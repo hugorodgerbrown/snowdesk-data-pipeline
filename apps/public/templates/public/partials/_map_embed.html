@@ -892,9 +892,13 @@ Optional context:
         {# Scrubbed-date ribbon — sits to the right of the (i) legend toggle in   #}
         {# the bottom-left cluster, close to the season scrubber that drives it.   #}
         {# map.js fills the text on every date-changed / preview / playback frame; #}
-        {# hidden until the first date is known (the date moved here from the top  #}
-        {# #region-readout). The legend card opens upward, above this row, so it   #}
-        {# never overlaps the toggle or the date.                                  #}
+        {# it ships `hidden` until the map has an answer to give (the date moved   #}
+        {# here from the top #region-readout). The legend card opens upward,       #}
+        {# above this row, so it never overlaps the toggle or the date.            #}
+        {# SNOW-660: once it has one, it stays visible even with NO day chosen —   #}
+        {# it then reads map-strings-template's `map-date-none`. A cold boot no    #}
+        {# longer paints a day nobody asked for, so an uncoloured map needs this   #}
+        {# to say why rather than to disappear along with the colours.             #}
         <div id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></div>
     </div>
     {# SNOW-445: the persistent off-season archive notice (SNOW-343) moved out #}
@@ -1468,6 +1472,16 @@ Optional context:
     {# attribute) for any scrubbed date outside the stored forecast       #}
     {# window — see updateWeatherRowAvailability in map.js.               #}
     <span data-string="weather-out-of-window">{% trans "No forecast for this date" %}</span>
+    {# SNOW-660: the same row's other disable reason — no day has been     #}
+    {# chosen at all. Two strings rather than one, because "no forecast    #}
+    {# for this date" would blame the data for a date the visitor has not  #}
+    {# picked yet.                                                          #}
+    <span data-string="weather-no-date">{% trans "Choose a date to see the forecast" %}</span>
+    {# SNOW-660: #map-date-ribbon's empty state. A cold boot no longer      #}
+    {# paints a day nobody asked for, so the ribbon reports which day is   #}
+    {# showing even when the honest answer is "none yet" — a blank         #}
+    {# choropleth with no cue is the bug that ticket fixed.                 #}
+    <span data-string="map-date-none">{% trans "No date selected" %}</span>
 </template>
 {# SNOW-658: the three overlay roundels' shared "…and its overlay is on the #}
 {# map right now" label (static/js/map_roundel_overlay_state.js). ONE       #}

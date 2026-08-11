@@ -103,15 +103,19 @@
   // always present regardless of favourites eligibility.
   const RESORT_POPUP_URL_TEMPLATE = mapEl.dataset.resortPopupUrl || '';
 
-  // SNOW-236: Clamp the cold-open boot date to the season end so the
-  // choropleth paints at the last populated date after season end.
-  // bootDateKey is hoisted to the outer IIFE scope so the country-toggle
-  // paint path can reuse it without re-reading the DOM.
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const seasonEndFromMap = mapEl.dataset.seasonEnd || todayISO;
-  const bootDateKey = todayISO < seasonEndFromMap ? todayISO : seasonEndFromMap;
-  // Expose to sibling IIFEs (seasonScrubberInit) via module scope.
-  BOOT_DATE_KEY = bootDateKey;
+  // SNOW-660: ``bootDateKey`` — min(today, seasonEnd), SNOW-236's cold-open
+  // date — used to live here, and every date-consuming path fell back to it
+  // when nothing had been chosen. That fallback is what made a cold boot
+  // paint a day nobody asked for: the map opened coloured for a date it had
+  // picked itself, with nothing on screen naming it. Off season, where that
+  // date can carry a rating for a single region, the result was one coloured
+  // polygon and no explanation.
+  //
+  // The one answer to "which day" is now ``currentDisplayedDate`` (declared
+  // further down, seeded from ``?d=`` and kept current by
+  // ``snowdesk:date-changed``), and ``null`` means no day has been asked
+  // for. Nothing reconstructs a substitute — a path with no date paints
+  // nothing rather than guessing.
 
   // SNOW-58: Basemap layer picker — resolve the active style URL.
   //
@@ -1993,8 +1997,17 @@
   // forecast window. No-op before the payload has ever been fetched —
   // there is nothing yet to judge the date against, so the row's normal
   // (possibly offline-gated) state stands.
+  //
+  // SNOW-660: a null `dateKey` — no day asked for — disables the row with a
+  // reason of its own. It is not "no forecast for this date": there is no
+  // date, and telling the visitor the forecast is missing would blame the
+  // data for a choice they have not made yet.
   const updateWeatherRowAvailability = (dateKey) => {
     if (!weatherResortGeojsonCache) return;
+    if (!dateKey) {
+      _setWeatherRowDisabled(true, MAP_STRINGS['weather-no-date']);
+      return;
+    }
     const merged = window.pwaWeatherCore.mergeFeatureCollections(
       weatherResortGeojsonCache,
       window.pwaWeatherCore.extractWeatherFeatures(favouritesGeojsonCache),
@@ -2016,7 +2029,11 @@
       weatherResortGeojsonCache,
       window.pwaWeatherCore.extractWeatherFeatures(favouritesGeojsonCache),
     );
-    const dateKey = currentDisplayedDate || bootDateKey;
+    // SNOW-660: the displayed date, with no substitute behind it. With no day
+    // asked for this is null, every feature projects to `icon: ''`, and the
+    // layer's own filter drops the lot — so the map carries no weather pins
+    // for a day the visitor never chose.
+    const dateKey = currentDisplayedDate;
     ensureWeatherIconsRegistered(window.pwaWeatherCore.iconFilenamesForPayload(merged))
       .then(() => {
         const src = map.getSource('weather');
@@ -2046,7 +2063,10 @@
       weatherResortGeojsonCache,
       window.pwaWeatherCore.extractWeatherFeatures(favouritesGeojsonCache),
     );
-    const dateKey = currentDisplayedDate || bootDateKey;
+    // SNOW-660: as in refreshWeatherSourceData above — the displayed date and
+    // nothing behind it, so an install that happens before any day is chosen
+    // installs an empty (fully filtered-out) layer rather than one day's pins.
+    const dateKey = currentDisplayedDate;
     const projected = window.pwaWeatherCore.projectFeatureCollectionForDate(merged, dateKey);
     map.addSource('weather', { type: 'geojson', data: projected });
     map.addLayer({
@@ -2203,8 +2223,11 @@
       fetchBulletinGroupingsForDate(dateKey)
         .then((fc) => {
           // Guard against a slow fetch resolving after the user has moved
-          // on: only draw if this is still the displayed date.
-          if ((currentDisplayedDate || bootDateKey) === dateKey) drawGroupings(fc);
+          // on: only draw if this is still the displayed date. SNOW-660: with
+          // no day chosen `currentDisplayedDate` is null, which matches no
+          // `dateKey` a fetch was ever scheduled for — the boundary stays
+          // blank, which is the same answer the choropleth gives.
+          if (currentDisplayedDate === dateKey) drawGroupings(fc);
         })
         .catch(() => { /* leave the boundary blank on failure */ });
     }, GROUPINGS_SETTLE_MS);
@@ -2498,14 +2521,31 @@
           // Paint the currently-displayed date for the new country's regions.
           // We use the display date from countryRatings directly rather than
           // relying on the season cache promise completing first.
-          if (MAP) {
-            // Determine which date is currently being displayed. The
-            // currentDisplayedDate var lives in the inner map.on('load') scope,
-            // so we read from the URL as a safe cross-scope fallback.
-            const displayDate = readUrlDateParam();
-            // SNOW-236: fall back to bootDateKey (season-end clamped) rather than
-            // raw today so post-season country toggles paint a populated frame.
-            const paintDate = displayDate || bootDateKey;
+          // Which date is currently being displayed — the committed date
+          // first, ``?d=`` behind it, exactly as a basemap swap resolves it.
+          //
+          // SNOW-660: this used to read ``readUrlDateParam()`` alone, on the
+          // reasoning that ``commitDate`` now writes ``?d=`` for every
+          // chosen day. It does — but it is not the only thing that commits
+          // one. The timelapse paints a frame per tick and only syncs the
+          // URL where playback settles, so a country toggled on mid-playback
+          // would find a bare URL, skip its paint, and leave the new
+          // country's regions grey beside correctly-graded neighbours. The
+          // precedence helper is the codebase's existing answer to exactly
+          // this question, and using it keeps the two callers from drifting.
+          //
+          // ``currentDisplayedDate`` is declared at this IIFE's top level,
+          // below this function but above every call site (a country toggle
+          // click and the map's 'load' handler), so it is initialised by the
+          // time this runs.
+          //
+          // Null still means nothing has been chosen: the paint is skipped
+          // rather than invented — and only the paint, so the sync-dot
+          // bookkeeping below still runs.
+          const paintDate = self.pwaChoroplethCore.repaintDateForStyleSwap(
+            currentDisplayedDate, readUrlDateParam(),
+          );
+          if (MAP && paintDate) {
             const frame = countryRatings[paintDate] || {};
             // Mirror the paintTodayRatings guard: setFeatureState is a no-op
             // if the source has not finished loading. Gate on isSourceLoaded
@@ -2689,21 +2729,34 @@
       // Fetch the currently-displayed day's boundary and draw it immediately
       // (no settle delay; that only applies while the scrubber is moving).
       if (!BULLETIN_GROUPINGS_URL) return;
-      const dateKey = currentDisplayedDate || bootDateKey;
-      const fc = await fetchBulletinGroupingsForDate(dateKey).catch(() => null);
-      if (!fc) {
-        // Deliberately silent, unlike every other tier here. Those load in
-        // response to the user clicking their toggle, so a failure owes them
-        // an explanation. This one loads automatically alongside L4 — and its
-        // endpoint is network-only (per-date data, excluded from sw.js's
-        // STATIC_PATHS), so it fails on every offline boot. Toasting that
-        // would fire an "unavailable offline" message at a user who asked for
-        // nothing and whose choropleth is working fine.
-        return;
+      // SNOW-660: the boundary is per-day, so with no day asked for there is
+      // nothing to fetch. Install the source EMPTY rather than not at all,
+      // and fall THROUGH to the `overlayLoaded[key] = true` below rather
+      // than returning: `drawGroupings` silently no-ops without a source,
+      // and the date-changed handler that would fill it in is gated on the
+      // tier being loaded — so either shortcut would leave the boundary
+      // blank for the rest of the session, including after a day is chosen.
+      const dateKey = currentDisplayedDate;
+      if (!dateKey) {
+        installBulletinGroupingsLayer(null);
+      } else {
+        const fc = await fetchBulletinGroupingsForDate(dateKey).catch(() => null);
+        if (!fc) {
+          // Deliberately silent, unlike every other tier here. Those load in
+          // response to the user clicking their toggle, so a failure owes
+          // them an explanation. This one loads automatically alongside L4 —
+          // and its endpoint is network-only (per-date data, excluded from
+          // sw.js's STATIC_PATHS), so it fails on every offline boot.
+          // Toasting that would fire an "unavailable offline" message at a
+          // user who asked for nothing and whose choropleth is working fine.
+          // Returns (unlike the no-date case above) so the tier stays
+          // unloaded and a later enable can retry the fetch.
+          return;
+        }
+        installBulletinGroupingsLayer(fc);
+        currentGroupingsFC = fc;
+        groupingsDrawn = true;
       }
-      installBulletinGroupingsLayer(fc);
-      currentGroupingsFC = fc;
-      groupingsDrawn = true;
     } else if (key === 'resorts') {
       if (!RESORTS_GEOJSON_URL) return;
       const data = await fetch(RESORTS_GEOJSON_URL)
@@ -2923,8 +2976,12 @@
       // skips refetching it (see the date-changed handler). So a re-enable can
       // reveal a boundary belonging to an earlier day, sitting over a
       // choropleth that has moved on. Refetch for the day now showing.
+      // SNOW-660: with no day asked for this passes null, and
+      // scheduleGroupingsForDate's own falsy guard blanks the boundary and
+      // schedules nothing — a re-enable reveals no day's outline until one
+      // is chosen.
       if (key === 'l3' && stillEnabled && wasLoaded) {
-        scheduleGroupingsForDate(currentDisplayedDate || bootDateKey);
+        scheduleGroupingsForDate(currentDisplayedDate);
       }
       // SNOW-499: making the favourites overlay (re-)visible means any
       // favourited resort should hide its plain dot again, now the star is
@@ -3604,11 +3661,20 @@
   // every transition goes through ``bulletinsVisibility``, which is the live
   // state (and the only thing that knows about suppression — a boundary
   // hidden because the downloads overlay is on must not be refetched either).
+  //
+  // SNOW-660: a commit can now carry ``date: null`` — the scrubber's popstate
+  // handler dispatches one when a back step lands on a URL with no ``?d=``,
+  // i.e. back to "no day asked for". That has to BLANK the boundary rather
+  // than return early and leave the previous day's outline sitting over a
+  // choropleth that has just been cleared.
   document.addEventListener('snowdesk:date-changed', (e) => {
     if (!overlayLoaded.l3) return;
     if (!BULLETINS_CORE.isEffective(bulletinsVisibility)) return;
     const dk = (e.detail && e.detail.date) || null;
-    if (!dk) return;
+    if (!dk) {
+      blankGroupings();
+      return;
+    }
     scheduleGroupingsForDate(dk);
   });
 
@@ -3634,10 +3700,14 @@
     // first-load.
     //
     // SNOW-239: today-summaries replaced by a compact ratings fetch
-    // (?d=<today>&country=ch, ~2 KB). Choropleth is painted via
+    // (?d=<date>&country=ch, ~2 KB). Choropleth is painted via
     // setFeatureState — no more property-based rating on features.
-    // SNOW-236: fetch using bootDateKey (clamped to season end) so the
-    // choropleth paints the last populated date when today is post-season.
+    // SNOW-660: that date is the one the visitor ASKED for (``?d=``), and
+    // nothing else. With an empty querystring the leg is skipped entirely
+    // rather than fetched for a day the map picked itself: a request whose
+    // only possible use is painting a day nobody chose is a request not
+    // worth making, and skipping it also removes the late-landing frame that
+    // SNOW-656 had to guard against.
     //
     // SNOW-638: these three fetches used to share this one Promise.all with
     // no guards on the regions/resorts legs, so a single always-rejecting
@@ -3655,7 +3725,10 @@
     // shared Promise.all, it was the unguarded legs; don't re-collapse
     // them into a single failure domain by dropping a .catch(), and don't
     // pull any leg out of this Promise.all to "fix" this again.
-    const [geojson, todayRatingsPayload, resorts] =
+    // SNOW-660: the day the URL asked for, or null. Read once here so the
+    // fetch and the frame it is unpacked from cannot disagree.
+    const requestedDate = readUrlDateParam();
+    const [geojson, bootRatingsPayload, resorts] =
       await Promise.all([
         fetch(REGIONS_URL + '?country=ch').then(r => {
           if (!r.ok) throw new Error('regions fetch failed');
@@ -3664,8 +3737,8 @@
           console.warn('[map] regions fetch failed', err);
           return null;
         }),
-        RATINGS_URL
-          ? fetch(RATINGS_URL + '?d=' + bootDateKey + '&country=ch').then(r => {
+        RATINGS_URL && requestedDate
+          ? fetch(RATINGS_URL + '?d=' + requestedDate + '&country=ch').then(r => {
               if (!r.ok) throw new Error('ratings fetch failed');
               return r.json();
             }).catch(() => ({}))
@@ -3687,8 +3760,10 @@
       return;
     }
     Object.assign(RESORTS_BY_REGION, resorts);
-    // todayRatingsPayload shape: { "YYYY-MM-DD": { region_id: rating_int } }
-    const todayRatings = todayRatingsPayload[bootDateKey] || {};
+    // bootRatingsPayload shape: { "YYYY-MM-DD": { region_id: rating_int } }.
+    // SNOW-660: keyed by the REQUESTED day — with none asked for the payload
+    // is the empty object the skipped leg resolved to, and this is empty too.
+    const bootRatings = requestedDate ? (bootRatingsPayload[requestedDate] || {}) : {};
 
     // Assign a numeric id to every feature and build the lookup.
     // MapLibre's feature-state API requires numeric ids; regionID is a string
@@ -3739,22 +3814,24 @@
     // initially-loaded country only, and a region with no geometry yet has
     // nothing to paint. Uses the local `map` rather than the module-scope
     // `MAP`, which this boot path runs before.
-    const paintTodayRatings = () => {
-      // SNOW-656: do not paint the boot day over a day the user actually
-      // asked for. This frame is fetched for ``bootDateKey``, but it lands
-      // asynchronously — gated on the source's 'data' event — and on a
-      // ``?d=`` deep link the scrubber has usually already repainted for the
-      // requested date by the time it does. Because this paint runs with
-      // ``clearMissing: false``, it does not wipe the map; it silently
-      // overwrites exactly those regions the BOOT day has a rating for,
-      // leaving them showing the wrong day's colour beside correct
-      // neighbours, with nothing on screen to explain the discrepancy.
-      //
-      // It surfaced as "one region is the wrong colour" only because the
-      // boot day in a seeded dev database happens to carry a single region;
-      // against a full season the boot frame covers ~140 of them, so a
-      // ``?d=`` link would repaint most of the map to the wrong day.
-      if (currentDisplayedDate && currentDisplayedDate !== bootDateKey) return;
+    // SNOW-660: renamed from ``paintTodayRatings``. It never painted "today"
+    // as such, and now it paints only the day the URL asked for — so the old
+    // name described the one behaviour this ticket removed.
+    const paintBootRatings = () => {
+      // Nothing was asked for, so there is nothing to paint: the choropleth
+      // stays uncoloured until the visitor chooses a day. #map-date-ribbon
+      // says so on screen (map_season_ribbon.js), so the blank map is a
+      // stated state rather than a page that looks broken.
+      if (!requestedDate) return;
+      // SNOW-656: do not paint this frame over a LATER commit. It lands
+      // asynchronously — gated on the source's 'data' event — and the
+      // scrubber may already have repainted for a day the visitor scrubbed
+      // to. Because this paint runs with ``clearMissing: false``, it does
+      // not wipe the map; it silently overwrites exactly those regions the
+      // boot frame has a rating for, leaving them showing the wrong day's
+      // colour beside correct neighbours, with nothing on screen to explain
+      // the discrepancy.
+      if (currentDisplayedDate && currentDisplayedDate !== requestedDate) return;
       self.pwaChoroplethCore.paintRatingsFrame(
         {
           featureById: FEATURE_BY_REGION_ID,
@@ -3762,17 +3839,17 @@
           setRating: (featureId, rating) =>
             map.setFeatureState({ source: 'regions', id: featureId }, { rating }),
         },
-        todayRatings,
+        bootRatings,
         { clearMissing: false },
       );
     };
     if (map.isSourceLoaded('regions')) {
-      paintTodayRatings();
+      paintBootRatings();
     } else {
       const onSourceData = (e) => {
         if (e.sourceId === 'regions' && map.isSourceLoaded('regions')) {
           map.off('sourcedata', onSourceData);
-          paintTodayRatings();
+          paintBootRatings();
         }
       };
       map.on('sourcedata', onSourceData);
@@ -5062,34 +5139,35 @@
      * the paint expression's `match` to `no_rating` grey and the map goes
      * blank the moment the user picks a different basemap.
      *
-     * The date this reads used to be `readUrlDateParam()` alone, which is
-     * null whenever the map is showing its default date: the scrubber
-     * clears `?d=` for "today" (`commitDate`), and out of season it snaps
-     * silently to the season's last populated day without ever writing the
-     * param. That is the ordinary way to arrive on the page — so the bug
-     * this fixes was not an edge case, it was every visitor who had not
+     * The date this reads used to be `readUrlDateParam()` alone, which was
+     * null whenever the map was showing a date the scrubber had committed
+     * silently — the ordinary way to arrive on the page back then — so the
+     * bug this fixes was not an edge case, it was every visitor who had not
      * deep-linked to a date and then changed basemap.
      *
      * The precedence between the committed date and `?d=` lives in
      * `choropleth_core.js` so it can be unit-tested; this function is the
-     * MapLibre wiring around it, with the boot frame as the floor below
-     * both — some colours beat a grey map in every case.
+     * MapLibre wiring around it.
+     *
+     * SNOW-660: null now means what it says — no day has been asked for —
+     * and the answer is to paint NOTHING. The swap has already wiped
+     * feature-state, so returning here leaves a genuinely uncoloured map,
+     * which is the same map the visitor was looking at before they changed
+     * basemap. The boot frame survives only as the offline fallback below,
+     * where it is the requested day's frame and so cannot invent a day.
      */
     const repaintAfterStyleSwap = () => {
       const dateKey = self.pwaChoroplethCore.repaintDateForStyleSwap(
         currentDisplayedDate, readUrlDateParam(),
       );
-      if (!dateKey) {
-        // Nothing has committed a date: the boot frame is still the truth.
-        paintTodayRatings();
-        return;
-      }
+      if (!dateKey) return;
       getSeasonRatings()
         .then((ratings) => repaintRegionsForDate(dateKey, ratings))
         .catch(() => {
           // Offline or a failed feed — the boot frame is the best colours
-          // available, and is strictly better than leaving the map grey.
-          paintTodayRatings();
+          // available for the day that WAS asked for, and is strictly better
+          // than leaving the map grey.
+          paintBootRatings();
         });
     };
 

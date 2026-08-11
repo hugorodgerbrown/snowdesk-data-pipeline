@@ -10,8 +10,12 @@ Context expected:
   ribbon            — SeasonRibbon instance from build_season_ribbon().
   season_start      — datetime.date: season window start (for data-season-start).
   season_end        — datetime.date: season window end (for data-season-end).
-  today             — datetime.date: current date (for data-default-date).
   default_region_id — str: the region whose ribbon is server-rendered (CH-4115).
+
+SNOW-660: ``data-default-date`` (today) is gone. It seeded the ribbon's
+displayed date, which meant a visitor who had asked for nothing arrived at a
+map coloured for a day the server had picked. The displayed date now comes
+from ``?d=`` alone, and no date means no date — see map_season_ribbon.js.
 
 This element is the data carrier (season bounds + default region) and the
 caption header. The visible cells are painted by map.js's seasonRibbonInit
@@ -37,7 +41,6 @@ for it was dead.
         data-default-subregion-name="{{ default_subregion_name|default:'' }}"
         data-default-major-name="{{ default_major_name|default:'' }}"
         data-default-region-slug="{{ default_region_slug|default:'' }}"
-        data-default-date="{{ today|date:'Y-m-d' }}"
         aria-label="{% blocktrans trimmed with label=ribbon.season_label %}Season {{ label }} danger ribbon{% endblocktrans %}"
         role="region"
     >

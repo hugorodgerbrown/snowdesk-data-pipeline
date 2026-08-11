@@ -41,11 +41,13 @@ const FEATURE_BY_REGION_ID = {};
 // computation (deriveEffectiveTodayKey).
 const COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
 
-// SNOW-236: The clamped boot date (min(today, seasonEnd)) computed by the
-// main IIFE and shared with the scrubber IIFE. The scrubber uses this as
-// the baseline when deciding whether to snap the thumb after getSeasonRatings
-// resolves — the initial paint was at bootDateKey, not necessarily at todayKey.
-let BOOT_DATE_KEY = null;
+// SNOW-660: ``BOOT_DATE_KEY`` (SNOW-236's clamped min(today, seasonEnd))
+// used to live here so the scrubber could snap to it. Nothing computes or
+// reads it any more: an empty querystring means no day has been asked for,
+// and the map paints nothing rather than a date it chose itself. The one
+// answer to "which day" is map.js's ``currentDisplayedDate``, seeded from
+// ``?d=``; there is deliberately no shared fallback for a chosen day to be
+// silently substituted from.
 
 // Whether a single click on a region auto-pans/zooms to fit it into view.
 // Off by default; persisted in localStorage under
@@ -222,6 +224,14 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // commonly returns fewer days than requested), so a scrubbed date
   // outside the stored window disables the row with this as its title.
   'weather-out-of-window': 'No forecast for this date',
+  // SNOW-660: the same row's OTHER disable reason — no day has been chosen
+  // at all. Distinct from the one above on purpose: "no forecast for this
+  // date" blames the data for a date the visitor has not picked yet.
+  'weather-no-date': 'Choose a date to see the forecast',
+  // SNOW-660: #map-date-ribbon's empty state. A cold boot no longer paints
+  // a day nobody asked for, so the ribbon says which day is showing —
+  // including when the honest answer is "none yet".
+  'map-date-none': 'No date selected',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
@@ -338,8 +348,8 @@ const MAP_READY_PROMISE = new Promise((r) => { resolveMapReady = r; });
 //
 // Splitting this file (SNOW-610) needs this to exist FIRST. The review's plan
 // puts the state promotion in step 2, after extracting the basemap-download
-// block — but that block is where `MAP`, `FEATURE_BY_ID`, `COUNTRY_STATE`,
-// `BOOT_DATE_KEY` and `AUTOZOOM` are declared, so extracting it first would
+// block — but that block is where `MAP`, `FEATURE_BY_ID`, `COUNTRY_STATE`
+// and `AUTOZOOM` are declared, so extracting it first would
 // take the state out of the file that still needs it and leave the remaining
 // IIFEs reading bare identifiers that no longer exist.
 window.snowdeskMapState = Object.freeze({
@@ -368,14 +378,6 @@ window.snowdeskMapState = Object.freeze({
   /** @returns {Object} Country code → whether its regions are shown. */
   get countryState() {
     return COUNTRY_STATE;
-  },
-
-  /** @returns {string|null} The clamped boot date, min(today, seasonEnd). */
-  get bootDateKey() {
-    return BOOT_DATE_KEY;
-  },
-  set bootDateKey(value) {
-    BOOT_DATE_KEY = value;
   },
 
   /** @returns {boolean} Whether a region click auto-pans to fit. */

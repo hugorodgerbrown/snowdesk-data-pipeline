@@ -20,6 +20,11 @@
 // snowdesk:date-changed event so the date readout stays in sync. Pressing
 // the opposite play button mid-playback flips direction from the current
 // frame without resetting the frame index.
+//
+// SNOW-660: playback chooses a day like any other surface, so the URL has
+// to say which — ``?d=`` is written at the points playback SETTLES (a stop,
+// and the two skip jumps), never per frame. See ``writeUrlDateParam`` in
+// map_shared.js for why the rate differs from the scrubber's.
 (function timelapseInit() {
   const playButton = document.getElementById('scrubber-play');
   if (!playButton) return;
@@ -84,6 +89,15 @@
   let frameIdx = 0;
   let timer = null;
 
+  // SNOW-660: the last frame actually painted — the day currently on screen.
+  //
+  // ``stop()`` cannot ask ``frameIdx`` for it: the boundary stop runs with
+  // the index already stepped out of range (``nextFrame`` returns the
+  // incremented value alongside ``done``), so ``sortedDates[frameIdx]``
+  // there is undefined. This is set where the paint happens, which is the
+  // only place that knows what the map is showing.
+  let lastPaintedDate = null;
+
   const announce = (dateKey) => {
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
       detail: { date: dateKey, source: 'timelapse' },
@@ -93,6 +107,7 @@
   const applyFrame = (dateKey) => {
     repaintRegionsForDate(dateKey, cache);
     moveScrubber(dateKey);
+    lastPaintedDate = dateKey;
     announce(dateKey);
   };
 
@@ -104,8 +119,10 @@
       frameIdx = result.frameIdx;
       if (result.done) {
         // Boundary reached (forward end or reverse start): last valid frame
-        // already painted — stop so the value settles.
-        stop();
+        // already painted — stop so the value settles. SNOW-660: playback
+        // ran to its own end, so the frame it settled on is the day the
+        // visitor is left looking at, and the URL says so.
+        stop({ syncUrl: true });
         return;
       }
       applyFrame(sortedDates[frameIdx]);
@@ -114,22 +131,43 @@
     frameIdx += direction;
     if (direction === 1 && frameIdx >= sortedDates.length) {
       // Forward end: last frame already painted — stop so the value settles.
-      stop();
+      stop({ syncUrl: true });
       return;
     }
     if (direction === -1 && frameIdx < 0) {
       // Reverse start: first frame already painted — stop.
-      stop();
+      stop({ syncUrl: true });
       return;
     }
     applyFrame(sortedDates[frameIdx]);
   };
 
-  const stop = () => {
+  /**
+   * Halt playback, leaving the map on the frame it reached.
+   *
+   * SNOW-660: `opts.syncUrl` writes `?d=` for that frame — playback chooses
+   * a day just as the scrubber does, so the URL has to say which, or a
+   * reload comes back to a map with no day chosen at all. It is written HERE
+   * and not per frame because `history.replaceState` is throttled by Safari
+   * (~100 calls per 30s, and it THROWS on the 101st), and five frames a
+   * second would hit that inside half a minute of playback — see
+   * `writeUrlDateParam` in map_shared.js.
+   *
+   * Off by default because two of this function's four callers are not the
+   * user ending playback: the `snowdesk:date-changed` listener stops in
+   * deference to a scrub that has ALREADY written its own, later date, and
+   * the basemap-swap listener stops for a reason that is not about dates at
+   * all. Writing in either case would replace the current URL with a stale
+   * frame's.
+   *
+   * @param {{syncUrl?: boolean}} [opts]
+   */
+  const stop = (opts = {}) => {
     if (timer !== null) {
       clearInterval(timer);
       timer = null;
     }
+    if (opts.syncUrl && lastPaintedDate) writeUrlDateParam(lastPaintedDate);
     // Reset data-state on both play transport buttons.
     playButton.dataset.state = 'stopped';
     playButton.setAttribute('aria-label', MAP_STRINGS['timelapse-play']);
@@ -214,7 +252,9 @@
   // Pressing while reverse is playing flips direction from the current frame.
   playButton.addEventListener('click', () => {
     if (timer !== null && direction === 1) {
-      stop();
+      // SNOW-660: the user ending playback IS a choice of day — the frame
+      // they stopped on is what they want to look at, so the URL says so.
+      stop({ syncUrl: true });
     } else {
       start(1);
     }
@@ -225,7 +265,7 @@
   if (reverseButton) {
     reverseButton.addEventListener('click', () => {
       if (timer !== null && direction === -1) {
-        stop();
+        stop({ syncUrl: true });
       } else {
         start(-1);
       }
@@ -238,10 +278,18 @@
   // aria-valuenow update; the synthetic date-changed event (source:
   // 'scrubber') causes the running timelapse to surrender control via
   // its own listener.
+  //
+  // SNOW-660: one discrete user action, one settled day — so it writes
+  // ``?d=`` exactly as a scrubber commit does. It announces itself as
+  // ``source: 'scrubber'`` and the listener above therefore stops playback
+  // WITHOUT its own URL write, which is right: this write is the later one
+  // and names the day the jump landed on, not the frame it interrupted.
   const commitJump = (target) => {
     if (!target) return;
     if (cache) repaintRegionsForDate(target, cache);
     moveScrubber(target);
+    lastPaintedDate = target;
+    writeUrlDateParam(target);
     document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
       detail: { date: target, source: 'scrubber' },
     }));

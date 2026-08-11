@@ -73,18 +73,24 @@ def _clear_forecast_weather_cache() -> Any:
 
 
 def _navigate_home(page: Page, live_server_url: str) -> None:
-    """Load / with navigator.onLine pinned true, wait for the map to boot.
+    """Load /?d=<today> with navigator.onLine pinned true, wait for the map.
 
     Mirrors test_map_layer_sync_status.py's ``_navigate_home_map_loaded`` —
     toggling a lazy overlay tier needs MAP.loaded() to be true, and the
     offline-integrity gate in map_layer_sync_status.js needs
     navigator.onLine pinned so it doesn't disable every row.
+
+    SNOW-660: the date is now load-bearing, not decoration. Weather pins are
+    projected for the displayed day, and a bare ``/`` means no day has been
+    asked for — every feature projects to ``icon: ''``, the layer's filter
+    drops the lot and the row disables itself with a "choose a date" reason.
+    The seeded forecast is for today, so today is the day to ask for.
     """
     page.add_init_script(
         "Object.defineProperty(navigator, 'onLine', "
         "{ value: true, configurable: true });"
     )
-    page.goto(f"{live_server_url}/")
+    page.goto(f"{live_server_url}/?d={datetime.date.today().isoformat()}")
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_selector('#season-scrubber[data-state="ready"]')
     page.wait_for_function(

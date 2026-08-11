@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), weather overlay, basemaps
 status: current
-last-reviewed: 2026-08-08
+last-reviewed: 2026-08-11
 ---
 
 # Map page — functional specification
@@ -446,10 +446,13 @@ to today's position within the **November–May** avalanche season window.
 - **Performance.** The full season's ratings are fetched once, on the
   first scrub, and served from memory thereafter — the first scrub pays a
   single round-trip; every later scrub and all playback render instantly.
-  The cold map load only fetches today's ratings, keeping first paint
-  small.
+  A cold map load fetches one day's ratings when the URL names one, and
+  none at all when it does not, keeping first paint small.
 - **Shareable.** The scrubbed date is reflected in the URL (`/?d=YYYY-MM-DD`),
-  so a specific day's map can be linked and reloaded.
+  so a specific day's map can be linked and reloaded. Since SNOW-660 that
+  includes today: an empty querystring means "no day chosen", and the map
+  opens uncoloured with the date ribbon saying so, rather than painting a
+  day the visitor never asked for.
 
 ---
 
