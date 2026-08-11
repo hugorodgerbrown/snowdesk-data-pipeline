@@ -364,6 +364,15 @@
   // default homepage focus, or a deep-linked region).
   document.addEventListener('snowdesk:regions-loaded', setHighlight);
 
+  // SNOW-660: state the date immediately, before any fetch. The readout used
+  // to appear only when the ratings cache resolved, which was fine while it
+  // could say nothing useful until then — but the no-date prompt and a `?d=`
+  // date both come from the URL alone, and a feed that fails (offline, a
+  // rejected season fetch) would otherwise leave an uncoloured map with
+  // nothing on it saying why. Region-dependent work still waits for the
+  // cache below; this is only the date.
+  updateReadout();
+
   // Paint the default focus (homepage) once the ratings cache resolves.
   getSeasonRatings().then((c) => {
     cache = c || null;
