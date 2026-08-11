@@ -152,303 +152,29 @@ Optional context:
         </svg>
     </div>
     {# Bottom-right control stack — every roundel in one bottom-anchored      #}
-    {# column: basemap, locate, the favourite + observation pills, and the    #}
-    {# help (?) roundel at the foot (level with the bottom-left (i) toggle).  #}
-    {# map.js/report.js/favourites.js bind by id, so the ordering is          #}
-    {# DOM-only; #map-controls-br is on the click guard.                       #}
+    {# column: locate, then the collapsible group (layers, bulletin fill,     #}
+    {# downloads, favourites, observations) with the help (?) roundel at its  #}
+    {# foot, then the expand/collapse toggle (level with the bottom-left (i)  #}
+    {# toggle). map.js/report.js/favourites.js bind by id, so the ordering is #}
+    {# DOM-only; #map-controls-br is on the click guard.                      #}
+    {# SNOW-664: LOCATE is the only roundel outside the collapsible group.    #}
+    {# "Where am I" is the one question worth a permanent control on a map    #}
+    {# the user is standing in; everything else is a choice about what the    #}
+    {# map shows, and a choice can wait behind the toggle. Layers used to sit #}
+    {# above locate and stay out with it — it is now the FIRST item inside    #}
+    {# the group, one slot down, so a collapsed column is locate + toggle and #}
+    {# nothing else.                                                          #}
     {# data-expanded drives the collapsible group below. Server-rendered      #}
     {# "true" so the controls are discoverable on a first visit and present   #}
     {# with JS disabled; mapControlsCollapseInit re-reads the persisted       #}
     {# preference from localStorage on boot.                                  #}
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
-        {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
-        {# pill that opens a popover of basemap options. Choice persists in   #}
-        {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
-        {# re-installs the regions source + layers on style.load.             #}
-        <div
-            class="map-utility-pill map-utility-pill--basemap"
-            id="basemap-pill"
-            data-state="collapsed"
-        >
-            <button
-                id="basemap-toggle"
-                type="button"
-                class="map-utility-button hover-affordance"
-                aria-label='{% trans "Choose basemap" %}'
-                aria-haspopup="menu"
-                aria-expanded="false"
-                aria-controls="basemap-menu"
-            >
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    <path d="M12 2 2 7l10 5 10-5-10-5Z" />
-                    <path d="m2 12 10 5 10-5" />
-                    <path d="m2 17 10 5 10-5" />
-                </svg>
-            </button>
-            <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
-                {# SNOW-172: country toggles — show/hide each country's region     #}
-                {# outlines. CH is on by default. The rest are off; their          #}
-                {# GeoJSON is lazy-fetched on first toggle-on. State persists in   #}
-                {# localStorage under snowdesk.map.overlay.country.<code>.         #}
-                {#                                                                 #}
-                {# SNOW-658: the section is "Bulletins" and each row names its     #}
-                {# PROVIDER, because that is what the row actually switches on —   #}
-                {# one provider's bulletins, drawn over the countries it publishes #}
-                {# for. Austria and Italy were two rows for one provider; ALBINA   #}
-                {# publishes the EUREGIO bulletin for both, so they are one row    #}
-                {# now, and toggling it fires one snowdesk:country-toggle PER      #}
-                {# CODE (map_basemap_picker.js). Nothing below the menu learned    #}
-                {# about providers: countryState, the storage keys and the country #}
-                {# filter are all still per-code.                                  #}
-                {#                                                                 #}
-                {# ``data-country-codes`` is the DOM projection of COUNTRY_GROUPS  #}
-                {# in static/js/map_state.js, read by map_layer_sync_status.js     #}
-                {# (which loads before the map bundle and so cannot read that      #}
-                {# declaration directly). tests/public/test_map_country_groups.py  #}
-                {# fails if the two ever disagree.                                 #}
-                <li role="none" class="basemap-menu-section-label">
-                    {% trans "Bulletins" %}
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="country.ch"
-                        data-country-codes="ch"
-                        aria-checked="true"
-                    >
-                        {# SNOW-524: per-row sync dot — green only when all four #}
-                        {# feeds are cached, for every country the row switches.  #}
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "SLF (CH)" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="country.fr"
-                        data-country-codes="fr"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "MétéoFrance (FR)" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="country.albina"
-                        data-country-codes="at it"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "ALBINA (AT, IT)" %}
-                    </button>
-                </li>
-                {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
-                {# add/remove visibility on outline-only line layers stacked  #}
-                {# above the L4 choropleth. State persists in localStorage    #}
-                {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
-                {# defaults to visible, like the other overlay tiers.         #}
-                {# SNOW-658: "Overlays" → "Boundaries", and each tier names its    #}
-                {# EAWS level. "Major / Minor / Micro" is this app's own shorthand  #}
-                {# for a published hierarchy, and the levels are what the data      #}
-                {# actually is — so the row carries both: the familiar word, and    #}
-                {# the standard's own name for it. The keys (l1/l2/l4) are          #}
-                {# unchanged; every consumer of the DOM contract keys off those.    #}
-                <li role="separator" class="basemap-menu-separator"></li>
-                <li role="none" class="basemap-menu-section-label">
-                    {% trans "Boundaries" %}
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="l1"
-                        aria-checked="false"
-                    >
-                        {# SNOW-505: sync-status dot — hidden (unknown) until #}
-                        {# map_layer_sync_status.js resolves it on menu-open. #}
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Major (EAWS Level 1)" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="l2"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Minor (EAWS L2)" %}
-                    </button>
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="l4"
-                        aria-checked="true"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Micro (EAWS L4)" %}
-                    </button>
-                </li>
-                {# SNOW-658: resorts are places, not boundaries, so they get     #}
-                {# their own section rather than trailing the tier list.         #}
-                {# SNOW-78: Resorts overlay — geocoded ski resorts as circle     #}
-                {# pins above the L4 choropleth. Off by default; state persists  #}
-                {# in localStorage under snowdesk.map.overlay.resorts.           #}
-                {# SNOW-499: pin click opens a minimal popup (name, region,      #}
-                {# favourite star, bulletin link) rather than selecting the      #}
-                {# parent region.                                                #}
-                <li role="separator" class="basemap-menu-separator"></li>
-                <li role="none" class="basemap-menu-section-label">
-                    {% trans "Locations" %}
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="resorts"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Resorts" %}
-                    </button>
-                </li>
-                {# SNOW-658: the Favourites row (SNOW-414) and the Community      #}
-                {# reports row (SNOW-419) were here. Both are USER-GENERATED      #}
-                {# data with a roundel of their own, so each toggle moved into    #}
-                {# the panel that roundel opens — "Show favourites on the map"    #}
-                {# in _favourites_surface.html, "Show community reports on the    #}
-                {# map" in _report_surface.html — driving                         #}
-                {# window.pwaFavouritesOverlay / window.pwaCommunityReportsOverlay#}
-                {# in map.js. That is SNOW-634's downloads pattern generalised:   #}
-                {# one subject, one way in. Their sync dots went with the rows    #}
-                {# rather than moving into the panels, following SNOW-645's own   #}
-                {# call for the downloaded-areas row.                            #}
-                {#                                                                #}
-                {# SNOW-658: weather is a CONDITION, not a boundary or a place,   #}
-                {# so it gets a heading of its own below rather than being folded #}
-                {# into one it doesn't belong to.                                 #}
-                {# SNOW-573: Weather overlay — a Meteocons condition symbol   #}
-                {# plus the day's max temperature at each resort-anchored     #}
-                {# (and, for a signed-in visitor, favourite-anchored)         #}
-                {# forecast point. Flag-gated on weather_layer; off by        #}
-                {# default. static/js/map.js disables this row (with a        #}
-                {# reason, via a second namespaced marker — see               #}
-                {# DISABLED_MARKER in map_layer_sync_status.js) for any       #}
-                {# scrubbed date outside the stored forecast window.          #}
-                {# SNOW-658: the heading and its separator sit INSIDE the      #}
-                {# flag check — this is the section's only row, so rendering   #}
-                {# them unconditionally would leave an empty "Conditions"      #}
-                {# heading for every visitor without the flag.                 #}
-                {% if weather_layer_eligible %}
-                    <li role="separator" class="basemap-menu-separator"></li>
-                    <li role="none" class="basemap-menu-section-label">
-                        {% trans "Conditions" %}
-                    </li>
-                    <li role="none">
-                        <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                            data-overlay-key="weather"
-                            aria-checked="false"
-                        >
-                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                            {% trans "Weather" %}
-                        </button>
-                    </li>
-                {% endif %}
-                {# SNOW-570/SNOW-587 drew one translucent square per tile     #}
-                {# actually held in the pinned basemap cache here, as a       #}
-                {# togglable "Available offline" overlay row. SNOW-645        #}
-                {# (Hugo's report: switching basemap while it was on left the #}
-                {# dot permanently grey and unclickable — its "any tile       #}
-                {# pinned under the ACTIVE template" probe is inherently      #}
-                {# per-basemap, and there was no way to tell that from the    #}
-                {# row) removed the row; its overlay, painted across every    #}
-                {# basemap at once, moved to the "Manage downloads" sheet.    #}
-                {# SNOW-645 review: opening that sheet turns the overlay on,  #}
-                {# but a second "Available offline" toggle now lives INSIDE   #}
-                {# the sheet itself and is the only thing that turns it off — #}
-                {# closing the sheet does not, since it is bottom-docked and  #}
-                {# full-width on mobile and would otherwise cover the very    #}
-                {# squares it draws. See map_downloads_manager.js's open()    #}
-                {# and its overlay-toggle change handler, and                 #}
-                {# window.pwaDownloadedOverlay's show/hide/isVisible in       #}
-                {# map.js.                                                    #}
-                {# SNOW-588 added a "Manage downloads…" row here, opening   #}
-                {# the sheet that lists what is stored offline on this      #}
-                {# device (public/partials/_map_downloads_sheet.html). That #}
-                {# gave the same subject two ways in — this menu row, and   #}
-                {# #map-custom-download-control (the bottom-right roundel), #}
-                {# which opened a DIFFERENT surface (the "Download a custom #}
-                {# area" framing overlay) — one of them buried inside a     #}
-                {# menu nominally about map layers.                        #}
-                {#                                                          #}
-                {# SNOW-634 reverses that: the roundel now opens THIS same  #}
-                {# sheet (public/partials/_map_custom_download_control.html #}
-                {# — its behaviour, not its glyph, changed), and "Download  #}
-                {# a custom area" moved INTO the sheet as its own action    #}
-                {# ([data-panel-add], _map_downloads_sheet.html) rather      #}
-                {# than the roundel's own click. This row is therefore      #}
-                {# gone — the roundel is the way in now, matching every     #}
-                {# other roundel-opens-its-own-surface pattern on the map   #}
-                {# (favourites, field reports) instead of routing through a #}
-                {# menu about something else.                               #}
-                <li role="separator" class="basemap-menu-separator"></li>
-                <li role="none" class="basemap-menu-section-label">
-                    {% trans "Base map" %}
-                </li>
-                {% for bm in basemaps %}
-                    <li role="none">
-                        <button
-                            type="button"
-                            role="menuitemradio"
-                            class="basemap-menu-item hover-affordance"
-                            data-basemap-key="{{ bm.key }}"
-                            data-basemap-url="{{ bm.url }}"
-                            aria-checked="false"
-                        >
-                            {# Offline-integrity: sync-status dot per basemap —  #}
-                            {# hidden (unknown) until map_layer_sync_status.js     #}
-                            {# resolves it on menu-open. Green = cached tiles      #}
-                            {# available offline; red = offline and uncached (the #}
-                            {# row is disabled to match).                          #}
-                            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                            {{ bm.label }}
-                        </button>
-                    </li>
-                {% endfor %}
-            </ul>
-        </div>
         {# SNOW-328: "Locate me" roundel — triggers the MapLibre       #}
         {# GeolocateControl to pan/zoom to the user's position once.  #}
         {# The control's own button is hidden via CSS; this pill is    #}
         {# the visible affordance. Rendered on both /map/ and /.       #}
+        {# SNOW-664: FIRST in the stack, and the only child outside     #}
+        {# #map-controls-collapsible — see the stack comment above.     #}
         <div class="map-utility-pill map-utility-pill--locate">
             <button
                 id="locate-toggle"
@@ -467,13 +193,59 @@ Optional context:
                 </svg>
             </button>
         </div>
-        {# Collapsible group. Layers + locate above stay put; these four reveal #}
-        {# beneath them, in stack order, easing out of the toggle anchored at   #}
-        {# the foot. The wrapper is what animates (height, clipped by overflow) #}
-        {# and the inner holds the flex column, because a height transition     #}
-        {# needs a fixed-height box wrapping an auto-height one.                #}
+        {# Collapsible group. Locate above stays put; these five reveal beneath  #}
+        {# it, in stack order, easing out of the toggle anchored at the foot.   #}
+        {# The wrapper is what animates (height, clipped by overflow) and the   #}
+        {# inner holds the flex column, because a height transition needs a     #}
+        {# fixed-height box wrapping an auto-height one.                        #}
+        {# The clip is on BOTH axes, which is why neither panel opened from     #}
+        {# this group lives inside it: #basemap-menu and #map-fill-flyout are   #}
+        {# both children of #map-controls-br, positioned against the stack by   #}
+        {# their own JS — see each one's comment below.                         #}
         <div id="map-controls-collapsible">
             <div class="map-controls-collapsible-inner">
+                {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
+                {# pill that opens a popover of basemap options. Choice persists in   #}
+                {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
+                {# re-installs the regions source + layers on style.load.             #}
+                {# SNOW-664: FIRST in the collapsible group, one slot below the       #}
+                {# always-visible locate roundel — it used to sit above locate and    #}
+                {# stay out of the group with it. Its menu (#basemap-menu) moved out  #}
+                {# to the stack in the same change: this wrapper is `overflow:        #}
+                {# hidden`, so a popover anchored to a roundel inside it would be     #}
+                {# clipped the moment it extended left, exactly as SNOW-656 found     #}
+                {# for the bulletin-fill flyout.                                      #}
+                <div
+                    class="map-utility-pill map-utility-pill--basemap"
+                    id="basemap-pill"
+                    data-state="collapsed"
+                >
+                    <button
+                        id="basemap-toggle"
+                        type="button"
+                        class="map-utility-button hover-affordance"
+                        aria-label='{% trans "Choose basemap" %}'
+                        aria-haspopup="menu"
+                        aria-expanded="false"
+                        aria-controls="basemap-menu"
+                    >
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M12 2 2 7l10 5 10-5-10-5Z" />
+                            <path d="m2 12 10 5 10-5" />
+                            <path d="m2 17 10 5 10-5" />
+                        </svg>
+                    </button>
+                </div>
                 {# SNOW-656: bulletin-fill strength — a roundel whose flyout     #}
                 {# opens to the LEFT with five opacity steps. It governs the     #}
                 {# danger choropleth (regions-fill) and the dissolved boundary   #}
@@ -496,7 +268,8 @@ Optional context:
                 {# the map" (both paint the same polygons) — moving either       #}
                 {# visibly moves the other. See window.pwaLayerVisibilityCore.   #}
                 {#                                                               #}
-                {# FIRST in the collapsible group, so it sits directly below the #}
+                {# SECOND in the collapsible group — SNOW-664 moved the layers   #}
+                {# roundel in above it — so it sits two slots below the          #}
                 {# always-visible locate roundel and hides with the strip. A     #}
                 {# flyout rather than inline on the canvas: five 44px targets is #}
                 {# 220px, which does not fit beside the date pill at 375px, and  #}
@@ -640,6 +413,267 @@ Optional context:
                 </div>
             </div>
         </div>
+        {# SNOW-664: the layers menu is a child of .map-controls-br, NOT of the #}
+        {# #basemap-pill it belongs to — the pill moved into                    #}
+        {# #map-controls-collapsible, which is `overflow: hidden` for its       #}
+        {# height animation, and that clips both axes, so a menu opening        #}
+        {# leftward out of it would simply be cut off. Same reasoning, and the  #}
+        {# same fix, as #map-fill-flyout below (SNOW-656).                      #}
+        {#                                                                      #}
+        {# It was always positioned by JS rather than by CSS — basemapPicker-   #}
+        {# Init measures the floor above the scrubber and the cap below #map's  #}
+        {# top edge on every open (SNOW-511/SNOW-656) — so the move changes     #}
+        {# only the box those offsets are measured from: the stack, not the     #}
+        {# pill. See positionMenu in static/js/map_basemap_picker.js.           #}
+        <ul id="basemap-menu" class="basemap-menu" role="menu" hidden>
+            {# SNOW-172: country toggles — show/hide each country's region     #}
+            {# outlines. CH is on by default. The rest are off; their          #}
+            {# GeoJSON is lazy-fetched on first toggle-on. State persists in   #}
+            {# localStorage under snowdesk.map.overlay.country.<code>.         #}
+            {#                                                                 #}
+            {# SNOW-658: the section is "Bulletins" and each row names its     #}
+            {# PROVIDER, because that is what the row actually switches on —   #}
+            {# one provider's bulletins, drawn over the countries it publishes #}
+            {# for. Austria and Italy were two rows for one provider; ALBINA   #}
+            {# publishes the EUREGIO bulletin for both, so they are one row    #}
+            {# now, and toggling it fires one snowdesk:country-toggle PER      #}
+            {# CODE (map_basemap_picker.js). Nothing below the menu learned    #}
+            {# about providers: countryState, the storage keys and the country #}
+            {# filter are all still per-code.                                  #}
+            {#                                                                 #}
+            {# ``data-country-codes`` is the DOM projection of COUNTRY_GROUPS  #}
+            {# in static/js/map_state.js, read by map_layer_sync_status.js     #}
+            {# (which loads before the map bundle and so cannot read that      #}
+            {# declaration directly). tests/public/test_map_country_groups.py  #}
+            {# fails if the two ever disagree.                                 #}
+            <li role="none" class="basemap-menu-section-label">
+                {% trans "Bulletins" %}
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="country.ch"
+                    data-country-codes="ch"
+                    aria-checked="true"
+                >
+                    {# SNOW-524: per-row sync dot — green only when all four #}
+                    {# feeds are cached, for every country the row switches.  #}
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "SLF (CH)" %}
+                </button>
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="country.fr"
+                    data-country-codes="fr"
+                    aria-checked="false"
+                >
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "MétéoFrance (FR)" %}
+                </button>
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="country.albina"
+                    data-country-codes="at it"
+                    aria-checked="false"
+                >
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "ALBINA (AT, IT)" %}
+                </button>
+            </li>
+            {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles    #}
+            {# add/remove visibility on outline-only line layers stacked  #}
+            {# above the L4 choropleth. State persists in localStorage    #}
+            {# under snowdesk.map.overlay.l1 / .l2 / .l4. Micro regions   #}
+            {# defaults to visible, like the other overlay tiers.         #}
+            {# SNOW-658: "Overlays" → "Boundaries", and each tier names its    #}
+            {# EAWS level. "Major / Minor / Micro" is this app's own shorthand  #}
+            {# for a published hierarchy, and the levels are what the data      #}
+            {# actually is — so the row carries both: the familiar word, and    #}
+            {# the standard's own name for it. The keys (l1/l2/l4) are          #}
+            {# unchanged; every consumer of the DOM contract keys off those.    #}
+            <li role="separator" class="basemap-menu-separator"></li>
+            <li role="none" class="basemap-menu-section-label">
+                {% trans "Boundaries" %}
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="l1"
+                    aria-checked="false"
+                >
+                    {# SNOW-505: sync-status dot — hidden (unknown) until #}
+                    {# map_layer_sync_status.js resolves it on menu-open. #}
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "Major (EAWS Level 1)" %}
+                </button>
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="l2"
+                    aria-checked="false"
+                >
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "Minor (EAWS L2)" %}
+                </button>
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="l4"
+                    aria-checked="true"
+                >
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "Micro (EAWS L4)" %}
+                </button>
+            </li>
+            {# SNOW-658: resorts are places, not boundaries, so they get     #}
+            {# their own section rather than trailing the tier list.         #}
+            {# SNOW-78: Resorts overlay — geocoded ski resorts as circle     #}
+            {# pins above the L4 choropleth. Off by default; state persists  #}
+            {# in localStorage under snowdesk.map.overlay.resorts.           #}
+            {# SNOW-499: pin click opens a minimal popup (name, region,      #}
+            {# favourite star, bulletin link) rather than selecting the      #}
+            {# parent region.                                                #}
+            <li role="separator" class="basemap-menu-separator"></li>
+            <li role="none" class="basemap-menu-section-label">
+                {% trans "Locations" %}
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="resorts"
+                    aria-checked="false"
+                >
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "Resorts" %}
+                </button>
+            </li>
+            {# SNOW-658: the Favourites row (SNOW-414) and the Community      #}
+            {# reports row (SNOW-419) were here. Both are USER-GENERATED      #}
+            {# data with a roundel of their own, so each toggle moved into    #}
+            {# the panel that roundel opens — "Show favourites on the map"    #}
+            {# in _favourites_surface.html, "Show community reports on the    #}
+            {# map" in _report_surface.html — driving                         #}
+            {# window.pwaFavouritesOverlay / window.pwaCommunityReportsOverlay#}
+            {# in map.js. That is SNOW-634's downloads pattern generalised:   #}
+            {# one subject, one way in. Their sync dots went with the rows    #}
+            {# rather than moving into the panels, following SNOW-645's own   #}
+            {# call for the downloaded-areas row.                            #}
+            {#                                                                #}
+            {# SNOW-658: weather is a CONDITION, not a boundary or a place,   #}
+            {# so it gets a heading of its own below rather than being folded #}
+            {# into one it doesn't belong to.                                 #}
+            {# SNOW-573: Weather overlay — a Meteocons condition symbol   #}
+            {# plus the day's max temperature at each resort-anchored     #}
+            {# (and, for a signed-in visitor, favourite-anchored)         #}
+            {# forecast point. Flag-gated on weather_layer; off by        #}
+            {# default. static/js/map.js disables this row (with a        #}
+            {# reason, via a second namespaced marker — see               #}
+            {# DISABLED_MARKER in map_layer_sync_status.js) for any       #}
+            {# scrubbed date outside the stored forecast window.          #}
+            {# SNOW-658: the heading and its separator sit INSIDE the      #}
+            {# flag check — this is the section's only row, so rendering   #}
+            {# them unconditionally would leave an empty "Conditions"      #}
+            {# heading for every visitor without the flag.                 #}
+            {% if weather_layer_eligible %}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Conditions" %}
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                        data-overlay-key="weather"
+                        aria-checked="false"
+                    >
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                        {% trans "Weather" %}
+                    </button>
+                </li>
+            {% endif %}
+            {# SNOW-570/SNOW-587 drew one translucent square per tile     #}
+            {# actually held in the pinned basemap cache here, as a       #}
+            {# togglable "Available offline" overlay row. SNOW-645        #}
+            {# (Hugo's report: switching basemap while it was on left the #}
+            {# dot permanently grey and unclickable — its "any tile       #}
+            {# pinned under the ACTIVE template" probe is inherently      #}
+            {# per-basemap, and there was no way to tell that from the    #}
+            {# row) removed the row; its overlay, painted across every    #}
+            {# basemap at once, moved to the "Manage downloads" sheet.    #}
+            {# SNOW-645 review: opening that sheet turns the overlay on,  #}
+            {# but a second "Available offline" toggle now lives INSIDE   #}
+            {# the sheet itself and is the only thing that turns it off — #}
+            {# closing the sheet does not, since it is bottom-docked and  #}
+            {# full-width on mobile and would otherwise cover the very    #}
+            {# squares it draws. See map_downloads_manager.js's open()    #}
+            {# and its overlay-toggle change handler, and                 #}
+            {# window.pwaDownloadedOverlay's show/hide/isVisible in       #}
+            {# map.js.                                                    #}
+            {# SNOW-588 added a "Manage downloads…" row here, opening   #}
+            {# the sheet that lists what is stored offline on this      #}
+            {# device (public/partials/_map_downloads_sheet.html). That #}
+            {# gave the same subject two ways in — this menu row, and   #}
+            {# #map-custom-download-control (the bottom-right roundel), #}
+            {# which opened a DIFFERENT surface (the "Download a custom #}
+            {# area" framing overlay) — one of them buried inside a     #}
+            {# menu nominally about map layers.                        #}
+            {#                                                          #}
+            {# SNOW-634 reverses that: the roundel now opens THIS same  #}
+            {# sheet (public/partials/_map_custom_download_control.html #}
+            {# — its behaviour, not its glyph, changed), and "Download  #}
+            {# a custom area" moved INTO the sheet as its own action    #}
+            {# ([data-panel-add], _map_downloads_sheet.html) rather      #}
+            {# than the roundel's own click. This row is therefore      #}
+            {# gone — the roundel is the way in now, matching every     #}
+            {# other roundel-opens-its-own-surface pattern on the map   #}
+            {# (favourites, field reports) instead of routing through a #}
+            {# menu about something else.                               #}
+            <li role="separator" class="basemap-menu-separator"></li>
+            <li role="none" class="basemap-menu-section-label">
+                {% trans "Base map" %}
+            </li>
+            {% for bm in basemaps %}
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemradio"
+                        class="basemap-menu-item hover-affordance"
+                        data-basemap-key="{{ bm.key }}"
+                        data-basemap-url="{{ bm.url }}"
+                        aria-checked="false"
+                    >
+                        {# Offline-integrity: sync-status dot per basemap —  #}
+                        {# hidden (unknown) until map_layer_sync_status.js     #}
+                        {# resolves it on menu-open. Green = cached tiles      #}
+                        {# available offline; red = offline and uncached (the #}
+                        {# row is disabled to match).                          #}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                        {{ bm.label }}
+                    </button>
+                </li>
+            {% endfor %}
+        </ul>
         {# Expand/collapse the group above. Anchored at the foot of the stack  #}
         {# so it never moves — the group grows and shrinks upward out of it.   #}
         {# aria-controls/aria-expanded are kept in sync by                     #}
@@ -954,17 +988,20 @@ Optional context:
             {% trans "Search regions and resorts by name." %}
         </li>
         {# The bottom-right stack, walked top to bottom in DOM order. #}
-        <li data-help-target="#basemap-toggle" data-help-title='{% trans "Map detail" %}'>
-            {% trans "Switch base maps and toggle overlays and map location data." %}
-        </li>
+        {# SNOW-664: locate leads it now — it is the only roundel outside the   #}
+        {# collapsible group, and the layers roundel moved one slot down into   #}
+        {# that group, so these two swapped to keep the walk in DOM order.      #}
         <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
             {% trans "Centre the map on your current position." %}
         </li>
+        <li data-help-target="#basemap-toggle" data-help-title='{% trans "Map detail" %}'>
+            {% trans "Switch base maps and toggle overlays and map location data." %}
+        </li>
         {# SNOW-656: bulletin-fill strength. Sits here because the tour walks    #}
-        {# the bottom-right stack in DOM order and this roundel is the first    #}
-        {# item in the collapsible group, directly under locate. The tour       #}
-        {# force-opens that group while it runs, so the target is on screen     #}
-        {# even for a user who had the strip collapsed.                         #}
+        {# the bottom-right stack in DOM order and this roundel follows the     #}
+        {# layers one inside the collapsible group. The tour force-opens that   #}
+        {# group while it runs, so the target is on screen even for a user who  #}
+        {# had the strip collapsed.                                             #}
         <li data-help-target="#map-fill-toggle" data-help-title='{% trans "Bulletin display" %}'>
             {% trans "Control the opacity of the bulletin colour shading." %}
         </li>

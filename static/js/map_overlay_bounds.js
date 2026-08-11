@@ -24,8 +24,10 @@
  * `compute()` deliberately returns VIEWPORT coordinates and leaves the
  * translation to each caller, because the two callers do not share a base:
  *
- *   - the layers menu is `position: absolute` inside #basemap-pill, so its
- *     `bottom` is measured from the pill — `pillBottom - floorY`;
+ *   - the layers menu is `position: absolute` inside #map-controls-br (it was
+ *     inside #basemap-pill until SNOW-664 moved that pill into the clipped
+ *     collapsible group), so its `bottom` is measured from the stack —
+ *     `stackBottom - floorY`;
  *   - a sheet is `position: fixed`, so its `bottom` is measured from the
  *     viewport — `window.innerHeight - floorY`.
  *

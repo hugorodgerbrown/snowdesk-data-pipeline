@@ -92,7 +92,10 @@ opened programmatically — the downloads panel from its roundel, the detail
 popup from a MapLibre canvas event — reached no document handler at all.
 The fill flyout's third dismiss path, the observer that closes it when the
 collapsible strip hides the roundel it is anchored to, answers a different
-question again and stays. The coachmark closes
+question again and stays — and SNOW-664 gave the layers menu the same
+observer, for the same reason: `#basemap-pill` moved into that strip, so a
+menu left open beside a hidden roundel is now an orphan there too. The
+coachmark closes
 without persisting `snowdesk.map.help`: being displaced is not the user
 saying "seen", which is what Done / Escape / "×" mean. Registering it is
 safe because every tour step targets map chrome — a roundel, the readout,

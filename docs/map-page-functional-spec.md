@@ -320,6 +320,46 @@ offline-status dots did not move with them; see
 
 ---
 
+## 3.6a The control column, and what a first visitor gets (SNOW-664)
+
+The bottom-right roundel column is **locate, then everything else behind a
+toggle**:
+
+| Position | Control | Visible when minimised |
+|----------|---------|------------------------|
+| 1 | Locate me | **yes** |
+| 2 | Layers (`#basemap-pill`) | no |
+| 3 | Bulletin fill strength | no |
+| 4 | Manage downloads | no |
+| 5 | Favourites | no |
+| 6 | Field observations | no |
+| 7 | Map help ("?") | no |
+| foot | Expand / collapse toggle | **yes** |
+
+Locate is the only permanent one. "Where am I" is the question worth a
+standing control on a map the user is physically standing in; everything
+else in the column is a choice about what the map *shows*, and a choice can
+wait behind the toggle. Layers used to stay out alongside locate, which made
+a minimised column two roundels and a toggle, and left no answer to why
+those two and not a third.
+
+Both panels opened from inside the group — the layers menu and the fill
+flyout — are children of `.map-controls-br`, **not** of the roundels that
+open them. `#map-controls-collapsible` is `overflow: hidden` for its height
+animation, and that clips both axes, so a panel extending left out of it
+would be silently cut off. Each is positioned against the stack by its own
+JS on open, and each closes when the strip collapses.
+
+**A first visit lands on:** the intro panel (`#home-intro`, dismissed state
+persisted under `snowdesk.home.intro`), SLF (CH) bulletins, Micro (EAWS L4)
+boundaries, the Standard basemap, and bulletin fill at 50%. Every one of
+those is a localStorage default rather than a server-rendered choice, so a
+returning visitor keeps whatever they last set; the `aria-checked` /
+`data-state` attributes in the template mirror the same values so the
+control reads correctly before JS runs.
+
+---
+
 ## 3.7 The three overlay panels, and why they differ by viewport
 
 Downloads, Favourites and Field observations each open a panel from their

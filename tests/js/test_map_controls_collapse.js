@@ -21,19 +21,19 @@ import '../../static/js/i18n_strings.js';
 const STORAGE_KEY = 'snowdesk.map.controls.expanded';
 
 /**
- * Build the control stack: layers + locate outside the group, four
- * collapsible controls inside it, toggle anchored last.
+ * Build the control stack: locate outside the group (SNOW-664 — the only
+ * roundel that stays out), the collapsible controls inside it, toggle
+ * anchored last.
  *
  * @param {number} collapsibleCount - children rendered inside the group.
  */
-function buildFixture(collapsibleCount = 4) {
+function buildFixture(collapsibleCount = 5) {
   const items = Array.from(
     { length: collapsibleCount },
     (_, i) => `<div class="map-utility-pill" id="collapsible-${i}"></div>`,
   ).join('');
   document.body.innerHTML = `
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
-      <div class="map-utility-pill map-utility-pill--basemap" id="basemap-pill"></div>
       <div class="map-utility-pill map-utility-pill--locate"></div>
       <div id="map-controls-collapsible">
         <div class="map-controls-collapsible-inner">${items}</div>
