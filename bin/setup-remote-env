@@ -8,54 +8,359 @@
 #
 #   1. Exits immediately (no-op) when CLAUDE_CODE_REMOTE is not "true", so
 #      local developer environments are never touched.
-#   2. Installs Python 3.14 via `uv python install` (uv fetches a pre-built
-#      binary from its managed distribution; no PPA or sudo required).
-#   3. Runs `uv sync` to create the in-project virtualenv (.venv/) — uv's
-#      default location, which lets bin/init-worktree symlink it into git
-#      worktrees.
+#   2. Resolves a *final* Python 3.14, upgrading uv from PyPI first when the
+#      container's uv is too old to offer one.
+#   3. Rebuilds the in-project virtualenv (.venv/) whenever it is missing or
+#      unusable — uv's default location, which lets bin/init-worktree symlink
+#      it into git worktrees.
+#   4. Seeds a throwaway .env when the session has none, because settings read
+#      SECRET_KEY through python-decouple with no default. tox does not
+#      declare `passenv` for it, so an exported variable never reaches pytest
+#      — only the file works. A cloud session starts from a fresh clone and
+#      bin/init-worktree cannot help: it symlinks .env from the main repo and
+#      refuses to run in the main worktree, which is precisely what a cloud
+#      session checks out.
+#   5. Verifies the result with `manage.py check` and shouts if it failed.
+#   6. Seeds db.sqlite3 and compiles static/css/output.css, so the session can
+#      run the app — runserver, npm run lh, the dev-mirror views — and not
+#      merely its tests. Both are best-effort: a failure here warns but does
+#      not fail the script, because tox needs neither (pytest-django builds
+#      its own test database and the `js` env runs its own `npm ci`).
 #
-# Idempotent: each step checks whether it is already done before acting, so
-# re-running the script in the same container is cheap (≈ 1 s).
+# Why "final" and not merely ">= 3.14"
+# ------------------------------------
+# The previous version accepted any interpreter named python3.14 and skipped
+# the sync whenever a .venv directory existed. A container carrying CPython
+# 3.14.0rc2 satisfied both tests, and the session was then unusable: pydantic
+# calls typing._eval_type(..., prefer_fwd_module=True), a keyword that only
+# landed in 3.14 final, so importing django-csp-plus's models raised
+# TypeError and django.setup() never completed. No manage.py command, no
+# pytest, no tox — while this script reported success and exited 0.
+#
+# The two lessons are encoded below: a release candidate is not the release
+# (releaselevel must be "final"), and the presence of a .venv directory is not
+# evidence that it works (import Django, don't stat a path).
+#
+# The uv upgrade goes through PyPI deliberately. Cloud environments running
+# the "Trusted" network policy can reach pypi.org but not astral.sh, so
+# `uv self update` and the standalone installer both fail there; the PyPI
+# wheel bundles the same binary and is reachable.
+#
+# Idempotent: every step checks whether it is already done before acting, so
+# re-running the script in a warm container costs about a second.
 #
 # Wired to the SessionStart hook in .claude/settings.json so it runs
 # automatically before bin/init-worktree at the start of every remote session.
+# That hook swallows the exit code (`|| true`) so a failure here can never
+# block a session — which is why the failure path below is loud rather than
+# merely non-zero.
 
 set -euo pipefail
 
 LOG_PREFIX="setup-remote-env"
+PYTHON_VERSION="3.14"
 
 # ── Guard: only run in Claude Code remote (cloud) sessions ─────────────────
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
     exit 0
 fi
 
-# ── 1. Install Python 3.14 via uv ──────────────────────────────────────────
-PYTHON_VERSION="3.14"
+# Print an unmissable banner and exit non-zero. The SessionStart hook drops
+# the exit code, so this text is the only signal the developer ever sees.
+fail() {
+    echo "" >&2
+    echo "  ######################################################################" >&2
+    echo "  $LOG_PREFIX: FAILED — the Python environment is NOT usable" >&2
+    echo "" >&2
+    while IFS= read -r line; do
+        echo "  $line" >&2
+    done <<< "$1"
+    echo "" >&2
+    echo "  manage.py, pytest and tox will all fail until this is resolved." >&2
+    echo "  ######################################################################" >&2
+    echo "" >&2
+    exit 1
+}
 
-if command -v "python${PYTHON_VERSION}" &>/dev/null; then
-    PYTHON_BIN=$(command -v "python${PYTHON_VERSION}")
-    echo "$LOG_PREFIX: python${PYTHON_VERSION} already present at $PYTHON_BIN"
-else
-    if ! command -v uv &>/dev/null; then
-        echo "$LOG_PREFIX: ERROR — uv is not installed; cannot install Python ${PYTHON_VERSION}" >&2
-        exit 1
+# True when $1 is a final (non-prerelease) CPython >= $PYTHON_VERSION.
+# An rc/alpha/beta reports releaselevel "candidate"/"alpha"/"beta" and is
+# rejected — see the header for what an rc costs us.
+is_final_python() {
+    local bin=${1:-}
+    [ -n "$bin" ] && [ -x "$bin" ] || return 1
+    # PYTHON_VERSION crosses into Python through the environment: the heredoc
+    # is quoted so the shell cannot interpolate it, and hardcoding the floor
+    # twice is how the two silently drift apart.
+    SETUP_PYTHON_FLOOR="$PYTHON_VERSION" "$bin" - <<'PY' >/dev/null 2>&1
+import os
+import sys
+
+major, minor = (int(part) for part in os.environ["SETUP_PYTHON_FLOOR"].split("."))
+version = sys.version_info
+ok = version[:2] >= (major, minor) and version.releaselevel == "final"
+raise SystemExit(0 if ok else 1)
+PY
+}
+
+# Human-readable version string, e.g. "3.14.0rc2" — used in log lines.
+python_version_of() {
+    "$1" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo "unknown"
+}
+
+# Upgrade uv from PyPI. Containers pin whatever uv was current when the image
+# was built, and uv's list of downloadable interpreters is baked into the
+# binary — an older uv simply does not know that 3.14 final exists.
+upgrade_uv() {
+    local output
+    echo "$LOG_PREFIX: upgrading uv from PyPI (current: $(uv --version 2>/dev/null || echo none))"
+    # Capture rather than pipe: piping through a filter would make grep's exit
+    # status the verdict on pip, and grep reports failure when it filters
+    # everything out — which is exactly what a clean pip run produces.
+    if ! output=$(python3 -m pip install --user --quiet --upgrade uv 2>&1); then
+        # A non-zero pip is not fatal on its own; the caller re-checks whether
+        # a usable interpreter appeared and fails with full context if not.
+        echo "$LOG_PREFIX: WARNING — pip could not upgrade uv" >&2
+        echo "$output" | tail -5 >&2
     fi
-    echo "$LOG_PREFIX: installing Python ${PYTHON_VERSION} via uv"
-    uv python install "${PYTHON_VERSION}"
-    PYTHON_BIN=$(uv python find "${PYTHON_VERSION}")
-    echo "$LOG_PREFIX: Python ${PYTHON_VERSION} ready at $PYTHON_BIN"
+    hash -r 2>/dev/null || true
+    echo "$LOG_PREFIX: uv is now $(uv --version 2>/dev/null || echo unavailable)"
+}
+
+if ! command -v uv &>/dev/null; then
+    fail "uv is not installed, so neither Python ${PYTHON_VERSION} nor the
+virtualenv can be provisioned."
 fi
 
-# ── 2. Create the in-project virtualenv with uv ────────────────────────────
-# uv creates .venv/ in the project root by default, which lets
-# bin/init-worktree symlink it into git worktrees.
+# ── 1. Resolve a final Python 3.14 ─────────────────────────────────────────
+# --system ignores any virtualenv in the working directory. Without it uv
+# answers with .venv/bin/python, so a venv built on an rc would be offered as
+# the interpreter to rebuild itself with and the repair below could never
+# converge. An older uv that lacks the flag simply yields nothing here, which
+# routes into the same install branch.
+find_system_python() {
+    uv python find "$PYTHON_VERSION" --system 2>/dev/null || true
+}
+
+python_bin=$(find_system_python)
+
+if is_final_python "$python_bin"; then
+    echo "$LOG_PREFIX: Python $(python_version_of "$python_bin") already present at $python_bin"
+else
+    if [ -n "$python_bin" ]; then
+        echo "$LOG_PREFIX: $python_bin is $(python_version_of "$python_bin") — not a final release, replacing it"
+    else
+        echo "$LOG_PREFIX: no Python ${PYTHON_VERSION} found"
+    fi
+
+    # The container's uv may predate 3.14 final; upgrade before asking for it.
+    upgrade_uv
+
+    echo "$LOG_PREFIX: installing Python ${PYTHON_VERSION} via uv"
+    # --force replaces the bin/ shim left by an earlier (possibly rc) install,
+    # which uv otherwise refuses to overwrite because it did not create it.
+    # A failure here must not abort under `set -e`: the diagnosis below is far
+    # more useful than uv's one-liner, and the hook's `|| true` would reduce
+    # an aborted run to a single line nobody reads.
+    install_log=""
+    if ! install_log=$(uv python install "$PYTHON_VERSION" --force 2>&1); then
+        echo "$LOG_PREFIX: WARNING — uv could not install Python ${PYTHON_VERSION}" >&2
+    fi
+    # Spelt as an `if` rather than `[ -n … ] && echo`: under `set -e` that
+    # AND-list would abort the script whenever the log came back empty.
+    if [ -n "$install_log" ]; then
+        echo "$install_log"
+    fi
+    python_bin=$(find_system_python)
+
+    if ! is_final_python "$python_bin"; then
+        fail "Could not obtain a final CPython ${PYTHON_VERSION}.
+Best available: ${python_bin:-none} ($(python_version_of "${python_bin:-/nonexistent}"))
+
+uv said:
+$(echo "$install_log" | tail -5)
+
+uv downloads interpreters from GitHub release assets and upgrades itself
+from PyPI. If this environment's network policy blocks either, allowlist
+them or pre-install Python ${PYTHON_VERSION} in the environment image."
+    fi
+    echo "$LOG_PREFIX: Python $(python_version_of "$python_bin") ready at $python_bin"
+fi
+
+# ── 2. Create or repair the in-project virtualenv ──────────────────────────
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
-if [ -d ".venv" ]; then
-    echo "$LOG_PREFIX: .venv already exists, skipping uv sync"
+# A .venv directory is not proof of a working environment. Require that its
+# interpreter is a final 3.14 and that Django actually imports; anything less
+# earns a rebuild. Deliberately avoids django.setup(), which needs SECRET_KEY
+# from a .env that a fresh cloud session does not have.
+venv_is_healthy() {
+    [ -x ".venv/bin/python" ] || return 1
+    is_final_python ".venv/bin/python" || return 1
+    .venv/bin/python -c "import django" >/dev/null 2>&1 || return 1
+}
+
+if venv_is_healthy; then
+    echo "$LOG_PREFIX: .venv healthy (Python $(python_version_of .venv/bin/python)), skipping uv sync"
 else
-    echo "$LOG_PREFIX: creating virtualenv with Python ${PYTHON_VERSION}"
-    uv sync --python "$PYTHON_BIN"
-    echo "$LOG_PREFIX: virtualenv ready — 'uv run tox' should now work"
+    if [ -e ".venv" ]; then
+        echo "$LOG_PREFIX: .venv is unusable — rebuilding it"
+        # Removes a worktree symlink rather than the main repo's venv behind
+        # it; uv sync then builds a real one in place.
+        rm -rf .venv
+    fi
+    echo "$LOG_PREFIX: creating virtualenv with Python $(python_version_of "$python_bin")"
+    uv sync --python "$python_bin"
+fi
+
+# ── 3. Seed a throwaway .env when the session has none ─────────────────────
+# Never overwrites an existing file: a developer's real .env carries live
+# credentials and is not ours to replace.
+if [ -f ".env" ]; then
+    echo "$LOG_PREFIX: .env already present, leaving it alone"
+elif [ -f ".env.example" ]; then
+    .venv/bin/python - <<'PY'
+"""Copy .env.example to .env, minting a random SECRET_KEY as we go.
+
+The container is ephemeral and .env is gitignored, so this key exists only
+for the lifetime of one cloud session and never reaches a real environment.
+"""
+
+import pathlib
+import secrets
+
+lines = []
+for line in pathlib.Path(".env.example").read_text().splitlines(keepends=True):
+    if line.startswith("SECRET_KEY="):
+        line = f"SECRET_KEY={secrets.token_urlsafe(50)}\n"
+    lines.append(line)
+pathlib.Path(".env").write_text("".join(lines))
+PY
+    echo "$LOG_PREFIX: seeded .env from .env.example with a throwaway SECRET_KEY"
+else
+    echo "$LOG_PREFIX: WARNING — no .env and no .env.example; tests needing SECRET_KEY will fail" >&2
+fi
+
+# ── 4. Verify — never report success without proving it ────────────────────
+# Prefer the .env the session will actually use, so a malformed one is caught
+# here rather than by the first command the developer runs. Falls back to an
+# injected key (python-decouple reads the environment before .env) only when
+# there is no .env to read.
+run_django_check() {
+    if [ -f ".env" ]; then
+        DJANGO_SETTINGS_MODULE="config.settings.development" \
+            .venv/bin/python manage.py check 2>&1
+    else
+        SECRET_KEY="setup-remote-env-smoke-check" \
+        DJANGO_SETTINGS_MODULE="config.settings.development" \
+            .venv/bin/python manage.py check 2>&1
+    fi
+}
+
+if ! check_output=$(run_django_check); then
+    fail "The virtualenv was built but 'manage.py check' failed:
+
+$(echo "$check_output" | tail -20)"
+fi
+
+echo "$LOG_PREFIX: verified with manage.py check — 'uv run tox' should now work"
+
+# ── 5. Seed the development database ───────────────────────────────────────
+# Mirrors bin/init-worktree's recipe (migrate → region fixtures →
+# seed_test_data), which cannot run here: it refuses to execute in the main
+# worktree, and a cloud session clones exactly that. Same data as CI, so the
+# SNOW-13 query-count baseline holds.
+#
+# Asks Django where the database is rather than assuming ./db.sqlite3, so the
+# path stays correct if BASE_DIR ever moves. The is-it-SQLite branch cannot
+# fire today — development.py pins ENGINE to sqlite3 and ignores DATABASE_URL
+# — but migrate-then-seed is destructive enough to be worth a cheap guard if
+# that overlay ever starts honouring the environment.
+DJANGO_ENV=(env "DJANGO_SETTINGS_MODULE=config.settings.development")
+
+# The verification step above already opened a connection, and SQLite creates
+# the file on connect — so an empty db.sqlite3 exists by now whether or not
+# anything has ever been written to it. "Does the file exist" would therefore
+# always answer yes and the seed would never run. Ask whether the database
+# holds region data instead, the same health-over-stat rule the venv follows.
+db_state=$(
+    "${DJANGO_ENV[@]}" .venv/bin/python - 2>/dev/null <<'PY'
+"""Report the default database's SQLite path and whether it holds data.
+
+Both values are marker-prefixed: django.setup() emits log records of its
+own, and these decide whether the seeding below runs at all.
+"""
+
+import django
+
+django.setup()
+
+from django.conf import settings
+
+database = settings.DATABASES["default"]
+if "sqlite3" not in database["ENGINE"]:
+    raise SystemExit(0)
+
+print(f"SQLITE_PATH:{database['NAME']}")
+
+# Region rows are the first thing bin/init-worktree's recipe loads, so their
+# absence means the database is empty or only half-built either way.
+try:
+    from apps.regions.models import MicroRegion
+
+    seeded = MicroRegion.objects.exists()
+except Exception:
+    seeded = False
+
+print(f"SEEDED:{'yes' if seeded else 'no'}")
+PY
+)
+sqlite_path=$(echo "$db_state" | sed -n 's/^SQLITE_PATH://p')
+db_seeded=$(echo "$db_state" | sed -n 's/^SEEDED://p')
+
+if [ -z "$sqlite_path" ]; then
+    echo "$LOG_PREFIX: default database is not SQLite — not seeding it"
+elif [ "$db_seeded" = "yes" ]; then
+    echo "$LOG_PREFIX: $(basename "$sqlite_path") already holds data, leaving it alone"
+else
+    echo "$LOG_PREFIX: seeding $(basename "$sqlite_path") (migrate + region fixtures + seed_test_data)"
+    if seed_log=$(
+        "${DJANGO_ENV[@]}" .venv/bin/python manage.py migrate --noinput 2>&1 &&
+        "${DJANGO_ENV[@]}" .venv/bin/python manage.py loaddata eaws_CH resorts 2>&1 &&
+        "${DJANGO_ENV[@]}" .venv/bin/python manage.py seed_test_data --all --commit 2>&1
+    ); then
+        # Pull just the row count out of seed_test_data's log line rather than
+        # echoing the whole record, timestamp and logger name included.
+        row_summary=$(echo "$seed_log" | grep -oE "seeded [0-9]+ rows" | tail -1 || true)
+        echo "$LOG_PREFIX: database seeded${row_summary:+ (${row_summary})}"
+    else
+        echo "$LOG_PREFIX: WARNING — seeding failed; runserver will have no data" >&2
+        echo "$seed_log" | tail -10 >&2
+        # A half-written database is worse than none: it would satisfy the
+        # existence check above and never be retried.
+        rm -f "$sqlite_path"
+    fi
+fi
+
+# ── 6. Compile the Tailwind stylesheet ─────────────────────────────────────
+# output.css is a gitignored build artefact. Without it every page renders
+# unstyled, which makes a browser preview or a Lighthouse run meaningless.
+if [ -f "static/css/output.css" ]; then
+    echo "$LOG_PREFIX: static/css/output.css already built, leaving it alone"
+elif ! command -v npm &>/dev/null; then
+    echo "$LOG_PREFIX: WARNING — npm not found; static/css/output.css not built" >&2
+else
+    echo "$LOG_PREFIX: building static/css/output.css (npm install + Tailwind CLI)"
+    if css_log=$(
+        # install, not ci: it reuses whatever the cached container image
+        # already has instead of deleting node_modules to rebuild it.
+        npm install --no-audit --no-fund 2>&1 &&
+        npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify 2>&1
+    ); then
+        echo "$LOG_PREFIX: static/css/output.css built"
+    else
+        echo "$LOG_PREFIX: WARNING — stylesheet build failed; pages will render unstyled" >&2
+        echo "$css_log" | tail -10 >&2
+        rm -f static/css/output.css
+    fi
 fi

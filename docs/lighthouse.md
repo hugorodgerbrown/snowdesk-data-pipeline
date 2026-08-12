@@ -33,13 +33,22 @@ Requires Chrome/Chromium on the host. The script:
    It rewrites tracked files, so `git checkout -- static/js` after a local
    run if you intend to keep working in the tree. `sw.js` and `sw-kill.js`
    are deliberately excluded — see the script header for why.
-2. Runs `collectstatic --noinput` under `DJANGO_SETTINGS_MODULE=config.settings.perf`
+2. Runs `bin/minify-css`, the same idea for the hand-written stylesheets.
+   `map.css` was the one file in the critical path no build step touched:
+   ~3,000 commented lines, render-blocking on the map homepage, and larger
+   compressed than the whole compiled Tailwind output. Minifying it takes
+   it from ~35 KB to ~6 KB on the wire.
+
+   Also rewrites tracked files — `git checkout -- static/css` after a local
+   run. `output.css` (Tailwind already emits it with `--minify`) and the
+   vendored `maplibre-gl.css` are excluded.
+3. Runs `collectstatic --noinput` under `DJANGO_SETTINGS_MODULE=config.settings.perf`
    so the ManifestStaticFilesStorage manifest is populated.
-3. Starts a Django server on `:8765` using `config.settings.perf` — the
+4. Starts a Django server on `:8765` using `config.settings.perf` — the
    same WhiteNoise + `CompressedManifestStaticFilesStorage` + `GZipMiddleware`
    stack as production, so hashed filenames, pre-compressed assets, and
    cache headers match reality.
-4. Audits the URLs in `lighthouserc.json` and writes HTML + JSON reports
+5. Audits the URLs in `lighthouserc.json` and writes HTML + JSON reports
    to `.lighthouseci/` (gitignored).
 
 ```bash
