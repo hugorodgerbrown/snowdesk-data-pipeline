@@ -33,11 +33,15 @@
        happened to sit next to it at the time.
 
        The split is by role, not by position:
-         lg — every FLOATING tap target (search, layers, locate, favourite,
-              observations, help, basemap download, view-bulletin).
-         sm — the bottom-left informational row (the (i) legend toggle and
-              the scrubbed-date ribbon) plus the region-name readout, which
-              is a label rather than a control.
+         lg — every tap target FLOATING over the map with nothing beside it
+              to be measured against (search, layers, locate, favourite,
+              observations, help, custom-area download).
+         sm — the ribbon header and the bottom-left informational row: the
+              region-name readout and the (i)/scrubbed-date labels, plus
+              the two ribbon-header TAP TARGETS (basemap download,
+              view-bulletin) — they sit in a row beside the readout, so
+              they take the row's height rather than the floating one (see
+              below).
          xs — tap targets INSIDE the season-scrubber pill, which cannot take
               lg without the pill outgrowing its corner (see below).
 
@@ -47,9 +51,29 @@
        unclipped rectangular patch at the pill's trailing edge. Every glass
        control here carries backdrop-filter, so keep new values even.
 
-       lg is also the accessibility floor: WCAG 2.2 SC 2.5.8 sets a 24px
-       minimum, and the old 22px download roundel cleared it only via the
-       spacing exception.
+       The accessibility floor is 24px (WCAG 2.2 SC 2.5.8) and it belongs to
+       the SCALE, not to lg — sm carries tap targets too. Every value clears
+       it outright rather than via the spacing exception: xs meets it
+       exactly, sm by 8px, lg by 16px. The 22px sizes this scale replaced
+       (the old download roundel, the transport buttons) were the ones that
+       needed the exception.
+
+       WHY THE RIBBON-HEADER ROUNDELS ARE sm, NOT lg. #map-download-control
+       and #region-readout-action sit in .ribbon-header immediately beside
+       the #region-readout chip, which is sm. At lg they stood 8px taller
+       than the chip they annotate, and a row of three controls read as one
+       label with two oversized buttons bolted on. They are the only tap
+       targets in this file that share a row with an sm element — every
+       other lg roundel floats alone over the map, which is what the role
+       split above turns on. The cost is 8px of tap target (40 → 32); the
+       alternative that keeps 40px is a painted shell inset inside a larger
+       transparent hit box, which needs a wrapper element on the download
+       control (both its pseudo-elements are taken — ::before by the
+       busy/done fill and the other-basemap ring, ::after by the shared
+       [data-overlay-shown] rule — and its overflow: hidden would clip any
+       hit-area expander). Rejected as machinery out of proportion to 8px.
+       .ribbon-header's own min-height stays at lg so the row still centres
+       against the lg search roundel opposite it.
 
        WHY xs EXISTS (map roundel sizing audit — this is the "record why"
        the previous version of this comment demanded before a third size).
@@ -60,9 +84,11 @@
        own padding is 10px top and bottom — which puts its top edge exactly
        on the 60px baseline the legend row and the control stack sit at, so
        the scrubber would touch both. sm (32px) is a 52px pill leaving 3px
-       of clearance, and sm is documented above as a LABEL size, not a
-       control one. 24px is the smallest even value that clears SC 2.5.8
-       outright: the 22px original passed only via the spacing exception,
+       of clearance. (This rationale used to lean on sm being a LABEL size
+       as well; it no longer is — see the ribbon-header paragraph above —
+       and the 3px clearance carries the argument on its own.) 24px is the
+       smallest even value that clears SC 2.5.8 outright: the 22px
+       original passed only via the spacing exception,
        which holds today (10px gaps put adjacent centres 32px apart, and
        the exception needs 24px) but breaks the moment the gap tightens or a
        sixth button lands. The pill grows 42px → 44px, keeping 16px of
@@ -74,9 +100,9 @@
        @theme variables that no scanned template references, so a token used
        only from this stylesheet would never reach :root.
        ———————————————————————————————————————————————————————— */
-    --map-control-lg: 40px;  /* floating tap targets              */
-    --map-control-sm: 32px;  /* labels + the (i)/date readout row */
-    --map-control-xs: 24px;  /* tap targets inside the scrubber   */
+    --map-control-lg: 40px;  /* tap targets floating over the map   */
+    --map-control-sm: 32px;  /* the ribbon header + the (i)/date row */
+    --map-control-xs: 24px;  /* tap targets inside the scrubber     */
 }
 
 /* ——————————————————————————————————————————————————————————————
@@ -1566,8 +1592,12 @@
 .ribbon-header {
     display: flex;
     align-items: center;
-    /* Centres every child — the sm readout and the lg action roundels — on
-       the same line as the top-right search roundel, whatever their heights. */
+    /* Every child is sm now (the readout chip and both action roundels), but
+       this min-height stays lg: it is what centres the row on the same line
+       as the top-right SEARCH roundel, which is still lg at the same top
+       inset. Dropping it to sm would raise the row by 4px and break that
+       alignment — the row's height is set by the control it aligns TO, not
+       by the controls inside it. */
     min-height: var(--map-control-lg);
     gap: 8px;
     padding: 0 2px;
@@ -1670,12 +1700,16 @@
    now present-but-disabled instead (the [aria-disabled] rule below), so the
    header keeps its shape and an unselected map is never mistaken for a ribbon
    that failed to load. */
+/* sm, not lg — it shares .ribbon-header with the sm #region-readout chip and
+   matches its height rather than the floating roundels'. See the control
+   scale's "WHY THE RIBBON-HEADER ROUNDELS ARE sm" paragraph at the top of
+   this file; the 16px glyph inside is unchanged and still centres. */
 .region-readout-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--map-control-lg);
-    height: var(--map-control-lg);
+    width: var(--map-control-sm);
+    height: var(--map-control-sm);
     flex: 0 0 auto;
     border-radius: 999px;
     color: var(--ink);
@@ -1809,6 +1843,23 @@
     border: 0.5px solid var(--border);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     cursor: pointer;
+}
+
+/* sm, not lg — and scoped to the id rather than the class ON PURPOSE. This
+   ruleset is shared with #map-custom-download-control, which sits in the
+   bottom-right stack among the other lg roundels there and must stay lg;
+   only THIS control sits in .ribbon-header beside the sm #region-readout
+   chip.
+   See the control scale's "WHY THE RIBBON-HEADER ROUNDELS ARE sm" paragraph
+   at the top of this file.
+
+   Nothing else in the ruleset needs touching: the busy/done fill, the
+   other-basemap ring and the overflow: hidden clip are all inset: 0 or
+   percentage-based, so they follow the box down, and the 18px glyph still
+   centres with 7px each side. */
+#map-download-control {
+    width: var(--map-control-sm);
+    height: var(--map-control-sm);
 }
 
 /* SNOW-522: the custom-area download control shares .map-download-control's
