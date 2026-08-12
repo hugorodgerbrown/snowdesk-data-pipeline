@@ -30,6 +30,8 @@ Covers:
     and follows BASEMAP_ORIGIN rather than being hardcoded.
   - #region-readout-action declares role="link" so its aria-label is not
     discarded while the anchor is still hrefless.
+  - base.html preloads only the Latin DM Sans subset; the Latin-ext subset is
+    left to unicode-range, which a preload would have bypassed.
 """
 
 from __future__ import annotations
@@ -1039,3 +1041,40 @@ class TestHomePageReadoutActionRole:
         assert 'aria-disabled="true"' in markup
         # No href yet: the role is what makes the label legal until JS sets one.
         assert "href=" not in markup
+
+
+@pytest.mark.django_db
+class TestFontPreloads:
+    """base.html preloads only the font subset pages actually render.
+
+    main.css gates each DM Sans @font-face behind a unicode-range, so the
+    browser fetches a subset only when the page contains one of its
+    codepoints. A <link rel="preload"> is unconditional and bypasses that
+    check, so preloading the Latin-ext subset downloaded ~18.5 KB on the
+    critical path of every page for glyphs nothing renders.
+    """
+
+    def test_latin_subset_is_preloaded(self) -> None:
+        """The Latin subset — the one every page renders from — is preloaded."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        preloads = re.findall(r'<link[^>]*rel="preload"[^>]*as="font"[^>]*>', content)
+        assert len(preloads) == 1
+        assert "dm-sans-latin.woff2" in preloads[0]
+        # crossorigin is mandatory on a font preload: without it the browser
+        # fetches the file a second time for the actual @font-face.
+        assert "crossorigin" in preloads[0]
+
+    def test_latin_ext_subset_is_not_preloaded(self) -> None:
+        """The Latin-ext subset is left to unicode-range to fetch on demand."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert "dm-sans-latin-ext.woff2" not in content
+
+    def test_rule_holds_off_the_map_page(self) -> None:
+        """It lives in base.html, so it applies site-wide, not just to /."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:colophon")).content.decode()
+        preloads = re.findall(r'<link[^>]*rel="preload"[^>]*as="font"[^>]*>', content)
+        assert len(preloads) == 1
+        assert "dm-sans-latin-ext.woff2" not in content

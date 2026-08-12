@@ -150,13 +150,23 @@ extra_js        : scripts loaded at end of <body>. Used by
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <meta name="apple-mobile-web-app-title" content="{{ SITE_NAME_DISPLAY }}">
         {% include "includes/theme_head.html" %}
-        {# Preload primary font files so the browser fetches them in parallel    #}
-        {# with the stylesheet rather than after CSS parsing discovers them.     #}
-        {# Only the two DM Sans files are preloaded — they cover weights 400–600 #}
-        {# for Latin and Latin-ext, which are all that regular pages need.       #}
+        {# Preload the primary font file so the browser fetches it in parallel   #}
+        {# with the stylesheet rather than after CSS parsing discovers it.       #}
         {# DM Mono is not preloaded as it only appears in non-critical contexts. #}
+        {#                                                                       #}
+        {# Only the Latin subset. Its Latin-ext sibling was preloaded here too,  #}
+        {# which quietly defeated the point of subsetting them: main.css gates   #}
+        {# each @font-face behind a unicode-range so the browser downloads a     #}
+        {# subset only when the page actually contains one of its codepoints,    #}
+        {# but a preload is unconditional and bypasses that check entirely.      #}
+        {# The result was 18.5 KB of critical-path bandwidth on every page for   #}
+        {# glyphs nothing renders — `en` is the only locale, no .po carries a    #}
+        {# Latin-ext codepoint, and the Alpine region names are all Latin-1.     #}
+        {#                                                                       #}
+        {# The @font-face itself is untouched, so this is not "drop the font":   #}
+        {# a page that ever does contain a Latin-ext glyph still fetches the     #}
+        {# file on discovery, exactly as unicode-range intends.                  #}
         <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin.woff2' %}">
-        <link rel="preload" as="font" type="font/woff2" crossorigin href="{% static 'fonts/dm-sans-latin-ext.woff2' %}">
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         {# SNOW-620: reads server-translated copy back out of the hidden strings #}
         {# <template>s the surface partials render, so makemessages can see the  #}
