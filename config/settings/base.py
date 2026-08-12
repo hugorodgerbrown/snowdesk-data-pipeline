@@ -982,6 +982,18 @@ except KeyError as exc:
         f"Valid keys: {sorted(BASEMAP_STYLES)}"
     ) from exc
 
+# Origin of the basemap the map page loads by default, for the <link
+# rel="preconnect"> in home.html. Derived with the same callable the CSP uses
+# so the hint and the policy cannot name different hosts.
+#
+# The active basemap, not OPENFREEMAP_STYLE_URL: a BASEMAP= override points
+# first paint at swisstopo or IGN instead, and preconnecting to a host the
+# page never contacts would open a connection to nothing. A visitor who has
+# since picked a different basemap does get the wrong hint — that choice lives
+# in localStorage and cannot be known server-side — which costs one unused
+# socket, not correctness.
+BASEMAP_ORIGIN = basemap_origin(BASEMAP_STYLE_URL)
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------

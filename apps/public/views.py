@@ -1357,6 +1357,12 @@ def _base_map_context(today: datetime.date) -> dict[str, Any]:
     return {
         "basemaps": _basemaps_for_picker(),
         "default_basemap_key": settings.BASEMAP,
+        # Origin for home.html's preconnect hint. The map's style JSON and
+        # vector tiles are the first cross-origin bytes the page needs, and
+        # nothing references that host until map.js has parsed and run — so
+        # without this the DNS, TCP and TLS round trips start late and land
+        # squarely on the critical path for a mobile connection.
+        "basemap_origin": settings.BASEMAP_ORIGIN,
         "season_start": season_start,
         "season_end": season_end,
         "today": today,
