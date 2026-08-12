@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import re
+from html.parser import HTMLParser
 
 import pytest
 from django.conf import settings
@@ -875,3 +876,109 @@ def test_ribbon_action_carries_the_shared_hover_affordance() -> None:
     assert action, "the ribbon did not render — has its data gate changed?"
     for classes in action:
         assert "hover-affordance" in classes.split(), classes
+
+
+class _CollapsibleChildCounter(HTMLParser):
+    """Count the direct element children of ``.map-controls-collapsible-inner``.
+
+    Stdlib rather than a parser dependency: the markup being counted is a
+    flat run of ``<div>``/``<button>`` roundels whose only descendants are
+    balanced ``<svg>`` wrappers and self-closing ``<path>``/``<polygon>``
+    shapes, which ``html.parser`` handles without help. ``_VOID`` is carried
+    anyway so a future ``<img>`` or ``<input>`` inside a roundel cannot throw
+    the depth count off silently.
+    """
+
+    #: Elements that never take a closing tag, so they must not open a level.
+    _VOID = frozenset(
+        {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "source",
+            "track",
+            "wbr",
+        }
+    )
+
+    def __init__(self) -> None:
+        """Start outside the target element with an empty count."""
+        super().__init__(convert_charrefs=True)
+        self.count = 0
+        self._depth: int | None = None
+        self._done = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Enter the target element, or count/descend once inside it."""
+        if self._done:
+            return
+        if self._depth is None:
+            classes = dict(attrs).get("class") or ""
+            if "map-controls-collapsible-inner" in classes.split():
+                self._depth = 0
+            return
+        if tag in self._VOID:
+            # Opens no level, so it is a child at the current depth rather
+            # than a new one.
+            if self._depth == 0:
+                self.count += 1
+            return
+        self._depth += 1
+        if self._depth == 1:
+            self.count += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        """Leave the current level, latching shut on the target's own close."""
+        if self._done or self._depth is None or tag in self._VOID:
+            return
+        if self._depth == 0:
+            # The target element's own closing tag. Latch rather than reset:
+            # without this the counter would treat everything after the stack
+            # as a fresh level-1 run and keep counting.
+            self._done = True
+            return
+        self._depth -= 1
+
+
+@pytest.mark.django_db
+def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> None:
+    """map.css's ``--map-controls-count`` fallback must equal the real count.
+
+    The fallback is only read before mapControlsCollapseInit publishes the
+    live count — but ``.map-controls-br`` is server-rendered
+    ``data-expanded="true"``, so a stale fallback is a visible clip rather
+    than an unused default: ``#map-controls-collapsible`` is
+    ``overflow: hidden``, and a group sized for fewer children than it holds
+    swallows the ones at the top until the JS corrects it.
+
+    It has gone stale once already — it sat at 4 after SNOW-664 moved the
+    layers roundel into the group and SNOW-656 added the bulletin fill,
+    hiding both on a pre-JS paint. This is a cross-file invariant that
+    neither file can hold alone, which is why it is asserted here rather
+    than left to the comment above the rule.
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    counter = _CollapsibleChildCounter()
+    counter.feed(content)
+    assert counter.count, (
+        "no .map-controls-collapsible-inner children found — has the "
+        "bottom-right control stack been restructured?"
+    )
+
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    fallbacks = {int(n) for n in re.findall(r"--map-controls-count,\s*(\d+)", css)}
+    assert fallbacks, "the --map-controls-count fallback has gone from map.css"
+    assert fallbacks == {counter.count}, (
+        f"map.css falls back to {sorted(fallbacks)} but the stack renders "
+        f"{counter.count} children — update the fallback in "
+        f"`.map-controls-br[data-expanded='true'] #map-controls-collapsible`."
+    )
