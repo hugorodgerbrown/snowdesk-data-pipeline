@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+/*
+ * bin/minify-css — Minify the hand-written stylesheets in place.
+ *
+ * `static/css/map.css` reached the browser as written: 3,000 lines and
+ * ~119 KB of heavily-commented CSS, render-blocking, on the map homepage
+ * that is already the heaviest page on the site. It compresses to ~35 KB on
+ * the wire — larger than the entire compiled Tailwind output — and Lighthouse
+ * flags it under both "Minify CSS" and "Reduce unused CSS".
+ *
+ * The asymmetry this closes: JS is minified by bin/minify-js and the Tailwind
+ * output is emitted with `--minify`, so map.css was the one stylesheet in the
+ * critical path that no build step touched.
+ *
+ * Runs from `bin/build.sh` (Render) and from `npm run lh`, so the measured
+ * number matches what production serves — the same reasoning as minify-js.
+ *
+ * In place, not into a build directory
+ * ------------------------------------
+ * Templates reference `{% static 'css/map.css' %}` and the service worker
+ * precaches that same path; writing minified copies elsewhere would mean
+ * every reference had to know which tree it was in. The Render checkout is
+ * ephemeral and `npm run lh` is a local perf run, so overwriting is safe in
+ * both — but it does mean this must never run as part of an ordinary dev
+ * loop. Like minify-js, it is deliberately not wired into any tox env. After
+ * a local run, `git checkout -- static/css` before you keep working.
+ *
+ * No source maps, unlike minify-js: those exist so a production stack trace
+ * points at real lines, and stylesheets do not produce stack traces.
+ *
+ * Exclusions
+ * ----------
+ *   output.css       Tailwind already emits it with `--minify`, and it is a
+ *                    gitignored artefact rebuilt on every deploy.
+ *   maplibre-gl.css  Vendored and already minified (one line).
+ *   *.min.css        Vendored and already minified, by convention.
+ *
+ * Usage:
+ *   node bin/minify-css          # minify static/css in place
+ *   node bin/minify-css --check  # report what would change, write nothing
+ */
+
+const fs = require('node:fs');
+const path = require('node:path');
+const esbuild = require('esbuild');
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const CSS_DIR = path.join(REPO_ROOT, 'static', 'css');
+
+// See the header for why each of these is left alone.
+const EXCLUDED = new Set(['output.css', 'maplibre-gl.css']);
+
+/** @returns {string[]} Absolute paths of the files to minify. */
+function targets() {
+  return fs
+    .readdirSync(CSS_DIR)
+    .filter((name) => name.endsWith('.css'))
+    .filter((name) => !name.endsWith('.min.css'))
+    .filter((name) => !EXCLUDED.has(name))
+    .sort()
+    .map((name) => path.join(CSS_DIR, name));
+}
+
+async function main() {
+  const check = process.argv.includes('--check');
+  const files = targets();
+  let before = 0;
+  let after = 0;
+
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    before += Buffer.byteLength(source);
+
+    const result = await esbuild.transform(source, {
+      loader: 'css',
+      minify: true,
+      legalComments: 'none',
+    });
+
+    // esbuild reports unknown at-rules and unparseable declarations as
+    // warnings rather than throwing. Silently shipping a stylesheet it did
+    // not fully understand is how a subtle visual regression reaches
+    // production, so surface them.
+    for (const warning of result.warnings) {
+      console.warn(
+        `minify-css: WARNING ${path.basename(file)}: ${warning.text}`,
+      );
+    }
+
+    after += Buffer.byteLength(result.code);
+    if (check) continue;
+
+    fs.writeFileSync(file, `${result.code}`);
+  }
+
+  const saved = before - after;
+  const pct = before > 0 ? ((saved / before) * 100).toFixed(1) : '0.0';
+  const verb = check ? 'would save' : 'saved';
+  console.log(
+    `minify-css: ${files.length} file(s) | ` +
+      `${(before / 1024).toFixed(0)} KiB → ${(after / 1024).toFixed(0)} KiB | ` +
+      `${verb} ${(saved / 1024).toFixed(0)} KiB (${pct}%)`,
+  );
+  console.log(
+    `minify-css: left alone — ${[...EXCLUDED].join(', ')}, *.min.css`,
+  );
+}
+
+main().catch((err) => {
+  console.error('minify-css failed:', err);
+  process.exit(1);
+});

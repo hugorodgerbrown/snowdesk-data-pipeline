@@ -25,6 +25,12 @@ npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --minify
 # the script header.
 node bin/minify-js
 
+# Minify the hand-written CSS in place, for the same reason and with the same
+# ephemeral-checkout caveat. map.css is render-blocking on the map homepage
+# and shipped as ~3,000 commented lines; Tailwind's output.css is already
+# built with --minify above and is skipped, as is the vendored maplibre-gl.css.
+node bin/minify-css
+
 # GeoIP — download GeoLite2-City.mmdb from MaxMind. Best-effort: retries
 # transient failures (429 rate-limit / 5xx) with backoff and never blocks
 # the deploy. When credentials are unset or MaxMind stays unreachable it

@@ -1,12 +1,13 @@
 {
   "name": "snowdesk-data-pipeline",
   "scripts": {
-    "lh": "npm run build:js && DJANGO_SETTINGS_MODULE=config.settings.perf uv run python manage.py collectstatic --noinput && lhci autorun",
+    "lh": "npm run build:js && npm run build:css && DJANGO_SETTINGS_MODULE=config.settings.perf uv run python manage.py collectstatic --noinput && lhci autorun",
     "lh:open": "open $(python -c \"import json; print(' '.join(r['htmlPath'] for r in json.load(open('.lighthouseci/manifest.json')) if r['isRepresentativeRun']))\")",
     "build:icons": "node bin/build-pwa-icons",
     "build:screenshots": "node bin/build-pwa-screenshots",
     "test:js": "vitest run",
-    "build:js": "node bin/minify-js"
+    "build:js": "node bin/minify-js",
+    "build:css": "node bin/minify-css"
   },
   "devDependencies": {
     "@lhci/cli": "^0.14.0",
