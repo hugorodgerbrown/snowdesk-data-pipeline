@@ -26,6 +26,10 @@ Covers:
     overlays.js dismiss idiom (SNOW-535).
   - #map-help-overlay opts out of the coachmark tour's first-load
     auto-start on the homepage (SNOW-535).
+  - A crossorigin <link rel="preconnect"> warms the active basemap's origin,
+    and follows BASEMAP_ORIGIN rather than being hardcoded.
+  - #region-readout-action declares role="link" so its aria-label is not
+    discarded while the anchor is still hrefless.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ import datetime
 import re
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
@@ -942,3 +947,95 @@ class TestHomePageWeatherParity:
         content = client.get(reverse("public:home")).content.decode()
         assert 'data-overlay-key="weather"' not in content
         assert 'data-weather-layer-eligible="false"' in content
+
+
+@pytest.mark.django_db
+class TestHomePageBasemapPreconnect:
+    """The map's tile origin is warmed before MapLibre asks for it.
+
+    The style JSON and vector tiles are the first cross-origin bytes the page
+    needs, but nothing references that host until map.js has been fetched,
+    parsed and run — so the handshake would otherwise start late and sit on
+    the critical path.
+    """
+
+    def test_preconnect_to_basemap_origin_is_rendered(self) -> None:
+        """A crossorigin preconnect names the active basemap's origin."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        assert (
+            f'<link rel="preconnect" href="{settings.BASEMAP_ORIGIN}" crossorigin>'
+            in content
+        )
+
+    def test_preconnect_origin_matches_the_active_style_url(self) -> None:
+        """The hint names the host the map actually fetches from.
+
+        A preconnect pointing anywhere else opens a connection to a host the
+        page never contacts, which is worse than having no hint at all.
+        """
+        assert settings.BASEMAP_STYLE_URL.startswith(f"{settings.BASEMAP_ORIGIN}/")
+
+    @override_settings(BASEMAP_ORIGIN="https://vectortiles.geo.admin.ch")
+    def test_preconnect_follows_the_configured_origin(self) -> None:
+        """A different basemap moves the hint — it is not hardcoded.
+
+        Asserted against the preconnect tags alone, not the whole page: the
+        basemap picker lists every style URL in BASEMAP_STYLES, so
+        openfreemap's host appears in the markup whichever basemap is active.
+        """
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        preconnects = re.findall(r'<link[^>]*rel="preconnect"[^>]*>', content)
+        assert preconnects == [
+            '<link rel="preconnect" href="https://vectortiles.geo.admin.ch" '
+            "crossorigin>"
+        ]
+
+
+@pytest.mark.django_db
+class TestHomePageReadoutActionRole:
+    """#region-readout-action states a role so its aria-label survives.
+
+    It ships without an href — map_season_ribbon.js sets one on the first
+    region selection — and an <a> with no href has no implicit role. ARIA
+    prohibits aria-label on a roleless element, so without role="link" the
+    label is discarded and the roundel announces itself as nothing.
+    """
+
+    @staticmethod
+    def _readout_action_markup() -> str:
+        """Render / with ribbon data and return the action anchor's open tag.
+
+        The ribbon — and so this anchor — is only rendered once CH-4115 has a
+        rating for the day, which is why the rows below are created first.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 2, 17),
+            max_rating="high",
+            source_bulletin=bulletin,
+        )
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:home")).content.decode()
+        anchor = re.search(r"<a[^>]*id=\"region-readout-action\"[^>]*>", content)
+        assert anchor is not None, "#region-readout-action was not rendered"
+        return anchor.group(0)
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_action_declares_the_link_role(self) -> None:
+        """The anchor carries role="link" in its hrefless initial state."""
+        assert 'role="link"' in self._readout_action_markup()
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_action_ships_disabled_and_labelled(self) -> None:
+        """The label and the disabled state travel together with the role."""
+        markup = self._readout_action_markup()
+        assert 'aria-label="View bulletin"' in markup
+        assert 'aria-disabled="true"' in markup
+        # No href yet: the role is what makes the label legal until JS sets one.
+        assert "href=" not in markup

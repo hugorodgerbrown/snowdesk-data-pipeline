@@ -107,9 +107,17 @@ for it was dead.
             {# exist yet — a bare hrefless anchor would look live and do       #}
             {# nothing. map.js's _setActionEnabled clears both attributes on   #}
             {# the first selection and restores them if it is ever cleared.    #}
+            {# role="link" is load-bearing, not decorative: an <a> with no href #}
+            {# has no implicit role, and aria-label is prohibited on a roleless #}
+            {# element — so the label below was being dropped and the roundel   #}
+            {# announced itself as nothing at all. Stating the role explicitly  #}
+            {# holds in both states, since it matches the implicit role once    #}
+            {# map_season_ribbon.js sets href, and _setActionEnabled only ever  #}
+            {# touches aria-disabled and tabindex.                              #}
             <a
                 id="region-readout-action"
                 class="region-readout-action hover-affordance"
+                role="link"
                 title="{% trans 'View bulletin' %}"
                 aria-label="{% trans 'View bulletin' %}"
                 aria-disabled="true"
