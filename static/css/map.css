@@ -27,19 +27,21 @@
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
 
     /* —— Map control size scale ————————————————————————————————
-       Exactly two sizes for every round / pill-ended control on the map
+       Three sizes for every round / pill-ended control on the map
        surface. The scale exists because five different heights had
        accumulated (22/26/29/32/40), each picked freehand against whatever
        happened to sit next to it at the time.
 
        The split is by role, not by position:
-         lg — every tap target (search, layers, locate, favourite,
+         lg — every FLOATING tap target (search, layers, locate, favourite,
               observations, help, basemap download, view-bulletin).
          sm — the bottom-left informational row (the (i) legend toggle and
               the scrubbed-date ribbon) plus the region-name readout, which
               is a label rather than a control.
+         xs — tap targets INSIDE the season-scrubber pill, which cannot take
+              lg without the pill outgrowing its corner (see below).
 
-       Both values are EVEN on purpose. With border-radius: 999px an odd
+       All three values are EVEN on purpose. With border-radius: 999px an odd
        height resolves to a fractional corner radius (29px → 14.5px), which
        Chrome's backdrop-filter clip does not honour — it leaves an
        unclipped rectangular patch at the pill's trailing edge. Every glass
@@ -47,15 +49,34 @@
 
        lg is also the accessibility floor: WCAG 2.2 SC 2.5.8 sets a 24px
        minimum, and the old 22px download roundel cleared it only via the
-       spacing exception. Do not add a third size without recording why here.
+       spacing exception.
+
+       WHY xs EXISTS (map roundel sizing audit — this is the "record why"
+       the previous version of this comment demanded before a third size).
+       The five scrubber transport buttons sat at 22px, outside the
+       scale entirely: they were part of the 22/26/29/32/40 spread the scale
+       was meant to collapse and were simply missed. Neither existing token
+       could take them. lg (40px) makes the scrubber pill 60px tall — its
+       own padding is 10px top and bottom — which puts its top edge exactly
+       on the 60px baseline the legend row and the control stack sit at, so
+       the scrubber would touch both. sm (32px) is a 52px pill leaving 3px
+       of clearance, and sm is documented above as a LABEL size, not a
+       control one. 24px is the smallest even value that clears SC 2.5.8
+       outright: the 22px original passed only via the spacing exception,
+       which holds today (10px gaps put adjacent centres 32px apart, and
+       the exception needs 24px) but breaks the moment the gap tightens or a
+       sixth button lands. The pill grows 42px → 44px, keeping 16px of
+       clearance to the 60px baseline. A fourth size still needs its own
+       paragraph here.
 
        These live in map.css rather than main.css @theme deliberately. They
        are map-chrome-only, like the locals above; and Tailwind v4 tree-shakes
        @theme variables that no scanned template references, so a token used
        only from this stylesheet would never reach :root.
        ———————————————————————————————————————————————————————— */
-    --map-control-lg: 40px;  /* tap targets                       */
+    --map-control-lg: 40px;  /* floating tap targets              */
     --map-control-sm: 32px;  /* labels + the (i)/date readout row */
+    --map-control-xs: 24px;  /* tap targets inside the scrubber   */
 }
 
 /* ——————————————————————————————————————————————————————————————
@@ -94,22 +115,37 @@
 }
 
 /* —— Collapsible control group ————————————————————————————————
-   Six roundels in one column read as clutter over the map. Layers, locate
-   and the toggle stay out; the other four (download, favourite,
-   observations, help) collapse into the toggle.
+   Eight roundels in one column read as clutter over the map. Locate and the
+   toggle stay out; the other six (layers, bulletin fill, download,
+   favourite, observations, help) collapse into the toggle.
+
+   That split is SNOW-664's, and this comment described the one before it
+   ("Layers, locate and the toggle stay out; the other four…") until the
+   roundel sizing audit — the same drift that left the fallback below stale.
 
    The toggle is the LAST child, so the bottom-anchored stack grows and
    shrinks upward out of it: the toggle never moves under the finger that
    is pressing it, and the revealed controls appear directly beneath layers
    and locate in their existing stack order.
 
-   Height is COMPUTED, not measured. The two-size control scale above
-   guarantees every child is exactly --map-control-lg tall with an 8px gap,
-   so n children occupy n*lg + (n-1)*8. --map-controls-count is set from the
+   Height is COMPUTED, not measured. The control scale above guarantees
+   every child is exactly --map-control-lg tall with an 8px gap, so n
+   children occupy n*lg + (n-1)*8. --map-controls-count is set from the
    live child count by mapControlsCollapseInit, which keeps this correct if
    a control ever becomes conditional again. Measuring instead would mean
    reading offsetHeight off an already-clipped box (it returns 0) or
    un-clipping to measure and forcing a reflow on every toggle.
+
+   THE FALLBACK MUST TRACK THE MARKUP. It is only reached before the JS
+   runs — but the group is server-rendered `data-expanded="true"` (so the
+   controls are discoverable on a first visit and present with JS off), so
+   a stale fallback is a visible clip, not a harmless default. It sat at 4
+   from before SNOW-664 moved layers into the group and SNOW-656 added the
+   bulletin fill, against six real children: 4*40 + 3*8 = 184px of box for
+   280px of content, and `overflow: hidden` swallowed the top ~96px — the
+   layers and fill roundels were entirely invisible until the JS corrected
+   the count. Found by the roundel sizing audit. If you add or remove a
+   child of .map-controls-collapsible-inner, change the 6 below to match.
 
    The wrapper animates height and is what clips; the inner holds the flex
    column, because transitioning height needs a fixed-height box wrapping an
@@ -129,8 +165,8 @@
 
 .map-controls-br[data-expanded="true"] #map-controls-collapsible {
     height: calc(
-        var(--map-controls-count, 4) * var(--map-control-lg) +
-            (var(--map-controls-count, 4) - 1) * 8px
+        var(--map-controls-count, 6) * var(--map-control-lg) +
+            (var(--map-controls-count, 6) - 1) * 8px
     );
     opacity: 1;
     margin-bottom: 0;
@@ -220,6 +256,43 @@
    40×40 flex-centred circle that anchors the #locate-toggle button. No
    popover needed; the pill is purely an icon button. */
 .map-utility-pill--locate {
+    width: var(--map-control-lg);
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+
+/* SNOW-656: bulletin-fill roundel — the same three declarations every other
+   member of the bottom-right stack carries.
+
+   Added by the roundel sizing audit: this rule did not exist at all. The
+   class was on the markup from the day the control shipped, but map.css
+   never defined it, so the pill fell back to `width: auto` and took its
+   width from content — the 40px button plus the pill's own two 0.5px
+   borders, i.e. 41px. Three things followed, and each is a reason one of
+   the declarations below is load-bearing rather than copied:
+
+   `width` — at 41px this roundel was a pixel wider than the other eight,
+   and .map-controls-br is `align-items: flex-end`, so the extra pixel hung
+   off the LEFT and broke the column's shared edge.
+
+   `border-radius: 999px` on a 41×40 box is an ellipse (20.5px/20px), not a
+   circle — and 41 is odd, which is the exact case the control-scale comment
+   at the top of this file warns about: a fractional corner radius that
+   Chrome's backdrop-filter clip does not honour, leaving an unclipped
+   rectangular patch at the trailing edge. This pill carries
+   backdrop-filter: blur(8px) from .map-utility-pill.
+
+   `flex: 0 0 auto` — without it this was the one child of the column that
+   could flex-shrink. #map-controls-collapsible's height is COMPUTED from a
+   child count rather than measured (see its own rule), so any drift between
+   that count and reality would have squashed this control first, silently.
+
+   `justify-content: center` has no visible effect today — the content box
+   is exactly the button's width — but it is what keeps the glyph centred if
+   anything else ever lands beside it in the pill, which is the whole reason
+   its siblings state it. */
+.map-utility-pill--fill {
     width: var(--map-control-lg);
     flex: 0 0 auto;
     justify-content: center;
@@ -1354,14 +1427,19 @@
     display: none;
 }
 
-/* Play-reverse and play-forward transport buttons — 22×22 dark-filled
-   circles that act as a symmetric pair flanking the track. The filled
-   dark fill picks them out as the primary actions. SVG state is swapped
-   via the data-state attribute set by static/js/map.js. */
+/* Play-reverse and play-forward transport buttons — dark-filled circles at
+   the xs control size that act as a symmetric pair flanking the track. The
+   filled dark fill picks them out as the primary actions. SVG state is
+   swapped via the data-state attribute set by static/js/map.js.
+
+   These were a freehand 22px until the roundel sizing audit — one of the
+   heights the control scale at the top of this file was written to collapse,
+   and the one it missed. See --map-control-xs's own paragraph there for why
+   the scrubber gets a third token rather than lg or sm. */
 .scrubber-play,
 .scrubber-reverse {
-    width: 22px;
-    height: 22px;
+    width: var(--map-control-xs);
+    height: var(--map-control-xs);
     background: var(--ink);
     color: var(--on-ink);
     border: none;
@@ -1373,13 +1451,16 @@
     background: #000;
 }
 
-/* Skip-to-start / skip-to-end transport buttons — same shared geometry
-   as .scrubber-play but 22×22 so the play button remains the visual
-   anchor. Colour inherits from the scrubber context (dark text on the
-   frosted pill) rather than the inverted play-button style. */
+/* Skip-to-start / skip-to-end transport buttons — same shared geometry and
+   the same xs size as .scrubber-play; the play button stays the visual
+   anchor through its dark fill, not through being larger (the two sizes
+   were already identical at 22px, so the "but 22×22" this comment used to
+   carry described a distinction that never existed). Colour inherits from
+   the scrubber context (dark text on the frosted pill) rather than the
+   inverted play-button style. */
 .scrubber-skip {
-    width: 22px;
-    height: 22px;
+    width: var(--map-control-xs);
+    height: var(--map-control-xs);
     background: transparent;
     color: var(--ink);
     border: 0.5px solid var(--border);
