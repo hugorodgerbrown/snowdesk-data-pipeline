@@ -13,6 +13,8 @@ Covers:
   - #season-ribbon carries data-default-subregion-name and -major-name (SNOW-342).
   - _default_region_label() returns a 4-tuple (SNOW-342).
   - The offmap-banner (#offmap-banner) is present on / (moved from map.html).
+  - The locate-failed banner (#locate-failed-banner) and its #locate-retry CTA
+    are present on / (SNOW-682).
   - GET /map/ returns 301 to / (query strings forwarded — SNOW-344).
   - Edit-mode: /?edit=resorts + edit_map flag renders the edit panel (SNOW-344).
   - Title and og:title name the Alps, not Switzerland alone (SNOW-535).
@@ -213,6 +215,22 @@ class TestHomePageBasic:
         assert 'data-overlay-hide="class"' in content
         # And carries the standard × dismiss control every other overlay uses.
         assert 'data-action="dismiss"' in content
+
+    def test_home_renders_locate_failed_banner(self) -> None:
+        """The #locate-failed-banner and its retry CTA are present on / (SNOW-682).
+
+        map_geolocate.js reveals this banner when no fix arrives inside its
+        five-second budget, and binds the retry to ``#locate-retry``. Both ids
+        are the contract between the two files, and the JS no-ops silently
+        when either is missing — so a template that stopped rendering them
+        would take the feedback away without failing anything else.
+        """
+        client = Client()
+        response = client.get(reverse("public:home"))
+        content = response.content.decode()
+        assert 'id="locate-failed-banner"' in content
+        assert 'id="locate-retry"' in content
+        assert "Can't find your location" in content
 
     def test_map_redirect_returns_301_to_home(self) -> None:
         """/map/ returns a 301 to / (SNOW-344)."""

@@ -288,6 +288,49 @@
 }
 
 
+/* SNOW-682: "looking for you". map_geolocate.js sets data-locating on the
+   button for as long as a fix is in flight, and the crosshair glyph pulses
+   under it — the same idiom, and deliberately the same shape of animation, as
+   the syncing dot further down this file.
+
+   The animation is on the <svg>, not the button: the pill carries a
+   backdrop-filter, and animating opacity or transform on the element that owns
+   that filter forces the blur to recompose every frame on a phone GPU for the
+   whole five seconds the fix may take.
+
+   No colour change and no added element — a spinner swapped in for the
+   crosshair would be a second glyph to reason about at 18px, and the pulse
+   already reads as "working" at a glance while keeping the icon recognisable
+   as the control the user just tapped. */
+#locate-toggle[data-locating] svg {
+    transform-origin: center;
+    animation: locate-searching 1100ms ease-in-out infinite;
+}
+
+@keyframes locate-searching {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.35;
+        transform: scale(0.78);
+    }
+}
+
+/* Reduced motion still needs the feedback — this ticket exists because the
+   roundel gave none — so the state is held as a steady dim instead of dropped
+   to nothing. */
+@media (prefers-reduced-motion: reduce) {
+    #locate-toggle[data-locating] svg {
+        animation: none;
+        opacity: 0.45;
+    }
+}
+
+
 /* SNOW-656: bulletin-fill roundel — the same three declarations every other
    member of the bottom-right stack carries.
 
