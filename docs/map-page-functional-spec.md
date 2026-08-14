@@ -350,6 +350,31 @@ animation, and that clips both axes, so a panel extending left out of it
 would be silently cut off. Each is positioned against the stack by its own
 JS on open, and each closes when the strip collapses.
 
+### What "locate" does while it is working (SNOW-682)
+
+The one permanent control is also the one whose answer the map cannot
+guarantee, so it reports on itself:
+
+| State | What the user sees |
+|-------|--------------------|
+| Acquiring a fix | The crosshair pulses (`data-locating` on `#locate-toggle`, `aria-busy="true"`). A second tap is ignored rather than queued. |
+| Fix, inside the map | The map flies to it, with MapLibre's marker and accuracy circle. |
+| Fix, outside the map | `#offmap-banner` — "Your location is outside the mapped regions." |
+| No fix within **5 seconds** | `#locate-failed-banner` — "Can't find your location", with a **Try again** CTA that re-runs the locate. |
+
+Five seconds is the whole budget, not a hint: `map_geolocate.js` runs its
+own watchdog alongside the Geolocation API's `timeout` option, because that
+option's clock does not start until a permission prompt has been answered
+and mobile browsers have been observed never firing the error callback at
+all. The failure case is not exotic — it is a phone offline in the
+mountains waiting on a cold GPS lock, which is the situation the map is
+most used in. A locate that cannot succeed should cost the user five
+seconds and end in a button, not fifteen seconds and end in silence.
+
+The same budget governs the `snowdesk:locate-request` path the field-report
+flow uses, so that sheet reaches its MANUAL "move the map to set your
+location" state promptly instead of holding "Finding your location…".
+
 **A first visit lands on:** the intro panel (`#home-intro`, dismissed state
 persisted under `snowdesk.home.intro`), SLF (CH) bulletins, Micro (EAWS L4)
 boundaries, the Standard basemap, and bulletin fill at 50%. Every one of

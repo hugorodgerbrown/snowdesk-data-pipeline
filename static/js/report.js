@@ -53,7 +53,13 @@
  *     the buttons right away, no separate "tap to place" step needed.
  *
  *   Safety-net timeout (20 s with no GPS answer):
- *     Route into MANUAL path rather than closing the sheet.
+ *     Route into MANUAL path rather than closing the sheet. SNOW-682 put a
+ *     five-second budget on the answer itself (map_geolocate.js), so in
+ *     practice this net now only catches a control that never replies at
+ *     all — a map bundle that failed to boot, say. It is deliberately not
+ *     retuned to match: it guards a DIFFERENT failure (no answer arriving)
+ *     from the one that budget bounds (an answer taking too long), and the
+ *     gap between the two is what makes it a net.
  *
  * Flow when not eligible:
  *   Authenticated but unverified (data-report-unverified) → the panel shows

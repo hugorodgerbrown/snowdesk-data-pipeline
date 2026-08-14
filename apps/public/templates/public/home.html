@@ -82,6 +82,19 @@ in addition to the shared map assets.
     {% trans "Off the map" as offmap_title %}
     {% trans "Your location is outside the mapped regions." as offmap_body %}
     {% include "includes/_overlay_banner.html" with variant="floating" id="offmap-banner" position="top" icon="location-off" title=offmap_title title_id="offmap-banner-title" body=offmap_body aria_live="polite" dismissible=True %}
+    {# SNOW-682: locate-failed notification. Same primitive, same top-centre  #}
+    {# slot and the same JS owner as the off-map banner above — and mutually  #}
+    {# exclusive with it, since both are answers to the same tap. Revealed by #}
+    {# map_geolocate.js when no fix arrives within its five-second budget     #}
+    {# (offline on a phone, the common case is a cold GPS lock that never     #}
+    {# lands), and auto-dismissed after 12s. The CTA re-runs the locate: it   #}
+    {# is the retry the user would otherwise get by hunting for the roundel   #}
+    {# again, which is exactly what a banner sitting over the map is in the   #}
+    {# way of.                                                                #}
+    {% trans "Can't find your location" as locate_failed_title %}
+    {% trans "Your device didn't give us a position. Move somewhere with a clearer view of the sky, then try again." as locate_failed_body %}
+    {% trans "Try again" as locate_failed_cta %}
+    {% include "includes/_overlay_banner.html" with variant="floating" id="locate-failed-banner" position="top" icon="location-off" title=locate_failed_title title_id="locate-failed-banner-title" body=locate_failed_body cta_id="locate-retry" cta_label=locate_failed_cta aria_live="polite" dismissible=True %}
     {# SNOW-314: shared map surface with intro overlay enabled.          #}
     {# The _map_embed partial renders #home-intro when show_intro=True.  #}
     {# SNOW-535: map_help_autostart=False — the coachmark tour only opens #}
