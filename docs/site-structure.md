@@ -69,6 +69,10 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
 - `/partials/report/`, `/partials/report/form/` — field-report submission
 - `/favourites/partials/…` — create, rename, delete, toggle, card, list
+- `/routes/partials/…` — create (multipart GPX upload), rename, delete, list.
+  `list` takes `?variant=map` for the map sheet's lean row (SNOW-686); the
+  surface that reaches these is gated on the `routes` waffle flag
+  ([`docs/map-and-api.md`](map-and-api.md))
 - `/partials/_components/<slug>/` — component-library panels
 
 ## Non-HTML routes

@@ -1,0 +1,199 @@
+"""
+tests/public/test_routes_surface.py — the map's routes surface (SNOW-686).
+
+The routes panel is the only UGC surface behind a waffle flag, which makes
+two things worth asserting that no other surface needs:
+
+  1. The flag really gates it. ``routes_visible``
+     (``apps.public.views._routes_context``) is read in two places — the
+     roundel in ``public/partials/_map_embed.html`` and the surface include
+     in ``public/home.html`` — so a partial gate would leave either a
+     roundel that opens nothing or a sheet nothing opens. Both are checked
+     in both directions.
+
+  2. ``routes.js`` stays OUTSIDE the map bundle's contiguous run.
+     ``tests/public/test_map_script_order.py`` exercises the homepage as an
+     anonymous visitor, for whom the flag is inactive and this script is
+     absent — so its ``test_bundle_scripts_are_contiguous`` cannot see this
+     tag at all. This module renders the page with the flag ON and asserts
+     the same property, which is the only place that combination is covered.
+
+Everything the panel does once open is asserted elsewhere: the endpoint in
+tests/routes/test_views.py, the client behaviour in
+tests/js/test_routes_panel*.js, the exclusivity registration in
+tests/js/test_map_overlay_exclusivity_surfaces.js. This module is only about
+what the page ships.
+
+Scoped to the Django test client — rendering a template needs no browser.
+"""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+from waffle.testutils import override_flag
+
+from tests.factories import UserFactory
+from tests.public.test_map_script_order import _map_bundle
+
+# `<script defer src="/static/js/map.js">` — captures the bare filename.
+# Deliberately the same shape as test_map_script_order.py's own regex; the
+# two modules assert different things about the same sequence.
+_SCRIPT_SRC_RE = re.compile(r'<script[^>]+src="[^"]*?/static/js/([^"]+)"')
+
+# Bundle membership comes from ``_map_bundle`` — the same parse of
+# tests/js/_load_map_bundle.js that test_map_script_order.py uses — rather
+# than a ``map*.js`` prefix test. NINE map-named modules legitimately sit
+# outside the bundle (map_sheet, map_help, map_overlay_bounds, … — that
+# module's own docstring lists them), so a prefix heuristic spans from
+# map_sheet.js in the content block to the last bundle member in extra_js
+# and swallows every surface script in between, including this one. That is
+# a false positive this test hit on its first run.
+
+
+def _home(client: Client) -> str:
+    """Render the homepage and return its decoded body."""
+    response = client.get(reverse("public:home"))
+    assert response.status_code == 200
+    return response.content.decode()
+
+
+@pytest.mark.django_db
+class TestRoutesSurfaceIsFlagGated:
+    """The ``routes`` flag governs the roundel and the sheet together."""
+
+    @override_flag("routes", active=False)
+    def test_nothing_renders_while_the_flag_is_off(self, client: Client) -> None:
+        """No roundel, no sheet, no script — the feature is simply absent."""
+        client.force_login(UserFactory.create())
+
+        body = _home(client)
+
+        assert 'id="route-add-btn"' not in body
+        assert 'id="route-sheet"' not in body
+        assert "js/routes.js" not in body
+
+    @override_flag("routes", active=False)
+    def test_the_flag_is_off_for_an_anonymous_visitor(self, client: Client) -> None:
+        """The default state for the world, and what other suites render."""
+        body = _home(client)
+
+        assert 'id="route-add-btn"' not in body
+
+    @override_flag("routes", active=True)
+    def test_the_roundel_renders_with_the_flag_on(self, client: Client) -> None:
+        """The roundel carries every attribute routes.js reads off it.
+
+        These five are the module's whole input — it reads nothing else from
+        the page — so a renamed or dropped attribute silently disables the
+        panel rather than failing loudly.
+        """
+        client.force_login(UserFactory.create())
+
+        body = _home(client)
+
+        assert 'id="route-add-btn"' in body
+        assert 'data-routes-eligible="true"' in body
+        assert 'data-route-create-url="/routes/partials/create/"' in body
+        assert 'data-route-list-url="/routes/partials/list/?variant=map"' in body
+        assert "data-route-rename-url-template=" in body
+        assert "data-signin-url=" in body
+
+    @override_flag("routes", active=True)
+    def test_the_surface_renders_with_the_flag_on(self, client: Client) -> None:
+        """The sheet, the panel template, the file picker and the strings."""
+        client.force_login(UserFactory.create())
+
+        body = _home(client)
+
+        assert 'id="route-sheet"' in body
+        assert 'id="route-list-template"' in body
+        assert 'id="route-upload-form"' in body
+        assert 'id="route-upload-input"' in body
+        assert 'id="routes-strings-template"' in body
+        assert "js/routes.js" in body
+
+    @override_flag("routes", active=True)
+    def test_an_anonymous_visitor_is_not_eligible(self, client: Client) -> None:
+        """Two gates, not one: visible does not imply eligible.
+
+        The roundel still renders — the affordance is discoverable rather
+        than appearing on sign-in — but routes.js reads ``false`` here and
+        shows its sign-in CTA instead of a list.
+        """
+        body = _home(client)
+
+        assert 'id="route-add-btn"' in body
+        assert 'data-routes-eligible="false"' in body
+
+    @override_flag("routes", active=True)
+    def test_the_panel_has_no_overlay_switch_yet(self, client: Client) -> None:
+        """No "Display on the map" switch — there is no routes layer (SNOW-687).
+
+        The panel includes ``includes/_ugc_panel.html`` without a
+        ``toggle_id``, and this is what stops that omission being quietly
+        undone: a switch wired to nothing is a worse lie than an absent one.
+        The other three panels' switches are unaffected and still render.
+        """
+        client.force_login(UserFactory.create())
+
+        body = _home(client)
+
+        assert 'id="map-routes-overlay-toggle"' not in body
+        # The sibling panels keep theirs — this is not a global removal.
+        assert 'id="map-favourites-overlay-toggle"' in body
+
+
+@pytest.mark.django_db
+class TestRoutesScriptStaysOutsideTheMapBundle:
+    """``routes.js`` is a surface module, not a bundle member."""
+
+    @override_flag("routes", active=True)
+    def test_it_is_not_interleaved_into_the_bundles_run(self, client: Client) -> None:
+        """The bundle's contiguous run must not contain routes.js.
+
+        This is the case ``test_map_script_order.py`` structurally cannot
+        reach: it renders the page anonymously, where this flag is off and
+        the tag is absent, so its own contiguity check never sees it. A
+        ``routes.js`` tag that drifted into the ``extra_js`` block — where
+        the bundle lives — would break the bundle's run for every superuser
+        and for nobody else, which is the worst possible audience for that
+        bug.
+        """
+        client.force_login(UserFactory.create())
+        rendered = _SCRIPT_SRC_RE.findall(_home(client))
+
+        assert "routes.js" in rendered, "the flag is on; the tag should be here"
+
+        bundle = set(_map_bundle())
+        positions = [i for i, name in enumerate(rendered) if name in bundle]
+        span = rendered[positions[0] : positions[-1] + 1]
+
+        assert "routes.js" not in span, (
+            "routes.js is interleaved into the map bundle's contiguous run. "
+            "It is not a MAP_BUNDLE member (it is loaded from "
+            "public/partials/_routes_surface.html and reads no map state), so "
+            "its tag must sit above or below the bundle — see "
+            "tests/public/test_map_script_order.py for why the run matters."
+        )
+
+    @override_flag("routes", active=True)
+    def test_it_loads_after_the_modules_it_depends_on(self, client: Client) -> None:
+        """map_sheet.js and inline_rename.js must run before routes.js.
+
+        routes.js calls ``window.MapSheet.attach`` at parse time, and reads
+        ``window.pwaInlineRename`` on a click. These are deferred classic
+        scripts, so document order is execution order — the first of those
+        would throw if its module had not run.
+        """
+        client.force_login(UserFactory.create())
+        rendered = _SCRIPT_SRC_RE.findall(_home(client))
+        routes_at = rendered.index("routes.js")
+
+        for name in ("map_sheet.js", "inline_rename.js", "i18n_strings.js"):
+            assert rendered.index(name) < routes_at, (
+                f"{name} loads after routes.js, but routes.js depends on it."
+            )

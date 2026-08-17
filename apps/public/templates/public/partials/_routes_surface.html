@@ -1,0 +1,135 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_routes_surface.html — saved-routes sheet + JS (SNOW-686).
+
+The fourth UGC surface, built to the shape SNOW-634 set for downloads and
+SNOW-658 generalised across favourites and field observations: its own
+roundel (#route-add-btn, public/partials/_map_embed.html), its own sheet,
+and rows rendered server-side and swapped in over HTMX. Mirrors
+_favourites_surface.html throughout — that file is the reference
+implementation, and the differences below are all deliberate.
+
+Included from home.html only when ``routes_visible`` (the ``routes`` waffle
+flag) is active, so nothing here reaches the DOM for a user the feature is
+not yet open to. See apps.public.views._routes_context for why the flag
+gates a whole surface rather than one control.
+
+Three shared modules are loaded once each by home.html before this partial
+— none is repeated here:
+
+  htmx.min.js       the panel's row list and each row's Remove form.
+  map_sheet.js      the sheet controller, failure toast and overlay
+                    registration this surface shares with the other three.
+  inline_rename.js  routes.js drives window.pwaInlineRename for the row's
+                    in-place rename, unchanged and unforked.
+
+WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
+
+  No "Display on the map" switch. There is no routes map layer yet —
+  SNOW-687 adds the MapLibre line and the overlay bridge — so
+  includes/_ugc_panel.html is included WITHOUT a ``toggle_id`` and renders
+  no switch. A switch wired to nothing is a worse lie than an absent one;
+  see that partial's own note on the parameter.
+
+  No place-picker. A route's geometry comes out of the uploaded file, so
+  there is nothing to place on the map and window.PlacePicker is never
+  armed. This is the biggest single difference from the favourites surface.
+
+  No mutation queue. Upload is ONLINE-ONLY and posts straight to
+  routes:create rather than through window.pwaMutationQueue: the queue
+  persists JSON bodies in IndexedDB and a multipart file is a different
+  shape, so making an upload replayable is real scope of its own.
+  SNOW-504's resort-favourite toggle is the precedent for a UGC action that
+  is deliberately online-only. Rename and delete are online-only too,
+  matching every other panel's edits.
+
+  No offline cache sidecar. _favourite_list_map.html carries
+  ``roster_payload`` for favourites_offline.js; caching routes for offline
+  reads arrives with the layer in SNOW-687, since until something draws a
+  route there is nothing an offline reader could do with one.
+
+Context expected:
+  route_create_url  — str: POST endpoint for routes:create.
+  routes_signin_url — str: sign-in page URL for the anon CTA.
+{% endcomment %}
+{# Sheet container — hidden until routes.js opens it. The shared sheet     #}
+{# primitive, same shape and same scroll model as #favourite-sheet, so the #}
+{# four UGC sheets read as one family. scroll_body=True: the panel's       #}
+{# header and its CTA foot stay pinned while only the list between them    #}
+{# scrolls, which is why every body rendered into it carries               #}
+{# `min-h-0 flex-1` and owns its own scroll region.                        #}
+{% trans "Routes" as route_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True %}
+{# The panel the roundel opens — the user's saved routes and a CTA to add   #}
+{# another. Cloned by routes.js on every open (so a stale row can never     #}
+{# survive a re-open), which then loads the rows themselves over HTMX from  #}
+{# routes:list at ?variant=map. Each row arrives with its Remove form       #}
+{# already wired, so this file needs no copy of it; rename is the one       #}
+{# action that needs JS — the row's pencil opens the inline editor the row  #}
+{# already carries, and routes.js posts what it commits.                    #}
+<template id="route-list-template">
+    {% trans "Routes" as route_list_title %}
+    {% trans "Add a route" as route_add_label %}
+    {# The context strip — where this panel's data lives. A route is the    #}
+    {# user's own and is never published, the same promise the favourites   #}
+    {# panel makes in its own words.                                       #}
+    {% trans "Routes are private and not shared." as routes_context_line %}
+    {% trans "Tracks" as routes_section_label %}
+    {# No `toggle_id`: no map layer to switch on yet (SNOW-687). #}
+    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label %}
+</template>
+{# The file picker. OUTSIDE the sheet, and outside the panel template, on   #}
+{# purpose: the sheet's body is re-cloned on every open, and an <input      #}
+{# type="file"> holding a user's chosen file must not be thrown away and    #}
+{# rebuilt underneath the upload it started. routes.js clicks this input    #}
+{# when [data-panel-add] is tapped and posts on its `change`.               #}
+{#                                                                         #}
+{# `hidden` rather than a visually-hidden class: nothing labels or focuses  #}
+{# this input directly — the panel's own CTA button is the labelled,        #}
+{# tabbable control, and a programmatic .click() opens the native picker    #}
+{# from a hidden input just as well as from a visible one.                  #}
+{#                                                                         #}
+{# It carries the CSRF token for every request routes.js makes: Django      #}
+{# issues one token per session, valid across every form on the page, so    #}
+{# the upload POST and the rename fetch both read it from here (mirroring   #}
+{# favourites.js, which reads its own out of the create-form template).     #}
+<form id="route-upload-form" hidden>
+    {% csrf_token %}
+    {# `accept` is a picker HINT, never a check — route_create validates the #}
+    {# bytes and answers 400 for anything it cannot parse as GPX.            #}
+    <input type="file" id="route-upload-input" name="file" accept=".gpx, application/gpx+xml">
+</form>
+{# SNOW-686: routes panel JS. Deliberately NOT part of the map bundle —     #}
+{# like favourites.js it is loaded from its own surface partial and reaches  #}
+{# shared map state through window.snowdeskMapState, so it is not listed in  #}
+{# MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the     #}
+{# bundle's contiguous run (tests/public/test_map_script_order.py).          #}
+<script defer src="{% static 'js/routes.js' %}"></script>
+{# Every user-facing string routes.js writes into the DOM. makemessages     #}
+{# never scans static/js, so a literal there ships as English to every      #}
+{# locale — `tox -e i18n-lint` fails the build on one. Read back via        #}
+{# window.pwaStrings.read(); the module keeps the English literal as its    #}
+{# fallback. See static/js/i18n_strings.js and docs/i18n.md.                #}
+<template id="routes-strings-template">
+    <span data-string="signin-prompt">{% trans "Sign in to save a route." %}</span>
+    <span data-string="signin-cta">{% trans "Sign in" %}</span>
+    {# The panel's own failure line. Distinct from routes:list's empty state #}
+    {# ("You have no saved routes yet.") on purpose: this panel opens        #}
+    {# offline, its list does not load offline, and telling a user they have #}
+    {# no routes when the request merely failed is a wrong statement about   #}
+    {# their own data.                                                      #}
+    <span data-string="list-failed">{% trans "Your routes couldn't be loaded — check your connection." %}</span>
+    <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
+    {# One line per outcome route_create distinguishes, because "it didn't   #}
+    {# work" is not actionable and each of these has a different next step:  #}
+    {# pick a different file, delete a route, or get back online.           #}
+    <span data-string="upload-offline">{% trans "You need to be online to upload a route." %}</span>
+    <span
+        data-string="upload-invalid"
+    >{% trans "That file couldn't be read as GPX. It must be a .gpx file containing a track or a route." %}</span>
+    <span data-string="upload-too-large">{% trans "That file is too large to upload." %}</span>
+    <span
+        data-string="upload-limit"
+    >{% trans "You've reached your saved-route limit. Remove one to upload another." %}</span>
+    <span data-string="upload-failed">{% trans "That route couldn't be uploaded. Try again." %}</span>
+</template>

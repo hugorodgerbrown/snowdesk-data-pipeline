@@ -384,6 +384,49 @@ Optional context:
                         {% include "includes/_icon_observation.html" with size=18 only %}
                     </button>
                 </div>
+                {# SNOW-686: saved-routes roundel — the fourth UGC control, opening a    #}
+                {# panel listing the user's imported GPX routes with a file picker to    #}
+                {# add one. Sits after the field-observation roundel and before the      #}
+                {# help "?" , which stays last (see its own note below).                 #}
+                {#                                                                       #}
+                {# Wrapped in `routes_visible` — the ``routes`` waffle flag — so the      #}
+                {# whole control is absent from the DOM for a user the feature is not    #}
+                {# open to, the way the Weather overlay's own toggle is gated on         #}
+                {# weather_layer_eligible. The surface partial that pairs with it        #}
+                {# (public/partials/_routes_surface.html, included from home.html) is    #}
+                {# gated on the same flag, so the two can never disagree.                #}
+                {#                                                                       #}
+                {# Rendered regardless of AUTHENTICATION state within that gate, so a    #}
+                {# signed-out visitor sees the affordance and gets a sign-in CTA on tap  #}
+                {# (routes.js branches on data-routes-eligible, mirroring                #}
+                {# #favourite-add-btn's data-favourites-eligible anon branch).           #}
+                {#                                                                       #}
+                {# No `data-overlay-shown` attribute, unlike the other three overlay      #}
+                {# roundels: that attribute means "this overlay is on the map right      #}
+                {# now", and there is no routes overlay until SNOW-687 adds the layer.   #}
+                {# map_roundel_overlay_state.js paints the ring for the roundels that     #}
+                {# carry it; this one has no ring to paint yet.                          #}
+                {% if routes_visible %}
+                    <div class="map-utility-pill map-utility-pill--route">
+                        <button
+                            id="route-add-btn"
+                            type="button"
+                            class="map-utility-button hover-affordance"
+                            data-route-create-url="{{ route_create_url }}"
+                            data-route-list-url="{{ route_list_url }}"
+                            data-route-rename-url-template="{{ route_rename_url_template }}"
+                            data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
+                            data-signin-url="{{ routes_signin_url }}"
+                            aria-label='{% trans "Your routes" %}'
+                        >
+                            {# The track glyph lives in includes/_icon_route.html — the   #}
+                            {# panel this roundel opens carries the same mark in its      #}
+                            {# header (its only identity mark), and one glyph rendered in  #}
+                            {# two places needs one source.                               #}
+                            {% include "includes/_icon_route.html" with size=18 only %}
+                        </button>
+                    </div>
+                {% endif %}
                 {# SNOW-457: help / coachmark tour roundel — the "how to use the map"    #}
                 {# affordance, moved to the BOTTOM of the stack so it sits level with    #}
                 {# the bottom-left (i) legend toggle on the shared bottom baseline.      #}

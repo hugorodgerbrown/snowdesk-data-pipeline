@@ -1,0 +1,35 @@
+{% load i18n %}
+{% comment %}
+routes/partials/_route_list.html — Owner routes list, default variant
+(SNOW-686).
+
+Rendered by apps.routes.views.route_list when no ``variant`` is given. Its
+rows are routes/partials/_route.html — the row SNOW-685 shipped and the one
+route_create and route_rename still return, with its always-visible rename
+field.
+
+So this is the list form of the row those two endpoints already hand back,
+which is what makes it the right no-variant answer: a caller that asks
+route_list for "the user's routes" with no surface in mind gets rows in the
+same shape as the ones it gets from a create. The map sheet asks for
+``?variant=map`` and gets _route_list_map.html instead.
+
+A ``<div>`` wrapper, not a ``<ul>``: _route.html is itself a ``<div>``, so
+the list variants cannot share one wrapper (see _route_list_map.html).
+
+Context:
+    routes : list[Route] — the requesting user's own routes
+             (Route.objects.for_user()).
+{% endcomment %}
+<div data-testid="route-list-default">
+    <div class="flex flex-col gap-2">
+        {% for route in routes %}
+            {% include "routes/partials/_route.html" with route=route %}
+        {% endfor %}
+    </div>
+    {% if not routes %}
+        <p class="py-2 text-sm text-text-2" data-testid="route-list-empty">
+            {% trans "You have no saved routes yet." %}
+        </p>
+    {% endif %}
+</div>

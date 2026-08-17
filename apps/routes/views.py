@@ -1,7 +1,7 @@
 """
 apps/routes/views.py — HTMX endpoints for the routes application.
 
-Three HTMX-only fragment views backing the GPX upload half of SNOW-684:
+Four HTMX-only fragment views backing the GPX upload half of SNOW-684:
 
 - ``route_create`` (POST) — multipart upload of a ``.gpx``; parses it,
   stores a Route, returns the route-row partial. The uploaded file is read
@@ -10,6 +10,8 @@ Three HTMX-only fragment views backing the GPX upload half of SNOW-684:
 - ``route_rename`` (POST) — owner-checked rename, returns the updated
   partial.
 - ``route_delete`` (POST) — owner-checked deletion.
+- ``route_list`` (GET) — SNOW-686: the requesting user's own routes, for
+  the map sheet's routes panel.
 
 All three are authentication-gated (403 for anonymous users) and
 owner-scoped via ``Route.objects.for_user()`` — another user's uuid returns
@@ -22,9 +24,9 @@ whole shape.
 ``user`` since these endpoints are auth-only) and returns 429 when the
 limit is exceeded.
 
-The panel that drives these endpoints (SNOW-686) and the MapLibre layer
-that draws a stored route (SNOW-687) are separate tickets — the partials
-here are the minimum surface those will build on.
+The MapLibre layer that draws a stored route (SNOW-687) is a separate
+ticket; the panel these endpoints back landed in SNOW-686, which is why
+``route_list`` has a ``?variant=map`` row and no overlay switch yet.
 """
 
 from __future__ import annotations
@@ -35,15 +37,25 @@ from uuid import UUID
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
+from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route
 from apps.routes.services.gpx import GPXParseError
 from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
 
 logger = logging.getLogger(__name__)
+
+# SNOW-686: route_list serves two row shapes. The ``variant`` query
+# parameter selects a template out of this fixed map — an unknown (or
+# absent) value falls back to the default, so nothing a caller sends ever
+# reaches a template path. Mirrors ``apps.favourites.views``'s own pair.
+_LIST_TEMPLATE_DEFAULT = "routes/partials/_route_list.html"
+_LIST_TEMPLATES = {
+    ROUTE_LIST_MAP_VARIANT: "routes/partials/_route_list_map.html",
+}
 
 # Must match Route.name's max_length. Checked here so an over-length
 # submission is turned into a handled 400 instead of a DB DataError (500).
@@ -200,3 +212,51 @@ def route_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
         return HttpResponse("Route not found.", status=404)
 
     return HttpResponse("")
+
+
+@require_htmx
+@require_GET
+def route_list(request: HttpRequest) -> HttpResponse:
+    """Render the requesting user's own routes list partial.
+
+    Backs the map sheet's routes panel (SNOW-686), which lazy-loads this
+    endpoint over HTMX every time it opens rather than holding rows across
+    an open/close cycle — so a row deleted or renamed in one session can
+    never survive into the next.
+
+    The ``variant`` query parameter picks the row shape out of a fixed map:
+    ``?variant=map`` gets ``_route_list_map.html`` (the lean
+    ``includes/_ugc_panel_row.html`` row the panel wants), anything else —
+    including no parameter at all — falls back to ``_route_list.html`` and
+    the always-visible rename field ``_route.html`` carries. The value
+    selects a template out of a dict; it is never interpolated into a
+    template path.
+
+    No freshness headers and no offline-cache sidecar, both of which
+    ``favourite_list`` carries. A route has no safety-critical constituent
+    to go stale (it is the user's own geometry, not a danger rating), and
+    caching routes for offline reads is the map layer's concern in
+    SNOW-687 — the panel says so instead, via its own failed-load line.
+
+    Errors:
+        400 — non-HTMX request.
+        403 — anonymous request.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        Rendered ``_route_list.html`` (or ``_route_list_map.html`` for
+        ``?variant=map``), or an error response.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    routes = list(Route.objects.for_user(request.user))
+
+    return render(
+        request,
+        _LIST_TEMPLATES.get(request.GET.get("variant", ""), _LIST_TEMPLATE_DEFAULT),
+        {"routes": routes},
+    )

@@ -13,6 +13,10 @@ Covers:
                  400; anonymous → 403; non-HTMX → 400.
   route_delete — owner deletes; another user's uuid → 404 and the row
                  survives; anonymous → 403; non-HTMX → 400.
+  route_list   — SNOW-686: the owner's own routes only; the empty state;
+                 anonymous → 403; non-HTMX → 400; POST → 405; both row
+                 variants render, and an unknown variant falls back to the
+                 default rather than reaching a template path.
 
 Scoped to the Django test client throughout — per CLAUDE.md's layer rules
 there is nothing browser-shaped in this ticket, and a 404 needs no browser.
@@ -28,6 +32,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
+from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route
 from tests.factories import RouteFactory, UserFactory
 
@@ -56,6 +61,12 @@ def _rename_url(uuid: object) -> str:
 def _delete_url(uuid: object) -> str:
     """Build the delete URL for a route's uuid."""
     return f"/routes/partials/{uuid}/delete/"
+
+
+LIST_URL = "/routes/partials/list/"
+
+# The map sheet's variant, as apps.public.views._routes_context builds it.
+MAP_LIST_URL = f"{LIST_URL}?variant={ROUTE_LIST_MAP_VARIANT}"
 
 
 # ---------------------------------------------------------------------------
@@ -455,3 +466,218 @@ class TestRouteDelete:
         route = RouteFactory.create(user=user)
         response = client.post(_delete_url(route.uuid))
         assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# route_list — GET /routes/partials/list/
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRouteListGates:
+    """Auth, HTMX and method gates."""
+
+    def test_anonymous_gets_403(self, client: Client) -> None:
+        """An anonymous list request returns 403."""
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 403
+
+    def test_non_htmx_returns_400(self, client: Client) -> None:
+        """A plain GET without HX-Request returns 400."""
+        client.force_login(UserFactory.create())
+        response = client.get(MAP_LIST_URL)
+        assert response.status_code == 400
+
+    def test_post_is_not_allowed(self, client: Client) -> None:
+        """The endpoint is GET-only."""
+        client.force_login(UserFactory.create())
+        response = client.post(MAP_LIST_URL, **HTMX_HEADERS)
+        assert response.status_code == 405
+
+
+@pytest.mark.django_db
+class TestRouteListScoping:
+    """The list is the requesting user's own routes and nobody else's."""
+
+    def test_owners_routes_are_listed(self, client: Client) -> None:
+        """Each of the user's own routes renders, addressed by its uuid."""
+        user = UserFactory.create()
+        client.force_login(user)
+        first = RouteFactory.create(user=user, name="Haute Route")
+        second = RouteFactory.create(user=user, name="Vallée Blanche")
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+        body = response.content.decode()
+
+        assert response.status_code == 200
+        assert "Haute Route" in body
+        assert "Vallée Blanche" in body
+        assert f'id="route-{first.uuid}"' in body
+        assert f'id="route-{second.uuid}"' in body
+
+    def test_another_users_routes_are_not_listed(self, client: Client) -> None:
+        """Owner scoping — a route belonging to someone else never appears."""
+        user = UserFactory.create()
+        other = UserFactory.create()
+        client.force_login(user)
+        mine = RouteFactory.create(user=user, name="Mine")
+        theirs = RouteFactory.create(user=other, name="Theirs")
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+        body = response.content.decode()
+
+        assert "Mine" in body
+        assert "Theirs" not in body
+        assert str(theirs.uuid) not in body
+        assert str(mine.uuid) in body
+
+    def test_empty_state_is_rendered(self, client: Client) -> None:
+        """A user with no routes gets the empty line, not a bare list.
+
+        The distinction matters to the panel: routes.js writes its OWN
+        failed-load line for a request that did not arrive, so this empty
+        state must only ever mean "you really have none".
+        """
+        client.force_login(UserFactory.create())
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+        body = response.content.decode()
+
+        assert response.status_code == 200
+        assert 'data-testid="route-list-empty"' in body
+
+
+@pytest.mark.django_db
+class TestRouteListVariants:
+    """``?variant=`` picks a row shape out of a fixed map."""
+
+    def test_map_variant_renders_the_shared_ugc_row(self, client: Client) -> None:
+        """``?variant=map`` gets the lean row: a pencil, a trash, no name field.
+
+        The hooks asserted here are the contract three other files depend
+        on — inline_rename.js reads ``data-row-renameable`` /
+        ``data-row-rename``, and routes.js reads ``data-route-rename`` for
+        the uuid — so a row that stopped carrying them would break the
+        panel's rename with nothing else failing.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(user=user)
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+        body = response.content.decode()
+
+        assert 'data-testid="route-list"' in body
+        assert "data-row-renameable" in body
+        assert "data-row-rename" in body
+        assert f'data-route-rename="{route.uuid}"' in body
+        # The map row is a <li> in a <ul>, not _route.html's <div> with an
+        # always-visible rename input.
+        assert "<li" in body
+        assert 'name="name"' not in body
+
+    def test_default_variant_renders_the_route_row_partial(
+        self, client: Client
+    ) -> None:
+        """No variant gets _route.html rows — the shape create/rename return."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+        body = response.content.decode()
+
+        assert response.status_code == 200
+        assert 'data-testid="route-list-default"' in body
+        # _route.html's always-visible rename field, which the map row drops.
+        assert 'name="name"' in body
+        assert "data-row-renameable" not in body
+
+    def test_an_unknown_variant_falls_back_to_the_default(self, client: Client) -> None:
+        """An unknown value is not interpolated into a template path.
+
+        The guard that matters: ``variant`` selects out of a dict, so a
+        caller cannot reach an arbitrary template with it.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        response = client.get(f"{LIST_URL}?variant=../../etc/passwd", **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert 'data-testid="route-list-default"' in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestRouteListFigures:
+    """The map row's meta line — distance, and ascent only when it is known."""
+
+    def test_distance_and_ascent_are_rendered(self, client: Client) -> None:
+        """Both figures appear, one decimal for km and none for metres."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, distance_m=12400.0, ascent_m=850.0)
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+        body = response.content.decode()
+
+        assert "12.4 km" in body
+        assert "850 m ascent" in body
+
+    def test_a_null_ascent_is_omitted(self, client: Client) -> None:
+        """A route with no elevation data shows its distance alone.
+
+        ``ascent_m`` is null — not zero — when the source GPX carried no
+        ``<ele>`` at all, and Route's own docstring is explicit that "we
+        don't know" and "flat" are different facts. Rendering "0 m ascent"
+        for the first would be a false statement about a route somebody may
+        be planning to ski, so the meta line drops the figure entirely.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, distance_m=12400.0, ascent_m=None)
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+        body = response.content.decode()
+
+        assert "12.4 km" in body
+        assert "ascent" not in body
+        assert "0 m" not in body
+
+    def test_a_zero_ascent_is_still_rendered(self, client: Client) -> None:
+        """Zero is a real measurement and must not be mistaken for absent.
+
+        The inverse of the test above, and the reason the template tests
+        ``is not None`` rather than truthiness: a genuinely flat route with
+        elevation data present says so.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, distance_m=5000.0, ascent_m=0.0)
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+
+        assert "0 m ascent" in response.content.decode()
+
+    def test_an_unnamed_route_falls_back_to_its_filename(self, client: Client) -> None:
+        """A blank name reads as the uploaded filename, never as an empty row."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, name="", source_filename="mont-blanc.gpx")
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+
+        assert "mont-blanc.gpx" in response.content.decode()
+
+    def test_a_route_with_neither_name_nor_filename_reads_as_untitled(
+        self, client: Client
+    ) -> None:
+        """The last fallback, so a row always has something to name it."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, name="", source_filename="")
+
+        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
+
+        assert "Untitled route" in response.content.decode()

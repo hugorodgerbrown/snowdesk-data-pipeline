@@ -113,6 +113,18 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         # bucket is now reconciled and deletable either way; this is how
         # often it happens.
         "map.basemap.record_write_failed",
+        # Saved routes (SNOW-686) — the same `map.*` namespace and the same
+        # created/deleted pair as favourites above, for the same reason.
+        # Emitted by static/js/routes.js: `created` on a successful upload
+        # to routes:create, `deleted` when a panel row's Remove form comes
+        # back 2xx. No overlay_toggled sibling yet — the routes map layer
+        # and its switch arrive in SNOW-687.
+        #
+        # `created` carries no file name, size or geometry: the event says
+        # that an upload succeeded, and the route itself is the user's own
+        # private data (a GPX track is a record of where somebody went).
+        "map.route.created",
+        "map.route.deleted",
     }
 )
 
