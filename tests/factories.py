@@ -47,6 +47,7 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
+from apps.routes.models import Route
 from apps.weather.models import (
     ForecastPoint,
     ForecastPointWeather,
@@ -652,3 +653,37 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
     )
     region = None
     resort = None
+
+
+class RouteFactory(factory.django.DjangoModelFactory[Route]):
+    """Factory for Route instances (SNOW-685).
+
+    Produces a short three-point track climbing 100 m, with the derived
+    fields consistent with ``points`` so a test that reads ``bounds`` or
+    ``point_count`` off a factory-built row sees the same relationship
+    ``apps.routes.services.gpx.parse_gpx`` would have produced.
+    ``distance_m`` is a round stand-in rather than the true great-circle
+    length of those coordinates — tests that care about the real maths
+    exercise the parser directly.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Route
+
+    user = factory.SubFactory(UserFactory)
+    name = factory.Sequence(lambda n: f"Route {n}")
+    source_filename = "track.gpx"
+    # [lon, lat, ele] — GeoJSON axis order, as stored.
+    points = factory.LazyFunction(
+        lambda: [
+            [7.4, 46.1, 1500.0],
+            [7.41, 46.11, 1550.0],
+            [7.42, 46.12, 1600.0],
+        ]
+    )
+    distance_m = 2500.0
+    ascent_m = 100.0
+    point_count = 3
+    bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])

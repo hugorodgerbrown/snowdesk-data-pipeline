@@ -1,0 +1,14 @@
+{% load i18n %}
+{% comment %}
+routes/partials/_route_limit.html — Route-cap-reached error partial.
+
+Rendered by apps.routes.views.route_create at HTTP 409 when the requesting
+user has already reached settings.ROUTES_MAX_PER_USER. Mirrors
+favourites/partials/_favourite_limit.html.
+{% endcomment %}
+<div
+    class="rounded-tag border border-status-warning-text/30 bg-status-warning-bg px-3 py-2 text-sm text-status-warning-text"
+    role="alert"
+>
+    {% trans "You've reached your saved-route limit. Remove one to upload another." %}
+</div>

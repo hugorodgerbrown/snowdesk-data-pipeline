@@ -124,4 +124,7 @@ urlpatterns.append(path("", include("apps.observations.urls")))
 # generic ``<str:region_id>/`` catch-all would otherwise swallow the
 # "favourites" prefix and resolve it as a region_id.
 urlpatterns.append(path("favourites/", include("apps.favourites.urls")))
+# routes/ (SNOW-685) — same ordering constraint as favourites/ above: the
+# public catch-all would otherwise resolve "routes" as a region_id.
+urlpatterns.append(path("routes/", include("apps.routes.urls")))
 urlpatterns.append(path("", include("apps.public.urls")))

@@ -274,6 +274,12 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         "ACCOUNT_TOKEN_MAX_AGE", validator=positive_int, note="Signed-token TTL (s)"
     ),
     SettingSpec("FAVOURITES_MAX_PER_USER", validator=positive_int, note="Per-user cap"),
+    SettingSpec("ROUTES_MAX_PER_USER", validator=positive_int, note="Per-user cap"),
+    SettingSpec(
+        "ROUTE_UPLOAD_MAX_BYTES",
+        validator=positive_int,
+        note="Largest accepted .gpx upload (bytes)",
+    ),
     SettingSpec(
         "FIELD_OBSERVATION_RADIUS_KM",
         validator=positive_number,

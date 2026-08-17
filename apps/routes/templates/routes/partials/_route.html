@@ -1,0 +1,54 @@
+{% load i18n %}
+{% comment %}
+routes/partials/_route.html — Imported-route row partial.
+
+Rendered by apps.routes.views.route_create/route_rename after a Route is
+ingested or renamed. The name field auto-saves on blur/change (rename), and
+the remove button deletes the row — both HTMX swaps target this same row
+element. Mirrors favourites/partials/_favourite.html.
+
+The routes panel that lists these rows is SNOW-686; this partial is the unit
+it will render.
+
+Context:
+    route : Route — the imported route to render.
+{% endcomment %}
+<div
+    id="route-{{ route.uuid }}"
+    class="flex items-center gap-2 rounded-tag border border-border bg-card px-3 py-2 text-sm"
+    data-route-uuid="{{ route.uuid }}"
+>
+    <form
+        hx-post="{% url 'routes:rename' route.uuid %}"
+        hx-target="#route-{{ route.uuid }}"
+        hx-swap="outerHTML"
+        hx-trigger="change"
+        class="flex-1"
+    >
+        {% csrf_token %}
+        <input
+            type="text"
+            name="name"
+            value="{{ route.name }}"
+            placeholder="{{ route.source_filename|default:_('Untitled route') }}"
+            class="w-full bg-transparent text-text-1 placeholder:text-text-3 focus:outline-none"
+            aria-label="{% trans 'Route name' %}"
+        >
+    </form>
+    <span class="shrink-0 text-xs text-text-2">
+        {% blocktrans with km=route.distance_km|floatformat:1 %}{{ km }} km{% endblocktrans %}
+    </span>
+    <form
+        hx-post="{% url 'routes:delete' route.uuid %}"
+        hx-target="#route-{{ route.uuid }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            class="shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text"
+        >
+            {% trans "Remove" %}
+        </button>
+    </form>
+</div>
