@@ -1,0 +1,44 @@
+{% comment %}
+templates/includes/_icon_route.html — the saved-route glyph: two waypoints
+joined by an S-bend track (SNOW-686).
+
+One source for one mark. The glyph identifies the routes roundel
+(#route-add-btn, public/partials/_map_embed.html) AND, at 22px, the header
+of the panel that roundel opens — Hugo's design makes the roundel's own
+icon the panel's only identity mark, so a reader can confirm which roundel
+they tapped.
+
+Why a track between two nodes rather than a mountain or a boot: the panel
+holds imported GPX lines, and what distinguishes one from every other kind
+of user data on this map is that it has a START and an END with a path in
+between. A summit or a footprint would say "touring", which is the whole
+site.
+
+STYLE — a 24-grid 2px stroke, matching _icon_favourite.html's outline star
+and _icon_downloads.html's viewfinder. (_icon_observation.html's filled
+binoculars is the deliberate exception in that set; see its own note.)
+
+Drawn for this ticket, so there is no third-party attribution to carry —
+unlike _icon_observation.html, which inlines a Font Awesome Free path.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18, the
+            roundel size; the panel header passes 22.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="6" cy="19" r="2.5" />
+    <circle cx="18" cy="5" r="2.5" />
+    <path d="M8.5 19h5a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h6" />
+</svg>

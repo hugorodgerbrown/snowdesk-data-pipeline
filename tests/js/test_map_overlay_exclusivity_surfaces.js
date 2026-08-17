@@ -5,10 +5,15 @@
  * The registry's own behaviour is covered in
  * tests/js/test_map_overlay_exclusivity.js against fakes. THIS file loads
  * the real surfaces — the layers menu, the favourites panel, the field-
- * observations panel, the downloads panel, the legend card, the help
- * tour's coachmark and the bulletin fill-strength flyout — into one
- * document, the way public/home.html does, and runs the full ordered
- * matrix over them: open A, open B, A must be shut.
+ * observations panel, the downloads panel, the routes panel, the legend
+ * card, the help tour's coachmark and the bulletin fill-strength flyout —
+ * into one document, the way public/home.html does, and runs the full
+ * ordered matrix over them: open A, open B, A must be shut.
+ *
+ * SNOW-686 added the eighth (the routes panel) and is exactly the case this
+ * shape was built for: registering it took no edit to any other surface,
+ * and its whole matrix row and column came for free from
+ * window.MapSheet.attach's registration.
  *
  * Why a matrix rather than the pairs a bug report would name: the wiring
  * this ticket replaced WAS the named pairs, three of the fifteen
@@ -28,8 +33,8 @@
  * cannot render a Django template). Each panel's own contents are asserted
  * in its own suite; what matters here is only which of them is on screen.
  *
- * One of the seven hides itself differently, which is the point of asking
- * each surface how to read its own state rather than assuming: the four
+ * One of the eight hides itself differently, which is the point of asking
+ * each surface how to read its own state rather than assuming: the five
  * panels, the coachmark and the fill flyout use the `hidden` attribute (the
  * coachmark's overlay is additionally `pointer-events: none`), while the
  * legend uses `data-state` on its CLUSTER (#map-legend, the card's parent —
@@ -52,7 +57,7 @@ function shownByAttribute(id) {
 }
 
 /**
- * The seven surfaces, by their registered name: how to open each one the way
+ * The eight surfaces, by their registered name: how to open each one the way
  * a user does — through its own roundel or pill — and how to read whether
  * it is on screen.
  *
@@ -84,6 +89,10 @@ const SURFACES = {
   'map-downloads-sheet': {
     open: () => window.pwaDownloadsManager.toggle(),
     isOpen: () => shownByAttribute('map-downloads-sheet'),
+  },
+  'route-sheet': {
+    open: () => document.getElementById('route-add-btn').click(),
+    isOpen: () => shownByAttribute('route-sheet'),
   },
   'map-legend-card': {
     open: () => document.getElementById('map-legend-toggle').click(),
@@ -151,6 +160,20 @@ function buildFixture() {
         <button type="button" data-panel-add></button>
         <input id="map-community-reports-overlay-toggle" type="checkbox" role="switch"></div>
     </template>
+    <button id="route-add-btn"
+            data-routes-eligible="true"
+            data-route-create-url="/routes/partials/create/"
+            data-route-list-url="/routes/partials/list/?variant=map"
+            data-route-rename-url-template="/routes/partials/__UUID__/rename/"></button>
+    <div id="route-sheet" hidden tabindex="-1" data-overlay></div>
+    <template id="route-list-template">
+      <div><div data-routes-rows></div>
+        <button type="button" data-panel-add></button></div>
+    </template>
+    <form id="route-upload-form" hidden>
+      <input type="hidden" name="csrfmiddlewaretoken" value="tok">
+      <input type="file" id="route-upload-input" name="file">
+    </form>
     <div id="map-downloads-sheet" hidden tabindex="-1" data-overlay></div>
     <template id="map-downloads-body-template">
       <div><div data-downloads-group="region" hidden><ul data-downloads-list-region></ul></div>
@@ -202,8 +225,8 @@ function buildFixture() {
 /**
  * Load the registry and the surface modules in home.html's order.
  *
- * Seven surfaces, six modules: map_basemap_picker.js carries both the layers
- * menu and the bulletin fill-strength flyout, in two IIFEs.
+ * Eight surfaces, seven modules: map_basemap_picker.js carries both the
+ * layers menu and the bulletin fill-strength flyout, in two IIFEs.
  *
  * @returns {Promise<void>}
  */
@@ -216,6 +239,7 @@ async function loadSurfaces() {
   await import('../../static/js/map_sheet.js');
   await import('../../static/js/favourites.js');
   await import('../../static/js/report.js');
+  await import('../../static/js/routes.js');
   await import('../../static/js/map_downloads_manager.js');
   await import('../../static/js/map_legend.js');
   await import('../../static/js/map_basemap_picker.js');

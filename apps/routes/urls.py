@@ -9,6 +9,7 @@ URL structure:
   routes/partials/create/            POST — upload and ingest a .gpx
   routes/partials/<uuid>/rename/     POST — rename a route
   routes/partials/<uuid>/delete/     POST — delete a route
+  routes/partials/list/              GET  — owner's routes list (SNOW-686)
 """
 
 from django.urls import path
@@ -32,5 +33,10 @@ urlpatterns = [
         "partials/<uuid:uuid>/delete/",
         views.route_delete,
         name="delete",
+    ),
+    path(
+        "partials/list/",
+        views.route_list,
+        name="list",
     ),
 ]

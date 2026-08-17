@@ -94,7 +94,26 @@ Parameters (passed via {% include … with … %}):
                   anything to hold.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
-  toggle_id       (string) — DOM id for the overlay switch. Required.
+  toggle_id       (string, optional) — DOM id for the overlay switch.
+                  Omit it and the switch is not rendered at all.
+
+                  Required for the first three panels and NOT optional as a
+                  style choice: a panel that owns a map overlay must carry
+                  its switch, because that is where SNOW-658 moved it from
+                  the layers menu. It is optional because SNOW-686's routes
+                  panel exists BEFORE the layer it will eventually control
+                  — SNOW-687 adds the MapLibre line and the overlay bridge
+                  — and the two honest options for the gap were a switch
+                  wired to nothing or no switch. A control that silently
+                  does nothing when tapped is a worse lie than an absent
+                  one, so routes omits it and SNOW-687 passes a
+                  ``toggle_id`` when there is something for it to drive.
+
+                  This is the narrow inverse of the note in
+                  static/js/favourites.js about the anonymous branch KEEPING
+                  its switch: there, the overlay exists and merely has
+                  nothing in it yet, so hiding the control would hide a
+                  working view setting. Here the overlay does not exist.
 
 The overlay switch's LABEL is not a parameter. It is "Display on the map"
 on all three panels — the design's own wording, replacing "Show areas on
@@ -177,8 +196,12 @@ state should not have to remember to bring its own.
             {{ cta_label }}
         </button>
     </div>
-    {# One string for all three panels — see the note above the parameter  #}
-    {# list for why this is not a parameter.                               #}
-    {% trans "Display on the map" as overlay_toggle_label %}
-    {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=overlay_toggle_label %}
+    {# One string for every panel that HAS this switch — see the note above #}
+    {# the parameter list for why the label is not a parameter, and why      #}
+    {# `toggle_id` is optional (a panel whose overlay does not exist yet     #}
+    {# renders no switch rather than a dead one).                           #}
+    {% if toggle_id %}
+        {% trans "Display on the map" as overlay_toggle_label %}
+        {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=overlay_toggle_label %}
+    {% endif %}
 </div>

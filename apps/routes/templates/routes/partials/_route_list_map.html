@@ -1,0 +1,42 @@
+{% load i18n %}
+{% comment %}
+routes/partials/_route_list_map.html — Owner routes list, map sheet
+(SNOW-686).
+
+Rendered by apps.routes.views.route_list for ``?variant=map`` and swapped
+into [data-routes-rows] inside the map's routes panel
+(public/partials/_routes_surface.html) by static/js/routes.js.
+
+The lean sibling of _route_list.html: same routes, a different row —
+_route_row_map.html rather than _route.html — because the sheet's rows are
+includes/_ugc_panel_row.html, the shape shared with the favourites,
+observations and downloads panels.
+
+The rows are a real ``<ul>``: each row is a ``<li>`` from
+includes/_ugc_panel_row.html, drawing its own separator via ``border-t``
+rather than sitting in a bordered box of its own — rows are not cards, on
+any of the four panels. (That is also why the default variant needs its own
+wrapper: _route.html is a ``<div>``, which is not a valid child of a list.)
+
+No offline-cache sidecar, unlike _favourite_list_map.html's
+``roster_payload``. Caching routes for offline reads arrives with the map
+layer in SNOW-687; until something draws a route there is nothing an
+offline reader could do with one, and the panel's own failed-load line
+(routes.js) covers the offline case honestly in the meantime.
+
+Context:
+    routes : list[Route] — the requesting user's own routes
+             (Route.objects.for_user()).
+{% endcomment %}
+<div data-testid="route-list">
+    <ul class="flex flex-col">
+        {% for route in routes %}
+            {% include "routes/partials/_route_row_map.html" with route=route %}
+        {% endfor %}
+    </ul>
+    {% if not routes %}
+        <p class="py-2 text-sm text-text-2" data-testid="route-list-empty">
+            {% trans "You have no saved routes yet." %}
+        </p>
+    {% endif %}
+</div>

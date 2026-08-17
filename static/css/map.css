@@ -701,6 +701,24 @@
 }
 
 
+/* SNOW-686: saved-routes pill — the fourth UGC roundel, identical geometry
+   to the favourites pill above. The three declarations are deliberately
+   restated rather than folded into a shared selector list: every other pill
+   variant in this file states its own geometry, and the favourites rule
+   carries its own SNOW-414 rationale, so a reader looking up one roundel
+   finds one rule. The track SVG inherits currentColor.
+
+   No ring / "overlay shown" state here, unlike the three roundels that own a
+   map overlay: there is no routes layer until SNOW-687, so nothing paints
+   this one — see the roundel's own note in
+   public/partials/_map_embed.html. */
+.map-utility-pill--route {
+    width: var(--map-control-lg);
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+
 /* Search input inside the expanded pill — hidden until the pill is
    in the expanded state. Width/opacity transition in sync with the
    pill's width transition so the reveal feels like one motion. */

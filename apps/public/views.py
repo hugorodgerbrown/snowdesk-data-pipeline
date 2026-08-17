@@ -111,6 +111,7 @@ from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
+from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.weather.models import (
     ForecastPointWeather,
     WeatherSnapshot,
@@ -836,6 +837,7 @@ def home(request: HttpRequest) -> HttpResponse:
 
     report_ctx = _report_context(request)
     favourites_ctx = _favourites_context(request)
+    routes_ctx = _routes_context(request)
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_context(request)
 
@@ -847,6 +849,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **edit_context,
             **report_ctx,
             **favourites_ctx,
+            **routes_ctx,
             **community_reports_ctx,
             **weather_ctx,
             "ribbon": ribbon,
@@ -1510,6 +1513,63 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
             "favourites:delete", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
         "favourites_signin_url": reverse("accounts:sign_in"),
+    }
+
+
+def _routes_context(request: HttpRequest) -> dict[str, Any]:
+    """Build the template context dict for the map's saved-routes panel (SNOW-686).
+
+    TWO gates, because they answer different questions and the surface
+    branches on them at different points:
+
+    ``routes_visible`` is the ``routes`` waffle flag — seeded
+    superusers-only by ``apps.routes.migrations.0002_seed_routes_flag``.
+    While it is inactive the roundel and the whole surface are absent from
+    the DOM, the way ``weather_layer_eligible`` gates the Weather overlay.
+    That is what makes it safe to land this panel before the map layer that
+    completes it (SNOW-687): the feature is reachable by the people
+    building it and by nobody else, rather than shipping a routes list that
+    cannot draw a route to everyone in between.
+
+    ``routes_eligible`` is authentication, mirroring
+    ``favourites_eligible`` — routes.js branches on it to show the real
+    list and upload control versus an anonymous sign-in CTA. With the flag
+    seeded superusers-only that branch is not reachable in production
+    today; it is built and tested (tests/js/test_routes_panel_anonymous.js)
+    because opening the flag up to ``everyone`` is an admin toggle, not a
+    code change, and the branch has to be right the moment it is flipped.
+
+    No ``__UUID__``-templated delete URL, unlike ``_favourites_context``. A
+    route row's Remove is a plain HTMX form rendered server-side into the
+    row itself (routes/partials/_route_row_map_actions.html), so nothing
+    client-side ever has to build that URL; only rename does, because its
+    commit is a fetch from an inline editor.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        Dict with ``routes_visible``, ``routes_eligible``,
+        ``route_create_url``, ``route_list_url``,
+        ``route_rename_url_template`` and ``routes_signin_url``.
+
+    """
+    # __UUID__ placeholder, mirroring _favourites_context — reverse with a
+    # dummy uuid, then string-replace at runtime with the uuid of the row
+    # actually being renamed.
+    dummy_uuid = uuid.UUID(int=0)
+    return {
+        "routes_visible": waffle.flag_is_active(request, "routes"),
+        "routes_eligible": request.user.is_authenticated,
+        "route_create_url": reverse("routes:create"),
+        # ``?variant=map`` asks for the sheet's lean row template — the
+        # shared includes/_ugc_panel_row.html shape, rather than
+        # _route.html's always-visible rename field.
+        "route_list_url": f"{reverse('routes:list')}?variant={ROUTE_LIST_MAP_VARIANT}",
+        "route_rename_url_template": reverse(
+            "routes:rename", args=[dummy_uuid]
+        ).replace(str(dummy_uuid), "__UUID__"),
+        "routes_signin_url": reverse("accounts:sign_in"),
     }
 
 

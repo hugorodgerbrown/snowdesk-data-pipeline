@@ -36,9 +36,13 @@ the three declaration files — `map_state.js`, `map_basemap_downloads.js`,
 `map_shared.js` — load before `map.js`, and the nine surface files after
 it, in the order they held inside the single file.
 
-Modules *outside* this set (`map_layer_sync_status.js`, `favourites.js`)
-must reach the shared state through `window.snowdeskMapState` instead. The
-distinction is not stylistic: a top-level `let` lands in the global lexical
+Modules *outside* this set (`map_layer_sync_status.js`, `favourites.js`,
+`routes.js`) must reach the shared state through `window.snowdeskMapState`
+instead — and the surface modules among them are loaded from their own
+surface partials rather than from the bundle's contiguous run, so they are
+not members of `MAP_BUNDLE`. (`routes.js` reads no map state at all today:
+nothing the routes panel does touches the map until SNOW-687 adds the
+layer.) The distinction is not stylistic: a top-level `let` lands in the global lexical
 scope but **not** on `window`, which is how `map_layer_sync_status.js` read
 `window.MAP` for its entire life and always got `undefined`. See
 `map_state.js`'s header.
@@ -58,11 +62,11 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Eight surfaces float over the map, and only one is ever meaningful at once:
-the layers menu, the three UGC panels (downloads, favourites, field
-observations), the anchored detail popup a resort or favourite pin opens,
-the legend card (`#map-legend-card`), the help tour's coachmark
-(`#map-help-overlay`) and the bulletin fill-strength flyout
+Nine surfaces float over the map, and only one is ever meaningful at once:
+the layers menu, the four UGC panels (downloads, favourites, field
+observations, and routes since SNOW-686), the anchored detail popup a resort
+or favourite pin opens, the legend card (`#map-legend-card`), the help
+tour's coachmark (`#map-help-overlay`) and the bulletin fill-strength flyout
 (`#map-fill-flyout`). Each registers with `window.pwaMapOverlays`
 (`static/js/map_overlay_exclusivity.js`) — a name plus `isOpen()` and
 `close()` — and calls `opening(name)` before it reveals itself; the
@@ -206,6 +210,45 @@ inline rename and the resort-popup star still post to them. The "Add
 favourite" flow itself (placement, drag-to-refine, the create sheet, CSRF
 handling) is documented in `apps/favourites/views.py`'s module docstring and
 `static/js/favourites.js`'s header comment.
+
+**Routes panel (SNOW-686)**: the fourth UGC roundel (`#route-add-btn`,
+`.map-utility-pill--route`) and the panel it opens (`#route-sheet`,
+`public/partials/_routes_surface.html`), listing the signed-in user's
+imported GPX routes with a file picker to add one and the shared
+pencil/trash row controls. Built to the same shape as the favourites panel
+and described in `static/js/routes.js`'s header; the differences worth
+knowing here:
+
+- **Flag-gated on `routes`** (`superusers=True`, seeded by
+  `apps/routes/migrations/0002_seed_routes_flag.py`). Both the roundel and
+  the surface partial read one context flag, `routes_visible`
+  (`_routes_context()`), so neither can render without the other. That gate
+  is what lets the panel land before the map layer that completes it —
+  SNOW-687 draws the line and adds the overlay switch.
+- **No map layer, so no overlay switch and no roundel ring.** The panel
+  includes `includes/_ugc_panel.html` *without* a `toggle_id`, which is why
+  that parameter is optional: a switch wired to nothing is a worse lie than
+  an absent one. The roundel likewise carries no `data-overlay-shown`.
+- **Upload is online-only** and posts multipart straight to
+  `routes:create` rather than through `window.pwaMutationQueue` — the queue
+  persists JSON bodies in IndexedDB and a multipart file is a different
+  shape, so replayable uploads are scope of their own. SNOW-504's resort
+  toggle is the precedent. An offline tap is refused before the picker
+  opens, with a line that says so.
+- **Rows come from `routes:list` at `?variant=map`**
+  (`ROUTE_LIST_MAP_VARIANT`), which selects
+  `routes/partials/_route_list_map.html` and the shared
+  `includes/_ugc_panel_row.html` row; the default variant keeps
+  `_route.html`, the row `route_create` / `route_rename` return. The URL is
+  used verbatim by the client — rebuilding it would drop the query string
+  and render the wrong variant.
+- **`route_rename` is unchanged from SNOW-685** and still answers with
+  `_route.html`. The panel re-reads the list after a rename or an upload
+  rather than swapping the response in, exactly as `favourites.js` does for
+  the same reason: the returned row is deliberately a different shape.
+- Row meta line is distance and ascent — and **ascent is omitted entirely
+  when `ascent_m` is null**, since a GPX with no elevation data means "we
+  don't know", not "flat".
 
 **Weather overlay (SNOW-573)**: a Meteocons condition symbol plus the
 day's max temperature at each resort-anchored (and, for a signed-in
