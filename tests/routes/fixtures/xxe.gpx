@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gpx [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<gpx version="1.1" creator="snowdesk-tests" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>&xxe;</name>
+    <trkseg>
+      <trkpt lat="46.0000" lon="7.0000"><ele>1000.0</ele></trkpt>
+      <trkpt lat="46.0100" lon="7.0000"><ele>1100.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

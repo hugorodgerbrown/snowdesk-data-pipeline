@@ -165,6 +165,7 @@ INSTALLED_APPS = [
     "apps.analytics",
     "apps.observations",
     "apps.favourites",
+    "apps.routes",
     "apps.mcp_server",
 ]
 
@@ -864,6 +865,25 @@ ACCOUNT_TOKEN_MAX_AGE = config("ACCOUNT_TOKEN_MAX_AGE", default=86400, cast=int)
 # by apps.favourites.services.create_favourite.
 
 FAVOURITES_MAX_PER_USER = config("FAVOURITES_MAX_PER_USER", default=25, cast=int)
+
+
+# ---------------------------------------------------------------------------
+# Routes (SNOW-685)
+# ---------------------------------------------------------------------------
+# Maximum number of Route rows a single user may hold at once, enforced by
+# apps.routes.services.routes.create_route.
+
+ROUTES_MAX_PER_USER = config("ROUTES_MAX_PER_USER", default=25, cast=int)
+
+# Largest .gpx upload apps.routes.views.route_create will accept, in bytes.
+# 5 MB is comfortably above a full-day 1 Hz recording (a 30,000-point track
+# is roughly 3 MB of GPX) while keeping a hostile upload away from the XML
+# parser. Django's DATA_UPLOAD_MAX_MEMORY_SIZE is a separate, larger backstop
+# on the request body as a whole.
+
+ROUTE_UPLOAD_MAX_BYTES = config(
+    "ROUTE_UPLOAD_MAX_BYTES", default=5 * 1024 * 1024, cast=int
+)
 
 
 # ---------------------------------------------------------------------------

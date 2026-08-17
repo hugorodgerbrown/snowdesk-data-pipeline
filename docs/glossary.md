@@ -80,6 +80,12 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 |------|---------|------|
 | FieldObservation | A GPS-gated avalanche-signal report submitted by an account from the map page (SNOW-324); stores observation types, coordinates, and region match | `apps/observations/models.py` |
 
+## Routes
+
+| Term | Meaning | Code |
+|------|---------|------|
+| Route | A polyline a user imported from a GPX upload (SNOW-685) — `points` as `[[lon, lat, ele], …]` in GeoJSON axis order, plus denormalised `distance_m` / `ascent_m` / `point_count` / `bounds`. The uploaded file is parsed and discarded ([why](decisions/gpx-uploads-are-parsed-not-stored.md)) | `apps/routes/models.py`; ingest in `apps/routes/services/gpx.py` |
+
 ## Subscriptions and tracking
 
 | Term | Meaning | Code |
