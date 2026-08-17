@@ -206,6 +206,43 @@ class TestRouteCreateValidation:
         assert response.status_code == 400
         assert not Route.objects.for_user(user).exists()
 
+    def test_a_parse_failure_does_not_echo_the_parser_message(
+        self, client: Client
+    ) -> None:
+        """CodeQL py/stack-trace-exposure: exception detail stays in the log.
+
+        expat's message names the line and column it choked on. That is
+        parser internals, not something the uploader can act on, so the
+        response is a fixed string.
+        """
+        client.force_login(UserFactory.create())
+
+        response = client.post(
+            CREATE_URL, {"file": _upload("malformed.gpx")}, **HTMX_HEADERS
+        )
+
+        body = response.content.decode()
+        assert response.status_code == 400
+        assert "mismatched tag" not in body
+        assert "column" not in body
+
+    def test_a_rejected_entity_payload_is_not_reflected_back(
+        self, client: Client
+    ) -> None:
+        """The rejected payload's own system_id must not come back out.
+
+        defusedxml names the entity and its system_id in the exception it
+        raises — echoing that would reflect the attacker's input verbatim.
+        """
+        client.force_login(UserFactory.create())
+
+        response = client.post(CREATE_URL, {"file": _upload("xxe.gpx")}, **HTMX_HEADERS)
+
+        body = response.content.decode()
+        assert response.status_code == 400
+        assert "system_id" not in body
+        assert "/etc/passwd" not in body
+
     def test_xxe_upload_returns_400(self, client: Client) -> None:
         """A hostile payload is a 400 from the parser, not a file read."""
         user = UserFactory.create()

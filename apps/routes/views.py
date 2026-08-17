@@ -52,6 +52,14 @@ _NAME_MAX_LENGTH = 100
 # The multipart field the upload arrives in.
 _UPLOAD_FIELD = "file"
 
+# The single response body for every parse failure. Deliberately fixed: it
+# says what the user can act on without echoing any part of the parser's
+# exception back to them (CodeQL py/stack-trace-exposure).
+_GPX_REJECTED_MESSAGE = (
+    "That file could not be read as GPX. It must be a valid .gpx file "
+    "containing a track or a route."
+)
+
 
 @require_htmx
 @require_POST
@@ -119,8 +127,13 @@ def route_create(request: HttpRequest) -> HttpResponse:
             request.user, upload.read(), source_filename=upload.name or ""
         )
     except GPXParseError as exc:
+        # The parser's own message is logged, never returned. It carries
+        # internals a caller has no use for — expat's line/column detail,
+        # and for a rejected entity payload the attacker's own system_id
+        # reflected back — so the response is a fixed string and the
+        # diagnosis lives in the log.
         logger.info("Route upload rejected: user=%s %s", request.user.pk, exc)
-        return HttpResponse(f"That file could not be read as GPX: {exc}", status=400)
+        return HttpResponse(_GPX_REJECTED_MESSAGE, status=400)
     except RouteLimitReached:
         logger.info("Route create blocked: user=%s hit the cap", request.user.pk)
         return render(request, "routes/partials/_route_limit.html", {}, status=409)
