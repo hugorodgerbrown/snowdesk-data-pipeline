@@ -31,7 +31,7 @@ dependencies = [
     "django-tasks>=0.12.0,<0.13",
     "django-tasks-db>=0.12.0,<0.13",
     "apscheduler>=3.10,<4",
-    "posthog>=7.30.1,<8",
+    "posthog>=7.39.1,<8",
     "cryptography>=50.0.0,<51",
     "shapely>=2.1.2,<3",
     "rapidfuzz>=3.14.5,<4",
@@ -55,7 +55,7 @@ test = [
 ]
 type = [
     "mypy>=2.3.0,<2.4",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
-    "django-stubs>=6.0.2,<7",
+    "django-stubs>=6.1.0,<7",
     "types-requests>=2.33.0.20260408,<3",
     "types-bleach>=6.3.0.20260408,<7",
     "types-defusedxml>=0.7.0.20260504,<0.8",
@@ -70,11 +70,11 @@ lint = [
     # ruff ahead of the pre-commit pin and re-drift CI. Bump this and
     # .pre-commit-config.yaml's rev in lockstep (SNOW-512). See
     # docs/coding-standards.md §6.5.
-    "ruff==0.16.2",
+    "ruff==0.16.3",
     "djangofmt>=0.2.6,<0.3",
 ]
 sast = [
-    "semgrep>=1.171.0,<2",
+    "semgrep>=1.173.0,<2",
 ]
 e2e = [
     # Upper-bounded below 1.62: that release (bundling a newer Chromium
@@ -82,7 +82,7 @@ e2e = [
     # timing deterministically in CI (SNOW-584 dependency-update run).
     # Investigate and lift this bound in SNOW-597.
     "playwright>=1.62.0,<1.63",
-    "pytest-playwright>=0.7,<0.9",
+    "pytest-playwright>=0.9.0,<0.10",
     # Bounded automatic-retry net for the real-SW/CacheStorage timing flakes
     # that can't be made fully deterministic (SNOW-516) — e2e-only, see
     # tox.ini's [testenv:e2e] and docs/client-side-tests.md.
@@ -91,12 +91,12 @@ e2e = [
     # pytest-playwright page/context) errored with `assert not self._finalizers`
     # instead of retrying — the net never worked. 16.x requires pytest>=8.2 and
     # handles the pytest 9 lifecycle.
-    "pytest-rerunfailures>=16,<17",
+    "pytest-rerunfailures>=16.5,<17",
     {include-group = "test"},
 ]
 dev = [
-    "pre-commit>=4.6.1,<5",
-    "tox>=4.52.1,<5",
+    "pre-commit>=4.6.2,<5",
+    "tox>=4.60.0,<5",
     "tox-uv>=1.0,<2",
     "tox-gh-actions>=3.5.0,<4",
     {include-group = "test"},
