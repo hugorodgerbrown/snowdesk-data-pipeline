@@ -19,11 +19,13 @@
     "vitest": "^3.0.0"
   },
   "comments": {
-    "overrides": "Force patched versions of vulnerable transitive deps of @lhci/cli (dev-only Lighthouse CI; never shipped to a browser or run in production). The latest @lhci/cli still pins these, and `npm audit fix --force` only offers a breaking downgrade to @lhci/cli@0.1.0 \u2014 do not run it. See SNOW-440 / docs/lighthouse.md."
+    "overrides": "Force patched versions of vulnerable transitive deps of @lhci/cli (dev-only Lighthouse CI; never shipped to a browser or run in production). The latest @lhci/cli still pins these, and `npm audit fix --force` only offers a breaking downgrade to @lhci/cli@0.1.0 \u2014 do not run it. See SNOW-440 / docs/lighthouse.md.",
+    "overrides.@puppeteer/browsers": "SNOW-688: GHSA-jmr9-qjv8-65gv, extract-zip symlink path traversal (high). Unlike the three entries above, this override does NOT pin a patched version of the vulnerable package \u2014 every extract-zip release is affected, so there is nothing to pin. @puppeteer/browsers dropped the dependency entirely in 3.0.2 (it untars with tar-fs / modern-tar now), so the fix is to move that package off the 2.x line and out of the chain: @lhci/cli -> lighthouse -> puppeteer-core -> @puppeteer/browsers -> extract-zip. This is the only override here that crosses a major version, because upstream has not propagated the fix: the latest @lhci/cli (0.15.1) still pins lighthouse 12.6.1, and the advisory covers lighthouse through 13.3.0. REMOVE this override once @lhci/cli ships a lighthouse >= 13.4.0 (whose puppeteer-core 25.x already depends on @puppeteer/browsers 3.x) \u2014 re-check with: npm view @lhci/cli dependencies.lighthouse"
   },
   "overrides": {
     "tmp": "^0.2.6",
     "uuid": "^11.1.1",
-    "cookie": "^0.7.0"
+    "cookie": "^0.7.0",
+    "@puppeteer/browsers": "^3.2.1"
   }
 }
