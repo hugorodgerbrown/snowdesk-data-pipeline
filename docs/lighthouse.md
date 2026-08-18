@@ -68,6 +68,43 @@ render models, runs `collectstatic` under perf settings, then
 `lhci autorun` with the CH-4115 bulletin URL added on top of the
 config URLs. Reports upload as a 14-day GitHub Actions artifact.
 
+## Dependency advisories in the lhci tree
+
+`@lhci/cli` drags in Lighthouse, Puppeteer and a browser downloader, and
+that subtree is where nearly every npm advisory this project sees lands.
+It is dev-only — never shipped to a browser, never run in production — but
+`tox -e audit-dev` audits it anyway, on the principle that "dev-only" is a
+severity judgement an audit that never runs cannot make.
+
+The fix is always an entry in `package.json`'s `overrides` block, with its
+reason and its removal condition in the sibling `comments` object. Never
+`npm audit fix --force`: it only offers a breaking downgrade to
+`@lhci/cli@0.12.0`. Current entries: `tmp`, `uuid`, `cookie` (SNOW-440) and
+`@puppeteer/browsers` (SNOW-688).
+
+`@puppeteer/browsers` is the one worth understanding, because it breaks the
+usual shape twice. It does not pin a patched version of the vulnerable
+package — `extract-zip` (GHSA-jmr9-qjv8-65gv) has no patched release, every
+version is affected — so instead it moves `@puppeteer/browsers` onto its
+3.x line, which dropped the dependency altogether in 3.0.2. And it is the
+only override crossing a major version, because upstream has not propagated
+the fix: the latest `@lhci/cli` still pins a Lighthouse the advisory covers.
+
+That major bump sits under `puppeteer-core@22`, so it was verified rather
+than assumed: all five symbols `puppeteer-core` imports from the package
+are still exported, `lhci healthcheck` passes, and a real `lighthouse` run
+completes and produces a full report. **Remove the override** once
+`@lhci/cli` ships a Lighthouse >= 13.4.0, whose `puppeteer-core@25.x`
+already depends on `@puppeteer/browsers@3.x`:
+
+```bash
+npm view @lhci/cli dependencies.lighthouse
+```
+
+An advisory with no resolvable override is a judgement call, not an
+automatic ignore — `tox.ini`'s `audit-dev` comment block records the same
+rule for the Python side, where the `mcp`/semgrep pin has no fix either.
+
 ## When adding a new public page
 
 Check all of:
