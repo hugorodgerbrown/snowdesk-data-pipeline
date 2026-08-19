@@ -7,6 +7,10 @@ last-reviewed: 2026-08-19
 
 # Competitor list
 
+**Last automated competitor scan: 2026-08-19.** News, product-update and
+new-entrant findings from that pass are marked inline as "2026-08-19 scan
+update"; the full source list is in the PR description for that change.
+
 Apps and sites that overlap Snowdesk's job — *"tell me what the avalanche
 bulletin says for where I'm going today, and let me act on it"*. Each
 profile records what the product actually does (checked against its own
@@ -43,7 +47,12 @@ other app in this list is measured against, including ours.
 
 - **Checked:** 2026-08-19 — <https://www.slf.ch/en/services-and-products/white-risk-app/>,
   <https://www.slf.ch/en/services-and-products/white-risk-portal/>,
-  <https://www.whiterisk.ch/>.
+  <https://www.whiterisk.ch/>. **Re-scanned 2026-08-19** (routine competitor
+  scan) via web search — <https://www.slf.ch/en/news/white-risk-the-new-look-slf-app/>,
+  <https://www.bergundsteigen.com/en/artikel/reporting-avalanches-made-easy-with-the-new-white-risk-design/>
+  (direct fetch of both blocked by this session's network policy; findings
+  below are corroborated across both independent sources, not primary-verified
+  — re-verify by direct fetch next pass).
 - **Shape:** a web portal plus a companion iOS/Android app, four
   languages, organised into four modules:
   - **EXPLORE** — the avalanche knowledge base: text, images and
@@ -66,19 +75,34 @@ other app in this list is measured against, including ours.
 - **Maps:** topographic coverage for Switzerland, France and Austria with
   layers including **slope angle** and **avalanche terrain**; the free
   tier drops to OpenStreetMap.
+- **2026 update (new app design):** a redesign shipped for the 2025/26
+  season adds (a) **the Météo-France bulletin** — WhiteRisk now publishes
+  the French Alps/Pyrenees/Corsica avalanche bulletin alongside the Swiss
+  one, not just French topo maps as before; (b) a **crowd-sourced avalanche
+  observation form** — any user can mark an avalanche's starting point on
+  the map and log its size and type from the field; and (c) clearer **crux
+  display** on planned tours (automatically-flagged critical passages, with
+  an improved interpretation aid) plus an **elevation profile and estimated
+  duration for alternative routes**. WhiteRisk was also named Best Swiss
+  App 2025.
 - **Business model:** free tier (EXPLORE, one LEARN lesson, TOUR on OSM
   maps); **Standard CHF 29/yr** for full EXPLORE + LEARN + TOUR including
   all topo maps and layers; **Pro CHF 58/yr** adding PRO.
 - **Where it is stronger:** everywhere it chooses to compete. Authoritative
   by construction, terrain-aware route analysis, station data, teaching
   material, and a decade of institutional trust.
-- **Where the gap is:** it is **Switzerland-first**. The bulletin at its
-  centre is the SLF one; France, Austria and Italy get map coverage but
-  not the same first-class treatment, and there is no single normalised
-  view across providers. It is also a *platform* with modules, licences
-  and an account — the opposite of a URL you open on a phone in a lift
-  queue. Our answer to WhiteRisk is not "more features" but
-  **cross-provider normalisation and zero friction**.
+- **Where the gap is:** it is still **Switzerland-first**, and the gap
+  narrowed this year — the 2026 redesign added the Météo-France bulletin
+  outright (see above), so WhiteRisk is no longer single-provider. Austria
+  and Italy still get map coverage but not a first-class ingested bulletin,
+  and there is still no single normalised render across CH, FR, AT and IT
+  side by side — WhiteRisk shows two bulletins in one app, not one model
+  across three-plus providers the way our render model does. It is also
+  still a *platform* with modules, licences and an account — the opposite
+  of a URL you open on a phone in a lift queue. **Watch this**: adding
+  ALBINA (AT/IT) next would close the gap our whole positioning rests on.
+  Our answer to WhiteRisk is not "more features" but **cross-provider
+  normalisation and zero friction**.
 - **Note:** WhiteRisk is also our explicit design model — see "Why we're
   replicating WhiteRisk" in [`design-system.md`](design-system.md).
   Treating it as both benchmark and competitor is deliberate: we replicate
@@ -127,7 +151,9 @@ other app in this list is measured against, including ours.
   web), born in Chamonix. Hiking, ski touring, mountaineering, climbing,
   trail running, snowshoeing.
 - **Checked:** 2026-08-19 — <https://get.whympr.com/en>, App Store listing
-  (v2.38.1, 4.4★).
+  (v2.38.1, 4.4★). **Re-scanned 2026-08-19** (routine competitor scan) via
+  web search — <https://get.whympr.com/en/blog-articles/trail-difficulty-ratings-for-every-hiking-path-all-on-one-map>
+  (direct fetch blocked by this session's network policy).
 - **Overlap with Snowdesk:** the avalanche bulletin is *one tab* of a
   planning app. Geolocated bulletins for FR, CH, IT, AT, AD, ES, US, CA
   and Scotland — broader country coverage than our three providers, but
@@ -139,7 +165,11 @@ other app in this list is measured against, including ours.
     with paid "Pro Topo" guidebook routes on top.
   - **Terrain layers** — slope-gradient shading across European regions,
     plus nature-conservation zones and livestock-guardian-dog (*patou*)
-    locations.
+    locations. (June 2026) two new **hiking trail-difficulty layers**
+    ("Hiking – trails"), colour-coding every mapped trail worldwide by
+    difficulty, with an explicit caveat that a rating can shift a full
+    grade with season or weather — the same "don't let the layer replace
+    judgement" framing our own disclaimer takes.
   - **Maps** — 11 national topo maps (IGN France, SwissTopo, Fraternali),
     3D/LiDAR terrain, 30 cm winter satellite imagery of the Mont Blanc
     massif, and (v2.38.1, Aug 2026) offline area downloads with a chosen
@@ -170,6 +200,11 @@ other app in this list is measured against, including ours.
 - **Checked:** 2026-08-19 — search results and a third-party review;
   opensnow.com blocks automated fetches, so pricing below is second-hand
   and worth re-checking before it is quoted anywhere externally.
+  **Re-scanned 2026-08-19** (routine competitor scan): OpenSnow published
+  a 2026/27 El Niño winter preview forecast (per POWDER and Adventure
+  Sports Network coverage) — a named-meteorologist seasonal outlook piece,
+  consistent with the Daily Snow editorial thesis already recorded below;
+  no funding, team or acquisition news found this pass.
 - **Overlap with Snowdesk:** adjacent rather than direct. Its avalanche
   forecasts cover the US and Canada only, so it does not compete in the
   Alps today — but its *shape* is the most commercially proven in this
@@ -219,8 +254,9 @@ Ordered by how much a profile would probably change our thinking.
 
 | Product | Who | Why it might matter |
 |---|---|---|
-| **Skitourenguru** | Günter Schmudlach (CH) | The most directly threatening idea in the category: rates individual ski tours by avalanche risk **daily**, by combining the bulletin with terrain analysis over a route database. This is [Feature inspiration](#feature-inspiration) item 2 as a shipped product. Profile this one first. |
-| **avalanche.report** | EUREGIO / ALBINA | The provider's own web front end — one of our three upstreams. Sets the expectation for how an ALBINA bulletin "should" look, and its region map is the thing our AT/IT users already know. |
+| **AvalancheClarity** | Simon Perry (guidebook author, Tignes) — new find, 2026-08-19 scan | **New entrant, profile this one first, ahead of Skitourenguru.** A free app + web widget that AI-translates and plain-language-explains the official Météo-France bulletin, works offline, and — per PlanetSKI and SnowBrains coverage — sends a push notification the moment a new bulletin or a revision is published for a subscribed region. That is [Feature inspiration](#feature-inspiration) item 1 (danger-change/new-bulletin alerts), the idea we flagged as our strongest available differentiator, already shipped by someone else. On 30 March 2026 it also launched an embeddable widget (one line of code, accepts GPS coordinates, region codes or a multi-point touring route) that any resort, guide or chalet site can drop in — a distribution channel we don't have an answer to. No account required; free. Direct fetch of avalancheclarity.com and the SnowBrains writeup was blocked by this session's network policy, so this entry is search-corroborated across independent sources (PlanetSKI, SnowBrains, a snowheads.com forum thread, a stylealtitude.com writeup, the Google Play listing) but not yet primary-verified — verify by direct fetch before treating any figure here as exact. |
+| **Skitourenguru & Yéti** | Günter Schmudlach (CH) / Petzl Foundation-backed (FR) | The most directly threatening idea in the category: both rate individual ski tours by avalanche risk **daily**, by combining the official bulletin with terrain analysis over a route database. This is [Feature inspiration](#feature-inspiration) item 2 as a shipped product — now shipped twice. **2026-08-19 scan update:** Petzl Foundation funding has made both **free to all users** (previously gated); the combined route database is now ~13,000 tours across the Alps (~4,600 in the French Alps alone), with ~500 more planned for the Pyrenees during 2026, and a Petzl-produced tutorial video series is rolling out explaining how bulletin + terrain data combine. Yéti is the newer, France-only sibling product (Météo-France bulletin + DTM terrain analysis) — worth its own row once profiled, currently bundled here since the two are developed and funded together. Profile Skitourenguru first as originally planned, but note Yéti alongside it. |
+| **avalanche.report** | EUREGIO / ALBINA | The provider's own web front end — one of our three upstreams. Sets the expectation for how an ALBINA bulletin "should" look, and its region map is the thing our AT/IT users already know. 2026-08-19 scan found no material product changes since last review — only a backend admin-GUI fix, not user-facing. |
 | **Regobs / Varsom** | NVE (NO) | State-run community observation platform at national scale. The reference design for `FieldObservation` if that surface ever grows past a stream. |
 | **LAWIS** | AT | Open database of snow profiles, avalanche events and observations across the Alps. Potentially a *source* as much as a competitor. |
 | **Bergfex** | AT | The default DACH tour-and-weather portal, with enormous reach and avalanche info attached. The incumbent our Austrian users likely already have installed. |
@@ -257,6 +293,14 @@ different promises, and the second is the one that survives a quiet week.
 OpenSnow's lesson is to let the user set the threshold rather than
 guessing it. See [`push-notifications.md`](push-notifications.md) and
 [`accounts.md`](accounts.md).
+**2026-08-19 scan update — this has now shipped, from a new entrant:**
+AvalancheClarity (see [Not yet profiled](#not-yet-profiled)) already sends
+a push notification the instant a new bulletin or revision publishes for a
+subscribed region, on top of a free translate-and-explain layer over the
+Météo-France bulletin. This was our best-argued idle-infrastructure
+advantage; it no longer differentiates us from every competitor, only from
+the three profiled above. Worth re-scoping soon rather than treating this
+as a someday item.
 
 **2. Route ↔ bulletin coupling** *(WhiteRisk's crux analysis; Whympr, inverted)*
 WhiteRisk already analyses a drawn route and flags its critical cruxes
@@ -273,6 +317,14 @@ bulletin-first product can write, in a geography where nobody writes it
 yet. Note the corollary: don't try to build Whympr's 100,000-route
 library, and do read WhiteRisk's crux presentation carefully before
 designing ours.
+**2026-08-19 scan update:** the France-only piece of this idea is now live
+twice over — Yéti (Petzl Foundation-backed) does route-vs-bulletin risk
+colour-coding using the Météo-France bulletin today, and WhiteRisk's 2026
+redesign both ingested the Météo-France bulletin *and* sharpened its own
+crux display with route elevation profiles. The cross-provider angle (CH +
+FR + AT + IT in one render model) is still unclaimed by anyone we've
+found, but the France-only version of this feature is no longer a gap —
+it's a contested feature with two live implementations.
 
 **3. A written daily read** *(OpenSnow's Daily Snow)*
 OpenSnow's spine is a named meteorologist writing a regional narrative
