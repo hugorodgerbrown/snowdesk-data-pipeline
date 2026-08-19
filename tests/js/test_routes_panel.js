@@ -34,9 +34,18 @@
  *     have no saved routes yet." would be a wrong statement about the user's
  *     own data.
  *
- * There is no overlay-switch assertion anywhere in this file, unlike
- * test_favourites_panel.js: the panel has no "Display on the map" switch
- * because there is no routes layer until SNOW-687.
+ *   - the switch reflects window.pwaRoutesOverlay.isEnabled() on open,
+ *     rather than a flag of this module's own that could drift from it.
+ *     isEnabled(), NOT isVisible(): the switch states what the user asked
+ *     for, and the roundel's ring states whether it reached the map. Painting
+ *     the switch from paint would show the user's own setting flipping itself
+ *     off whenever an enable found nothing to draw (SNOW-687, following the
+ *     SNOW-658 review).
+ *
+ * SNOW-686 shipped this panel before its map layer existed, so this file
+ * asserted the INVERSE — that no switch was rendered at all, a switch wired
+ * to nothing being a worse lie than an absent one. SNOW-687 added the layer
+ * and the bridge; the assertions below are that inversion.
  *
  * `IS_ELIGIBLE` is captured once when the IIFE runs, so the anonymous branch
  * needs its own file (test_routes_panel_anonymous.js) — the same
@@ -66,6 +75,8 @@ document.body.innerHTML = `
     <div>
       <div data-routes-rows><p>Loading your routes…</p></div>
       <button type="button" data-panel-add>Add a route</button>
+      <label for="map-routes-overlay-toggle">Display on the map</label>
+      <input id="map-routes-overlay-toggle" type="checkbox" role="switch">
     </div>
   </template>
   <form id="route-upload-form" hidden>
@@ -85,6 +96,11 @@ await import('../../static/js/routes.js');
 const btn = document.getElementById('route-add-btn');
 const sheet = document.getElementById('route-sheet');
 const uploadInput = document.getElementById('route-upload-input');
+
+/** The overlay switch inside the currently-rendered panel body. */
+function overlaySwitch() {
+  return sheet.querySelector('#map-routes-overlay-toggle');
+}
 
 /** The panel's add CTA, inside the currently-rendered body. */
 function addCta() {
@@ -124,6 +140,16 @@ beforeEach(() => {
   globalThis.htmx.ajax.mockClear();
   globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200 }));
   window.pwaTelemetry = { emit: vi.fn() };
+  // The map.js bridge, stubbed: routes.js reaches the overlay only through
+  // this frozen shape, so the panel's whole contract with the layer is the
+  // four methods below. isEnabled defaults false to match the overlay's own
+  // default (opt-in, unlike favourites).
+  window.pwaRoutesOverlay = {
+    show: vi.fn(),
+    hide: vi.fn(),
+    isEnabled: vi.fn(() => false),
+    isVisible: vi.fn(() => false),
+  };
   // Online by default; the offline tests override it.
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
 });
@@ -131,6 +157,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   delete window.pwaTelemetry;
+  delete window.pwaRoutesOverlay;
   sheet.hidden = true;
   sheet.replaceChildren();
 });
@@ -162,10 +189,80 @@ describe('opening and closing the panel', () => {
     );
   });
 
-  it('renders no overlay switch — there is no routes layer yet (SNOW-687)', () => {
+});
+
+describe('the overlay switch', () => {
+  it('reflects the overlay preference on open, not a flag of its own', () => {
+    window.pwaRoutesOverlay.isEnabled = vi.fn(() => true);
+    btn.click();
+    expect(overlaySwitch().checked).toBe(true);
+
+    // Re-opened after the preference moved elsewhere — the panel re-reads
+    // rather than remembering what it drew last time.
+    btn.click();
+    window.pwaRoutesOverlay.isEnabled = vi.fn(() => false);
+    btn.click();
+    expect(overlaySwitch().checked).toBe(false);
+  });
+
+  it('reads isEnabled(), never isVisible()', () => {
+    // The state where the two disagree: the user enabled the overlay and
+    // nothing was drawn (offline, nothing cached). The switch must keep
+    // showing their choice — the roundel's ring is what reports that it
+    // never reached the map. A switch painted from isVisible() would appear
+    // to silently undo the setting the user just made.
+    window.pwaRoutesOverlay.isEnabled = vi.fn(() => true);
+    window.pwaRoutesOverlay.isVisible = vi.fn(() => false);
+
     btn.click();
 
-    expect(sheet.querySelector('input[role="switch"]')).toBeNull();
+    expect(overlaySwitch().checked).toBe(true);
+    expect(window.pwaRoutesOverlay.isVisible).not.toHaveBeenCalled();
+  });
+
+  it('drives the bridge in both directions', () => {
+    btn.click();
+    const toggle = overlaySwitch();
+
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(window.pwaRoutesOverlay.show).toHaveBeenCalledTimes(1);
+
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(window.pwaRoutesOverlay.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('is delegated on the sheet, so it survives a re-clone', () => {
+    // The body is replaced wholesale on every open, so the element carrying
+    // this switch is thrown away each time. A listener bound to the input
+    // itself would work exactly once.
+    btn.click();
+    btn.click();
+    btn.click();
+
+    const toggle = overlaySwitch();
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(window.pwaRoutesOverlay.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('survives a missing bridge rather than throwing', () => {
+    // map.js publishes the bridge at parse time, but routes.js loads from
+    // its own surface partial and does not depend on the map bundle being
+    // present at all (the panel opens on pages the map does not). An absent
+    // bridge must leave the panel usable, not break the open.
+    delete window.pwaRoutesOverlay;
+
+    expect(() => btn.click()).not.toThrow();
+    expect(overlaySwitch().checked).toBe(false);
+
+    const toggle = overlaySwitch();
+    toggle.checked = true;
+    expect(() =>
+      toggle.dispatchEvent(new Event('change', { bubbles: true })),
+    ).not.toThrow();
   });
 });
 
