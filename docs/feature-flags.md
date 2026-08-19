@@ -41,8 +41,8 @@ If you're not sure: use a **Flag**. The other two are conveniences.
   (`edit_map`) over many sibling flags (`edit_map_resorts`,
   `edit_map_regions`) until you actually need different sub-scopes.
 * No `SNOW-XX` in the name. Reference the ticket in the flag's `note`
-  field (visible in the admin) and in the seeding migration's
-  docstring; the flag name lives forever and tickets get squash-merged
+  field in the manifest (it is copied to the DB row and is visible in
+  the admin); the flag name lives forever and tickets get squash-merged
   out of git history.
 
 ---
@@ -52,6 +52,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/save/`, `/api/edit/resorts/create/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
+| `routes` | `superusers=True` | The GPX routes panel and its upload/list/rename/delete endpoints under `/routes/`, and the map route overlay (`routes.geojson` + the line layers). | SNOW-686, SNOW-687. |
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 | `weather_layer` | `superusers=True` | The map's "Weather" overlay (condition symbols + temperature at forecast points), `/api/forecast-weather.geojson`, the `days` property on `favourites.geojson`, and the matching `/help/` section. | SNOW-573. |
 
@@ -71,6 +72,14 @@ Keep this table up to date as new flags land. The **source of truth for
 which flags exist** is `apps/core/fixtures/waffle_flags.json` (SNOW-502) — the
 `sync_waffle_flags` management command reconciles the DB to that manifest
 on every deploy; this table is the human-readable summary of the same set.
+
+**Adding a flag means adding a manifest entry — nothing else.** Never seed
+a `waffle.Flag` row from a data migration. `sync_waffle_flags` runs on
+every deploy and deletes any DB row the manifest does not name, so a
+migration-seeded flag is created and then destroyed in the same build, and
+the feature it gates goes dark with `WAFFLE_FLAG_DEFAULT = False`. SNOW-685
+did exactly this and the routes feature was invisible on staging until the
+manifest entry landed.
 
 ---
 
