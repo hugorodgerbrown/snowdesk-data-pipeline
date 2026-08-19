@@ -1548,10 +1548,16 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
     Args:
         request: The current HTTP request.
 
+    SNOW-687 adds ``routes_geojson_url`` — the map layer's own data
+    endpoint, rendered onto ``#map`` as ``data-routes-url`` for
+    static/js/map.js to fetch. A ``reverse()``, not a query, so the
+    homepage's query count is unmoved.
+
     Returns:
         Dict with ``routes_visible``, ``routes_eligible``,
         ``route_create_url``, ``route_list_url``,
-        ``route_rename_url_template`` and ``routes_signin_url``.
+        ``route_rename_url_template``, ``routes_geojson_url`` and
+        ``routes_signin_url``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1569,6 +1575,10 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         "route_rename_url_template": reverse(
             "routes:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
+        # SNOW-687: the map layer's data. Emitted only for an eligible user
+        # (see the template) — the endpoint 403s for anyone else, and there
+        # is nothing to draw.
+        "routes_geojson_url": reverse("routes:geojson"),
         "routes_signin_url": reverse("accounts:sign_in"),
     }
 

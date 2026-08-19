@@ -117,14 +117,19 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         # created/deleted pair as favourites above, for the same reason.
         # Emitted by static/js/routes.js: `created` on a successful upload
         # to routes:create, `deleted` when a panel row's Remove form comes
-        # back 2xx. No overlay_toggled sibling yet — the routes map layer
-        # and its switch arrive in SNOW-687.
+        # back 2xx.
+        #
+        # SNOW-687 completes the set with `overlay_toggled`, the favourites
+        # sibling this list noted was missing — emitted by
+        # static/js/map.js's window.pwaRoutesOverlay on each edge, carrying
+        # only `visible`.
         #
         # `created` carries no file name, size or geometry: the event says
         # that an upload succeeded, and the route itself is the user's own
         # private data (a GPX track is a record of where somebody went).
         "map.route.created",
         "map.route.deleted",
+        "map.route.overlay_toggled",
     }
 )
 

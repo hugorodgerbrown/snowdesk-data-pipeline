@@ -110,6 +110,13 @@ const OVERLAY_STORAGE_KEY = {
   // SNOW-573: flag-gated only — the toggle exists in the DOM (and this key
   // is only ever read/written) when data-weather-layer-eligible="true".
   weather: 'snowdesk.map.overlay.weather',
+  // SNOW-687: eligible-only, like favourites — the switch lives in the
+  // routes panel and this key is only ever read/written when
+  // data-routes-eligible="true" (the ``routes`` waffle flag AND an
+  // authenticated user). Defaults OFF, unlike favourites: a GPX track is
+  // visually far heavier than a pin, so the overlay is opt-in the way
+  // community_reports and weather are.
+  routes: 'snowdesk.map.overlay.routes',
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
@@ -232,6 +239,20 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // a day nobody asked for, so the ribbon says which day is showing —
   // including when the honest answer is "none yet".
   'map-date-none': 'No date selected',
+  // SNOW-687: the two figures in the route detail popup (map.js's
+  // activateRoute). Two strings rather than one templated line, because
+  // the ascent is OMITTED ENTIRELY when Route.ascent_m is null — a GPX
+  // with no <ele> means "unknown", not "flat", and rendering the second
+  // for the first is a safety-relevant lie (see the model's own
+  // docstring). One combined string would have no way to leave half of
+  // itself out.
+  'route-distance': '%(km)s km',
+  'route-ascent': '%(m)s m ascent',
+  // The same last-resort label routes/partials/_route_row_map.html falls
+  // back to, so one route reads identically in the panel and in the popup.
+  // The popup's payload carries no ``source_filename`` (the row's middle
+  // fallback), so a nameless route lands straight here.
+  'route-untitled': 'Untitled route',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source
