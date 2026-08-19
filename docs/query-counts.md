@@ -55,6 +55,14 @@ missing from the CI database makes the measured page look two queries
 cheaper than the deployed page actually is, and the baseline silently
 becomes a number no environment produces.
 
-This is not hypothetical — SNOW-690 hit it. Keep the CI database's flag
-state reconciled to the manifest, and regenerate baselines against a
-database built the same way.
+This is not hypothetical — SNOW-690 hit it twice, in both directions.
+`routes` was seeded by a migration and absent from the manifest, so it
+existed in CI and was deleted on every deploy; `weather_layer` is the
+mirror image — manifest-only, with no seeding migration, so it existed on
+every deployed environment and never in CI. The committed `home` baseline
+of 9 was measuring a database that had the first flag and not the second,
+which is a combination no environment has ever run. Adding the sync step
+moved it to 11: not a regression, just the first honest measurement.
+
+Keep the CI database's flag state reconciled to the manifest, and
+regenerate baselines against a database built the same way.
