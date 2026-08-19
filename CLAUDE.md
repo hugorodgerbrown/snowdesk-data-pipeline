@@ -574,6 +574,7 @@ Read these when working in the relevant area:
 | Site structure (routes, AI-generated summary fields) | [`docs/site-structure.md`](docs/site-structure.md) |
 | How to read an avalanche bulletin (domain primer) | [`docs/bulletin-guide.md`](docs/bulletin-guide.md) |
 | User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
+| Competitor list (WhiteRisk, SnowSafe, Whympr, OpenSnow) and the feature ideas they suggest | [`docs/competitors.md`](docs/competitors.md) |
 | Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
 | Login/logout manual test checklist | [`docs/auth-testing-checklist.md`](docs/auth-testing-checklist.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
