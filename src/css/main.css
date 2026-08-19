@@ -204,6 +204,27 @@
   --color-basemap-ign-plan:            #9333ea;  /* purple-600 */
   --color-basemap-basemap-at:          #0d9488;  /* teal-600   */
 
+  /* Saved-route line (SNOW-687) — the MapLibre line layer that draws a
+     user's imported GPX track, plus the darker casing painted underneath
+     it so the line stays readable over a pale satellite basemap and over
+     the danger choropleth alike.
+
+     The hue is chosen by elimination, not taste. The EAWS 1–5 ramp above
+     (#ccff66 / #ffff00 / #ff9900 / #ff0000) is mandated by the standard
+     and is not ours to reuse for anything else; the favourite star is
+     Snowdesk blue (#1a73e8) and the community-report flag is amber
+     (#e8711a). Magenta is the one hue family none of those occupy.
+
+     MapLibre paint properties cannot reference a CSS custom property at
+     all, so static/js/map.js's installRoutesLayer carries these two hex
+     literals directly and points back here — the same by-hand-kept-in-sync
+     idiom installFavouritesLayer already uses for its star colour, and the
+     case CLAUDE.md's design-system rule exempts from the template-side hex
+     ban. Declared here anyway so the palette has one home and a reviewer
+     can see the whole set side by side. */
+  --color-route-line:        #c026d3;   /* fuchsia-600                        */
+  --color-route-line-casing: #1a1916;   /* same ink as --color-text-1         */
+
   /* Misc interactive */
   --color-card-hover:     #eeeae2;   /* subtle card footer hover            */
   --color-ring-selected:  #3b82f6;   /* calendar selected-date ring (blue-500) */
