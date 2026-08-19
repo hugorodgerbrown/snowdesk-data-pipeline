@@ -70,7 +70,7 @@ lint = [
     # ruff ahead of the pre-commit pin and re-drift CI. Bump this and
     # .pre-commit-config.yaml's rev in lockstep (SNOW-512). See
     # docs/coding-standards.md §6.5.
-    "ruff==0.16.2",
+    "ruff==0.16.3",
     "djangofmt>=0.2.6,<0.3",
 ]
 sast = [
@@ -82,7 +82,7 @@ e2e = [
     # timing deterministically in CI (SNOW-584 dependency-update run).
     # Investigate and lift this bound in SNOW-597.
     "playwright>=1.62.0,<1.63",
-    "pytest-playwright>=0.7,<0.9",
+    "pytest-playwright>=0.7,<0.10",
     # Bounded automatic-retry net for the real-SW/CacheStorage timing flakes
     # that can't be made fully deterministic (SNOW-516) — e2e-only, see
     # tox.ini's [testenv:e2e] and docs/client-side-tests.md.
