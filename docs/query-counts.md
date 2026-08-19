@@ -37,3 +37,32 @@ the new baseline row.
 When a new feature touches more of the DB, or adds a new prefetch: run
 `--commit` and include the `perf/query_counts.txt` delta in the same
 PR so reviewers can sanity-check the new number.
+
+## The measured database must match a deployed one
+
+CI builds the database the check runs against in
+[`.github/workflows/lighthouse.yml`](../.github/workflows/lighthouse.yml):
+`migrate`, then `sync_waffle_flags --commit`, then `loaddata` +
+`seed_test_data`. That middle step mirrors
+[`bin/build.sh`](../bin/build.sh) and is load-bearing, not decorative.
+
+`apps/core/fixtures/waffle_flags.json` is the source of truth for which
+flags exist, and waffle charges very different amounts depending on
+whether a flag has a DB row: **three cold queries for a flag that
+exists** (the `waffle_flag` row plus the `users` and `groups` m2m
+lookups) against **one** for a name it never finds. So a manifest flag
+missing from the CI database makes the measured page look two queries
+cheaper than the deployed page actually is, and the baseline silently
+becomes a number no environment produces.
+
+This is not hypothetical — SNOW-690 hit it twice, in both directions.
+`routes` was seeded by a migration and absent from the manifest, so it
+existed in CI and was deleted on every deploy; `weather_layer` is the
+mirror image — manifest-only, with no seeding migration, so it existed on
+every deployed environment and never in CI. The committed `home` baseline
+of 9 was measuring a database that had the first flag and not the second,
+which is a combination no environment has ever run. Adding the sync step
+moved it to 11: not a regression, just the first honest measurement.
+
+Keep the CI database's flag state reconciled to the manifest, and
+regenerate baselines against a database built the same way.
