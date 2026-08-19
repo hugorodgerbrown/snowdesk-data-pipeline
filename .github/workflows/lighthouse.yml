@@ -109,6 +109,15 @@ jobs:
       - name: Run migrations
         run: uv run python manage.py migrate --noinput
 
+      # Mirrors bin/build.sh: waffle_flags.json is the source of truth for
+      # which flags exist, and every deploy reconciles the DB to it. Without
+      # this step CI measures a database no deployed environment resembles —
+      # a manifest flag is absent, so waffle pays one miss for it instead of
+      # the three cold queries a real flag row costs, and the query-count
+      # baseline drifts from the page's true cost (SNOW-690).
+      - name: Sync waffle flags to the manifest
+        run: uv run python manage.py sync_waffle_flags --commit
+
       - name: Seed the test dataset (factories)
         run: |
           uv run python manage.py loaddata eaws_CH resorts
