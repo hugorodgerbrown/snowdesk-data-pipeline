@@ -10,6 +10,12 @@ URL structure:
   routes/partials/<uuid>/rename/     POST — rename a route
   routes/partials/<uuid>/delete/     POST — delete a route
   routes/partials/list/              GET  — owner's routes list (SNOW-686)
+  routes/routes.geojson              GET  — owner's routes as GeoJSON (SNOW-687)
+
+``routes.geojson`` sits OUTSIDE the ``partials/`` prefix on purpose: that
+prefix marks the HTMX fragment endpoints (``@require_htmx``), and this one
+is a plain-JSON layer consumed by a ``fetch()`` from static/js/map.js.
+Mirrors ``favourites/favourites.geojson``.
 """
 
 from django.urls import path
@@ -38,5 +44,10 @@ urlpatterns = [
         "partials/list/",
         views.route_list,
         name="list",
+    ),
+    path(
+        "routes.geojson",
+        views.routes_geojson,
+        name="geojson",
     ),
 ]

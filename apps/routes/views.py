@@ -1,5 +1,5 @@
 """
-apps/routes/views.py — HTMX endpoints for the routes application.
+apps/routes/views.py — HTMX endpoints + GeoJSON layer for the routes application.
 
 Four HTMX-only fragment views backing the GPX upload half of SNOW-684:
 
@@ -13,7 +13,13 @@ Four HTMX-only fragment views backing the GPX upload half of SNOW-684:
 - ``route_list`` (GET) — SNOW-686: the requesting user's own routes, for
   the map sheet's routes panel.
 
-All three are authentication-gated (403 for anonymous users) and
+plus one plain-JSON endpoint:
+
+- ``routes_geojson`` (GET) — SNOW-687: a ``LineString`` FeatureCollection of
+  the requesting user's own routes, for the map's routes layer. Not
+  ``@require_htmx`` — consumed by a JS ``fetch()`` call, not an HTMX swap.
+
+All of them are authentication-gated (403 for anonymous users) and
 owner-scoped via ``Route.objects.for_user()`` — another user's uuid returns
 404, never 403, so a probing request can't distinguish "not yours" from
 "doesn't exist" (no existence oracle). This mirrors
@@ -23,24 +29,25 @@ whole shape.
 ``route_create`` additionally applies django-ratelimit (10/m, keyed on
 ``user`` since these endpoints are auth-only) and returns 429 when the
 limit is exceeded.
-
-The MapLibre layer that draws a stored route (SNOW-687) is a separate
-ticket; the panel these endpoints back landed in SNOW-686, which is why
-``route_list`` has a ``?variant=map`` row and no overlay switch yet.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.utils import timezone
+from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
+from apps.core.freshness import apply_freshness_headers
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route
 from apps.routes.services.gpx import GPXParseError
@@ -235,8 +242,10 @@ def route_list(request: HttpRequest) -> HttpResponse:
     No freshness headers and no offline-cache sidecar, both of which
     ``favourite_list`` carries. A route has no safety-critical constituent
     to go stale (it is the user's own geometry, not a danger rating), and
-    caching routes for offline reads is the map layer's concern in
-    SNOW-687 — the panel says so instead, via its own failed-load line.
+    caching routes for offline reads belongs to the map layer — SNOW-687's
+    ``routes_geojson`` below, write-through cached by
+    static/js/map_overlay_offline_cache.js. The panel itself still says so
+    via its own failed-load line.
 
     Errors:
         400 — non-HTMX request.
@@ -260,3 +269,96 @@ def route_list(request: HttpRequest) -> HttpResponse:
         _LIST_TEMPLATES.get(request.GET.get("variant", ""), _LIST_TEMPLATE_DEFAULT),
         {"routes": routes},
     )
+
+
+# ---------------------------------------------------------------------------
+# routes_geojson (SNOW-687) — the map layer's data
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+# Per-user data, so ``private`` and ``no-store``: this payload must never be
+# held by an intermediate cache and handed to a different visitor. Mirrors
+# ``favourites_geojson``'s header and ``community_reports_geojson``'s
+# decorator.
+@cache_control(private=True, no_store=True)
+def routes_geojson(request: HttpRequest) -> JsonResponse:
+    """Return a FeatureCollection of the requesting user's own routes.
+
+    Backs the map's routes line layer (SNOW-687). One ``LineString``
+    Feature per route, whose ``coordinates`` are ``Route.points``
+    **verbatim** — the model already stores ``[lon, lat, ele]`` in GeoJSON
+    axis order (RFC 7946), already simplified at ingest, so there is no
+    per-render transform and no chance of an axis swap creeping in between
+    the two representations.
+
+    Properties per feature: ``uuid``, ``name``, ``distance_m``,
+    ``ascent_m`` and ``bounds``. ``ascent_m`` is passed through **as
+    stored**, including ``None`` — ``Route``'s own docstring is explicit
+    that null means "the source file carried no elevation data", not
+    "flat", and the client omits the ascent line entirely rather than
+    rendering a zero for an unknown. ``bounds`` rides on the feature so a
+    tap can fit the viewport to the route from the payload the map already
+    holds, offline included.
+
+    Not ``@require_htmx`` — consumed by a JS ``fetch()`` call, not an HTMX
+    swap. Owner-scoped via ``Route.objects.for_user()``, in **one** query
+    however many routes the user has.
+
+    Freshness headers follow ``apps.public.api.community_reports_geojson``
+    rather than ``favourites_geojson`` (which carries none):
+    ``generated_at`` is the newest route's ``updated_at``, falling back to
+    "now" for a user with no routes at all, and ``unsafe_after`` is
+    ``None`` — a user's own uploaded track is not safety-critical data, so
+    the client's freshness state saturates at "stale" and never escalates
+    to "unsafe". The default 24h ``max_age`` applies.
+
+    Args:
+        request: The incoming GET request.
+
+    Returns:
+        A JsonResponse with a FeatureCollection payload, or a 403 error.
+
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    routes = list(Route.objects.for_user(request.user))
+
+    newest: datetime | None = None
+    features: list[dict[str, Any]] = []
+    for route in routes:
+        if newest is None or route.updated_at > newest:
+            newest = route.updated_at
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    # Stored in GeoJSON axis order already — see the note
+                    # above and Route.points' own help_text.
+                    "type": "LineString",
+                    "coordinates": route.points,
+                },
+                "properties": {
+                    "uuid": str(route.uuid),
+                    "name": route.name,
+                    "distance_m": route.distance_m,
+                    # None passes straight through: "unknown", not zero.
+                    "ascent_m": route.ascent_m,
+                    "bounds": route.bounds,
+                },
+            }
+        )
+
+    response = JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+    )
+    apply_freshness_headers(
+        response,
+        generated_at=newest or timezone.now(),
+        unsafe_after=None,
+    )
+    return response

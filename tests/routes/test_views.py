@@ -17,6 +17,14 @@ Covers:
                  anonymous → 403; non-HTMX → 400; POST → 405; both row
                  variants render, and an unknown variant falls back to the
                  default rather than reaching a template path.
+  routes_geojson — SNOW-687: anonymous → 403 JSON; served without an
+                 HX-Request header (a fetch(), not a swap); private/no-store;
+                 LineString geometry carrying ``points`` verbatim in
+                 [lon, lat, ele] order; every property the popup and the
+                 fit-to-bounds read; a null ``ascent_m`` surviving as null
+                 (and a zero staying a zero); owner scoping; freshness
+                 headers WITHOUT X-Data-Unsafe-After; and a query count that
+                 does not grow with the number of routes.
 
 Scoped to the Django test client throughout — per CLAUDE.md's layer rules
 there is nothing browser-shaped in this ticket, and a 404 needs no browser.
@@ -30,8 +38,11 @@ from unittest.mock import patch
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 
+from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route
 from tests.factories import RouteFactory, UserFactory
@@ -67,6 +78,10 @@ LIST_URL = "/routes/partials/list/"
 
 # The map sheet's variant, as apps.public.views._routes_context builds it.
 MAP_LIST_URL = f"{LIST_URL}?variant={ROUTE_LIST_MAP_VARIANT}"
+
+# SNOW-687: the map layer's data endpoint. Outside the ``partials/`` prefix
+# on purpose — it is a plain-JSON fetch target, not an HTMX fragment.
+GEOJSON_URL = "/routes/routes.geojson"
 
 
 # ---------------------------------------------------------------------------
@@ -681,3 +696,204 @@ class TestRouteListFigures:
         response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
 
         assert "Untitled route" in response.content.decode()
+
+
+# ---------------------------------------------------------------------------
+# routes_geojson — GET /routes/routes.geojson (SNOW-687)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonGates:
+    """Auth gate and cache directives."""
+
+    def test_anonymous_gets_403_json(self, client: Client) -> None:
+        """An anonymous request is refused in the shape the JS client parses."""
+        response = client.get(GEOJSON_URL)
+
+        assert response.status_code == 403
+        assert response.json() == {"error": "authentication_required"}
+
+    def test_response_is_private_and_no_store(self, client: Client) -> None:
+        """Per-user data must never be held by an intermediate cache."""
+        client.force_login(UserFactory.create())
+
+        response = client.get(GEOJSON_URL)
+
+        cache_control = response["Cache-Control"]
+        assert "private" in cache_control
+        assert "no-store" in cache_control
+
+    def test_not_htmx_gated(self, client: Client) -> None:
+        """A plain fetch (no HX-Request header) is served, unlike the partials."""
+        client.force_login(UserFactory.create())
+
+        response = client.get(GEOJSON_URL)
+
+        assert response.status_code == 200
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonShape:
+    """The FeatureCollection the MapLibre source consumes."""
+
+    def test_empty_collection_for_a_user_with_no_routes(self, client: Client) -> None:
+        """A valid, empty FeatureCollection — never an error, never a null."""
+        client.force_login(UserFactory.create())
+
+        payload = client.get(GEOJSON_URL).json()
+
+        assert payload == {"type": "FeatureCollection", "features": []}
+
+    def test_geometry_is_a_linestring_of_the_stored_points(
+        self, client: Client
+    ) -> None:
+        """``points`` is handed over verbatim — [lon, lat, ele], GeoJSON order.
+
+        The stored order is already RFC 7946's, so any transform here would
+        be a chance to swap the axes. Asserting identity is what pins that.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(user=user)
+
+        feature = client.get(GEOJSON_URL).json()["features"][0]
+
+        assert feature["type"] == "Feature"
+        assert feature["geometry"]["type"] == "LineString"
+        assert feature["geometry"]["coordinates"] == route.points
+        # Longitude first: the factory's track sits around 7.4E / 46.1N.
+        assert feature["geometry"]["coordinates"][0][0] == pytest.approx(7.4)
+        assert feature["geometry"]["coordinates"][0][1] == pytest.approx(46.1)
+
+    def test_every_property_the_client_reads_is_present(self, client: Client) -> None:
+        """uuid, name, distance_m, ascent_m and bounds — the popup + fitBounds set."""
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(user=user, name="Haute Route")
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties == {
+            "uuid": str(route.uuid),
+            "name": "Haute Route",
+            "distance_m": route.distance_m,
+            "ascent_m": route.ascent_m,
+            "bounds": route.bounds,
+        }
+
+    def test_a_null_ascent_passes_through_as_null(self, client: Client) -> None:
+        """A GPX with no <ele> means "unknown", and must not become a zero.
+
+        ``Route``'s docstring is explicit that rendering "flat" for
+        "we don't know" is a safety-relevant lie; the client omits the
+        ascent line entirely, which it can only do if the null survives
+        serialisation.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, ascent_m=None)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties["ascent_m"] is None
+
+    def test_a_zero_ascent_is_still_a_zero(self, client: Client) -> None:
+        """The other half of the pair: a genuinely flat track reports 0."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, ascent_m=0.0)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties["ascent_m"] == 0.0
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonScoping:
+    """Owner scoping — the layer draws the requesting user's routes alone."""
+
+    def test_another_users_routes_are_absent(self, client: Client) -> None:
+        """A route belonging to somebody else never reaches this payload."""
+        user = UserFactory.create()
+        other = UserFactory.create()
+        client.force_login(user)
+        mine = RouteFactory.create(user=user, name="Mine")
+        theirs = RouteFactory.create(user=other, name="Theirs")
+
+        payload = client.get(GEOJSON_URL).json()
+
+        uuids = [f["properties"]["uuid"] for f in payload["features"]]
+        assert uuids == [str(mine.uuid)]
+        assert str(theirs.uuid) not in uuids
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonFreshness:
+    """Freshness headers follow community_reports_geojson, not favourites."""
+
+    def test_generated_at_is_the_newest_routes_updated_at(self, client: Client) -> None:
+        """The client's freshness dot reads the most recent edit, not "now"."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+        newest = RouteFactory.create(user=user)
+
+        response = client.get(GEOJSON_URL)
+
+        assert response["X-Data-Generated-At"] == newest.updated_at.isoformat(
+            timespec="seconds"
+        )
+
+    def test_headers_are_present_for_an_empty_set(self, client: Client) -> None:
+        """A user with no routes still gets a generated-at, falling back to now."""
+        client.force_login(UserFactory.create())
+
+        response = client.get(GEOJSON_URL)
+
+        assert response["X-Data-Generated-At"]
+        assert response["X-Data-Max-Age"] == str(DEFAULT_MAX_AGE_SECONDS)
+
+    def test_no_unsafe_after_header(self, client: Client) -> None:
+        """A user's own track is not safety-critical data.
+
+        ``unsafe_after=None`` means the client's freshness state saturates
+        at "stale" and never escalates to "unsafe" — the same call
+        ``community_reports_geojson`` makes, and the reason that endpoint
+        rather than ``favourites_geojson`` is the precedent here.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        response = client.get(GEOJSON_URL)
+
+        assert "X-Data-Unsafe-After" not in response
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonQueryCount:
+    """The endpoint stays flat as a user's route count grows."""
+
+    def test_query_count_does_not_grow_with_route_count(self, client: Client) -> None:
+        """One route and five routes cost the same number of queries.
+
+        Measured rather than asserted at a literal: the client's session
+        and auth lookups are counted too, and pinning their number here
+        would make this test fail on an unrelated middleware change. What
+        matters is that nothing is per-route.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        with CaptureQueriesContext(connection) as one_route:
+            client.get(GEOJSON_URL)
+
+        RouteFactory.create_batch(4, user=user)
+
+        with CaptureQueriesContext(connection) as five_routes:
+            response = client.get(GEOJSON_URL)
+
+        assert len(response.json()["features"]) == 5
+        assert len(five_routes) == len(one_route)
