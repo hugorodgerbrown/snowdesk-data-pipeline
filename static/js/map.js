@@ -85,6 +85,12 @@
   // this request.
   const WEATHER_URL = mapEl.dataset.forecastWeatherUrl || null;
   const WEATHER_ELIGIBLE = mapEl.dataset.weatherLayerEligible === 'true';
+  // SNOW-687: per-user saved-routes GeoJSON — eligibility is the ``routes``
+  // waffle flag AND an authenticated user (the endpoint 403s for anyone
+  // else, and there is nothing to draw), so this is gated the same way as
+  // favourites rather than as the two public layers above.
+  const ROUTES_URL = mapEl.dataset.routesUrl || null;
+  const ROUTES_ELIGIBLE = mapEl.dataset.routesEligible === 'true';
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -242,6 +248,9 @@
   // people's reports is an opt-in, unlike a user's own favourites.
   // SNOW-573: weather defaults OFF, like community_reports — an opt-in
   // layer, not shown unannounced.
+  // SNOW-687: routes defaults OFF too, and deliberately NOT like
+  // favourites even though both are the signed-in user's own data: a GPX
+  // track is visually far heavier than a pin, so it is opt-in.
   //
   // SNOW-645 review: 'downloaded' used to be a key here, a togglable
   // layers-menu row like every other overlay — persisted, seeded on boot
@@ -265,7 +274,7 @@
   const overlayState = {
     l1: false, l2: false, l4: true, bulletins: true, resorts: false,
     favourites: true, community_reports: false,
-    weather: false,
+    weather: false, routes: false,
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
@@ -320,7 +329,7 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather']) {
+  for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
@@ -1643,6 +1652,70 @@
     announceOverlayVisibility();
   };
 
+  // SNOW-687: install the saved-routes layer — one GeoJSON source of
+  // LineStrings (routes:geojson), drawn as TWO ``line`` layers.
+  //
+  // The casing is added FIRST so MapLibre paints it underneath: a wider,
+  // translucent dark under-stroke, with the route colour over it. One
+  // stroke on its own is unreadable somewhere — a mid-saturation line
+  // vanishes into the choropleth's orange band, and a pale one into a
+  // white satellite basemap — and the casing is what lets a single colour
+  // work over both. Both widths are zoom-interpolated so the line stays a
+  // hairline at country scale and a followable track at valley scale.
+  //
+  // Idempotent, like installFavouritesLayer: early-returns on an existing
+  // source, so the lazy load, the basemap-swap re-install and any later
+  // refresh can all call it without duplicating layers.
+  const installRoutesLayer = (geojson) => {
+    if (!geojson || map.getSource('routes')) return;
+    routesGeojsonCache = geojson;
+    map.addSource('routes', { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: 'routes-line-casing',
+      type: 'line',
+      source: 'routes',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        // --color-route-line-casing (src/css/main.css). MapLibre paint
+        // properties cannot reference a CSS ``@theme`` token at all, so the
+        // hex lives here too and the two are kept in step by hand — the
+        // same idiom installFavouritesLayer uses for its star colour above.
+        'line-color': '#1a1916',
+        'line-opacity': 0.55,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
+      },
+    });
+    map.addLayer({
+      id: 'routes-line',
+      type: 'line',
+      source: 'routes',
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        // --color-route-line (fuchsia-600) — see the casing's note above
+        // for why the value is repeated here rather than referenced.
+        'line-color': '#c026d3',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+      },
+    });
+    // The lines were just added on top of everything, so lift the pin
+    // layers back over them — a favourite star or a report flag sitting on
+    // a route must stay visible and stay tappable (MARKER_EXCLUSION_LAYERS
+    // gives them the tap, and burying them would make that invisible).
+    raiseMarkerLayers();
+    // Same one-install-function-announces rule installFavouritesLayer
+    // carries: every path that gets these lines onto the map (or explicitly
+    // hides them) ends here, so the roundel ring is settled from one place.
+    announceOverlayVisibility();
+  };
+
   // SNOW-472: shared flag-icon id for every unclustered community-report
   // pin, regardless of OBSERVATION_TYPE. Replaced the earlier SNOW-419
   // per-type text glyphs (a unicode zoo that read as inconsistent
@@ -2249,6 +2322,10 @@
   // SNOW-419: retained so the styledata re-install handler can re-add the
   // community-reports layer after a basemap swap without a refetch.
   let communityReportsGeojsonCache = null;
+  // SNOW-687: same job for the saved-routes lines — the basemap-swap
+  // re-install reads this rather than re-fetching an endpoint whose answer
+  // has not changed (and which is unreachable offline).
+  let routesGeojsonCache = null;
 
   // SNOW-172: Snapshot of each layer's filter expression as set during
   // installRegionsLayers / installOverlayLayers.  applyCountryFilters
@@ -2843,6 +2920,26 @@
         }
         installWeatherLayer(cached);
       }
+    } else if (key === 'routes') {
+      // SNOW-687: eligible-gated like favourites (flag + authenticated) —
+      // the switch only exists in the DOM for an eligible user, but guard
+      // the fetch too in case this is ever reached some other way.
+      if (!ROUTES_ELIGIBLE || !ROUTES_URL) return;
+      const data = await fetch(ROUTES_URL).then(r => r.json()).catch(() => null);
+      if (data) {
+        // Write-through, like favourites: a route never expires (it is the
+        // user's own stored geometry), so the cached copy is installed
+        // as-is on a later offline read-back.
+        window.pwaMapOverlayCache?.putOverlay('routes', data);
+        installRoutesLayer(data);
+      } else {
+        const cached = await window.pwaMapOverlayCache?.getOverlay('routes');
+        if (!cached) {
+          revealOfflineToast('map-offline-toast-routes');
+          return;
+        }
+        installRoutesLayer(cached);
+      }
     }
     overlayLoaded[key] = true;
     // Apply country filters to the freshly-added layers so they
@@ -2897,6 +2994,12 @@
     // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
     // separate pin+label layers.
     weather: ['weather-point'],
+    // SNOW-687: the coloured line FIRST and the casing second — deliberately
+    // the inverse of the order installRoutesLayer adds them in, where the
+    // casing has to be added first to paint underneath. This list's order is
+    // read by panelOverlayPainted below, which answers for the whole group
+    // from element [0], and that has to be the layer the user actually sees.
+    routes: ['routes-line', 'routes-line-casing'],
   };
 
   /**
@@ -3490,8 +3593,8 @@
 
   // ==== SNOW-658 review: isVisible() means PAINT, isEnabled() means INTENT ====
   //
-  // All three bridges answer two different questions, and conflating them was
-  // the defect this pair of methods removes. ``isVisible()`` is "these layers
+  // All four bridges (SNOW-687 added routes) answer two different questions,
+  // and conflating them was the defect this pair of methods removes. ``isVisible()`` is "these layers
   // are drawn on the map right now" — read off MapLibre, never off a flag.
   // ``isEnabled()`` is "the user asked for this overlay" — the persisted
   // preference (or, for downloads, the session's inspection mode), which is
@@ -3539,10 +3642,30 @@
     isEnabled: () => !!overlayState.community_reports,
   });
 
-  // SNOW-658: all three bridges now exist, so a listener can safely be told
+  // SNOW-687: the fourth bridge, and the same shape as the three above —
+  // ``showPanelOverlay``/``hidePanelOverlay`` needed no edit to take a new
+  // key, since their only key-specific branch is the favourites
+  // resort-exclusion recompute. Read by static/js/routes.js (the panel
+  // switch, via isEnabled) and by static/js/map_roundel_overlay_state.js
+  // (the roundel ring, via isVisible) — see the block above for why those
+  // two are different questions.
+  window.pwaRoutesOverlay = Object.freeze({
+    show() {
+      showPanelOverlay('routes');
+      window.pwaTelemetry?.emit('map.route.overlay_toggled', { visible: true });
+    },
+    hide() {
+      hidePanelOverlay('routes');
+      window.pwaTelemetry?.emit('map.route.overlay_toggled', { visible: false });
+    },
+    isVisible: () => panelOverlayPainted('routes'),
+    isEnabled: () => !!overlayState.routes,
+  });
+
+  // SNOW-658: all four bridges now exist, so a listener can safely be told
   // to read them. Announced HERE rather than beside the seed loop near the
   // top of this IIFE, because a listener that hears it will immediately call
-  // ``isVisible()`` on all three, and two of them do not exist until the
+  // ``isVisible()`` on all four, and three of them do not exist until the
   // lines above have run.
   //
   // SNOW-658 review: this announcement now says "nothing is drawn yet", and
@@ -3918,6 +4041,13 @@
     // this only fires for a returning user who opted in.
     if (COMMUNITY_REPORTS_ELIGIBLE && overlayState.community_reports) {
       restoreOverlay('community_reports');
+    }
+
+    // SNOW-687: restore the routes overlay if the user had it enabled in a
+    // prior session. Off by default (like community reports, unlike
+    // favourites), so this only fires for a returning user who opted in.
+    if (ROUTES_ELIGIBLE && overlayState.routes) {
+      restoreOverlay('routes');
     }
 
     // Interaction
@@ -4411,10 +4541,21 @@
     //
     // The layer order below is the priority order: it breaks ties when two
     // marker glyphs overlap under the tap (cluster > favourite > report).
+    //
+    // SNOW-687: 'routes-line' joins the set LAST, and last means lowest
+    // priority. A route is a long thin thing that runs UNDER other markers
+    // for most of its length, so a favourite star or a report flag sitting
+    // on top of one still wins the tap; the route only claims taps nothing
+    // else wanted. It is still in the set rather than out of it, because a
+    // tap on a track has to open that track rather than select the region
+    // the track happens to cross. The casing is deliberately absent: it is
+    // wider than the line, so including it would make the tappable area
+    // larger than the thing the user can see.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
       'community-reports-point',
+      'routes-line',
     ];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
@@ -4569,8 +4710,102 @@
         .addTo(map);
     };
 
-    // Dispatch a marker the exclusion zone claimed to its activation, by layer.
-    const activateMarker = (feature) => {
+    /**
+     * Read a feature property that may have arrived as JSON text.
+     *
+     * MapLibre serialises every non-scalar feature property when it hands a
+     * feature back from ``queryRenderedFeatures``, so ``properties.bounds``
+     * is the array the server sent on some paths and its JSON text on
+     * others. Both are accepted; anything unparseable comes back null so
+     * the caller can skip that step rather than throw and take the whole
+     * tap down with it.
+     *
+     * @param {*} value - A raw feature property value.
+     * @returns {*} The parsed value, or null if it could not be read.
+     */
+    const readFeatureJson = (value) => {
+      if (typeof value !== 'string') return value == null ? null : value;
+      try {
+        return JSON.parse(value);
+      } catch (_err) {
+        return null;
+      }
+    };
+
+    // SNOW-687: tapping a saved route frames the whole track and opens its
+    // detail. Two halves, and the order matters: the fit runs first and the
+    // popup anchors to the tap point, which MapLibre keeps pinned to its
+    // lng/lat for the duration of the ease — so the popup travels with the
+    // line rather than being left behind at a screen position.
+    //
+    // The anchor is passed in rather than derived. Every other member of
+    // MARKER_EXCLUSION_LAYERS is a point with one natural anchor; a line
+    // has none, and anchoring at (say) its midpoint would open the popup
+    // somewhere the user did not touch, possibly off screen.
+    //
+    // The body is the panel row's own two lines, in the panel's own order
+    // and format ("12.4 km · 850 m ascent"), for the reason
+    // activateCommunityReport gives above: one route should read the same
+    // whichever surface it is reached from. Built with createElement, never
+    // innerHTML — the name is user-supplied.
+    const activateRoute = (feature, lngLat) => {
+      const props = feature.properties || {};
+
+      const bounds = readFeatureJson(props.bounds);
+      if (Array.isArray(bounds) && bounds.length === 4) {
+        // GeoJSON bbox [min_lon, min_lat, max_lon, max_lat] → MapLibre's
+        // [[west, south], [east, north]]. Same padding/maxZoom/duration as
+        // zoomToFeatureBounds, so a route and a region frame alike.
+        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
+          padding: { top: 60, right: 40, bottom: 40, left: 40 },
+          maxZoom: 10,
+          duration: 400,
+        });
+      }
+
+      const container = document.createElement('div');
+      container.setAttribute('data-route-detail', '');
+
+      const title = document.createElement('div');
+      title.className = 'text-sm font-semibold text-text-1';
+      title.textContent = props.name || MAP_STRINGS['route-untitled'];
+      container.appendChild(title);
+
+      const parts = [];
+      if (typeof props.distance_m === 'number') {
+        parts.push(self.pwaStrings.interpolate(MAP_STRINGS['route-distance'], {
+          km: (props.distance_m / 1000).toFixed(1),
+        }));
+      }
+      // ``ascent_m`` is null when the GPX carried no <ele> at all, and that
+      // null is MEANINGFUL: Route's own docstring says "we don't know" and
+      // "flat" are different facts, and rendering the second for the first
+      // is a safety-relevant lie about a route somebody may be planning to
+      // ski. So the segment is omitted entirely rather than shown as 0 m —
+      // note the explicit null test, since 0 is a legitimate ascent.
+      if (props.ascent_m != null) {
+        parts.push(self.pwaStrings.interpolate(MAP_STRINGS['route-ascent'], {
+          m: String(Math.round(props.ascent_m)),
+        }));
+      }
+      if (parts.length) {
+        const meta = document.createElement('div');
+        meta.className = 'mt-0.5 text-xs text-text-2';
+        meta.textContent = parts.join(' · ');
+        container.appendChild(meta);
+      }
+
+      // The already-registered 'map-detail-popup' exclusivity member, so a
+      // route tap closes every other map overlay and needs no registration
+      // of its own.
+      mountDetailPopup(lngLat, { node: container });
+    };
+
+    // Dispatch a marker the exclusion zone claimed to its activation, by
+    // layer. ``lngLat`` is the tap's own coordinate — only the route needs
+    // it (a line has no single natural anchor), but it is passed
+    // unconditionally rather than as a special case at the call site.
+    const activateMarker = (feature, lngLat) => {
       switch (feature.layer.id) {
         case 'community-reports-clusters':
           activateCommunityCluster(feature);
@@ -4580,6 +4815,9 @@
           break;
         case 'community-reports-point':
           activateCommunityReport(feature);
+          break;
+        case 'routes-line':
+          activateRoute(feature, lngLat);
           break;
       }
     };
@@ -4626,7 +4864,9 @@
       // playback, matching the pre-consolidation behaviour.
       const marker = markerUnderPoint(e.point);
       if (marker) {
-        activateMarker(marker);
+        // SNOW-687: the tap's own lng/lat goes through too — the route
+        // popup anchors there, having no single natural anchor of its own.
+        activateMarker(marker, e.lngLat);
         return;
       }
 
@@ -5191,7 +5431,7 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather']) {
+      for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
       // l4 and bulletins are re-seeded before any install fn runs: the fill's
@@ -5264,6 +5504,13 @@
       if (overlayLoaded.weather) {
         installWeatherLayer(weatherResortGeojsonCache);
       }
+      // SNOW-687: same story for the route lines — re-install from the
+      // last-fetched cache rather than re-requesting an endpoint whose
+      // answer has not changed (and which a basemap swap made offline
+      // cannot reach at all).
+      if (overlayLoaded.routes) {
+        installRoutesLayer(routesGeojsonCache);
+      }
 
       // SNOW-172 / SNOW-493 finding 3: re-apply country filters for the
       // freshly-installed layers. geojsonCache/majorGeojsonCache/
@@ -5280,7 +5527,7 @@
       // nothing further to load.
       applyCountryFilters();
 
-      // SNOW-658: the three roundels' "my overlay is on the map" state has to
+      // SNOW-658: the four roundels' "my overlay is on the map" state has to
       // be repainted here or a basemap swap leaves it stating the pre-swap
       // answer for the rest of the session — the path a boot-only
       // implementation passes without.

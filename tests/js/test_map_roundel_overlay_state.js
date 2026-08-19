@@ -2,11 +2,15 @@
  * tests/js/test_map_roundel_overlay_state.js — Vitest DOM test for
  * static/js/map_roundel_overlay_state.js (SNOW-658).
  *
- * The three overlay roundels — downloads, favourites, field observations —
- * each carry ``data-overlay-shown``, meaning one thing on all three: "the
- * overlay this roundel's panel switches is drawn on the map right now".
- * Before this ticket only one of them carried a state at all, and it meant
- * something else ("this device holds a downloaded area").
+ * The overlay roundels — downloads, favourites, field observations and,
+ * since SNOW-687, routes — each carry ``data-overlay-shown``, meaning one
+ * thing on all of them: "the overlay this roundel's panel switches is drawn
+ * on the map right now". Before SNOW-658 only one of them carried a state at
+ * all, and it meant something else ("this device holds a downloaded area").
+ *
+ * SNOW-687 is the first roundel added since, and the case that shows the
+ * shape held: it joined by adding one line to that module's ROUNDELS array
+ * — no new event, no new CSS, and no edit to any assertion below.
  *
  * What is worth testing here is not the attribute write — it is that the
  * state stays TRUE over time. Five paths can change an overlay's
@@ -43,6 +47,7 @@ import { MAP_BUNDLE, loadMapBundle } from './_load_map_bundle.js';
 const DOWNLOADS_ROUNDEL = 'map-custom-download-control';
 const FAVOURITES_ROUNDEL = 'favourite-add-btn';
 const REPORTS_ROUNDEL = 'report-btn';
+const ROUTES_ROUNDEL = 'route-add-btn';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
@@ -156,6 +161,8 @@ function buildFixture() {
          data-favourites-eligible="true"
          data-community-reports-url="/api/community-reports.geojson"
          data-community-reports-eligible="true"
+         data-routes-url="/routes/routes.geojson"
+         data-routes-eligible="true"
          data-default-basemap-key="openfreemap_liberty"
          data-season-end="2026-05-31"></div>
     <div id="search-pill" data-state="collapsed">
@@ -173,6 +180,9 @@ function buildFixture() {
     <button id="${REPORTS_ROUNDEL}"
             data-overlay-shown="false"
             aria-label="Your field observations"></button>
+    <button id="${ROUTES_ROUNDEL}"
+            data-overlay-shown="false"
+            aria-label="Your routes"></button>
     <template id="map-roundel-strings-template">
       <span data-string="roundel-overlay-shown">%(label)s — shown on the map</span>
     </template>`;
@@ -267,6 +277,7 @@ beforeEach(async () => {
   window.pwaDownloadedOverlay.hide();
   window.pwaFavouritesOverlay.hide();
   window.pwaCommunityReportsOverlay.hide();
+  window.pwaRoutesOverlay.hide();
   if (!mapStub.getLayer('favourites-pin')) await installFavouritesLayers();
 });
 
@@ -296,7 +307,7 @@ describe('an overlay whose data never arrives', () => {
   });
 });
 
-describe('the three roundels track their own overlay', () => {
+describe('each roundel tracks its own overlay', () => {
   it('paints from the layers, not from the stored preference', async () => {
     // The distinction the SNOW-658 review turns on: the preference below
     // never moves, and the ring still goes out, because the pins did.
@@ -339,12 +350,26 @@ describe('the three roundels track their own overlay', () => {
     expect(shown(REPORTS_ROUNDEL)).toBe('false');
   });
 
-  it('leaves the other two roundels alone', async () => {
+  it('follows the routes overlay in both directions', async () => {
+    // SNOW-687's roundel. Asserted the same way as the other three and for
+    // the same reason: the ring lights on the announcement its lazy load
+    // makes, not on the switch, so a bridge that forgot to announce would
+    // leave the ring dark over a drawn route.
+    window.pwaRoutesOverlay.show();
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
+    expect(shown(ROUTES_ROUNDEL)).toBe('true');
+
+    window.pwaRoutesOverlay.hide();
+    expect(shown(ROUTES_ROUNDEL)).toBe('false');
+  });
+
+  it('leaves the other roundels alone', async () => {
     window.pwaFavouritesOverlay.show();
     await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
 
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
     expect(shown(REPORTS_ROUNDEL)).toBe('false');
+    expect(shown(ROUTES_ROUNDEL)).toBe('false');
   });
 });
 
@@ -432,6 +457,19 @@ describe('the state is announced, not only painted', () => {
 
     window.pwaFavouritesOverlay.hide();
     expect(label(FAVOURITES_ROUNDEL)).toBe('Your favourites');
+  });
+
+  it('composes the routes roundel\'s own name too', async () => {
+    // One translated string states the shared fact; each roundel keeps its
+    // own name. The fourth roundel gets this for free from the same
+    // compose-don't-pick path — worth pinning, since a pair of hardcoded
+    // labels would have needed a third and fourth variant here.
+    window.pwaRoutesOverlay.show();
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
+    expect(label(ROUTES_ROUNDEL)).toBe('Your routes — shown on the map');
+
+    window.pwaRoutesOverlay.hide();
+    expect(label(ROUTES_ROUNDEL)).toBe('Your routes');
   });
 
   it('keeps a roundel\'s title in step with its label where it has one', async () => {

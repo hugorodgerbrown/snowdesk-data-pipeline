@@ -92,6 +92,20 @@ Optional context:
     {# *eligible* flag rather than omitting the attribute.                 #}
     data-forecast-weather-url="{{ forecast_weather_geojson_url }}"
     data-weather-layer-eligible="{{ weather_layer_eligible|yesno:'true,false' }}"
+    {# SNOW-687: saved-routes layer. The URL is omitted entirely for an     #}
+    {# ineligible request, mirroring data-favourites-url above: the         #}
+    {# endpoint is per-user and 403s for anyone else, so there would be     #}
+    {# nothing behind the attribute to fetch.                               #}
+    {#                                                                      #}
+    {# TWO gates ANDed, unlike favourites, which has only the auth one:      #}
+    {# routes is also behind the ``routes`` waffle flag (routes_visible),    #}
+    {# and both the roundel and its whole surface are absent from the DOM    #}
+    {# without it. Without the flag in this expression a returning user      #}
+    {# who had the overlay switched ON before the flag was taken away        #}
+    {# would still get the lines drawn at boot, with no control anywhere on  #}
+    {# the page to switch them off again.                                    #}
+    {% if routes_visible and routes_eligible %}data-routes-url="{{ routes_geojson_url }}"{% endif %}
+    data-routes-eligible="{% if routes_visible and routes_eligible %}true{% else %}false{% endif %}"
 >
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
@@ -401,11 +415,11 @@ Optional context:
                 {# (routes.js branches on data-routes-eligible, mirroring                #}
                 {# #favourite-add-btn's data-favourites-eligible anon branch).           #}
                 {#                                                                       #}
-                {# No `data-overlay-shown` attribute, unlike the other three overlay      #}
-                {# roundels: that attribute means "this overlay is on the map right      #}
-                {# now", and there is no routes overlay until SNOW-687 adds the layer.   #}
-                {# map_roundel_overlay_state.js paints the ring for the roundels that     #}
-                {# carry it; this one has no ring to paint yet.                          #}
+                {# SNOW-687: this roundel now carries `data-overlay-shown` like the       #}
+                {# other three — the routes overlay exists, and                          #}
+                {# map_roundel_overlay_state.js paints the ring here from                 #}
+                {# window.pwaRoutesOverlay.isVisible(). It said "no ring to paint yet"    #}
+                {# through SNOW-686, when there was no layer for a switch to drive.       #}
                 {% if routes_visible %}
                     <div class="map-utility-pill map-utility-pill--route">
                         <button
@@ -418,6 +432,10 @@ Optional context:
                             data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
                             data-signin-url="{{ routes_signin_url }}"
                             aria-label='{% trans "Your routes" %}'
+                            {# SNOW-687: see #favourite-add-btn above — same          #}
+                            {# attribute, same meaning, same painter. Server-rendered #}
+                            {# false because that is the truth with JS off.           #}
+                            data-overlay-shown="false"
                         >
                             {# The track glyph lives in includes/_icon_route.html — the   #}
                             {# panel this roundel opens carries the same mark in its      #}
@@ -1390,6 +1408,13 @@ Optional context:
 {# later offline visit is the recovery path once cached, not just "online". #}
 {% trans "Weather isn't available offline right now — view it online to refresh." as offline_toast_weather_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-weather" kind="warning" body=offline_toast_weather_body dismissible=True timeout=6000 %}
+{# SNOW-687: routes. Its own copy rather than the shared layer toast,      #}
+{# because routes DO cache offline (map_overlay_offline_cache.js, and     #}
+{# principal-scoped there) — so this fires only when nothing was ever     #}
+{# cached for this account, and "view them online first" is the one       #}
+{# recovery action, exactly as it is for favourites.                      #}
+{% trans "Your routes aren't available offline yet — view them online first." as offline_toast_routes_body %}
+{% include "includes/_toast.html" with id="map-offline-toast-routes" kind="warning" body=offline_toast_routes_body dismissible=True timeout=6000 %}
 {# SNOW-521: a SUCCESSFUL "Download basemap" run is carried by the download #}
 {# roundel itself (a green offline circle) — there is no completion toast,  #}
 {# because a success needs no words and no action.                         #}
@@ -1562,8 +1587,19 @@ Optional context:
     {# showing even when the honest answer is "none yet" — a blank         #}
     {# choropleth with no cue is the bug that ticket fixed.                 #}
     <span data-string="map-date-none">{% trans "No date selected" %}</span>
+    {# SNOW-687: the route detail popup's two figures (map.js's             #}
+    {# activateRoute), plus the last-resort label for a route with no name. #}
+    {# Two strings and not one templated line, because the ascent is        #}
+    {# OMITTED ENTIRELY when Route.ascent_m is null — a GPX with no <ele>   #}
+    {# means "unknown", not "flat", and rendering the second for the first  #}
+    {# would be a safety-relevant lie. The wording and the " · " join match #}
+    {# routes/partials/_route_row_map.html exactly, so one route reads the  #}
+    {# same in the panel and in the popup.                                  #}
+    <span data-string="route-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
+    <span data-string="route-ascent">{% blocktrans %}%(m)s m ascent{% endblocktrans %}</span>
+    <span data-string="route-untitled">{% trans "Untitled route" %}</span>
 </template>
-{# SNOW-658: the three overlay roundels' shared "…and its overlay is on the #}
+{# SNOW-658: the four overlay roundels' shared "…and its overlay is on the #}
 {# map right now" label (static/js/map_roundel_overlay_state.js). ONE       #}
 {# string, not one pair per roundel: each roundel keeps its own name        #}
 {# ("Your favourites", "Manage offline downloads") as the server-rendered   #}

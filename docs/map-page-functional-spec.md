@@ -1,8 +1,8 @@
 ---
 name: map-page-functional-spec
-description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations), weather overlay, basemaps
+description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), weather overlay, basemaps
 status: current
-last-reviewed: 2026-08-11
+last-reviewed: 2026-08-19
 ---
 
 # Map page — functional specification
@@ -138,9 +138,9 @@ historical reasons but is not the EAWS L3 tier.)
 
 ---
 
-## 3. User-generated content — favourites, resorts, observations
+## 3. User-generated content — favourites, resorts, observations, routes
 
-Three overlays carry content that originates from people rather than
+Four overlays carry content that originates from people rather than
 from an official avalanche service. They are grouped here because they
 share a property the region layers do not: **the data was created by a
 human, not fetched from a forecasting authority**, and so each needs its
@@ -280,6 +280,46 @@ favourite pins too.
 - **Rollout.** Gated behind the `weather_layer` feature flag during
   rollout (see [`feature-flags.md`](feature-flags.md)).
 
+### 3.4a Routes — private imported tracks (SNOW-687)
+
+A **route** is a polyline the user imported from their own GPX file: a ski
+tour, a traverse, a day out they are planning or have already done. It is
+the most private thing on the map — a record of where somebody actually
+went — and it is never shared, never aggregated, and visible only to the
+account that uploaded it.
+
+**What is drawn.** Each route is two stacked line layers: a wider dark
+casing under the route colour. The casing is not decoration — a single
+coloured line disappears against both the danger choropleth (which is
+warm, saturated, and covers most of the map) and a white satellite
+basemap. The route colour itself sits deliberately outside the EAWS 1–5
+danger ramp, which is mandated by the standard and must never be borrowed
+for something that is not a danger rating, and is distinct from the
+favourite pin and report flag colours.
+
+**Tapping a route** fits the viewport to that route's stored bounds and
+opens the anchored detail popup with its name, distance, and ascent. The
+tap priority puts a route *below* the point markers: where a favourite
+star or a report flag sits on top of a line, the pin wins, because a pin
+is a smaller and more deliberate target.
+
+**Ascent is omitted when unknown.** A GPX file with no elevation data
+produces a route with no ascent figure at all — not zero. "We don't know
+how much climbing this is" and "this route is flat" are different facts
+about a mountain day, and showing the second for the first is the kind of
+error somebody could plan on. The popup simply has no ascent line in that
+case, exactly as the panel row does not.
+
+**Default off.** Unlike favourites, the routes overlay starts switched
+off and is opt-in. Favourites are pins, and a handful of extra pins costs
+the reader nothing; a saved route is a line across a whole valley, and a
+first visit that painted every stored track at once would bury the
+bulletin data underneath the user's own history.
+
+Routes are gated by the `routes` waffle flag (seeded superusers-only)
+*and* by authentication, so the surface is absent from the DOM entirely
+for anyone the feature is not open to.
+
 ### 3.5 UGC eligibility at a glance
 
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
@@ -288,6 +328,7 @@ favourite pins too.
 | Resorts | Public | Staff via `edit_map` editor | Off | Shared reference |
 | Community reports | Public | via Report flow below | Off — switched from the field-observation panel, not the layer menu | Anonymised, public |
 | Weather | Public (resorts) + own favourites (signed in) | n/a — derived from the weather pipeline | Off | Public + per-user merge |
+| Routes | Signed in **and** `routes` flag | Owner only, 10/min upload | Off — switched from the routes panel | Private, per-user |
 | Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
 
 `edit_map` remains a superuser-scoped feature flag during rollout;
@@ -419,11 +460,12 @@ never pushes its own content off-screen, whatever the list contains.
 
 ## 3.8 Overlay roundel state — is it on the map right now?
 
-Each of the three roundels shows whether **its own** overlay is currently
+Each of the four roundels — downloads, favourites, field observations and,
+since SNOW-687, routes — shows whether **its own** overlay is currently
 drawn: a coloured rim, in the same colour as the ON position of the
 "Display on the map" switch that controls it, plus the same fact in the
 roundel's accessible label ("Your favourites — shown on the map"). One
-signal, one meaning, on all three.
+signal, one meaning, on all of them.
 
 It is live rather than a snapshot: the rim follows the panel switch, and
 also follows anything else that takes an overlay off the map — turning
@@ -437,8 +479,8 @@ fails — and the switch stays ON (the setting took, and will be restored
 next time) while the rim stays off, because nothing reached the map. The
 two disagreeing is the point: it is the only way to see that a request
 has not landed. Positioning a pin clears every overlay off the map for
-the duration of the placement, and all three rims go out with them and
-come back when it ends, for the same reason.
+the duration of the placement, and every rim goes out with them and comes
+back when it ends, for the same reason.
 
 The downloads roundel used to carry a different signal — "this device
 holds at least one downloaded area" — which is a fact about storage, not

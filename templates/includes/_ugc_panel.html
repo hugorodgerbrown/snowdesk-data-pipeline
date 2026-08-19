@@ -97,26 +97,29 @@ Parameters (passed via {% include … with … %}):
   toggle_id       (string, optional) — DOM id for the overlay switch.
                   Omit it and the switch is not rendered at all.
 
-                  Required for the first three panels and NOT optional as a
-                  style choice: a panel that owns a map overlay must carry
-                  its switch, because that is where SNOW-658 moved it from
-                  the layers menu. It is optional because SNOW-686's routes
-                  panel exists BEFORE the layer it will eventually control
-                  — SNOW-687 adds the MapLibre line and the overlay bridge
-                  — and the two honest options for the gap were a switch
-                  wired to nothing or no switch. A control that silently
-                  does nothing when tapped is a worse lie than an absent
-                  one, so routes omits it and SNOW-687 passes a
-                  ``toggle_id`` when there is something for it to drive.
+                  NOT optional as a style choice: a panel that owns a map
+                  overlay must carry its switch, because that is where
+                  SNOW-658 moved it from the layers menu. All four panels
+                  pass one as of SNOW-687, which gave the routes panel the
+                  MapLibre line and the overlay bridge its switch drives.
 
-                  This is the narrow inverse of the note in
+                  The parameter stays optional all the same, because the
+                  gap it covered is a real state and will recur: SNOW-686
+                  landed the routes panel BEFORE that layer existed, and
+                  the two honest options were a switch wired to nothing or
+                  no switch. A control that silently does nothing when
+                  tapped is a worse lie than an absent one, so routes
+                  omitted it until there was something for it to drive.
+
+                  That is the narrow inverse of the note in
                   static/js/favourites.js about the anonymous branch KEEPING
                   its switch: there, the overlay exists and merely has
                   nothing in it yet, so hiding the control would hide a
-                  working view setting. Here the overlay does not exist.
+                  working view setting. In the gap case the overlay itself
+                  does not exist.
 
 The overlay switch's LABEL is not a parameter. It is "Display on the map"
-on all three panels — the design's own wording, replacing "Show areas on
+on every panel that has one — the design's own wording, replacing "Show areas on
 the map" / "Show favourites on the map" / "Show community reports on the
 map". Three sentences for one control is the same divergence the shared
 `data-panel-add` hook removed in attribute form, so the string is fixed

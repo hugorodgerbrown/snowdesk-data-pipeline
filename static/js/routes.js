@@ -1,6 +1,6 @@
 /*
  * static/js/routes.js — SNOW-686 saved-routes panel: upload, list, rename
- * and delete.
+ * and delete; SNOW-687's "Display on the map" switch.
  *
  * The fourth UGC surface, built to the shape SNOW-634 set for downloads and
  * SNOW-658 generalised across favourites and field observations: its own
@@ -39,14 +39,29 @@
  *   Tap opens the panel with a sign-in / sign-up CTA pointing at the
  *   sign-in page (data-signin-url) in place of the list and the add CTA.
  *
- * NO MAP STATE. Unlike favourites.js this module never reads
- * window.snowdeskMapState, because nothing it does involves the map: a
- * route's geometry comes out of the uploaded file, so there is no
- * place-picker to arm and no centre to seed from, and there is no routes
- * overlay to reflect until SNOW-687 adds the layer. That is also why the
- * panel carries no "Display on the map" switch (see
- * includes/_ugc_panel.html's note on its optional ``toggle_id``) and why
- * the roundel has no `data-overlay-shown` ring.
+ * NO MAP STATE, still. Unlike favourites.js this module never reads
+ * window.snowdeskMapState: a route's geometry comes out of the uploaded
+ * file, so there is no place-picker to arm and no map centre to seed a
+ * create form from.
+ *
+ * It DOES reach the map, as of SNOW-687, but only through
+ * window.pwaRoutesOverlay — the frozen bridge map.js publishes, the same
+ * one favourites.js uses for its own switch. Two rules there, and both are
+ * load-bearing:
+ *
+ *   - the switch reflects ``isEnabled()``, the persisted PREFERENCE, never
+ *     ``isVisible()``, which answers from the layers MapLibre is actually
+ *     drawing. Enable the overlay offline with nothing cached and the two
+ *     legitimately disagree — switch ON, roundel ring OFF — and that pair
+ *     is the only way the user can see their request never reached the
+ *     map. Painting the switch from paint would instead show their own
+ *     setting silently flipping itself off.
+ *   - show()/hide() are the only writers of that overlay's visibility, so
+ *     the switch and the map cannot drift.
+ *
+ * The roundel's `data-overlay-shown` ring follows from the same bridge,
+ * painted by static/js/map_roundel_overlay_state.js — nothing here writes
+ * it.
  *
  * UPLOAD IS ONLINE-ONLY, and posts straight to routes:create rather than
  * through window.pwaMutationQueue. The queue persists JSON bodies in
@@ -177,16 +192,27 @@
   /** Clone #route-list-template into the sheet and populate it.
    *
    * Eligible: the rows load over HTMX from routes:list. Anonymous: the rows
-   * and the add CTA are removed and a sign-in CTA takes their place.
-   *
-   * No overlay switch to reflect, unlike favourites.js's own version of
-   * this function — there is no routes overlay yet (SNOW-687).
+   * and the add CTA are removed and a sign-in CTA takes their place — but
+   * the overlay switch stays, exactly as it does on the favourites panel:
+   * it is a view control for the map behind the sheet, not a row in a list
+   * the visitor hasn't got.
    *
    * @returns {void}
    */
   function showListPanel() {
     sheet.replaceChildren();
     sheet.appendChild(listTemplate.content.cloneNode(true));
+
+    // SNOW-687: reflect the overlay's REAL state rather than a flag of this
+    // module's own, the way favourites.js and map_downloads_manager.js do.
+    //
+    // isEnabled(), the persisted preference — NOT isVisible(), which
+    // answers from the layers MapLibre is drawing. See this file's header:
+    // the switch states what the user asked for, the roundel's ring states
+    // whether it reached the map, and the case where they disagree is the
+    // case the distinction exists for.
+    const toggle = sheet.querySelector('#map-routes-overlay-toggle');
+    if (toggle) toggle.checked = !!window.pwaRoutesOverlay?.isEnabled?.();
 
     if (!IS_ELIGIBLE) {
       const addButton = sheet.querySelector('[data-panel-add]');
@@ -259,6 +285,19 @@
       return;
     }
     uploadInput.click();
+  });
+
+  // SNOW-687: the overlay switch drives window.pwaRoutesOverlay directly —
+  // show()/hide() are the only writers of that overlay's visibility, and
+  // showListPanel() reads isEnabled() back, so the two can never drift. No
+  // re-render: nothing else in the panel depends on this state. Delegated
+  // on the sheet because the body is re-cloned on every open.
+  sheet.addEventListener('change', function (event) {
+    const target = /** @type {HTMLInputElement} */ (event.target);
+    if (!target || !target.matches) return;
+    if (!target.matches('#map-routes-overlay-toggle')) return;
+    if (target.checked) window.pwaRoutesOverlay?.show();
+    else window.pwaRoutesOverlay?.hide();
   });
 
   /** Handle a click that starts a row's inline rename.
@@ -409,7 +448,8 @@
   //
   // Unlike the favourites equivalent this is the ONLY writer of that
   // element: there is no routes_offline.js repainting cached rows over the
-  // line, because nothing caches routes until SNOW-687.
+  // line. SNOW-687 caches the map LAYER's geometry offline
+  // (map_overlay_offline_cache.js), not this list's rows.
   for (const name of ['htmx:responseError', 'htmx:sendError']) {
     document.addEventListener(name, function (event) {
       const rows = sheet.querySelector('[data-routes-rows]');

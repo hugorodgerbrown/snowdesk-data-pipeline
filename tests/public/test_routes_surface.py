@@ -130,20 +130,26 @@ class TestRoutesSurfaceIsFlagGated:
         assert 'data-routes-eligible="false"' in body
 
     @override_flag("routes", active=True)
-    def test_the_panel_has_no_overlay_switch_yet(self, client: Client) -> None:
-        """No "Display on the map" switch — there is no routes layer (SNOW-687).
+    def test_the_panel_carries_the_overlay_switch(self, client: Client) -> None:
+        """The "Display on the map" switch, now there is a layer to drive.
 
-        The panel includes ``includes/_ugc_panel.html`` without a
-        ``toggle_id``, and this is what stops that omission being quietly
-        undone: a switch wired to nothing is a worse lie than an absent one.
-        The other three panels' switches are unaffected and still render.
+        SNOW-686 asserted the inverse: the panel shipped before its map
+        layer existed, so ``includes/_ugc_panel.html`` was included without
+        a ``toggle_id`` and rendered no switch, on the grounds that a
+        switch wired to nothing is a worse lie than an absent one. SNOW-687
+        adds the layer and the ``window.pwaRoutesOverlay`` bridge, so the
+        panel now passes a ``toggle_id`` and the switch appears.
+
+        The id is the one static/js/routes.js delegates its ``change``
+        listener on, which is why it is asserted here rather than left to
+        the JS suite: a rename on either side silently unwires the switch.
+        The sibling panels keep theirs — this was never a global change.
         """
         client.force_login(UserFactory.create())
 
         body = _home(client)
 
-        assert 'id="map-routes-overlay-toggle"' not in body
-        # The sibling panels keep theirs — this is not a global removal.
+        assert 'id="map-routes-overlay-toggle"' in body
         assert 'id="map-favourites-overlay-toggle"' in body
 
 

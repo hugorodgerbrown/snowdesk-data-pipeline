@@ -1,8 +1,8 @@
 ---
 name: offline-map
-description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal navigation partitioning, Download basemap, custom-area download, layers
+description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-08-08
+last-reviewed: 2026-08-19
 ---
 
 # PWA shell
@@ -545,11 +545,11 @@ control.
 Two gaps the opportunistic strategies above don't cover, both closed
 without loosening the `network`-only default for safety-critical data:
 
-**Favourites / community-reports overlays.** Both feeds are `network`
--classified in `sw.js` (per-user / anonymised-but-live data, not safe
-for the SW's own stale-while-revalidate), so without a client-side
-cache they went blank offline even after the map's own regions/ratings
-still rendered. `static/js/map_overlay_offline_cache.js`
+**Favourites / community-reports / weather / routes overlays.** Every one
+of these feeds is `network`-classified in `sw.js` (per-user /
+anonymised-but-live data, not safe for the SW's own
+stale-while-revalidate), so without a client-side cache they went blank
+offline even after the map's own regions/ratings still rendered. `static/js/map_overlay_offline_cache.js`
 (`window.pwaMapOverlayCache`) is a small write-through/read-back
 helper — modelled on `static/js/favourites_offline.js` — over a new
 `data:map_overlays` IndexedDB store (schema v4, one row per resource;
@@ -559,14 +559,33 @@ fetch and installs from the cached copy when the fetch fails offline:
 
 - **Favourites never expire** at read-back — a saved pin is still
   useful to see offline even days later.
+- **Routes never expire either** (SNOW-687), for the same reason and
+  more strongly: a route is a track the user uploaded themselves and
+  which changes only when they change it, so there is no upstream
+  freshness for a cached copy to fall behind.
 - **Community reports** re-apply the existing 48h age-fade window
   (`dropExpiredCommunityReports`) at read-back, so a stale cached copy
   drops features past the horizon exactly as the live feed would —
   it never shows a report as if it were still within its normal
   freshness window.
-- **Known gap**: neither cache itself expires or gets evicted — a
-  favourites/community-reports snapshot can go arbitrarily stale if
-  the user never reconnects. Flagged as a future refinement rather
+**Principal scoping (SNOW-493, extended by SNOW-687).** Only
+**account-specific** resources are partitioned by the signed-in account:
+`PRINCIPAL_SCOPED` in `map_overlay_offline_cache.js` holds `favourites`
+and, since SNOW-687, `routes`. Those rows are stamped with
+`window.pwaDb.context().user_id` (normalised to `null` for anonymous) on
+write and validated on read, so a cached row from one account can never be
+read back after a different account signs in on the same browser — and a
+row carrying no `principal` at all (written before that fix) never matches,
+so it cannot leak across an account switch either. Routes are if anything
+the stronger case: a GPX track is a record of where somebody actually
+went. `community_reports` is deliberately **absent** from that set — it is
+public data with no account binding, and a report cached while signed in
+must stay readable after logout (tying it to a principal would wrongly hide
+public data across an account change).
+
+- **Known gap**: none of these caches expires or gets evicted — a
+  favourites/routes/community-reports snapshot can go arbitrarily stale
+  if the user never reconnects. Flagged as a future refinement rather
   than shipped now (low risk: favourites are explicitly the user's
   own choice of pins, and community reports already re-filter by age
   at read-back).
@@ -575,9 +594,17 @@ When an overlay's fetch fails offline AND nothing is cached to fall
 back to, `ensureOverlayLoaded` reveals a small dismissible toast
 (`includes/_toast.html`, `kind="warning"`) rather than silently
 leaving the toggle looking like it did nothing — `#map-offline-toast-favourites`,
-`#map-offline-toast-community_reports`, and a shared
-`#map-offline-toast-layer` for l1/l2/l3/resorts (rendered in
+`#map-offline-toast-community_reports`, `#map-offline-toast-weather`,
+`#map-offline-toast-routes`, and a shared `#map-offline-toast-layer` for
+l1/l2/l3/resorts (rendered in
 `apps/public/templates/public/partials/_map_embed.html`).
+
+That toast is the *only* thing the user gets in this state, and it is
+deliberately paired with the panel switch staying ON and the roundel ring
+staying OFF: the switch reports what was asked for (`isEnabled()`, the
+persisted preference), the ring reports what reached the map
+(`isVisible()`, read off MapLibre). They disagree here on purpose — see
+[`map-page-functional-spec.md`](map-page-functional-spec.md) §3.8.
 
 **"Download basemap"** (SNOW-521 — previously "Cache this area for offline",
 SNOW-492) is a **single-region download** — one control

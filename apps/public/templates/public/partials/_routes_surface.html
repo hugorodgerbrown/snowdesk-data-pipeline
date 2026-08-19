@@ -1,6 +1,7 @@
 {% load i18n static %}
 {% comment %}
-public/partials/_routes_surface.html — saved-routes sheet + JS (SNOW-686).
+public/partials/_routes_surface.html — saved-routes sheet + JS (SNOW-686,
+extended by SNOW-687).
 
 The fourth UGC surface, built to the shape SNOW-634 set for downloads and
 SNOW-658 generalised across favourites and field observations: its own
@@ -23,13 +24,14 @@ Three shared modules are loaded once each by home.html before this partial
   inline_rename.js  routes.js drives window.pwaInlineRename for the row's
                     in-place rename, unchanged and unforked.
 
-WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
+SNOW-687 closed the gap SNOW-686 left: there IS a routes map layer now (a
+MapLibre line pair driven by window.pwaRoutesOverlay), so
+includes/_ugc_panel.html is included WITH a ``toggle_id`` and renders the
+"Display on the map" switch every other UGC panel carries. routes.js
+reflects it from the bridge's ``isEnabled()`` — the persisted preference,
+not what MapLibre is drawing — and drives show()/hide() on change.
 
-  No "Display on the map" switch. There is no routes map layer yet —
-  SNOW-687 adds the MapLibre line and the overlay bridge — so
-  includes/_ugc_panel.html is included WITHOUT a ``toggle_id`` and renders
-  no switch. A switch wired to nothing is a worse lie than an absent one;
-  see that partial's own note on the parameter.
+WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
 
   No place-picker. A route's geometry comes out of the uploaded file, so
   there is nothing to place on the map and window.PlacePicker is never
@@ -43,10 +45,14 @@ WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
   is deliberately online-only. Rename and delete are online-only too,
   matching every other panel's edits.
 
-  No offline cache sidecar. _favourite_list_map.html carries
-  ``roster_payload`` for favourites_offline.js; caching routes for offline
-  reads arrives with the layer in SNOW-687, since until something draws a
-  route there is nothing an offline reader could do with one.
+  No offline cache sidecar for the PANEL. _favourite_list_map.html carries
+  ``roster_payload`` for favourites_offline.js, which repaints cached rows
+  over a failed list load; this panel still says "couldn't be loaded"
+  instead. The MAP LAYER does cache offline as of SNOW-687 —
+  routes:geojson is write-through cached by
+  static/js/map_overlay_offline_cache.js, principal-scoped so one account's
+  tracks can never read back into another's session — but that payload is
+  geometry for the line, not the rows this list renders.
 
 Context expected:
   route_create_url  — str: POST endpoint for routes:create.
@@ -75,8 +81,10 @@ Context expected:
     {# panel makes in its own words.                                       #}
     {% trans "Routes are private and not shared." as routes_context_line %}
     {% trans "Tracks" as routes_section_label %}
-    {# No `toggle_id`: no map layer to switch on yet (SNOW-687). #}
-    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label %}
+    {# SNOW-687: the switch the panel shipped without. Its id is the hook  #}
+    {# routes.js delegates on; the LABEL is fixed inside _ugc_panel.html,  #}
+    {# not passed, so it cannot be restated per panel.                      #}
+    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" %}
 </template>
 {# The file picker. OUTSIDE the sheet, and outside the panel template, on   #}
 {# purpose: the sheet's body is re-cloned on every open, and an <input      #}

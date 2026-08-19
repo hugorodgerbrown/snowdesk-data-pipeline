@@ -1,6 +1,7 @@
 /*
  * static/js/map_overlay_offline_cache.js — Offline read cache for the map's
- * favourites / community-reports overlays (SNOW-492).
+ * favourites / community-reports / weather / routes overlays (SNOW-492;
+ * routes added by SNOW-687).
  *
  * Companion to favourites_offline.js (SNOW-418), same shape: a write-through
  * cache keyed into IndexedDB (``data:map_overlays``, ``db.js`` schema v4) on
@@ -14,22 +15,24 @@
  * Storage shape
  * -------------
  * One row per resource: ``{ key, geojson, cached_at, principal }``, keyed by
- * ``resource`` (``'favourites'`` or ``'community_reports'``). Expiry is a
- * caller concern, not enforced here — favourites never expire; community
- * reports apply the existing 48h age-opacity horizon at read-back time (see
- * ``withCommunityReportsAgeOpacity`` in map.js), so ``cached_at`` is recorded
- * only for observability, not as a store-level cutoff.
+ * ``resource`` (``'favourites'``, ``'community_reports'``, ``'weather'`` or
+ * ``'routes'``). Expiry is a caller concern, not enforced here — favourites
+ * and routes never expire (both are the user's own stored data, changed only
+ * by the user); community reports apply the existing 48h age-opacity horizon
+ * at read-back time (see ``withCommunityReportsAgeOpacity`` in map.js), so
+ * ``cached_at`` is recorded only for observability, not as a store-level
+ * cutoff.
  *
  * ``principal`` (SNOW-493) partitions **account-specific** rows by the
  * signed-in account — ``window.pwaDb.context().user_id``, normalised to
  * ``null`` for anonymous sessions — so a cached favourites row from one
  * account can never be read back after a different account signs in on the
- * same browser. Only resources in ``PRINCIPAL_SCOPED`` (``favourites``)
- * carry and validate a ``principal``. ``community_reports`` is public data
- * with no account binding, so it is deliberately NOT partitioned: a report
- * cached while signed in must stay readable after logout, and an anonymous
- * report after login — tying it to a principal would wrongly hide public
- * data across an account change.
+ * same browser. Only resources in ``PRINCIPAL_SCOPED`` (``favourites`` and,
+ * since SNOW-687, ``routes``) carry and validate a ``principal``.
+ * ``community_reports`` is public data with no account binding, so it is
+ * deliberately NOT partitioned: a report cached while signed in must stay
+ * readable after logout, and an anonymous report after login — tying it to a
+ * principal would wrongly hide public data across an account change.
  *
  * No exports beyond ``window.pwaMapOverlayCache`` — every call site in
  * map.js reaches this via that global.
@@ -42,9 +45,13 @@
 
   // SNOW-493: resources whose cached rows are partitioned by the signed-in
   // account. Only account-specific data belongs here — favourites are a
-  // user's own saved locations. ``community_reports`` is public and is
-  // intentionally absent, so it round-trips across sign-in/sign-out.
-  const PRINCIPAL_SCOPED = new Set(['favourites']);
+  // user's own saved locations, and SNOW-687's routes are the user's own
+  // uploaded tracks, which is if anything a stronger case: a GPX track is a
+  // record of where somebody actually went, and it must not read back into
+  // a different account's session on a shared browser.
+  // ``community_reports`` is public and is intentionally absent, so it
+  // round-trips across sign-in/sign-out.
+  const PRINCIPAL_SCOPED = new Set(['favourites', 'routes']);
 
   /**
    * True when ``window.pwaDb`` is present and the app is not in the
@@ -83,7 +90,8 @@
    * effort — never throws, so a broken cache write can't break the overlay
    * fetch it rides on.
    *
-   * @param {string} resource - ``'favourites'`` or ``'community_reports'``
+   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
+   *   ``'weather'`` or ``'routes'``
    * @param {object} geojson - the fetched FeatureCollection
    * @returns {Promise<void>}
    */
@@ -110,14 +118,16 @@
   /**
    * Read back the cached GeoJSON payload for ``resource``, or ``null`` if
    * nothing is cached or the DB isn't ready. For account-specific
-   * resources (``PRINCIPAL_SCOPED``, i.e. favourites) also returns ``null``
-   * when the cached row belongs to a different principal than the one
-   * currently signed in (SNOW-493) — a favourites row with no ``principal``
-   * at all (written before this fix) never matches, so it can't leak across
-   * an account switch either. Public resources (community_reports) skip the
-   * principal check entirely and read back for any session.
+   * resources (``PRINCIPAL_SCOPED``, i.e. favourites and routes) also
+   * returns ``null`` when the cached row belongs to a different principal
+   * than the one currently signed in (SNOW-493) — a row with no
+   * ``principal`` at all (written before that fix) never matches, so it
+   * can't leak across an account switch either. Public resources
+   * (community_reports) skip the principal check entirely and read back for
+   * any session.
    *
-   * @param {string} resource - ``'favourites'`` or ``'community_reports'``
+   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
+   *   ``'weather'`` or ``'routes'``
    * @returns {Promise<object | null>}
    */
   async function getOverlay(resource) {
