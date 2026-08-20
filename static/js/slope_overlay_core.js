@@ -6,22 +6,25 @@
  * `ch.swisstopo.hangneigung-ueber_30` WMTS layer, and everything that is
  * interesting about it is a fact about ITS COVERAGE rather than about
  * MapLibre. That fact is a rectangle, taken verbatim from the service's own
- * `WMTSCapabilities.xml` `WGS84BoundingBox`, and it matters in three places
- * at once:
+ * `WMTSCapabilities.xml` `WGS84BoundingBox`, and it matters in two places:
  *
  *   - the source's `bounds`, so MapLibre never requests a tile outside it
  *     (the service answers HTTP 400 with a JSON body out there — not an
  *     empty tile, so an unbounded source would spend real requests on
- *     errors);
- *   - a line drawn on the map whenever the overlay is on, so the edge is
- *     VISIBLE; and
+ *     errors); and
  *   - the layers-menu row, which disables itself with a reason once the
  *     viewport centre leaves the box.
  *
- * The last two exist because of the safety line in the ticket: absent
+ * The second exists because of the safety line in the ticket: absent
  * shading must never be readable as "no steep terrain here". Unshaded
  * ground inside the box means "under 30°"; unshaded ground outside it
  * means "not surveyed", and nothing on a raster distinguishes the two.
+ *
+ * A third mechanism — the rectangle drawn on the map as a line layer —
+ * was built and then removed: a hard box across the whole map, most of
+ * whose length runs through terrain nobody is looking at, cost far more
+ * legibility than the edge case was worth. The row's disable reason is
+ * what carries that job now.
  *
  * The raster is NOT Switzerland plus a buffer, despite the layer's name.
  * swisstopo derive it at 10 m from a combined DEM — swissALTI3D (CH/LI),
@@ -40,11 +43,10 @@
  * Exports (frozen `self.pwaSlopeOverlayCore`):
  *
  *   COVERAGE_BOUNDS              — [west, south, east, north]
- *   MIN_ZOOM / MAX_ZOOM          — the 3857_17 matrix set's limits
+ *   MIN_ZOOM / MAX_ZOOM          — the zoom range worth requesting
  *   RASTER_OPACITY               — the paint constant, and why
  *   CLASSES                      — the five painted slope classes
  *   coversPoint(lng, lat)
- *   coverageRingFeature()
  */
 
 (function () {
@@ -63,16 +65,24 @@
   const COVERAGE_BOUNDS = Object.freeze([5.140242, 45.398181, 11.47757, 48.230651]);
 
   /**
-   * The zoom range the `3857_17` tile matrix set publishes.
+   * The zoom range worth requesting.
    *
-   * `maxzoom` is declared explicitly for the reason SNOW-604 found the hard
-   * way: MapLibre defaults a raster source's `maxzoom` to 22, and z18 on
-   * this service answers HTTP 400 rather than serving nothing — so an
-   * omitted value turns every zoom past 17 into a screenful of failed
-   * requests instead of overzoomed z17 tiles.
+   * The service's `3857_17` matrix set publishes z0-17, but z17 carries no
+   * more information than z16: comparing a z16 tile upscaled 2x against the
+   * four native z17 tiles under it differs in 1.3% of pixels (anti-alias
+   * noise), where z15->z16 differs in 2.7% and z14->z15 in 7.0%. The
+   * pyramid's real detail stops at z16 and the top level is a server-side
+   * upscale.
+   *
+   * So `maxzoom` is 16 and MapLibre overzooms above it — pixel-identical to
+   * fetching z17, minus four requests per tile of screen at touring zooms.
+   *
+   * Declaring it at all is the SNOW-604 lesson: MapLibre defaults a raster
+   * source's `maxzoom` to 22, and this service answers HTTP 400 past z17,
+   * so an omitted value turns every close-in zoom into failed requests.
    */
   const MIN_ZOOM = 0;
-  const MAX_ZOOM = 17;
+  const MAX_ZOOM = 16;
 
   /**
    * The raster's paint opacity.
@@ -130,40 +140,6 @@
     return lng >= west && lng <= east && lat >= south && lat <= north;
   }
 
-  /**
-   * The coverage rectangle as a GeoJSON Feature, for the boundary line.
-   *
-   * A `Polygon` rather than a `LineString` so the same feature could carry
-   * a fill later without changing shape; MapLibre draws a `line` layer over
-   * a polygon's ring perfectly well. The ring is closed explicitly (five
-   * positions, first === last) — GeoJSON requires it, and MapLibre will
-   * render an unclosed ring with a visible gap along one edge rather than
-   * complaining.
-   *
-   * Returns a fresh object on every call: the caller hands it to
-   * `addSource`/`setData`, which is a place a frozen shared instance would
-   * be an unpleasant surprise.
-   *
-   * @returns {Object} A GeoJSON Feature wrapping the coverage rectangle.
-   */
-  function coverageRingFeature() {
-    const [west, south, east, north] = COVERAGE_BOUNDS;
-    return {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[
-          [west, south],
-          [east, south],
-          [east, north],
-          [west, north],
-          [west, south],
-        ]],
-      },
-    };
-  }
-
   self.pwaSlopeOverlayCore = Object.freeze({
     COVERAGE_BOUNDS: COVERAGE_BOUNDS,
     MIN_ZOOM: MIN_ZOOM,
@@ -171,6 +147,5 @@
     RASTER_OPACITY: RASTER_OPACITY,
     CLASSES: CLASSES,
     coversPoint: coversPoint,
-    coverageRingFeature: coverageRingFeature,
   });
 })();

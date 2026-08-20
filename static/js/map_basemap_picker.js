@@ -226,18 +226,12 @@
     // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
     // separate pin+label layers.
     weather: ['weather-point'],
-    // SNOW-691: the slope raster and the line marking the edge of its
-    // coverage. Deliberately NOT in the lazy-load branch below: the source
-    // is installed eagerly with its only layers hidden, and MapLibre
-    // requests no tiles for a source whose layers are all
+    // SNOW-691: the slope raster. Deliberately NOT in the lazy-load branch
+    // below: the source is installed eagerly with its layer hidden, and
+    // MapLibre requests no tiles for a source whose layers are all
     // ``visibility: none`` — so there is nothing to fetch on first enable
     // and this takes the direct setLayoutProperty path.
-    //
-    // The coverage line rides with the raster rather than having a row of
-    // its own: on its own it is a rectangle around nothing, and switched
-    // off while the raster is on it turns "not surveyed" into a silent
-    // blank, which is the one reading the ticket exists to prevent.
-    slope: ['slope-raster', 'slope-coverage-line'],
+    slope: ['slope-raster'],
   };
 
   for (const item of items) {

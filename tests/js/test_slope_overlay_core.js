@@ -35,11 +35,19 @@ describe('coverage bounds', () => {
     expect(core.COVERAGE_BOUNDS).toEqual([5.140242, 45.398181, 11.47757, 48.230651]);
   });
 
-  it('declares the 3857_17 matrix set\'s zoom range', () => {
-    // z18 answers HTTP 400. MapLibre defaults a raster maxzoom to 22, so
-    // leaving this off turns every zoom past 17 into failed requests.
+  it('stops at z16, where the pyramid stops adding detail', () => {
+    // The service advertises z0-17, but z17 is a server-side upscale of
+    // z16: a z16 tile upscaled 2x differs from its four native z17 children
+    // in 1.3% of pixels, against 2.7% for z15->z16 and 7.0% for z14->z15.
+    // Capping here costs nothing visible and saves four requests per tile
+    // of screen at the zooms people actually tour at.
+    //
+    // The value must stay BELOW the service's 18 (which answers HTTP 400)
+    // whatever else changes — MapLibre defaults a raster maxzoom to 22, and
+    // that default is what SNOW-604 blanked the basemap with.
     expect(core.MIN_ZOOM).toBe(0);
-    expect(core.MAX_ZOOM).toBe(17);
+    expect(core.MAX_ZOOM).toBe(16);
+    expect(core.MAX_ZOOM).toBeLessThan(18);
   });
 });
 
@@ -98,35 +106,6 @@ describe('coversPoint', () => {
     expect(core.coversPoint(NaN, 46)).toBe(false);
     expect(core.coversPoint(7.7, undefined)).toBe(false);
     expect(core.coversPoint(Infinity, Infinity)).toBe(false);
-  });
-});
-
-describe('coverageRingFeature', () => {
-  it('is a closed ring whose corners are exactly the bounds', () => {
-    const feature = core.coverageRingFeature();
-    expect(feature.type).toBe('Feature');
-    expect(feature.geometry.type).toBe('Polygon');
-
-    const ring = feature.geometry.coordinates[0];
-    // Five positions, first === last. MapLibre renders an unclosed ring
-    // with a visible gap along one edge rather than complaining, and a gap
-    // in this particular line reads as "coverage continues", which is the
-    // one thing it must never say.
-    expect(ring).toHaveLength(5);
-    expect(ring[0]).toEqual(ring[4]);
-
-    const [west, south, east, north] = core.COVERAGE_BOUNDS;
-    expect(new Set(ring.map(([lng]) => lng))).toEqual(new Set([west, east]));
-    expect(new Set(ring.map(([, lat]) => lat))).toEqual(new Set([south, north]));
-  });
-
-  it('returns a fresh, mutable object each call', () => {
-    // The caller hands it to addSource/setData, so a frozen shared instance
-    // would be an unpleasant surprise.
-    const first = core.coverageRingFeature();
-    const second = core.coverageRingFeature();
-    expect(first).not.toBe(second);
-    expect(Object.isFrozen(first)).toBe(false);
   });
 });
 

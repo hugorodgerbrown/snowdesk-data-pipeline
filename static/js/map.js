@@ -685,22 +685,6 @@
   // Listed lowest -> highest: moveLayer() with no beforeId moves a layer to the
   // very top, so the last id in this list ends up topmost.
   const ALWAYS_ON_TOP_MARKER_LAYERS = [
-    // SNOW-691: not a marker — the slope raster's coverage outline, and the
-    // lowest thing in this list. It has to clear the choropleth (the edge of
-    // the data is unreadable with a translucent danger fill painted over it,
-    // and that edge is the difference between "under 30°" and "not
-    // surveyed"), but it must stay UNDER every pin below, which are smaller
-    // and more deliberate targets.
-    //
-    // It rides this list rather than an `addLayer` beforeId because the two
-    // install paths run in opposite orders — boot installs slope before the
-    // regions, the styledata re-install does the reverse — and `regions-fill`
-    // is itself appended with no beforeId. So at boot there is no layer to
-    // aim at yet, and the outline silently landed UNDER the choropleth on
-    // the commonest path of all: a first load, no basemap swap. Raising it
-    // here makes the order a property of this list rather than of who
-    // happened to install first.
-    'slope-coverage-line',
     // SNOW-573: weather symbols sit above region fills/boundaries but below
     // the more "personal" pin layers below, so a favourite star or
     // community-report flag at the same point is never hidden by a
@@ -2316,11 +2300,11 @@
       type: 'raster',
       tiles: [SLOPE_TILE_URL],
       tileSize: 256,
-      // Both declared explicitly. SNOW-604's blanking bug was a source that
-      // let `maxzoom` default to 22 and then requested tiles the origin did
-      // not hold; this origin answers HTTP 400 past z17, so the same
-      // omission would turn every close-in zoom into failed requests
-      // instead of overzoomed z17 tiles.
+      // Both declared explicitly, and maxzoom is 16 rather than the
+      // service's advertised 17 — see MAX_ZOOM in slope_overlay_core.js for
+      // the measurement behind that. Declaring it at all is SNOW-604's
+      // lesson: a raster source's maxzoom defaults to 22, and this origin
+      // answers HTTP 400 past z17.
       minzoom: SLOPE_CORE.MIN_ZOOM,
       maxzoom: SLOPE_CORE.MAX_ZOOM,
       // The declared coverage rectangle. This is what keeps MapLibre from
@@ -2336,18 +2320,13 @@
         '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">swisstopo</a>',
     });
 
-    map.addSource('slope-coverage', {
-      type: 'geojson',
-      data: SLOPE_CORE.coverageRingFeature(),
-    });
-
-    // The raster goes UNDER the choropleth, so the danger ratings stay
-    // readable on top of it and the SNOW-656 fill-strength control does the
-    // "am I reading danger or terrain" trade-off it was built for — no new
-    // exclusivity rule, and no second opacity control. `beforeId` rather
-    // than relying on insertion order because the two install paths run in
-    // opposite orders: at boot this runs before installRegionsLayers, and
-    // on a basemap swap the styledata handler reinstalls the regions first.
+    // Under the choropleth, so the danger ratings stay readable on top of
+    // it and the SNOW-656 fill-strength control does the "am I reading
+    // danger or terrain" trade-off it was built for — no new exclusivity
+    // rule, and no second opacity control. `beforeId` rather than relying
+    // on insertion order because the two install paths run in opposite
+    // orders: at boot this runs before installRegionsLayers, and on a
+    // basemap swap the styledata handler reinstalls the regions first.
     const beforeId = map.getLayer('regions-fill') ? 'regions-fill' : undefined;
     map.addLayer(
       {
@@ -2355,41 +2334,26 @@
         type: 'raster',
         source: 'slope',
         layout: { visibility: visibility },
-        paint: { 'raster-opacity': SLOPE_CORE.RASTER_OPACITY },
+        paint: {
+          'raster-opacity': SLOPE_CORE.RASTER_OPACITY,
+          // NEAREST, not MapLibre's default linear. This raster is
+          // CATEGORICAL — five discrete class colours — so interpolating
+          // between neighbouring pixels invents colours that correspond to
+          // no slope class at all, softening every class boundary into a
+          // gradient the data does not contain. On a layer a reader might
+          // use to judge whether a slope is under or over 40°, a made-up
+          // colour between two classes is worse than a visible pixel edge.
+          //
+          // The blockiness that leaves at high zoom is the source's own 10 m
+          // grid, not a rendering artefact: measured against the served
+          // tiles, the smallest distinguishable feature is ~10 m at every
+          // zoom (a 2px run at z14, 3px at z15, 6px at z16 — each doubling
+          // with the zoom rather than resolving further).
+          'raster-resampling': 'nearest',
+        },
       },
       beforeId,
     );
-
-    // The coverage outline must clear the choropleth — it is the one thing
-    // here that must not be muddied by a fill painted over it. An invisible
-    // edge is the failure this whole feature has to avoid: inside the
-    // rectangle, unshaded means "under 30°"; outside it, unshaded means
-    // "not surveyed", and the raster alone cannot tell those apart.
-    //
-    // Its final position is NOT set here. Where this `addLayer` puts it
-    // depends on whether the regions happen to be installed yet, which
-    // differs between the boot path and the basemap-swap path — so
-    // `raiseMarkerLayers()` below owns the ordering, via the outline's entry
-    // at the foot of ALWAYS_ON_TOP_MARKER_LAYERS. That lifts it above the
-    // choropleth and then lifts every pin above it, on both paths.
-    map.addLayer({
-      id: 'slope-coverage-line',
-      type: 'line',
-      source: 'slope-coverage',
-      layout: {
-        visibility: visibility,
-        'line-cap': 'square',
-        'line-join': 'miter',
-      },
-      paint: {
-        // A near-black annotation colour, deliberately outside both the
-        // EAWS danger ramp and the route/pin colours: this is chrome
-        // describing the DATA's limit, not a rating or a place.
-        'line-color': '#1f2937',
-        'line-width': 2,
-        'line-opacity': 0.9,
-      },
-    });
 
     raiseMarkerLayers();
 
@@ -3221,11 +3185,9 @@
     // read by panelOverlayPainted below, which answers for the whole group
     // from element [0], and that has to be the layer the user actually sees.
     routes: ['routes-line', 'routes-line-casing'],
-    // SNOW-691: mirrors the picker's own table (map_basemap_picker.js). The
-    // raster first, so panelOverlayPainted-style "is it drawn" reads answer
-    // from the layer the visitor actually sees rather than from the
-    // coverage outline.
-    slope: ['slope-raster', 'slope-coverage-line'],
+    // SNOW-691: one layer — the raster. The coverage outline that rode
+    // alongside it was removed; see slope_overlay_core.js's header.
+    slope: ['slope-raster'],
   };
 
   /**

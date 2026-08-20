@@ -1077,5 +1077,5 @@ def test_slope_legend_section_renders_with_its_caveat() -> None:
     assert 'data-testid="map-legend-slope"' in content
     for band in ("30–35°", "35–40°", "40–45°", "45–50°", "Over 50°"):
         assert band in content, band
-    assert "unshaded ground there is not gentle ground" in content
+    assert "has not been surveyed rather than being gentle" in content
     assert "Never read this layer as a decision" in content

@@ -316,24 +316,36 @@ copies) but not in the picker's lazy branch, and why there is no
 `ensureOverlayLoaded` case and no `snowdesk:overlay-load` handling for it.
 The generic `setLayoutProperty` path is the whole toggle.
 
-Two source properties are load-bearing rather than decorative.
-`maxzoom: 17` is declared because the service answers HTTP 400 past z17 and
-MapLibre defaults a raster source's `maxzoom` to 22 — the same omission
-that blanked the basemap in SNOW-604. `bounds` is the layer's declared
-coverage rectangle (`COVERAGE_BOUNDS` in `static/js/slope_overlay_core.js`),
-which keeps MapLibre from requesting the tiles outside it that the service
-answers with HTTP 400 and a JSON body rather than an empty tile.
+Three source/paint properties are load-bearing rather than decorative.
+`maxzoom` is **16**, not the service's advertised 17: z17 is a server-side
+upscale, differing from a 2x-upscaled z16 in 1.3% of pixels against 2.7%
+for z15→z16 and 7.0% for z14→z15, so capping costs nothing visible and
+saves four requests per tile of screen at touring zooms. Declaring it at
+all is SNOW-604's lesson — a raster source's `maxzoom` defaults to 22.
+`bounds` is the declared coverage rectangle (`COVERAGE_BOUNDS` in
+`static/js/slope_overlay_core.js`), which keeps MapLibre from requesting
+the tiles outside it that the service answers with HTTP 400 and a JSON body
+rather than an empty tile. `raster-resampling` is `nearest`, not MapLibre's
+default `linear`: the raster is categorical, and interpolating between two
+class colours invents a colour that corresponds to no slope class.
+
+The blockiness that `nearest` leaves at high zoom is the source's own 10 m
+grid, not a rendering fault — measured against the served tiles the
+smallest distinguishable feature is ~10 m at every zoom (a 2px run at z14,
+3px at z15, 6px at z16, each doubling with the zoom rather than resolving
+further). Note for SNOW-693: Copernicus GLO-30 is **30 m**, so a
+self-hosted replacement would be three times coarser than this inside the
+area swisstopo covers.
 
 `slope-raster` resolves `beforeId: 'regions-fill'` so it lands under the
 choropleth from either install path (boot installs it first; the
-`styledata` re-install runs the regions first). `slope-coverage-line` goes
-on top instead — the coverage edge is the one thing here that must not be
-muddied by the fill painted over it, because inside the rectangle unshaded
-means "under 30°" and outside it means "not surveyed".
+`styledata` re-install runs the regions first).
 `updateSlopeRowAvailability` (on `moveend`) disables the layers-menu row
 with a reason once the viewport centre leaves the rectangle, via a
 namespaced marker (`data-slope-disabled-out-of-coverage`) mirroring the
-weather row's.
+weather row's. An earlier build also drew the rectangle as a
+`slope-coverage-line` layer; it was removed as a hard box across the whole
+map that cost more legibility than it bought.
 
 One non-obvious coupling: `installSlopeLayer` nulls `map.js`'s memoised
 `attributionSourceIds` and re-runs `updateMapAttribution`.

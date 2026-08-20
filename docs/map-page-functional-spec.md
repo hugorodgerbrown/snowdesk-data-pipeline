@@ -368,12 +368,16 @@ colour scheme underneath them.
 covers `5.140242, 45.398181` → `11.47757, 48.230651` and stops dead — the
 Zillertal, the Dolomites, the Queyras and the Mercantour are all outside
 it, and the Zillertal is terrain we publish ALBINA bulletins for. So the
-rectangle is drawn on the map whenever the layer is on, and the menu row
-disables itself with a reason once the viewport centre leaves it. This is
-not tidiness: **inside the rectangle unshaded means "under 30°"; outside it
-unshaded means "not surveyed"**, and nothing about a raster distinguishes
-the two. Widening coverage to everything we publish bulletins for is
-SNOW-693.
+menu row disables itself, with a reason, once the viewport centre leaves
+the covered area. This is not tidiness: **inside it unshaded means "under
+30°"; outside it unshaded means "not surveyed"**, and nothing about a
+raster distinguishes the two. Widening coverage to everything we publish
+bulletins for is SNOW-693.
+
+An earlier build also drew the coverage rectangle on the map as a line.
+It was removed: a hard box spanning the whole map, most of whose length
+runs through terrain nobody is looking at, cost more legibility than the
+edge case was worth.
 
 **It is not a Swiss layer despite the name.** swisstopo derive it at 10 m
 from a combined elevation model — swissALTI3D (CH/LI), RGE ALTI (FR),
@@ -381,8 +385,10 @@ TINITALY/01 (IT), DGM10 (AT), DGM1 (Bavaria), EU-DEM (Baden-Württemberg) —
 and warn that accuracy is not guaranteed where two base models meet.
 
 **The editorial line.** A 10 m model averages the ground, so a short steep
-roll inside a gentler face does not appear at any zoom. The legend says so,
-says what unshaded ground means on each side of the coverage edge, and says
+roll inside a gentler face does not appear at any zoom — and the shading
+visibly blocks up at touring zooms for exactly that reason, which is the
+data's resolution rather than a rendering fault. The legend says so, says
+what unshaded ground means where the layer has no coverage, and says
 plainly that the layer is not a decision. A slope shading is the single
 easiest surface on this map to misread as permission, which is the whole
 reason all three of those sentences are there.
@@ -400,7 +406,7 @@ published data**. Its sections say what their rows are:
 | **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy |
 | **Locations** | Resorts | Named places geocoded onto regions |
 | **Conditions** | Weather (flag-gated) | Forecast symbols at each point |
-| **Terrain** | Slope angle (flag-gated) | Steepness shading and its coverage edge |
+| **Terrain** | Slope angle (flag-gated) | Steepness shading |
 | **Base map** | one row per basemap | The geographic backdrop |
 
 **Favourites and community reports are not in it.** Both are
