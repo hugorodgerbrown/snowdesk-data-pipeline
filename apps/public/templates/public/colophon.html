@@ -1,11 +1,22 @@
 {% extends "public/base.html" %}
 {% comment %}
-apps/public/templates/public/colophon.html — Technology credits and attribution page
-(SNOW-122).
+apps/public/templates/public/colophon.html — Technology credits and attribution
+page (SNOW-122).
 
-Lists every framework, data source, icon set, font, and hosted service the site
-depends on. Content is authored directly in this template; versions are pinned
-at authoring time, not derived at runtime from installed packages.
+Lists every framework, library, data source, icon set, font, and hosted service
+the site depends on. Content is authored directly in this template; nothing is
+derived at runtime from installed packages.
+
+Version policy (SNOW-122 review, 2026-08-20): only the two browser assets
+vendored into ``static/js/`` carry an exact version, because the committed file
+IS that version and can be checked against the repo. Server-side and build-time
+frameworks carry the major line only — the pinned Django minor drifted from 5.2
+to 6.x here unnoticed, and a major line is the part that is actually a credit.
+
+Reviewing this page: the browser-facing third parties are enumerated by
+``csp_defaults`` in ``config/settings/base.py`` (``connect-src``) and by
+``BASEMAP_STYLES``; the hosted services that see request data are listed in
+``public/privacy.html`` §5. Both are the cross-check for anything missing here.
 {% endcomment %}
 {% load i18n %}
 
@@ -27,8 +38,12 @@ at authoring time, not derived at runtime from installed packages.
             </h2>
             <ul class="list-disc pl-5 space-y-1">
                 <li>
+                    <a class="underline" href="https://www.python.org/" target="_blank" rel="noopener">Python 3</a>
+                    {% trans "— language runtime" %}
+                </li>
+                <li>
                     <a class="underline" href="https://www.djangoproject.com/" target="_blank" rel="noopener"
-                    >Django 5.2</a>
+                    >Django 6</a>
                     {% trans "— web framework" %}
                 </li>
                 <li>
@@ -49,6 +64,60 @@ at authoring time, not derived at runtime from installed packages.
                     <a class="underline" href="https://whitenoise.readthedocs.io/" target="_blank" rel="noopener"
                     >WhiteNoise</a>
                     {% trans "— static file serving" %}
+                </li>
+            </ul>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-libraries">
+            <h2 class="text-base font-semibold text-text-1 mb-2">
+                {% trans "Libraries" %}
+            </h2>
+            <ul class="list-disc pl-5 space-y-1">
+                <li>
+                    <a
+                        class="underline"
+                        href="https://github.com/RealOrangeOne/django-tasks"
+                        target="_blank"
+                        rel="noopener"
+                    >django-tasks</a>
+                    {% trans "— background task queue for outbound email" %}
+                </li>
+                <li>
+                    <a
+                        class="underline"
+                        href="https://github.com/django-waffle/django-waffle"
+                        target="_blank"
+                        rel="noopener"
+                    >django-waffle</a>
+                    {% trans "— feature flags" %}
+                </li>
+                <li>
+                    <a
+                        class="underline"
+                        href="https://github.com/yunojuno/django-csp-plus"
+                        target="_blank"
+                        rel="noopener"
+                    >django-csp-plus</a>
+                    {% trans "— Content-Security-Policy headers and violation reports" %}
+                </li>
+                <li>
+                    <a class="underline" href="https://github.com/duo-labs/py_webauthn" target="_blank" rel="noopener"
+                    >py_webauthn</a>
+                    {% trans "— passkey (WebAuthn) registration and sign-in" %}
+                </li>
+                <li>
+                    <a
+                        class="underline"
+                        href="https://github.com/web-push-libs/pywebpush"
+                        target="_blank"
+                        rel="noopener"
+                    >pywebpush</a>
+                    {% trans "— Web Push notification delivery" %}
+                </li>
+                <li>
+                    <a class="underline" href="https://shapely.readthedocs.io/" target="_blank" rel="noopener"
+                    >Shapely</a>
+                    {% trans "— region boundary geometry" %}
                 </li>
             </ul>
         </section>
@@ -110,6 +179,26 @@ at authoring time, not derived at runtime from installed packages.
                     >European Avalanche Warning Services (EAWS)</a>
                     {% trans "— region boundaries and danger/problem iconography" %}
                 </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <a
+                            class="underline"
+                            href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/"
+                            target="_blank"
+                            rel="noopener"
+                        >GeoLite2</a>
+                        by <a class="underline" href="https://www.maxmind.com" target="_blank" rel="noopener"
+                        >MaxMind</a>
+                        — offline database used to derive an approximate location from a request's IP address,
+                        licensed under
+                        <a
+                            class="underline"
+                            href="https://creativecommons.org/licenses/by-sa/4.0/"
+                            target="_blank"
+                            rel="noopener"
+                        >CC BY-SA 4.0</a>
+                    {% endblocktrans %}
+                </li>
             </ul>
         </section>
 
@@ -125,12 +214,37 @@ at authoring time, not derived at runtime from installed packages.
                 </li>
                 <li>
                     <a class="underline" href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>
-                    {% trans "— Liberty vector tiles (production default)" %}
+                    {% trans "— Liberty vector tiles (the Standard basemap, and the production default)" %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <a
+                            class="underline"
+                            href="https://www.openstreetmap.org/copyright"
+                            target="_blank"
+                            rel="noopener"
+                        >© OpenStreetMap contributors</a>
+                        — the map data behind the Liberty tiles, licensed under the
+                        <a
+                            class="underline"
+                            href="https://opendatacommons.org/licenses/odbl/"
+                            target="_blank"
+                            rel="noopener"
+                        >Open Database Licence (ODbL)</a>
+                    {% endblocktrans %}
                 </li>
                 <li>
                     <a class="underline" href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener"
                     >swisstopo</a>
-                    {% trans "— Winter and Light vector tile styles" %}
+                    {% trans "— Winter vector tile style, covering Switzerland" %}
+                </li>
+                <li>
+                    <a class="underline" href="https://geoservices.ign.fr/" target="_blank" rel="noopener">IGN</a>
+                    {% trans "— Plan IGN vector tile style, covering France" %}
+                </li>
+                <li>
+                    <a class="underline" href="https://basemap.at/" target="_blank" rel="noopener">basemap.at</a>
+                    {% trans "— vector tile style, covering Austria" %}
                 </li>
             </ul>
         </section>
@@ -162,7 +276,8 @@ at authoring time, not derived at runtime from installed packages.
                             rel="noopener"
                         >CC BY 4.0</a>
                     {% endblocktrans %}
-                    {# EAWS icon licence: assumed CC BY 4.0 — verify before launch #}
+                    {# EAWS icon licence: still assumed CC BY 4.0 — unverified as of the 2026-08-20 review. #}
+                    {# EAWS publishes no licence file alongside the icon set; confirm with them before launch. #}
                 </li>
             </ul>
         </section>
@@ -203,6 +318,23 @@ at authoring time, not derived at runtime from installed packages.
                 <li>
                     <a class="underline" href="https://resend.com/" target="_blank" rel="noopener">Resend</a>
                     {% trans "— transactional email delivery" %}
+                </li>
+            </ul>
+        </section>
+
+        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-analytics">
+            <h2 class="text-base font-semibold text-text-1 mb-2">
+                {% trans "Analytics" %}
+            </h2>
+            <ul class="list-disc pl-5 space-y-1">
+                <li>
+                    {% url 'public:privacy' as privacy_url %}
+                    {% blocktrans trimmed %}
+                        <a class="underline" href="https://posthog.com/" target="_blank" rel="noopener">PostHog</a>
+                        — anonymous product analytics. Events are sent from our servers, not your browser; what is
+                        collected is described in the
+                        <a class="underline" href="{{ privacy_url }}">privacy policy</a>
+                    {% endblocktrans %}
                 </li>
             </ul>
         </section>
