@@ -119,7 +119,7 @@ Optional context:
                 id="search-toggle"
                 type="button"
                 class="map-utility-button hover-affordance"
-                aria-label='{% trans "Find a region" %}'
+                aria-label='{% trans "Find a region or resort" %}'
                 aria-expanded="false"
                 aria-controls="search-input"
             >
@@ -141,10 +141,10 @@ Optional context:
                 id="search-input"
                 class="search-input"
                 type="search"
-                placeholder='{% trans "Find a region" %}'
+                placeholder='{% trans "Find a region or resort" %}'
                 autocomplete="off"
                 spellcheck="false"
-                aria-label='{% trans "Find a region" %}'
+                aria-label='{% trans "Find a region or resort" %}'
                 aria-autocomplete="list"
                 aria-controls="search-results"
                 aria-expanded="false"
@@ -1150,7 +1150,7 @@ Optional context:
         <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
             {% trans "View the selected region bulletin detail page." %}
         </li>
-        <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region" %}'>
+        <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region or resort" %}'>
             {% trans "Search regions and resorts by name." %}
         </li>
         {# The bottom-right stack, walked top to bottom in DOM order. #}
@@ -1628,6 +1628,11 @@ Optional context:
     <span data-string="frame-readout-done">{% blocktrans %}%(mb)s downloaded{% endblocktrans %}</span>
     <span data-string="frame-budget-banner">{% blocktrans %}%(used)s / %(budget)s downloaded{% endblocktrans %}</span>
     <span data-string="action-close">{% trans "Close" %}</span>
+    {# SNOW-697: visually-hidden row-type words for the search dropdown,   #}
+    {# read back by map.js's renderResults. Sighted users get the type     #}
+    {# from the pin glyph and the secondary line.                          #}
+    <span data-string="search-type-region">{% trans "Region" %}</span>
+    <span data-string="search-type-resort">{% trans "Resort" %}</span>
     {# SNOW-658 removed "custom-control-idle"/"custom-control-done" —      #}
     {# #map-custom-download-control's two labels for a downloads state it  #}
     {# no longer carries. Its label is server-rendered on the button       #}

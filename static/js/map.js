@@ -5303,13 +5303,19 @@
     // after a country lazy-loads — the CH entries are already present).
     const INDEXED_REGIONS = new Set();
 
+    // SNOW-697: a region contributes its own row plus one per resort, so
+    // this pushes a list rather than a single entry. RESORTS_BY_REGION is
+    // already populated by the time this first runs (the boot fetch above
+    // awaits it) and is not country-scoped, so a country that lazy-loads
+    // later finds its resorts waiting. When that fetch failed the map
+    // degrades to region-only rows — see its .catch().
     const indexRegion = (props) => {
       const regionID = props && props.regionID;
       if (!regionID || INDEXED_REGIONS.has(regionID)) return;
-      const entry = searchCore.buildEntry(props, RESORTS_BY_REGION[regionID] || []);
-      if (!entry) return;
+      const entries = searchCore.buildEntries(props, RESORTS_BY_REGION[regionID] || []);
+      if (!entries.length) return;
       INDEXED_REGIONS.add(regionID);
-      SEARCH_INDEX.push(entry);
+      SEARCH_INDEX.push(...entries);
     };
 
     for (const props of Object.values(REGION_LOOKUP)) {
@@ -5435,19 +5441,60 @@
         li.id = `search-result-${i}`;
 
         // Text column (primary/secondary) and a region-ID badge side by side.
-        // All rows are regions; the badge carries the EAWS region ID
-        // (e.g. CH-4115) so users can see the canonical identifier.
+        // SNOW-697: rows are regions OR resorts. The badge carries the EAWS
+        // region ID either way — for a resort that is the region it sits
+        // in, which is both what the row selects and the bulletin the user
+        // is on their way to, so it is context rather than clutter.
+        li.dataset.resultType = r.type;
+
         const text = document.createElement('div');
         text.className = 'search-result-text';
         const primary = document.createElement('div');
         primary.className = 'search-result-primary';
-        primary.textContent = r.primary;
+        // A pin glyph marks the resort rows. Sighted users get the
+        // region/resort distinction from this plus the secondary line;
+        // the visually-hidden word below is what carries it to a screen
+        // reader, which cannot see either.
+        if (r.type === 'resort') {
+          // Stroked in currentColor rather than filled with a punched-out
+          // centre: a filled pin needs a literal colour for the hole, and
+          // the row behind it is --color-card, which is not the same colour
+          // in both themes. Stroke-only inherits and is right in either.
+          // Same idiom as the search toggle's own icon in _map_embed.html.
+          const pin = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          pin.setAttribute('class', 'search-result-pin');
+          pin.setAttribute('viewBox', '0 0 24 24');
+          pin.setAttribute('fill', 'none');
+          pin.setAttribute('stroke', 'currentColor');
+          pin.setAttribute('stroke-width', '2');
+          pin.setAttribute('aria-hidden', 'true');
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', 'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z');
+          const hole = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          hole.setAttribute('cx', '12');
+          hole.setAttribute('cy', '10');
+          hole.setAttribute('r', '2.5');
+          pin.append(path, hole);
+          primary.append(pin);
+        }
+        const typeLabel = document.createElement('span');
+        typeLabel.className = 'search-result-type';
+        // Trailing space inside the hidden span, not a text node between
+        // the two: the span is clipped to a 1px box, so a separator
+        // outside it can collapse and leave a screen reader reading
+        // "ResortVerbier" as one word. Invisible either way.
+        typeLabel.textContent = (r.type === 'resort'
+          ? MAP_STRINGS['search-type-resort']
+          : MAP_STRINGS['search-type-region']) + ' ';
+        primary.append(typeLabel, document.createTextNode(r.primary));
+
         const secondary = document.createElement('div');
         secondary.className = 'search-result-secondary';
-        // Secondary line: parent L2 sub-region name (or empty when the
-        // fixture has no descriptive L2 — AT/IT). Resorts are searched
-        // against but not rendered; see indexRegion for why.
-        secondary.textContent = r.subregionName;
+        // Region row: the parent L2 sub-region name, blank where the
+        // fixture has no descriptive L2 (AT/IT). Resort row: the name of
+        // the region it belongs to, so resorts sharing a first word stay
+        // told apart.
+        secondary.textContent = r.secondary;
         text.append(primary, secondary);
 
         const badge = document.createElement('span');
@@ -5467,7 +5514,7 @@
           flag.append(use);
           badge.append(flag);
         }
-        badge.append(document.createTextNode(r.secondary));
+        badge.append(document.createTextNode(r.regionID));
 
         li.append(text, badge);
         // Use pointerdown rather than click so we act before the input's
