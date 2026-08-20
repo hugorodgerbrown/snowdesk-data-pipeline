@@ -685,6 +685,22 @@
   // Listed lowest -> highest: moveLayer() with no beforeId moves a layer to the
   // very top, so the last id in this list ends up topmost.
   const ALWAYS_ON_TOP_MARKER_LAYERS = [
+    // SNOW-691: not a marker — the slope raster's coverage outline, and the
+    // lowest thing in this list. It has to clear the choropleth (the edge of
+    // the data is unreadable with a translucent danger fill painted over it,
+    // and that edge is the difference between "under 30°" and "not
+    // surveyed"), but it must stay UNDER every pin below, which are smaller
+    // and more deliberate targets.
+    //
+    // It rides this list rather than an `addLayer` beforeId because the two
+    // install paths run in opposite orders — boot installs slope before the
+    // regions, the styledata re-install does the reverse — and `regions-fill`
+    // is itself appended with no beforeId. So at boot there is no layer to
+    // aim at yet, and the outline silently landed UNDER the choropleth on
+    // the commonest path of all: a first load, no basemap swap. Raising it
+    // here makes the order a property of this list rather than of who
+    // happened to install first.
+    'slope-coverage-line',
     // SNOW-573: weather symbols sit above region fills/boundaries but below
     // the more "personal" pin layers below, so a favourite star or
     // community-report flag at the same point is never hidden by a
@@ -2344,13 +2360,18 @@
       beforeId,
     );
 
-    // The coverage outline goes ON TOP of everything instead — it is the
-    // one thing on this layer that must not be muddied by the choropleth
-    // painted over it. An invisible edge is the failure this whole feature
-    // has to avoid: inside the rectangle, unshaded means "under 30°";
-    // outside it, unshaded means "not surveyed", and the raster alone
-    // cannot tell those apart. raiseMarkerLayers() below lifts the pins
-    // back above it.
+    // The coverage outline must clear the choropleth — it is the one thing
+    // here that must not be muddied by a fill painted over it. An invisible
+    // edge is the failure this whole feature has to avoid: inside the
+    // rectangle, unshaded means "under 30°"; outside it, unshaded means
+    // "not surveyed", and the raster alone cannot tell those apart.
+    //
+    // Its final position is NOT set here. Where this `addLayer` puts it
+    // depends on whether the regions happen to be installed yet, which
+    // differs between the boot path and the basemap-swap path — so
+    // `raiseMarkerLayers()` below owns the ordering, via the outline's entry
+    // at the foot of ALWAYS_ON_TOP_MARKER_LAYERS. That lifts it above the
+    // choropleth and then lifts every pin above it, on both paths.
     map.addLayer({
       id: 'slope-coverage-line',
       type: 'line',
