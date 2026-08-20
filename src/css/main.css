@@ -281,6 +281,27 @@
   --color-eaws-high:          #ff0000;
   --color-eaws-very-high:     #ff0000;   /* same hue as High per EAWS spec  */
 
+  /* —— swisstopo slope-angle classes (SNOW-691) ————
+     The five painted classes of the
+     ch.swisstopo.hangneigung-ueber_30 raster, sampled
+     off the served tiles. This is the SLF slope
+     classification, so — like the EAWS scale above —
+     these are a published standard, not a brand
+     choice: do not adjust them. Everything below 30°
+     is fully transparent in the source raster and so
+     has no token here.
+
+     Consumed by .map-legend-swatch--slope-* in
+     static/css/map.css. The map layer itself paints
+     nothing: it is a raster, and the colours arrive
+     already baked into the tile.
+     ————————————————————————————————————————— */
+  --color-slope-30: #f2e50a;   /* 30–35° */
+  --color-slope-35: #f46f24;   /* 35–40° */
+  --color-slope-40: #de055b;   /* 40–45° */
+  --color-slope-45: #c889bb;   /* 45–50° */
+  --color-slope-50: #4b4b4b;   /* >50°   */
+
   /* Muted tint backgrounds for danger band strips */
   --color-eaws-low-tint:          #e8ffb8;
   --color-eaws-moderate-tint:     #fff7b8;

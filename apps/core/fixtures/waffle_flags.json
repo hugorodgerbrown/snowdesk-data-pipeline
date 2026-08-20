@@ -11,6 +11,11 @@
       "superusers": true
     },
     {
+      "name": "slope_layer",
+      "note": "Gates the SNOW-691 map Terrain overlay — the swisstopo slope-angle raster (ch.swisstopo.hangneigung-ueber_30), its layers-menu row and its legend section. Ships ON FOR EVERYONE; swisstopo is credited in the map legend's \"Map data\" section and on /colophon/. Open item: swisstopo's layersConfig marks this layer \"chargeable\": true and that flag's meaning is unconfirmed (opendata.swiss and its CKAN API both 403 automated fetches), so the licence position is worth confirming with geodata@swisstopo.ch.",
+      "everyone": true
+    },
+    {
       "name": "sync_log",
       "note": "Gates the SNOW-482 sync-log panel (manage page) and its matching /help/ section — a read-out of the client-side log:sync IndexedDB store of recent real server round-trips.",
       "superusers": true

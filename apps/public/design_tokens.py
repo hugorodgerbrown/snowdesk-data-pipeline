@@ -351,6 +351,23 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="slope",
+        label="Slope angle",
+        description=(
+            "swisstopo slope-angle classes, SLF classification "
+            "(theme-invariant; below 30° is unpainted)."
+        ),
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token("--color-slope-30", "30–35°", "#f2e50a", None),
+            Token("--color-slope-35", "35–40°", "#f46f24", None),
+            Token("--color-slope-40", "40–45°", "#de055b", None),
+            Token("--color-slope-45", "45–50°", "#c889bb", None),
+            Token("--color-slope-50", "Over 50°", "#4b4b4b", None),
+        ),
+    ),
+    FoundationCategory(
         slug="weather",
         label="Weather header",
         description=(

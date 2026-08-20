@@ -1201,6 +1201,16 @@
 .map-legend-swatch--considerable { background: var(--color-eaws-considerable); }
 .map-legend-swatch--high         { background: var(--color-eaws-high); }
 
+/* SNOW-691: the swisstopo slope-angle raster's five painted classes, in the
+   same swatch shape as the danger scale above. The tokens are in
+   src/css/main.css's @theme; the values are the SLF classification and are
+   read off the served tiles, so the legend and the raster cannot disagree. */
+.map-legend-swatch--slope-30 { background: var(--color-slope-30); }
+.map-legend-swatch--slope-35 { background: var(--color-slope-35); }
+.map-legend-swatch--slope-40 { background: var(--color-slope-40); }
+.map-legend-swatch--slope-45 { background: var(--color-slope-45); }
+.map-legend-swatch--slope-50 { background: var(--color-slope-50); }
+
 /* SNOW-78: legend pin matches the on-map resort circle paint — neutral
  * dark fill with a thin white stroke so it reads against any basemap or
  * EAWS rating fill. Smaller than the rating swatches so the pin looks
