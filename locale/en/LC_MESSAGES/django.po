@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-19 15:59+0000\n"
+"POT-Creation-Date: 2026-08-20 17:07+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,6 +17,699 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Your Snowdesk account link"
+msgstr ""
+
+#, python-format
+msgid "Snowdesk: you're subscribed to %(region_name)s"
+msgstr ""
+
+msgid "Verify your Snowdesk email address"
+msgstr ""
+
+msgid "Reset your Snowdesk password"
+msgstr ""
+
+msgid "Confirm your new Snowdesk email address"
+msgstr ""
+
+msgid "Your Snowdesk email address is changing"
+msgstr ""
+
+msgid "Access your account — Snowdesk"
+msgstr ""
+
+msgid ""
+"Confirm to sign in to your Snowdesk account and manage your avalanche "
+"bulletin subscriptions."
+msgstr ""
+
+msgid "Access your account"
+msgstr ""
+
+msgid ""
+"Tap the button below to sign in to your Snowdesk account and manage your "
+"avalanche bulletin subscriptions."
+msgstr ""
+
+msgid "Sign in to my account"
+msgstr ""
+
+msgid "Change your email — Snowdesk"
+msgstr ""
+
+msgid "Change the email address on your Snowdesk account."
+msgstr ""
+
+msgid "Change your email"
+msgstr ""
+
+#, python-format
+msgid ""
+"Your account email is <strong>%(current)s</strong>. Enter a new address and "
+"we'll send it a confirmation link. Your current address stays in use until "
+"you confirm."
+msgstr ""
+
+msgid "New email address"
+msgstr ""
+
+msgid "Send confirmation link"
+msgstr ""
+
+#, python-format
+msgid "<a href=\"%(manage_url)s\" class=\"underline\">Back to your account</a>"
+msgstr ""
+
+msgid "Confirm your new email — Snowdesk"
+msgstr ""
+
+msgid "Confirm the new email address for your Snowdesk account."
+msgstr ""
+
+msgid "Confirm your new email"
+msgstr ""
+
+#, python-format
+msgid ""
+"Confirm that <strong>%(new)s</strong> should become the email address for "
+"your Snowdesk account. Your old address will stop working for sign-in."
+msgstr ""
+
+msgid "Confirm new email"
+msgstr ""
+
+msgid "Check your inbox — Snowdesk"
+msgstr ""
+
+msgid "We've sent a confirmation link to your new Snowdesk email address."
+msgstr ""
+
+msgid "Check your inbox"
+msgstr ""
+
+#, python-format
+msgid ""
+"We've sent a confirmation link to <strong>%(new)s</strong>. Click it to "
+"finish changing your email. It expires in 24 hours, and your current address "
+"stays in use until then."
+msgstr ""
+
+msgid "Hi,"
+msgstr ""
+
+msgid ""
+"Click the button below to access your Snowdesk account and manage your "
+"avalanche bulletin subscriptions."
+msgstr ""
+
+msgid "Access my Snowdesk account"
+msgstr ""
+
+msgid "Or copy this link into your browser:"
+msgstr ""
+
+#, python-format
+msgid "This link expires in %(hours)s hours."
+msgstr ""
+
+msgid "If you did not request this, you can safely ignore this email."
+msgstr ""
+
+msgid "Snowdesk — Swiss Avalanche Bulletins"
+msgstr ""
+
+msgid ""
+"Avalanche data: WSL Institute for Snow and Avalanche Research SLF (<a "
+"href=\"https://www.slf.ch\" style=\"color: #9ca3af\" >slf.ch</a>) &middot; "
+"Licensed under <a href=\"https://creativecommons.org/licenses/by/4.0/\" "
+"style=\"color: #9ca3af\" >CC BY 4.0</a>"
+msgstr ""
+
+msgid ""
+"Click the link below to access your Snowdesk account and manage your "
+"avalanche bulletin subscriptions."
+msgstr ""
+
+msgid ""
+"Avalanche data: WSL Institute for Snow and Avalanche Research SLF (slf.ch) · "
+"Licensed under CC BY 4.0"
+msgstr ""
+
+#, python-format
+msgid "Snowdesk: you're subscribed to %(region)s"
+msgstr ""
+
+#, python-format
+msgid ""
+"You're now subscribed to avalanche bulletin alerts for <strong>%(region)s</"
+"strong>."
+msgstr ""
+
+msgid "Manage your subscriptions"
+msgstr ""
+
+#, python-format
+msgid "You're now subscribed to avalanche bulletin alerts for %(region)s."
+msgstr ""
+
+msgid "Use the link below to manage your subscriptions:"
+msgstr ""
+
+msgid ""
+"We received a request to use this address for your Snowdesk account. Click "
+"the button below to confirm it."
+msgstr ""
+
+msgid "Confirm this email address"
+msgstr ""
+
+#, python-format
+msgid ""
+"This link expires in %(hours)s hours. Until you confirm, your account keeps "
+"its current email address."
+msgstr ""
+
+msgid ""
+"We received a request to use this address for your Snowdesk account. Click "
+"the link below to confirm it."
+msgstr ""
+
+msgid ""
+"The email address on your Snowdesk account has been changed. This address "
+"will no longer be used to sign in."
+msgstr ""
+
+msgid ""
+"A change to the email address on your Snowdesk account was requested. Your "
+"current address stays in use until the new one is confirmed."
+msgstr ""
+
+msgid ""
+"If this wasn't you, please secure your account — reset your password from "
+"the sign-in page."
+msgstr ""
+
+msgid ""
+"We received a request to reset your Snowdesk password. Click the button "
+"below to choose a new one."
+msgstr ""
+
+msgid "Reset my password"
+msgstr ""
+
+#, python-format
+msgid "This link expires in %(hours)s hours and can only be used once."
+msgstr ""
+
+msgid ""
+"If you did not request this, you can safely ignore this email — your "
+"password will not change."
+msgstr ""
+
+msgid ""
+"We received a request to reset your Snowdesk password. Click the link below "
+"to choose a new one."
+msgstr ""
+
+msgid ""
+"Click the button below to verify your email address and finish setting up "
+"your Snowdesk account."
+msgstr ""
+
+msgid "Verify my email"
+msgstr ""
+
+msgid ""
+"Click the link below to verify your email address and finish setting up your "
+"Snowdesk account."
+msgstr ""
+
+msgid "Link expired — Snowdesk"
+msgstr ""
+
+msgid ""
+"This account link has expired or is invalid. Request a new one to manage "
+"your Snowdesk subscriptions."
+msgstr ""
+
+msgid "This link has expired"
+msgstr ""
+
+msgid ""
+"Account links are only valid for 24 hours. This one has expired or is "
+"invalid."
+msgstr ""
+
+msgid "Request a new link"
+msgstr ""
+
+msgid "My account — Snowdesk"
+msgstr ""
+
+msgid "Update your Snowdesk avalanche bulletin region subscriptions."
+msgstr ""
+
+msgid "Something went wrong."
+msgstr ""
+
+msgid "Your subscription is confirmed."
+msgstr ""
+
+msgid "You'll receive alerts for the regions below."
+msgstr ""
+
+msgid "Your subscription"
+msgid_plural "Your subscriptions"
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "View %(region)s on the map"
+msgstr ""
+
+msgid "Switzerland"
+msgstr ""
+
+msgid "Austria"
+msgstr ""
+
+msgid "France"
+msgstr ""
+
+msgid "Italy"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+#, python-format
+msgid "Open bulletin for %(d)s →"
+msgstr ""
+
+msgid "You have no active subscriptions."
+msgstr ""
+
+msgid "Choose more regions on the map →"
+msgstr ""
+
+msgid "My favourites"
+msgstr ""
+
+msgid "Loading…"
+msgstr ""
+
+msgid "Account email"
+msgstr ""
+
+msgid "Change email"
+msgstr ""
+
+msgid "Passkeys"
+msgstr ""
+
+msgid "Sign in faster with a passkey"
+msgstr ""
+
+msgid ""
+"Save a passkey for this device and you won't need a magic link next time."
+msgstr ""
+
+msgid "Save a passkey for this device"
+msgstr ""
+
+#, python-format
+msgid "Last used %(date)s"
+msgstr ""
+
+msgid "Never used"
+msgstr ""
+
+msgid "Remove this passkey?"
+msgstr ""
+
+msgid "Add a passkey for this device"
+msgstr ""
+
+msgid "Sign out"
+msgstr ""
+
+msgid ""
+"Ends this session on this device. Anything already saved offline stays until "
+"you reset local data below."
+msgstr ""
+
+msgid "Reset local data on this device"
+msgstr ""
+
+msgid ""
+"Clears cached bulletins, offline data, and saved preferences on this device. "
+"Your subscription is not affected."
+msgstr ""
+
+msgid "Sync log"
+msgstr ""
+
+msgid "Anonymous usage data"
+msgstr ""
+
+#, python-format
+msgid ""
+"We collect a small stream of anonymous events (installs, updates, push "
+"delivery, errors) so we can keep the app working across browsers. No "
+"bulletin content, no email address, no location. <a href=\"%(privacy_url)s\" "
+"class=\"underline\">Read the full policy</a>."
+msgstr ""
+
+msgid "Share anonymous usage data"
+msgstr ""
+
+msgid "Unsubscribe from all alerts and delete your account?"
+msgstr ""
+
+msgid "Unsubscribe from all alerts"
+msgstr ""
+
+msgid "Passkey registration failed. Please try again."
+msgstr ""
+
+msgid "Subscriptions saved — Snowdesk"
+msgstr ""
+
+msgid ""
+"Your Snowdesk avalanche bulletin region subscriptions have been updated."
+msgstr ""
+
+msgid "Regions saved"
+msgstr ""
+
+msgid "Your bulletin subscriptions have been updated."
+msgstr ""
+
+msgid "Back to Snowdesk"
+msgstr ""
+
+msgid ""
+"We've sent you an account link. Check your inbox to manage your Snowdesk "
+"subscriptions."
+msgstr ""
+
+msgid ""
+"If that address is registered, we've sent you a link to manage your "
+"subscriptions. It expires in 24 hours."
+msgstr ""
+
+msgid ""
+"Recent real syncs with the server on this device (cached, offline-served "
+"pages don't count). Cleared by \"Reset local data on this device\", above."
+msgstr ""
+
+msgid "Sync log unavailable on this device."
+msgstr ""
+
+msgid "No syncs yet."
+msgstr ""
+
+msgid "Could not load the sync log."
+msgstr ""
+
+#, python-format
+msgid "Add <strong>%(region)s</strong> to your alerts"
+msgstr ""
+
+msgid ""
+"You're signed in. One click to add daily bulletin updates for this region."
+msgstr ""
+
+msgid "Add region"
+msgstr ""
+
+msgid "Saving…"
+msgstr ""
+
+#, python-format
+msgid "You're subscribed to <strong>%(region)s</strong>"
+msgstr ""
+
+msgid "You receive daily bulletin updates for this region."
+msgstr ""
+
+msgid "Unsubscribe"
+msgstr ""
+
+msgid "Something went wrong"
+msgstr ""
+
+msgid "We couldn't find that region — please try again from the bulletin page."
+msgstr ""
+
+msgid "Get avalanche alerts"
+msgstr ""
+
+msgid "Enter your email to receive daily bulletin updates for this region."
+msgstr ""
+
+msgid "Subscribe"
+msgstr ""
+
+msgid "Sending…"
+msgstr ""
+
+msgid "We've sent you a link to access your account. It expires in 24 hours."
+msgstr ""
+
+#, python-format
+msgid "Added <strong>%(region)s</strong> to your alerts"
+msgstr ""
+
+msgid "We've sent a confirmation to your email."
+msgstr ""
+
+#, python-format
+msgid "You're already subscribed to <strong>%(region)s</strong>"
+msgstr ""
+
+#, python-format
+msgid "You've unsubscribed from <strong>%(region)s</strong>"
+msgstr ""
+
+msgid "Create your account — Snowdesk"
+msgstr ""
+
+msgid "Create a Snowdesk account to save favourites and share field reports."
+msgstr ""
+
+msgid "Create your account"
+msgstr ""
+
+msgid "Enter your email address and we'll send you a link to verify it."
+msgstr ""
+
+msgid "Email address"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "(optional)"
+msgstr ""
+
+msgid "Create account"
+msgstr ""
+
+#, python-format
+msgid ""
+"Already have an account? <a href=\"%(sign_in_url)s\" "
+"class=\"underline\">Sign in</a>."
+msgstr ""
+
+msgid "We've sent you a link to verify your Snowdesk email address."
+msgstr ""
+
+msgid ""
+"If that address needs verifying, we've sent you a link to confirm it. It "
+"expires in 24 hours."
+msgstr ""
+
+msgid "Reset your password — Snowdesk"
+msgstr ""
+
+msgid "Reset your Snowdesk password by email."
+msgstr ""
+
+msgid "Reset your password"
+msgstr ""
+
+msgid ""
+"Enter your email address and we'll send you a link to choose a new password."
+msgstr ""
+
+msgid "Send reset link"
+msgstr ""
+
+#, python-format
+msgid ""
+"Remembered it? <a href=\"%(sign_in_url)s\" class=\"underline\">Sign in</a>."
+msgstr ""
+
+msgid "Choose a new password — Snowdesk"
+msgstr ""
+
+msgid "Choose a new password for your Snowdesk account."
+msgstr ""
+
+msgid "Choose a new password"
+msgstr ""
+
+msgid "Enter a new password for your Snowdesk account."
+msgstr ""
+
+msgid "New password"
+msgstr ""
+
+msgid "Confirm password"
+msgstr ""
+
+msgid "Set new password"
+msgstr ""
+
+msgid "If that address has a Snowdesk password, we've sent you a reset link."
+msgstr ""
+
+msgid ""
+"If that address has a Snowdesk account with a password, we've sent you a "
+"link to reset it. It expires in 24 hours."
+msgstr ""
+
+msgid "Finish setting up — Snowdesk"
+msgstr ""
+
+msgid "Your Snowdesk email is verified. Finish setting up your account."
+msgstr ""
+
+msgid "You're verified"
+msgstr ""
+
+msgid ""
+"Your email address is confirmed. You can manage your account and "
+"subscriptions from here."
+msgstr ""
+
+msgid "Continue to your account"
+msgstr ""
+
+msgid "Set a password"
+msgstr ""
+
+msgid ""
+"Optional — set a password so you can sign in without waiting for an email "
+"link."
+msgstr ""
+
+msgid "Set password"
+msgstr ""
+
+msgid "Save a passkey"
+msgstr ""
+
+msgid ""
+"Optional — save a passkey for this device to sign in with Face ID, Touch ID, "
+"or your device PIN, no password needed."
+msgstr ""
+
+msgid "Sign in — Snowdesk"
+msgstr ""
+
+msgid "Sign in to manage your Snowdesk avalanche bulletin subscriptions."
+msgstr ""
+
+msgid "Sign in"
+msgstr ""
+
+msgid "Enter your email address and we'll send you a sign-in link."
+msgstr ""
+
+msgid "Invalid email or password."
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "Your password"
+msgstr ""
+
+msgid "Forgot your password?"
+msgstr ""
+
+msgid "Send sign-in link"
+msgstr ""
+
+msgid "Sign in with a password instead"
+msgstr ""
+
+msgid "Sign in with a passkey"
+msgstr ""
+
+#, python-format
+msgid ""
+"New to Snowdesk? <a href=\"%(register_url)s\" class=\"underline\">Create an "
+"account</a>."
+msgstr ""
+
+msgid ""
+"The passkey you used could not be found on Snowdesk. Please try a different "
+"passkey or use the sign-in link."
+msgstr ""
+
+msgid "Sign-in failed. Please try again or use the sign-in link."
+msgstr ""
+
+msgid "Unsubscribe — Snowdesk"
+msgstr ""
+
+msgid ""
+"Confirm your unsubscribe request to stop receiving avalanche bulletin alerts "
+"for this region."
+msgstr ""
+
+#, python-format
+msgid "You are about to unsubscribe <strong>%(email)s</strong> from:"
+msgstr ""
+
+msgid "Yes, unsubscribe me"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Unsubscribed — Snowdesk"
+msgstr ""
+
+msgid ""
+"You have been successfully unsubscribed from Snowdesk avalanche bulletin "
+"alerts."
+msgstr ""
+
+msgid "You've been unsubscribed"
+msgstr ""
+
+msgid "You will no longer receive avalanche bulletin alerts for that region."
+msgstr ""
+
+msgid "Verify your email — Snowdesk"
+msgstr ""
+
+msgid "Confirm your email address to finish setting up your Snowdesk account."
+msgstr ""
+
+msgid "Verify your email"
+msgstr ""
+
+msgid ""
+"Tap the button below to confirm your email address and finish setting up "
+"your account."
+msgstr ""
 
 msgid "Low (1)"
 msgstr ""
@@ -102,7 +795,238 @@ msgstr ""
 msgid "High to very high danger — backcountry travel is not recommended."
 msgstr ""
 
-msgid "Fetch today's weather"
+msgid "Upload Météo-France archive"
+msgstr ""
+
+#, python-format
+msgid "%(name)s · Snowdesk"
+msgstr ""
+
+#, python-format
+msgid ""
+"%(name)s — your saved favourite pin, its point forecast, and the local "
+"avalanche bulletin."
+msgstr ""
+
+msgid "Saved location · Snowdesk"
+msgstr ""
+
+msgid ""
+"Your saved favourite pin, its point forecast, and the local avalanche "
+"bulletin."
+msgstr ""
+
+msgid "← Region bulletin"
+msgstr ""
+
+msgid "Unnamed pin"
+msgstr ""
+
+msgid "Favourite name"
+msgstr ""
+
+#, python-format
+msgid "%(m)s m altitude"
+msgstr ""
+
+msgid "Avalanche danger — regional"
+msgstr ""
+
+#, python-format
+msgid "Rating shown is for the whole %(region)s region, not this exact spot."
+msgstr ""
+
+msgid "Open bulletin →"
+msgstr ""
+
+msgid "No bulletin coverage for this location."
+msgstr ""
+
+msgid "Weather — this spot"
+msgstr ""
+
+msgid ""
+"Point forecast coming soon — weather for this exact location and altitude "
+"isn't available yet."
+msgstr ""
+
+msgid "Avalanche problems — this location"
+msgstr ""
+
+msgid "You've reached your saved-pin limit. Remove one to save another."
+msgstr ""
+
+msgid "Details →"
+msgstr ""
+
+msgid "You have no saved favourites yet."
+msgstr ""
+
+msgid "View favourites on the map →"
+msgstr ""
+
+msgid "Applies at this altitude"
+msgstr ""
+
+msgid "Above this location"
+msgstr ""
+
+msgid "Below this location"
+msgstr ""
+
+#, python-format
+msgid "Saved %(when)s"
+msgstr ""
+
+#, python-format
+msgid "%(region)s · saved %(when)s"
+msgstr ""
+
+#, python-format
+msgid "Rename %(name)s"
+msgstr ""
+
+#, python-format
+msgid "Remove %(name)s"
+msgstr ""
+
+msgid "Saved"
+msgstr ""
+
+msgid "Save resort"
+msgstr ""
+
+msgid "Sign in to save this resort"
+msgstr ""
+
+msgid "You haven't reported any field observations yet."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(region)s · <time datetime=\"%(iso)s\" data-relative-time>%(age)s</time>"
+msgstr ""
+
+#, python-format
+msgid "Remove %(kind)s"
+msgstr ""
+
+msgid "Thank you for your report!"
+msgstr ""
+
+#, python-format
+msgid ""
+"Your observation has been recorded for <strong\n"
+"                >%(name)s</strong>."
+msgstr ""
+
+msgid "Your observation has been recorded."
+msgstr ""
+
+msgid "Saved — will sync when you're back online."
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Field observation report"
+msgstr ""
+
+msgid "Report"
+msgstr ""
+
+msgid "Using current GPS location"
+msgstr ""
+
+#, python-format
+msgid ""
+"We think you're in <strong\n"
+"                        >%(name)s</strong>."
+msgstr ""
+
+msgid "We couldn't match your location to a known region."
+msgstr ""
+
+msgid "GPS not available — move the map to set your location"
+msgstr ""
+
+msgid "Refine location"
+msgstr ""
+
+msgid "What did you observe?"
+msgstr ""
+
+#, python-format
+msgid "Danger level %(peak)s %(peak_word)s. Read the bulletin carefully."
+msgstr ""
+
+msgid "Generally favourable. Low danger — isolated trigger points only."
+msgstr ""
+
+msgid "Heightened caution. Moderate danger — choose terrain conservatively."
+msgstr ""
+
+msgid ""
+"Persistent weakness lingers. Moderate danger — avoid stress on shaded steep "
+"slopes."
+msgstr ""
+
+msgid "Reactive snowpack. Considerable danger — avoid wind-loaded steeps."
+msgstr ""
+
+msgid ""
+"Deep persistent weakness. Considerable danger — careful route choice "
+"essential."
+msgstr ""
+
+msgid ""
+"Dangerous conditions. High danger — large avalanches possible; off-piste "
+"travel not recommended."
+msgstr ""
+
+msgid ""
+"Widespread instability. High danger — road and infrastructure exposure; "
+"backcountry travel inadvisable."
+msgstr ""
+
+msgid ""
+"Wet-snow cycle. High danger — significant releases expected on sun-affected "
+"aspects."
+msgstr ""
+
+msgid ""
+"Manageable morning, more reactive afternoon — wet snow expected later in the "
+"day."
+msgstr ""
+
+msgid ""
+"Touchy morning, dangerous afternoon — wet snow cycle developing as the day "
+"progresses."
+msgstr ""
+
+msgid ""
+"Reactive at first, easing later — wind slab settles as the day progresses."
+msgstr ""
+
+msgid ""
+"Extreme conditions. Very high danger — large natural avalanches, stay out of "
+"avalanche terrain."
+msgstr ""
+
+msgid ""
+"Mixed hazards. Considerable danger — multiple problem types in play; read "
+"the bulletin carefully."
+msgstr ""
+
+msgid ""
+"Higher danger at altitude. Considerable above the band — manageable lower "
+"down."
+msgstr ""
+
+msgid "Dry"
+msgstr ""
+
+msgid "Wet"
 msgstr ""
 
 msgid "Slab"
@@ -111,8 +1035,14 @@ msgstr ""
 msgid "Loose"
 msgstr ""
 
+msgid "See description below"
+msgstr ""
+
+msgid "All aspects · all elevations"
+msgstr ""
+
 #, python-format
-msgid "Open bulletin for %(d)s →"
+msgid "Avalanche data is not published by %(p)s for this area"
 msgstr ""
 
 #, python-format
@@ -121,40 +1051,53 @@ msgstr ""
 
 #, python-format
 msgid ""
-"Avalanche data: <a class=\"underline hover:text-text-2\" href=\"https://"
-"www.slf.ch\" target=\"_blank\" rel=\"noopener\" >WSL Institute for Snow and "
-"Avalanche Research SLF</a> &middot; Licensed under <a class=\"underline "
-"hover:text-text-2\" href=\"https://creativecommons.org/licenses/by/4.0/\" "
-"target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a> &middot; <a "
-"class=\"underline hover:text-text-2\" href=\"%(terms_url)s\">Terms</a> "
+"<a class=\"underline hover:text-text-2\" href=\"%(help_url)s\">Help</a> "
+"&middot; Avalanche data: <a class=\"underline hover:text-text-2\" "
+"href=\"https://www.slf.ch\" target=\"_blank\" rel=\"noopener\">SLF</a> "
+"&middot; <a class=\"underline hover:text-text-2\" href=\"https://"
+"avalanche.report\" target=\"_blank\" rel=\"noopener\" >ALBINA</a> &middot; "
+"<a class=\"underline hover:text-text-2\" href=\"https://meteofrance.com/"
+"meteo-montagne\" target=\"_blank\" rel=\"noopener\" >Météo-France</a> "
 "&middot; <a class=\"underline hover:text-text-2\" "
-"href=\"%(privacy_url)s\">Privacy</a> &middot; <a class=\"underline "
+"href=\"%(terms_url)s\">Terms</a> &middot; <a class=\"underline hover:text-"
+"text-2\" href=\"%(privacy_url)s\">Privacy</a> &middot; <a class=\"underline "
 "hover:text-text-2\" href=\"%(tos_url)s\">Terms of Service</a> &middot; <a "
 "class=\"underline hover:text-text-2\" href=\"%(colophon_url)s\">Colophon</a>"
 msgstr ""
 
-msgid "An updated version is available."
+msgid "Snowdesk — Alpine Avalanche Bulletins"
 msgstr ""
 
-msgid "Reload"
+#, python-format
+msgid "%(name)s · Today · Snowdesk"
 msgstr ""
 
-msgid "Dismiss"
+#, python-format
+msgid "%(name)s · %(day)s · Snowdesk"
+msgstr ""
+
+#, python-format
+msgid "Avalanche bulletin for %(name)s, %(day)s."
+msgstr ""
+
+#, python-format
+msgid "Avalanche bulletin for %(name)s."
+msgstr ""
+
+msgid "No bulletin available"
+msgstr ""
+
+msgid "There is no bulletin published for this region on this date."
+msgstr ""
+
+msgid "We couldn't process this bulletin."
 msgstr ""
 
 #, python-format
 msgid ""
-"Avalanche bulletin for\n"
-"        %(name)s"
-msgstr ""
-
-msgid "Today"
-msgstr ""
-
-msgid "No bulletins available for this region."
-msgstr ""
-
-msgid "We couldn't process this bulletin."
+"Bulletin ID: <span\n"
+"                                class=\"font-mono\"\n"
+"                            >%(bulletin_id)s</span>"
 msgstr ""
 
 msgid "Inspect in admin →"
@@ -166,6 +1109,9 @@ msgid ""
 msgstr ""
 
 msgid "Day Risk Profile"
+msgstr ""
+
+msgid "Problem type changes as the day progresses"
 msgstr ""
 
 msgid "Avalanche Problems"
@@ -180,7 +1126,13 @@ msgstr ""
 msgid "Avalanche Activity"
 msgstr ""
 
+msgid "Outlook"
+msgstr ""
+
 msgid "Snowpack &amp; Weather"
+msgstr ""
+
+msgid "Source"
 msgstr ""
 
 msgid "Issued"
@@ -195,6 +1147,18 @@ msgstr ""
 msgid "Adjoining regions"
 msgstr ""
 
+msgid "Resorts in this region"
+msgstr ""
+
+msgid "Your favourites here"
+msgstr ""
+
+msgid "Reported today"
+msgstr ""
+
+msgid "Some reports were placed manually"
+msgstr ""
+
 msgid "Colophon"
 msgstr ""
 
@@ -204,6 +1168,9 @@ msgid ""
 msgstr ""
 
 msgid "Frameworks"
+msgstr ""
+
+msgid "— language runtime"
 msgstr ""
 
 msgid "— web framework"
@@ -221,15 +1188,53 @@ msgstr ""
 msgid "— static file serving"
 msgstr ""
 
+msgid "Libraries"
+msgstr ""
+
+msgid "— background task queue for outbound email"
+msgstr ""
+
+msgid "— feature flags"
+msgstr ""
+
+msgid "— Content-Security-Policy headers and violation reports"
+msgstr ""
+
+msgid "— passkey (WebAuthn) registration and sign-in"
+msgstr ""
+
+msgid "— Web Push notification delivery"
+msgstr ""
+
+msgid "— region boundary geometry"
+msgstr ""
+
 msgid "Data"
 msgstr ""
 
 msgid ""
 "<a class=\"underline\" href=\"https://www.slf.ch\" target=\"_blank\" "
 "rel=\"noopener\" >WSL Institute for Snow and Avalanche Research SLF</a> — "
-"avalanche bulletins, licensed under <a class=\"underline\" href=\"https://"
-"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" "
-">CC BY 4.0</a>"
+"avalanche bulletins for Switzerland, licensed under <a class=\"underline\" "
+"href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\" "
+"rel=\"noopener\" >CC BY 4.0</a>"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://avalanche.report\" target=\"_blank\" "
+"rel=\"noopener\" >Avalanche.report (ALBINA / EUREGIO)</a> — avalanche "
+"bulletins for Tyrol, South Tyrol, and Trentino, licensed under <a "
+"class=\"underline\" href=\"https://creativecommons.org/licenses/by/4.0/\" "
+"target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a>"
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://meteofrance.com/meteo-montagne\" "
+"target=\"_blank\" rel=\"noopener\" >Météo-France</a> — avalanche bulletins "
+"(BRA) for the French mountain ranges, used under the <a class=\"underline\" "
+"href=\"https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/"
+"license\" target=\"_blank\" rel=\"noopener\" >Météo-France open-data "
+"licence</a>"
 msgstr ""
 
 msgid "— weather forecasts and historical archive"
@@ -238,16 +1243,41 @@ msgstr ""
 msgid "— region boundaries and danger/problem iconography"
 msgstr ""
 
+msgid ""
+"<a class=\"underline\" href=\"https://dev.maxmind.com/geoip/geolite2-free-"
+"geolocation-data/\" target=\"_blank\" rel=\"noopener\" >GeoLite2</a> by <a "
+"class=\"underline\" href=\"https://www.maxmind.com\" target=\"_blank\" "
+"rel=\"noopener\" >MaxMind</a> — offline database used to derive an "
+"approximate location from a request's IP address, licensed under <a "
+"class=\"underline\" href=\"https://creativecommons.org/licenses/by-sa/4.0/\" "
+"target=\"_blank\" rel=\"noopener\" >CC BY-SA 4.0</a>"
+msgstr ""
+
 msgid "Basemap"
 msgstr ""
 
 msgid "— open-source map renderer"
 msgstr ""
 
-msgid "— Liberty vector tiles (production default)"
+msgid ""
+"— Liberty vector tiles (the Standard basemap, and the production default)"
 msgstr ""
 
-msgid "— Winter and Light vector tile styles"
+msgid ""
+"<a class=\"underline\" href=\"https://www.openstreetmap.org/copyright\" "
+"target=\"_blank\" rel=\"noopener\" >© OpenStreetMap contributors</a> — the "
+"map data behind the Liberty tiles, licensed under the <a class=\"underline\" "
+"href=\"https://opendatacommons.org/licenses/odbl/\" target=\"_blank\" "
+"rel=\"noopener\" >Open Database Licence (ODbL)</a>"
+msgstr ""
+
+msgid "— Winter vector tile style, covering Switzerland"
+msgstr ""
+
+msgid "— Plan IGN vector tile style, covering France"
+msgstr ""
+
+msgid "— vector tile style, covering Austria"
 msgstr ""
 
 msgid "Icons"
@@ -288,63 +1318,283 @@ msgstr ""
 msgid "— transactional email delivery"
 msgstr ""
 
+msgid "Analytics"
+msgstr ""
+
+#, python-format
+msgid ""
+"<a class=\"underline\" href=\"https://posthog.com/\" target=\"_blank\" "
+"rel=\"noopener\">PostHog</a> — anonymous product analytics. Events are sent "
+"from our servers, not your browser; what is collected is described in the <a "
+"class=\"underline\" href=\"%(privacy_url)s\">privacy policy</a>"
+msgstr ""
+
 msgid "Hosting"
 msgstr ""
 
 msgid "— web application hosting and cron jobs"
 msgstr ""
 
-msgid "Snowdesk — Avalanche bulletins for backcountry skiers"
+msgid "Help"
 msgstr ""
 
 msgid ""
-"Daily Swiss avalanche bulletins for backcountry skiers — per-region danger "
-"levels, avalanche problems, snowpack structure, and a season-wide map "
-"timelapse, sourced from SLF."
+"Plain-language guide to how Snowdesk works: the map, bulletins, weather, "
+"favourites, and more."
 msgstr ""
 
-msgid "Snowdesk"
-msgstr ""
-
-msgid "Avalanche bulletins for backcountry skiers."
+msgid "Help & how it works"
 msgstr ""
 
 msgid ""
-"We take the daily SLF avalanche forecast and present it in a clear, mobile-"
-"friendly format so you can make better decisions in the mountains."
+"A plain-language guide to what Snowdesk does and how to use each part of it."
 msgstr ""
 
-msgid "Daily bulletins"
+msgid "What Snowdesk is"
+msgstr ""
+
+msgid "Reading a bulletin"
+msgstr ""
+
+msgid "The weather header"
+msgstr ""
+
+msgid "The map"
+msgstr ""
+
+msgid "Map weather"
+msgstr ""
+
+msgid "Favourites"
+msgstr ""
+
+msgid "Field observations"
+msgstr ""
+
+msgid "Recent observations"
+msgstr ""
+
+msgid "The season timeline & calendar"
+msgstr ""
+
+msgid "Accounts & subscriptions"
+msgstr ""
+
+msgid "Install & offline"
 msgstr ""
 
 msgid ""
-"fetched automatically from the Swiss Institute for Snow and Avalanche "
-"Research (SLF)."
-msgstr ""
-
-msgid "Per-region detail"
-msgstr ""
-
-msgid ""
-"danger level, avalanche problems, snowpack structure, and field guidance for "
-"every forecast region."
-msgstr ""
-
-msgid "Season at a glance"
+"Snowdesk accounts are passwordless by default: enter your email address and "
+"follow the link that's sent to you &mdash; no password to remember. You can "
+"optionally set a password, or register a passkey on your device, from the "
+"account setup page."
 msgstr ""
 
 msgid ""
-"scrub through the whole season on the map to see how danger evolved across "
-"regions."
+"Once signed in, subscribe to a region from its bulletin page to get an email "
+"whenever a new bulletin is published for it. Manage or remove your "
+"subscribed regions at any time from the account menu, or unsubscribe with "
+"one click from any alert email."
 msgstr ""
 
-msgid "View a sample bulletin →"
+msgid ""
+"Every bulletin page shows a danger rating on a five-level scale (Low to Very "
+"High), and one or more \"avalanche problems\" &mdash; the specific hazards "
+"driving that rating, such as fresh wind slab or a persistent weak layer "
+"&mdash; each with the aspects and elevations where it applies."
 msgstr ""
 
-msgid "Explore the map →"
+msgid ""
+"For a full walkthrough of the danger scale, subdivisions, and how to read "
+"the avalanche-problem cards, see the dedicated guide:"
 msgstr ""
 
 msgid "How to read a bulletin"
+msgstr ""
+
+msgid ""
+"Favourites let you pin specific spots &mdash; a resort, a trailhead, a "
+"favourite line &mdash; directly on the map. Sign in, then use \"Add a "
+"favourite pin\" to drop a pin at any point."
+msgstr ""
+
+msgid ""
+"Each favourite carries its own multi-day point forecast &mdash; temperature, "
+"snowfall, and conditions for that exact location &mdash; alongside the "
+"region's avalanche bulletin, so you can see both together."
+msgstr ""
+
+msgid ""
+"Every favourite also has its own page you can bookmark or share &mdash; open "
+"it from \"My favourites\" or from \"Your favourites here\" on that "
+"favourite's region bulletin page."
+msgstr ""
+
+msgid ""
+"Snowdesk can be installed as an app on your phone or computer. Look for an "
+"\"Install\" or \"Add to Home Screen\" option in your browser's address bar "
+"or share menu &mdash; once installed, it opens in its own window without any "
+"browser chrome."
+msgstr ""
+
+msgid ""
+"Pages you've already visited load instantly on repeat visits, even with a "
+"poor connection, because the app shell is cached on your device. Avalanche "
+"data itself is always fetched fresh from the network &mdash; Snowdesk never "
+"shows you a stale danger rating from the cache."
+msgstr ""
+
+msgid ""
+"The map colours every region by its current avalanche danger level, from "
+"pale green (Low) through to red (Very High). Use the search box to jump "
+"straight to a region by name, the locate-me button to centre the map on your "
+"position, and pinch or scroll to zoom and pan. The info panel in the corner "
+"shows the legend and the current data sources."
+msgstr ""
+
+msgid ""
+"A basemap picker lets you switch between the standard map style and each "
+"country's national mapping-agency basemap (Swisstopo, IGN, basemap.at) where "
+"available."
+msgstr ""
+
+msgid ""
+"An overlay toggle shows your saved favourite pins directly on the map, "
+"alongside the resorts layer."
+msgstr ""
+
+msgid ""
+"A community-reports overlay shows anonymised, publicly-shared field "
+"observations from other Snowdesk users on the map."
+msgstr ""
+
+msgid ""
+"The Report button lets you submit a quick field observation &mdash; "
+"conditions you've seen in person &mdash; for the region you're viewing."
+msgstr ""
+
+msgid ""
+"Field observations are quick, one-tap reports of what you've actually seen "
+"out on the snow &mdash; recent avalanche activity, snowpack signs, or "
+"general conditions &mdash; for the region you're viewing."
+msgstr ""
+
+msgid ""
+"Sign in, then use the Report button on the map or a bulletin page to submit "
+"one. Reports feed into the community-reports overlay so other users can see "
+"recent, real-world observations alongside the official bulletin."
+msgstr ""
+
+msgid ""
+"Snowdesk brings together official avalanche bulletins from three providers "
+"&mdash; SLF (Switzerland), ALBINA (Austria/EUREGIO), and Météo-France "
+"&mdash; onto a single interactive map, with a consistent layout for every "
+"region and every day."
+msgstr ""
+
+msgid ""
+"You don't need an account to browse: pick a region on the map, read today's "
+"danger rating and avalanche problems, or scrub back through the season to "
+"see how conditions have evolved. Signing in unlocks extras such as email "
+"alerts and saved favourite locations."
+msgstr ""
+
+msgid ""
+"The Observations page lists field reports from the last 48 hours, newest "
+"first — a quick way to see what other users have spotted recently without "
+"opening the map."
+msgstr ""
+
+msgid ""
+"Sign in to view it. Your own reports always appear, marked \"You\". Other "
+"users' reports appear only when you have the community-reports overlay "
+"enabled, and their times are rounded to the nearest 15 minutes to keep "
+"individual reports from being pinpointed."
+msgstr ""
+
+msgid ""
+"The offline banner shows two clocks: when this device last synced with the "
+"server, and when the server generated the data it last returned. They can "
+"differ &mdash; off-season, the newest avalanche rating might be weeks old "
+"even though your device synced minutes ago."
+msgstr ""
+
+msgid ""
+"Your account page has a \"Sync log\" panel listing your device's most recent "
+"real syncs with the server (cached, offline-served pages don't count). It "
+"keeps the newest 100 entries."
+msgstr ""
+
+msgid ""
+"\"Reset local data on this device\" clears the sync log along with "
+"everything else cached on this device."
+msgstr ""
+
+msgid ""
+"The scrubber along the bottom of the map lets you drag through the whole "
+"avalanche season, day by day, to see how conditions have changed for a "
+"region over time."
+msgstr ""
+
+msgid ""
+"The calendar glyph on a bulletin page opens a month grid instead, colour-"
+"coded by that day's danger rating, so you can jump straight to a specific "
+"date without scrubbing through every day in between."
+msgstr ""
+
+msgid ""
+"The band at the top of every bulletin page shows the region name, the date, "
+"and a weather icon and condition label &mdash; clear, cloudy, snowing, and "
+"so on &mdash; for that day. Its colour and icon shift between day and night "
+"styling to match the actual sunrise and sunset for the region."
+msgstr ""
+
+msgid ""
+"When you scrub back to a past date, the header shows the day or night look "
+"based on your current clock time in the region's timezone &mdash; not the "
+"time of day when that bulletin was first issued."
+msgstr ""
+
+msgid ""
+"A Weather overlay on the map shows a condition symbol and the day's forecast "
+"high temperature at every resort, so you can see the weather picture "
+"alongside the avalanche danger without leaving the map."
+msgstr ""
+
+msgid ""
+"Point weather only covers the next several days, and sometimes fewer than "
+"that. Scrubbing to a date outside that window disables the overlay's menu "
+"row until you scrub back to a date it has data for."
+msgstr ""
+
+msgid ""
+"If you're signed in, your own favourite pins get a weather symbol too "
+"&mdash; visible only to you, never to anyone else."
+msgstr ""
+
+msgid "Alpine Avalanche Bulletins · Snowdesk"
+msgstr ""
+
+msgid ""
+"Avalanche bulletins for Switzerland, France, Austria, South Tyrol and "
+"Trentino. Receive daily bulletin updates, submit field observations."
+msgstr ""
+
+msgid "Off the map"
+msgstr ""
+
+msgid "Your location is outside the mapped regions."
+msgstr ""
+
+msgid "Can't find your location"
+msgstr ""
+
+msgid ""
+"Your device didn't give us a position. Move somewhere with a clearer view of "
+"the sky, then try again."
+msgstr ""
+
+msgid "Try again"
 msgstr ""
 
 msgid ""
@@ -380,9 +1630,6 @@ msgid ""
 msgstr ""
 
 msgid "Level"
-msgstr ""
-
-msgid "Name"
 msgstr ""
 
 msgid "Characteristics"
@@ -728,9 +1975,6 @@ msgid ""
 "may differ."
 msgstr ""
 
-msgid "Outlook"
-msgstr ""
-
 msgid ""
 "Indicative assessment for the two days after the bulletin's validity period. "
 "Less detailed but useful for multi-day planning."
@@ -764,75 +2008,690 @@ msgid ""
 "Bulletin Interpretation Guide, Edition November 2025."
 msgstr ""
 
-msgid "Snowdesk — Avalanche map"
+msgid "Observations"
+msgstr ""
+
+msgid "Recent field observations reported by Snowdesk users."
+msgstr ""
+
+msgid "Field reports submitted by Snowdesk users in the last 48 hours."
+msgstr ""
+
+msgid "Sign in to see recent field observations from Snowdesk users."
+msgstr ""
+
+msgid "You"
+msgstr ""
+
+#, python-format
+msgid "No observations reported in the last %(hours)s hours."
+msgstr ""
+
+msgid "Loading your favourites…"
+msgstr ""
+
+msgid "Favourite"
+msgstr ""
+
+msgid "Add a favourite"
+msgstr ""
+
+msgid "Favourites are private and not shared."
+msgstr ""
+
+msgid "Places"
+msgstr ""
+
+msgid "Add favourite"
+msgstr ""
+
+msgid "Name this pin (optional)"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Pin saved!"
+msgstr ""
+
+msgid "Your favourite has been saved to this device."
+msgstr ""
+
+msgid "Sign in to save a favourite."
+msgstr ""
+
+msgid "That name couldn't be saved. Try again."
+msgstr ""
+
+msgid "Your favourites couldn't be loaded — check your connection."
+msgstr ""
+
+msgid "Manage offline downloads"
+msgstr ""
+
+msgid "Select a region to download its basemap"
+msgstr ""
+
+msgid "of"
 msgstr ""
 
 msgid ""
-"Interactive map of Swiss avalanche regions — tap a region to see today's "
-"danger rating, headline problem, and nearby resorts."
+"You're over your budget. Your next download will remove the oldest areas to "
+"make room — or remove some yourself below."
+msgstr ""
+
+msgid "Regions"
+msgstr ""
+
+msgid "Custom areas"
+msgstr ""
+
+msgid ""
+"You haven't downloaded any areas yet. Download a region from the map, or use "
+"the button below for a custom area."
+msgstr ""
+
+msgid "Downloads on this device"
+msgstr ""
+
+msgid "Download a custom area"
+msgstr ""
+
+msgid "Downloads and budget stay on this device."
+msgstr ""
+
+msgid "Area name"
+msgstr ""
+
+msgid "Incomplete"
+msgstr ""
+
+#, python-format
+msgid ""
+"Remove the offline map for %%(name)s? This frees %%(size)s. You can\n"
+"            download it again when you're back online."
+msgstr ""
+
+msgid "That download couldn't be removed. Try again."
+msgstr ""
+
+msgid "You're offline — connect to download a new area."
+msgstr ""
+
+msgid "Downloading needs a connection"
+msgstr ""
+
+#, python-format
+msgid "Rename %%(name)s"
+msgstr ""
+
+#, python-format
+msgid "Remove %%(name)s"
+msgstr ""
+
+#, python-format
+msgid ""
+"New season starts in %(start_month)s — currently showing the "
+"%(season_label)s season archive."
 msgstr ""
 
 msgid "Find a region"
 msgstr ""
 
+msgid "Locate me"
+msgstr ""
+
 msgid "Choose basemap"
 msgstr ""
 
-msgid "Base map"
+msgid "Bulletin fill strength"
 msgstr ""
 
-msgid "Overlays"
+msgid "Your favourites"
 msgstr ""
 
-msgid "Major regions"
+msgid "Your field observations"
 msgstr ""
 
-msgid "Sub regions"
+msgid "Your routes"
 msgstr ""
 
-msgid "Micro regions carry the avalanche danger ratings — required"
+msgid "How to use the map"
 msgstr ""
 
-msgid "Micro regions"
+msgid "Bulletins"
+msgstr ""
+
+msgid "SLF (CH)"
+msgstr ""
+
+msgid "MétéoFrance (FR)"
+msgstr ""
+
+msgid "ALBINA (AT, IT)"
+msgstr ""
+
+msgid "Boundaries"
+msgstr ""
+
+msgid "Major (EAWS Level 1)"
+msgstr ""
+
+msgid "Minor (EAWS L2)"
+msgstr ""
+
+msgid "Micro (EAWS L4)"
+msgstr ""
+
+msgid "Locations"
 msgstr ""
 
 msgid "Resorts"
 msgstr ""
 
-msgid "Countries"
+msgid "Conditions"
 msgstr ""
 
-msgid "Switzerland"
+msgid "Weather"
 msgstr ""
 
-msgid "France"
+msgid "Base map"
 msgstr ""
 
-msgid "Austria"
+msgid "Bulletins off"
 msgstr ""
 
-msgid "Italy"
+#, python-format
+msgid "Bulletins at 25%%"
 msgstr ""
 
-msgid "Options"
+#, python-format
+msgid "Bulletins at 50%%"
 msgstr ""
 
-msgid "Auto-zoom"
+#, python-format
+msgid "Bulletins at 75%%"
 msgstr ""
 
-msgid "Avalanche danger legend"
+msgid "Bulletins at full strength"
 msgstr ""
 
-msgid "Show avalanche danger legend"
+msgid "Hide map controls"
+msgstr ""
+
+msgid "Map information"
+msgstr ""
+
+msgid "EAWS Danger Scale"
+msgstr ""
+
+msgid "Map pins"
+msgstr ""
+
+msgid "Map data"
+msgstr ""
+
+msgid "Avalanche data"
+msgstr ""
+
+#, python-format
+msgid ""
+"<a class=\"map-legend-attribution-link\" href=\"https://www.slf.ch\" "
+"target=\"_blank\" rel=\"noopener\" >SLF</a> &middot; <a class=\"map-legend-"
+"attribution-link\" href=\"https://avalanche.report\" target=\"_blank\" "
+"rel=\"noopener\" >ALBINA</a> &middot; <a class=\"map-legend-attribution-"
+"link\" href=\"https://meteofrance.com/meteo-montagne\" target=\"_blank\" "
+"rel=\"noopener\" >Météo-France</a> &middot; Full attribution in the <a "
+"class=\"map-legend-attribution-link\" href=\"%(colophon_url)s\">colophon</a>"
 msgstr ""
 
 msgid "Season scrubber"
 msgstr ""
 
+msgid "Season data loading…"
+msgstr ""
+
+msgid "Region name"
+msgstr ""
+
+msgid ""
+"Display the name of the selected region and its risk level on the displayed "
+"date."
+msgstr ""
+
+msgid "Download region"
+msgstr ""
+
+msgid "Make the selected region available offline."
+msgstr ""
+
+msgid "View bulletin"
+msgstr ""
+
+msgid "View the selected region bulletin detail page."
+msgstr ""
+
+msgid "Search regions and resorts by name."
+msgstr ""
+
+msgid "Centre the map on your current position."
+msgstr ""
+
+msgid "Map detail"
+msgstr ""
+
+msgid "Switch base maps and toggle overlays and map location data."
+msgstr ""
+
+msgid "Bulletin display"
+msgstr ""
+
+msgid "Control the opacity of the bulletin colour shading."
+msgstr ""
+
+msgid "Offline maps"
+msgstr ""
+
+msgid ""
+"View and manage offline regions, download custom areas and manage storage."
+msgstr ""
+
+msgid "See your saved pins, add another, and show or hide them on the map."
+msgstr ""
+
+msgid ""
+"See your reports, share a new field observation, and show or hide the "
+"community's on the map."
+msgstr ""
+
+msgid "Map help"
+msgstr ""
+
+msgid "Reopen this tour."
+msgstr ""
+
+msgid "Hide the controls"
+msgstr ""
+
+msgid "Collapse the controls to clear the map."
+msgstr ""
+
+msgid "Timeline scrubber"
+msgstr ""
+
+msgid "Run through the season day by day."
+msgstr ""
+
+msgid "View attribution and EAWS danger level key."
+msgstr ""
+
+msgid "Map display date"
+msgstr ""
+
+msgid "The date currently shown on the map."
+msgstr ""
+
+#, python-brace-format
+msgid "Step {n} of {total}"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
+msgid "Done"
+msgstr ""
+
+msgid "Dismiss"
+msgstr ""
+
+msgid "Welcome to Snowdesk"
+msgstr ""
+
+msgid ""
+"Avalanche information across the Alps, sourced daily from SLF (Switzerland), "
+"ALBINA (Austria, Italy) and Météo-France (France). Each bulletin displays on "
+"the interactive map in its EAWS danger rating colour. Tap on a region to see "
+"the season timeline, and a link to the day's bulletin."
+msgstr ""
+
+#, python-format
+msgid ""
+"<a href=\"%(register_url)s\" class=\"home-intro-inline-link\">Register</a> "
+"with Snowdesk to view field observations, track favourite locations, and "
+"receive daily region updates."
+msgstr ""
+
+#, python-format
+msgid ""
+"Map shows %(season_label)s season — live bulletins resume in %(start_month)s"
+msgstr ""
+
+msgid "Dismiss and explore the map"
+msgstr ""
+
+msgid "Explore the map"
+msgstr ""
+
+msgid "Download selected area for offline use."
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "This map layer isn't available offline yet — view it online first."
+msgstr ""
+
+msgid "Favourites aren't available offline yet — view them online first."
+msgstr ""
+
+msgid ""
+"Community reports aren't available offline right now — view them online to "
+"refresh."
+msgstr ""
+
+msgid "Weather isn't available offline right now — view it online to refresh."
+msgstr ""
+
+msgid "Your routes aren't available offline yet — view them online first."
+msgstr ""
+
+msgid ""
+"Not enough storage to save this area. Free up space on your device, or frame "
+"a smaller area."
+msgstr ""
+
+msgid "This area is too large for the download budget. Frame a smaller area."
+msgstr ""
+
+msgid ""
+"Offline maps aren't active on this page yet. Reload the page, then try the "
+"download again."
+msgstr ""
+
+msgid "Download failed. Check your connection and try again."
+msgstr ""
+
+msgid ""
+"Downloading this area would remove earlier downloads to make room. Continue?"
+msgstr ""
+
+msgid "Remove and continue"
+msgstr ""
+
+msgid "Show map controls"
+msgstr ""
+
+msgid "Available offline"
+msgstr ""
+
+msgid "Not cached — view online first"
+msgstr ""
+
+msgid "Unavailable offline — not cached"
+msgstr ""
+
+msgid "Unavailable offline — switch back online to load"
+msgstr ""
+
+msgid "Region data available offline"
+msgstr ""
+
+msgid "Caching for offline use…"
+msgstr ""
+
+#, python-format
+msgid "Open bulletin for %%(date)s →"
+msgstr ""
+
+#, python-format
+msgid "No bulletin available for %%(date)s"
+msgstr ""
+
+msgid "Season data unavailable"
+msgstr ""
+
 msgid "Play season timelapse"
 msgstr ""
 
-msgid "Timelapse speed"
+msgid "Play season timelapse in reverse"
+msgstr ""
+
+msgid "Stop season timelapse"
+msgstr ""
+
+msgid "Stop reverse timelapse"
+msgstr ""
+
+#, python-format
+msgid "Up to %%(mb)s MB"
+msgstr ""
+
+#, python-format
+msgid ""
+"Area too large to download (over %%(mb)s\n"
+"            MB)"
+msgstr ""
+
+#, python-format
+msgid "%%(pct)s · %%(mb)s"
+msgstr ""
+
+#, python-format
+msgid "%%(mb)s downloaded"
+msgstr ""
+
+#, python-format
+msgid "%%(used)s / %%(budget)s downloaded"
+msgstr ""
+
+#, python-format
+msgid "Custom area %%(n)s"
+msgstr ""
+
+msgid "No region selected"
+msgstr ""
+
+msgid "Basemap download isn't available for this region"
+msgstr ""
+
+#, python-format
+msgid ""
+"Download this region's basemap — up to %%(mb)s\n"
+"            MB"
+msgstr ""
+
+#, python-format
+msgid ""
+"Downloading this region's basemap —\n"
+"            %%(pct)s"
+msgstr ""
+
+msgid "This region's basemap is downloaded — available offline"
+msgstr ""
+
+msgid "This region's basemap download failed — tap to try again"
+msgstr ""
+
+msgid "This region's basemap is too large to download"
+msgstr ""
+
+msgid "Basemap download unavailable while offline"
+msgstr ""
+
+#, python-format
+msgid ""
+"This region's basemap is downloaded for %%(basemap)s —\n"
+"            tap to download it for this basemap too"
+msgstr ""
+
+msgid ""
+"This region's basemap is downloaded for another basemap — tap to download it "
+"for this basemap too"
+msgstr ""
+
+msgid "No forecast for this date"
+msgstr ""
+
+msgid "Choose a date to see the forecast"
+msgstr ""
+
+msgid "No date selected"
+msgstr ""
+
+#, python-format
+msgid "%%(km)s km"
+msgstr ""
+
+#, python-format
+msgid "%%(m)s m ascent"
+msgstr ""
+
+msgid "Untitled route"
+msgstr ""
+
+#, python-format
+msgid "%%(label)s — shown on the map"
+msgstr ""
+
+msgid "Loading your reports…"
+msgstr ""
+
+msgid "Report an observation"
+msgstr ""
+
+msgid "Reports are shared with the community."
+msgstr ""
+
+msgid "Reports"
+msgstr ""
+
+msgid "Could not submit your report — please tap a signal type."
+msgstr ""
+
+msgid "Could not save your report on this device — please try again."
+msgstr ""
+
+msgid "Something went wrong — please try again."
+msgstr ""
+
+msgid ""
+"Verify your email to submit a field observation. Check your inbox for the "
+"verification link."
+msgstr ""
+
+msgid "Sign in to submit a field observation."
+msgstr ""
+
+msgid "Your reports couldn't be loaded — check your connection."
+msgstr ""
+
+msgid "Finding your location…"
+msgstr ""
+
+msgid "Operator"
+msgstr ""
+
+msgid "Add operator name"
+msgstr ""
+
+msgid "Website"
+msgstr ""
+
+msgid "Official website"
+msgstr ""
+
+msgid "Add website"
+msgstr ""
+
+msgid "Lifts"
+msgstr ""
+
+msgid "Add lift count"
+msgstr ""
+
+msgid "Runs"
+msgstr ""
+
+msgid "Add run count"
+msgstr ""
+
+msgid "Piste length"
+msgstr ""
+
+msgid "Add piste length"
+msgstr ""
+
+msgid "Add elevation range"
+msgstr ""
+
+msgid "Season"
+msgstr ""
+
+msgid "Add typical season"
+msgstr ""
+
+msgid "View resort →"
+msgstr ""
+
+msgid "Add a why-it-matters line"
+msgstr ""
+
+#, python-format
+msgid ""
+"Nobody has written up %(name)s yet. <a href=\"%(register_url)s\" "
+"class=\"text-status-info-text underline\">Create an account</a> to help "
+"build the guide."
+msgstr ""
+
+msgid "Loading your routes…"
+msgstr ""
+
+msgid "Routes"
+msgstr ""
+
+msgid "Add a route"
+msgstr ""
+
+msgid "Routes are private and not shared."
+msgstr ""
+
+msgid "Tracks"
+msgstr ""
+
+msgid "Sign in to save a route."
+msgstr ""
+
+msgid "Your routes couldn't be loaded — check your connection."
+msgstr ""
+
+msgid "You need to be online to upload a route."
+msgstr ""
+
+msgid ""
+"That file couldn't be read as GPX. It must be a .gpx file containing a track "
+"or a route."
+msgstr ""
+
+msgid "That file is too large to upload."
+msgstr ""
+
+msgid "You've reached your saved-route limit. Remove one to upload another."
+msgstr ""
+
+msgid "That route couldn't be uploaded. Try again."
+msgstr ""
+
+#, python-format
+msgid "Season %(label)s danger ribbon"
+msgstr ""
+
+msgid "Skip to season start"
+msgstr ""
+
+msgid "Skip to season end"
 msgstr ""
 
 msgid "Season heatmap"
@@ -851,8 +2710,10 @@ msgid "Edit resort coordinates"
 msgstr ""
 
 msgid ""
-"Pick a resort, click the map to drop a pin (or paste lat/lon), then Save. "
-"Run <code>manage.py dump_resorts_fixture --commit</code> to persist to git."
+"Pick a resort — or \"New resort\" to add one — click the map to drop a pin "
+"(or paste lat/lon), fill in any details, then Save. A new resort takes its "
+"region from the pin. Run <code>manage.py dump_resorts_fixture --commit</"
+"code> to persist to git."
 msgstr ""
 
 msgid "Filter resorts…"
@@ -864,19 +2725,66 @@ msgstr ""
 msgid "Current target"
 msgstr ""
 
+msgid "New resort"
+msgstr ""
+
 msgid "No resort selected."
+msgstr ""
+
+msgid "Required"
+msgstr ""
+
+msgid "Canton"
+msgstr ""
+
+msgid "auto"
+msgstr ""
+
+msgid ""
+"Left blank, the canton is taken from the other resorts in the region the pin "
+"lands in."
 msgstr ""
 
 msgid "Paste:"
 msgstr ""
 
-msgid "Save"
+msgid "Resort details"
 msgstr ""
 
-msgid "Cancel"
+msgid "Map tier"
 msgstr ""
 
-msgid "Loading…"
+msgid "Core — large pin"
+msgstr ""
+
+msgid "Standard"
+msgstr ""
+
+msgid "Minor — small pin"
+msgstr ""
+
+msgid "Alternative name"
+msgstr ""
+
+msgid "Why it matters"
+msgstr ""
+
+msgid "Terrain, access or reputation — one sentence."
+msgstr ""
+
+msgid "Total piste (km)"
+msgstr ""
+
+msgid "Base (m)"
+msgstr ""
+
+msgid "Top (m)"
+msgstr ""
+
+msgid "Season opens"
+msgstr ""
+
+msgid "Season closes"
 msgstr ""
 
 msgid "Privacy Policy"
@@ -898,7 +2806,8 @@ msgstr ""
 msgid ""
 "We collect your email address only if you choose to subscribe to bulletin "
 "notifications. We don't sell your data. We don't track you across the web. "
-"We don't use advertising or analytics cookies."
+"We don't use advertising cookies. Our anonymous app-usage telemetry uses "
+"IndexedDB, not cookies — see section 5."
 msgstr ""
 
 msgid "1. Who we are"
@@ -937,7 +2846,23 @@ msgid ""
 "your location is never transmitted to or stored by Snowdesk."
 msgstr ""
 
-msgid "2c. Session data"
+msgid "2c. Field observation reports"
+msgstr ""
+
+msgid ""
+"When you submit a field observation report from the map page, we ask your "
+"browser for a GPS fix. Your latitude, longitude, and optional accuracy "
+"radius are transmitted to Snowdesk and stored with the report so that we can "
+"match your location to an avalanche warning region. Location is captured "
+"only at the moment you tap \"Report\" — we never track your position in the "
+"background or between sessions. You can submit multiple reports per day; "
+"each is stored as a separate row linked to your subscriber account. Reports "
+"are displayed on the bulletin page as anonymous aggregate counts (e.g. \"3 "
+"people reported whumpfing\") — your name and exact coordinates are never "
+"shown publicly."
+msgstr ""
+
+msgid "2d. Session data"
 msgstr ""
 
 msgid ""
@@ -946,7 +2871,7 @@ msgid ""
 "No consent is required for this cookie under UK PECR."
 msgstr ""
 
-msgid "2d. Server logs"
+msgid "2e. Server logs"
 msgstr ""
 
 msgid ""
@@ -1016,8 +2941,28 @@ msgid ""
 msgstr ""
 
 msgid ""
+"<strong>PostHog</strong> (posthog.com) — processes the anonymous app-usage "
+"events described below, if you have telemetry switched on. We never send "
+"bulletin content, your email address, or your IP address as part of these "
+"events."
+msgstr ""
+
+msgid ""
 "All providers are contractually required to handle your data in compliance "
-"with UK GDPR. We do not use any advertising networks or analytics platforms."
+"with UK GDPR. We do not use advertising networks, and we do not sell or "
+"share data for advertising purposes."
+msgstr ""
+
+#, python-format
+msgid ""
+"We collect a small stream of anonymous app-usage events — for example "
+"<code>pwa.sw.installed</code> or <code>pwa.push.received</code> — so we can "
+"keep Snowdesk working reliably across browsers and devices. These events "
+"never include bulletin content, your email address, or your IP address. This "
+"is switched off by default for browsers set to a European language, and on "
+"by default otherwise; you can change this at any time from the toggle on "
+"your <a class=\"underline\" href=\"%(manage_url)s\">manage subscriptions "
+"page</a>."
 msgstr ""
 
 msgid "6. Your rights"
@@ -1071,8 +3016,10 @@ msgid ""
 "Snowdesk uses one strictly necessary session cookie. It is set automatically "
 "when you visit the site, contains no personal information, and expires when "
 "you close your browser. Because it is strictly necessary, no consent banner "
-"is required under UK PECR. We do not use tracking, analytics, or advertising "
-"cookies of any kind."
+"is required under UK PECR. We do not use advertising cookies, and our "
+"anonymous usage-data telemetry (see section 5) does not use cookies either — "
+"it is stored locally in your browser and sent to us directly when you have "
+"it switched on."
 msgstr ""
 
 msgid "9. Changes to this policy"
@@ -1082,6 +3029,28 @@ msgid ""
 "If we make material changes to this policy, we will update the effective "
 "date at the top and notify subscribers by email. Continued use of Snowdesk "
 "after changes constitutes acceptance."
+msgstr ""
+
+#, python-format
+msgid "%(name)s ski resort — avalanche danger and bulletin for %(region)s."
+msgstr ""
+
+msgid "View bulletin →"
+msgstr ""
+
+msgid "Weather — this resort"
+msgstr ""
+
+msgid "Reported nearby"
+msgstr ""
+
+msgid "Reported in this region"
+msgstr ""
+
+msgid "No reports near here today."
+msgstr ""
+
+msgid "No reports in this region today."
 msgstr ""
 
 msgid "Terms"
@@ -1346,6 +3315,15 @@ msgstr ""
 msgid "Very High"
 msgstr ""
 
+msgid "Constant avalanche danger"
+msgstr ""
+
+msgid "Increasing avalanche danger"
+msgstr ""
+
+msgid "Decreasing avalanche danger"
+msgstr ""
+
 msgid "GO"
 msgstr ""
 
@@ -1355,13 +3333,13 @@ msgstr ""
 msgid "AVOID"
 msgstr ""
 
-msgid "Standard"
+msgid "Swisstopo (CH)"
 msgstr ""
 
-msgid "Winter"
+msgid "IGN (FR)"
 msgstr ""
 
-msgid "Light"
+msgid "basemap.at (AT)"
 msgstr ""
 
 msgid "Stable snowpack"
@@ -1385,296 +3363,189 @@ msgstr ""
 msgid "No distinct problem"
 msgstr ""
 
+msgid "Few"
+msgstr ""
+
+msgid "Some"
+msgstr ""
+
+msgid "Many"
+msgstr ""
+
+msgid "Very poor"
+msgstr ""
+
+msgid "Poor"
+msgstr ""
+
+msgid "Fair"
+msgstr ""
+
+msgid "Good"
+msgstr ""
+
+msgid "Small"
+msgstr ""
+
+msgid "Medium"
+msgstr ""
+
+msgid "Large"
+msgstr ""
+
+msgid "Very large"
+msgstr ""
+
+msgid "Extremely large"
+msgstr ""
+
 msgid "Wet-snow avalanches"
 msgstr ""
 
 msgid "Gliding avalanches"
 msgstr ""
 
-msgid "Your Snowdesk account link"
+msgid "Avalanche danger outlook"
+msgstr ""
+
+msgid "Route name"
 msgstr ""
 
 #, python-format
-msgid "Snowdesk: you're subscribed to %(region_name)s"
+msgid "%(km)s km"
 msgstr ""
 
-msgid "Hi,"
-msgstr ""
-
-msgid ""
-"Click the button below to access your Snowdesk account and manage your "
-"avalanche bulletin subscriptions."
-msgstr ""
-
-msgid "Access my Snowdesk account"
-msgstr ""
-
-msgid "Or copy this link into your browser:"
+msgid "You have no saved routes yet."
 msgstr ""
 
 #, python-format
-msgid "This link expires in %(hours)s hours."
+msgid "%(km)s km · %(ascent)s m ascent"
 msgstr ""
 
-msgid "If you did not request this, you can safely ignore this email."
+msgid "Fetch today's weather"
 msgstr ""
 
-msgid "Snowdesk — Swiss Avalanche Bulletins"
+msgid "Django site admin"
 msgstr ""
 
-msgid ""
-"Avalanche data: WSL Institute for Snow and Avalanche Research SLF (<a "
-"href=\"https://www.slf.ch\" style=\"color: #9ca3af\" >slf.ch</a>) &middot; "
-"Licensed under <a href=\"https://creativecommons.org/licenses/by/4.0/\" "
-"style=\"color: #9ca3af\" >CC BY 4.0</a>"
+msgid "Django administration"
 msgstr ""
 
-msgid ""
-"Click the link below to access your Snowdesk account and manage your "
-"avalanche bulletin subscriptions."
+msgid "Update available"
 msgstr ""
 
 msgid ""
-"Avalanche data: WSL Institute for Snow and Avalanche Research SLF (slf.ch) · "
-"Licensed under CC BY 4.0"
+"A newer version of Snowdesk is ready. Your downloaded maps and saved data "
+"are kept."
+msgstr ""
+
+msgid "Reload"
 msgstr ""
 
 #, python-format
-msgid "Snowdesk: you're subscribed to %(region)s"
+msgid "%%(metres)s m altitude"
+msgstr ""
+
+msgid "Rating expired — reconnect to see today's danger level"
+msgstr ""
+
+#, python-format
+msgid "as of %%(time)s"
+msgstr ""
+
+#, python-format
+msgid "Showing cached data — as of %%(time)s"
+msgstr ""
+
+#, python-format
+msgid "%(cm)s cm"
+msgstr ""
+
+#, python-format
+msgid "Hourly detail — %(weekday)s"
+msgstr ""
+
+#, python-format
+msgid "Data generated at %(ts)s"
+msgstr ""
+
+msgid "Fresh:"
+msgstr ""
+
+msgid "Stale but usable:"
+msgstr ""
+
+msgid "Unsafe — do not rely on:"
 msgstr ""
 
 #, python-format
 msgid ""
-"You're now subscribed to avalanche bulletin alerts for <strong>%(region)s</"
-"strong>."
+"Updated\n"
+"            %(ts)s"
 msgstr ""
 
-msgid "Manage your subscriptions"
-msgstr ""
-
-#, python-format
-msgid "You're now subscribed to avalanche bulletin alerts for %(region)s."
-msgstr ""
-
-msgid "Use the link below to manage your subscriptions:"
-msgstr ""
-
-msgid "Link expired — Snowdesk"
-msgstr ""
-
-msgid ""
-"This account link has expired or is invalid. Request a new one to manage "
-"your Snowdesk subscriptions."
-msgstr ""
-
-msgid "This link has expired"
-msgstr ""
-
-msgid ""
-"Account links are only valid for 24 hours. This one has expired or is "
-"invalid."
-msgstr ""
-
-msgid "Request a new link"
-msgstr ""
-
-msgid "Manage subscriptions — Snowdesk"
-msgstr ""
-
-msgid "Update your Snowdesk avalanche bulletin region subscriptions."
-msgstr ""
-
-msgid "Something went wrong."
-msgstr ""
-
-msgid "Please reload the page and try again."
-msgstr ""
-
-msgid "Your subscription is confirmed."
-msgstr ""
-
-msgid "You'll receive alerts for the regions below."
-msgstr ""
-
-msgid "Your subscription"
-msgid_plural "Your subscriptions"
-msgstr[0] ""
-msgstr[1] ""
-
-#, python-format
-msgid "View %(region)s on the map"
-msgstr ""
-
-msgid "Remove"
-msgstr ""
-
-msgid "You have no active subscriptions."
-msgstr ""
-
-msgid "Choose more regions on the map →"
-msgstr ""
-
-msgid "Passkeys"
-msgstr ""
-
-msgid "Sign in faster with a passkey"
-msgstr ""
-
-msgid ""
-"Save a passkey for this device and you won't need a magic link next time."
-msgstr ""
-
-msgid "Save a passkey for this device"
-msgstr ""
-
-#, python-format
-msgid "Last used %(date)s"
-msgstr ""
-
-msgid "Never used"
-msgstr ""
-
-msgid "Remove this passkey?"
-msgstr ""
-
-msgid "Add a passkey for this device"
-msgstr ""
-
-msgid "Unsubscribe from all alerts and delete your account?"
-msgstr ""
-
-msgid "Unsubscribe from all alerts"
-msgstr ""
-
-msgid "Passkey registration failed. Please try again."
-msgstr ""
-
-msgid "Subscriptions saved — Snowdesk"
-msgstr ""
-
-msgid ""
-"Your Snowdesk avalanche bulletin region subscriptions have been updated."
-msgstr ""
-
-msgid "Regions saved"
-msgstr ""
-
-msgid "Your bulletin subscriptions have been updated."
-msgstr ""
-
-msgid "Back to Snowdesk"
-msgstr ""
-
-msgid "Check your inbox — Snowdesk"
-msgstr ""
-
-msgid ""
-"We've sent you an account link. Check your inbox to manage your Snowdesk "
-"subscriptions."
-msgstr ""
-
-msgid "Check your inbox"
-msgstr ""
-
-msgid ""
-"If that address is registered, we've sent you a link to manage your "
-"subscriptions. It expires in 24 hours."
-msgstr ""
-
-msgid "Something went wrong"
-msgstr ""
-
-msgid "We couldn't find that region — please try again from the bulletin page."
-msgstr ""
-
-msgid "Get avalanche alerts"
-msgstr ""
-
-msgid "Enter your email to receive daily bulletin updates for this region."
-msgstr ""
-
-msgid "Subscribe"
-msgstr ""
-
-msgid "Sending…"
-msgstr ""
-
-msgid "We've sent you a link to access your account. It expires in 24 hours."
-msgstr ""
-
-#, python-format
-msgid "Added <strong>%(region)s</strong> to your alerts"
-msgstr ""
-
-msgid "We've sent a confirmation to your email."
-msgstr ""
-
-#, python-format
-msgid "You're already subscribed to <strong>%(region)s</strong>"
-msgstr ""
-
-msgid "Sign in — Snowdesk"
-msgstr ""
-
-msgid "Sign in to manage your Snowdesk avalanche bulletin subscriptions."
-msgstr ""
-
-msgid "Sign in"
-msgstr ""
-
-msgid "Enter your email address and we'll send you a sign-in link."
-msgstr ""
-
-msgid "Email address"
-msgstr ""
-
-msgid "Send sign-in link"
-msgstr ""
-
-msgid "Sign in with a passkey"
-msgstr ""
-
-msgid ""
-"The passkey you used could not be found on Snowdesk. Please try a different "
-"passkey or use the sign-in link."
-msgstr ""
-
-msgid "Sign-in failed. Please try again or use the sign-in link."
-msgstr ""
-
-msgid "Unsubscribe — Snowdesk"
-msgstr ""
-
-msgid ""
-"Confirm your unsubscribe request to stop receiving avalanche bulletin alerts "
-"for this region."
-msgstr ""
-
-msgid "Unsubscribe"
-msgstr ""
-
-#, python-format
-msgid "You are about to unsubscribe <strong>%(email)s</strong> from:"
-msgstr ""
-
-msgid "Yes, unsubscribe me"
-msgstr ""
-
-msgid "Unsubscribed — Snowdesk"
-msgstr ""
-
-msgid ""
-"You have been successfully unsubscribed from Snowdesk avalanche bulletin "
-"alerts."
-msgstr ""
-
-msgid "You've been unsubscribed"
-msgstr ""
-
-msgid "You will no longer receive avalanche bulletin alerts for that region."
+msgid "Rename"
 msgstr ""
 
 msgid "No data supplied"
+msgstr ""
+
+msgid "Offline — last synced"
+msgstr ""
+
+msgid ""
+"\n"
+"                The app has lost contact with the server, and is displaying "
+"the latest cached data. It will update as\n"
+"                soon as the connection is restored.\n"
+"            "
+msgstr ""
+
+msgid "Install Snowdesk"
+msgstr ""
+
+msgid ""
+"Add Snowdesk to your home screen for one-tap access and notifications when a "
+"new bulletin lands."
+msgstr ""
+
+msgid "Install"
+msgstr ""
+
+msgid "Add Snowdesk to your Home Screen"
+msgstr ""
+
+msgid ""
+"Tap the Share icon, then choose <b>Add to Home Screen</b>. Home-screen "
+"installs unlock notifications and offline access."
+msgstr ""
+
+msgid "Reset local data"
+msgstr ""
+
+msgid ""
+"Snowdesk needs to reset local data on this device to keep working. Your\n"
+"    subscription and account are stored on the server and are not affected."
+msgstr ""
+
+msgid "Reset now"
+msgstr ""
+
+msgid "Update required"
+msgstr ""
+
+msgid ""
+"This version of Snowdesk is no longer supported. Reloading refreshes the\n"
+"    offline copy of the app — your downloaded maps and saved data are kept."
+msgstr ""
+
+msgid "Reload now"
+msgstr ""
+
+msgid "Some changes couldn't be saved and won't be retried."
+msgstr ""
+
+msgid "Display on the map"
 msgstr ""
 
 msgid "Sunrise"
@@ -1683,32 +3554,32 @@ msgstr ""
 msgid "Sunset"
 msgstr ""
 
-msgid "Avalanche conditions by window"
+msgid "Temperature"
 msgstr ""
 
-msgid "Back"
+msgid "Snowfall"
+msgstr ""
+
+msgid "Avalanche conditions by window"
 msgstr ""
 
 #, python-format
 msgid "Show %(label)s season heatmap"
 msgstr ""
 
-msgid "Season"
-msgstr ""
-
 msgid "Account menu"
 msgstr ""
 
-msgid "Manage alerts"
-msgstr ""
-
-msgid "Sign out"
+msgid "My account"
 msgstr ""
 
 msgid "Admin menu"
 msgstr ""
 
 msgid "Component library"
+msgstr ""
+
+msgid "Push demo"
 msgstr ""
 
 msgid "Edit map"
