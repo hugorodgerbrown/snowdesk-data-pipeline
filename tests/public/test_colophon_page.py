@@ -125,6 +125,7 @@ class TestColophonPage:
         """
         response = client.get(reverse("public:colophon"))
         assert "Slope classes over 30°".encode() in response.content
+
     def test_openstreetmap_odbl_attribution_present(self, client: Client) -> None:
         """OpenFreeMap serves OSM data under ODbL, which requires credit."""
         response = client.get(reverse("public:colophon"))
