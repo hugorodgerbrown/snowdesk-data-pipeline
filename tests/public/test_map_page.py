@@ -1064,12 +1064,13 @@ def test_terrain_section_follows_locations_in_the_layer_menu() -> None:
 @pytest.mark.django_db
 @override_flag("slope_layer", active=True)
 def test_slope_legend_section_renders_with_its_caveat() -> None:
-    """SNOW-691: the legend carries the five classes and the safety caveat.
+    """SNOW-691: the legend carries the five classes and a route to the caveats.
 
-    The caveat is the reason this test exists rather than a bare
-    "the swatches are present": a raster that paints nothing means two
-    different things — "under 30°" inside the coverage rectangle and "not
-    surveyed" outside it — and neither is discoverable from the map itself.
+    The link is the reason this test exists rather than a bare "the swatches
+    are present". The caveats moved to /help/ because they ran to several
+    paragraphs in a panel that has room for none — but a shading a reader
+    might mistake for permission cannot ship with no path to the warnings,
+    so the heading being a link is the load-bearing part.
     """
     client = Client()
     content = client.get(reverse("public:home")).content.decode()
@@ -1077,5 +1078,7 @@ def test_slope_legend_section_renders_with_its_caveat() -> None:
     assert 'data-testid="map-legend-slope"' in content
     for band in ("30–35°", "35–40°", "40–45°", "45–50°", "Over 50°"):
         assert band in content, band
-    assert "has not been surveyed rather than being gentle" in content
-    assert "Never read this layer as a decision" in content
+    # The caveats live on /help/, not in the legend — but the legend must
+    # still be the way to reach them, or a reader gets five colours and no
+    # warning that the layer averages the ground and stops at a border.
+    assert "#help-topic-slope" in content

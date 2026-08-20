@@ -2316,8 +2316,16 @@
       // oblige us to name the source. `updateMapAttribution` unions this
       // into the legend's "Map data" section; /colophon/ carries the longer
       // form. Trusted, server-controlled HTML, like every other source's.
+      //
+      // It names the DATASET, not just the publisher, and that is
+      // load-bearing rather than pedantic: two of the basemaps are also
+      // swisstopo and contribute a bare "© swisstopo", so a matching string
+      // here rendered as "© swisstopo · swisstopo" — a duplicate that
+      // credits nothing. The union is by exact string, so the way to say
+      // "this is a second, different swisstopo dataset" is to say which.
       attribution:
-        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">swisstopo</a>',
+        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
+        + 'swisstopo — slope classes</a>',
     });
 
     // Under the choropleth, so the danger ratings stay readable on top of

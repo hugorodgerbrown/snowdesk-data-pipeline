@@ -384,12 +384,16 @@ from a combined elevation model — swissALTI3D (CH/LI), RGE ALTI (FR),
 TINITALY/01 (IT), DGM10 (AT), DGM1 (Bavaria), EU-DEM (Baden-Württemberg) —
 and warn that accuracy is not guaranteed where two base models meet.
 
-**The editorial line.** A 10 m model averages the ground, so a short steep
-roll inside a gentler face does not appear at any zoom — and the shading
-visibly blocks up at touring zooms for exactly that reason, which is the
-data's resolution rather than a rendering fault. The legend says so, says
-what unshaded ground means where the layer has no coverage, and says
-plainly that the layer is not a decision. A slope shading is the single
+**The editorial line lives on `/help/`, not in the legend.** A 10 m model
+averages the ground, so a short steep roll inside a gentler face does not
+appear at any zoom — and the shading visibly blocks up at touring zooms for
+exactly that reason, which is the data's resolution rather than a rendering
+fault. That, what unshaded ground means where the layer has no coverage,
+and the plain statement that the layer is not a verdict, all run to several
+paragraphs: more than a legend panel can hold and too much to drop. So the
+legend carries the five class swatches and its heading is a **link** to
+`/help/#help-topic-slope`, which is the only route from the map to the
+warnings and therefore not optional chrome. A slope shading is the single
 easiest surface on this map to misread as permission, which is the whole
 reason all three of those sentences are there.
 

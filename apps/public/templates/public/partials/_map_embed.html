@@ -973,7 +973,18 @@ Optional context:
             {# the map, so the legend has to say both.                        #}
             {% if slope_layer_eligible %}
                 <section class="map-legend-section" data-testid="map-legend-slope">
-                    <div class="map-legend-title">{% trans "Slope angle" %}</div>
+                    {# The heading is the way to the caveats. What this layer  #}
+                    {# cannot tell you — its 10 m grid, where its coverage     #}
+                    {# stops, and that it is not a verdict — runs to several   #}
+                    {# paragraphs, which is more than a legend can hold and    #}
+                    {# too much to drop. So the legend keeps the key and       #}
+                    {# points at /help/#help-topic-slope for the rest.         #}
+                    <div class="map-legend-title">
+                        <a
+                            class="map-legend-attribution-link"
+                            href="{% url 'public:help' %}#help-topic-slope"
+                        >{% trans "Slope angle" %}</a>
+                    </div>
                     <div class="map-legend-row">
                         <span
                             class="map-legend-swatch map-legend-swatch--slope-30"
@@ -1004,16 +1015,6 @@ Optional context:
                             aria-hidden="true"
                         ></span>{% trans "Over 50°" %}
                     </div>
-                    <p class="map-legend-attribution">
-                        {% blocktrans trimmed %}
-                            The first three bands are the 30–45° range most avalanches release on. Slopes are
-                            averaged over a 10 m elevation model, so a short steep roll inside a gentler face is not
-                            shown, and accuracy is not guaranteed where the national elevation models meet. Coverage
-                            stops at the edge of the Alps: where this layer is unavailable the menu row says so, and
-                            unshaded ground there has not been surveyed rather than being gentle. Never read this layer
-                            as a decision.
-                        {% endblocktrans %}
-                    </p>
                 </section>
             {% endif %}
             {# SNOW-640: the whole section is hidden by map.js when the      #}

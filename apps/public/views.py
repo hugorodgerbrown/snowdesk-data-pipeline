@@ -1194,6 +1194,11 @@ def help_page(request: HttpRequest) -> HttpResponse:
     context = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         "weather_layer_visible": waffle.flag_is_active(request, "weather_layer"),
+        # SNOW-691: the Slope angle panel. Gated like the two above, and the
+        # map legend's "Slope angle" heading links straight to it — the
+        # layer's caveats are too long to live in the legend and too
+        # important to leave unsaid.
+        "slope_layer_visible": waffle.flag_is_active(request, "slope_layer"),
     }
     return render(request, "public/help.html", context)
 

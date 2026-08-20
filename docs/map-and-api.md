@@ -353,6 +353,16 @@ That cache is populated at `style.load` and this source is added
 afterwards, so without the reset swisstopo's attribution — a licence
 obligation, not a nicety — never reaches the legend's "Map data" section.
 
+The legend's "Slope angle" heading is an anchor into
+`/help/#help-topic-slope` (`public/help/_topic_slope.html`, gated on the
+same flag via `slope_layer_visible` in `help_page`). The id sits on a
+wrapper `div` rather than on `_collapsible_panel.html`'s `<details>`, so
+that shared partial keeps one shape for every caller. The source's
+`attribution` names the DATASET rather than the publisher — two basemaps
+are also swisstopo and contribute a bare `© swisstopo`, and
+`updateMapAttribution` unions by exact string, so a matching value rendered
+as "© swisstopo · swisstopo".
+
 Offline caching: no `OVERLAY_RESOURCES` entry, so the row carries no sync
 dot state and the offline gate never touches it. The tiles ride the service
 worker's cross-origin basemap stale-while-revalidate cache instead — the
