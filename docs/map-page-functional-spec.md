@@ -202,8 +202,12 @@ users. They are shown as reference, not as authoritative geography.
   the small resorts are frequently the ones with the most interesting
   terrain. Size does the ranking; nothing disappears.
 - **Who can use it.** Everyone. The resorts overlay and the search box
-  (which indexes resorts alongside regions) are public. The overlay is
-  **off by default** — a visitor opts in.
+  are public. The overlay is **off by default** — a visitor opts in — but
+  search does not depend on it: a resort is its own row in the dropdown
+  (SNOW-697), labelled with its parent region, and selects that region
+  exactly as the region's own row would. Between SNOW-188 and SNOW-697
+  resort names were matched but never shown, so a query for "Verbier"
+  silently returned a region row instead.
 - **Who can edit it.** Placement/correction of resort coordinates is a
   staff tool: the in-map resort editor at `/?edit=resorts`, gated on the
   `edit_map` flag (currently superusers). Edits land in the local
