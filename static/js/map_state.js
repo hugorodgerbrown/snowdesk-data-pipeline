@@ -201,6 +201,13 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'frame-readout-done': '%(mb)s downloaded',
   'frame-budget-banner': '%(used)s / %(budget)s downloaded',
   'action-close': 'Close',
+  // SNOW-697: the search dropdown's row-type words. Visually hidden — a
+  // sighted user reads the type off the pin glyph and the secondary line,
+  // so these exist for screen readers, which have neither. Needed the
+  // moment resorts became rows again: two rows that both say "Verbier"
+  // and both name a region are indistinguishable read aloud.
+  'search-type-region': 'Region',
+  'search-type-resort': 'Resort',
   // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
   // custom-area roundel's two labels for a state it no longer has (see
   // map_custom_download.js's header). Its label is server-rendered now,
