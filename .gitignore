@@ -29,6 +29,11 @@ static/css/output.css
 
 # Django
 db.sqlite3
+# Backups taken before a reseed (docs/worktrees.md's force-reseed procedure
+# renames the old DB aside rather than deleting it). `db.sqlite3` alone does
+# not match these, so without this line a 69 MB dev database is one
+# `git add -A` away from the index.
+db.sqlite3.bak-*
 # Playwright e2e file-based test database (tox -e e2e) + its journal/WAL files
 e2e_test_db.sqlite3*
 *.log
