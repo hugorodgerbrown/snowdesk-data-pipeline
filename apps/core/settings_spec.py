@@ -251,6 +251,15 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     SettingSpec(
         "OPENFREEMAP_STYLE_URL", validator=absolute_url, note="Basemap style JSON"
     ),
+    # SNOW-691: an XYZ tile TEMPLATE, not a plain URL — it carries the
+    # literal {z}/{x}/{y} placeholders MapLibre substitutes per tile, so
+    # ``absolute_url`` is the right shape check (scheme + host) and nothing
+    # stricter would accept it.
+    SettingSpec(
+        "SLOPE_TILE_URL",
+        validator=absolute_url,
+        note="Slope-angle raster XYZ tile template",
+    ),
     SettingSpec("MAXMIND_ACCOUNT_ID", secret=True, note="GeoIP download account"),
     SettingSpec("MAXMIND_LICENSE_KEY", secret=True, note="GeoIP download key"),
     # --- Email ------------------------------------------------------------

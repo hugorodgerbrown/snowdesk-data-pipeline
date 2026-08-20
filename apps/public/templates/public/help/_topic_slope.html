@@ -1,0 +1,68 @@
+{% comment %}
+apps/public/templates/public/help/_topic_slope.html — "Slope angle" panel body.
+
+Content partial for the help page (SNOW-691); included via the
+body_template parameter of includes/_collapsible_panel.html. Gated on the
+slope_layer waffle flag, mirroring the flag that gates the map overlay
+this topic documents.
+
+This panel is where the layer's shortcomings live. The map legend carries
+the five class swatches and a link here, and nothing else: the caveats are
+too long to sit in a legend panel and too important to drop, and a reader
+deciding whether to trust a shading needs the whole answer rather than the
+half that fits.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The Slope angle overlay shades the ground by steepness, so you can see how steep a line is without leaving
+            the map. The bands follow the classification the SLF recommends, the same one you will have seen on Swiss
+            maps: 30&ndash;35&deg;, 35&ndash;40&deg;, 40&ndash;45&deg;, 45&ndash;50&deg; and over 50&deg;. Ground under
+            30&deg; is left unshaded.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-why-30-45">
+        {% blocktrans trimmed %}
+            The first three bands matter most. The large majority of slab avalanches release on slopes between 30 and 45
+            degrees, which is why that range is the one to find when a bulletin talks about steep terrain in a
+            particular aspect and elevation.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "What it cannot tell you" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-resolution">
+        {% blocktrans trimmed %}
+            The shading is calculated from an elevation model with a 10 metre grid, so it describes the average
+            steepness of each 10 metre square rather than the ground itself. A short steep roll inside an otherwise
+            gentle face will not appear at any zoom, and neither will a small bench in the middle of a steep one. Zoom
+            in far enough and you will see the individual squares &mdash; that is the resolution of the data, not a
+            fault in the map.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-coverage">
+        {% blocktrans trimmed %}
+            Coverage does not extend across the whole map. Where the layer has no data its menu row is switched off with
+            a note, but be careful near the edge: unshaded ground outside the covered area has simply not been surveyed,
+            and looks exactly like ground that is under 30 degrees.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-accuracy">
+        {% blocktrans trimmed %}
+            The data is stitched together from several countries' national elevation models, and swisstopo, who publish
+            it, note that accuracy is not guaranteed in the places where two of those models meet.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-slope-not-a-decision">
+        {% blocktrans trimmed %}
+            Treat the layer as one input among several, never as a verdict. It says nothing about the snowpack, about
+            what is above you, or about the day's danger rating &mdash; and a slope being shaded, or not being shaded,
+            is not permission to ski it.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The data is the &ldquo;Slope classes over 30&deg;&rdquo; dataset published by swisstopo, the Swiss Federal
+            Office of Topography. Full attribution is in the colophon.
+        {% endblocktrans %}
+    </p>
+</div>

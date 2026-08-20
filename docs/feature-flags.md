@@ -53,8 +53,18 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 |------|---------------------|-------|------------|
 | `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/save/`, `/api/edit/resorts/create/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
 | `routes` | `superusers=True` | The GPX routes panel and its upload/list/rename/delete endpoints under `/routes/`, and the map route overlay (`routes.geojson` + the line layers). | SNOW-686, SNOW-687. |
+| `slope_layer` | **`everyone=True`** | The map's "Terrain" section and its "Slope angle" row — the swisstopo slope-angle raster (`ch.swisstopo.hangneigung-ueber_30`), its coverage outline and its legend key. | SNOW-691. |
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 | `weather_layer` | `superusers=True` | The map's "Weather" overlay (condition symbols + temperature at forecast points), `/api/forecast-weather.geojson`, the `days` property on `favourites.geojson`, and the matching `/help/` section. | SNOW-573. |
+
+`slope_layer` is the only flag here that is **not** a rollout gate.
+It ships `everyone=True`, so the overlay is on for every visitor from the
+first deploy that runs `sync_waffle_flags --commit`; the flag exists as a
+kill switch, because the layer depends on a third-party tile service we do
+not operate. Setting `Everyone: No` in the admin removes the row, the
+raster and the legend key without a deploy — which is the lever to reach
+for if swisstopo's service degrades, or if the licence question recorded in
+the flag's `note` resolves against us.
 
 The saved-map-pin favourites feature (SNOW-413), the field-report button
 and submission endpoints (SNOW-324), the "Community reports" read overlay

@@ -232,6 +232,15 @@ in addition to the shared map assets.
     {# first overlay toggle, never at parse time, so it has no place in the   #}
     {# temporal-dead-zone ordering the bundle exists to protect.              #}
     <script defer src="{% static 'js/map_weather_core.js' %}"></script>
+    {# SNOW-691: the slope overlay's coverage rectangle, zoom limits and     #}
+    {# class table (window.pwaSlopeOverlayCore), extracted so the coverage   #}
+    {# predicate can be unit-tested (tests/js/test_slope_overlay_core.js).   #}
+    {# Here with the other *_core.js modules and NOT inside the map bundle's #}
+    {# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it  #}
+    {# from installSlopeLayer, on the style-install path, never at parse     #}
+    {# time, so it has no place in the temporal-dead-zone ordering the       #}
+    {# bundle exists to protect.                                            #}
+    <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}

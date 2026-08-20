@@ -86,6 +86,13 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 |------|---------|------|
 | Route | A polyline a user imported from a GPX upload (SNOW-685) — `points` as `[[lon, lat, ele], …]` in GeoJSON axis order, plus denormalised `distance_m` / `ascent_m` / `point_count` / `bounds`. The uploaded file is parsed and discarded ([why](decisions/gpx-uploads-are-parsed-not-stored.md)) | `apps/routes/models.py`; ingest in `apps/routes/services/gpx.py` |
 
+## Terrain
+
+| Term | Meaning | Code |
+|------|---------|------|
+| Slope angle overlay | The map's steepness raster (SNOW-691) — swisstopo's `ch.swisstopo.hangneigung-ueber_30`, banded to the SLF classification (30–35 / 35–40 / 40–45 / 45–50 / >50°). Under 30° is unshaded | `static/js/slope_overlay_core.js`; `installSlopeLayer` in `static/js/map.js`; `SLOPE_TILE_URL` in `config/settings/base.py` |
+| Coverage rectangle | The slope raster's declared extent, `5.140242, 45.398181` → `11.47757, 48.230651`. Used as the source's `bounds` and to disable the layers-menu row outside it, because unshaded ground *outside* it means "not surveyed" rather than "under 30°" | `COVERAGE_BOUNDS` / `coversPoint` in `static/js/slope_overlay_core.js` |
+
 ## Subscriptions and tracking
 
 | Term | Meaning | Code |

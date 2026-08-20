@@ -741,19 +741,44 @@ def basemap_origin(style_url: str) -> str:
     """
     parts = urlsplit(style_url)
     if not parts.scheme or not parts.netloc:
+        # SNOW-691: the message names the VALUE rather than one setting —
+        # SLOPE_TILE_URL is a second caller now, and naming
+        # OPENFREEMAP_STYLE_URL for a bad slope template would send whoever
+        # hits this to the wrong line of the wrong .env.
         raise ImproperlyConfigured(
-            f"OPENFREEMAP_STYLE_URL={style_url!r} must be an absolute "
-            f"URL (e.g. https://tiles.openfreemap.org/styles/liberty)."
+            f"Tile/style URL {style_url!r} must be an absolute URL "
+            f"(e.g. https://tiles.openfreemap.org/styles/liberty) — the CSP "
+            f"origin is derived from it."
         )
     return f"{parts.scheme}://{parts.netloc}"
 
 
-def csp_defaults(tile_origin: str) -> dict[str, list[str]]:
+def csp_defaults(
+    tile_origin: str, *, slope_origin: str | None = None
+) -> dict[str, list[str]]:
     """Return the baseline CSP directives, allowlisting ``tile_origin``.
 
     ``tile_origin`` is the basemap origin the map page fetches its style
     JSON and vector tiles from — the sole part of the policy that varies
     with the environment.
+
+    ``slope_origin`` (SNOW-691) is the origin serving the slope-angle
+    raster overlay's WMTS tiles. Keyword-only and defaulted so the direct
+    callers in ``tests/test_csp.py`` keep working unchanged; ``None`` omits
+    it entirely, which is what a deployment with the overlay's tile URL
+    unset should get. It is appended to BOTH ``connect-src`` and
+    ``img-src`` because MapLibre fetches raster tiles through ``fetch()``
+    but decodes them as images, and ``img-src`` is otherwise
+    ``'self' data:`` only.
+
+    Args:
+        tile_origin: ``scheme://host[:port]`` of the basemap tile origin.
+        slope_origin: ``scheme://host[:port]`` of the slope-raster origin,
+            or None to leave it out of the policy.
+
+    Returns:
+        The CSP directive name → source-list mapping.
+
     """
     return {
         "default-src": ["'none'"],
@@ -773,7 +798,9 @@ def csp_defaults(tile_origin: str) -> dict[str, list[str]]:
             "'self'",
             "'unsafe-inline'",
         ],
-        "img-src": ["'self'", "data:"],
+        # SNOW-691: the slope raster is decoded as an image, so its origin
+        # has to be here as well as in connect-src below.
+        "img-src": ["'self'", "data:", *([slope_origin] if slope_origin else [])],
         "font-src": ["'self'", "data:"],
         # MapLibre creates its tile-parser workers from blob: URLs; /sw.js is
         # our own service worker (served from /).
@@ -791,6 +818,10 @@ def csp_defaults(tile_origin: str) -> dict[str, list[str]]:
             # basemap.at (Austria) — style JSON, vector tiles, sprites, glyphs.
             "https://data.geopf.fr",
             "https://mapsneu.wien.gv.at",
+            # SNOW-691: the slope-angle raster's WMTS origin (swisstopo by
+            # default). Env-derived like tile_origin above, so the setting
+            # and the policy cannot drift.
+            *([slope_origin] if slope_origin else []),
         ],
         "manifest-src": ["'self'"],
         "report-uri": ["{report_uri}"],
@@ -803,9 +834,29 @@ OPENFREEMAP_STYLE_URL = config(
 )
 OPENFREEMAP_ORIGIN = basemap_origin(OPENFREEMAP_STYLE_URL)
 
+# SNOW-691: the slope-angle raster overlay's XYZ tile template. swisstopo's
+# ``ch.swisstopo.hangneigung-ueber_30`` WMTS layer, in the ``3857_17`` matrix
+# set (z0–17; z18 answers HTTP 400). It is derived from a 10 m COMBINED DEM —
+# swissALTI3D (CH/LI), RGE ALTI (FR), TINITALY/01 (IT), DGM10 (AT), DGM1
+# (Bavaria), EU-DEM (Baden-Württemberg) — so it is a multi-country layer
+# clipped to a rectangle, not "Switzerland plus a buffer"; the rectangle
+# itself lives in ``static/js/slope_overlay_core.js`` because the client is
+# what has to keep requests inside it.
+#
+# Env-overridable so a self-hosted or replacement raster (SNOW-693) can be
+# swapped in without a code deploy, exactly as the basemap style URL is.
+SLOPE_TILE_URL = config(
+    "SLOPE_TILE_URL",
+    default=(
+        "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hangneigung-ueber_30"
+        "/default/current/3857/{z}/{x}/{y}.png"
+    ),
+)
+SLOPE_TILE_ORIGIN = basemap_origin(SLOPE_TILE_URL)
+
 CSP_ENABLED = False
 CSP_REPORT_ONLY = True
-CSP_DEFAULTS = csp_defaults(OPENFREEMAP_ORIGIN)
+CSP_DEFAULTS = csp_defaults(OPENFREEMAP_ORIGIN, slope_origin=SLOPE_TILE_ORIGIN)
 
 
 def _csp_filter_request(request):  # type: ignore[no-untyped-def]

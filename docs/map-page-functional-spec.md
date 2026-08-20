@@ -340,6 +340,69 @@ for anyone the feature is not open to.
 
 ---
 
+### 3.5a Terrain — the slope-angle overlay (SNOW-691)
+
+The **Slope angle** overlay shades the ground by steepness, so a visitor
+can ask "is the line I am looking at in the range this bulletin is talking
+about?" without leaving the map. It is not user-generated and not issued by
+an avalanche service, which is why it sits in a **Terrain** section of its
+own rather than under Conditions: slope is a permanent property of the
+ground, and does not change with the day being scrubbed to.
+
+**What it shows.** Five bands, in the classification the SLF recommends and
+Swiss tourers already read on swisstopo's own maps: 30–35°, 35–40°, 40–45°,
+45–50°, and over 50°. **The first three are the 30–45° range most slab
+avalanches release on** — the reason to look at this layer at all. Anything
+under 30° is unshaded.
+
+**Where it sits.** Under the danger choropleth, so the ratings stay
+readable on top of it. There is no separate opacity control and no
+exclusivity rule: the bulletin-fill strength control (§2) already exists
+for exactly this trade-off, and a reader who wants the terrain clean takes
+the fill to 0.
+
+**Who can use it.** Everyone. Unlike every other flagged surface here, the
+`slope_layer` flag is a kill switch rather than a rollout gate — the layer
+depends on a tile service Snowdesk does not operate. **Off by default**: it
+paints the whole viewport rather than discrete features, and a visitor who
+opened the map to read danger ratings did not ask for a second full-screen
+colour scheme underneath them.
+
+**Coverage is a rectangle, and the map says where it ends.** The source
+covers `5.140242, 45.398181` → `11.47757, 48.230651` and stops dead — the
+Zillertal, the Dolomites, the Queyras and the Mercantour are all outside
+it, and the Zillertal is terrain we publish ALBINA bulletins for. So the
+menu row disables itself, with a reason, once the viewport centre leaves
+the covered area. This is not tidiness: **inside it unshaded means "under
+30°"; outside it unshaded means "not surveyed"**, and nothing about a
+raster distinguishes the two. Widening coverage to everything we publish
+bulletins for is SNOW-693.
+
+An earlier build also drew the coverage rectangle on the map as a line.
+It was removed: a hard box spanning the whole map, most of whose length
+runs through terrain nobody is looking at, cost more legibility than the
+edge case was worth.
+
+**It is not a Swiss layer despite the name.** swisstopo derive it at 10 m
+from a combined elevation model — swissALTI3D (CH/LI), RGE ALTI (FR),
+TINITALY/01 (IT), DGM10 (AT), DGM1 (Bavaria), EU-DEM (Baden-Württemberg) —
+and warn that accuracy is not guaranteed where two base models meet.
+
+**The editorial line lives on `/help/`, not in the legend.** A 10 m model
+averages the ground, so a short steep roll inside a gentler face does not
+appear at any zoom — and the shading visibly blocks up at touring zooms for
+exactly that reason, which is the data's resolution rather than a rendering
+fault. That, what unshaded ground means where the layer has no coverage,
+and the plain statement that the layer is not a verdict, all run to several
+paragraphs: more than a legend panel can hold and too much to drop. So the
+legend carries the five class swatches and its heading is a **link** to
+`/help/#help-topic-slope`, which is the only route from the map to the
+warnings and therefore not optional chrome. A slope shading is the single
+easiest surface on this map to misread as permission, which is the whole
+reason all three of those sentences are there.
+
+---
+
 ## 3.6 What the layer menu lists (SNOW-658)
 
 The layer menu (the stacked-layers roundel) is the map's **view controls for
@@ -351,6 +414,7 @@ published data**. Its sections say what their rows are:
 | **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy |
 | **Locations** | Resorts | Named places geocoded onto regions |
 | **Conditions** | Weather (flag-gated) | Forecast symbols at each point |
+| **Terrain** | Slope angle (flag-gated) | Steepness shading |
 | **Base map** | one row per basemap | The geographic backdrop |
 
 **Favourites and community reports are not in it.** Both are

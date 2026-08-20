@@ -226,6 +226,12 @@
     // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
     // separate pin+label layers.
     weather: ['weather-point'],
+    // SNOW-691: the slope raster. Deliberately NOT in the lazy-load branch
+    // below: the source is installed eagerly with its layer hidden, and
+    // MapLibre requests no tiles for a source whose layers are all
+    // ``visibility: none`` — so there is nothing to fetch on first enable
+    // and this takes the direct setLayoutProperty path.
+    slope: ['slope-raster'],
   };
 
   for (const item of items) {

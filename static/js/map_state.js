@@ -117,6 +117,12 @@ const OVERLAY_STORAGE_KEY = {
   // visually far heavier than a pin, so the overlay is opt-in the way
   // community_reports and weather are.
   routes: 'snowdesk.map.overlay.routes',
+  // SNOW-691: flag-gated only, like weather — the row exists in the DOM (and
+  // this key is only ever read/written) when data-slope-layer-eligible="true".
+  // Defaults OFF: the raster covers the whole viewport wherever it has data,
+  // and a visitor who opened the map to read danger ratings did not ask for a
+  // second full-screen colour scheme under them.
+  slope: 'snowdesk.map.overlay.slope',
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
@@ -260,6 +266,12 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // The popup's payload carries no ``source_filename`` (the row's middle
   // fallback), so a nameless route lands straight here.
   'route-untitled': 'Untitled route',
+  // SNOW-691: the Terrain row's disable reason — the viewport centre has
+  // left the slope raster's declared coverage rectangle, so there is
+  // nothing for the layer to draw here. One string, not two: the row is
+  // only in the DOM when the layer is available at all, so WHERE the
+  // visitor is looking is the only thing that can make it unusable.
+  'slope-out-of-coverage': 'No slope data for this area',
 });
 
 // basemap.at ships an ESRI ArcGIS VectorTileServer style whose vector source

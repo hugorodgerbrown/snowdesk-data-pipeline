@@ -777,6 +777,10 @@ def home(request: HttpRequest) -> HttpResponse:
                                 flag is active for the request user (SNOW-573).
       ``forecast_weather_geojson_url`` — URL for the map Weather overlay's
                                 GeoJSON endpoint (SNOW-573).
+      ``slope_layer_eligible`` — True when the ``slope_layer`` waffle flag
+                                is active for the request user (SNOW-691).
+      ``slope_tile_url``      — XYZ tile template for the slope-angle raster,
+                                or "" while ineligible (SNOW-691).
 
     Args:
         request: The incoming HTTP request.
@@ -840,6 +844,7 @@ def home(request: HttpRequest) -> HttpResponse:
     routes_ctx = _routes_context(request)
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_context(request)
+    slope_ctx = _slope_context(request)
 
     return render(
         request,
@@ -852,6 +857,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **routes_ctx,
             **community_reports_ctx,
             **weather_ctx,
+            **slope_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
@@ -1188,6 +1194,11 @@ def help_page(request: HttpRequest) -> HttpResponse:
     context = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         "weather_layer_visible": waffle.flag_is_active(request, "weather_layer"),
+        # SNOW-691: the Slope angle panel. Gated like the two above, and the
+        # map legend's "Slope angle" heading links straight to it — the
+        # layer's caveats are too long to live in the legend and too
+        # important to leave unsaid.
+        "slope_layer_visible": waffle.flag_is_active(request, "slope_layer"),
     }
     return render(request, "public/help.html", context)
 
@@ -1621,6 +1632,35 @@ def _weather_context(request: HttpRequest) -> dict[str, Any]:
     return {
         "weather_layer_eligible": waffle.flag_is_active(request, "weather_layer"),
         "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson"),
+    }
+
+
+def _slope_context(request: HttpRequest) -> dict[str, Any]:
+    """Build the template context dict for the map slope-angle overlay (SNOW-691).
+
+    Gated exactly like the Weather overlay: eligibility is the
+    ``slope_layer`` waffle flag, not authentication, and the row must be
+    absent from the DOM entirely — not merely disabled — while the flag is
+    inactive.
+
+    Unlike Weather, there is no Snowdesk endpoint behind it. The tiles come
+    straight from the configured third-party WMTS origin, so the "URL" here
+    is a settings value rather than a ``reverse()``. It is emitted only for
+    an eligible request: an ineligible page has no layer to install, and a
+    tile template in its DOM would be an invitation to install one.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        Dict with ``slope_layer_eligible`` and ``slope_tile_url`` (empty
+        string while ineligible).
+
+    """
+    eligible = waffle.flag_is_active(request, "slope_layer")
+    return {
+        "slope_layer_eligible": eligible,
+        "slope_tile_url": settings.SLOPE_TILE_URL if eligible else "",
     }
 
 

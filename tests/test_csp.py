@@ -139,6 +139,58 @@ def test_csp_connect_src_derived_from_openfreemap_style_url(
     assert expected_origin in policy
 
 
+@pytest.mark.django_db
+def test_csp_allows_slope_tile_origin_in_connect_and_img_src() -> None:
+    """SNOW-691: the slope raster's origin reaches connect-src AND img-src.
+
+    MapLibre fetches a raster tile with ``fetch()`` and then decodes it as
+    an image, so a policy naming the origin in only one of the two blocks
+    the overlay. ``img-src`` is otherwise ``'self' data:`` only, which makes
+    this the directive that would actually have bitten.
+    """
+    origin = "https://wmts.example.test"
+    tile_origin = basemap_origin(settings.OPENFREEMAP_STYLE_URL)
+    with override_settings(
+        SLOPE_TILE_URL=f"{origin}/1.0.0/slope/{{z}}/{{x}}/{{y}}.png",
+        SLOPE_TILE_ORIGIN=origin,
+        CSP_DEFAULTS=csp_defaults(tile_origin, slope_origin=origin),
+    ):
+        clear_cache()
+        try:
+            policy = _csp(Client().get("/"))
+        finally:
+            clear_cache()
+
+    connect_src = policy.split("connect-src")[1].split(";")[0]
+    img_src = policy.split("img-src")[1].split(";")[0]
+    assert origin in connect_src
+    assert origin in img_src
+
+
+def test_csp_defaults_omit_the_slope_origin_when_unset() -> None:
+    """No slope origin configured means no extra source in either directive.
+
+    The keyword is defaulted so the direct callers above keep working
+    unchanged; this pins that the default is an OMISSION rather than an
+    empty string, which would emit a stray token into the policy.
+    """
+    policy = csp_defaults("https://tiles.example.test")
+    assert policy["img-src"] == ["'self'", "data:"]
+    assert "" not in policy["connect-src"]
+    assert policy["connect-src"].count("'self'") == 1
+
+
+def test_slope_tile_origin_is_derived_from_the_configured_template() -> None:
+    """SLOPE_TILE_ORIGIN is ``basemap_origin(SLOPE_TILE_URL)``, not a literal.
+
+    The same anti-drift contract SNOW-242 set for the basemap: one
+    env-configurable value, one derivation, so the CSP can never allowlist
+    an origin the map does not actually fetch from.
+    """
+    assert settings.SLOPE_TILE_ORIGIN == basemap_origin(settings.SLOPE_TILE_URL)
+    assert settings.SLOPE_TILE_URL.startswith(f"{settings.SLOPE_TILE_ORIGIN}/")
+
+
 def test_openfreemap_style_url_validation_failure_mode() -> None:
     """A scheme-less OPENFREEMAP_STYLE_URL trips base.py's startup guard.
 

@@ -92,6 +92,12 @@ Optional context:
     {# *eligible* flag rather than omitting the attribute.                 #}
     data-forecast-weather-url="{{ forecast_weather_geojson_url }}"
     data-weather-layer-eligible="{{ weather_layer_eligible|yesno:'true,false' }}"
+    {# SNOW-691: the slope-angle raster's tile template. Emitted only for an  #}
+    {# eligible request — unlike the two URLs above there is no Snowdesk      #}
+    {# endpoint behind it to 404, so an ineligible page carrying the template #}
+    {# would be an invitation to install the layer anyway.                    #}
+    {% if slope_layer_eligible %}data-slope-tile-url="{{ slope_tile_url }}"{% endif %}
+    data-slope-layer-eligible="{{ slope_layer_eligible|yesno:'true,false' }}"
     {# SNOW-687: saved-routes layer. The URL is omitted entirely for an     #}
     {# ineligible request, mirroring data-favourites-url above: the         #}
     {# endpoint is per-user and 403s for anyone else, so there would be     #}
@@ -673,6 +679,49 @@ Optional context:
                     </button>
                 </li>
             {% endif %}
+            {# SNOW-691: Terrain — the swisstopo slope-angle raster        #}
+            {# (ch.swisstopo.hangneigung-ueber_30), banded so the 30-45°   #}
+            {# range avalanches mostly release on reads at a glance. Its   #}
+            {# own section rather than a row under "Conditions": slope is  #}
+            {# a permanent property of the ground, not something that      #}
+            {# changes with the day being scrubbed to.                     #}
+            {#                                                              #}
+            {# Heading and separator sit INSIDE the flag check, for the     #}
+            {# reason spelled out on the Weather row above — this is the    #}
+            {# section's only row, so rendering them unconditionally would  #}
+            {# leave an empty "Terrain" heading (SNOW-658's lesson).        #}
+            {#                                                              #}
+            {# static/js/map.js disables this row, with a reason, once the  #}
+            {# viewport centre leaves the raster's declared coverage        #}
+            {# rectangle — via a marker of its own, mirroring the weather   #}
+            {# row's, so the offline gate and the coverage gate can clear   #}
+            {# independently.                                               #}
+            {% if slope_layer_eligible %}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none" class="basemap-menu-section-label">
+                    {% trans "Terrain" %}
+                </li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                        data-overlay-key="slope"
+                        aria-checked="false"
+                    >
+                        {# The dot every overlay row carries. It has no      #}
+                        {# resource entry in map_layer_sync_status.js's      #}
+                        {# OVERLAY_RESOURCES — the tiles are a third-party   #}
+                        {# raster, not a Snowdesk feed or an IndexedDB row   #}
+                        {# — so it stays at "unknown", which map.css renders #}
+                        {# display:none. Rendered anyway so the row's shape  #}
+                        {# matches its siblings and a probe added later has  #}
+                        {# somewhere to paint.                               #}
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                        {% trans "Slope angle" %}
+                    </button>
+                </li>
+            {% endif %}
             {# SNOW-570/SNOW-587 drew one translucent square per tile     #}
             {# actually held in the pinned basemap cache here, as a       #}
             {# togglable "Available offline" overlay row. SNOW-645        #}
@@ -912,6 +961,62 @@ Optional context:
                     </span>{% trans "Observations" %}
                 </div>
             </section>
+            {# SNOW-691: the slope-angle raster's key. Flag-gated with the   #}
+            {# layer itself — a key for something the visitor has no way to   #}
+            {# switch on is noise.                                            #}
+            {#                                                                #}
+            {# The caveat is not decoration. A raster that paints nothing can #}
+            {# mean two entirely different things — "under 30°" inside the    #}
+            {# coverage rectangle, "not surveyed" outside it — and a 10 m DEM #}
+            {# averages the ground, so a short steep roll inside a gentle     #}
+            {# cell is invisible at any zoom. Neither is discoverable from    #}
+            {# the map, so the legend has to say both.                        #}
+            {% if slope_layer_eligible %}
+                <section class="map-legend-section" data-testid="map-legend-slope">
+                    {# The heading is the way to the caveats. What this layer  #}
+                    {# cannot tell you — its 10 m grid, where its coverage     #}
+                    {# stops, and that it is not a verdict — runs to several   #}
+                    {# paragraphs, which is more than a legend can hold and    #}
+                    {# too much to drop. So the legend keeps the key and       #}
+                    {# points at /help/#help-topic-slope for the rest.         #}
+                    <div class="map-legend-title">
+                        <a
+                            class="map-legend-attribution-link"
+                            href="{% url 'public:help' %}#help-topic-slope"
+                        >{% trans "Slope angle" %}</a>
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--slope-30"
+                            aria-hidden="true"
+                        ></span>{% trans "30–35°" %}
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--slope-35"
+                            aria-hidden="true"
+                        ></span>{% trans "35–40°" %}
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--slope-40"
+                            aria-hidden="true"
+                        ></span>{% trans "40–45°" %}
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--slope-45"
+                            aria-hidden="true"
+                        ></span>{% trans "45–50°" %}
+                    </div>
+                    <div class="map-legend-row">
+                        <span
+                            class="map-legend-swatch map-legend-swatch--slope-50"
+                            aria-hidden="true"
+                        ></span>{% trans "Over 50°" %}
+                    </div>
+                </section>
+            {% endif %}
             {# SNOW-640: the whole section is hidden by map.js when the      #}
             {# active style yields no attribution at all, rather than        #}
             {# painting a heading with nothing under it. A style that omits  #}
@@ -1603,6 +1708,13 @@ Optional context:
     <span data-string="route-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
     <span data-string="route-ascent">{% blocktrans %}%(m)s m ascent{% endblocktrans %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
+    {# SNOW-691: the Terrain row's one disable reason (title attribute), set  #}
+    {# by updateSlopeRowAvailability in map.js when the viewport centre       #}
+    {# leaves the raster's declared coverage rectangle. Deliberately says     #}
+    {# "for this area" rather than naming the layer: the row is only in the   #}
+    {# DOM at all when the layer is available, so the only way it can be      #}
+    {# unusable is WHERE the visitor is looking.                              #}
+    <span data-string="slope-out-of-coverage">{% trans "No slope data for this area" %}</span>
 </template>
 {# SNOW-658: the four overlay roundels' shared "…and its overlay is on the #}
 {# map right now" label (static/js/map_roundel_overlay_state.js). ONE       #}

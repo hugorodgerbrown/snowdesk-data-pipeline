@@ -17,6 +17,9 @@ Covers:
     ``settings.BASEMAP_STYLES`` when IGN and basemap.at were added, so the
     basemap credits are checked against that setting rather than a list
     hard-coded here.
+  * The slope-angle overlay's source (SNOW-691), which is a second
+    swisstopo dataset rather than a third basemap, so it is asserted on
+    the dataset title — a bare publisher check would pass without it.
   * The global site footer contains a link to /colophon/.
   * The URL ``public:colophon`` resolves correctly.
 
@@ -106,6 +109,22 @@ class TestColophonPage:
             b"portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/license"
             in response.content
         )
+
+    def test_slope_layer_source_credited(self, client: Client) -> None:
+        """SNOW-691: the slope-angle overlay's source is named here.
+
+        swisstopo's terms for their free geodata and geoservices oblige us
+        to indicate the source. The overlay is credited in the map legend's
+        "Map data" section as well, but that section is populated at runtime
+        from the style's source attributions — this page is the durable
+        record, and the only one that survives the map failing to load.
+
+        Asserted on the dataset title rather than the swisstopo domain: two
+        basemap styles from the same publisher are already credited above,
+        so a bare domain check would pass with this entry deleted.
+        """
+        response = client.get(reverse("public:colophon"))
+        assert "Slope classes over 30°".encode() in response.content
 
     def test_openstreetmap_odbl_attribution_present(self, client: Client) -> None:
         """OpenFreeMap serves OSM data under ODbL, which requires credit."""

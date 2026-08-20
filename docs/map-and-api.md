@@ -298,6 +298,78 @@ shell cache. It write-through-caches to IndexedDB
 self-corrects on read-back: a stale cached payload simply stops drawing
 anything as scrubbed dates roll past its forecast window.
 
+**Slope-angle overlay (SNOW-691)**: the map's only `raster` source, and its
+only layer whose data is fetched straight from a third party rather than
+through a Snowdesk endpoint. The tiles are swisstopo's
+`ch.swisstopo.hangneigung-ueber_30` WMTS, read from `SLOPE_TILE_URL`
+(`config/settings/base.py`, env-overridable so SNOW-693 can move the origin
+without a code change) and rendered onto `#map` as `data-slope-tile-url`
+for an eligible request only. Flag-gated on `slope_layer`, which ships
+`everyone=True` — a kill switch, not a rollout gate.
+
+It differs from every other opt-in overlay in one way worth knowing before
+you go looking for the missing code: **it is installed eagerly and hidden,
+not lazy-loaded.** MapLibre requests no tiles for a source whose layers are
+all `visibility: none`, so a hidden raster costs one source entry and no
+network at all — which is why `slope` appears in `OVERLAY_LAYER_IDS` (both
+copies) but not in the picker's lazy branch, and why there is no
+`ensureOverlayLoaded` case and no `snowdesk:overlay-load` handling for it.
+The generic `setLayoutProperty` path is the whole toggle.
+
+Three source/paint properties are load-bearing rather than decorative.
+`maxzoom` is **16**, not the service's advertised 17: z17 is a server-side
+upscale, differing from a 2x-upscaled z16 in 1.3% of pixels against 2.7%
+for z15→z16 and 7.0% for z14→z15, so capping costs nothing visible and
+saves four requests per tile of screen at touring zooms. Declaring it at
+all is SNOW-604's lesson — a raster source's `maxzoom` defaults to 22.
+`bounds` is the declared coverage rectangle (`COVERAGE_BOUNDS` in
+`static/js/slope_overlay_core.js`), which keeps MapLibre from requesting
+the tiles outside it that the service answers with HTTP 400 and a JSON body
+rather than an empty tile. `raster-resampling` is `nearest`, not MapLibre's
+default `linear`: the raster is categorical, and interpolating between two
+class colours invents a colour that corresponds to no slope class.
+
+The blockiness that `nearest` leaves at high zoom is the source's own 10 m
+grid, not a rendering fault — measured against the served tiles the
+smallest distinguishable feature is ~10 m at every zoom (a 2px run at z14,
+3px at z15, 6px at z16, each doubling with the zoom rather than resolving
+further). Note for SNOW-693: Copernicus GLO-30 is **30 m**, so a
+self-hosted replacement would be three times coarser than this inside the
+area swisstopo covers.
+
+`slope-raster` resolves `beforeId: 'regions-fill'` so it lands under the
+choropleth from either install path (boot installs it first; the
+`styledata` re-install runs the regions first).
+`updateSlopeRowAvailability` (on `moveend`) disables the layers-menu row
+with a reason once the viewport centre leaves the rectangle, via a
+namespaced marker (`data-slope-disabled-out-of-coverage`) mirroring the
+weather row's. An earlier build also drew the rectangle as a
+`slope-coverage-line` layer; it was removed as a hard box across the whole
+map that cost more legibility than it bought.
+
+One non-obvious coupling: `installSlopeLayer` nulls `map.js`'s memoised
+`attributionSourceIds` and re-runs `updateMapAttribution`.
+That cache is populated at `style.load` and this source is added
+afterwards, so without the reset swisstopo's attribution — a licence
+obligation, not a nicety — never reaches the legend's "Map data" section.
+
+The legend's "Slope angle" heading is an anchor into
+`/help/#help-topic-slope` (`public/help/_topic_slope.html`, gated on the
+same flag via `slope_layer_visible` in `help_page`). The id sits on a
+wrapper `div` rather than on `_collapsible_panel.html`'s `<details>`, so
+that shared partial keeps one shape for every caller. The source's
+`attribution` names the DATASET rather than the publisher — two basemaps
+are also swisstopo and contribute a bare `© swisstopo`, and
+`updateMapAttribution` unions by exact string, so a matching value rendered
+as "© swisstopo · swisstopo".
+
+Offline caching: no `OVERLAY_RESOURCES` entry, so the row carries no sync
+dot state and the offline gate never touches it. The tiles ride the service
+worker's cross-origin basemap stale-while-revalidate cache instead — the
+slope origin joins the `register-basemap-origins` payload alongside the
+basemap origins — so terrain browsed online still paints offline. Pinning
+slope tiles as part of a deliberate area download is SNOW-692.
+
 **Marker exclusion zone (SNOW-445)**: favourite, community-observation,
 and report-cluster markers sit on top of the region choropleth. MapLibre
 has no `stopPropagation` between layer-scoped click handlers, so a tap on a

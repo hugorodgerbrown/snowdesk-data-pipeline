@@ -82,7 +82,7 @@ class TestHelpPage:
 
 @pytest.mark.django_db
 class TestHelpPageFlagGating:
-    """The Sync-log topic renders only for users who can see the feature."""
+    """Flag-gated topics render only for users who can see the feature."""
 
     def test_sync_log_panel_absent_by_default(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
@@ -101,6 +101,49 @@ class TestHelpPageFlagGating:
     def test_weather_layer_panel_present_when_flag_active(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-weather-layer"' in response.content
+
+    def test_slope_panel_absent_by_default(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-slope"' not in response.content
+
+    @override_flag("slope_layer", active=True)
+    def test_slope_panel_present_when_flag_active(self, client: Client) -> None:
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-slope"' in response.content
+
+    @override_flag("slope_layer", active=True)
+    def test_slope_panel_is_an_anchor_target(self, client: Client) -> None:
+        """SNOW-691: the map legend links here, so the id has to exist.
+
+        The legend carries the five class swatches and nothing else; the
+        heading is a link to ``#help-topic-slope`` and that fragment is the
+        only route from the map to the layer's caveats. A panel that
+        rendered without the id would leave the link landing at the top of
+        the page with the warnings still collapsed somewhere below.
+        """
+        response = client.get(reverse("public:help"))
+        assert b'id="help-topic-slope"' in response.content
+
+    @override_flag("slope_layer", active=True)
+    def test_slope_panel_states_the_layer_is_not_a_verdict(
+        self, client: Client
+    ) -> None:
+        """SNOW-691: the shortcomings are the point of this panel.
+
+        Asserted individually rather than as "the panel is non-empty",
+        because each is a distinct thing a reader could otherwise get wrong:
+        the 10 m grid hides small features, coverage stops mid-map with
+        unshaded ground on both sides of the edge, and the layer is an input
+        rather than permission to ski a slope.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in (
+            b"help-slope-resolution",
+            b"help-slope-coverage",
+            b"help-slope-accuracy",
+            b"help-slope-not-a-decision",
+        ):
+            assert testid in content, testid
 
 
 @pytest.mark.django_db

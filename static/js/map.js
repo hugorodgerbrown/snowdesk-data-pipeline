@@ -91,6 +91,14 @@
   // favourites rather than as the two public layers above.
   const ROUTES_URL = mapEl.dataset.routesUrl || null;
   const ROUTES_ELIGIBLE = mapEl.dataset.routesEligible === 'true';
+  // SNOW-691: the slope-angle raster's tile template and its flag gate.
+  // Public third-party tiles, so "eligible" is the ``slope_layer`` waffle
+  // flag alone — the same shape as WEATHER_* above rather than the
+  // flag-AND-authentication shape routes and favourites use. The template
+  // is a swisstopo WMTS XYZ URL rather than a Snowdesk endpoint, which is
+  // why it is rendered as a whole URL instead of being reversed here.
+  const SLOPE_TILE_URL = mapEl.dataset.slopeTileUrl || null;
+  const SLOPE_ELIGIBLE = mapEl.dataset.slopeLayerEligible === 'true';
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -190,11 +198,20 @@
   // (so the key is present but the value is nullish), and dereferencing
   // ``navigator.serviceWorker.ready`` would throw and abort map init.
   if (navigator.serviceWorker) {
+    // SNOW-691: the slope raster's origin joins the list. It is not a
+    // basemap — it never reaches BASEMAP_OPTIONS and has no picker row — but
+    // it is the same KIND of thing to the service worker: cross-origin tiles
+    // whose opportunistic caching is what lets previously-browsed terrain
+    // still paint offline. Without it every slope tile is network-only, and
+    // the layer goes blank the moment the signal does, which is precisely
+    // the situation it is most wanted in. (Pinning slope tiles as part of a
+    // deliberate area download is SNOW-692; this is the passive half.)
     const basemapOrigins = [
       ...new Set(
         Object.values(BASEMAP_OPTIONS)
           .filter((url) => typeof url === 'string' && url)
-          .map((url) => new URL(url).origin),
+          .map((url) => new URL(url).origin)
+          .concat(SLOPE_TILE_URL ? [new URL(SLOPE_TILE_URL).origin] : []),
       ),
     ];
     const registerBasemapOrigins = (registration) => {
@@ -271,10 +288,14 @@
   // separate row. Both default on, so the map opens exactly as it did.
   // 'bulletins' is the user's PREFERENCE; what is actually painted is that
   // AND-ed with any active suppression, held in bulletinsVisibility below.
+  // SNOW-691: slope defaults OFF. It is the only overlay that paints the
+  // WHOLE viewport rather than discrete features, so opening the map with it
+  // on would put a second full-screen colour scheme under the danger ratings
+  // for a visitor who came to read the ratings.
   const overlayState = {
     l1: false, l2: false, l4: true, bulletins: true, resorts: false,
     favourites: true, community_reports: false,
-    weather: false, routes: false,
+    weather: false, routes: false, slope: false,
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
@@ -329,7 +350,7 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes']) {
+  for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes', 'slope']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
@@ -2189,6 +2210,178 @@
     updateWeatherRowAvailability(dateKey);
   };
 
+  // ==== SNOW-691: the slope-angle overlay ====
+  //
+  // A third-party raster (swisstopo's ch.swisstopo.hangneigung-ueber_30),
+  // banded to the SLF classification. Everything pure about it — the
+  // coverage rectangle, the zoom limits, the opacity constant, the class
+  // table — lives in static/js/slope_overlay_core.js so it can be tested;
+  // this is the MapLibre half.
+  //
+  // Installed EAGERLY and hidden, unlike every other opt-in overlay, which
+  // lazy-loads on first toggle-on. There is nothing to lazy-load: MapLibre
+  // requests no tiles for a source whose layers are all `visibility: none`,
+  // so a hidden raster costs one source entry and no network at all. That
+  // is also why `slope` is absent from the picker's lazy-load branch and
+  // from ensureOverlayLoaded — the generic setLayoutProperty path is the
+  // whole toggle.
+  const SLOPE_CORE = self.pwaSlopeOverlayCore;
+
+  // The Terrain row's own namespaced disabled marker, mirroring
+  // WEATHER_ROW_DISABLED_MARKER above so this module only ever re-enables a
+  // row IT disabled.
+  //
+  // Unlike the weather row, nothing else disables this one today: the slope
+  // tiles are a third-party raster with no entry in
+  // map_layer_sync_status.js's OVERLAY_RESOURCES, so that module's
+  // offline gate never reaches this row and its marker is the only one in
+  // play. The `data-sync-disabled-offline` check below is therefore
+  // defensive rather than load-bearing — kept because it costs one
+  // comparison and is exactly what would have to be here the day a probe
+  // for the slope tile cache is added (SNOW-692's territory).
+  const SLOPE_ROW_DISABLED_MARKER = 'data-slope-disabled-out-of-coverage';
+
+  /**
+   * Apply or clear the Terrain row's coverage disable.
+   *
+   * @param {boolean} disabled Whether the row should be inert.
+   * @param {string} reason The title text explaining why.
+   */
+  const _setSlopeRowDisabled = (disabled, reason) => {
+    const row = document.querySelector('#basemap-menu [data-overlay-key="slope"]');
+    if (!row) return;
+    if (disabled) {
+      row.setAttribute('aria-disabled', 'true');
+      row.setAttribute(SLOPE_ROW_DISABLED_MARKER, '1');
+      row.title = reason;
+    } else if (row.getAttribute(SLOPE_ROW_DISABLED_MARKER) === '1') {
+      row.removeAttribute(SLOPE_ROW_DISABLED_MARKER);
+      row.removeAttribute('title');
+      // Never re-enable a row the offline gate is still holding down —
+      // whichever reason clears second is the one that re-enables it.
+      if (row.getAttribute('data-sync-disabled-offline') !== '1') {
+        row.removeAttribute('aria-disabled');
+      }
+    }
+  };
+
+  /**
+   * Re-derive the Terrain row's disabled state from where the map is
+   * currently looking.
+   *
+   * The viewport CENTRE, not its bounds: a partial overlap would otherwise
+   * leave the row enabled while most of the screen has no data, and the
+   * centre is the thing a visitor is actually looking at. Panning back
+   * inside re-enables it.
+   *
+   * The row is only in the DOM for an eligible request, so there is exactly
+   * one reason it can be unusable and one string to say it.
+   */
+  const updateSlopeRowAvailability = () => {
+    if (!SLOPE_ELIGIBLE || !SLOPE_CORE) return;
+    const centre = map.getCenter();
+    const covered = SLOPE_CORE.coversPoint(centre.lng, centre.lat);
+    _setSlopeRowDisabled(!covered, MAP_STRINGS['slope-out-of-coverage']);
+  };
+
+  /**
+   * Install the slope raster and its coverage outline.
+   *
+   * Idempotent — early-returns when the source is already present, so the
+   * styledata re-install handler can call it on every basemap swap.
+   */
+  const installSlopeLayer = () => {
+    if (!SLOPE_ELIGIBLE || !SLOPE_TILE_URL || !SLOPE_CORE) return;
+    if (map.getSource('slope')) return;
+
+    const visibility = overlayState.slope ? 'visible' : 'none';
+
+    map.addSource('slope', {
+      type: 'raster',
+      tiles: [SLOPE_TILE_URL],
+      tileSize: 256,
+      // Both declared explicitly, and maxzoom is 16 rather than the
+      // service's advertised 17 — see MAX_ZOOM in slope_overlay_core.js for
+      // the measurement behind that. Declaring it at all is SNOW-604's
+      // lesson: a raster source's maxzoom defaults to 22, and this origin
+      // answers HTTP 400 past z17.
+      minzoom: SLOPE_CORE.MIN_ZOOM,
+      maxzoom: SLOPE_CORE.MAX_ZOOM,
+      // The declared coverage rectangle. This is what keeps MapLibre from
+      // ever asking for a tile outside it — the service answers those with
+      // HTTP 400 and a JSON body rather than an empty tile, so an unbounded
+      // source would spend real requests on errors along every edge.
+      bounds: SLOPE_CORE.COVERAGE_BOUNDS,
+      // swisstopo's terms make the free geoservices usable commercially and
+      // oblige us to name the source. `updateMapAttribution` unions this
+      // into the legend's "Map data" section; /colophon/ carries the longer
+      // form. Trusted, server-controlled HTML, like every other source's.
+      //
+      // It names the DATASET, not just the publisher, and that is
+      // load-bearing rather than pedantic: two of the basemaps are also
+      // swisstopo and contribute a bare "© swisstopo", so a matching string
+      // here rendered as "© swisstopo · swisstopo" — a duplicate that
+      // credits nothing. The union is by exact string, so the way to say
+      // "this is a second, different swisstopo dataset" is to say which.
+      attribution:
+        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
+        + 'swisstopo — slope classes</a>',
+    });
+
+    // Under the choropleth, so the danger ratings stay readable on top of
+    // it and the SNOW-656 fill-strength control does the "am I reading
+    // danger or terrain" trade-off it was built for — no new exclusivity
+    // rule, and no second opacity control. `beforeId` rather than relying
+    // on insertion order because the two install paths run in opposite
+    // orders: at boot this runs before installRegionsLayers, and on a
+    // basemap swap the styledata handler reinstalls the regions first.
+    const beforeId = map.getLayer('regions-fill') ? 'regions-fill' : undefined;
+    map.addLayer(
+      {
+        id: 'slope-raster',
+        type: 'raster',
+        source: 'slope',
+        layout: { visibility: visibility },
+        paint: {
+          'raster-opacity': SLOPE_CORE.RASTER_OPACITY,
+          // NEAREST, not MapLibre's default linear. This raster is
+          // CATEGORICAL — five discrete class colours — so interpolating
+          // between neighbouring pixels invents colours that correspond to
+          // no slope class at all, softening every class boundary into a
+          // gradient the data does not contain. On a layer a reader might
+          // use to judge whether a slope is under or over 40°, a made-up
+          // colour between two classes is worse than a visible pixel edge.
+          //
+          // The blockiness that leaves at high zoom is the source's own 10 m
+          // grid, not a rendering artefact: measured against the served
+          // tiles, the smallest distinguishable feature is ~10 m at every
+          // zoom (a 2px run at z14, 3px at z15, 6px at z16 — each doubling
+          // with the zoom rather than resolving further).
+          'raster-resampling': 'nearest',
+        },
+      },
+      beforeId,
+    );
+
+    raiseMarkerLayers();
+
+    // `updateMapAttribution` caches the style's source ids the first time it
+    // runs (at style.load) and only clears that cache on the next style
+    // load. This source is added AFTER that, so without dropping the cache
+    // its attribution is never read and the swisstopo credit silently never
+    // reaches the legend — a licence obligation lost to a memoisation.
+    attributionSourceIds = null;
+    updateMapAttribution();
+
+    updateSlopeRowAvailability();
+  };
+
+  // Panning changes whether the map is looking at ground the raster covers,
+  // so the row's reason is re-derived on every settled move. `moveend`
+  // rather than `move`: this only touches the menu, which nobody can read
+  // mid-gesture, and one DOM write per gesture is the right budget.
+  map.on('moveend', updateSlopeRowAvailability);
+
   // SNOW-323: Install the bulletin-groupings source and line layer.
   // Idempotent — early-returns when the source already exists (called on
   // basemap swap via the styledata handler and on first l3 toggle).
@@ -3000,6 +3193,9 @@
     // read by panelOverlayPainted below, which answers for the whole group
     // from element [0], and that has to be the layer the user actually sees.
     routes: ['routes-line', 'routes-line-casing'],
+    // SNOW-691: one layer — the raster. The coverage outline that rode
+    // alongside it was removed; see slope_overlay_core.js's header.
+    slope: ['slope-raster'],
   };
 
   /**
@@ -3912,6 +4108,11 @@
     // SNOW-235: majorGeojsonCache / subGeojsonCache / resortsGeojsonCache
     // remain null until the user first enables that overlay tier; they are
     // populated by ensureOverlayLoaded below.
+    // SNOW-691: before the regions, so the raster lands under the
+    // choropleth. installSlopeLayer also passes `beforeId: 'regions-fill'`
+    // when that layer already exists, so the ordering survives the
+    // styledata path running these two the other way round.
+    installSlopeLayer();
     installRegionsLayers(geojson);
     // SNOW-235: installOverlayLayers / installResortsLayer are no longer
     // called here; they run inside ensureOverlayLoaded when each tier is
@@ -5478,7 +5679,7 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes']) {
+      for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes', 'slope']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
       // l4 and bulletins are re-seeded before any install fn runs: the fill's
@@ -5512,6 +5713,11 @@
       // was loaded before the basemap switch is a no-op (loadedCountries
       // still has the code), so the data never comes back.
       installRegionsLayers(geojsonCache);
+      // SNOW-691: the raster went with the style too. Re-added after the
+      // regions here rather than before them — installSlopeLayer resolves
+      // its own `beforeId` against 'regions-fill', so it slots underneath
+      // either way and neither call site has to know the other's order.
+      installSlopeLayer();
       // SNOW-59: overlays got wiped with the rest of the style. Re-add
       // them and let the install function re-apply the persisted
       // visibility from overlayState.
