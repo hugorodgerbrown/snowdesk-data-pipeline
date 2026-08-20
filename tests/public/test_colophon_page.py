@@ -92,5 +92,21 @@ class TestColophonPage:
             in response.content
         )
 
+    def test_slope_layer_source_credited(self, client: Client) -> None:
+        """SNOW-691: the slope-angle overlay's source is named here.
+
+        swisstopo's terms for their free geodata and geoservices oblige us
+        to indicate the source. The overlay is credited in the map legend's
+        "Map data" section as well, but that section is populated at runtime
+        from the style's source attributions — this page is the durable
+        record, and the only one that survives the map failing to load.
+
+        Asserted on the dataset title rather than the swisstopo domain: two
+        basemap styles from the same publisher are already credited above,
+        so a bare domain check would pass with this entry deleted.
+        """
+        response = client.get(reverse("public:colophon"))
+        assert "Slope classes over 30°".encode() in response.content
+
     def test_url_reverses_correctly(self) -> None:
         assert reverse("public:colophon") == "/colophon/"

@@ -2227,12 +2227,18 @@
   // whole toggle.
   const SLOPE_CORE = self.pwaSlopeOverlayCore;
 
-  // The Terrain row's own namespaced disabled marker, for the same reason
-  // WEATHER_ROW_DISABLED_MARKER above has one: map_layer_sync_status.js
-  // re-enables only the rows IT tagged, so a second reason for disabling a
-  // row needs a second marker or the two clear each other. Here the two
-  // reasons are "you are offline and this isn't cached" (that module's) and
-  // "you have panned off the edge of the data" (this one).
+  // The Terrain row's own namespaced disabled marker, mirroring
+  // WEATHER_ROW_DISABLED_MARKER above so this module only ever re-enables a
+  // row IT disabled.
+  //
+  // Unlike the weather row, nothing else disables this one today: the slope
+  // tiles are a third-party raster with no entry in
+  // map_layer_sync_status.js's OVERLAY_RESOURCES, so that module's
+  // offline gate never reaches this row and its marker is the only one in
+  // play. The `data-sync-disabled-offline` check below is therefore
+  // defensive rather than load-bearing — kept because it costs one
+  // comparison and is exactly what would have to be here the day a probe
+  // for the slope tile cache is added (SNOW-692's territory).
   const SLOPE_ROW_DISABLED_MARKER = 'data-slope-disabled-out-of-coverage';
 
   /**

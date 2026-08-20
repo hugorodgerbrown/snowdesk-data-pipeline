@@ -22,6 +22,7 @@ from django.conf import settings
 from django.test import Client, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
+from waffle.testutils import override_flag
 
 from tests.factories import (
     AccountFactory,
@@ -982,3 +983,99 @@ def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> No
         f"{counter.count} children — update the fallback in "
         f"`.map-controls-br[data-expanded='true'] #map-controls-collapsible`."
     )
+
+
+@pytest.mark.django_db
+@override_flag("slope_layer", active=True)
+def test_terrain_row_renders_when_flag_active() -> None:
+    """SNOW-691: the Terrain section and its Slope angle row render.
+
+    The row carries the same ``.sync-dot`` its siblings do, and the tile
+    template reaches ``#map`` as ``data-slope-tile-url`` for map.js to build
+    the raster source from.
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    assert 'data-overlay-key="slope"' in content
+    assert "Terrain" in content
+    assert 'data-slope-layer-eligible="true"' in content
+    assert "data-slope-tile-url=" in content
+
+    key_idx = content.index('data-overlay-key="slope"')
+    button_scope = content[key_idx : content.index("</button>", key_idx)]
+    assert 'class="sync-dot" data-sync-state="unknown"' in button_scope
+
+
+@pytest.mark.django_db
+@override_flag("slope_layer", active=False)
+def test_terrain_row_absent_without_flag() -> None:
+    """SNOW-691: nothing of the overlay reaches the DOM without the flag.
+
+    The flag ships ``everyone: true`` in the manifest, so this is the
+    kill-switch state (an operator setting ``everyone=False`` in the admin)
+    rather than a rollout gate — but it has to stay clean either way. In
+    particular the tile template must not be emitted: there is no Snowdesk
+    endpoint behind it to 403, so a template rendered for an ineligible
+    page would be an invitation to install the layer anyway.
+
+    The heading is asserted absent alongside the row because it sits inside
+    the same flag check — SNOW-658's lesson that a section whose only row is
+    gated must gate its heading too, or the menu grows an empty "Terrain".
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    assert 'data-overlay-key="slope"' not in content
+    assert "Terrain" not in content
+    assert 'data-slope-layer-eligible="false"' in content
+    assert "data-slope-tile-url=" not in content
+
+
+@pytest.mark.django_db
+@override_flag("slope_layer", active=True)
+def test_terrain_section_follows_locations_in_the_layer_menu() -> None:
+    """SNOW-691: Terrain sits after Locations and before Base map.
+
+    Slope is a permanent property of the ground rather than something that
+    changes with the scrubbed day, so it gets a section of its own rather
+    than a row under Conditions — and it belongs with the other
+    view-controls, above the basemap list that closes the menu.
+
+    The unflagged section-order assertion above deliberately does not name
+    Terrain: with no flag row in the test database the section is absent
+    there, which is the state an anonymous visitor sees until
+    ``sync_waffle_flags --commit`` has run.
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    start = content.index("basemap-menu-section-label")
+    positions = [
+        content.index(label, start)
+        for label in ("Bulletins", "Boundaries", "Locations", "Terrain", "Base map")
+    ]
+    assert positions == sorted(positions), (
+        "Map layer menu sections are not in the expected order "
+        "(Bulletins < Boundaries < Locations < Terrain < Base map)"
+    )
+
+
+@pytest.mark.django_db
+@override_flag("slope_layer", active=True)
+def test_slope_legend_section_renders_with_its_caveat() -> None:
+    """SNOW-691: the legend carries the five classes and the safety caveat.
+
+    The caveat is the reason this test exists rather than a bare
+    "the swatches are present": a raster that paints nothing means two
+    different things — "under 30°" inside the coverage rectangle and "not
+    surveyed" outside it — and neither is discoverable from the map itself.
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    assert 'data-testid="map-legend-slope"' in content
+    for band in ("30–35°", "35–40°", "40–45°", "45–50°", "Over 50°"):
+        assert band in content, band
+    assert "unshaded ground there is not gentle ground" in content
+    assert "Never read this layer as a decision" in content

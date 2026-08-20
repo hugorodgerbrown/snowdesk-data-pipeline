@@ -132,6 +132,26 @@ at authoring time, not derived at runtime from installed packages.
                     >swisstopo</a>
                     {% trans "— Winter and Light vector tile styles" %}
                 </li>
+                {# SNOW-691: the slope-angle overlay's source. Named          #}
+                {# separately from the two basemap styles above even though   #}
+                {# both are swisstopo: this is a different dataset under the  #}
+                {# same publisher, and their terms oblige us to indicate the  #}
+                {# source of the data we actually use, not merely the         #}
+                {# organisation. The in-map legend credits it too; this is    #}
+                {# the longer form the legend's "Map data" line defers to.    #}
+                <li>
+                    <a
+                        class="underline"
+                        href="https://www.geocat.ch/geonetwork/srv/eng/catalog.search#/metadata/77f0637f-8d52-45bc-b824-d6e5719de55b"
+                        target="_blank"
+                        rel="noopener"
+                    >swisstopo — Slope classes over 30°</a>
+                    {% blocktrans trimmed %}
+                        — the map's slope-angle overlay, classified as the SLF recommends (30–35°, 35–40°,
+                        40–45°, 45–50°, over 50°) and derived from a combined 10 m elevation model: swissALTI3D,
+                        RGE ALTI, TINITALY/01, DGM10, DGM1 and EU-DEM
+                    {% endblocktrans %}
+                </li>
             </ul>
         </section>
 
