@@ -1154,6 +1154,75 @@ RESORT_WHY_IT_MATTERS_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Resort facts block (SNOW-695) -----------------------------------------------
+# The curated Resort columns the detail page stored but never rendered. The
+# partial reads ``resort`` directly, so — like the why-it-matters fixtures
+# above — a ``SimpleNamespace`` stand-in carries just the attributes used.
+# Three variants cover the whole contract: fully curated, partially curated
+# (including a base elevation with no top, and a season open with no close),
+# and nothing curated at all, which must render no container rather than an
+# empty one.
+RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Fully curated",
+        "solo": True,
+        "context": {
+            "resort": SimpleNamespace(
+                operator_name="Zermatt Bergbahnen AG",
+                website="https://www.zermatt.ch/",
+                notes=(
+                    "Lift-served access to the Theodul glacier; the "
+                    "Hohtälli and Rothorn sectors open onto committing "
+                    "north-facing terrain."
+                ),
+                num_lifts=34,
+                num_runs=53,
+                total_piste_km=196.5,
+                base_elevation_m=1620,
+                top_elevation_m=3899,
+                typical_season_open="11-23",
+                typical_season_close="04-27",
+            ),
+        },
+    },
+    {
+        "caption": "Partially curated — one-sided elevation and season",
+        "solo": True,
+        "context": {
+            "resort": SimpleNamespace(
+                operator_name="",
+                website="",
+                notes="",
+                num_lifts=4,
+                num_runs=None,
+                total_piste_km=None,
+                base_elevation_m=1343,
+                top_elevation_m=None,
+                typical_season_open="12-14",
+                typical_season_close="",
+            ),
+        },
+    },
+    {
+        "caption": "Nothing curated — renders no container at all",
+        "solo": True,
+        "context": {
+            "resort": SimpleNamespace(
+                operator_name="",
+                website="",
+                notes="",
+                num_lifts=None,
+                num_runs=None,
+                total_piste_km=None,
+                base_elevation_m=None,
+                top_elevation_m=None,
+                typical_season_open="",
+                typical_season_close="",
+            ),
+        },
+    },
+)
+
 # Overlay primitives (SNOW-486) -----------------------------------------------
 # The four consolidated overlay shapes — banner, modal, sheet — each with a
 # "static" context flag so the component library renders them inline rather

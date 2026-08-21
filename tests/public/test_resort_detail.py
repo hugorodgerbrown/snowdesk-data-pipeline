@@ -23,11 +23,19 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
     linked point, or a linked point with no rows in the window, shows no
     forecast section — the region panel above still covers it. One added
     query, guarded by the view's ``select_related("forecast_point")``.
+  - Freezing level on the day strip (SNOW-695): rendered when the day
+    carries one, including an explicit 0 m; only that cell is omitted when
+    it is null.
+  - Resort facts block (SNOW-695): the curated Resort columns the page
+    stored but never rendered. Every cell renders when curated, an unset
+    cell is omitted, and the whole block is omitted rather than rendered
+    empty when nothing is curated at all.
 """
 
 from __future__ import annotations
 
 import datetime
+import re
 
 import pytest
 from django.db import connection
@@ -721,3 +729,241 @@ class TestResortWhyItMatters:
         response = client.get(resort.get_absolute_url())
 
         assert "resort-why-it-matters" not in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestResortDetailFreezingLevel:
+    """Freezing level on the point-forecast day strip (SNOW-695).
+
+    ``ForecastPanelDay.freezing_level_height`` has been derived from the
+    hourly block, persisted and carried onto the panel context since
+    SNOW-417, and rendered nowhere until now. It is tested here rather than
+    in ``tests/js/`` because it is server-rendered markup with no
+    JavaScript involved.
+    """
+
+    def test_freezing_level_renders_on_the_day_strip(self) -> None:
+        """A day carrying a freezing level renders it in metres."""
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        ForecastPointWeatherFactory.create(
+            forecast_point=point,
+            valid_for_date=timezone.localdate(),
+            freezing_level_height=2450.0,
+            hourly_series=[],
+        )
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-forecast-freezing-level"' in content
+        assert "2450 m" in content
+
+    def test_explicit_zero_freezing_level_renders(self) -> None:
+        """0 m means freezing at valley floor — a fact, not a blank to hide.
+
+        Matches ``_weather_panel.html``'s snowfall group, which renders an
+        explicit zero for the same reason. A truthiness test here would
+        drop exactly the reading a tourer most wants to see.
+        """
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        ForecastPointWeatherFactory.create(
+            forecast_point=point,
+            valid_for_date=timezone.localdate(),
+            freezing_level_height=0.0,
+            hourly_series=[],
+        )
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-forecast-freezing-level"' in content
+        assert "0 m" in content
+
+    def test_null_freezing_level_omits_only_that_cell(self) -> None:
+        """The rest of the day strip survives a null freezing level."""
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        ForecastPointWeatherFactory.create(
+            forecast_point=point,
+            valid_for_date=timezone.localdate(),
+            freezing_level_height=None,
+            hourly_series=[],
+        )
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert "resort-forecast-freezing-level" not in content
+        # The cell goes; the day column and its temperatures stay.
+        assert 'data-testid="resort-forecast-day"' in content
+        assert "4&deg;" in content
+
+
+@pytest.mark.django_db
+class TestResortDetailHourlyColumns:
+    """Gusts, precipitation and freezing level in the hourly body (SNOW-695).
+
+    ``hourly_series`` has carried all three keys since SNOW-417;
+    ``includes/_forecast_hourly_body.html`` was the only thing dropping
+    them.
+    """
+
+    def test_hourly_body_renders_the_three_new_columns(self) -> None:
+        """The factory's default hourly rows render gusts, precipitation and level."""
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        ForecastPointWeatherFactory.create(
+            forecast_point=point, valid_for_date=timezone.localdate()
+        )
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-forecast-hourly-gusts"' in content
+        assert 'data-testid="resort-forecast-hourly-precipitation"' in content
+        assert 'data-testid="resort-forecast-hourly-freezing-level"' in content
+        assert "28" in content  # wind_gusts_10m on the 12:00 row
+        assert "1700" in content  # freezing_level_height on the 06:00 row
+
+    def test_row_missing_gusts_renders_an_em_dash(self) -> None:
+        """A null key leaves an em-dash so the other columns stay aligned."""
+        point = ForecastPointFactory.create()
+        resort = ResortFactory.create(forecast_point=point)
+        ForecastPointWeatherFactory.create(
+            forecast_point=point,
+            valid_for_date=timezone.localdate(),
+            hourly_series=[
+                {
+                    "time": "2026-05-01T06:00",
+                    "temperature_2m": -2.0,
+                    "snowfall": 0.5,
+                    "precipitation": 0.5,
+                    "wind_speed_10m": 10.0,
+                    "wind_gusts_10m": None,
+                    "freezing_level_height": 1700.0,
+                }
+            ],
+        )
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        marker = 'data-testid="resort-forecast-hourly-gusts"'
+        gusts_cell = content.split(marker)[1].split("</span>")[0]
+        assert "&mdash;" in gusts_cell
+        # The neighbouring columns are undisturbed.
+        assert "1700" in content
+        assert "0.5" in content
+
+
+@pytest.mark.django_db
+class TestResortFacts:
+    """The curated Resort columns the page stored but never rendered (SNOW-695).
+
+    Unlike ``_resort_meta_row.html`` — the map popup's row, which keeps a
+    dashed placeholder so missing curation stays visible to staff — this
+    block omits an unset cell entirely and omits the whole container when
+    nothing is curated. It is a public detail page, not a curation surface.
+    """
+
+    @staticmethod
+    def _fully_curated() -> dict[str, object]:
+        """Return kwargs setting every field the facts block reads."""
+        return {
+            "operator_name": "Zermatt Bergbahnen AG",
+            "website": "https://www.zermatt.ch/",
+            "notes": "Lift-served access to the Theodul glacier.",
+            "num_lifts": 34,
+            "num_runs": 53,
+            "total_piste_km": 196.5,
+            "base_elevation_m": 1620,
+            "top_elevation_m": 3899,
+            "typical_season_open": "11-23",
+            "typical_season_close": "04-27",
+        }
+
+    def test_every_curated_field_renders(self) -> None:
+        """A fully curated resort renders each cell."""
+        resort = ResortFactory.create(**self._fully_curated())
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-facts"' in content
+        for testid in (
+            "resort-facts-elevation",
+            "resort-facts-lifts",
+            "resort-facts-runs",
+            "resort-facts-piste",
+            "resort-facts-season",
+            "resort-facts-operator",
+            "resort-facts-website",
+            "resort-facts-notes",
+        ):
+            assert f'data-testid="{testid}"' in content, testid
+        assert "1620&ndash;3899 m" in content
+        assert "34" in content
+        assert "196.5 km" in content
+        assert "23 Nov&ndash;27 Apr" in content
+        assert "Zermatt Bergbahnen AG" in content
+        assert "Theodul glacier" in content
+        # Compare the rendered href exactly rather than asking whether the
+        # URL appears somewhere on the page: the loose check would pass on a
+        # link pointing anywhere that merely contained this string.
+        website_cell = content.split('data-testid="resort-facts-website"')[1]
+        href = re.search(r'href="([^"]+)"', website_cell)
+        assert href is not None
+        assert href.group(1) == self._fully_curated()["website"]
+
+    def test_nothing_curated_omits_the_whole_block(self) -> None:
+        """No curated field renders no container — not an empty one.
+
+        The factory's defaults are the uncurated state, which is the
+        majority case for the fixture: this is the assertion that keeps a
+        thin resort page from growing an empty box.
+        """
+        resort = ResortFactory.create()
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert "resort-facts" not in content
+        # The page itself still renders.
+        assert 'data-testid="resort-detail"' in content
+
+    def test_partial_curation_renders_only_the_cells_it_has(self) -> None:
+        """A base elevation with no top degrades to a one-sided reading."""
+        resort = ResortFactory.create(
+            num_lifts=4,
+            base_elevation_m=1343,
+            top_elevation_m=None,
+            typical_season_open="12-14",
+            typical_season_close="",
+        )
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-facts"' in content
+        assert 'data-testid="resort-facts-elevation"' in content
+        assert "from 1343 m" in content
+        assert "from 14 Dec" in content
+        # Nothing curated for these, so no cell at all.
+        assert "resort-facts-runs" not in content
+        assert "resort-facts-piste" not in content
+        assert "resort-facts-operator" not in content
+        assert "resort-facts-website" not in content
+        assert "resort-facts-notes" not in content
+
+    def test_zero_lifts_renders_rather_than_vanishing(self) -> None:
+        """A genuine zero is a fact; the cells test `is not None`, not truthiness."""
+        resort = ResortFactory.create(num_lifts=0, total_piste_km=0.0)
+
+        client = Client()
+        content = client.get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-facts-lifts"' in content
+        assert 'data-testid="resort-facts-piste"' in content
+        assert "0 km" in content

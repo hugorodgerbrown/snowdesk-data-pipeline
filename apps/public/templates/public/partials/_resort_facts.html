@@ -1,0 +1,131 @@
+{% load i18n snowdesk_time %}
+{% comment %}
+apps/public/templates/public/partials/_resort_facts.html — Resort facts block
+(SNOW-695).
+
+The curated ``Resort`` columns the detail page stored but never rendered:
+operator, website, lifts, runs, piste length, elevation range, typical
+season and notes. ``kind`` and ``tier`` are deliberately absent — they are
+staff-facing curation fields, not reader-facing facts.
+
+Two deliberate differences from ``_resort_meta_row.html``, which renders the
+same underlying fields in the map's resort popup:
+
+  * That partial never omits a blank field — it renders a dashed-box
+    placeholder so missing curation stays visible to staff. This block does
+    the opposite: an unset field renders nothing at all, and the whole block
+    is omitted when every field is unset. The popup is a curation surface;
+    this is a public detail page, and it follows the same no-empty-state
+    discipline as the point-forecast section above it.
+  * The label primitive here is the shared ``includes/_meta_cell.html``,
+    reused rather than re-inlined per design-system rule 1.
+
+Numeric fields test ``is not None`` rather than truthiness, so a genuine
+zero (no lifts, no piste) renders as the fact it is instead of vanishing.
+Elevation and season each compose two nullable columns into one cell and
+degrade to a one-sided "from"/"to" reading when only one end is curated.
+
+Context variables expected:
+  resort — regions.Resort instance.
+{% endcomment %}
+{% if resort.operator_name or resort.website or resort.notes or resort.num_lifts is not None or resort.num_runs is not None or resort.total_piste_km is not None or resort.base_elevation_m is not None or resort.top_elevation_m is not None or resort.typical_season_open or resort.typical_season_close %}
+    <section
+        class="rounded-card border border-border bg-card p-4"
+        data-testid="resort-facts"
+        aria-labelledby="resort-facts-heading"
+    >
+        {% translate "About this resort" as resort_facts_eyebrow_label %}
+        {% include "includes/_eyebrow.html" with text=resort_facts_eyebrow_label heading_id="resort-facts-heading" class_extra="mb-3" %}
+        <div class="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+            {% if resort.base_elevation_m is not None or resort.top_elevation_m is not None %}
+                <div data-testid="resort-facts-elevation">
+                    {% translate "Elevation" as elevation_label %}
+                    {% include "includes/_meta_cell.html" with text=elevation_label %}
+                    <p class="text-sm text-text-2">
+                        {% if resort.base_elevation_m is not None and resort.top_elevation_m is not None %}
+                            {{ resort.base_elevation_m }}&ndash;{{ resort.top_elevation_m }} m
+                        {% elif resort.base_elevation_m is not None %}
+                            {% blocktrans with m=resort.base_elevation_m trimmed %}
+                                from {{ m }} m
+                            {% endblocktrans %}
+                        {% else %}
+                            {% blocktrans with m=resort.top_elevation_m trimmed %}
+                                to {{ m }} m
+                            {% endblocktrans %}
+                        {% endif %}
+                    </p>
+                </div>
+            {% endif %}
+            {% if resort.num_lifts is not None %}
+                <div data-testid="resort-facts-lifts">
+                    {% translate "Lifts" as lifts_label %}
+                    {% include "includes/_meta_cell.html" with text=lifts_label %}
+                    <p class="text-sm text-text-2">{{ resort.num_lifts }}</p>
+                </div>
+            {% endif %}
+            {% if resort.num_runs is not None %}
+                <div data-testid="resort-facts-runs">
+                    {% translate "Runs" as runs_label %}
+                    {% include "includes/_meta_cell.html" with text=runs_label %}
+                    <p class="text-sm text-text-2">{{ resort.num_runs }}</p>
+                </div>
+            {% endif %}
+            {% if resort.total_piste_km is not None %}
+                <div data-testid="resort-facts-piste">
+                    {% translate "Piste" as piste_label %}
+                    {% include "includes/_meta_cell.html" with text=piste_label %}
+                    <p class="text-sm text-text-2">{{ resort.total_piste_km|floatformat:"-1" }} km</p>
+                </div>
+            {% endif %}
+            {% if resort.typical_season_open or resort.typical_season_close %}
+                <div data-testid="resort-facts-season">
+                    {% translate "Typical season" as season_label %}
+                    {% include "includes/_meta_cell.html" with text=season_label %}
+                    {% with s_open=resort.typical_season_open|month_day s_close=resort.typical_season_close|month_day %}
+                        <p class="text-sm text-text-2">
+                            {% if s_open and s_close %}
+                                {{ s_open|date:"j M" }}&ndash;{{ s_close|date:"j M" }}
+                            {% elif s_open %}
+                                {% blocktrans with d=s_open|date:"j M" trimmed %}
+                                    from {{ d }}
+                                {% endblocktrans %}
+                            {% else %}
+                                {% blocktrans with d=s_close|date:"j M" trimmed %}
+                                    to {{ d }}
+                                {% endblocktrans %}
+                            {% endif %}
+                        </p>
+                    {% endwith %}
+                </div>
+            {% endif %}
+            {% if resort.operator_name %}
+                <div data-testid="resort-facts-operator">
+                    {% translate "Operator" as operator_label %}
+                    {% include "includes/_meta_cell.html" with text=operator_label %}
+                    <p class="text-sm text-text-2">{{ resort.operator_name }}</p>
+                </div>
+            {% endif %}
+            {% if resort.website %}
+                <div data-testid="resort-facts-website">
+                    {% translate "Website" as website_label %}
+                    {% include "includes/_meta_cell.html" with text=website_label %}
+                    <p class="text-sm text-text-2">
+                        <a
+                            href="{{ resort.website }}"
+                            rel="noopener"
+                            target="_blank"
+                            class="hover:underline"
+                        >{% trans "Official website" %}</a>
+                    </p>
+                </div>
+            {% endif %}
+            {% if resort.notes %}
+                <div class="col-span-2 sm:col-span-4" data-testid="resort-facts-notes">
+                    {% translate "Notes" as notes_label %}
+                    {% include "includes/_meta_cell.html" with text=notes_label %}
+                    <p class="text-sm text-text-2">{{ resort.notes }}</p>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+{% endif %}
