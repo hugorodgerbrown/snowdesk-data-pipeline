@@ -33,7 +33,7 @@ Implements the subscription flow built around Django's TimestampSigner:
   account_view        GET/POST — account-access ("magic link") token. GET shows
                             a confirm button (no state change, no login); POST
                             verifies the Account, logs in via Django auth, and
-                            redirects to /account/manage/.
+                            redirects to /account/.
   manage_view         GET  — authenticated "your subscriptions" page.
                             Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
@@ -144,8 +144,11 @@ _LINK_EXPIRED_TEMPLATE = "accounts/link_expired.html"
 _REFERRER_NO_REFERRER = "no-referrer"
 _REFERRER_CONFIRM_PAGE = "same-origin"
 
-# URL name for the manage page — used in redirects.
-_MANAGE_URL = "/account/manage/"
+# URL path for the account hub — used in redirects that append a query
+# string. SNOW-667 moved this off /account/manage/, which is now a 301 to
+# the hub; pointing at the redirect would cost a needless hop and drop
+# nothing but time.
+_HUB_URL = "/account/"
 
 # URL for the unsubscribe-done page — used in HX-Redirect headers.
 _UNSUBSCRIBE_DONE_URL = "/account/unsubscribe-done/"
@@ -198,7 +201,7 @@ def _password_sign_in(request: HttpRequest) -> HttpResponse | None:
         )
         if user is not None:
             login(request, user)
-            return redirect("accounts:manage")
+            return redirect("accounts:hub")
 
     return render(
         request,
@@ -230,7 +233,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
 
     """
     if request.user.is_authenticated:
-        return redirect("accounts:manage")
+        return redirect("accounts:hub")
 
     if request.method == "GET":
         return render(request, "accounts/sign_in.html", {"form": EmailForm()})
@@ -312,7 +315,7 @@ def register_view(request: HttpRequest) -> HttpResponse:
 
     """
     if request.user.is_authenticated:
-        return redirect("accounts:manage")
+        return redirect("accounts:hub")
 
     if request.method == "GET":
         return render(request, "accounts/register.html", {"form": RegisterForm()})
@@ -516,7 +519,7 @@ def set_password_view(request: HttpRequest) -> HttpResponse:
     # session is not invalidated by SessionAuthenticationMiddleware.
     update_session_auth_hash(request, request.user)
     logger.info("Password set for user pk=%s via setup page", request.user.pk)
-    return redirect("accounts:manage")
+    return redirect("accounts:hub")
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +636,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
         account.mark_verified(now)
         account.save(update_fields=["is_verified", "verified_at", "updated_at"])
 
-    response = redirect("accounts:manage")
+    response = redirect("accounts:hub")
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
@@ -810,7 +813,7 @@ def change_email_confirm_view(request: HttpRequest, token: str) -> HttpResponse:
     login(request, user, backend=_TOKEN_BACKEND)
     send_email_change_notice(old_email, stage="completed")
     logger.info("Email change completed for user pk=%s", user.pk)
-    response = redirect("accounts:manage")
+    response = redirect("accounts:hub")
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
@@ -1329,7 +1332,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
     (SNOW-439).  Only the POST from that page acts: it marks the ``Account``
     verified (idempotent — re-submitting does not re-stamp ``verified_at``),
     then ``django.contrib.auth.login()`` establishes the session and redirects
-    to ``/account/manage/?just_confirmed=1``.
+    to ``/account/?just_confirmed=1``.
 
     On a bad, tampered, or expired token — or a token for an unknown user —
     renders ``link_expired.html`` (400) for both verbs.
@@ -1400,52 +1403,65 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
                 alias_id=anon_id,
             )
     login(request, user, backend=_TOKEN_BACKEND)
-    response = redirect(f"{_MANAGE_URL}?just_confirmed=1")
+    response = redirect(f"{_HUB_URL}?just_confirmed=1")
     # Tokens appear in this view's URL path — suppress Referer leakage.
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 
 # ---------------------------------------------------------------------------
-# manage_view — authenticated subscriptions dashboard
+# hub_view / settings_view — the account area (SNOW-667)
 # ---------------------------------------------------------------------------
+#
+# These two replace the former ``manage_view``, a single page that had
+# accumulated nine unranked sections. The split is by what the user is doing:
+# the hub holds their own data, settings holds everything they can change
+# about the account itself. ``/account/manage/`` is now a permanent redirect
+# to the hub (see urls.py).
+#
+# Neither view is ``@never_cache``, and that is deliberate — see
+# ``_ACCOUNT_PAGE_CACHE_NOTE`` below.
+
+_ACCOUNT_PAGE_CACHE_NOTE = """
+Deliberately NOT ``@never_cache``, unlike ``change_email_view`` (C1,
+``docs/code-reviews/2026-08-03-js-review.md``). These pages render the
+signed-in user's own data, so they must never be served to anyone else — but
+the offline favourites roster is built on the hub being in the PWA shell
+cache, so ``no-store`` would break a shipped feature. The ``X-SW-Principal``
+stamp is what makes that safe: ``_networkFirst`` in ``static/js/sw.js``
+records the account this HTML was rendered for and the offline read refuses
+an entry whose stamp is not the principal signed in now, so a sign-out or a
+different user gets the offline fallback instead of the previous session's
+page. Cache-partitioning, not cache-avoidance — the same trade
+``map_overlay_offline_cache.js`` makes for the overlay cache under SNOW-493.
+"""
 
 
 @require_GET
-def manage_view(request: HttpRequest) -> HttpResponse:
+def hub_view(request: HttpRequest) -> HttpResponse:
     """
-    Show the account dashboard for the authenticated user.
+    Show the account hub — the user's own saved data.
 
     Unauthenticated visitors are redirected to the sign-in page.  A registered
     user with no ``Subscription`` rows still sees the page (with no
     subscription cards) — this is the landing spot after registration.
 
-    Deliberately NOT ``@never_cache``, unlike ``change_email_view`` (C1,
-    ``docs/code-reviews/2026-08-03-js-review.md``). This page renders the
-    signed-in user's email address and passkeys, so it must never be served
-    to anyone else — but the offline favourites roster is built on it being
-    in the PWA shell cache, so ``no-store`` would break a shipped feature.
-    The ``X-SW-Principal`` stamp is what makes that safe: ``_networkFirst``
-    in ``static/js/sw.js`` records the account this HTML was rendered for and
-    the offline read refuses an entry whose stamp is not the principal signed
-    in now, so a sign-out or a different user gets the offline fallback
-    instead of the previous session's page. Cache-partitioning, not
-    cache-avoidance — the same trade ``map_overlay_offline_cache.js`` makes
-    for the overlay cache under SNOW-493.
+    Carries the subscribed-region cards and the lazy-loaded favourites panel.
+    SNOW-668 moves both to ``/account/places/`` once the unified place model
+    exists; until then the hub is where "your data" lives, so no surface is
+    unreachable mid-chain.
+
+    Not ``@never_cache`` — the offline favourites roster depends on this page
+    reaching the PWA shell cache. See ``_ACCOUNT_PAGE_CACHE_NOTE``.
 
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).
 
     Context keys:
-        account            — authenticated Account instance.
-        subscriptions      — queryset of Subscription rows for the account.
-        just_confirmed     — True when arriving via the confirmation link.
-        today              — today's date (datetime.date) for the bulletin link label.
-        sync_log_visible   — True when the ``sync_log`` waffle flag is
-                              active for this request (SNOW-482). Gates the
-                              sync-log panel, which reads
-                              ``window.pwaDb.getSyncLog()`` client-side —
-                              nothing server-side to query here.
+        account        — authenticated Account instance.
+        subscriptions  — queryset of Subscription rows for the account.
+        just_confirmed — True when arriving via the confirmation link.
+        today          — today's date (datetime.date) for the bulletin link label.
 
     Args:
         request: Incoming HTTP request.
@@ -1476,12 +1492,55 @@ def manage_view(request: HttpRequest) -> HttpResponse:
 
     return render(
         request,
-        "accounts/manage.html",
+        "accounts/hub.html",
         {
             "account": account,
             "subscriptions": subscriptions,
             "just_confirmed": just_confirmed,
             "today": timezone.now().date(),
+        },
+    )
+
+
+@require_GET
+def settings_view(request: HttpRequest) -> HttpResponse:
+    """
+    Show the account settings page for the authenticated user.
+
+    Unauthenticated visitors are redirected to the sign-in page.
+
+    Holds everything the user can change about the account itself: the
+    verified email address, passkeys, the telemetry opt-in, the sync-log
+    panel, the reset-local-data escape hatch, sign out, and the account
+    deletion control.
+
+    Not ``@never_cache`` — see ``_ACCOUNT_PAGE_CACHE_NOTE``. This page does
+    not itself feed the offline roster, but it renders inside the same shell
+    and is stamped by the same principal guard, so it follows the hub rather
+    than inventing a second caching posture for the account area.
+
+    Context keys:
+        account          — authenticated Account instance.
+        sync_log_visible — True when the ``sync_log`` waffle flag is active
+                            for this request (SNOW-482). Gates the sync-log
+                            panel, which reads ``window.pwaDb.getSyncLog()``
+                            client-side — nothing server-side to query here.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        Rendered page or redirect to sign-in.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    return render(
+        request,
+        "accounts/settings.html",
+        {
+            "account": _get_account(request),
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         },
     )

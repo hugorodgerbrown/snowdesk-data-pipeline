@@ -928,13 +928,13 @@ class TestAccountView:
         assert acc.verified_at is not None
 
     def test_post_redirects_to_manage_with_just_confirmed(self) -> None:
-        """Successful POST redirects to /account/manage/?just_confirmed=1."""
+        """Successful POST redirects to /account/?just_confirmed=1."""
         AccountFactory.create(user__email="redirect@example.com", is_verified=False)
         token = _valid_account_token("redirect@example.com")
         client = Client()
         response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
-        assert response["Location"] == "/account/manage/?just_confirmed=1"
+        assert response["Location"] == "/account/?just_confirmed=1"
 
     def test_post_sets_confirmed_at_with_timezone(self) -> None:
         """verified_at timestamp has tzinfo set."""
@@ -979,7 +979,7 @@ class TestAccountView:
         client = Client()
         response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 302
-        assert "/account/manage/" in response["Location"]
+        assert "/account/" in response["Location"]
 
     def test_get_expired_token_returns_400(self) -> None:
         """Expired token renders link_expired.html with status 400 on GET."""
@@ -1038,24 +1038,24 @@ class TestAccountView:
 
 
 # ---------------------------------------------------------------------------
-# manage_view (unauthenticated)
+# hub_view (unauthenticated)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestManageViewUnauthenticated:
-    """Unauthenticated GET on manage_view redirects to sign_in."""
+class TestHubViewUnauthenticated:
+    """Unauthenticated GET on hub_view redirects to sign_in."""
 
     def test_get_redirects_to_sign_in(self) -> None:
         """Unauthenticated GET on manage redirects to the sign-in page."""
         client = Client()
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 302
         assert response["Location"] == reverse("accounts:sign_in")
 
 
 @pytest.mark.django_db
-class TestManageViewRegisteredOnly:
+class TestHubViewRegisteredOnly:
     """A registered user with an Account but no Subscription rows still
     reaches the dashboard — no redirect loop (SNOW-434 regression).
     """
@@ -1064,7 +1064,7 @@ class TestManageViewRegisteredOnly:
         account = AccountFactory.create()
         client = Client()
         client.force_login(account.user)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
         assert "no active subscriptions" in response.content.decode().lower()
 
@@ -1091,7 +1091,7 @@ class TestSignInView:
         client = _make_session_client(account)
         response = client.get(reverse("accounts:sign_in"))
         assert response.status_code == 302
-        assert "/account/manage/" in response["Location"]
+        assert "/account/" in response["Location"]
 
     def test_post_known_email_sends_account_access_email(self) -> None:
         """Known email on POST → account access email sent."""
@@ -1222,13 +1222,13 @@ class TestSignInPostTimingSideChannel:
 
 
 # ---------------------------------------------------------------------------
-# manage_view (authenticated)
+# hub_view (authenticated)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestManageViewAuthenticated:
-    """Tests for manage_view with a valid session."""
+class TestHubViewAuthenticated:
+    """Tests for hub_view with a valid session."""
 
     def test_get_shows_subscribed_region_name(self) -> None:
         """Authenticated GET shows the subscribed region's name."""
@@ -1236,7 +1236,7 @@ class TestManageViewAuthenticated:
         region = MicroRegionFactory.create(name="Zermatt Region")
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
         assert b"Zermatt Region" in response.content
 
@@ -1246,7 +1246,7 @@ class TestManageViewAuthenticated:
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
         assert region.region_id.encode() in response.content
 
@@ -1257,7 +1257,7 @@ class TestManageViewAuthenticated:
         ResortFactory.create(region=region, name="Verbier")
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert b"Verbier" in response.content
 
     def test_get_does_not_show_non_subscribed_region(self) -> None:
@@ -1267,7 +1267,7 @@ class TestManageViewAuthenticated:
         MicroRegionFactory.create(name="Other Region Zephyr")
         SubscriptionFactory.create(account=account, region=subscribed_region)
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert b"Other Region Zephyr" not in response.content
 
     def test_get_shows_welcome_banner_when_just_confirmed(self) -> None:
@@ -1275,7 +1275,7 @@ class TestManageViewAuthenticated:
         account = AccountFactory.create()
         MicroRegionFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage") + "?just_confirmed=1")
+        response = client.get(reverse("accounts:hub") + "?just_confirmed=1")
         assert response.status_code == 200
         assert b"confirmed" in response.content.lower()
 
@@ -1283,7 +1283,7 @@ class TestManageViewAuthenticated:
         """Without ?just_confirmed the welcome banner is absent."""
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
         # The banner contains a specific phrase; assert it's absent
         assert b"Your subscription is confirmed" not in response.content
@@ -1301,7 +1301,7 @@ class TestManageViewAuthenticated:
         user = account.user
         account.delete()
         user.delete()
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 302
         assert reverse("accounts:sign_in") in response["Location"]
 
@@ -1327,7 +1327,7 @@ class TestManageViewAuthenticated:
         """
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
         assert "no-store" not in response.get("Cache-Control", "")
 
@@ -1338,7 +1338,7 @@ class TestManageViewAuthenticated:
         """
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert b"map" in response.content.lower()
         assert b'href="/"' in response.content
 
@@ -1350,7 +1350,7 @@ class TestManageViewAuthenticated:
         client = _make_session_client(account)
 
         with freeze_time("2026-05-18"):
-            response = client.get(reverse("accounts:manage"))
+            response = client.get(reverse("accounts:hub"))
 
         assert response.status_code == 200
         bulletin_url = region.get_absolute_url().encode()
@@ -1368,7 +1368,7 @@ class TestManageViewAuthenticated:
         region = MicroRegionFactory.create(region_id="CH-1234")
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
 
         assert response.status_code == 200
         assert b"/#CH-1234" in response.content
@@ -1379,7 +1379,7 @@ class TestManageViewAuthenticated:
         region = MicroRegionFactory.create()
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
 
         assert response.status_code == 200
         # SubFactory chain: MicroRegion → SubRegion → MajorRegion
@@ -1396,7 +1396,7 @@ class TestManageViewAuthenticated:
         region = MicroRegionFactory.create(region_id="CH-4115")
         SubscriptionFactory.create(account=account, region=region)
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
 
         assert response.status_code == 200
         # Flag sprite use reference for CH
@@ -1408,7 +1408,7 @@ class TestManageViewAuthenticated:
         """SNOW-387: the Anonymous usage data section renders a role="switch" toggle."""
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:settings"))
         assert response.status_code == 200
         assert b"data-telemetry-toggle" in response.content
         assert b'role="switch"' in response.content
@@ -1417,7 +1417,7 @@ class TestManageViewAuthenticated:
         """SNOW-387: the telemetry section explains what is (and isn't) collected."""
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:settings"))
         assert b"Anonymous usage data" in response.content
         assert b"No bulletin content" in response.content
 
@@ -1425,18 +1425,18 @@ class TestManageViewAuthenticated:
         """SNOW-387: the telemetry copy links to the resolved privacy policy URL."""
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:settings"))
         privacy_url = reverse("public:privacy")
         assert privacy_url.encode() in response.content
 
 
 # ---------------------------------------------------------------------------
-# manage_view — "My favourites" section (SNOW-415)
+# hub_view — "My favourites" section (SNOW-415)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestManageViewFavouritesSection:
+class TestHubViewFavouritesSection:
     """The 'My favourites' section lazy-loads favourites:list.
 
     Asserted purely via the reversed ``favourites:list`` URL appearing in
@@ -1448,26 +1448,26 @@ class TestManageViewFavouritesSection:
         """The section always lazy-loads favourites:list."""
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
         assert b"My favourites" in response.content
         assert reverse("favourites:list").encode() in response.content
 
 
 # ---------------------------------------------------------------------------
-# manage_view — "Sync log" panel (SNOW-482)
+# settings_view — "Sync log" panel (SNOW-482)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestManageViewSyncLogSection:
+class TestSettingsViewSyncLogSection:
     """The flag-gated 'Sync log' panel next to the SNOW-378 reset control."""
 
     @override_flag("sync_log", active=True)
     def test_panel_present_when_flag_active(self) -> None:
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:settings"))
         assert response.status_code == 200
         assert b'data-testid="sync-log-panel"' in response.content
 
@@ -1475,7 +1475,7 @@ class TestManageViewSyncLogSection:
     def test_panel_absent_when_flag_inactive(self) -> None:
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:manage"))
+        response = client.get(reverse("accounts:settings"))
         assert response.status_code == 200
         assert b'data-testid="sync-log-panel"' not in response.content
 
@@ -1948,7 +1948,7 @@ class TestEmailNormalisation:
         response = client.post(reverse("accounts:account", kwargs={"token": token}))
         # Should redirect to manage page, not render a link-expired 400.
         assert response.status_code == 302
-        assert response["Location"].startswith(reverse("accounts:manage"))
+        assert response["Location"].startswith(reverse("accounts:hub"))
         account.refresh_from_db()
         assert account.is_verified
 

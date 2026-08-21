@@ -41,7 +41,7 @@ def test_remove_button_removes_the_subscription_card(
         SubscriptionFactory.create(account=favourites_page.account, region=region)
 
     page = favourites_page.page
-    page.goto(f"{favourites_page.live_server_url}/account/manage/")
+    page.goto(f"{favourites_page.live_server_url}/account/")
 
     card = page.locator(".subscription-card")
     expect(card).to_have_count(1)

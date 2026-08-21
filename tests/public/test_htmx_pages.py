@@ -104,13 +104,13 @@ class TestHtmxIsLoadedWhereItIsUsed:
                 f"{{% block extra_head %}}, or drop the attributes."
             )
 
-    def test_manage_page(self, subscribed_account: Account) -> None:
-        """The signed-in manage page is htmx-driven end to end."""
+    def test_account_hub_page(self, subscribed_account: Account) -> None:
+        """The signed-in account hub is htmx-driven end to end."""
         client = Client()
         client.force_login(subscribed_account.user, backend=_TOKEN_BACKEND)
-        html = client.get(reverse("accounts:manage")).content.decode()
-        assert _hx_attributes(html), "manage page no longer emits hx-* attributes"
-        assert _HTMX_SCRIPT in html, "manage page emits hx-* but never loads htmx"
+        html = client.get(reverse("accounts:hub")).content.decode()
+        assert _hx_attributes(html), "account hub no longer emits hx-* attributes"
+        assert _HTMX_SCRIPT in html, "account hub emits hx-* but never loads htmx"
 
 
 class TestResortPage:

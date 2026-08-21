@@ -1,8 +1,8 @@
 ---
 name: accounts
-description: accounts app — Account model, registration + email verification, is_verified gate, signed-token salts, /account/ mount
+description: accounts app — Account model, registration + email verification, is_verified gate, signed-token salts, /account/ hub + settings routes
 status: current
-last-reviewed: 2026-07-24
+last-reviewed: 2026-08-21
 ---
 
 # Accounts
@@ -25,7 +25,9 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 
 | URL | Name | Method | Purpose |
 |-----|------|--------|---------|
-| `/account/` | `subscribe` | POST | HTMX inline subscribe form |
+| `/account/` | `hub` | GET | Account hub — subscribed regions + favourites (SNOW-667) |
+| `/account/settings/` | `settings` | GET | Email, passkeys, telemetry, sync log, reset local data, sign out, delete account (SNOW-667) |
+| `/account/subscribe/` | `subscribe` | POST | HTMX inline subscribe form (moved off `/account/` by SNOW-667) |
 | `/account/register/` | `register` | GET + POST | Standalone registration (email required, name optional); sends a verification link |
 | `/account/verify/<token>/` | `verify` | GET + POST | GET shows a confirm button (no state change); POST marks the `Account` verified, logs in, redirects to setup |
 | `/account/setup/` | `setup` | GET | Post-verification credential-setup landing (extended by SNOW-431/434) |
@@ -35,11 +37,15 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 | `/account/change-email/` | `change_email` | GET + POST | Request a change of account email (SNOW-433) |
 | `/account/change-email/<token>/` | `change_email_confirm` | GET + POST | Confirm + apply an email change (SNOW-433) |
 | `/account/access/<token>/` | `account` | GET + POST | GET shows a confirm button (no state change, no login); POST verifies the `Account` and signs in (SNOW-439) |
-| `/account/manage/` | `manage` | GET + POST | Email entry (unauth) or region management (auth) |
+| `/account/manage/` | `manage` | GET | Permanent redirect to `/account/` (SNOW-667) |
 | `/account/manage/remove/<region_id>/` | `remove_region` | POST | HTMX — remove one region from the authenticated account |
 | `/account/manage/delete/` | `delete_account` | POST | HTMX — hard-delete the authenticated account (User) and cascade subscriptions |
 | `/account/unsubscribe/<token>/` | `unsubscribe` | GET + POST | One-click region unsubscribe |
 | `/account/unsubscribe-done/` | `unsubscribe_done` | GET | Post-unsubscribe confirmation page |
+
+**Account area layout (SNOW-667)** — `/account/manage/` was a single 529-line template stacking nine unranked sections. It is now a hub at `/account/` (subscribed regions and the lazy-loaded favourites panel) plus `/account/settings/` (email, passkeys, sign out, reset local data, sync log, telemetry, account deletion), with `/account/manage/` kept as a permanent redirect so old bookmarks and in-flight email links still resolve. The sub-nav tying them together renders from `apps/accounts/subnav.py` rather than from markup, so adding a child route — SNOW-668's `/account/places/`, SNOW-677's `/account/observations/` — is one `_Entry` and no template edit.
+
+Two things to know before touching the routing. `subscribe_partial` used to own the `""` route, which made a GET of `/account/` answer 405; it moved to `/account/subscribe/` keeping its URL name, so every `{% url 'accounts:subscribe' %}` is unaffected. And neither `hub_view` nor `settings_view` is `@never_cache`: the offline favourites roster reads the hub out of the PWA shell cache, and `static/js/sw.js` refuses to cache a `no-store` response, so safety comes from the `X-SW-Principal` stamp instead.
 
 **Models** (SNOW-514 collapsed `Subscriber` into `Account` — there is now a single public-user identity):
 - `Account(user, is_verified, verified_at, display_name, acquisition_request, pending_email, pending_email_requested_at)` — the single public-user identity, OneToOne to `auth.User` (`related_name="account"`). Auto-created at every public entry point (subscribe, sign-in, register) via `Account.objects.get_or_create_for_email(email)` (username == email == lowercased). `is_verified` is the sole "email proven reachable" gate, set by **every** email-proving link (`verify_view`, `account_view`, `change_email_confirm_view`, and `reset_password_confirm_view`); it is deliberately distinct from `User.is_active` (the kill switch). `Account.mark_verified(now)` mutates in memory and returns `self` (idempotent on `verified_at`); the caller owns the `save()` + `login()`. `acquisition_request` (FK to `core.RequestLog`, `SET_NULL`) records the request that first created the account — first-observation wins, never overwritten. `pending_email` / `pending_email_requested_at` (SNOW-433) hold a new address awaiting verification without touching the live `User.email`.

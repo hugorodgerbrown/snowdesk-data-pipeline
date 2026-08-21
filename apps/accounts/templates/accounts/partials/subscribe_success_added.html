@@ -14,6 +14,6 @@ and a confirmation email has been sent.
 </h2>
 <p class="text-sm text-text-2 leading-relaxed">
     {% trans "We've sent a confirmation to your email." %}
-    <a href="/account/manage/" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
+    <a href="{% url 'accounts:hub' %}" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
 </p>
 {% endcard %}

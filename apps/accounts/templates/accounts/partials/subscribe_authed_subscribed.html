@@ -20,7 +20,7 @@ Expected context variables:
     </h2>
     <p class="text-sm text-text-2 mb-4 leading-relaxed">
         {% trans "You receive daily bulletin updates for this region." %}
-        <a href="/account/manage/" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
+        <a href="{% url 'accounts:hub' %}" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
     </p>
     <form
         hx-post="{% url 'accounts:remove_region_from_bulletin' region_id %}"

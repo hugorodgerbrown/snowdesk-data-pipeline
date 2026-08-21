@@ -1,36 +1,38 @@
 {% extends "public/base.html" %}
 {% comment %}
-apps/accounts/templates/accounts/manage.html — Subscription management page.
+apps/accounts/templates/accounts/settings.html — Account settings.
 
 Rendered for any authenticated user (the view redirects unauthenticated
-visitors to /account/sign-in/ before this template is reached). A registered
-user with no Subscription rows sees the page with no subscription cards.
+visitors to /account/sign-in/ before this template is reached).
 
-Shows one card per subscribed region, ordered by region name. Each card
-shows the region name, region ID, and resort list. A per-region "Remove"
-button POSTs to accounts:remove_region via HTMX. A "Choose more
-regions on the map" link routes to /. A "My favourites" section
-(SNOW-415) lazy-loads favourites:list via hx-get — no cross-app import. A
-passkeys section lists registered platform passkeys with delete buttons.
-An "Anonymous usage data" section (SNOW-387) hosts a role="switch" toggle
-bound to window.pwaTelemetry.setOptIn/.isOptIn(), with a link to the
-privacy policy. A flag-gated "Sync log" panel (SNOW-482) reads recent
-real-sync rows from window.pwaDb.getSyncLog() via static/js/sync_log.js —
-gated on the same "sync_log" waffle flag as the matching /help/ section.
-A destructive "Unsubscribe from all alerts" button hard-deletes the
-account, shown for any authenticated account.
+SNOW-667 split the former 529-line manage.html into hub.html and this page.
+This half is everything the user can change about the account itself:
+
+  - Account email (SNOW-433) — current verified address plus the control
+    that starts the re-verification flow.
+  - Passkeys — registered platform passkeys with delete buttons, and an
+    "add passkey" button.
+  - Sign out (SNOW-616) — also in the nav disclosure; kept here because it
+    is the control someone goes looking for on a borrowed device.
+  - Reset local data (SNOW-378) — the PWA escape hatch.
+  - Sync log (SNOW-482) — flag-gated, painted client-side.
+  - Anonymous usage data (SNOW-387) — the telemetry opt-in switch.
+  - Delete your account — the sole hard-delete path, under a danger heading.
+
+The delete control read "Unsubscribe from all alerts" until SNOW-667. It
+POSTs to accounts:delete_account, which deletes the User and cascades
+through subscriptions, passkeys, favourites, routes and field observations;
+the label now names that. Behaviour is unchanged.
 {% endcomment %}
 {% load i18n static components %}
 
-{# SNOW-553: sharing=False. Every /account/ URL is disallowed in       #}
-{# robots.txt, so a crawler fetching this page to build an unfurl card  #}
-{# should not be here in the first place; several of these routes also  #}
-{# carry a single-use token in the path. The tab title and description  #}
-{# still render — it is only the og:/twitter: card identity that is     #}
-{# withheld.                                                            #}
+{# SNOW-553: sharing=False — same reason as the hub. Every /account/ URL is #}
+{# disallowed in robots.txt, and this page renders the signed-in user's     #}
+{# email address and passkeys, so it has no business producing an unfurl    #}
+{# card. Title and description still render.                               #}
 {% block page_meta %}
-    {% trans "My account — Snowdesk" as page_title %}
-    {% trans "Update your Snowdesk avalanche bulletin region subscriptions." as page_description %}
+    {% trans "Account settings — Snowdesk" as page_title %}
+    {% trans "Manage your Snowdesk email address, passkeys and device data." as page_description %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
 {% endblock page_meta %}
 
@@ -39,157 +41,27 @@ account, shown for any authenticated account.
 {% endblock %}
 
 {% block content %}
-    {% include "includes/country_flags_sprite.html" %}
     <div class="px-4 py-10">
         <div class="max-w-narrow mx-auto">
             {% comment %}
                 hx-headers on this wrapper injects the CSRF token on every
-                HTMX POST below (Remove, Unsubscribe-from-all).  HTMX
+                HTMX POST below (passkey delete, account delete).  HTMX
                 inherits hx-headers from ancestors, so we set it once here
                 rather than on each button.
             {% endcomment %}
             <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                {% include "accounts/partials/_htmx_error_banner.html" %}
+
                 {% comment %}
-                    Silent error banner — revealed by JS on htmx:responseError
-                    so users see feedback when a Remove/Delete POST fails
-                    (e.g. CSRF rejection, rate limit, network).
+                    No sub-nav here yet. SNOW-667 built one and it did not
+                    earn its place — two group headings above one link each.
+                    Navigation between the account pages is carried by the
+                    nav dropdown until SNOW-705 designs this area properly.
                 {% endcomment %}
-                {% include "includes/_toast.html" with id="htmx-error-banner" kind="error" body=_("Something went wrong.") dismissible=False %}
 
-                {# Optional one-time welcome banner when arriving via confirmation link #}
-                {% if just_confirmed %}
-                    {% card padding="px-5 py-4" extra="mb-6" %}
-                    <p class="text-sm text-text-1 font-medium">
-                        {% trans "Your subscription is confirmed." %}
-                    </p>
-                    <p class="text-sm text-text-2 mt-0.5">
-                        {% trans "You'll receive alerts for the regions below." %}
-                    </p>
-                    {% endcard %}
-                {% endif %}
-
-                {# Page heading — singular/plural based on subscription count #}
                 <h1 class="text-2xl font-semibold text-text-1 mb-6">
-                    {% blocktrans count count=subscriptions|length trimmed %}
-                        Your subscription
-                    {% plural %}
-                        Your subscriptions
-                    {% endblocktrans %}
+                    {% trans "Settings" %}
                 </h1>
-
-                {# One card per subscribed region #}
-                {% for subscription in subscriptions %}
-                    {% with country=subscription.region.region_id|slice:":2"|lower %}
-                        {% card padding="p-6" extra="subscription-card mb-4" %}
-                        <div class="flex items-start justify-between gap-4">
-                            <div class="min-w-0 flex-1">
-                                {# Header row: flag-badge (links to map) inline with region name #}
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    {# Flag-badge anchor — opens the map drawer for this region #}
-                                    <a
-                                        href="{% url 'public:home' %}#{{ subscription.region.region_id }}"
-                                        class="inline-flex items-center gap-1 font-mono text-xs text-text-3 border border-text-3/30 rounded-pill px-1.5 py-0.5 shrink-0 hover:text-text-1 hover:border-text-2 transition-colors"
-                                        aria-label="{% blocktrans with region=subscription.region.name %}View {{ region }} on the map{% endblocktrans %}"
-                                    >
-                                        {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
-                                            <svg width="12" height="9" aria-hidden="true">
-                                                <use href="#flag-{{ country }}" />
-                                            </svg>
-                                        {% endif %}
-                                        {{ subscription.region.region_id }}
-                                    </a>
-                                    <h2 class="text-lg font-semibold text-text-1 leading-snug">
-                                        {{ subscription.region.name }}
-                                    </h2>
-                                </div>
-                                {# Breadcrumb: country › L1 (MajorRegion) › L2 (SubRegion) #}
-                                <p class="text-xs text-text-3 mt-1">
-                                    {% if country == "ch" %}
-                                        {% trans "Switzerland" %}
-                                    {% elif country == "at" %}
-                                        {% trans "Austria" %}
-                                    {% elif country == "fr" %}
-                                        {% trans "France" %}
-                                    {% elif country == "it" %}
-                                        {% trans "Italy" %}
-                                    {% else %}
-                                        {{ country }}
-                                    {% endif %}
-                                    <span aria-hidden="true"> › </span>
-                                    {{ subscription.region.subregion.major.name_en|default:subscription.region.subregion.major.name_native }}
-                                    <span aria-hidden="true"> › </span>
-                                    {{ subscription.region.subregion.name_en|default:subscription.region.subregion.name_native }}
-                                </p>
-                            </div>
-                            <button
-                                hx-post="{% url 'accounts:remove_region' region_id=subscription.region.region_id %}"
-                                hx-target="closest .subscription-card"
-                                hx-swap="outerHTML"
-                                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
-                            >
-                                {% trans "Remove" %}
-                            </button>
-                        </div>
-
-                        {# Resort list — omit entirely when empty #}
-                        {% with resorts=subscription.region.resorts.all %}
-                            {% if resorts %}
-                                <p class="mt-3 text-sm text-text-2 leading-relaxed">
-                                    {% for resort in resorts %}{{ resort.name }}{% if not forloop.last %},
-                                        {% endif %}{% endfor %}
-                                </p>
-                            {% endif %}
-                        {% endwith %}
-
-                        {# Bottom link: bulletin for today (map link is the header flag-badge) #}
-                        <div class="mt-4">
-                            <a
-                                href="{{ subscription.region.get_absolute_url }}"
-                                class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
-                            >
-                                {% blocktrans with d=today|date:"j N Y" trimmed %}Open bulletin for {{ d }}
-                                    →{% endblocktrans %}
-                            </a>
-                        </div>
-                        {% endcard %}
-                    {% endwith %}
-                {% empty %}
-                    {% card padding="px-6 py-8" center=True extra="mb-4" %}
-                    <p class="text-sm text-text-2">
-                        {% trans "You have no active subscriptions." %}
-                    </p>
-                    {% endcard %}
-                {% endfor %}
-
-                {# Map CTA — choose more regions #}
-                <div class="mt-2 mb-10">
-                    <a
-                        href="{% url 'public:home' %}"
-                        class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
-                    >
-                        {% trans "Choose more regions on the map →" %}
-                    </a>
-                </div>
-
-                {% comment %}
-                    SNOW-415: "My favourites" section — lazy-loads
-                    favourites:list by URL name via hx-get on page load. No
-                    cross-app import here: this template only reverses the
-                    URL name.
-                {% endcomment %}
-                <section class="border-t border-border pt-8 mt-8">
-                    <h2 class="text-lg font-semibold text-text-1 mb-4">
-                        {% trans "My favourites" %}
-                    </h2>
-                    <div
-                        hx-get="{% url 'favourites:list' %}"
-                        hx-trigger="load"
-                        hx-target="this"
-                        hx-swap="innerHTML"
-                    >
-                        <p class="text-sm text-text-3">{% trans "Loading…" %}</p>
-                    </div>
-                </section>
 
                 {% comment %}
                     Account email — SNOW-433. Shows the current verified address
@@ -197,7 +69,7 @@ account, shown for any authenticated account.
                     flow (the address is not changed until the new one is
                     confirmed).
                 {% endcomment %}
-                <div class="border-t border-border pt-8 mb-10">
+                <div class="mb-10">
                     <h2 class="text-lg font-semibold text-text-1 mb-3">
                         {% trans "Account email" %}
                     </h2>
@@ -216,33 +88,14 @@ account, shown for any authenticated account.
 
                 {% comment %}
                     Passkeys section — lists registered platform passkeys with
-                    delete buttons, and offers a "add passkey" button.
-
-                    just_confirmed=True + no passkeys → show a prominent prompt
-                    to register this device right now.
+                    delete buttons, and offers an "add passkey" button.
                 {% endcomment %}
-                <div class="mb-10">
+                <div class="border-t border-border pt-8 mb-10">
                     <h2 class="text-lg font-semibold text-text-1 mb-4">
                         {% trans "Passkeys" %}
                     </h2>
 
                     {% with passkeys=request.user.passkeys.all %}
-                        {% if just_confirmed and not passkeys %}
-                            {# Prominent first-time registration prompt #}
-                            {% card padding="px-5 py-4" extra="mb-4" %}
-                            <div id="passkey-prompt">
-                                <p class="text-sm text-text-1 font-medium mb-1">
-                                    {% trans "Sign in faster with a passkey" %}
-                                </p>
-                                <p class="text-sm text-text-2 mb-3 leading-relaxed">
-                                    {% trans "Save a passkey for this device and you won't need a magic link next time." %}
-                                </p>
-                                {% trans "Save a passkey for this device" as label %}
-                                {% include "includes/_button.html" with label=label variant="primary" size="compact" button_type="button" button_id="btn-register-passkey" %}
-                            </div>
-                            {% endcard %}
-                        {% endif %}
-
                         {# Existing passkey cards #}
                         {% for passkey in passkeys %}
                             {% card padding="p-4" extra="passkey-card mb-3 flex items-center justify-between gap-4" %}
@@ -270,13 +123,14 @@ account, shown for any authenticated account.
                                 {% trans "Remove" %}
                             </button>
                             {% endcard %}
+                        {% empty %}
+                            <p class="text-sm text-text-3 mb-4">
+                                {% trans "No passkeys saved for this account yet." %}
+                            </p>
                         {% endfor %}
 
-                        {# "Add a passkey" button — always shown when we have one or more #}
-                        {% if passkeys or not just_confirmed %}
-                            {% trans "Add a passkey for this device" as label %}
-                            {% include "includes/_button.html" with label=label variant="ghost" size="compact" button_type="button" button_id="btn-register-passkey" %}
-                        {% endif %}
+                        {% trans "Add a passkey for this device" as label %}
+                        {% include "includes/_button.html" with label=label variant="ghost" size="compact" button_type="button" button_id="btn-register-passkey" %}
                     {% endwith %}
 
                     {# Passkey feedback banner — shown/hidden by JS #}
@@ -400,29 +254,40 @@ account, shown for any authenticated account.
                 </div>
 
                 {% comment %}
-                    Destructive account deletion — visually separated,
-                    small, muted.  hx-confirm stays here: deleting the
-                    whole account is irreversible. Shown for any
-                    authenticated account, including a registered-only
-                    account with no subscriptions — delete_account is the
-                    sole hard-delete path, available to any authenticated
-                    account.
+                    Destructive account deletion — visually separated under a
+                    danger heading that names what the control does. Until
+                    SNOW-667 this button read "Unsubscribe from all alerts"
+                    while POSTing to delete_account, which deletes the User
+                    and cascades through subscriptions, passkeys, favourites,
+                    routes and field observations.
+
+                    hx-confirm stays: the deletion is irreversible. Shown for
+                    any authenticated account, including a registered-only
+                    account with no subscriptions — delete_account is the sole
+                    hard-delete path, available to any authenticated account.
                 {% endcomment %}
                 <div class="border-t border-border pt-8">
+                    <h2 class="text-sm font-semibold text-text-1 mb-2">
+                        {% trans "Delete account" %}
+                    </h2>
+                    <p class="text-xs text-text-3 max-w-prose mb-3">
+                        {% blocktrans trimmed %}
+                            Permanently deletes your account and everything saved to it — subscriptions, favourites,
+                            passkeys and any field reports you have submitted. This cannot be undone.
+                        {% endblocktrans %}
+                    </p>
                     <button
                         hx-post="{% url 'accounts:delete_account' %}"
-                        hx-confirm='{% trans "Unsubscribe from all alerts and delete your account?" %}'
+                        hx-confirm='{% trans "Permanently delete your account and everything saved to it?" %}'
+                        data-testid="delete-account"
                         class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
                     >
-                        {% trans "Unsubscribe from all alerts" %}
+                        {% trans "Delete your account" %}
                     </button>
                 </div>
             </div>
             {# /hx-headers wrapper #}
 
-            {% comment %}
-                Passkey + HTMX error handling scripts.
-            {% endcomment %}
             {# SNOW-378: the [data-pwa-reset-trigger] button above is wired by  #}
             {# pwa_reset.js, which base.html now loads on every page (SNOW-615). #}
             {# The tag that used to sit here is gone rather than duplicated:     #}
@@ -438,17 +303,6 @@ account, shown for any authenticated account.
             <script nonce="{{ request.csp_nonce }}">
                 (function () {
                     'use strict';
-
-                    /* HTMX error banner */
-                    var banner = document.getElementById("htmx-error-banner");
-                    if (banner) {
-                        document.body.addEventListener("htmx:responseError", function () {
-                            banner.classList.remove("hidden");
-                        });
-                        document.body.addEventListener("htmx:sendError", function () {
-                            banner.classList.remove("hidden");
-                        });
-                    }
 
                     /* Passkey registration */
                     var regBtn = document.getElementById("btn-register-passkey");

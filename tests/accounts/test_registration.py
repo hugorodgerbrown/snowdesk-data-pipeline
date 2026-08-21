@@ -65,7 +65,7 @@ class TestRegisterView:
         client.force_login(account.user)
         response = client.get(self.URL)
         assert response.status_code == 302
-        assert response["Location"] == reverse("accounts:manage")
+        assert response["Location"] == reverse("accounts:hub")
 
     def test_post_new_email_creates_user_and_account(self, client: Client) -> None:
         response = client.post(self.URL, {"email": "new@example.com"})
@@ -284,6 +284,11 @@ class TestSubscribeRedirect:
     """The legacy /subscribe/ prefix permanently redirects to /account/."""
 
     def test_manage_path_redirects(self, client: Client) -> None:
+        """The legacy prefix maps path-for-path, so this lands on
+        /account/manage/ — which SNOW-667 then 301s on to the hub. Two hops,
+        both permanent; asserted as the first hop so this test keeps
+        covering the /subscribe/ mapping rather than the newer one.
+        """
         response = client.get("/subscribe/manage/")
         assert response.status_code == 301
         assert response["Location"] == "/account/manage/"

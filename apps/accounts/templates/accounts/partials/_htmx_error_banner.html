@@ -1,0 +1,33 @@
+{% comment %}
+apps/accounts/templates/accounts/partials/_htmx_error_banner.html — Silent HTMX failure banner.
+
+Renders a hidden error toast and the listener that reveals it on
+``htmx:responseError`` / ``htmx:sendError``, so a failed POST (CSRF
+rejection, rate limit, dropped network) produces visible feedback instead of
+a control that simply does nothing.
+
+Extracted by SNOW-667 when ``manage.html`` split into the hub and settings
+pages: both carry destructive HTMX controls, so both need this, and a second
+inline copy is exactly what the design-system rules forbid.
+
+No component-library registry entry of its own — the visible surface is
+``includes/_toast.html``, which is already registered. This partial adds
+only the behaviour that reveals it.
+
+Requires ``request.csp_nonce`` (present on every request via the CSP
+middleware).
+{% endcomment %}
+{% load i18n %}
+{% include "includes/_toast.html" with id="htmx-error-banner" kind="error" body=_("Something went wrong.") dismissible=False %}
+<script nonce="{{ request.csp_nonce }}">
+    (function () {
+        'use strict';
+        var banner = document.getElementById("htmx-error-banner");
+        if (!banner) return;
+        function reveal() {
+            banner.classList.remove("hidden");
+        }
+        document.body.addEventListener("htmx:responseError", reveal);
+        document.body.addEventListener("htmx:sendError", reveal);
+    })();
+</script>
