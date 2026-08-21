@@ -7,7 +7,9 @@ All URLs are mounted under the ``/account/`` prefix by the root URLconf
 
 URL map
 -------
-/account/                              subscribe              POST-only HTMX form
+/account/                             hub                    GET  — account hub (authed)
+/account/settings/                    settings               GET  — settings (authed)
+/account/subscribe/                   subscribe              POST-only HTMX form
 /account/add/<region_id>/             add_region             POST HTMX (authed)
 /account/remove-region/<region_id>/   remove_region_from_bulletin  POST HTMX (authed)
 /account/register/                    register               GET/POST — registration
@@ -15,7 +17,7 @@ URL map
 /account/setup/                       setup                  GET — credential setup
 /account/sign-in/                     sign_in                GET/POST — sign-in page
 /account/access/<token>/              account                GET/POST — access token
-/account/manage/                      manage                 GET — authenticated
+/account/manage/                      manage                 GET  — 301 to /account/
 /account/manage/remove/<region_id>/   remove_region          POST HTMX
 /account/manage/delete/               delete_account         POST HTMX
 /account/manage/passkeys/<uuid>/delete/ passkey_delete       POST HTMX
@@ -29,13 +31,21 @@ URL map
 """
 
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import push_views, views, views_passkey
 
 app_name = "accounts"
 
 urlpatterns = [
-    path("", views.subscribe_partial, name="subscribe"),
+    # SNOW-667: the hub owns "" (GET). ``subscribe_partial`` used to sit
+    # here, which made a GET of /account/ answer 405 — Django dispatches on
+    # path, not method, so the two cannot share a route. The URL *name* is
+    # unchanged, and every caller reverses by name, so moving the path is
+    # transparent to templates.
+    path("", views.hub_view, name="hub"),
+    path("settings/", views.settings_view, name="settings"),
+    path("subscribe/", views.subscribe_partial, name="subscribe"),
     path("add/<region_id:region_id>/", views.add_region, name="add_region"),
     path(
         "remove-region/<region_id:region_id>/",
@@ -64,7 +74,15 @@ urlpatterns = [
     ),
     path("sign-in/", views.sign_in_view, name="sign_in"),
     path("access/<str:token>/", views.account_view, name="account"),
-    path("manage/", views.manage_view, name="manage"),
+    # SNOW-667: /account/manage/ was the single stacked page this ticket
+    # split up. Kept as a permanent redirect so bookmarks, and the reverses
+    # in older emails, still land somewhere sensible. Mirrors the
+    # /subscribe/ -> /account/ precedent in config/urls.py (SNOW-430).
+    path(
+        "manage/",
+        RedirectView.as_view(pattern_name="accounts:hub", permanent=True),
+        name="manage",
+    ),
     path(
         "manage/remove/<region_id:region_id>/",
         views.remove_region,

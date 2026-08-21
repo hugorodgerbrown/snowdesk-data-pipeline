@@ -1,0 +1,196 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/accounts/templates/accounts/hub.html — Account hub: the user's own saved data.
+
+Rendered for any authenticated user (the view redirects unauthenticated
+visitors to /account/sign-in/ before this template is reached). A registered
+user with no Subscription rows sees the page with no subscription cards.
+
+SNOW-667 split the former 529-line manage.html into this page and
+settings.html. This half is "your data": one card per subscribed region,
+ordered by region name, each with a per-region "Remove" button that POSTs to
+accounts:remove_region via HTMX, plus the "My favourites" section (SNOW-415)
+which lazy-loads favourites:list by hx-get — no cross-app import, this
+template only reverses the URL name.
+
+SNOW-668 lifts both surfaces into /account/places/ once the unified place
+model lands. Until then they live here, so nothing becomes unreachable
+mid-chain.
+
+Offline note: the favourites hx-get on this page is what feeds the offline
+roster (static/js/favourites_offline.js caches the sidecars it returns), and
+hub_view is deliberately not @never_cache so the rendered HTML reaches the
+PWA shell cache. See the cache note in apps/accounts/views.py before adding
+any cache-avoidance here.
+{% endcomment %}
+{% load i18n static components %}
+
+{# SNOW-553: sharing=False. Every /account/ URL is disallowed in       #}
+{# robots.txt, so a crawler fetching this page to build an unfurl card  #}
+{# should not be here in the first place; several of these routes also  #}
+{# carry a single-use token in the path. The tab title and description  #}
+{# still render — it is only the og:/twitter: card identity that is     #}
+{# withheld.                                                            #}
+{% block page_meta %}
+    {% trans "My account — Snowdesk" as page_title %}
+    {% trans "Your saved Snowdesk regions and favourite places." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block extra_head %}
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+    {% include "includes/country_flags_sprite.html" %}
+    <div class="px-4 py-10">
+        <div class="max-w-narrow mx-auto">
+            {% comment %}
+                hx-headers on this wrapper injects the CSRF token on every
+                HTMX POST below (Remove).  HTMX inherits hx-headers from
+                ancestors, so we set it once here rather than on each button.
+            {% endcomment %}
+            <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                {% include "accounts/partials/_htmx_error_banner.html" %}
+
+                {% include "accounts/partials/_account_subnav.html" %}
+
+                {# Optional one-time welcome banner when arriving via confirmation link #}
+                {% if just_confirmed %}
+                    {% card padding="px-5 py-4" extra="mb-6" %}
+                    <p class="text-sm text-text-1 font-medium">
+                        {% trans "Your subscription is confirmed." %}
+                    </p>
+                    <p class="text-sm text-text-2 mt-0.5">
+                        {% trans "You'll receive alerts for the regions below." %}
+                    </p>
+                    {% endcard %}
+                {% endif %}
+
+                {# Page heading — singular/plural based on subscription count #}
+                <h1 class="text-2xl font-semibold text-text-1 mb-6">
+                    {% blocktrans count count=subscriptions|length trimmed %}
+                        Your subscription
+                    {% plural %}
+                        Your subscriptions
+                    {% endblocktrans %}
+                </h1>
+
+                {# One card per subscribed region #}
+                {% for subscription in subscriptions %}
+                    {% with country=subscription.region.region_id|slice:":2"|lower %}
+                        {% card padding="p-6" extra="subscription-card mb-4" %}
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="min-w-0 flex-1">
+                                {# Header row: flag-badge (links to map) inline with region name #}
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    {# Flag-badge anchor — opens the map drawer for this region #}
+                                    <a
+                                        href="{% url 'public:home' %}#{{ subscription.region.region_id }}"
+                                        class="inline-flex items-center gap-1 font-mono text-xs text-text-3 border border-text-3/30 rounded-pill px-1.5 py-0.5 shrink-0 hover:text-text-1 hover:border-text-2 transition-colors"
+                                        aria-label="{% blocktrans with region=subscription.region.name %}View {{ region }} on the map{% endblocktrans %}"
+                                    >
+                                        {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
+                                            <svg width="12" height="9" aria-hidden="true">
+                                                <use href="#flag-{{ country }}" />
+                                            </svg>
+                                        {% endif %}
+                                        {{ subscription.region.region_id }}
+                                    </a>
+                                    <h2 class="text-lg font-semibold text-text-1 leading-snug">
+                                        {{ subscription.region.name }}
+                                    </h2>
+                                </div>
+                                {# Breadcrumb: country › L1 (MajorRegion) › L2 (SubRegion) #}
+                                <p class="text-xs text-text-3 mt-1">
+                                    {% if country == "ch" %}
+                                        {% trans "Switzerland" %}
+                                    {% elif country == "at" %}
+                                        {% trans "Austria" %}
+                                    {% elif country == "fr" %}
+                                        {% trans "France" %}
+                                    {% elif country == "it" %}
+                                        {% trans "Italy" %}
+                                    {% else %}
+                                        {{ country }}
+                                    {% endif %}
+                                    <span aria-hidden="true"> › </span>
+                                    {{ subscription.region.subregion.major.name_en|default:subscription.region.subregion.major.name_native }}
+                                    <span aria-hidden="true"> › </span>
+                                    {{ subscription.region.subregion.name_en|default:subscription.region.subregion.name_native }}
+                                </p>
+                            </div>
+                            <button
+                                hx-post="{% url 'accounts:remove_region' region_id=subscription.region.region_id %}"
+                                hx-target="closest .subscription-card"
+                                hx-swap="outerHTML"
+                                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                            >
+                                {% trans "Remove" %}
+                            </button>
+                        </div>
+
+                        {# Resort list — omit entirely when empty #}
+                        {% with resorts=subscription.region.resorts.all %}
+                            {% if resorts %}
+                                <p class="mt-3 text-sm text-text-2 leading-relaxed">
+                                    {% for resort in resorts %}{{ resort.name }}{% if not forloop.last %},
+                                        {% endif %}{% endfor %}
+                                </p>
+                            {% endif %}
+                        {% endwith %}
+
+                        {# Bottom link: bulletin for today (map link is the header flag-badge) #}
+                        <div class="mt-4">
+                            <a
+                                href="{{ subscription.region.get_absolute_url }}"
+                                class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                            >
+                                {% blocktrans with d=today|date:"j N Y" trimmed %}Open bulletin for {{ d }}
+                                    →{% endblocktrans %}
+                            </a>
+                        </div>
+                        {% endcard %}
+                    {% endwith %}
+                {% empty %}
+                    {% card padding="px-6 py-8" center=True extra="mb-4" %}
+                    <p class="text-sm text-text-2">
+                        {% trans "You have no active subscriptions." %}
+                    </p>
+                    {% endcard %}
+                {% endfor %}
+
+                {# Map CTA — choose more regions #}
+                <div class="mt-2 mb-10">
+                    <a
+                        href="{% url 'public:home' %}"
+                        class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                    >
+                        {% trans "Choose more regions on the map →" %}
+                    </a>
+                </div>
+
+                {% comment %}
+                    SNOW-415: "My favourites" section — lazy-loads
+                    favourites:list by URL name via hx-get on page load. No
+                    cross-app import here: this template only reverses the
+                    URL name.
+                {% endcomment %}
+                <section class="border-t border-border pt-8 mt-8">
+                    <h2 class="text-lg font-semibold text-text-1 mb-4">
+                        {% trans "My favourites" %}
+                    </h2>
+                    <div
+                        hx-get="{% url 'favourites:list' %}"
+                        hx-trigger="load"
+                        hx-target="this"
+                        hx-swap="innerHTML"
+                    >
+                        <p class="text-sm text-text-3">{% trans "Loading…" %}</p>
+                    </div>
+                </section>
+            </div>
+            {# /hx-headers wrapper #}
+        </div>
+    </div>
+{% endblock %}
