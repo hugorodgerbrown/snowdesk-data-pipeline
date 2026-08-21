@@ -1,18 +1,23 @@
 ---
 name: location-first-information-model
-description: Proposed Map → Region → Location drill-down, bulletin-as-provenance, weather sourcing split, and elevation-range relevance primitive
-status: draft
+description: Accepted Map → Region → Location drill-down, bulletin-as-provenance, weather sourcing split, and elevation-range relevance primitive
+status: current
 last-reviewed: 2026-08-21
 ---
 
 # Location-first information model
 
-**This is a proposal, not an accepted decision.** It records a direction for
-review, and the tier boundaries in particular are a product call. On
-acceptance it should be split into three accepted files — the information
-model, the weather-sourcing rule, and the relevance primitive — since each
-constrains different code. It is one document now because the three arrived
-as one argument and reviewing them apart would lose that.
+**Accepted 2026-08-21.** The tier boundaries were the product call this
+needed, and they are now settled: Location is the working surface, Region is
+the indexed one, and the bulletin document sits beside them as provenance.
+
+This file still carries three decisions in one — the information model, the
+weather-sourcing rule, and the relevance primitive — and should be split into
+three files, since each constrains different code. That split is deferred, not
+dropped; it is one document here because the three arrived as one argument.
+
+The four open questions at the foot remain open. None of them blocks the
+model, and each is scoped to a surface rather than to the tiers themselves.
 
 ## Decision
 
