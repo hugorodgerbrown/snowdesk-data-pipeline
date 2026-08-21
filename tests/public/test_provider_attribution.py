@@ -1,11 +1,17 @@
 """
-tests/public/test_slf_attribution.py — Tests for provider data-licence
-compliance surfaces (SNOW-30, SNOW-294).
+tests/public/test_provider_attribution.py — Tests for provider data-licence
+compliance surfaces (SNOW-30, SNOW-294, SNOW-666).
+
+Renamed from ``test_slf_attribution.py`` by SNOW-666: the surfaces under test
+stopped being SLF-only when ALBINA and Météo-France were ingested, and a file
+named for one provider while asserting three is the same drift the ticket
+exists to fix.
 
 Covers:
 
-  * ``/terms/`` page renders, has the four placeholder sections, and
-    is reachable.
+  * ``/terms/`` page renders, has its required sections, and is reachable.
+  * **Every legal page names every provider** — the SNOW-666 guard, over
+    ``/terms/``, ``/terms-of-service/`` and ``/privacy/``.
   * The global ``_site_footer.html`` partial renders on every public
     page (home, terms, bulletin, map) with all three provider links
     (SLF, ALBINA, Météo-France) and a link to /terms.
@@ -130,13 +136,14 @@ class TestTermsPage:
     @pytest.mark.parametrize(
         "marker",
         [
-            b'data-testid="terms-not-substitute"',
+            b'data-testid="terms-data-sources"',
+            b'data-testid="terms-not-authoritative"',
             b'data-testid="terms-on-site-assessment"',
             b'data-testid="terms-liability"',
-            b'data-testid="terms-slf-no-liability"',
+            b'data-testid="terms-provider-disclaimers"',
         ],
     )
-    def test_has_four_required_sections(self, client: Client, marker: bytes) -> None:
+    def test_has_required_sections(self, client: Client, marker: bytes) -> None:
         response = client.get(reverse("public:terms"))
         assert marker in response.content
 
@@ -147,6 +154,57 @@ class TestTermsPage:
     def test_links_to_cc_by_4_0(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
         assert b"creativecommons.org/licenses/by/4.0/" in response.content
+
+    def test_links_to_meteofrance_open_data_licence(self, client: Client) -> None:
+        """Météo-France's licence is not CC BY 4.0 and needs its own link (SNOW-666)."""
+        response = client.get(reverse("public:terms"))
+        assert b"portail-api.meteofrance.fr" in response.content
+
+
+# ---------------------------------------------------------------------------
+# Three-provider coverage across every legal surface (SNOW-666)
+# ---------------------------------------------------------------------------
+
+# Byte fragments that must appear on each legal page, one per provider. Chosen
+# to survive rewording: a provider's name, not a sentence it happens to sit in.
+_PROVIDER_MARKERS: tuple[bytes, ...] = (
+    b"SLF",
+    b"ALBINA",
+    b"M\xc3\xa9t\xc3\xa9o-France",  # UTF-8 "Météo-France"
+)
+
+_LEGAL_PAGE_ROUTES: tuple[str, ...] = (
+    "public:terms",
+    "public:terms_of_service",
+    "public:privacy",
+)
+
+
+@pytest.mark.django_db
+class TestEveryLegalPageNamesEveryProvider:
+    """Every legal page names all three bulletin providers (SNOW-666).
+
+    Snowdesk republishes bulletins for 461 micro-regions, of which only 149
+    are Swiss. The legal pages described an SLF-only site for long enough
+    that 312 regions were served under licences those pages never
+    acknowledged — so this is the guard that stops a fourth provider, or a
+    copy rewrite, silently dropping one again.
+
+    Deliberately asserts on provider *names* rather than section testids:
+    the failure mode being guarded against is a provider going unmentioned,
+    which no structural marker would catch.
+    """
+
+    @pytest.mark.parametrize("route", _LEGAL_PAGE_ROUTES)
+    @pytest.mark.parametrize("provider", _PROVIDER_MARKERS)
+    def test_page_names_provider(
+        self, client: Client, route: str, provider: bytes
+    ) -> None:
+        response = client.get(reverse(route))
+        assert response.status_code == 200
+        assert provider in response.content, (
+            f"{route} does not name {provider.decode()}"
+        )
 
 
 # ---------------------------------------------------------------------------
