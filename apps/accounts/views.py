@@ -115,7 +115,6 @@ from .services.token import (
     verify_token,
     verify_unsubscribe_token,
 )
-from .subnav import build_subnav
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User as UserType
@@ -1499,7 +1498,6 @@ def hub_view(request: HttpRequest) -> HttpResponse:
             "subscriptions": subscriptions,
             "just_confirmed": just_confirmed,
             "today": timezone.now().date(),
-            "subnav_groups": build_subnav("accounts:hub"),
         },
     )
 
@@ -1544,7 +1542,6 @@ def settings_view(request: HttpRequest) -> HttpResponse:
         {
             "account": _get_account(request),
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
-            "subnav_groups": build_subnav("accounts:settings"),
         },
     )
 

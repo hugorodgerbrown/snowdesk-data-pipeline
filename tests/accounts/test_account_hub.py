@@ -4,7 +4,11 @@ tests/accounts/test_account_hub.py — The /account/ hub split (SNOW-667).
 ``/account/manage/`` was one page stacking nine unranked sections. SNOW-667
 split it into a hub at ``/account/`` and a settings page at
 ``/account/settings/``, tied together by a sub-nav whose groups come from
-``apps.accounts.subnav`` rather than from markup.
+the nav dropdown.
+
+The sub-nav this ticket originally shipped was cut — it did not earn its
+place. SNOW-705 designs the account area's navigation and layouts; until
+then the two pages are reached from the nav menu.
 
 These tests pin the parts of that split which are easy to regress:
 
@@ -15,7 +19,6 @@ These tests pin the parts of that split which are easy to regress:
   * the **legacy redirect** — ``/account/manage/`` 301s to the hub and
     ``reverse("accounts:manage")`` still resolves, so old bookmarks and
     in-flight emails land somewhere sensible;
-  * the **sub-nav** marking the page currently being rendered;
   * the **renamed delete control**, which read "Unsubscribe from all alerts"
     while hard-deleting the account.
 
@@ -30,7 +33,6 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.accounts.models import Account
-from apps.accounts.subnav import build_subnav
 from tests.factories import AccountFactory, MicroRegionFactory, SubscriptionFactory
 
 _TOKEN_BACKEND = "django.contrib.auth.backends.ModelBackend"
@@ -111,56 +113,23 @@ class TestAccountRouting:
 
 
 # ---------------------------------------------------------------------------
-# Sub-nav
+# Reaching the settings page
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestAccountSubnav:
-    """The sub-nav renders on both pages and marks the current one."""
+class TestSettingsIsReachable:
+    """Settings has no on-page navigation, so the nav menu is the only route.
 
-    @pytest.mark.parametrize("name", ["accounts:hub", "accounts:settings"])
-    def test_subnav_renders_on_every_child_route(self, name: str) -> None:
+    Pinned because it is easy to lose: nothing else on the hub links to
+    /account/settings/, and SNOW-705 will replace this arrangement. If that
+    nav entry disappears before the design lands, the page is orphaned.
+    """
+
+    def test_nav_menu_links_to_settings(self) -> None:
         client = _client_for(AccountFactory.create())
-        response = client.get(reverse(name))
-        assert b'data-testid="account-subnav"' in response.content
-
-    @pytest.mark.parametrize("name", ["accounts:hub", "accounts:settings"])
-    def test_subnav_marks_the_current_page(self, name: str) -> None:
-        """Exactly one entry carries aria-current="page"."""
-        client = _client_for(AccountFactory.create())
-        html = client.get(reverse(name)).content.decode()
-        assert html.count('aria-current="page"') == 1
-
-    def test_build_subnav_marks_only_the_named_route(self) -> None:
-        """The current flag is set from the URL name, not from position."""
-        groups = build_subnav("accounts:settings")
-        current = [
-            entry["label"]
-            for group in groups
-            for entry in group["entries"]
-            if entry["current"]
-        ]
-        assert len(current) == 1
-
-    def test_build_subnav_tolerates_an_unknown_route(self) -> None:
-        """A page outside the nav still renders it, highlighting nothing.
-
-        Cheap insurance for the tickets queued behind this one: a child route
-        added before its nav entry should not raise, it should just render an
-        unhighlighted nav.
-        """
-        groups = build_subnav("accounts:nonexistent")
-        assert not any(
-            entry["current"] for group in groups for entry in group["entries"]
-        )
-
-    def test_every_subnav_entry_resolves(self) -> None:
-        """No entry points at a URL name that does not exist."""
-        groups = build_subnav("accounts:hub")
-        for group in groups:
-            for entry in group["entries"]:
-                assert entry["url"].startswith("/account/")
+        html = client.get(reverse("accounts:hub")).content.decode()
+        assert reverse("accounts:settings") in html
 
 
 # ---------------------------------------------------------------------------

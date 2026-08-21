@@ -189,6 +189,18 @@ Usage
                         >
                             {% trans "My account" %}
                         </a>
+                        {# SNOW-667: the only route to /account/settings/ until  #}
+                        {# SNOW-705 designs the account area's own navigation.   #}
+                        {# Deliberately reuses this menu's existing item styling #}
+                        {# rather than inventing a surface the design pass would #}
+                        {# only have to undo.                                    #}
+                        <a
+                            role="menuitem"
+                            href="{% url 'accounts:settings' %}"
+                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% trans "Settings" %}
+                        </a>
                         <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
                             {% csrf_token %}

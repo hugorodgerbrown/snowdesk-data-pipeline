@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.public._component_fixtures import (
-    ACCOUNT_SUBNAV_VARIANTS,
     BULLETIN_HEADLINE_VARIANTS,
     BUTTON_VARIANTS,
     CALLOUT_VARIANTS,
@@ -1089,24 +1088,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_collapsible_panel.html",
         variants=COLLAPSIBLE_PANEL_VARIANTS,
-        panel_layout="stack",
-    ),
-    FoundationCategory(
-        slug="account-subnav",
-        label="Account sub-nav",
-        description=(
-            "Persistent navigation across the /account/ child routes "
-            "(SNOW-667), grouped into 'Your data' and 'Settings'. Groups and "
-            "entries render from a list built by apps.accounts.subnav, so a "
-            "new child route is a data change rather than an edit to the "
-            "partial — SNOW-668 and SNOW-677 both add entries this way. The "
-            'current page is marked with aria-current="page" and styled '
-            "off that attribute, so there is no parallel class to keep in "
-            "sync with the flag."
-        ),
-        kind="components",
-        partial="accounts/partials/_account_subnav.html",
-        variants=ACCOUNT_SUBNAV_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

@@ -52,7 +52,12 @@ the label now names that. Behaviour is unchanged.
             <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
                 {% include "accounts/partials/_htmx_error_banner.html" %}
 
-                {% include "accounts/partials/_account_subnav.html" %}
+                {% comment %}
+                    No sub-nav here yet. SNOW-667 built one and it did not
+                    earn its place — two group headings above one link each.
+                    Navigation between the account pages is carried by the
+                    nav dropdown until SNOW-705 designs this area properly.
+                {% endcomment %}
 
                 <h1 class="text-2xl font-semibold text-text-1 mb-6">
                     {% trans "Settings" %}
