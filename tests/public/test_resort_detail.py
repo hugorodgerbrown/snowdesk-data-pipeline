@@ -35,6 +35,7 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
 from __future__ import annotations
 
 import datetime
+import re
 
 import pytest
 from django.db import connection
@@ -907,8 +908,14 @@ class TestResortFacts:
         assert "196.5 km" in content
         assert "23 Nov&ndash;27 Apr" in content
         assert "Zermatt Bergbahnen AG" in content
-        assert "https://www.zermatt.ch/" in content
         assert "Theodul glacier" in content
+        # Compare the rendered href exactly rather than asking whether the
+        # URL appears somewhere on the page: the loose check would pass on a
+        # link pointing anywhere that merely contained this string.
+        website_cell = content.split('data-testid="resort-facts-website"')[1]
+        href = re.search(r'href="([^"]+)"', website_cell)
+        assert href is not None
+        assert href.group(1) == self._fully_curated()["website"]
 
     def test_nothing_curated_omits_the_whole_block(self) -> None:
         """No curated field renders no container — not an empty one.
