@@ -140,8 +140,8 @@ describe('forecastWindowDates', () => {
           '2026-08-08': { icon: 'clear-day.svg', label: 'Clear', tmax: 4, tmin: -3, snow: 0 },
           '2026-08-07': { icon: 'clear-day.svg', label: 'Clear', tmax: 4, tmin: -3, snow: 0 },
         }),
-        // A short-window point (SNOW-573: ICON-CH2 often returns fewer than
-        // POINT_FORECAST_DAYS) contributes only one extra date.
+        // A short-window point (SNOW-573: the backing model may cover
+        // fewer than POINT_FORECAST_DAYS) contributes only one extra date.
         makeFeature({
           '2026-08-09': { icon: 'clear-day.svg', label: 'Clear', tmax: 4, tmin: -3, snow: 0 },
         }),

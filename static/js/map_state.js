@@ -240,9 +240,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-other-basemap-unnamed':
     "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
   // SNOW-573: the Weather overlay's layers-menu row disable reason —
-  // point weather is forecast-only and often runs short (ICON-CH2
-  // commonly returns fewer days than requested), so a scrubbed date
-  // outside the stored window disables the row with this as its title.
+  // point weather is forecast-only and can run short (the backing model
+  // may cover fewer days than requested), so a scrubbed date outside the
+  // stored window disables the row with this as its title.
   'weather-out-of-window': 'No forecast for this date',
   // SNOW-660: the same row's OTHER disable reason — no day has been chosen
   // at all. Distinct from the one above on purpose: "no forecast for this

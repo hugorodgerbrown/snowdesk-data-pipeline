@@ -6,10 +6,10 @@ Covers:
   - elevation pass-through — the outgoing request params include `elevation`
     equal to the point's elevation, and `daily` contains the extended
     variables; `hourly` contains the ski-relevant hourly set.
-  - ICON-CH model selection (SNOW-443) — points inside ICON_CH_BOUNDS send
-    `models=meteoswiss_icon_ch2`; points outside send no `models=` at all;
-    a 400 or a null day-0 field falls back once to the default chain, and
-    any other HTTP status still surfaces as a failure.
+  - single model policy (SNOW-699) — no point ever sends `models=`, wherever
+    it sits, so Open-Meteo picks the best model for the coordinates; each
+    point makes exactly one request, and every non-2xx status surfaces as a
+    failure rather than being retried.
   - 7-day window — a single API call returns POINT_FORECAST_DAYS days of
     daily data; one ForecastPointWeather row is persisted per day.
   - extended fields round-trip — a mocked full daily payload persists
@@ -31,7 +31,7 @@ Covers:
     part-way through the 7-day loop leaves zero rows, not a partial
     window that reports as a failed point.
   - truncated model horizon (SNOW-628) — a payload whose tail carries a
-    null weather_code (ICON-CH2 runs ~5 days into the 7-day window)
+    null weather_code (any model can run short of the 7-day request)
     stores the days that resolved instead of rolling the whole window
     back, and is not counted as a failure; a payload resolving no day at
     all still is.
@@ -53,11 +53,8 @@ from django.test import override_settings
 
 from apps.weather.models import ForecastPointWeather, ForecastPointWeatherHistory
 from apps.weather.services.weather_fetcher import (
-    ICON_CH_BOUNDS,
-    ICON_CH_MODEL,
     POINT_FORECAST_DAYS,
     POINT_HOURLY_DAYS,
-    _is_alpine_point,
     fetch_all_points,
     fetch_weather_for_point,
 )
@@ -245,23 +242,35 @@ class TestFetchWeatherForPoint:
         assert "wind_gusts_10m" in hourly_fields
         assert "freezing_level_height" in hourly_fields
 
-    def test_no_models_param_outside_the_icon_ch_domain(self) -> None:
-        """An out-of-domain point sends no `models=` — the default chain stands.
+    @pytest.mark.parametrize(
+        ("label", "latitude", "longitude"),
+        [
+            ("Valais", 46.1, 7.4),
+            ("London", 51.5, -0.13),
+        ],
+    )
+    def test_no_models_param_is_ever_sent(
+        self, label: str, latitude: float, longitude: float
+    ) -> None:
+        """No point sends `models=`, wherever it sits (SNOW-699).
 
-        This assertion previously covered every point (SNOW-417 shipped on
-        the default chain unconditionally). SNOW-443 narrowed it: the
-        factory's default coordinates are in Valais, which is inside the
-        ICON-CH box, so the "no models" case now needs a point that
-        genuinely is not.
+        SNOW-443 briefly pinned `models=meteoswiss_icon_ch2` for points
+        inside an Alpine bounding box, which left this assertion able to
+        cover only the out-of-box case. Both coordinates are asserted here
+        — one squarely inside the old box, one far outside it — so the
+        geography cannot quietly come back without a test failing.
         """
-        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
+        point = ForecastPointFactory.create(latitude=latitude, longitude=longitude)
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
         with patch("apps.weather.services.weather_fetcher.requests.get", mock):
             fetch_weather_for_point(point, target, commit=False)
 
-        assert "models" not in mock.call_args[1]["params"]
+        assert "models" not in mock.call_args[1]["params"], label
+        # One model means one call: the retry path was the only thing that
+        # could ever make a point issue two.
+        assert mock.call_count == 1, label
 
     def test_request_window_spans_seven_days(self) -> None:
         """start_date/end_date span POINT_FORECAST_DAYS consecutive days."""
@@ -784,132 +793,43 @@ class TestFetchWeatherForPointProviderDates:
 
 
 @pytest.mark.django_db
-class TestIconChModelSelection:
-    """MeteoSwiss ICON-CH2 selection and its fallback (SNOW-443).
+class TestSingleModelPolicy:
+    """One model policy, one request per point, no retries (SNOW-699).
 
-    Points inside ``ICON_CH_BOUNDS`` ask for the 2 km MeteoSwiss run
-    rather than Open-Meteo's default blended chain. The fallback is not
-    defensive padding: ``ForecastPointWeather.weather_code`` is a
-    ``PositiveSmallIntegerField`` with no ``null=True``, so a partial
-    ICON-CH payload would raise at ``update_or_create`` rather than
-    skipping the row.
+    SNOW-443 pinned ``models=meteoswiss_icon_ch2`` inside an Alpine
+    bounding box and retried on the default chain when that request came
+    back a 400 or with a dead day 0. Both are gone: with no model pinned
+    there is no model-specific failure to catch, so a point issues exactly
+    one request and every non-2xx status propagates.
     """
 
-    def test_in_domain_point_requests_icon_ch2(self) -> None:
-        """A Valais point sends models=meteoswiss_icon_ch2."""
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
-        mock = _mock_get(_make_full_point_response())
+    def test_http_400_propagates(self) -> None:
+        """A 400 is a failure now, not a cue to retry on another model.
 
-        with patch("apps.weather.services.weather_fetcher.requests.get", mock):
-            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
-
-        assert mock.call_args[1]["params"]["models"] == ICON_CH_MODEL
-
-    def test_wider_alpine_arc_is_in_domain(self) -> None:
-        """Chamonix and the Dolomites are inside the box, not just Switzerland.
-
-        The box is deliberately wider than the Swiss border — Snowdesk
-        serves the wider arc via ALBINA and Météo-France, and ICON-CH
-        covers it.
+        The old fallback read a 400 as "this point is outside ICON-CH's
+        domain" and silently reissued the request. Nothing asks for a
+        model any more, so a 400 means the request itself was bad and
+        belongs in ``fetch_all_points``' failed counter like any other
+        error.
         """
-        for label, lat, lon in (
-            ("Chamonix", 45.92, 6.87),
-            ("Cortina", 46.54, 12.14 - 1.0),
-            ("Innsbruck", 47.27, 11.39),
-        ):
-            point = ForecastPointFactory.create(latitude=lat, longitude=lon)
-            mock = _mock_get(_make_full_point_response())
-            with patch("apps.weather.services.weather_fetcher.requests.get", mock):
-                fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
-            assert mock.call_args[1]["params"].get("models") == ICON_CH_MODEL, label
-
-    def test_out_of_domain_point_makes_exactly_one_request(self) -> None:
-        """No speculative ICON-CH call is made for a point outside the box."""
-        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
-        mock = _mock_get(_make_full_point_response())
-
-        with patch("apps.weather.services.weather_fetcher.requests.get", mock):
-            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=False)
-
-        assert mock.call_count == 1
-
-    def test_null_day_zero_falls_back_to_the_default_chain(self) -> None:
-        """A dead day 0 triggers one retry with models= dropped."""
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
-        degraded = _make_full_point_response()
-        degraded["daily"]["weather_code"][0] = None
-
-        mock_response_degraded = MagicMock()
-        mock_response_degraded.raise_for_status = MagicMock()
-        mock_response_degraded.json.return_value = degraded
-        mock_response_good = MagicMock()
-        mock_response_good.raise_for_status = MagicMock()
-        mock_response_good.json.return_value = _make_full_point_response()
-        mock = MagicMock(side_effect=[mock_response_degraded, mock_response_good])
-
-        with patch("apps.weather.services.weather_fetcher.requests.get", mock):
-            results = fetch_weather_for_point(
-                point, datetime.date(2026, 5, 1), commit=True
-            )
-
-        assert mock.call_count == 2
-        assert "models" in mock.call_args_list[0][1]["params"]
-        assert "models" not in mock.call_args_list[1][1]["params"]
-        # The persisted rows come from the fallback payload, so no null
-        # weather_code reaches the non-nullable column.
-        assert len(results) == POINT_FORECAST_DAYS
-        assert (
-            ForecastPointWeather.objects.filter(weather_code__isnull=True).count() == 0
-        )
-
-    def test_missing_sunrise_also_triggers_the_fallback(self) -> None:
-        """sunrise and sunset are required by _build_point_defaults too."""
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
-        degraded = _make_full_point_response()
-        degraded["daily"]["sunrise"][0] = None
-
-        first = MagicMock()
-        first.raise_for_status = MagicMock()
-        first.json.return_value = degraded
-        second = MagicMock()
-        second.raise_for_status = MagicMock()
-        second.json.return_value = _make_full_point_response()
-        mock = MagicMock(side_effect=[first, second])
-
-        with patch("apps.weather.services.weather_fetcher.requests.get", mock):
-            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
-
-        assert mock.call_count == 2
-
-    def test_http_400_falls_back_to_the_default_chain(self) -> None:
-        """A 400 means the box was optimistic for this point — retry, don't fail."""
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
 
         rejected = MagicMock()
         rejected.status_code = 400
         error = requests.HTTPError(response=rejected)
         rejected.raise_for_status = MagicMock(side_effect=error)
+        mock = MagicMock(return_value=rejected)
 
-        good = MagicMock()
-        good.raise_for_status = MagicMock()
-        good.json.return_value = _make_full_point_response()
-        mock = MagicMock(side_effect=[rejected, good])
+        with (
+            patch("apps.weather.services.weather_fetcher.requests.get", mock),
+            pytest.raises(requests.HTTPError),
+        ):
+            fetch_weather_for_point(point, datetime.date(2026, 5, 1), commit=True)
 
-        with patch("apps.weather.services.weather_fetcher.requests.get", mock):
-            results = fetch_weather_for_point(
-                point, datetime.date(2026, 5, 1), commit=True
-            )
+        assert mock.call_count == 1
 
-        assert mock.call_count == 2
-        assert "models" not in mock.call_args_list[1][1]["params"]
-        assert len(results) == POINT_FORECAST_DAYS
-
-    def test_http_500_is_not_swallowed_by_the_fallback(self) -> None:
-        """A real outage must still surface — only a 400 means out-of-domain.
-
-        Retrying every failure would turn a rate limit or an outage into
-        two requests and hide it from fetch_all_points' failed counter.
-        """
+    def test_http_500_propagates(self) -> None:
+        """A real outage still surfaces — no status is swallowed by a retry."""
         point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
 
         broken = MagicMock()
@@ -926,16 +846,15 @@ class TestIconChModelSelection:
 
         assert mock.call_count == 1
 
-    def test_out_of_domain_degraded_payload_is_not_retried(self) -> None:
-        """The fallback belongs to ICON-CH; the default chain gets no second go.
+    def test_degraded_day_zero_is_not_retried(self) -> None:
+        """A null day-0 weather_code stores the rest of the window, once.
 
-        A null day-0 weather_code from the default chain is not retried
-        against the same model that just produced it. Since SNOW-628 it is
-        no longer fatal either: the six days that did resolve are stored
-        and day 0 is logged, rather than the whole window being discarded
-        for the one day that failed.
+        There is no second model to ask, so the payload that arrived is
+        the payload that gets stored. Since SNOW-628 a dead day 0 is not
+        fatal either: the six days that did resolve are kept and day 0 is
+        logged, rather than the whole window being discarded for it.
         """
-        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
+        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
         target = datetime.date(2026, 5, 1)
         degraded = _make_full_point_response()
         degraded["daily"]["weather_code"][0] = None
@@ -1031,12 +950,17 @@ class TestHistoryIsOptIn:
 class TestTruncatedModelHorizon:
     """A model that runs short of the window stores what it resolved (SNOW-628).
 
-    ICON-CH2 covers ~5 days of the 7-day request. Its last days come back
-    with a null ``weather_code`` while ``sunrise``/``sunset`` — astronomical
-    rather than modelled — stay populated, which is what made this look
-    like a well-formed payload right up to the write. Against a non-null
-    column that raised, and SNOW-546's transaction then discarded the good
-    days with it, so every alpine point wrote nothing at all.
+    Any model can cover fewer days than the 7-day request. The days past
+    its horizon come back with a null ``weather_code`` while
+    ``sunrise``/``sunset`` — astronomical rather than modelled — stay
+    populated, which is what made this look like a well-formed payload
+    right up to the write. Against a non-null column that raised, and
+    SNOW-546's transaction then discarded the good days with it, so a
+    point whose model ran short wrote nothing at all.
+
+    This is a general guard on the shape of the payload, not on any one
+    provider: it long predates the model pin SNOW-699 removed and outlives
+    it unchanged.
     """
 
     @staticmethod
@@ -1126,32 +1050,6 @@ class TestTruncatedModelHorizon:
         assert counts["failed"] == 1
         assert counts["created"] == 0
         assert ForecastPointWeather.objects.count() == 0
-
-
-class TestIsAlpinePoint:
-    """Unit cases for the bounding-box predicate (no database needed)."""
-
-    def test_inside_the_box(self) -> None:
-        """A point well inside the box is in-domain."""
-        assert _is_alpine_point(46.1, 7.4) is True
-
-    def test_corners_are_inclusive(self) -> None:
-        """The bounds themselves count as in-domain."""
-        min_lat, max_lat, min_lon, max_lon = ICON_CH_BOUNDS
-        assert _is_alpine_point(min_lat, min_lon) is True
-        assert _is_alpine_point(max_lat, max_lon) is True
-
-    def test_outside_on_each_axis(self) -> None:
-        """A miss on either axis alone is enough to fall out of domain."""
-        min_lat, max_lat, min_lon, max_lon = ICON_CH_BOUNDS
-        assert _is_alpine_point(min_lat - 0.1, 7.4) is False
-        assert _is_alpine_point(max_lat + 0.1, 7.4) is False
-        assert _is_alpine_point(46.1, min_lon - 0.1) is False
-        assert _is_alpine_point(46.1, max_lon + 0.1) is False
-
-    def test_southern_hemisphere_is_out_of_domain(self) -> None:
-        """Coordinates are (lat, lon) — a swapped pair must not read as Alpine."""
-        assert _is_alpine_point(-41.3, 174.8) is False
 
 
 # ---------------------------------------------------------------------------

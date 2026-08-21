@@ -29,8 +29,8 @@ point**:
   blob — apparent temperature, precipitation, wind, UV, freezing level —
   because a favourited pin is a personal detail card, not an archive
   record. There is no archive/backfill equivalent (SNOW-416, SNOW-417):
-  Open-Meteo has no meaningful "what would ICON-CH have forecast for this
-  point three years ago" answer, and `ForecastPoint` rows themselves are
+  Open-Meteo has no meaningful "what would the forecast for this point
+  have been three years ago" answer, and `ForecastPoint` rows themselves are
   pruned once their last favourite/resort goes away
   (`docs/decisions/forecast-point-quantisation.md`), so old point-weather
   rows are routinely discarded rather than retained.

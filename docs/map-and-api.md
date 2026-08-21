@@ -268,7 +268,8 @@ merged into the same `weather` MapLibre source client-side from
 identically for both endpoints so the two can't drift.
 
 Point weather is forecast-only (`POINT_FORECAST_DAYS = 7` days from today,
-often fewer — ICON-CH2 commonly returns 5) and every date's data ships in
+sometimes fewer, when the backing model runs short of the request) and
+every date's data ships in
 one payload, so the client never re-fetches on a scrubbed date: it
 re-projects the already-fetched FeatureCollection in memory
 (`window.pwaWeatherCore.projectFeatureCollectionForDate`, `static/js/

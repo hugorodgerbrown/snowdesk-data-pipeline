@@ -349,7 +349,7 @@ class TestForecastWeatherGeojsonShortWindowTolerance:
     """A short forecast window and null extended fields are normal, not errors."""
 
     def test_short_window_of_five_rows(self) -> None:
-        """A point with only 5 stored rows (ICON-CH2's typical run length)."""
+        """A point with only 5 stored rows (a model that ran short)."""
         point = ForecastPointFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
         start = dt.date(2026, 8, 7)
