@@ -1,11 +1,30 @@
 ---
 name: icon-ch-domain-bounding-box
-description: ICON-CH point-forecast model selection is gated by a loose lat/lon bounding box, not a polygon, with a day-0 fallback to the default chain
-status: current
-last-reviewed: 2026-08-09
+description: Superseded by SNOW-699 — ICON-CH point-forecast model pin, its loose lat/lon bounding box and its day-0 fallback are all removed
+status: historical
+last-reviewed: 2026-08-21
 ---
 
 # ICON-CH selection is gated by a deliberately loose bounding box
+
+> **Superseded by SNOW-699 (2026-08-21).** The pin is gone: `ICON_CH_MODEL`,
+> `ICON_CH_BOUNDS`, `_is_alpine_point`, `_day_zero_is_degraded` and the
+> single-retry fallback have all been deleted, and `fetch_weather_for_point`
+> now sends no `models=` at all — the same policy `fetch_weather_for_region`
+> always followed.
+>
+> The premise below is the part that failed, not the reasoning built on it.
+> Open-Meteo's default is `auto` / `best_match`, which picks the
+> highest-resolution model available for the requested coordinates — not the
+> "blend picked for global coverage" this document assumes. Measured against
+> that roster the pin bought nothing over Switzerland, cost France its finer
+> AROME France HD run, and left days 5–6 null in every in-box point's
+> seven-day panel because ICON-CH2 runs only about five days.
+>
+> Kept as the record of a decision made carefully against a false premise.
+> Nothing here describes current behaviour. The successor policy — one model
+> policy across both weather paths — belongs to the wider weather-sourcing
+> decision rather than to a replacement for this file.
 
 **Decision.** `fetch_weather_for_point` requests
 `models=meteoswiss_icon_ch2` when a point falls inside

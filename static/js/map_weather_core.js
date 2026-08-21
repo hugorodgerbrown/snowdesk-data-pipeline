@@ -50,8 +50,8 @@
  *     every feature's `days` dict — the layer's forecast window.
  *   isDateInForecastWindow(dateKey, featureCollection)
  *     True when `dateKey` is a member of `forecastWindowDates`. Point
- *     weather is forecast-only and often runs short (ICON-CH2 commonly
- *     returns 5 of the requested 7 days) — the layers-menu row disables
+ *     weather is forecast-only and can run short (the backing model may
+ *     cover fewer than the requested 7 days) — the layers-menu row disables
  *     itself, with a reason, for any scrubber date outside this set rather
  *     than silently drawing nothing.
  *   iconFilenamesForPayload(featureCollection)

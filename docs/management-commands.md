@@ -971,9 +971,10 @@ returns the whole window; one `ForecastPointWeather` row per day is
 persisted. Each row's `freezing_level_height` is derived as the daily
 maximum of that day's hourly values (Open-Meteo has no daily freezing-level
 aggregate); `hourly_series` is populated for the first `POINT_HOURLY_DAYS`
-rows only, `None` beyond, to keep the JSON payload bounded. Ships on
-Open-Meteo's default blended model chain — no `models=` parameter
-(MeteoSwiss ICON-CH selection is deferred to a follow-up ticket). Points
+rows only, `None` beyond, to keep the JSON payload bounded. No `models=`
+parameter is sent, so Open-Meteo picks the highest-resolution model it has
+for the point's coordinates — the same policy the region pass follows
+(SNOW-699). Points
 are **forecast-only**: there is no archive/backfill path for them, and
 they do not participate in `--local-mirror` or `--stash` — both are
 skipped cleanly for the point pass regardless of the flag values. Pass
@@ -985,12 +986,12 @@ not one count per point.
 **Short model horizons are not failures (SNOW-628)** — a day whose
 `weather_code`, `sunrise` or `sunset` comes back null is dropped before the
 write loop opens its transaction, and the days that did resolve are stored.
-ICON-CH2 runs ~5 days into the 7-day window, so an alpine point stores ~5
-rows and a point on the default chain stores 7. This is the normal outcome
-and is not counted as `failed`. A payload where *no* day resolves is
-malformed rather than short, and still counts. Before this, one null day
-raised `NotNullViolation` inside the SNOW-546 transaction and rolled back
-the whole window — every alpine point wrote nothing at all.
+A model that covers fewer than seven days therefore stores fewer than seven
+rows. This is the normal outcome and is not counted as `failed`. A payload
+where *no* day resolves is malformed rather than short, and still counts.
+Before this, one null day raised `NotNullViolation` inside the SNOW-546
+transaction and rolled back the whole window — a point whose model ran
+short wrote nothing at all.
 
 **Forecast history (SNOW-575, opt-in since SNOW-629)** — with
 `--add-history`, each stored day of the point pass also writes a
