@@ -583,6 +583,7 @@ Read these when working in the relevant area:
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
 | Why the Open-Meteo domain is its own app (db_table pinning, ContentType move) | [`docs/decisions/weather-is-its-own-app.md`](docs/decisions/weather-is-its-own-app.md) |
+| Location is the primitive (Location model, ForecastPoint is a fetch cell, apps/locations/) | [`docs/decisions/location-is-the-primitive.md`](docs/decisions/location-is-the-primitive.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
