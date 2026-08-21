@@ -1,6 +1,6 @@
 ---
 name: worktrees
-description: init-worktree worktree seed strategy, dev credentials, seed_test_data dataset coverage, reseed procedure, dev shell-cache bypass toggle
+description: init-worktree seed recipe, sync_waffle_flags step, dev credentials, seed_test_data coverage, reseed procedure, shell-cache bypass toggle
 status: current
 last-reviewed: 2026-08-02
 ---
@@ -14,13 +14,22 @@ fully-configured worktree is a no-op.
 
 ## Seed recipe
 
-When `db.sqlite3` is absent the script runs three commands in order:
+When `db.sqlite3` is absent the script runs four commands in order:
 
 ```bash
 uv run python manage.py migrate --noinput
+uv run python manage.py sync_waffle_flags --commit
 uv run python manage.py loaddata eaws_CH resorts
 uv run python manage.py seed_test_data --all --commit
 ```
+
+The `sync_waffle_flags` step mirrors `bin/build.sh` and the Lighthouse
+workflow, and it is load-bearing rather than tidy-up: waffle charges three
+cold queries for a flag that has a DB row against one for a name it never
+finds, so a worktree missing the manifest flags measures every monitored
+page cheaper than any deployed environment and
+`manage.py monitor_query_counts` fails against a perfectly correct
+baseline. See [query-counts.md](query-counts.md).
 
 The dataset is built from the FactoryBoy factories in `tests/factories.py` by
 `seed_test_data` (the factory-based path that replaced the old
@@ -114,6 +123,14 @@ rm db.sqlite3 && bin/init-worktree
 Existing worktrees that were set up before SNOW-345 (when the script
 copied `db.sqlite3`) keep their copied DB until manually reseeded using
 the command above.
+
+Worktrees seeded before the `sync_waffle_flags` step was added have a DB
+whose flag rows predate the manifest, which fails `monitor_query_counts`
+with a spurious *reduction*. Reconcile one without a full reseed:
+
+```bash
+uv run python manage.py sync_waffle_flags --commit
+```
 
 ## Seeded dataset coverage
 
