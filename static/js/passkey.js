@@ -52,7 +52,7 @@
    * with mediation:"conditional".  The browser surfaces matching passkeys
    * inline inside the email input's autofill dropdown without a modal.
    *
-   * On success the user is redirected to /account/manage/.
+   * On success the user is redirected to the account hub, /account/.
    *
    * No-ops if the browser does not support conditional UI, if a conditional
    * ceremony is already pending, or if an explicit ceremony is in flight —
@@ -317,7 +317,7 @@
     }
 
     if (resp.ok && data.ok) {
-      window.location.href = '/account/manage/';
+      window.location.href = '/account/';
       return;
     }
 

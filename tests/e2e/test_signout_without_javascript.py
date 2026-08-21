@@ -14,7 +14,7 @@ from playwright.sync_api import Page, expect
 
 from tests.e2e.conftest import NoScriptPage
 
-MANAGE_URL_PATH = "/account/manage/"
+ACCOUNT_URL_PATH = "/account/"
 
 _MENU = "#subscriber-menu"
 _MENU_TOGGLE = "#subscriber-menu-toggle"
@@ -28,7 +28,7 @@ def _assert_signed_out(page: Page, live_server_url: str) -> None:
     because a stale render would still pass that — the session ending is
     the claim, and only the server can settle it.
     """
-    page.goto(live_server_url + MANAGE_URL_PATH)
+    page.goto(live_server_url + ACCOUNT_URL_PATH)
     page.wait_for_load_state("load")
     assert "sign-in" in page.url, (
         f"expected the manage page to redirect to sign-in after signing out; "
@@ -45,7 +45,7 @@ def test_sign_out_works_with_javascript_disabled(no_script_page: NoScriptPage) -
     sign-out form inside it.
     """
     page = no_script_page.page
-    page.goto(no_script_page.live_server_url + MANAGE_URL_PATH)
+    page.goto(no_script_page.live_server_url + ACCOUNT_URL_PATH)
     page.wait_for_load_state("load")
     assert "sign-in" not in page.url, "fixture failed to sign the user in"
 

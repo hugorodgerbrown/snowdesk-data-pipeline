@@ -114,5 +114,5 @@ class TestNavAuthArea:
         request = rf.get("/")
         request.user = regular_user
         html = render_to_string("includes/nav.html", {}, request=request)
-        assert reverse("accounts:manage") in html
+        assert reverse("accounts:hub") in html
         assert "My account" in html

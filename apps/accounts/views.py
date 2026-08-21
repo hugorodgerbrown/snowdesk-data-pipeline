@@ -33,7 +33,7 @@ Implements the subscription flow built around Django's TimestampSigner:
   account_view        GET/POST — account-access ("magic link") token. GET shows
                             a confirm button (no state change, no login); POST
                             verifies the Account, logs in via Django auth, and
-                            redirects to /account/manage/.
+                            redirects to /account/.
   manage_view         GET  — authenticated "your subscriptions" page.
                             Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
@@ -1333,7 +1333,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
     (SNOW-439).  Only the POST from that page acts: it marks the ``Account``
     verified (idempotent — re-submitting does not re-stamp ``verified_at``),
     then ``django.contrib.auth.login()`` establishes the session and redirects
-    to ``/account/manage/?just_confirmed=1``.
+    to ``/account/?just_confirmed=1``.
 
     On a bad, tampered, or expired token — or a token for an unknown user —
     renders ``link_expired.html`` (400) for both verbs.

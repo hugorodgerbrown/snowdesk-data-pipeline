@@ -67,6 +67,31 @@ any cache-avoidance here.
                     {% endcard %}
                 {% endif %}
 
+                {% comment %}
+                    Passkey nudge for a freshly-confirmed account with no
+                    passkey yet. Until SNOW-667 this was a registration card
+                    on the same page as the passkey controls; those now live
+                    on /account/settings/, and ``just_confirmed`` belongs to
+                    the hub, so the prompt stays here and links across rather
+                    than duplicating the registration button (which needs
+                    passkey.js loaded).
+                {% endcomment %}
+                {% if just_confirmed and not request.user.passkeys.exists %}
+                    {% card padding="px-5 py-4" extra="mb-6" %}
+                    <div id="passkey-prompt">
+                        <p class="text-sm text-text-1 font-medium mb-1">
+                            {% trans "Sign in faster with a passkey" %}
+                        </p>
+                        <p class="text-sm text-text-2 mb-3 leading-relaxed">
+                            {% trans "Save a passkey for this device and you won't need a magic link next time." %}
+                        </p>
+                        {% trans "Save a passkey for this device" as label %}
+                        {% url 'accounts:settings' as settings_href %}
+                        {% include "includes/_button.html" with label=label href=settings_href variant="primary" size="compact" %}
+                    </div>
+                    {% endcard %}
+                {% endif %}
+
                 {# Page heading — singular/plural based on subscription count #}
                 <h1 class="text-2xl font-semibold text-text-1 mb-6">
                     {% blocktrans count count=subscriptions|length trimmed %}

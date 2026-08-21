@@ -378,7 +378,7 @@ describe('_networkFirst principal partitioning (C1)', () => {
     });
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/account/manage/'));
+    await sw._networkFirst(navRequest('/account/'));
     await flush();
 
     expect(caches.size('snowdesk-shell-UNSUBSTITUTED')).toBe(0);
@@ -389,17 +389,17 @@ describe('_networkFirst principal partitioning (C1)', () => {
     const online = basicResponse(pageHtml('acct-uuid-a', 'account dashboard'));
     const sw = loadSw({ caches, fetch: () => Promise.resolve(online) });
 
-    await sw._networkFirst(navRequest('/account/manage/'));
+    await sw._networkFirst(navRequest('/account/'));
     await flush();
 
     const cache = await caches.open('snowdesk-shell-UNSUBSTITUTED');
-    const stored = await cache.match(navRequest('/account/manage/'));
+    const stored = await cache.match(navRequest('/account/'));
     expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-uuid-a');
   });
 
   it('refuses a cached page rendered for a different principal', async () => {
     const caches = makeCaches();
-    const request = navRequest('/account/manage/');
+    const request = navRequest('/account/');
     let online = basicResponse(pageHtml('acct-uuid-a', 'a@example.com'));
     const sw = loadSw({
       caches,
@@ -430,7 +430,7 @@ describe('_networkFirst principal partitioning (C1)', () => {
 
   it('serves a cached page back to the principal it was rendered for', async () => {
     const caches = makeCaches();
-    const request = navRequest('/account/manage/');
+    const request = navRequest('/account/');
     let online = basicResponse(pageHtml('acct-uuid-a', 'a@example.com'));
     const sw = loadSw({
       caches,
@@ -483,12 +483,12 @@ describe('_networkFirst principal partitioning (C1)', () => {
       new Response("<h1>This page isn't available offline</h1>"),
     );
 
-    await sw._networkFirst(navRequest('/account/manage/'));
+    await sw._networkFirst(navRequest('/account/'));
     await flush();
     await setStoredPrincipal(null);
     online = null;
 
-    const offline = await sw._networkFirst(navRequest('/account/manage/?tab=passkeys'));
+    const offline = await sw._networkFirst(navRequest('/account/?tab=passkeys'));
     const body = await offline.text();
     expect(body).not.toContain('a@example.com');
     expect(body).toContain("This page isn't available offline");

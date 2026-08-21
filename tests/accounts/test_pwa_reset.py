@@ -2,8 +2,10 @@
 Server-side tests for the SNOW-378 "Reset local data" escape hatch.
 
 The JS half is exercised by Playwright in a later ticket; this file
-verifies the manage page carries the trigger, the script is loaded on
+verifies the settings page carries the trigger, the script is loaded on
 the same page, and the copy is present.
+
+SNOW-667 moved the control from /account/manage/ to /account/settings/.
 """
 
 from __future__ import annotations
@@ -15,13 +17,13 @@ from tests.factories import AccountFactory
 
 
 @pytest.mark.django_db
-def test_manage_page_has_reset_trigger() -> None:
-    """The manage page ships the ``data-pwa-reset-trigger`` button."""
+def test_settings_page_has_reset_trigger() -> None:
+    """The settings page ships the ``data-pwa-reset-trigger`` button."""
     account = AccountFactory.create()
     client = Client()
     client.force_login(account.user)
 
-    response = client.get("/account/manage/")
+    response = client.get("/account/settings/")
     body = response.content.decode("utf-8")
 
     assert response.status_code == 200
@@ -30,26 +32,26 @@ def test_manage_page_has_reset_trigger() -> None:
 
 
 @pytest.mark.django_db
-def test_manage_page_loads_pwa_reset_script() -> None:
-    """The manage page loads ``pwa_reset.js`` alongside its passkey script."""
+def test_settings_page_loads_pwa_reset_script() -> None:
+    """The settings page loads ``pwa_reset.js`` alongside its passkey script."""
     account = AccountFactory.create()
     client = Client()
     client.force_login(account.user)
 
-    response = client.get("/account/manage/")
+    response = client.get("/account/settings/")
     body = response.content.decode("utf-8")
 
     assert "pwa_reset.js" in body
 
 
 @pytest.mark.django_db
-def test_manage_page_has_reset_helper_copy() -> None:
+def test_settings_page_has_reset_helper_copy() -> None:
     """The helper line explains what is and is not affected."""
     account = AccountFactory.create()
     client = Client()
     client.force_login(account.user)
 
-    response = client.get("/account/manage/")
+    response = client.get("/account/settings/")
     body = response.content.decode("utf-8")
 
     # Copy is spread across template line breaks + blocktrans whitespace

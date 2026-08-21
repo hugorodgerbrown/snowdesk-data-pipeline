@@ -18,6 +18,6 @@ Expected context variables:
     {% endblocktrans %}
 </h2>
 <p class="text-sm text-text-2 leading-relaxed">
-    <a href="/account/manage/" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
+    <a href="{% url 'accounts:hub' %}" class="underline text-text-1">{% trans "Manage your subscriptions" %}</a>
 </p>
 {% endcard %}

@@ -1053,6 +1053,68 @@ COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# SNOW-667: the account-area sub-nav. Groups are data, not markup, so the
+# fixture exercises both the single-group shape it ships with and the
+# multi-entry shape SNOW-668/677 will produce.
+ACCOUNT_SUBNAV_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "As shipped — one entry per group",
+        "context": {
+            "subnav_groups": [
+                {
+                    "label": "Your data",
+                    "entries": [
+                        {"label": "Overview", "url": "/account/", "current": True}
+                    ],
+                },
+                {
+                    "label": "Settings",
+                    "entries": [
+                        {
+                            "label": "Settings",
+                            "url": "/account/settings/",
+                            "current": False,
+                        }
+                    ],
+                },
+            ]
+        },
+    },
+    {
+        "caption": "Once SNOW-668/677 land — multiple entries per group",
+        "context": {
+            "subnav_groups": [
+                {
+                    "label": "Your data",
+                    "entries": [
+                        {"label": "Overview", "url": "/account/", "current": False},
+                        {
+                            "label": "Places",
+                            "url": "/account/places/",
+                            "current": True,
+                        },
+                        {
+                            "label": "Observations",
+                            "url": "/account/observations/",
+                            "current": False,
+                        },
+                    ],
+                },
+                {
+                    "label": "Settings",
+                    "entries": [
+                        {
+                            "label": "Settings",
+                            "url": "/account/settings/",
+                            "current": False,
+                        }
+                    ],
+                },
+            ]
+        },
+    },
+)
+
 EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Bulletin section heading", "context": {"text": "Day Risk Profile"}},
     {"caption": "Bulletin section heading", "context": {"text": "Avalanche Problems"}},

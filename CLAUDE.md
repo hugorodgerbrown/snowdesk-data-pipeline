@@ -19,7 +19,7 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the ten Django apps (SNOW-557 — moved
+apps/            Parent package for the eleven Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
@@ -51,6 +51,8 @@ apps/            Parent package for the ten Django apps (SNOW-557 — moved
                  relevance scoring, and the HTMX partials under /favourites/
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
+  routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
+                 (FK to auth.User), surfaced in the flag-gated routes panel
   analytics/     PostHog wiring and the /api/telemetry receiver (see
                  docs/telemetry-pipeline.md). NOTE: signals.py here means
                  *telemetry* signals, not django.db.models.signals — it does

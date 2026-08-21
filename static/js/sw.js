@@ -143,7 +143,7 @@
  * The shell cache is the one persistent store in the PWA that held page
  * HTML with no record of who it was rendered for, so an offline
  * navigation after a sign-out replayed the previous user's
- * ``/account/manage/`` page. ``_networkFirst`` now refuses to cache a
+ * ``/account/`` hub page. ``_networkFirst`` now refuses to cache a
  * ``Cache-Control: no-store`` response at all, and stamps every other
  * navigation with ``X-SW-Principal`` — the account its HTML was rendered
  * for, read from the response's own ``<meta name="pwa-user-id">``. The
@@ -1575,7 +1575,7 @@ async function _basemapStaleWhileRevalidate(request) {
 // ``_networkFirst`` used to write every 2xx same-origin navigation into the
 // shell cache with nothing recording who it was rendered for. Sign-out
 // purges neither the cache nor the session's trace in it, so the next
-// offline navigation to ``/account/manage/`` replayed the previous user's
+// offline navigation to the ``/account/`` hub replayed the previous user's
 // rendered page — their email address included. ``Vary: Cookie`` cannot
 // help: ``Cookie`` is a forbidden header name, invisible to the Cache
 // API's Vary comparison, so the match succeeds whoever is signed in.

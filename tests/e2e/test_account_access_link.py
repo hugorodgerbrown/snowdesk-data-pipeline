@@ -9,6 +9,7 @@ Scenario: 10
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from playwright.sync_api import Page
@@ -50,7 +51,9 @@ def test_access_link_lands_on_confirm_then_post_signs_in(
         assert not before.is_verified
 
     page.click("button[type='submit']")
-    page.wait_for_url(f"{live_server.url}/account/manage/**")
+    # SNOW-667: lands on the hub. Anchored — a "/account/**" glob would also
+    # match /account/access/<token>/, where we already are.
+    page.wait_for_url(re.compile(r"/account/(\?.*)?$"))
 
     with django_db_blocker.unblock():
         after = Account.objects.get(pk=account.pk)
