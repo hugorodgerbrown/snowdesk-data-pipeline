@@ -13,8 +13,16 @@
 #                    every worktree has the same data as CI; avoids drift that
 #                    breaks the SNOW-13 query-count baseline). Recipe:
 #                      1. migrate --noinput
-#                      2. loaddata eaws_CH resorts
-#                      3. seed_test_data --all --commit  (includes dev users)
+#                      2. sync_waffle_flags --commit
+#                      3. loaddata eaws_CH resorts
+#                      4. seed_test_data --all --commit  (includes dev users)
+#                    Step 2 mirrors bin/build.sh and lighthouse.yml, and is
+#                    load-bearing: waffle charges three cold queries for a
+#                    flag that has a DB row against one for a name it never
+#                    finds, so a manifest flag missing here makes every
+#                    monitored page measure cheaper than any deployed one
+#                    and monitor_query_counts fails against a correct
+#                    baseline. See docs/query-counts.md.
 #                    See docs/worktrees.md for credentials and reseed steps.
 #   - output.css   → compiled from src/css/main.css with the Tailwind CLI
 #                    (gitignored build artifact, not shared across worktrees).
@@ -76,8 +84,9 @@ seed_db_if_missing() {
     if [ -e "db.sqlite3" ]; then
         return
     fi
-    echo "init-worktree: seeding db.sqlite3 (migrate + region fixtures + seed_test_data)"
+    echo "init-worktree: seeding db.sqlite3 (migrate + waffle flags + region fixtures + seed_test_data)"
     uv run python manage.py migrate --noinput
+    uv run python manage.py sync_waffle_flags --commit
     uv run python manage.py loaddata eaws_CH resorts
     uv run python manage.py seed_test_data --all --commit
     echo "init-worktree: db.sqlite3 seeded"

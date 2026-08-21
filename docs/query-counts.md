@@ -2,7 +2,7 @@
 name: query-counts
 description: Query-count monitoring — monitor_query_counts baseline in perf/query_counts.txt and the X-DB-Query-Count header
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-21
 ---
 
 # Query-count monitoring (SNOW-13)
@@ -66,3 +66,33 @@ moved it to 11: not a regression, just the first honest measurement.
 
 Keep the CI database's flag state reconciled to the manifest, and
 regenerate baselines against a database built the same way.
+
+### This applies to your local database too
+
+The same rule binds the local pre-push gate, which runs against the
+worktree's `db.sqlite3` rather than a CI-built one. `bin/init-worktree`
+seeds that DB and — since this was first hit on `main` at 7771540 —
+runs `sync_waffle_flags --commit` alongside `migrate`, exactly as
+`bin/build.sh` does.
+
+A worktree seeded before that step existed still holds pre-manifest flag
+rows, and the symptom is distinctive: **the gate fails with a reduction,
+not a regression.** Three manifest flags absent locally
+(`routes`, `slope_layer`, `weather_layer`) took `home` from 12 to 8 —
+`routes` and `weather_layer` are `superusers` flags costing 3 queries
+present against 1 absent, while `slope_layer` is `everyone: true` and
+short-circuits to a single query either way, so the arithmetic is
+-2 -2 -0 = -4.
+
+A drop that size looks like someone's prefetch landing, which is why it
+is worth stating the rule plainly: **do not `--commit` a baseline to
+resolve a reduction you cannot attribute to a specific merged change.**
+Committing `home 8` here would have replaced a correct baseline with a
+number no environment produces, and turned a local-only failure into a
+CI failure for everyone. Reconcile the database first:
+
+```bash
+uv run python manage.py sync_waffle_flags --commit
+```
+
+then re-run the monitor and see whether a delta survives.
