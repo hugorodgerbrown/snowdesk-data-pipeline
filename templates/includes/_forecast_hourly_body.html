@@ -8,6 +8,13 @@ _collapsible_panel.html's body wrapper for the near-term forecast days
 context — ``hourly`` is a list of dicts with keys time/temperature_2m/
 snowfall/precipitation/wind_speed_10m/wind_gusts_10m/freezing_level_height,
 copied from ForecastPointWeather.hourly_series.
+
+SNOW-695 added the gusts, precipitation and freezing-level columns. All
+three keys were already on every row — the template was the only thing
+dropping them. Each renders an em-dash when its key is null, so a row
+short of one value keeps the other columns aligned; snowfall keeps its
+older blank-on-zero treatment rather than gaining an em-dash, so existing
+rendered output for that column is unchanged.
 {% endcomment %}
 <ul class="divide-y divide-border text-sm" data-testid="{{ testid_prefix|default:'favourite-forecast' }}-hourly-list">
     {% for hour in hourly %}
@@ -23,6 +30,27 @@ copied from ForecastPointWeather.hourly_series.
             <span class="text-text-3 w-16 text-right">
                 {% if hour.wind_speed_10m is not None %}{{ hour.wind_speed_10m|floatformat:0 }}
                     km/h{% else %}&mdash;{% endif %}
+            </span>
+            <span
+                class="text-text-3 w-16 text-right"
+                data-testid="{{ testid_prefix|default:'favourite-forecast' }}-hourly-gusts"
+            >
+                {% if hour.wind_gusts_10m is not None %}{{ hour.wind_gusts_10m|floatformat:0 }}
+                    km/h{% else %}&mdash;{% endif %}
+            </span>
+            <span
+                class="text-text-3 w-14 text-right"
+                data-testid="{{ testid_prefix|default:'favourite-forecast' }}-hourly-precipitation"
+            >
+                {% if hour.precipitation is not None %}{{ hour.precipitation|floatformat:1 }}
+                    mm{% else %}&mdash;{% endif %}
+            </span>
+            <span
+                class="text-text-3 w-16 text-right"
+                data-testid="{{ testid_prefix|default:'favourite-forecast' }}-hourly-freezing-level"
+            >
+                {% if hour.freezing_level_height is not None %}{{ hour.freezing_level_height|floatformat:0 }}
+                    m{% else %}&mdash;{% endif %}
             </span>
             <span class="text-text-3 w-14 text-right">
                 {% if hour.snowfall %}{{ hour.snowfall|floatformat:1 }} cm{% endif %}

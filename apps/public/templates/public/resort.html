@@ -12,7 +12,10 @@ Sections, top to bottom:
   1. Resort name (+ alternative/marketing name, when set), canton, and
      parent region name, then the curated "why it matters" line (SNOW-542)
      via the shared ``public/partials/_resort_why_it_matters.html`` partial,
-     which owns its own blank state.
+     which owns its own blank state, then the curated facts block
+     (SNOW-695) via ``public/partials/_resort_facts.html`` — operator,
+     website, lifts, runs, piste, elevation range, season and notes, each
+     cell omitted when unset and the whole block omitted when all are.
   2. Today's danger chip — reuses the ``.danger-tile`` component from
      ``_region_tooltip.html`` — alongside a "View bulletin →" link to the
      parent region's evergreen bulletin page.
@@ -118,6 +121,9 @@ Context expected (built by ``apps.public.views.resort_detail``):
             </p>
             <div class="mt-2">
                 {% include "public/partials/_resort_why_it_matters.html" %}
+            </div>
+            <div class="mt-4">
+                {% include "public/partials/_resort_facts.html" %}
             </div>
         </div>
 

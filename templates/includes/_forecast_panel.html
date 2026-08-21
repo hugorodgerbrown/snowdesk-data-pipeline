@@ -18,8 +18,8 @@ system rule 1 is reuse-then-extract. Two consumers today:
 Two parts:
 
   1. Compact day strip — one column per forecast day: weekday label,
-     weather icon, hi/lo temperature, and a snowfall chip when the day's
-     ``snowfall_sum`` is non-zero.
+     weather icon, hi/lo temperature, the day's freezing level, and a
+     snowfall chip when the day's ``snowfall_sum`` is non-zero.
   2. Expandable hourly detail — one ``_collapsible_panel.html`` per
      near-term day (``day.hourly`` non-empty), listing that day's hourly
      series via ``_forecast_hourly_body.html``.
@@ -51,6 +51,23 @@ Context:
                         class="text-text-3"
                     >/{% if day.temp_min is not None %}{{ day.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
                 </span>
+                {# Freezing level (SNOW-695) — derived as the day's hourly maximum  #}
+                {# by build_point_forecast_panel and persisted since SNOW-417, but      #}
+                {# rendered nowhere until now. `is not None` rather than a truthiness   #}
+                {# test, matching _weather_panel.html's snowfall group: a freezing      #}
+                {# level of 0 m means freezing at valley floor, which is a statement    #}
+                {# worth showing, not a blank to hide.                                  #}
+                {% if day.freezing_level_height is not None %}
+                    <span
+                        class="text-xs text-text-3 whitespace-nowrap"
+                        data-testid="{{ testid_prefix|default:'favourite-forecast' }}-freezing-level"
+                    >
+                        <span class="sr-only">{% trans "Freezing level" %}</span>
+                        {% blocktrans with m=day.freezing_level_height|floatformat:0 trimmed %}
+                            {{ m }} m
+                        {% endblocktrans %}
+                    </span>
+                {% endif %}
                 {% if day.snowfall_sum %}
                     {% blocktrans with cm=day.snowfall_sum|floatformat:0 trimmed asvar snowfall_chip_text %}
                         {{ cm }} cm

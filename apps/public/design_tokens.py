@@ -54,6 +54,7 @@ from apps.public._component_fixtures import (
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
+    RESORT_FACTS_VARIANTS,
     RESORT_META_ROW_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
@@ -1130,6 +1131,24 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_resort_meta_row.html",
         variants=RESORT_META_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-facts",
+        label="Resort facts block",
+        description=(
+            "The curated Resort columns the detail page stores but never "
+            "rendered before SNOW-695 — operator, website, lifts, runs, "
+            "piste, elevation range, typical season and notes. Unlike the "
+            "resort-popup meta row, which keeps a dashed placeholder so "
+            "missing curation stays visible to staff, this block omits an "
+            "unset cell entirely and omits the whole container when every "
+            "field is unset. Elevation and season each compose two nullable "
+            "columns and degrade to a one-sided from/to reading."
+        ),
+        kind="components",
+        partial="public/partials/_resort_facts.html",
+        variants=RESORT_FACTS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
