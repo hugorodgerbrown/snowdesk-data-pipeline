@@ -1,13 +1,29 @@
 ---
 name: location-first-information-model
-description: Accepted Map → Region → Location drill-down, bulletin-as-provenance, weather sourcing split, and elevation-range relevance primitive
-status: current
+description: Historical — Map → Region → Location tiers and weather sourcing; NamedLocation split withdrawn, superseded by location-is-the-primitive
+status: historical
 last-reviewed: 2026-08-21
 ---
 
 # Location-first information model
 
-**Accepted 2026-08-21.** The tier boundaries were the product call this
+**Superseded by [`location-is-the-primitive`](location-is-the-primitive.md).**
+Sections 4 and 5 below — `NamedLocation` as a curated table beside an
+anonymous `ForecastPoint`, and identity opt-in — invert the model: they make
+a place point at a weather row, when the weather is *for* the place. Their
+stated justification, that an anonymous cell serves a public resort and a
+private pin "without leaking either", is not a property of this system —
+`Favourite` stores the exact pin, and
+[`forecast-point-quantisation`](forecast-point-quantisation.md) gives the
+cell's rationale as fetch cost and forecast resolution, never privacy.
+
+Sections 1–3 — the three tiers, the weather-sourcing split, and *a location
+is a point; a resort has several* — are correct and are carried forward into
+the superseding file.
+
+---
+
+**Original decision, accepted 2026-08-21.** The tier boundaries were the product call this
 needed, and they are now settled: Location is the working surface, Region is
 the indexed one, and the bulletin document sits beside them as provenance.
 
