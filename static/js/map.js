@@ -4749,9 +4749,10 @@
     // on top of one still wins the tap; the route only claims taps nothing
     // else wanted. It is still in the set rather than out of it, because a
     // tap on a track has to open that track rather than select the region
-    // the track happens to cross. The casing is deliberately absent: it is
-    // wider than the line, so including it would make the tappable area
-    // larger than the thing the user can see.
+    // the track happens to cross. The casing is deliberately absent: the
+    // line's tap tolerance is set explicitly by ROUTE_TAP_SLOP_PX below,
+    // and querying a second, wider layer as well would make that tolerance
+    // whatever the casing's width happened to be.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
@@ -4759,25 +4760,67 @@
       'routes-line',
     ];
 
+    // The route line's tap tolerance, in pixels either side of the touch.
+    //
+    // A pin is a glyph roughly 18px across, so an exact-point hit test lands
+    // on it and "the tappable area matches what the user sees" is a true
+    // description. A route line is 1.5px wide at z6 and 4px at z12 (see
+    // installRoutesLayer's line-width interpolation), and an exact-point
+    // test against a 1.5px line is a target no finger can hit — so the tap
+    // fell through to regions-fill and SELECTED THE REGION instead, which
+    // is what the route tap did in practice for its whole life.
+    //
+    // 8px is about a third of a fingertip and well inside the gap between
+    // two markers, so it makes the line reachable without letting it
+    // reach across to steal taps that were aimed at something else.
+    const ROUTE_TAP_SLOP_PX = 8;
+
+    /** The one exclusion layer that is a line rather than a point. */
+    const ROUTE_LINE_LAYER = 'routes-line';
+
     // Return the highest-priority marker whose rendered glyph is under the tap
-    // point, or null. Uses an exact-point queryRenderedFeatures — the same
-    // hit-test that drives the pointer cursor — so the tappable area matches
-    // what the user sees. Filters to layers actually present because these
+    // point, or null. Filters to layers actually present because these
     // overlays are lazy-installed and queryRenderedFeatures throws on an
     // unknown layer id.
+    //
+    // TWO HIT TESTS, not one, because the layers are two different shapes.
+    // The point layers keep the exact-point query — the same hit-test that
+    // drives the pointer cursor, so a pin's tappable area is exactly its
+    // glyph. The route line gets a slop box, for the reason on
+    // ROUTE_TAP_SLOP_PX above.
+    //
+    // The pins are queried FIRST and win outright, which preserves the
+    // priority order the array encodes: a favourite star or a report flag
+    // sitting on a route still takes the tap, and the wider box can never
+    // let the line outrank one. A route only claims taps nothing else
+    // wanted — it is just now able to claim them at all.
     const markerUnderPoint = (point) => {
       const layers = MARKER_EXCLUSION_LAYERS.filter((id) => map.getLayer(id));
       if (!layers.length) return null;
-      let best = null;
-      let bestPriority = Infinity;
-      for (const f of map.queryRenderedFeatures(point, { layers })) {
-        const priority = MARKER_EXCLUSION_LAYERS.indexOf(f.layer.id);
-        if (priority < bestPriority) {
-          best = f;
-          bestPriority = priority;
+
+      const pointLayers = layers.filter((id) => id !== ROUTE_LINE_LAYER);
+      if (pointLayers.length) {
+        let best = null;
+        let bestPriority = Infinity;
+        for (const f of map.queryRenderedFeatures(point, { layers: pointLayers })) {
+          const priority = MARKER_EXCLUSION_LAYERS.indexOf(f.layer.id);
+          if (priority < bestPriority) {
+            best = f;
+            bestPriority = priority;
+          }
         }
+        if (best) return best;
       }
-      return best;
+
+      if (!layers.includes(ROUTE_LINE_LAYER)) return null;
+      const slop = ROUTE_TAP_SLOP_PX;
+      const box = [
+        [point.x - slop, point.y - slop],
+        [point.x + slop, point.y + slop],
+      ];
+      // Topmost first, which for overlapping routes is the one drawn last —
+      // the same one the user sees on top at the point they touched.
+      return map.queryRenderedFeatures(box, { layers: [ROUTE_LINE_LAYER] })[0] || null;
     };
 
     // SNOW-419: tapping a cluster zooms in just far enough to break it apart
@@ -4933,6 +4976,66 @@
       }
     };
 
+    /**
+     * Draw the route's elevation profile into its popup, if it has one.
+     *
+     * The chart is a picture of the SAME data the figures above it state:
+     * every route coordinate carries its elevation as a third ordinate
+     * (RFC 7946 allows it, MapLibre ignores it), straight from the GPX's
+     * own `<ele>`. Nothing is fetched, so this works offline exactly as
+     * the rest of the popup does.
+     *
+     * THE GEOMETRY COMES FROM THE CACHE, NOT FROM THE TAPPED FEATURE, and
+     * that is the whole reason this takes a uuid rather than the feature
+     * it is called beside. A click feature is whatever
+     * `queryRenderedFeatures` returned, which is the TILE's copy of the
+     * line: clipped at tile boundaries — a long route comes back as just
+     * the piece the tap landed in — and simplified for the current zoom.
+     * Drawing from it would give a profile of part of the route, or of a
+     * coarser one, varying with where the user tapped and how far out
+     * they were zoomed. `routesGeojsonCache` holds the whole line as the
+     * server sent it, already in memory, and never varies.
+     *
+     * Silently draws nothing when the track has no elevation at all — a
+     * GPX with no `<ele>` means "unknown", and an empty flat line at zero
+     * would be the same lie the omitted ascent figure exists to avoid.
+     *
+     * @param {HTMLElement} container The popup body being built.
+     * @param {string} uuid The route's uuid, from the feature properties.
+     */
+    const appendElevationProfile = (container, uuid) => {
+      const core = self.pwaElevationProfileCore;
+      if (!core || !uuid || !routesGeojsonCache) return;
+
+      const features = routesGeojsonCache.features || [];
+      const cached = features.find(
+        (f) => f && f.properties && f.properties.uuid === uuid,
+      );
+      const coordinates = cached && cached.geometry && cached.geometry.coordinates;
+      if (!Array.isArray(coordinates)) return;
+
+      const profile = core.readProfile(coordinates);
+      const svg = core.createProfileSvg(profile, {
+        label: MAP_STRINGS['route-profile-label'],
+      });
+      if (!svg) return;
+      container.appendChild(svg);
+
+      // The chart's y-axis is scaled to this track's own highest and
+      // lowest point, so the curve's height means nothing without the
+      // pair that bounds it. Caption, not decoration.
+      const range = document.createElement('div');
+      range.className = 'text-xs text-text-3';
+      range.textContent = self.pwaStrings.interpolate(
+        MAP_STRINGS['route-elevation-range'],
+        {
+          low: String(Math.round(profile.minEle)),
+          high: String(Math.round(profile.maxEle)),
+        },
+      );
+      container.appendChild(range);
+    };
+
     // SNOW-687: tapping a saved route frames the whole track and opens its
     // detail. Two halves, and the order matters: the fit runs first and the
     // popup anchors to the tap point, which MapLibre keeps pinned to its
@@ -4945,10 +5048,17 @@
     // somewhere the user did not touch, possibly off screen.
     //
     // The body is the panel row's own two lines, in the panel's own order
-    // and format ("12.4 km · 850 m ascent"), for the reason
-    // activateCommunityReport gives above: one route should read the same
-    // whichever surface it is reached from. Built with createElement, never
-    // innerHTML — the name is user-supplied.
+    // and format ("12.4 km · 850 m ascent · 1100 m descent"), for the
+    // reason activateCommunityReport gives above: one route should read the
+    // same whichever surface it is reached from. Built with createElement,
+    // never innerHTML — the name is user-supplied.
+    //
+    // The popup then adds what the panel row cannot: the elevation profile
+    // itself. The row is includes/_ugc_panel_row.html, whose five-slot
+    // anatomy is shared with favourites, observations and downloads — a
+    // chart inside it would be a shape only one of the four panels has. The
+    // popup is already this route's detail surface, so the picture goes
+    // where the tap goes. See appendElevationProfile just above.
     const activateRoute = (feature, lngLat) => {
       const props = feature.properties || {};
 
@@ -4989,12 +5099,24 @@
           m: String(Math.round(props.ascent_m)),
         }));
       }
+      // Descent gets the same null test and for the same reason. It sits
+      // beside the ascent rather than replacing it: the two are not each
+      // other's mirror (an out-and-back climbs and drops the same height,
+      // a traverse does not), and they are never netted — see
+      // Route.descent_m.
+      if (props.descent_m != null) {
+        parts.push(self.pwaStrings.interpolate(MAP_STRINGS['route-descent'], {
+          m: String(Math.round(props.descent_m)),
+        }));
+      }
       if (parts.length) {
         const meta = document.createElement('div');
         meta.className = 'mt-0.5 text-xs text-text-2';
         meta.textContent = parts.join(' · ');
         container.appendChild(meta);
       }
+
+      appendElevationProfile(container, props.uuid);
 
       // The already-registered 'map-detail-popup' exclusivity member, so a
       // route tap closes every other map overlay and needs no registration

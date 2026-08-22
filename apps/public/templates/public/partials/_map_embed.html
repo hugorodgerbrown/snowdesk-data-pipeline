@@ -1697,16 +1697,25 @@ Optional context:
     {# showing even when the honest answer is "none yet" — a blank         #}
     {# choropleth with no cue is the bug that ticket fixed.                 #}
     <span data-string="map-date-none">{% trans "No date selected" %}</span>
-    {# SNOW-687: the route detail popup's two figures (map.js's             #}
-    {# activateRoute), plus the last-resort label for a route with no name. #}
-    {# Two strings and not one templated line, because the ascent is        #}
-    {# OMITTED ENTIRELY when Route.ascent_m is null — a GPX with no <ele>   #}
-    {# means "unknown", not "flat", and rendering the second for the first  #}
-    {# would be a safety-relevant lie. The wording and the " · " join match #}
+    {# SNOW-687: the route detail popup's figures (map.js's activateRoute), #}
+    {# plus the last-resort label for a route with no name. Separate        #}
+    {# strings and not one templated line, because each figure is OMITTED   #}
+    {# ENTIRELY when its Route field is null — a GPX with no <ele> means    #}
+    {# "unknown", not "flat", and rendering the second for the first would  #}
+    {# be a safety-relevant lie. The wording and the " · " join match       #}
     {# routes/partials/_route_row_map.html exactly, so one route reads the  #}
     {# same in the panel and in the popup.                                  #}
     <span data-string="route-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
     <span data-string="route-ascent">{% blocktrans %}%(m)s m ascent{% endblocktrans %}</span>
+    <span data-string="route-descent">{% blocktrans %}%(m)s m descent{% endblocktrans %}</span>
+    {# The elevation profile chart's accessible name, and the range caption #}
+    {# printed under it. The caption carries the chart's meaning rather     #}
+    {# than decorating it: the curve is scaled to the track's OWN highest   #}
+    {# and lowest point (static/js/elevation_profile_core.js), so its       #}
+    {# height says nothing without the two numbers that bound it. The en    #}
+    {# dash is the range dash, not a hyphen.                                #}
+    <span data-string="route-profile-label">{% trans "Elevation profile of this route" %}</span>
+    <span data-string="route-elevation-range">{% blocktrans %}%(low)s–%(high)s m{% endblocktrans %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
     {# SNOW-691: the Terrain row's one disable reason (title attribute), set  #}
     {# by updateSlopeRowAvailability in map.js when the viewport centre       #}

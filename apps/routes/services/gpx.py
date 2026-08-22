@@ -21,9 +21,10 @@ What the parser accepts, and why:
 * **The first track wins** when a file holds several. The caller is told
   how many were present (``track_count``) so the response can say which
   one it took rather than silently dropping the rest.
-* **Missing ``<ele>`` leaves ``ascent_m`` as ``None``.** Reporting zero
-  ascent for a file that simply never recorded elevation would state a
-  fact we do not have.
+* **Missing ``<ele>`` leaves ``ascent_m`` and ``descent_m`` as ``None``.**
+  Reporting zero climb for a file that simply never recorded elevation
+  would state a fact we do not have. The two figures are always known or
+  unknown together — they are read off the same series.
 
 Parsing goes through ``defusedxml.ElementTree`` rather than the stdlib
 parser — the same choice, for the same reason, as the Météo-France DPBRA
@@ -100,6 +101,9 @@ class ParsedRoute:
         distance_m: Great-circle length of the **full-resolution** track.
         ascent_m: Total positive elevation gain over the full-resolution
             track, or ``None`` when the file carried no elevation at all.
+        descent_m: Total elevation loss over the full-resolution track, as
+            a positive magnitude, or ``None`` on the same condition —
+            the two are always known or unknown together.
         point_count: ``len(points)`` — what is stored, not what was read.
         bounds: GeoJSON bbox over ``points``:
             ``[min_lon, min_lat, max_lon, max_lat]``.
@@ -115,6 +119,7 @@ class ParsedRoute:
     points: list[list[float | None]]
     distance_m: float
     ascent_m: float | None
+    descent_m: float | None
     point_count: int
     bounds: list[float]
     track_count: int
@@ -308,34 +313,50 @@ def _total_distance_m(points: list[tuple[float, float, float | None]]) -> float:
     )
 
 
-def _total_ascent_m(points: list[tuple[float, float, float | None]]) -> float | None:
-    """Return total positive elevation gain in metres, or None if unknown.
+def _total_ascent_descent_m(
+    points: list[tuple[float, float, float | None]],
+) -> tuple[float | None, float | None]:
+    """Return total climb and total drop in metres, or ``(None, None)``.
 
     Only consecutive pairs where **both** points carry an elevation
     contribute, so a gap in the series is skipped rather than counted as a
     cliff. When no point in the track has an elevation at all the answer is
-    ``None``: the file does not say, and zero would claim it does.
+    ``(None, None)``: the file does not say, and zero would claim it does.
+
+    Descent is returned as a **positive magnitude** — "1,100 m descent" is
+    how a route is read, and a signed figure would need every display site
+    to remember to flip it.
+
+    The two are measured independently and neither is netted against the
+    other: a lap that climbs 800 m and drops back down it carries 800 m of
+    each, not zero of both. That is the whole point of reporting them as a
+    pair — an out-and-back and a one-way traverse of the same length and
+    the same climb are very different days on skis, and only the descent
+    figure separates them.
 
     Args:
         points: ``(lon, lat, ele)`` triples in order.
 
     Returns:
-        Metres of cumulative climb, or ``None`` when the track carries no
-        elevation data.
+        An ``(ascent_m, descent_m)`` pair in metres, or ``(None, None)``
+        when the track carries no elevation data.
 
     """
     elevations = [point[2] for point in points]
     if all(elevation is None for elevation in elevations):
-        return None
+        return None, None
 
     ascent = 0.0
+    descent = 0.0
     for previous, current in zip(elevations, elevations[1:], strict=False):
         if previous is None or current is None:
             continue
         delta = current - previous
         if delta > 0:
             ascent += delta
-    return ascent
+        else:
+            descent -= delta
+    return ascent, descent
 
 
 def _bounds(points: list[list[float | None]]) -> list[float]:
@@ -485,9 +506,10 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
         raw: The raw bytes of the uploaded ``.gpx`` file.
 
     Returns:
-        A ``ParsedRoute``. ``distance_m`` and ``ascent_m`` are measured on
-        the full-resolution track; ``points``, ``point_count`` and
-        ``bounds`` describe the simplified track that will be stored.
+        A ``ParsedRoute``. ``distance_m``, ``ascent_m`` and ``descent_m``
+        are measured on the full-resolution track; ``points``,
+        ``point_count`` and ``bounds`` describe the simplified track that
+        will be stored.
 
     Raises:
         GPXParseError: When the bytes are not well-formed XML, are not a
@@ -515,10 +537,11 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
             f"A route needs at least {_MIN_POINTS} points; found {len(source_points)}."
         )
 
-    # Distance and ascent come from the full-resolution track — simplifying
-    # first would shorten the line and flatten the climb.
+    # Distance, ascent and descent come from the full-resolution track —
+    # simplifying first would shorten the line and flatten both the climb
+    # and the drop.
     distance_m = _total_distance_m(source_points)
-    ascent_m = _total_ascent_m(source_points)
+    ascent_m, descent_m = _total_ascent_descent_m(source_points)
 
     simplified = _simplify(source_points)
     points: list[list[float | None]] = [
@@ -532,6 +555,7 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
         points=points,
         distance_m=distance_m,
         ascent_m=ascent_m,
+        descent_m=descent_m,
         point_count=len(points),
         bounds=_bounds(points),
         track_count=track_count,

@@ -7,7 +7,8 @@ apps.routes.services.gpx.parse_gpx:
   an <rte>-only file is accepted;
   a waypoint-only file is rejected (a <wpt> is not part of any path);
   a multi-track file imports the first and reports how many it saw;
-  a file with no <ele> leaves ascent_m null, not zero;
+  a file with no <ele> leaves ascent_m and descent_m null, not zero;
+  ascent and descent are measured independently and never netted;
   malformed XML is rejected;
   an XXE payload is rejected by defusedxml rather than by our validation;
   a non-<gpx> root, a too-short track and out-of-range coordinates are
@@ -15,13 +16,14 @@ apps.routes.services.gpx.parse_gpx:
   simplification honours MAX_POINTS, keeps both endpoints, returns a
     subsequence of the source, and carries each surviving point's
     elevation with it;
-  distance and ascent are measured on the full-resolution track, so
-    simplification does not shorten or flatten them;
+  distance, ascent and descent are measured on the full-resolution track,
+    so simplification does not shorten or flatten them;
   _stride_sample — the bound is guaranteed even when Douglas-Peucker
     cannot reach it.
 
 apps.routes.services.routes:
-  create_route stores the parsed result and truncates over-long names;
+  create_route stores the parsed result — descent_m included — and
+    truncates over-long names;
   create_route enforces settings.ROUTES_MAX_PER_USER and does not parse
     when already at the cap;
   create_route re-checks the cap inside the transaction (SNOW-465 pattern);
@@ -129,6 +131,24 @@ class TestParseGpxSingleTrack:
         parsed = parse_gpx(_fixture("single_track.gpx"))
         assert parsed.ascent_m == pytest.approx(300.0)
 
+    def test_descent_counts_only_the_drops(self) -> None:
+        """The same track's one -50 leg, reported as a positive magnitude."""
+        parsed = parse_gpx(_fixture("single_track.gpx"))
+        assert parsed.descent_m == pytest.approx(50.0)
+
+    def test_ascent_and_descent_are_not_netted_against_each_other(self) -> None:
+        """Both figures are whole: 300 up and 50 down, never a net 250.
+
+        The pair is the point — an out-and-back and a one-way traverse can
+        carry the same length and the same climb, and only the descent
+        separates them.
+        """
+        parsed = parse_gpx(_fixture("single_track.gpx"))
+        assert (parsed.ascent_m, parsed.descent_m) == (
+            pytest.approx(300.0),
+            pytest.approx(50.0),
+        )
+
     def test_track_count_is_one(self) -> None:
         """A single-track file reports one track, so nothing was dropped."""
         assert parse_gpx(_fixture("single_track.gpx")).track_count == 1
@@ -199,11 +219,20 @@ class TestParseGpxMultipleTracks:
 
 
 class TestParseGpxMissingElevation:
-    """A file with no <ele> yields a null ascent, not zero."""
+    """A file with no <ele> yields null vertical figures, not zeroes."""
 
     def test_ascent_is_none(self) -> None:
         """A file that never recorded elevation says nothing, not "flat"."""
         assert parse_gpx(_fixture("no_elevation.gpx")).ascent_m is None
+
+    def test_descent_is_none(self) -> None:
+        """Descent is unknown on exactly the same terms as ascent."""
+        assert parse_gpx(_fixture("no_elevation.gpx")).descent_m is None
+
+    def test_the_two_figures_are_unknown_together(self) -> None:
+        """One elevation series produces both, so neither can be known alone."""
+        parsed = parse_gpx(_fixture("no_elevation.gpx"))
+        assert (parsed.ascent_m is None) is (parsed.descent_m is None)
 
     def test_points_carry_null_elevations(self) -> None:
         """Each stored point still has three slots, with ele null."""
@@ -221,6 +250,16 @@ class TestParseGpxMissingElevation:
         parsed = parse_gpx(raw)
         # 1000→(gap)→1050→1250: only the +200 leg has both ends.
         assert parsed.ascent_m == pytest.approx(200.0)
+
+    def test_a_gap_is_not_counted_as_a_drop_either(self) -> None:
+        """The same gap: dropping the 1100 removes the -50 leg with it.
+
+        1000→(gap)→1050→1250 leaves one legal pair, and it climbs — so the
+        descent is a true zero rather than the 50 the intact file carries,
+        and certainly not a 1050-metre plunge from a missing reading.
+        """
+        raw = _fixture("single_track.gpx").replace(b"<ele>1100.0</ele>", b"", 1)
+        assert parse_gpx(raw).descent_m == pytest.approx(0.0)
 
     def test_an_unparseable_elevation_is_a_gap_not_a_failure(self) -> None:
         """A malformed <ele> drops that point's elevation, keeping its position."""
@@ -397,6 +436,16 @@ class TestParseGpxSimplification:
         parsed = parse_gpx(_synthetic_gpx(5_000))
         assert parsed.ascent_m == pytest.approx(499.9)
 
+    def test_descent_is_zero_not_none_on_a_monotonic_climb(self) -> None:
+        """A track that only ever climbs has no drop — and we know that.
+
+        The distinction this asserts is the one Route's docstring turns on:
+        zero is a measurement, null is the absence of one. This track has
+        elevation on every point, so its descent is measured, and measures 0.
+        """
+        parsed = parse_gpx(_synthetic_gpx(5_000))
+        assert parsed.descent_m == pytest.approx(0.0)
+
     def test_stride_sampling_guarantees_the_bound(self) -> None:
         """The backstop behind Douglas-Peucker cannot fail to meet the limit."""
         points: list[tuple[float, float, float | None]] = [
@@ -458,6 +507,7 @@ class TestCreateRoute:
         assert route.bounds == [7.0, 46.0, 7.0, 46.03]
         assert route.distance_m == pytest.approx(3 * LEG_M)
         assert route.ascent_m == pytest.approx(300.0)
+        assert route.descent_m == pytest.approx(50.0)
 
     def test_stores_null_ascent_for_an_elevation_free_file(self) -> None:
         """The null survives the write."""
@@ -465,6 +515,13 @@ class TestCreateRoute:
         route = create_route(user, _fixture("no_elevation.gpx"))
         route.refresh_from_db()
         assert route.ascent_m is None
+
+    def test_stores_null_descent_for_an_elevation_free_file(self) -> None:
+        """Descent's null survives the write on the same terms as ascent's."""
+        user = UserFactory.create()
+        route = create_route(user, _fixture("no_elevation.gpx"))
+        route.refresh_from_db()
+        assert route.descent_m is None
 
     def test_over_long_gpx_name_is_truncated_not_a_db_error(self) -> None:
         """A GPX may name itself anything; the column may not."""

@@ -241,6 +241,16 @@ in addition to the shared map assets.
     {# time, so it has no place in the temporal-dead-zone ordering the       #}
     {# bundle exists to protect.                                            #}
     <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
+    {# The saved-route elevation profile's maths and SVG                     #}
+    {# (window.pwaElevationProfileCore) — the picture the route popup's      #}
+    {# distance/ascent/descent figures summarise, derived from the elevation #}
+    {# already carried as the third ordinate of each route coordinate.       #}
+    {# Here with the other *_core.js modules and NOT inside the map bundle's #}
+    {# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it  #}
+    {# from activateRoute, on a tap, never at parse time — so like the       #}
+    {# weather and slope cores it has no place in the temporal-dead-zone     #}
+    {# ordering the bundle exists to protect.                                #}
+    <script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}

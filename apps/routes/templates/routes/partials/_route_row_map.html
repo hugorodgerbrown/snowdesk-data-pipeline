@@ -20,17 +20,32 @@ The row's id matches _route.html's own ``route-<uuid>`` so both variants
 stay addressable the same way — which is what the Remove form's hx-target
 addresses.
 
-META LINE — the two figures a route is read by: its length, and how much
-climbing it carries. "12.4 km · 850 m ascent".
+META LINE — the three figures a route is read by: its length, how much
+climbing it carries, and how much dropping. "12.4 km · 850 m ascent ·
+1100 m descent".
 
-``ascent_m`` is nullable and the null is MEANINGFUL: a GPX with no <ele>
-data anywhere yields null, and Route's own docstring is explicit that "we
-don't know" and "flat" are different facts — rendering the second for the
-first would be a safety-relevant lie about a route someone may be
-planning to ski. So the joined form exists only for a route that has an
-ascent figure, and a route without one shows its distance alone rather
-than "0 m ascent". Tested by
+Ascent and descent are both here because they are not each other's
+mirror: an out-and-back climbs and drops the same height, a one-way
+traverse does not, and the pair is what separates them at a glance. They
+are never netted — see Route.descent_m.
+
+``ascent_m`` and ``descent_m`` are nullable and the null is MEANINGFUL: a
+GPX with no <ele> data anywhere yields null, and Route's own docstring is
+explicit that "we don't know" and "flat" are different facts — rendering
+the second for the first would be a safety-relevant lie about a route
+someone may be planning to ski. So a route with no vertical data shows
+its distance alone rather than "0 m ascent". Tested by
 tests/routes/test_views.py::TestRouteList::test_a_null_ascent_is_omitted.
+
+The two are normally known or unknown together (one elevation series
+produces both), and the common cases are the first and last branches
+below. The two single-figure branches are not dead: a legacy row
+backfilled by routes migration 0002 takes its descent from the SIMPLIFIED
+points while its ascent came from the full-resolution track, so a track
+mixing elevation-bearing and elevation-free points could in principle
+lose every elevation vertex to simplification and end up with one figure
+and not the other. Each branch is a whole phrase rather than assembled
+fragments, so a locale can order it freely.
 
 No `value` slot. That column is for a single measured quantity (downloads'
 size), and a route has two figures that belong together in one line —
@@ -41,13 +56,21 @@ as the favourite row's own note.
 Context:
     route : Route — the saved route to render.
 {% endcomment %}
-{% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 %}
+{% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=route.ascent_m|floatformat:0 descent=route.descent_m|floatformat:0 %}
     {% trans "Untitled route" as untitled_route %}
     {% firstof route.name route.source_filename untitled_route as row_label %}
     {% blocktrans trimmed with km=km asvar row_meta %}{{ km }} km{% endblocktrans %}
-    {% if route.ascent_m is not None %}
-        {% blocktrans trimmed with km=km ascent=route.ascent_m|floatformat:0 asvar row_meta %}
+    {% if route.ascent_m is not None and route.descent_m is not None %}
+        {% blocktrans trimmed with km=km ascent=ascent descent=descent asvar row_meta %}
+            {{ km }} km · {{ ascent }} m ascent · {{ descent }} m descent
+        {% endblocktrans %}
+    {% elif route.ascent_m is not None %}
+        {% blocktrans trimmed with km=km ascent=ascent asvar row_meta %}
             {{ km }} km · {{ ascent }} m ascent
+        {% endblocktrans %}
+    {% elif route.descent_m is not None %}
+        {% blocktrans trimmed with km=km descent=descent asvar row_meta %}
+            {{ km }} km · {{ descent }} m descent
         {% endblocktrans %}
     {% endif %}
     {% trans "Route name" as rename_label %}

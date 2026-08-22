@@ -84,7 +84,9 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 
 | Term | Meaning | Code |
 |------|---------|------|
-| Route | A polyline a user imported from a GPX upload (SNOW-685) — `points` as `[[lon, lat, ele], …]` in GeoJSON axis order, plus denormalised `distance_m` / `ascent_m` / `point_count` / `bounds`. The uploaded file is parsed and discarded ([why](decisions/gpx-uploads-are-parsed-not-stored.md)) | `apps/routes/models.py`; ingest in `apps/routes/services/gpx.py` |
+| Route | A polyline a user imported from a GPX upload (SNOW-685) — `points` as `[[lon, lat, ele], …]` in GeoJSON axis order, plus denormalised `distance_m` / `ascent_m` / `descent_m` / `point_count` / `bounds`. The uploaded file is parsed and discarded ([why](decisions/gpx-uploads-are-parsed-not-stored.md)) | `apps/routes/models.py`; ingest in `apps/routes/services/gpx.py` |
+| Elevation profile | The chart of a Route's height against distance along it, drawn in the route's map popup. Read from the GPX's own `<ele>` — the third ordinate of each stored coordinate — with no DEM lookup, no smoothing and no interpolation across a point whose `<ele>` was missing (the line breaks instead) | `static/js/elevation_profile_core.js`; mounted by `appendElevationProfile` in `static/js/map.js` |
+| Ascent / descent | A Route's total climb and total drop in metres, both positive magnitudes, measured independently at ingest on the full-resolution track and never netted against each other. Null — not zero — when the source GPX carried no elevation at all | `Route.ascent_m` / `Route.descent_m`; `_total_ascent_descent_m` in `apps/routes/services/gpx.py` |
 
 ## Terrain
 

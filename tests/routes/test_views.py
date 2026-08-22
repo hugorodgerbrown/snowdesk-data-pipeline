@@ -626,7 +626,7 @@ class TestRouteListVariants:
 
 @pytest.mark.django_db
 class TestRouteListFigures:
-    """The map row's meta line — distance, and ascent only when it is known."""
+    """The map row's meta line — distance, plus ascent/descent when known."""
 
     def test_distance_and_ascent_are_rendered(self, client: Client) -> None:
         """Both figures appear, one decimal for km and none for metres."""
@@ -640,6 +640,49 @@ class TestRouteListFigures:
         assert "12.4 km" in body
         assert "850 m ascent" in body
 
+    def test_descent_is_rendered_beside_ascent(self, client: Client) -> None:
+        """Both vertical figures, not one netted against the other.
+
+        An out-and-back and a one-way traverse can carry the same length
+        and the same climb; the descent is what separates them, so it is
+        shown rather than subtracted.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user, distance_m=12400.0, ascent_m=850.0, descent_m=1100.0
+        )
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "850 m ascent" in body
+        assert "1100 m descent" in body
+
+    def test_a_null_descent_is_omitted(self, client: Client) -> None:
+        """Descent obeys the same unknown-is-not-flat rule as ascent."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user, distance_m=12400.0, ascent_m=850.0, descent_m=None
+        )
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "850 m ascent" in body
+        assert "descent" not in body
+
+    def test_a_zero_descent_is_still_rendered(self, client: Client) -> None:
+        """A measured zero — a track that only climbs — states itself."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user, distance_m=12400.0, ascent_m=850.0, descent_m=0.0
+        )
+
+        assert (
+            "0 m descent" in client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+        )
+
     def test_a_null_ascent_is_omitted(self, client: Client) -> None:
         """A route with no elevation data shows its distance alone.
 
@@ -651,7 +694,9 @@ class TestRouteListFigures:
         """
         user = UserFactory.create()
         client.force_login(user)
-        RouteFactory.create(user=user, distance_m=12400.0, ascent_m=None)
+        RouteFactory.create(
+            user=user, distance_m=12400.0, ascent_m=None, descent_m=None
+        )
 
         response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
         body = response.content.decode()
@@ -767,7 +812,7 @@ class TestRoutesGeojsonShape:
         assert feature["geometry"]["coordinates"][0][1] == pytest.approx(46.1)
 
     def test_every_property_the_client_reads_is_present(self, client: Client) -> None:
-        """uuid, name, distance_m, ascent_m and bounds — the popup + fitBounds set."""
+        """uuid, name, distance_m, ascent_m, descent_m, bounds — popup + fitBounds."""
         user = UserFactory.create()
         client.force_login(user)
         route = RouteFactory.create(user=user, name="Haute Route")
@@ -779,8 +824,40 @@ class TestRoutesGeojsonShape:
             "name": "Haute Route",
             "distance_m": route.distance_m,
             "ascent_m": route.ascent_m,
+            "descent_m": route.descent_m,
             "bounds": route.bounds,
         }
+
+    def test_a_null_descent_passes_through_as_null(self, client: Client) -> None:
+        """Descent's null survives serialisation exactly as ascent's does."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, ascent_m=None, descent_m=None)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties["descent_m"] is None
+
+    def test_per_point_elevation_reaches_the_client_in_the_geometry(
+        self, client: Client
+    ) -> None:
+        """The profile chart's whole data source — no property of its own.
+
+        ``static/js/elevation_profile_core.js`` draws from the third
+        ordinate of each coordinate, which RFC 7946 allows and MapLibre
+        ignores. If serialisation ever flattened positions to [lon, lat]
+        the chart would silently vanish, so this asserts the third slot
+        survives with its value.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        coordinates = client.get(GEOJSON_URL).json()["features"][0]["geometry"][
+            "coordinates"
+        ]
+
+        assert [point[2] for point in coordinates] == [1500.0, 1550.0, 1600.0]
 
     def test_a_null_ascent_passes_through_as_null(self, client: Client) -> None:
         """A GPX with no <ele> means "unknown", and must not become a zero.
