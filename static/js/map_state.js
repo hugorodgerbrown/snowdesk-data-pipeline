@@ -252,15 +252,28 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // a day nobody asked for, so the ribbon says which day is showing —
   // including when the honest answer is "none yet".
   'map-date-none': 'No date selected',
-  // SNOW-687: the two figures in the route detail popup (map.js's
-  // activateRoute). Two strings rather than one templated line, because
-  // the ascent is OMITTED ENTIRELY when Route.ascent_m is null — a GPX
+  // SNOW-687: the figures in the route detail popup (map.js's
+  // activateRoute). Separate strings rather than one templated line,
+  // because each is OMITTED ENTIRELY when its Route field is null — a GPX
   // with no <ele> means "unknown", not "flat", and rendering the second
   // for the first is a safety-relevant lie (see the model's own
-  // docstring). One combined string would have no way to leave half of
+  // docstring). One combined string would have no way to leave part of
   // itself out.
   'route-distance': '%(km)s km',
   'route-ascent': '%(m)s m ascent',
+  // Ascent's opposite number, and shown beside it rather than instead of
+  // it: an out-and-back and a one-way traverse can carry the same length
+  // and the same climb, and only the descent separates them. A positive
+  // magnitude, as stored — Route.descent_m is never signed.
+  'route-descent': '%(m)s m descent',
+  // The elevation profile's accessible name and the range caption under
+  // it. The caption is not decoration: the chart's y-axis is scaled to
+  // the track's OWN min-to-max (see elevation_profile_core.js's
+  // buildPaths), so without these two numbers the curve's height has no
+  // stated meaning. Both are omitted along with the chart when the GPX
+  // carried no elevation.
+  'route-profile-label': 'Elevation profile of this route',
+  'route-elevation-range': '%(low)s–%(high)s m',
   // The same last-resort label routes/partials/_route_row_map.html falls
   // back to, so one route reads identically in the panel and in the popup.
   // The popup's payload carries no ``source_filename`` (the row's middle

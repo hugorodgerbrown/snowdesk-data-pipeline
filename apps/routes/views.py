@@ -293,13 +293,18 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     the two representations.
 
     Properties per feature: ``uuid``, ``name``, ``distance_m``,
-    ``ascent_m`` and ``bounds``. ``ascent_m`` is passed through **as
-    stored**, including ``None`` — ``Route``'s own docstring is explicit
-    that null means "the source file carried no elevation data", not
-    "flat", and the client omits the ascent line entirely rather than
-    rendering a zero for an unknown. ``bounds`` rides on the feature so a
-    tap can fit the viewport to the route from the payload the map already
-    holds, offline included.
+    ``ascent_m``, ``descent_m`` and ``bounds``. ``ascent_m`` and
+    ``descent_m`` are passed through **as stored**, including ``None`` —
+    ``Route``'s own docstring is explicit that null means "the source file
+    carried no elevation data", not "flat", and the client omits those
+    figures entirely rather than rendering a zero for an unknown.
+    ``bounds`` rides on the feature so a tap can fit the viewport to the
+    route from the payload the map already holds, offline included.
+
+    The per-point elevation the popup's profile chart is drawn from needs
+    no property of its own: it is already the third ordinate of every
+    coordinate in ``geometry``, which RFC 7946 allows and MapLibre
+    ignores. ``static/js/elevation_profile_core.js`` reads it from there.
 
     Not ``@require_htmx`` — consumed by a JS ``fetch()`` call, not an HTMX
     swap. Owner-scoped via ``Route.objects.for_user()``, in **one** query
@@ -345,6 +350,7 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
                     "distance_m": route.distance_m,
                     # None passes straight through: "unknown", not zero.
                     "ascent_m": route.ascent_m,
+                    "descent_m": route.descent_m,
                     "bounds": route.bounds,
                 },
             }

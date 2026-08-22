@@ -665,6 +665,12 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     ``distance_m`` is a round stand-in rather than the true great-circle
     length of those coordinates — tests that care about the real maths
     exercise the parser directly.
+
+    The default track only climbs, so ``descent_m`` is a true 0.0 rather
+    than a null: null means "the source file carried no elevation data",
+    and these points plainly carry some. A test that needs the unknown
+    case passes ``ascent_m=None, descent_m=None`` with elevation-free
+    ``points`` to match.
     """
 
     class Meta:
@@ -685,5 +691,6 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     )
     distance_m = 2500.0
     ascent_m = 100.0
+    descent_m = 0.0
     point_count = 3
     bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])

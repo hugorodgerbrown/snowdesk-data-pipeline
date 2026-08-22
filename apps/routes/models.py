@@ -73,12 +73,21 @@ class Route(BaseModel):
     ``source_filename`` is the name of the uploaded file, kept purely as a
     label — the file itself is never written to disk.
 
-    ``distance_m`` and ``ascent_m`` are derived at ingest from the
-    **full-resolution** track, before simplification, so a coarser stored
-    geometry never shortens the reported distance or flattens the climb.
-    ``ascent_m`` is null — not zero — when the source file carries no
-    elevation data at all: "we don't know" and "flat" are different facts,
-    and rendering the second for the first would be a safety-relevant lie.
+    ``distance_m``, ``ascent_m`` and ``descent_m`` are derived at ingest
+    from the **full-resolution** track, before simplification, so a coarser
+    stored geometry never shortens the reported distance or flattens either
+    the climb or the drop. ``ascent_m`` and ``descent_m`` are null — not
+    zero — when the source file carries no elevation data at all: "we don't
+    know" and "flat" are different facts, and rendering the second for the
+    first would be a safety-relevant lie. They are never netted against
+    each other: an out-and-back carries its full climb AND its full drop.
+
+    ``descent_m`` was added after ``ascent_m`` had already been shipping.
+    Rows created before it could not be given a full-resolution figure —
+    the source ``.gpx`` is parsed and discarded, so the only geometry left
+    for them is the simplified ``points``. Their backfilled ``descent_m``
+    is therefore measured on that coarser track; see
+    ``apps/routes/migrations/0002_route_descent_m.py`` for what that costs.
 
     ``point_count`` and ``bounds`` describe what is actually stored in
     ``points``: the count is ``len(points)``, and ``bounds`` is a GeoJSON
@@ -128,6 +137,16 @@ class Route(BaseModel):
             "Total positive elevation gain in metres over the "
             "full-resolution track. Null — not zero — when the source file "
             "carries no elevation data."
+        ),
+    )
+    descent_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Total elevation loss in metres over the full-resolution "
+            "track, as a positive magnitude. Null on the same condition as "
+            "ascent_m — the two are read off one elevation series and are "
+            "always known or unknown together."
         ),
     )
     point_count = models.PositiveIntegerField(

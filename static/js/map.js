@@ -4933,6 +4933,66 @@
       }
     };
 
+    /**
+     * Draw the route's elevation profile into its popup, if it has one.
+     *
+     * The chart is a picture of the SAME data the figures above it state:
+     * every route coordinate carries its elevation as a third ordinate
+     * (RFC 7946 allows it, MapLibre ignores it), straight from the GPX's
+     * own `<ele>`. Nothing is fetched, so this works offline exactly as
+     * the rest of the popup does.
+     *
+     * THE GEOMETRY COMES FROM THE CACHE, NOT FROM THE TAPPED FEATURE, and
+     * that is the whole reason this takes a uuid rather than the feature
+     * it is called beside. A click feature is whatever
+     * `queryRenderedFeatures` returned, which is the TILE's copy of the
+     * line: clipped at tile boundaries — a long route comes back as just
+     * the piece the tap landed in — and simplified for the current zoom.
+     * Drawing from it would give a profile of part of the route, or of a
+     * coarser one, varying with where the user tapped and how far out
+     * they were zoomed. `routesGeojsonCache` holds the whole line as the
+     * server sent it, already in memory, and never varies.
+     *
+     * Silently draws nothing when the track has no elevation at all — a
+     * GPX with no `<ele>` means "unknown", and an empty flat line at zero
+     * would be the same lie the omitted ascent figure exists to avoid.
+     *
+     * @param {HTMLElement} container The popup body being built.
+     * @param {string} uuid The route's uuid, from the feature properties.
+     */
+    const appendElevationProfile = (container, uuid) => {
+      const core = self.pwaElevationProfileCore;
+      if (!core || !uuid || !routesGeojsonCache) return;
+
+      const features = routesGeojsonCache.features || [];
+      const cached = features.find(
+        (f) => f && f.properties && f.properties.uuid === uuid,
+      );
+      const coordinates = cached && cached.geometry && cached.geometry.coordinates;
+      if (!Array.isArray(coordinates)) return;
+
+      const profile = core.readProfile(coordinates);
+      const svg = core.createProfileSvg(profile, {
+        label: MAP_STRINGS['route-profile-label'],
+      });
+      if (!svg) return;
+      container.appendChild(svg);
+
+      // The chart's y-axis is scaled to this track's own highest and
+      // lowest point, so the curve's height means nothing without the
+      // pair that bounds it. Caption, not decoration.
+      const range = document.createElement('div');
+      range.className = 'text-xs text-text-3';
+      range.textContent = self.pwaStrings.interpolate(
+        MAP_STRINGS['route-elevation-range'],
+        {
+          low: String(Math.round(profile.minEle)),
+          high: String(Math.round(profile.maxEle)),
+        },
+      );
+      container.appendChild(range);
+    };
+
     // SNOW-687: tapping a saved route frames the whole track and opens its
     // detail. Two halves, and the order matters: the fit runs first and the
     // popup anchors to the tap point, which MapLibre keeps pinned to its
@@ -4945,10 +5005,17 @@
     // somewhere the user did not touch, possibly off screen.
     //
     // The body is the panel row's own two lines, in the panel's own order
-    // and format ("12.4 km · 850 m ascent"), for the reason
-    // activateCommunityReport gives above: one route should read the same
-    // whichever surface it is reached from. Built with createElement, never
-    // innerHTML — the name is user-supplied.
+    // and format ("12.4 km · 850 m ascent · 1100 m descent"), for the
+    // reason activateCommunityReport gives above: one route should read the
+    // same whichever surface it is reached from. Built with createElement,
+    // never innerHTML — the name is user-supplied.
+    //
+    // The popup then adds what the panel row cannot: the elevation profile
+    // itself. The row is includes/_ugc_panel_row.html, whose five-slot
+    // anatomy is shared with favourites, observations and downloads — a
+    // chart inside it would be a shape only one of the four panels has. The
+    // popup is already this route's detail surface, so the picture goes
+    // where the tap goes. See appendElevationProfile just above.
     const activateRoute = (feature, lngLat) => {
       const props = feature.properties || {};
 
@@ -4989,12 +5056,24 @@
           m: String(Math.round(props.ascent_m)),
         }));
       }
+      // Descent gets the same null test and for the same reason. It sits
+      // beside the ascent rather than replacing it: the two are not each
+      // other's mirror (an out-and-back climbs and drops the same height,
+      // a traverse does not), and they are never netted — see
+      // Route.descent_m.
+      if (props.descent_m != null) {
+        parts.push(self.pwaStrings.interpolate(MAP_STRINGS['route-descent'], {
+          m: String(Math.round(props.descent_m)),
+        }));
+      }
       if (parts.length) {
         const meta = document.createElement('div');
         meta.className = 'mt-0.5 text-xs text-text-2';
         meta.textContent = parts.join(' · ');
         container.appendChild(meta);
       }
+
+      appendElevationProfile(container, props.uuid);
 
       // The already-registered 'map-detail-popup' exclusivity member, so a
       // route tap closes every other map overlay and needs no registration
