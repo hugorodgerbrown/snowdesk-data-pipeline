@@ -251,6 +251,14 @@ in addition to the shared map assets.
     {# weather and slope cores it has no place in the temporal-dead-zone     #}
     {# ordering the bundle exists to protect.                                #}
     <script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
+    {# The start dot and checkered finish flag on a saved route              #}
+    {# (window.pwaRouteMarkersCore) — the endpoint geometry plus the raw     #}
+    {# RGBA for both icons, which a checkered flag needs because SDF keeps   #}
+    {# only an alpha mask and would collapse it to a silhouette. Read by     #}
+    {# map.js from installRoutesLayer, on the overlay's first load, never at #}
+    {# parse time — so like the other call-site cores it sits here and not   #}
+    {# inside the map bundle's contiguous run.                               #}
+    <script defer src="{% static 'js/route_markers_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}
