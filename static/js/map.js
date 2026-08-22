@@ -844,18 +844,21 @@
   const hatchImageId = (key) => `cached-tiles-hatch-${key || 'default'}`;
 
   /**
-   * Build the hatch image for one identity colour, as raw RGBA.
+   * Resolve any CSS colour string to its `[r, g, b]` channels.
    *
-   * The colour arrives as whatever CSS value the token holds — hex today,
-   * but `oklch()` is one Tailwind upgrade away and no amount of
-   * string-slicing turns that into three channels — so a 1×1 canvas fill
-   * does the parsing. Everything after that is `pwaHatchCore`'s.
+   * A 1×1 canvas fill, because nothing else parses every CSS colour
+   * syntax: a `@theme` token in `src/css/main.css` is hex today, but
+   * `oklch()` is one Tailwind upgrade away and no amount of
+   * string-slicing turns that into three channels.
+   *
+   * Shared by the downloaded-areas hatch and the route end markers —
+   * extracted at the second caller rather than copied a second time, per
+   * the design-system rule against a third inline copy.
    *
    * @param {string} colour Any CSS colour value.
-   * @returns {{width: number, height: number, data: Uint8ClampedArray}}
-   *   A MapLibre StyleImage.
+   * @returns {Array<number>} `[r, g, b]`, each 0-255.
    */
-  const buildHatchImage = (colour) => {
+  const cssColourChannels = (colour) => {
     const probe = document.createElement('canvas');
     probe.width = 1;
     probe.height = 1;
@@ -863,6 +866,18 @@
     ctx.fillStyle = colour;
     ctx.fillRect(0, 0, 1, 1);
     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return [r, g, b];
+  };
+
+  /**
+   * Build the hatch image for one identity colour, as raw RGBA.
+   *
+   * @param {string} colour Any CSS colour value.
+   * @returns {{width: number, height: number, data: Uint8ClampedArray}}
+   *   A MapLibre StyleImage.
+   */
+  const buildHatchImage = (colour) => {
+    const [r, g, b] = cssColourChannels(colour);
     return HATCH_CORE.hatchPixels(r, g, b);
   };
 
@@ -1673,6 +1688,80 @@
     announceOverlayVisibility();
   };
 
+  // The route line's two colours, named once. MapLibre paint properties
+  // cannot reference a CSS `@theme` token at all, so these mirror
+  // --color-route-line and --color-route-line-casing in src/css/main.css and
+  // are kept in step with them by hand — the idiom installFavouritesLayer
+  // uses for its star colour. They are constants rather than four literals
+  // because the end markers are painted from the same two values: a start
+  // dot in a different fuchsia from its own line would be a bug nobody
+  // would think to look for.
+  const ROUTE_LINE_COLOUR = '#c026d3';
+  const ROUTE_CASING_COLOUR = '#1a1916';
+
+  /** Map image ids for the two route end markers. */
+  const ROUTE_START_ICON = 'route-start-dot';
+  const ROUTE_END_ICON = 'route-finish-flag';
+
+  /**
+   * Register the start dot and finish flag, unless the style already holds
+   * them.
+   *
+   * `setStyle` drops every registered image along with every layer, so this
+   * is called from installRoutesLayer rather than once at boot — the
+   * basemap-swap re-install goes through there too, and `hasImage` is what
+   * makes the repeat call free. Same shape as ensureHatchImage above.
+   *
+   * `addImage` must be given the core's own PIXEL_RATIO: the icon is sized
+   * in device pixels, and registering a 40px image at ratio 1 would draw a
+   * marker twice the intended size on every screen.
+   *
+   * @returns {void}
+   */
+  const ensureRouteMarkerImages = () => {
+    const core = self.pwaRouteMarkersCore;
+    if (!core) return;
+    const ratio = { pixelRatio: core.PIXEL_RATIO };
+    if (!map.hasImage(ROUTE_START_ICON)) {
+      map.addImage(
+        ROUTE_START_ICON,
+        core.startDotPixels(...cssColourChannels(ROUTE_LINE_COLOUR)),
+        ratio,
+      );
+    }
+    if (!map.hasImage(ROUTE_END_ICON)) {
+      map.addImage(
+        ROUTE_END_ICON,
+        core.finishFlagPixels(...cssColourChannels(ROUTE_CASING_COLOUR)),
+        ratio,
+      );
+    }
+  };
+
+  /**
+   * The start/finish point features for a routes payload.
+   *
+   * A guarded wrapper over the core: `route_markers_core.js` is a separate
+   * classic script, and every other core on this map is read defensively
+   * for the same reason — a load failure should cost the markers, not the
+   * whole routes overlay.
+   *
+   * The endpoints layer is deliberately NOT in MARKER_EXCLUSION_LAYERS. A
+   * tap on a marker should open the route it belongs to, and it already
+   * does: the marker sits on the line's own endpoint, well inside the 8px
+   * tolerance markerUnderPoint gives `routes-line`. Adding it to the
+   * exclusion set would mean maintaining a second path to the same popup.
+   *
+   * @param {?object} geojson The routes FeatureCollection.
+   * @returns {{type: string, features: Array<object>}} A point
+   *   FeatureCollection, empty when the core is unavailable.
+   */
+  const routeEndpointsFor = (geojson) => {
+    const core = self.pwaRouteMarkersCore;
+    if (!core) return { type: 'FeatureCollection', features: [] };
+    return core.endpointsGeojson(geojson);
+  };
+
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
   // LineStrings (routes:geojson), drawn as TWO ``line`` layers.
   //
@@ -1701,11 +1790,9 @@
         'line-join': 'round',
       },
       paint: {
-        // --color-route-line-casing (src/css/main.css). MapLibre paint
-        // properties cannot reference a CSS ``@theme`` token at all, so the
-        // hex lives here too and the two are kept in step by hand — the
-        // same idiom installFavouritesLayer uses for its star colour above.
-        'line-color': '#1a1916',
+        // See ROUTE_CASING_COLOUR above for why the value is named here
+        // rather than referenced from the stylesheet.
+        'line-color': ROUTE_CASING_COLOUR,
         'line-opacity': 0.55,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
       },
@@ -1720,10 +1807,46 @@
         'line-join': 'round',
       },
       paint: {
-        // --color-route-line (fuchsia-600) — see the casing's note above
-        // for why the value is repeated here rather than referenced.
-        'line-color': '#c026d3',
+        'line-color': ROUTE_LINE_COLOUR,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+      },
+    });
+    // SNOW-687 follow-up: the start dot and finish flag. Their own point
+    // source, derived from the same payload — MapLibre cannot symbolise
+    // "the ends of a LineString" (`symbol-placement: 'line'` repeats a
+    // symbol ALONG one, which is a different thing), so the endpoints are
+    // computed once here and kept beside the lines.
+    //
+    // minzoom 10 matches the resort labels, and for their reason: it keeps
+    // the markers off-screen until the map is genuinely zoomed in, rather
+    // than littering a country-scale view with flags on tracks a few
+    // pixels long. It is also the zoom at which a route's two ends are far
+    // enough apart to read as two markers.
+    ensureRouteMarkerImages();
+    map.addSource('route-endpoints', {
+      type: 'geojson',
+      data: routeEndpointsFor(geojson),
+    });
+    map.addLayer({
+      id: 'routes-endpoints',
+      type: 'symbol',
+      source: 'route-endpoints',
+      minzoom: 10,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'icon-image': [
+          'case', ['==', ['get', 'role'], 'start'], ROUTE_START_ICON, ROUTE_END_ICON,
+        ],
+        // Both ends of a short track can sit close together, and the whole
+        // point of these markers is that BOTH are visible — MapLibre's
+        // default collision would silently drop one.
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        // The dot is centred on its point; the flag hangs off a pole whose
+        // foot is the point, so it is anchored bottom-left.
+        'icon-anchor': [
+          'case', ['==', ['get', 'role'], 'start'], 'center', 'bottom-left',
+        ],
       },
     });
     // The lines were just added on top of everything, so lift the pin
@@ -3192,7 +3315,7 @@
     // casing has to be added first to paint underneath. This list's order is
     // read by panelOverlayPainted below, which answers for the whole group
     // from element [0], and that has to be the layer the user actually sees.
-    routes: ['routes-line', 'routes-line-casing'],
+    routes: ['routes-line', 'routes-line-casing', 'routes-endpoints'],
     // SNOW-691: one layer — the raster. The coverage outline that rode
     // alongside it was removed; see slope_overlay_core.js's header.
     slope: ['slope-raster'],

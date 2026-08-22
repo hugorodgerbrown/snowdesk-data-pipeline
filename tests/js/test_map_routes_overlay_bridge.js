@@ -49,7 +49,7 @@ const FAVOURITES_KEY = 'snowdesk.map.overlay.favourites';
  * installRoutesLayer, where the casing goes down first so it paints
  * underneath. Asserting on both ids catches a group that half-flips.
  */
-const ROUTE_LAYERS = ['routes-line', 'routes-line-casing'];
+const ROUTE_LAYERS = ['routes-line', 'routes-line-casing', 'routes-endpoints'];
 
 const ROUTES_GEOJSON = {
   type: 'FeatureCollection',
@@ -265,14 +265,14 @@ describe('window.pwaRoutesOverlay', () => {
 
     it('show() installs both line layers and draws them', () => {
       expect(window.pwaRoutesOverlay.isVisible()).toBe(true);
-      expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['visible', 'visible']);
+      expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['visible', 'visible', 'visible']);
     });
 
     it('hide() drops every routes layer and flips isVisible()', () => {
       window.pwaRoutesOverlay.hide();
 
       expect(window.pwaRoutesOverlay.isVisible()).toBe(false);
-      expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['none', 'none']);
+      expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['none', 'none', 'none']);
     });
 
     it('show() makes them visible again', async () => {
@@ -282,7 +282,7 @@ describe('window.pwaRoutesOverlay', () => {
       await waitFor(
         () => visibilities(mapStub, ROUTE_LAYERS).every((v) => v === 'visible'),
       );
-      expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['visible', 'visible']);
+      expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['visible', 'visible', 'visible']);
     });
 
     it('persists the preference, so an enabled overlay survives a reload', () => {
