@@ -4749,9 +4749,10 @@
     // on top of one still wins the tap; the route only claims taps nothing
     // else wanted. It is still in the set rather than out of it, because a
     // tap on a track has to open that track rather than select the region
-    // the track happens to cross. The casing is deliberately absent: it is
-    // wider than the line, so including it would make the tappable area
-    // larger than the thing the user can see.
+    // the track happens to cross. The casing is deliberately absent: the
+    // line's tap tolerance is set explicitly by ROUTE_TAP_SLOP_PX below,
+    // and querying a second, wider layer as well would make that tolerance
+    // whatever the casing's width happened to be.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
@@ -4759,25 +4760,67 @@
       'routes-line',
     ];
 
+    // The route line's tap tolerance, in pixels either side of the touch.
+    //
+    // A pin is a glyph roughly 18px across, so an exact-point hit test lands
+    // on it and "the tappable area matches what the user sees" is a true
+    // description. A route line is 1.5px wide at z6 and 4px at z12 (see
+    // installRoutesLayer's line-width interpolation), and an exact-point
+    // test against a 1.5px line is a target no finger can hit — so the tap
+    // fell through to regions-fill and SELECTED THE REGION instead, which
+    // is what the route tap did in practice for its whole life.
+    //
+    // 8px is about a third of a fingertip and well inside the gap between
+    // two markers, so it makes the line reachable without letting it
+    // reach across to steal taps that were aimed at something else.
+    const ROUTE_TAP_SLOP_PX = 8;
+
+    /** The one exclusion layer that is a line rather than a point. */
+    const ROUTE_LINE_LAYER = 'routes-line';
+
     // Return the highest-priority marker whose rendered glyph is under the tap
-    // point, or null. Uses an exact-point queryRenderedFeatures — the same
-    // hit-test that drives the pointer cursor — so the tappable area matches
-    // what the user sees. Filters to layers actually present because these
+    // point, or null. Filters to layers actually present because these
     // overlays are lazy-installed and queryRenderedFeatures throws on an
     // unknown layer id.
+    //
+    // TWO HIT TESTS, not one, because the layers are two different shapes.
+    // The point layers keep the exact-point query — the same hit-test that
+    // drives the pointer cursor, so a pin's tappable area is exactly its
+    // glyph. The route line gets a slop box, for the reason on
+    // ROUTE_TAP_SLOP_PX above.
+    //
+    // The pins are queried FIRST and win outright, which preserves the
+    // priority order the array encodes: a favourite star or a report flag
+    // sitting on a route still takes the tap, and the wider box can never
+    // let the line outrank one. A route only claims taps nothing else
+    // wanted — it is just now able to claim them at all.
     const markerUnderPoint = (point) => {
       const layers = MARKER_EXCLUSION_LAYERS.filter((id) => map.getLayer(id));
       if (!layers.length) return null;
-      let best = null;
-      let bestPriority = Infinity;
-      for (const f of map.queryRenderedFeatures(point, { layers })) {
-        const priority = MARKER_EXCLUSION_LAYERS.indexOf(f.layer.id);
-        if (priority < bestPriority) {
-          best = f;
-          bestPriority = priority;
+
+      const pointLayers = layers.filter((id) => id !== ROUTE_LINE_LAYER);
+      if (pointLayers.length) {
+        let best = null;
+        let bestPriority = Infinity;
+        for (const f of map.queryRenderedFeatures(point, { layers: pointLayers })) {
+          const priority = MARKER_EXCLUSION_LAYERS.indexOf(f.layer.id);
+          if (priority < bestPriority) {
+            best = f;
+            bestPriority = priority;
+          }
         }
+        if (best) return best;
       }
-      return best;
+
+      if (!layers.includes(ROUTE_LINE_LAYER)) return null;
+      const slop = ROUTE_TAP_SLOP_PX;
+      const box = [
+        [point.x - slop, point.y - slop],
+        [point.x + slop, point.y + slop],
+      ];
+      // Topmost first, which for overlapping routes is the one drawn last —
+      // the same one the user sees on top at the point they touched.
+      return map.queryRenderedFeatures(box, { layers: [ROUTE_LINE_LAYER] })[0] || null;
     };
 
     // SNOW-419: tapping a cluster zooms in just far enough to break it apart
