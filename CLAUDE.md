@@ -556,8 +556,8 @@ Every doc under `docs/` carries YAML frontmatter (`name`, `description`,
 from the routing table below — `bin/docs-lint` (`tox -e docs-lint`, and the
 `lint-guards` CI workflow) enforces both. The `description` line is the
 retrieval key: front-load the model/command/URL nouns an agent would search
-for. `docs/code-reviews/`, `docs/qa/`, and `docs/research/` hold dated
-artefacts, not living documentation, and are exempt.
+for. `docs/code-reviews/`, `docs/page-audits/`, `docs/qa/`, and `docs/research/`
+hold dated artefacts, not living documentation, and are exempt.
 
 When you make a non-obvious architectural choice, add a file to
 [`docs/decisions/`](docs/decisions/) (format in its README). When a domain
@@ -607,6 +607,7 @@ Read these when working in the relevant area:
 | Path to live (staging/production branch split, releases) | [`docs/deployment.md`](docs/deployment.md) |
 | Linear workflow (full lifecycle) | [`docs/linear-workflow.md`](docs/linear-workflow.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
+| Page audits (what each public page says, does and promises) | [`docs/page-audits/README.md`](docs/page-audits/README.md) |
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |

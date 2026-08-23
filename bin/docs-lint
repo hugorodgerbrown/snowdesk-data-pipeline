@@ -38,11 +38,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_ROOT = REPO_ROOT / "docs"
 ROUTER = REPO_ROOT / "CLAUDE.md"
 
-# Subdirectories of docs/ that hold dated artefacts (review records, QA
-# scripts, research spikes, images) rather than living documentation.
-# They are exempt from frontmatter and routing requirements.
+# Subdirectories of docs/ that hold dated artefacts (review records, page
+# audits, QA scripts, research spikes, images) rather than living
+# documentation. They are exempt from frontmatter and routing requirements.
 EXCLUDED_DIRS: frozenset[str] = frozenset(
-    {"code-reviews", "qa", "research", "screenshots"}
+    {"code-reviews", "page-audits", "qa", "research", "screenshots"}
 )
 
 VALID_STATUSES: frozenset[str] = frozenset({"current", "draft", "historical"})
