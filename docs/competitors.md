@@ -2,14 +2,15 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-08-19
+last-reviewed: 2026-08-23
 ---
 
 # Competitor list
 
-**Last automated competitor scan: 2026-08-19.** News, product-update and
-new-entrant findings from that pass are marked inline as "2026-08-19 scan
+**Last automated competitor scan: 2026-08-23.** News, product-update and
+new-entrant findings from that pass are marked inline as "2026-08-23 scan
 update"; the full source list is in the PR description for that change.
+Findings from the prior 2026-08-19 pass remain marked as such below.
 
 Apps and sites that overlap Snowdesk's job — *"tell me what the avalanche
 bulletin says for where I'm going today, and let me act on it"*. Each
@@ -52,7 +53,13 @@ other app in this list is measured against, including ours.
   <https://www.bergundsteigen.com/en/artikel/reporting-avalanches-made-easy-with-the-new-white-risk-design/>
   (direct fetch of both blocked by this session's network policy; findings
   below are corroborated across both independent sources, not primary-verified
-  — re-verify by direct fetch next pass).
+  — re-verify by direct fetch next pass). **Re-scanned again 2026-08-23**
+  (routine competitor scan) via web search — no material change since
+  2026-08-19: the 20th-anniversary/Best-Swiss-App-2025 coverage and the 2026
+  redesign (Météo-France bulletin, crowd-sourced observations, crux display)
+  are the same findings already recorded below; no new feature or
+  business-model news surfaced this pass. Direct fetch of slf.ch and
+  whiterisk.ch is still blocked by this session's network policy.
 - **Shape:** a web portal plus a companion iOS/Android app, four
   languages, organised into four modules:
   - **EXPLORE** — the avalanche knowledge base: text, images and
@@ -114,7 +121,11 @@ other app in this list is measured against, including ours.
   Line Solutions GmbH. Explicitly *not* a planner: "all avalanche
   information at your fingertips."
 - **Checked:** 2026-08-19 — <https://snowsafe.at/>, App Store listing
-  (v6.3.0810, released Aug 2026).
+  (v6.3.0810, released Aug 2026). **Re-scanned 2026-08-23** (routine
+  competitor scan) via web search — Google Play/Uptodown changelogs surfaced
+  are for v6.1.0122/v6.1.0108 (Jan 2026: refined clinometer, cleaner
+  interface, smarter weather calculation), which predate the v6.3.0810
+  release already recorded above. No material change found this pass.
 - **Overlap with Snowdesk:** the closest in scope of anything here. Same
   job, same editorial instinct, overlapping regions — its Austrian, South
   Tyrolean, Trentino and Veneto coverage is the same EAWS/ALBINA family
@@ -153,7 +164,11 @@ other app in this list is measured against, including ours.
 - **Checked:** 2026-08-19 — <https://get.whympr.com/en>, App Store listing
   (v2.38.1, 4.4★). **Re-scanned 2026-08-19** (routine competitor scan) via
   web search — <https://get.whympr.com/en/blog-articles/trail-difficulty-ratings-for-every-hiking-path-all-on-one-map>
-  (direct fetch blocked by this session's network policy).
+  (direct fetch blocked by this session's network policy). **Re-scanned
+  2026-08-23** (routine competitor scan) via web search (Tracxn, PitchBook,
+  Crunchbase, Dealroom) — total raised remains $443K (BigBooster, HUB612,
+  SKEMA Entrepreneurs, Sowefund), ~18 employees; no new funding round, team
+  move, or product feature surfaced this pass.
 - **Overlap with Snowdesk:** the avalanche bulletin is *one tab* of a
   planning app. Geolocated bulletins for FR, CH, IT, AT, AD, ES, US, CA
   and Scotland — broader country coverage than our three providers, but
@@ -204,12 +219,28 @@ other app in this list is measured against, including ours.
   a 2026/27 El Niño winter preview forecast (per POWDER and Adventure
   Sports Network coverage) — a named-meteorologist seasonal outlook piece,
   consistent with the Daily Snow editorial thesis already recorded below;
-  no funding, team or acquisition news found this pass.
+  no funding, team or acquisition news found this pass. **Re-scanned
+  2026-08-23** (routine competitor scan) via web search — found one genuine
+  product update the 08-19 pass missed: OpenSnow shipped **PEAKS**, a new
+  in-house forecast model, for the 2025/26 winter season, claimed (per
+  OpenSnow's own marketing and app-store copy) to be up to 50% more accurate
+  than prior sources in mountain terrain, and now powering every
+  precipitation/temperature/wind forecast in the app — added to "Where it is
+  stronger" below. App version 7.4.0 (30 Apr 2026) gates 11–15 day
+  forecasts, the global storm map, super-res radar and severe-weather
+  alerts behind Premium. No funding, team or acquisition news found this
+  pass either.
 - **Overlap with Snowdesk:** adjacent rather than direct. Its avalanche
   forecasts cover the US and Canada only, so it does not compete in the
   Alps today — but its *shape* is the most commercially proven in this
   list, and the parts worth copying are editorial, not geographic.
 - **Where it is stronger:**
+  - **PEAKS forecast model** *(new, 2026-08-23 scan)* — an in-house
+    mountain-terrain forecast model, claimed up to 50% more accurate than
+    prior sources, now powering every precipitation/temperature/wind
+    forecast in the app. A reminder that forecast accuracy itself is a
+    competable surface, not just presentation — relevant to our own
+    Open-Meteo dependency in `apps/weather/`.
   - **Daily Snow** — a human-written daily forecast narrative per region,
     authored by named local meteorologists, for the US, Canada, Europe,
     Australia and New Zealand. This is the product's spine: people
@@ -254,7 +285,8 @@ Ordered by how much a profile would probably change our thinking.
 
 | Product | Who | Why it might matter |
 |---|---|---|
-| **AvalancheClarity** | Simon Perry (guidebook author, Tignes) — new find, 2026-08-19 scan | **New entrant, profile this one first, ahead of Skitourenguru.** A free app + web widget that AI-translates and plain-language-explains the official Météo-France bulletin, works offline, and — per PlanetSKI and SnowBrains coverage — sends a push notification the moment a new bulletin or a revision is published for a subscribed region. That is [Feature inspiration](#feature-inspiration) item 1 (danger-change/new-bulletin alerts), the idea we flagged as our strongest available differentiator, already shipped by someone else. On 30 March 2026 it also launched an embeddable widget (one line of code, accepts GPS coordinates, region codes or a multi-point touring route) that any resort, guide or chalet site can drop in — a distribution channel we don't have an answer to. No account required; free. Direct fetch of avalancheclarity.com and the SnowBrains writeup was blocked by this session's network policy, so this entry is search-corroborated across independent sources (PlanetSKI, SnowBrains, a snowheads.com forum thread, a stylealtitude.com writeup, the Google Play listing) but not yet primary-verified — verify by direct fetch before treating any figure here as exact. |
+| **AvalancheClarity** | Simon Perry (guidebook author, Tignes) — new find, 2026-08-19 scan | **Escalate to top of the profile queue, ahead of Skitourenguru — 2026-08-23 scan update found this is materially bigger than previously recorded.** A free app + web widget that AI-translates and plain-language-explains official avalanche bulletins, works offline, and — per PlanetSKI and SnowBrains coverage — sends a push notification the moment a new bulletin or a revision is published for a subscribed region ([Feature inspiration](#feature-inspiration) item 1, already shipped by someone else). On 30 March 2026 it also launched an embeddable widget (one line of code, accepts GPS coordinates, region codes or a multi-point touring route) — a distribution channel we don't have an answer to. **What's new this pass:** per PlanetSKI's 5 Apr 2026 coverage (missed by the 2026-08-19 scan), the app is no longer France-only — it now covers **every avalanche bulletin area in Europe, 14 countries**. France gets full AI translation across all 36 massifs (12 fully translated, the rest shown in original French with interactive weather charts); **Switzerland gets the same full AI-translation treatment — all 134 SLF micro-regions, in eight languages** — i.e. it already covers our SLF provider end-to-end, not just Météo-France. Austria, Italy, Germany, Norway, Sweden, Spain, Andorra, Slovenia, Slovakia, Czechia, Finland and Scotland get tap-through map links to the official bulletin (pass-through, not translated) — which includes our ALBINA (AT/IT) territory. It also indexes **1,100 searchable European ski resorts** and a per-user "watchlist" spanning France/Switzerland/Italy bulletins in one place. This is the cross-provider consolidation idea we called our unclaimed differentiator ([Feature inspiration](#feature-inspiration) item 2) — someone has now shipped a rough version of it (translation-depth varies by country, but the single-app, multi-provider coverage is real) across all three of our providers' geographies. Direct fetch of avalancheclarity.com, planetski.eu and the SnowBrains writeup remains blocked by this session's network policy, so this entry is search-corroborated across independent sources (PlanetSKI, SnowBrains, snowheads.com, stylealtitude.com, the Google Play listing) but not yet primary-verified — **prioritise a direct-fetch verification and full profile next pass**, this has outgrown a one-liner. |
+| **onX Backcountry** | onX Maps (US) — new find, 2026-08-23 scan | Not a bulletin competitor (US/Canada only, no Alps coverage) but relevant to [Feature inspiration](#feature-inspiration) item 6 (slope-angle overlay): it ships an **Avalanche Terrain Exposure Scale (ATES)** map layer — colour-coded terrain classification plus a distinct "safe zone" rating marking areas with no avalanche exposure regardless of conditions — alongside slope-angle, slope-aspect and an "avalanche simulator" tool, and has a formal partnership with the American Avalanche Association feeding forecasts from local avalanche centres into the app. Worth a look as prior art for how a terrain-hazard layer earns its safety framing, given our own disclaimer concerns about a slope-angle layer inviting "the map said it was fine" misreadings. |
 | **Skitourenguru & Yéti** | Günter Schmudlach (CH) / Petzl Foundation-backed (FR) | The most directly threatening idea in the category: both rate individual ski tours by avalanche risk **daily**, by combining the official bulletin with terrain analysis over a route database. This is [Feature inspiration](#feature-inspiration) item 2 as a shipped product — now shipped twice. **2026-08-19 scan update:** Petzl Foundation funding has made both **free to all users** (previously gated); the combined route database is now ~13,000 tours across the Alps (~4,600 in the French Alps alone), with ~500 more planned for the Pyrenees during 2026, and a Petzl-produced tutorial video series is rolling out explaining how bulletin + terrain data combine. Yéti is the newer, France-only sibling product (Météo-France bulletin + DTM terrain analysis) — worth its own row once profiled, currently bundled here since the two are developed and funded together. Profile Skitourenguru first as originally planned, but note Yéti alongside it. |
 | **avalanche.report** | EUREGIO / ALBINA | The provider's own web front end — one of our three upstreams. Sets the expectation for how an ALBINA bulletin "should" look, and its region map is the thing our AT/IT users already know. 2026-08-19 scan found no material product changes since last review — only a backend admin-GUI fix, not user-facing. |
 | **Regobs / Varsom** | NVE (NO) | State-run community observation platform at national scale. The reference design for `FieldObservation` if that surface ever grows past a stream. |
@@ -300,7 +332,12 @@ subscribed region, on top of a free translate-and-explain layer over the
 Météo-France bulletin. This was our best-argued idle-infrastructure
 advantage; it no longer differentiates us from every competitor, only from
 the three profiled above. Worth re-scoping soon rather than treating this
-as a someday item.
+as a someday item. **2026-08-23 scan update:** and per the fuller
+AvalancheClarity picture found this pass, that alerting layer now sits on
+top of coverage spanning all three of our providers (CH, FR, AT/IT — see
+[Not yet profiled](#not-yet-profiled)), not just Météo-France. The
+idle-infrastructure advantage was already gone; the coverage gap it sat
+inside is now narrowing too.
 
 **2. Route ↔ bulletin coupling** *(WhiteRisk's crux analysis; Whympr, inverted)*
 WhiteRisk already analyses a drawn route and flags its critical cruxes
@@ -366,6 +403,14 @@ derived from a DEM, served from the existing self-hosted origin (see
 a careful editorial line, because a 30°+ shading layer invites exactly
 the "the map said it was fine" misreading our disclaimer exists to
 prevent.
+**2026-08-23 scan update:** onX Backcountry (US, no Alps coverage — see
+[Not yet profiled](#not-yet-profiled)) is a third independent example of
+this pattern, and its **safe-zone rating** — a distinct classification for
+terrain with no avalanche exposure regardless of conditions, layered on
+top of its ATES terrain-exposure scale — is a more careful answer to our
+own "map said it was fine" worry than a bare slope-angle wash: it frames
+the layer as *ruling terrain in as safe*, not as rating everything else
+dangerous. Worth reading before designing our editorial line.
 
 **7. Weather-station observations** *(WhiteRisk, SnowSafe)*
 We render *forecast* weather from Open-Meteo; neither our map nor our
