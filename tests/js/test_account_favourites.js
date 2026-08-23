@@ -34,7 +34,7 @@ const UUID = '11111111-2222-3333-4444-555555555555';
 const RENAME_URL = `/favourites/partials/${UUID}/rename/`;
 const CARD_URL = `/favourites/partials/${UUID}/card/`;
 
-globalThis.htmx = { process: vi.fn(), ajax: vi.fn() };
+globalThis.htmx = { process: vi.fn(), ajax: vi.fn(), trigger: vi.fn() };
 
 await import('../../static/js/account_favourites.js');
 
@@ -212,6 +212,22 @@ describe('expanding a row', () => {
     expect(chevron().getAttribute('aria-expanded')).toBe('false');
     expect(panel().children.length).toBe(0);
     expect(htmxListener).not.toHaveBeenCalled();
+  });
+
+  it('aborts a card still in flight when the row is closed again', () => {
+    // aria-expanded is set optimistically on the opening click, so a user
+    // who opens and closes before the GET lands would otherwise get the
+    // response swapped into a panel they had already closed — a card on
+    // screen under a control reading "collapsed".
+    globalThis.htmx.trigger.mockClear();
+    chevron().click();
+
+    chevron().click();
+
+    expect(globalThis.htmx.trigger).toHaveBeenCalledWith(
+      chevron(),
+      'htmx:abort',
+    );
   });
 
   it('ignores a click anywhere else in the row', () => {

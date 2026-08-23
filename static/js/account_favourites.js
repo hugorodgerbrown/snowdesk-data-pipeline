@@ -168,6 +168,13 @@
     if (control.getAttribute('aria-expanded') === 'true') {
       event.preventDefault();
       event.stopPropagation();
+      // Cancel a card still on its way. `aria-expanded` is set optimistically
+      // on the opening click, so a user who opens and closes again before the
+      // GET lands would otherwise have the response swapped into a panel they
+      // had already closed — a visible card under a control reading
+      // "collapsed". htmx:abort is HTMX's own documented way to drop an
+      // in-flight request, and is a no-op when there is none.
+      if (typeof htmx !== 'undefined') htmx.trigger(control, 'htmx:abort');
       panel.replaceChildren();
       control.setAttribute('aria-expanded', 'false');
       return;
