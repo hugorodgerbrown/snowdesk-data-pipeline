@@ -14,7 +14,7 @@
  * SNOW-658: the roundel opens a PANEL, not the create form. The panel
  * (#favourite-list-template, in _favourites_surface.html) lists the user's
  * own pins — loaded over HTMX from favourites:list at ?variant=map, whose
- * row (favourites/partials/_favourite_row_map.html) is the shared UGC row:
+ * row (favourites/partials/_favourite.html) is the shared UGC row:
  * a label, a muted meta line, and two icon controls — a pencil and a
  * trash. Remove is that row's own HTMX form and needs nothing here;
  * Rename — the pencil, and only the pencil — puts the row's own label

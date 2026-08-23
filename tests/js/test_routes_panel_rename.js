@@ -73,7 +73,7 @@ const sheet = document.getElementById('route-sheet');
  *
  * Stands in for what routes:list swaps in — the row's shape is
  * includes/_ugc_panel_row.html's plus
- * routes/partials/_route_row_map_actions.html's, both asserted server-side
+ * routes/partials/_route_row_actions.html's, both asserted server-side
  * in tests/routes/test_views.py::TestRouteListVariants.
  *
  * @returns {HTMLElement} The row.

@@ -42,10 +42,10 @@ Context expected:
 {# the layers menu. Cloned by favourites.js on every open (so a stale row   #}
 {# can never survive a re-open), which then loads the rows themselves over  #}
 {# HTMX from favourites:list at ?variant=map — the same endpoint the manage #}
-{# page uses, but its own lean row (_favourite_row_map.html), so each row    #}
-{# arrives with its Remove form already wired and this file needs no copy of #}
-{# it. Rename is the one action that needs JS: the row's pencil (or its own   #}
-{# label) opens the inline editor the row already carries, and favourites.js  #}
+{# page uses, and since SNOW-711 the same row too (_favourite.html, minus    #}
+{# its disclosure) — so each row arrives with its Remove form already wired  #}
+{# and this file needs no copy of it. Rename is the one action that needs JS: #}
+{# the row's pencil opens the inline editor the row already carries, and      #}
 {# posts what it commits.                                                     #}
 {#                                                                           #}
 {# Adding a pin is an action INSIDE the panel now ([data-panel-add]),        #}

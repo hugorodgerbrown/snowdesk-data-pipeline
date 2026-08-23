@@ -23,7 +23,7 @@
  *
  * There is no delete URL template, unlike favourites.js: a route row's
  * Remove is a plain HTMX form rendered into the row server-side
- * (routes/partials/_route_row_map_actions.html), so nothing here ever
+ * (routes/partials/_route_row_actions.html), so nothing here ever
  * builds that URL. Only rename needs one, because its commit is a fetch
  * from an inline editor rather than a form submit.
  *

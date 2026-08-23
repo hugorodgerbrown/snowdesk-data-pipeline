@@ -1,21 +1,23 @@
 {% load i18n components %}
 {% comment %}
-routes/partials/_route_row_map_actions.html — the route row's icon
-controls, map sheet only (SNOW-686).
+routes/partials/_route_row_actions.html — the route row's icon controls
+(SNOW-686, shared with every route surface by SNOW-711).
 
 includes/_ugc_panel_row.html's `actions_template` slot, reached from
-_route_row_map.html — which passes its own full context on, so ``route``
-is in scope here for the delete endpoint's URL.
+routes/partials/_route.html — which passes its own full context on, so
+``route`` is in scope here for the delete endpoint's URL. It was
+`_route_row_map_actions.html` until SNOW-711 retired the map's fork of
+that row; there was never anything map-shaped about either control.
 
 Rename then Remove, the design's order: trash is always last, on every
 panel, so the destructive control is in the same place wherever a user
 meets it.
 
-Rename is a `data-route-rename` button, not a form: static/js/routes.js
-puts the row's own label into an inline edit (static/js/inline_rename.js,
-shared unchanged with the favourites and downloads panels) and posts the
-committed name. The uuid rides on the button so the delegated handler
-needs no closure over the rendered row.
+Rename is a `data-route-rename` button, not a form: the row's own label
+becomes an inline edit (static/js/inline_rename.js, shared unchanged with
+the favourites and downloads panels) and the committed name is posted by
+static/js/row_rename_commit.js. The uuid rides on the button so the
+delegated handler needs no closure over the rendered row.
 
 Remove stays a plain HTMX form — route_delete returns an empty 200, so
 ``hx-target``/``hx-swap`` on this row's own id removes exactly this row
@@ -27,10 +29,18 @@ includes/_ugc_panel_row.html's own parameter, in scope here — rather than
 ``route.name``, so a route stored without a name reads as "Rename
 mont-blanc.gpx" rather than "Rename ".
 
+``row_target`` rather than a hardcoded ``#route-<uuid>``: the shared row
+takes its own DOM id as a parameter, and a Remove that named the id
+directly would go on addressing the default one whatever the row was
+given. Same contract as the favourite row's actions.
+
 Context:
-    route : Route — the saved route this row describes.
-    label : str — the row's display name (the shared row's own parameter):
-            the route's name, its source filename, or "Untitled route".
+    route      : Route — the saved route this row describes.
+    label      : str — the row's display name (the shared row's own
+                 parameter): the route's name, its source filename, or
+                 "Untitled route".
+    row_target : str — CSS selector for the row this Remove empties,
+                 supplied by _route.html as ``#<the row's id>``.
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
@@ -47,7 +57,7 @@ Context:
 >
     {% include "includes/_icon_pencil.html" only %}
 </button>
-<form hx-post="{% url 'routes:delete' route.uuid %}" hx-target="#route-{{ route.uuid }}" hx-swap="outerHTML">
+<form hx-post="{% url 'routes:delete' route.uuid %}" hx-target="{{ row_target }}" hx-swap="outerHTML">
     {% csrf_token %}
     <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
         {% include "includes/_icon_trash.html" only %}

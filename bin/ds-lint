@@ -52,6 +52,11 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "apps" / "weather" / "templates",
     REPO_ROOT / "apps" / "observations" / "templates",
     REPO_ROOT / "apps" / "favourites" / "templates",
+    # SNOW-711. The routes app shipped after this list was written and was
+    # never added to it, so its four partials — which render the same shared
+    # UGC row every other panel does — were the one first-party template
+    # directory nothing checked.
+    REPO_ROOT / "apps" / "routes" / "templates",
 )
 
 # SNOW-619: first-party JavaScript, scanned for the same token rules. Only

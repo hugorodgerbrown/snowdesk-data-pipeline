@@ -1,54 +1,86 @@
 {% load i18n %}
 {% comment %}
-routes/partials/_route.html — Imported-route row partial.
+routes/partials/_route.html — one imported-route row. The ONE route row:
+every surface that lists a route renders this file (SNOW-711).
 
-Rendered by apps.routes.views.route_create/route_rename after a Route is
-ingested or renamed. The name field auto-saves on blur/change (rename), and
-the remove button deletes the row — both HTMX swaps target this same row
-element. Mirrors favourites/partials/_favourite.html.
+Rendered directly by apps.routes.views.route_create/route_rename after a
+route is ingested or renamed, and looped over by both list variants
+(_route_list.html and _route_list_map.html).
 
-The routes panel that lists these rows is SNOW-686; this partial is the unit
-it will render.
+WHAT THIS REPLACED. SNOW-685 shipped this row as a bordered box holding an
+always-visible name field and an underlined "Remove"; SNOW-686 gave the map
+sheet a SECOND row built from the shared UGC row, because that was the
+shape Hugo's design gives every UGC panel. The two then rendered the same
+route two ways. SNOW-711 kept the shared row and deleted the fork
+(_route_row_map.html), the same move it made for favourites — and unlike
+that pair, these two had no slot that genuinely differed: a route has no
+detail page, so neither surface has a disclosure.
+
+  * a row is not a card. It draws a hairline and nothing else
+    (includes/_ugc_panel_row.html), so a list reads as a list;
+  * rename is the pencil, and happens IN PLACE on the label;
+  * Remove is the trash, last in the row, in the same place on every list
+    a user meets.
+
+The primary line is inert, as it is on every panel: renaming is the
+pencil's job, and a route has no detail page to link to.
+
+The row's id is ``route-<uuid>``, which is what its own Remove form
+addresses.
+
+META LINE — the three figures a route is read by: its length, how much
+climbing it carries, and how much dropping. "12.4 km · 850 m ascent ·
+1100 m descent".
+
+Ascent and descent are both here because they are not each other's
+mirror: an out-and-back climbs and drops the same height, a one-way
+traverse does not, and the pair is what separates them at a glance. They
+are never netted — see Route.descent_m.
+
+``ascent_m`` and ``descent_m`` are nullable and the null is MEANINGFUL: a
+GPX with no <ele> data anywhere yields null, and Route's own docstring is
+explicit that "we don't know" and "flat" are different facts — rendering
+the second for the first would be a safety-relevant lie about a route
+someone may be planning to ski. So a route with no vertical data shows
+its distance alone rather than "0 m ascent". Tested by
+tests/routes/test_views.py::TestRouteList::test_a_null_ascent_is_omitted.
+
+The two are normally known or unknown together (one elevation series
+produces both), and the common cases are the first and last branches
+below. The two single-figure branches are not dead: a legacy row
+backfilled by routes migration 0002 takes its descent from the SIMPLIFIED
+points while its ascent came from the full-resolution track, so a track
+mixing elevation-bearing and elevation-free points could in principle
+lose every elevation vertex to simplification and end up with one figure
+and not the other. Each branch is a whole phrase rather than assembled
+fragments, so a locale can order it freely.
+
+No `value` slot. That column is for a single measured quantity (downloads'
+size), and a route has two figures that belong together in one line —
+splitting one of them into a right-aligned mono column would make the
+column mean "size" on one panel and "distance" on another. Same reasoning
+as the favourite row's own note.
 
 Context:
-    route : Route — the imported route to render.
+    route : Route — the saved route to render.
 {% endcomment %}
-<div
-    id="route-{{ route.uuid }}"
-    class="flex items-center gap-2 rounded-tag border border-border bg-card px-3 py-2 text-sm"
-    data-route-uuid="{{ route.uuid }}"
->
-    <form
-        hx-post="{% url 'routes:rename' route.uuid %}"
-        hx-target="#route-{{ route.uuid }}"
-        hx-swap="outerHTML"
-        hx-trigger="change"
-        class="flex-1"
-    >
-        {% csrf_token %}
-        <input
-            type="text"
-            name="name"
-            value="{{ route.name }}"
-            placeholder="{{ route.source_filename|default:_('Untitled route') }}"
-            class="w-full bg-transparent text-text-1 placeholder:text-text-3 focus:outline-none"
-            aria-label="{% trans 'Route name' %}"
-        >
-    </form>
-    <span class="shrink-0 text-xs text-text-2">
-        {% blocktrans with km=route.distance_km|floatformat:1 %}{{ km }} km{% endblocktrans %}
-    </span>
-    <form
-        hx-post="{% url 'routes:delete' route.uuid %}"
-        hx-target="#route-{{ route.uuid }}"
-        hx-swap="outerHTML"
-    >
-        {% csrf_token %}
-        <button
-            type="submit"
-            class="shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text"
-        >
-            {% trans "Remove" %}
-        </button>
-    </form>
-</div>
+{% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=route.ascent_m|floatformat:0 descent=route.descent_m|floatformat:0 %}
+    {% trans "Untitled route" as untitled_route %}
+    {% firstof route.name route.source_filename untitled_route as row_label %}
+    {% blocktrans trimmed with km=km asvar row_meta %}{{ km }} km{% endblocktrans %}
+    {% if route.ascent_m is not None and route.descent_m is not None %}
+        {% blocktrans trimmed with km=km ascent=ascent descent=descent asvar row_meta %}
+            {{ km }} km · {{ ascent }} m ascent · {{ descent }} m descent
+        {% endblocktrans %}
+    {% elif route.ascent_m is not None %}
+        {% blocktrans trimmed with km=km ascent=ascent asvar row_meta %}
+            {{ km }} km · {{ ascent }} m ascent
+        {% endblocktrans %}
+    {% elif route.descent_m is not None %}
+        {% blocktrans trimmed with km=km descent=descent asvar row_meta %}
+            {{ km }} km · {{ descent }} m descent
+        {% endblocktrans %}
+    {% endif %}
+    {% trans "Route name" as rename_label %}
+    {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label actions_template="routes/partials/_route_row_actions.html" %}
+{% endwith %}
