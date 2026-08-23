@@ -32,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/inline_rename.js';
+import '../../static/js/row_rename_commit.js';
 import '../../static/js/map_sheet.js';
 
 const LIST_URL = '/routes/partials/list/?variant=map';
@@ -72,7 +73,7 @@ const sheet = document.getElementById('route-sheet');
  *
  * Stands in for what routes:list swaps in — the row's shape is
  * includes/_ugc_panel_row.html's plus
- * routes/partials/_route_row_map_actions.html's, both asserted server-side
+ * routes/partials/_route_row_actions.html's, both asserted server-side
  * in tests/routes/test_views.py::TestRouteListVariants.
  *
  * @returns {HTMLElement} The row.

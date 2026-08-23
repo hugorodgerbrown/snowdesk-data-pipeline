@@ -3,14 +3,27 @@
 favourites/partials/_favourite_card.html — Favourite detail card.
 
 Rendered by apps.favourites.views.favourite_card. Shown in-page (the
-manage-page list row's "Details →" link hx-gets it into
-#favourite-card-panel — the same content its href leads to, since
-favourite_detail.html includes this very partial);
-the map pin-tap trigger is SNOW-414 (out of scope here).
+account list row's chevron hx-gets it into that row's own panel — the same
+content its href leads to, since favourite_detail.html includes this very
+partial); the map pin-tap trigger is SNOW-414 (out of scope here).
 
 Content:
-  1. Title — favourite.name, falling back to formatted coordinates — plus
-     altitude.
+  1. Title, altitude, and a link that finds the pin on the map.
+
+     The title is the pin's name, falling back to "Unnamed pin" — the same
+     words the row above it uses, so one pin does not have two names. It
+     fell back to the pin's own coordinates until SNOW-711, which made a
+     nameless pin's heading a pair of five-decimal numbers: precise,
+     unmemorable, impossible to place, and the least useful thing the card
+     could have led with.
+
+     The coordinates keep their place on the card, one line lower and
+     doing a job instead: they are the visible text of a link to
+     /map/?favourite=<uuid>, which flies the map to that pin and opens its
+     popup (map.js's own deep link, SNOW-711). Reading a coordinate tells
+     nobody where a place is; going there does. The crosshair
+     (includes/_icon_locate.html) marks it as an action rather than a
+     stray figure — see that file for why it is not the favourites star.
   2. Avalanche danger — regional. The containing MicroRegion's name and
      today's danger-tile chip (when a RegionDayRating exists), linking to
      the evergreen bulletin page. When favourite.region is None (the pin
@@ -28,8 +41,26 @@ Content:
      altitude annotation relative to favourite.elevation — every problem
      the bulletin publishes is always shown; the annotation only
      highlights relevance, it never suppresses a card.
-  5. Rename / delete controls — reuses the SNOW-413 row partial so the
-     card's controls hit the existing endpoints.
+
+THE CARD SHOWS A FAVOURITE; IT DOES NOT MANAGE ONE. It carried a fifth
+section until SNOW-711 — "Rename / delete controls", a copy of the list's
+own row (_favourite.html). That made sense while the card appeared in
+#favourite-card-panel at the TOP of the account page, detached from the row
+that opened it: the card was the only place its own pin's controls were
+within reach.
+
+SNOW-711 moved the card UNDER its row, and the section became a second copy
+of that row sitting fourteen pixels below the first — same label, same meta
+line, same pencil and trash. Hugo, seeing it: "There is a rogue repeat of
+the row?" It was, and giving the copy its own id (which this file did for
+one commit) fixed the id collision while leaving the duplication on screen.
+
+So managing a favourite belongs to the surface that LISTS it — the account
+row and the map row, both of which are one row per pin. The same split the
+map already had: its row manages, its card reads. On the standalone
+favourite_detail.html the controls are not replaced by anything, and are
+not missed: that page has never loaded htmx, so the rename form and Remove
+button it inherited here were inert from the day SNOW-507 shipped them.
 
 Context:
     favourite            : Favourite — the pin being detailed.
@@ -61,17 +92,26 @@ Context:
     data-favourite-uuid="{{ favourite.uuid }}"
 >
     {{ cache_payload|json_script:"favourite-card-cache" }}
-    {# 1. Title + altitude #}
+    {# 1. Title + altitude + locate link #}
+    {% trans "Unnamed pin" as unnamed_pin %}
     <h2 class="text-lg font-semibold text-text-1" data-testid="favourite-card-title">
-        {% if favourite.name %}
-            {{ favourite.name }}
-        {% else %}
-            {{ favourite.latitude|floatformat:5 }}, {{ favourite.longitude|floatformat:5 }}
-        {% endif %}
+        {% firstof favourite.name unnamed_pin %}
     </h2>
     <p class="text-sm text-text-2 mt-0.5" data-testid="favourite-card-altitude">
         {% blocktrans with m=favourite.elevation|floatformat:0 trimmed %}{{ m }} m altitude{% endblocktrans %}
     </p>
+    {% blocktrans trimmed with name=favourite.name|default:unnamed_pin asvar locate_aria_label %}
+        Show {{ name }} on the map
+    {% endblocktrans %}
+    <a
+        href="{% url 'public:map' %}?favourite={{ favourite.uuid }}"
+        class="mt-1 inline-flex items-center gap-1.5 font-mono text-summary text-text-3 hover:text-text-1 transition-colors"
+        aria-label="{{ locate_aria_label }}"
+        data-testid="favourite-card-locate-link"
+    >
+        {% include "includes/_icon_locate.html" only %}
+        {{ favourite.latitude|floatformat:5 }}, {{ favourite.longitude|floatformat:5 }}
+    </a>
 
     {# 2. Avalanche danger — regional #}
     <div class="mt-4 pt-4 border-t border-border">
@@ -136,9 +176,4 @@ Context:
             {% endfor %}
         </div>
     {% endif %}
-
-    {# 5. Rename / delete controls #}
-    <div class="mt-4 pt-4 border-t border-border">
-        {% include "favourites/partials/_favourite.html" with favourite=favourite %}
-    </div>
 </div>

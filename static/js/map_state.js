@@ -274,7 +274,7 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // carried no elevation.
   'route-profile-label': 'Elevation profile of this route',
   'route-elevation-range': '%(low)s–%(high)s m',
-  // The same last-resort label routes/partials/_route_row_map.html falls
+  // The same last-resort label routes/partials/_route.html falls
   // back to, so one route reads identically in the panel and in the popup.
   // The popup's payload carries no ``source_filename`` (the row's middle
   // fallback), so a nameless route lands straight here.

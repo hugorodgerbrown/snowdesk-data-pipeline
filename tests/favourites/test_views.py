@@ -917,6 +917,27 @@ class TestFavouriteCard:
         assert "My spot" in content
         assert "1834" in content
 
+    def test_it_carries_no_row_of_its_own(self, client: Client) -> None:
+        """The card shows a favourite; it does not manage one (SNOW-711).
+
+        It rendered a copy of the list's row until SNOW-711 put the card
+        UNDERNEATH that very row, at which point the copy read as the same
+        row printed twice. Managing a pin belongs to the surface that
+        lists it, so the card carries no row, no rename control and no
+        Remove — the ones fourteen pixels above it already do that job.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="My spot")
+
+        content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        # The card still names the pin — in its heading, not in a row.
+        assert "My spot" in content
+        assert "data-row-label" not in content
+        assert "data-row-rename" not in content
+        assert f"{favourite.uuid}/delete" not in content
+
     def test_unnamed_favourite_falls_back_to_coordinates(self, client: Client) -> None:
         """An unnamed favourite's title falls back to formatted coordinates."""
         user = UserFactory.create()
@@ -1299,15 +1320,18 @@ class TestFavouriteList:
         assert 'data-testid="favourite-list-detail-link"' in content
         assert _detail_url(favourite.uuid) in content
 
-    def test_detail_link_is_htmx_enhanced_onto_the_card_panel(
+    def test_detail_link_is_htmx_enhanced_onto_the_rows_own_panel(
         self, client: Client
     ) -> None:
-        """The manage page's detail link hx-gets the card into the panel.
+        """The chevron hx-gets the card into the panel under its own row.
 
         SNOW-658 collapsed the "Details" button and the "Open page →" link
-        into this one element: an href for the no-JS navigation, an hx-get
-        so the card still renders in-page — and so favourites_offline.js
-        still sees an HTMX swap to write through (SNOW-418).
+        into one element: an href for the no-JS navigation, an hx-get so
+        the card still renders in-page — and so favourites_offline.js still
+        sees an HTMX swap to write through (SNOW-418). SNOW-711 made that
+        element the row's trailing chevron and gave every row its own
+        panel: there was ONE #favourite-card-panel above the whole list, so
+        expanding the fifth row painted its card four rows away from it.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1318,13 +1342,37 @@ class TestFavouriteList:
         content = response.content.decode()
         hx_get = f'hx-get="{_card_url(favourite.uuid)}"'
         assert hx_get in content
-        assert 'hx-target="#favourite-card-panel"' in content
-        assert 'data-testid="favourite-card-panel"' in content
+        assert f'hx-target="#favourite-panel-{favourite.uuid}"' in content
+        assert f'id="favourite-panel-{favourite.uuid}"' in content
+        # The panel is the row's next sibling, not a box somewhere above
+        # it: that adjacency is the whole point of the change.
+        row_at = content.index(f'id="favourite-{favourite.uuid}"')
+        assert row_at < content.index(f'id="favourite-panel-{favourite.uuid}"')
         # The GET is carried by a link, never a button: a GET is a link, a
         # POST is an active control. (The row's own buttons — rename,
         # Remove — are POSTs, so they stay buttons.)
         opener = content[: content.index(hx_get)].rsplit("<", 1)[1]
         assert opener.startswith("a ") or opener.startswith("a\n")
+
+    def test_the_disclosure_is_the_only_expand_control(self, client: Client) -> None:
+        """One control, not a button and a link beside it.
+
+        The row carried an underlined "Details →" until SNOW-711 — the one
+        typographic control on a row whose other controls are icons.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert content.count("data-row-disclosure") == 1
+        assert "Details" not in content
+        # It names the row, because "Details" alone names nothing with a
+        # list of pins on screen.
+        assert 'aria-label="Show details for Mine"' in content
+        assert 'aria-expanded="false"' in content
 
     def test_default_variant_offers_the_map_link(self, client: Client) -> None:
         """The manage-page template keeps its "view on the map" navigation."""
@@ -1491,23 +1539,69 @@ class TestFavouriteList:
         assert 'aria-label="Rename Mine"' in content
         assert 'aria-label="Remove Mine"' in content
 
-    def test_manage_variant_keeps_its_always_visible_rename_field(
-        self, client: Client
-    ) -> None:
-        """_favourite.html is untouched by the map row's redesign (SNOW-658).
+    def test_both_variants_render_the_same_shared_row(self, client: Client) -> None:
+        """The account page's row IS the map's row now (SNOW-711).
 
-        The manage page is a page for managing favourites; the map sheet is
-        a list glanced at. Only the map variant conforms to the shared row.
+        This reverses the assertion SNOW-658 left here, which pinned the
+        account page's always-visible name field and underlined "Remove" as
+        deliberate. They were not deliberate for long: the same pin read
+        one way on the map and another on /account/, and this was the last
+        surface managing user data with a text field and a text button.
+        Only the disclosure differs — the map reaches a pin's detail by
+        tapping the pin.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        account = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        sheet = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+
+        for hook in (
+            "data-row-renameable",
+            "data-row-rename-input",
+            f'data-favourite-rename="{favourite.uuid}"',
+            _delete_url(favourite.uuid),
+        ):
+            assert hook in account, hook
+            assert hook in sheet, hook
+        # The always-visible input is gone from both. It was never
+        # reachable without JS anyway: /account/ loads this list by hx-get.
+        assert 'name="name"' not in account
+        # One slot differs, and only that one.
+        assert "data-row-disclosure" in account
+        assert "data-row-disclosure" not in sheet
+
+    def test_both_variants_address_a_row_by_the_same_id(self, client: Client) -> None:
+        """``favourite-<uuid>`` on both, so a Remove targets it either way."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine")
+
+        account = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        sheet = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+
+        assert f'id="favourite-{favourite.uuid}"' in account
+        assert f'id="favourite-{favourite.uuid}"' in sheet
+        assert f'hx-target="#favourite-{favourite.uuid}"' in account
+        assert f'hx-target="#favourite-{favourite.uuid}"' in sheet
+
+    def test_the_list_carries_the_rename_url_template(self, client: Client) -> None:
+        """account_favourites.js builds a row's rename URL from this.
+
+        On the list rather than on each row: every row would carry the same
+        string, and this element is rendered by the same endpoint the rows
+        are.
         """
         user = UserFactory.create()
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(LIST_URL, **HTMX_HEADERS)
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
 
-        content = response.content.decode()
-        assert 'name="name"' in content
-        assert "data-favourite-rename" not in content
+        assert 'data-rename-url-template="/favourites/partials/__UUID__/rename/"' in (
+            content
+        )
 
     def test_map_variant_empty_state(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy in the sheet."""

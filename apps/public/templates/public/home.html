@@ -152,6 +152,12 @@ in addition to the shared map assets.
     {# partial both remain — retiring a primitive is not this ticket's      #}
     {# call — and the component library still renders it.                   #}
     <script defer src="{% static 'js/inline_rename.js' %}"></script>
+    {# SNOW-711: the server half of that rename — read the row's uuid off   #}
+    {# the pencil, POST the committed name, hand the response back. The     #}
+    {# favourites and routes panels here and the account page's own list    #}
+    {# all did that identically; each still decides what to do with the     #}
+    {# response, which is the only part that differs.                       #}
+    <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
     {# Keeps every `<time data-relative-time>` on this page true for as     #}
     {# long as the page is open — the field-observation rows' "reported 2   #}
     {# hours ago". This is the map: it is opened at the car park and read   #}

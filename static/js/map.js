@@ -4999,6 +4999,141 @@
       mountDetailPopup(feature.geometry.coordinates, { node: container });
     };
 
+    // ==== SNOW-711: the /map/?favourite=<uuid> deep link ====
+    //
+    // A favourite's detail card carries a crosshair link to this URL, so
+    // "show me where this is" is an ordinary navigation rather than a
+    // gesture only available to someone already looking at the map. What
+    // the visitor lands on has to be indistinguishable from having tapped
+    // the pin themselves, which is why this calls ``activateFavourite``
+    // above rather than building a popup of its own: two popup paths for
+    // one pin drift apart, and the one nobody taps drifts first.
+    //
+    // The feature is looked up in ``favouritesGeojsonCache``, not through
+    // ``queryRenderedFeatures``. The cache is the collection the layer was
+    // installed from — the network fetch and the ``pwaMapOverlayCache``
+    // offline read-back alike — so the lookup answers identically offline,
+    // and it answers for a pin outside the current viewport, which for a
+    // pin the visitor is asking to be flown to is the usual case.
+
+    // Close enough to read one pin against its surroundings. Past the
+    // favourite-label minzoom (8) so the pin arrives named, past the L4
+    // boundary minzoom (8.5) so it sits visibly inside its danger-rated
+    // region, and past the resort-label minzoom (10) so the places around
+    // it name themselves too. Tighter than this fills the viewport with
+    // terrain and drops every one of those cues.
+    const FAVOURITE_DEEP_LINK_ZOOM = 11;
+
+    /**
+     * The cached favourite feature carrying ``uuid``, if the collection
+     * holds one.
+     *
+     * @param {string} uuid - The favourite's UUID, as read from the URL.
+     * @returns {?object} The GeoJSON feature, or null — the favourite was
+     *   deleted, or belongs to someone else and was never in this
+     *   collection. Both are ordinary, and neither is worth saying.
+     */
+    const favouriteFeatureByUuid = (uuid) => {
+      const features = favouritesGeojsonCache && favouritesGeojsonCache.features;
+      if (!Array.isArray(features)) return null;
+      return features.find(
+        (feature) => feature && feature.properties && feature.properties.uuid === uuid,
+      ) || null;
+    };
+
+    /**
+     * Read ``?favourite=`` and strip it from the address bar in one step.
+     *
+     * Consumed rather than merely read. The collection is refetched on
+     * every ``snowdesk:favourites-changed``, so a parameter still sitting
+     * in the URL would be a standing instruction — renaming a pin an hour
+     * later would fly the map back to it. Stripping also means a reload or
+     * a shared address bar carries the map the visitor is looking at, not
+     * the link they arrived on.
+     *
+     * @returns {?string} The requested UUID, or null when there is none.
+     */
+    const consumeFavouriteDeepLink = () => {
+      const params = new URLSearchParams(location.search);
+      const uuid = params.get('favourite');
+      if (!uuid) return null;
+      params.delete('favourite');
+      const query = params.toString();
+      history.replaceState(
+        null,
+        '',
+        location.pathname + (query ? `?${query}` : '') + location.hash,
+      );
+      return uuid;
+    };
+
+    /**
+     * Honour a ``/map/?favourite=<uuid>`` arrival: fly to that favourite's
+     * pin and open the popup a tap on it would have opened.
+     *
+     * Silent in every case it cannot satisfy. An ineligible visitor reaches
+     * this URL only by guessing it (the link is rendered for the owner
+     * alone), and a UUID matching nothing is a favourite that has been
+     * deleted — telling either of them anything is either a leak or a
+     * puzzle, so the map just opens as it otherwise would.
+     *
+     * @returns {void}
+     */
+    const openFavouriteDeepLink = () => {
+      const uuid = consumeFavouriteDeepLink();
+      if (!uuid || !FAVOURITES_ELIGIBLE) return;
+
+      // Someone who followed a link to one specific pin means to see that
+      // pin, so an overlay left switched off is switched back on rather
+      // than flown to invisibly. This goes through ``showPanelOverlay`` —
+      // the same call the panel's own switch makes — because that persists
+      // the preference and drives the lazy load. Flipping ``visibility`` by
+      // hand would paint layers whose stored preference still said "off",
+      // and the next thing to re-read that preference (SNOW-493's
+      // overlay-load path, a basemap swap) would switch them off again
+      // under a visitor who never touched the switch.
+      if (!overlayState.favourites) showPanelOverlay('favourites');
+
+      const flyToFavourite = () => {
+        const feature = favouriteFeatureByUuid(uuid);
+        if (!feature) return false;
+        // Fly first, open second: the popup anchors to the coordinate and
+        // rides the camera in, so the pin is never briefly popup-less.
+        map.flyTo({
+          center: feature.geometry.coordinates,
+          zoom: FAVOURITE_DEEP_LINK_ZOOM,
+        });
+        activateFavourite(feature);
+        return true;
+      };
+
+      // The layer may already be installed by the time this runs — the boot
+      // restore is async and this sits late in the ``load`` handler, so
+      // both orders happen.
+      if (flyToFavourite()) return;
+
+      // Otherwise wait for the install, exactly once. There is no
+      // "favourites installed" event, and ``sourcedata`` is what the source
+      // itself emits whichever branch of the boot load installed it — the
+      // network fetch or the offline cache read-back — which is what makes
+      // the deep link work on an offline boot. Following the boot ratings
+      // paint above, the loaded check reads ``map.isSourceLoaded`` rather
+      // than the event's own flag.
+      //
+      // It unbinds on the first favourites load it sees, found or not: a
+      // UUID absent from that collection will not appear in a later one,
+      // and a listener left bound would re-fire on every subsequent
+      // ``snowdesk:favourites-changed`` setData.
+      const onFavouritesSourceData = (e) => {
+        if (e.sourceId !== 'favourites' || !map.isSourceLoaded('favourites')) return;
+        map.off('sourcedata', onFavouritesSourceData);
+        flyToFavourite();
+      };
+      map.on('sourcedata', onFavouritesSourceData);
+    };
+
+    openFavouriteDeepLink();
+
     // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
     // small popup with the observation type and a relative time — built via
     // DOM methods (not setHTML) since these values, though server-controlled,

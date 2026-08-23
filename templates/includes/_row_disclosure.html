@@ -1,0 +1,63 @@
+{% load components %}
+{% comment %}
+templates/includes/_row_disclosure.html — a UGC row's trailing expand
+control (SNOW-711).
+
+includes/_ugc_panel_row.html's `disclosure_template` slot: the chevron at
+the row's trailing edge that expands the row's own detail underneath it,
+into the element `disclosure_panel_id` names. Its one caller today is the
+account page's favourite row (favourites/partials/_favourite.html).
+
+A CHEVRON, NOT AN ARROW, because this expands in place rather than
+navigating: the same meaning includes/_collapsible_panel.html and
+static/js/map_controls_collapse.js already give the mark. What it
+replaces on that row is a "Details →" text link, which said the opposite
+and led to a separate page — two controls doing one thing, one of them
+the odd typographic control on a row of icon controls.
+
+STILL A REAL LINK. `href` is the row's own detail page, so the control
+works with no JavaScript at all and a middle-click still opens the page
+in a new tab. The `hx-get` is what makes it a disclosure when JS is
+running: HTMX swaps the detail fragment into the panel and the click
+never leaves the page. The hx-get is load-bearing beyond convenience for
+favourites — static/js/favourites_offline.js writes the fetched card
+through to IndexedDB on `htmx:afterOnLoad`, an event a full-page
+navigation never fires.
+
+COLLAPSE IS JS. `aria-expanded` starts false and is flipped by the
+surface's own module (static/js/account_favourites.js for the one caller),
+which also empties the panel on the closing click. With no JS the control
+degrades to its href, which is why the closed state is the one rendered.
+
+Parameters (passed via {% include … with … %}):
+  disclosure_href     (string) — the plain-navigation destination.
+  disclosure_hx_get   (string, optional) — fragment URL for the in-place
+                      expand. Omit it and the control is a plain link.
+  disclosure_panel_id (string) — DOM id of the element the fragment is
+                      swapped into; also the control's `aria-controls`.
+  disclosure_label    (string) — the control's aria-label. Name the ROW,
+                      not the action: "Details" alone names nothing with
+                      a list of rows on screen.
+  disclosure_testid   (string, optional) — `data-testid` on the control.
+  disclosure_expanded (bool, optional) — render the OPEN state. For the
+                      component library, which loads no interaction JS and
+                      would otherwise only ever show one of the two
+                      states. No real caller passes it: a row is rendered
+                      closed and opened by its module.
+{% endcomment %}
+<a
+    href="{{ disclosure_href }}"
+    {% if disclosure_hx_get %}
+        hx-get="{{ disclosure_hx_get }}"
+        hx-target="#{{ disclosure_panel_id }}"
+        hx-swap="innerHTML"
+    {% endif %}
+    data-row-disclosure
+    aria-controls="{{ disclosure_panel_id }}"
+    aria-expanded="{% if disclosure_expanded %}true{% else %}false{% endif %}"
+    aria-label="{{ disclosure_label }}"
+    {% if disclosure_testid %}data-testid="{{ disclosure_testid }}"{% endif %}
+    class="group {% icon_button_classes %}"
+>
+    {% include "includes/_icon_chevron.html" with svg_class="transition-transform group-aria-expanded:rotate-180" only %}
+</a>

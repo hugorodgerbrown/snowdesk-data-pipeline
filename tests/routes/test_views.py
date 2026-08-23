@@ -586,27 +586,41 @@ class TestRouteListVariants:
         assert "data-row-renameable" in body
         assert "data-row-rename" in body
         assert f'data-route-rename="{route.uuid}"' in body
-        # The map row is a <li> in a <ul>, not _route.html's <div> with an
-        # always-visible rename input.
+        # A <li> in a <ul>, not the bordered box with an always-visible
+        # rename input that SNOW-685 shipped.
         assert "<li" in body
         assert 'name="name"' not in body
 
-    def test_default_variant_renders_the_route_row_partial(
-        self, client: Client
-    ) -> None:
-        """No variant gets _route.html rows — the shape create/rename return."""
+    def test_both_variants_render_the_same_shared_row(self, client: Client) -> None:
+        """One row, both variants (SNOW-711).
+
+        This reverses what SNOW-686 pinned here: _route.html kept an
+        always-visible rename field and an underlined "Remove" while the map
+        sheet rendered the shared UGC row, so the same route read two ways.
+        Unlike the favourites pair there is nothing left that differs —
+        a route has no detail page, so neither list carries a disclosure.
+        """
         user = UserFactory.create()
         client.force_login(user)
-        RouteFactory.create(user=user)
+        route = RouteFactory.create(user=user)
 
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-        body = response.content.decode()
+        default = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        sheet = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
-        assert response.status_code == 200
-        assert 'data-testid="route-list-default"' in body
-        # _route.html's always-visible rename field, which the map row drops.
-        assert 'name="name"' in body
-        assert "data-row-renameable" not in body
+        assert 'data-testid="route-list-default"' in default
+        for hook in (
+            "data-row-renameable",
+            "data-row-rename-input",
+            f'data-route-rename="{route.uuid}"',
+            f'hx-target="#route-{route.uuid}"',
+        ):
+            assert hook in default, hook
+            assert hook in sheet, hook
+        # The always-visible field is gone from both — the commit is a
+        # fetch from an inline editor, not a form submit.
+        assert 'name="name"' not in default
+        assert "data-row-disclosure" not in default
+        assert "data-row-disclosure" not in sheet
 
     def test_an_unknown_variant_falls_back_to_the_default(self, client: Client) -> None:
         """An unknown value is not interpolated into a template path.

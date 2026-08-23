@@ -56,6 +56,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/inline_rename.js';
+import '../../static/js/row_rename_commit.js';
 import '../../static/js/map_sheet.js';
 
 // As apps.public.views._routes_context builds it — the map sheet asks for the

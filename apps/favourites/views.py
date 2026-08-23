@@ -115,10 +115,36 @@ _LIST_TEMPLATES = {
     FAVOURITE_LIST_MAP_VARIANT: "favourites/partials/_favourite_list_map.html",
 }
 
+# SNOW-711: the dummy uuid the rename URL template is reversed with. See
+# _rename_url_template below.
+_DUMMY_UUID = UUID(int=0)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _rename_url_template() -> str:
+    """Return favourites:rename with ``__UUID__`` where the uuid goes.
+
+    Handed to the account page's list template so
+    ``static/js/account_favourites.js`` can build one row's rename URL at
+    commit time, from the uuid riding on that row's own pencil. The same
+    ``__UUID__`` trick ``apps.public.views._favourites_context`` uses for
+    the map panel: reverse with a dummy uuid, then string-replace.
+
+    Reversed per call rather than once at import — this module is imported
+    by ``apps.favourites.urls``, so reversing at import time would ask the
+    URLconf to resolve itself while it is still being built.
+
+    Returns:
+        The rename URL with the uuid replaced by ``__UUID__``.
+
+    """
+    return reverse("favourites:rename", args=[_DUMMY_UUID]).replace(
+        str(_DUMMY_UUID), "__UUID__"
+    )
 
 
 def _parse_latlon(
@@ -773,7 +799,7 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     parameter: the manage page's "My favourites" section, which lazy-loads
     this endpoint via ``hx-get`` on page load (no parameter), and the map
     sheet's favourites panel (``?variant=map``, SNOW-658), which gets the
-    leaner ``_favourite_list_map.html`` — no in-page card panel, no
+    leaner ``_favourite_list_map.html`` — no row disclosure, no
     "view on the map" link. Anything other than a known variant falls back
     to the manage-page template; the value picks a template out of a fixed
     map, it is never interpolated into a template path.
@@ -836,7 +862,11 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     response = render(
         request,
         _LIST_TEMPLATES.get(request.GET.get("variant", ""), _LIST_TEMPLATE_DEFAULT),
-        {"favourites": favourites, "roster_payload": roster_payload},
+        {
+            "favourites": favourites,
+            "roster_payload": roster_payload,
+            "rename_url_template": _rename_url_template(),
+        },
     )
     return apply_freshness_headers(
         response, response_generated_at, unsafe_after=response_unsafe_after

@@ -7,16 +7,22 @@ Rendered by apps.routes.views.route_list for ``?variant=map`` and swapped
 into [data-routes-rows] inside the map's routes panel
 (public/partials/_routes_surface.html) by static/js/routes.js.
 
-The lean sibling of _route_list.html: same routes, a different row —
-_route_row_map.html rather than _route.html — because the sheet's rows are
-includes/_ugc_panel_row.html, the shape shared with the favourites,
-observations and downloads panels.
+The sibling of _route_list.html: the same routes and, since SNOW-711, the
+same row — _route.html, which is includes/_ugc_panel_row.html, the shape
+shared with the favourites, observations and downloads panels. SNOW-686
+gave this sheet a fork of that row (_route_row_map.html) because the
+default one was still a bordered box with a name field in it; SNOW-711 put
+that shape on every surface and deleted the fork.
+
+What is left between the two variants is this wrapper and its testid,
+which routes.js and the account-page surfaces address separately. Unlike
+the favourites pair there is no slot that differs: a route has no detail
+page, so neither list has a row disclosure.
 
 The rows are a real ``<ul>``: each row is a ``<li>`` from
 includes/_ugc_panel_row.html, drawing its own separator via ``border-t``
 rather than sitting in a bordered box of its own — rows are not cards, on
-any of the four panels. (That is also why the default variant needs its own
-wrapper: _route.html is a ``<div>``, which is not a valid child of a list.)
+any of the four panels.
 
 No offline-cache sidecar, unlike _favourite_list_map.html's
 ``roster_payload``. Caching routes for offline reads arrives with the map
@@ -31,7 +37,7 @@ Context:
 <div data-testid="route-list">
     <ul class="flex flex-col">
         {% for route in routes %}
-            {% include "routes/partials/_route_row_map.html" with route=route %}
+            {% include "routes/partials/_route.html" with route=route %}
         {% endfor %}
     </ul>
     {% if not routes %}

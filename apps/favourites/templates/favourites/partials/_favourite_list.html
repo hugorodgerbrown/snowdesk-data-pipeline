@@ -1,24 +1,42 @@
 {% load i18n %}
 {% comment %}
-favourites/partials/_favourite_list.html — Owner favourites list.
+favourites/partials/_favourite_list.html — Owner favourites list, account
+page.
 
-Rendered by apps.favourites.views.favourite_list for the manage page, which
+Rendered by apps.favourites.views.favourite_list for /account/, which
 lazy-loads it into its "My favourites" section via hx-get on page load
 (SNOW-415). The map sheet gets the leaner _favourite_list_map.html instead
 (``?variant=map``) — see that file's header for what it drops and why.
 
-Each row reuses the SNOW-413 rename/remove controls
-(favourites/partials/_favourite.html) plus ONE detail control. It used to
-be two: a "Details" button hx-getting favourites:card into
-#favourite-card-panel, and an "Open page →" link to favourites:detail
-(SNOW-507). Both showed the same thing — favourite_detail.html includes the
-very same _favourite_card.html the card endpoint renders — and a GET wearing
-a button is the wrong element for it. SNOW-658 collapsed them into a single
-progressively-enhanced link: href navigates to the real page without JS,
-hx-get renders the card into the panel below with it. The hx-get is
-load-bearing beyond convenience — it is what drives the SNOW-418 offline
-cache write-through in favourites_offline.js, which fires on htmx:afterOnLoad
-and would never see a plain full-page navigation.
+Both variants now loop over the same row (_favourite.html), which is the
+point of SNOW-711: until then this list carried a bordered box with an
+always-visible name field, an underlined "Remove", and a "Details →" link
+beside it, while the map sheet carried the shared UGC row.
+
+THE ROWS ARE A REAL ``<ul>``. Each row is a ``<li>``, drawing its own
+separator via ``border-t`` rather than sitting in a bordered box of its
+own — rows are not cards, on any surface. The roster sidecar sits OUTSIDE
+it: ``json_script`` emits a ``<script>``, which is not a valid child of a
+list.
+
+THE DETAIL CARD EXPANDS UNDER ITS OWN ROW. There was one
+``#favourite-card-panel`` above the whole list until SNOW-711, so
+expanding the fifth row painted its card four rows away from it. Each row
+now has its own panel — the ``<li>`` immediately after it, which the row's
+chevron addresses by id — and static/js/account_favourites.js empties it
+again on the closing click. An empty ``<li>`` has no box of its own, so a
+collapsed row's panel takes no space and needs no hiding.
+
+The control that opens it is one control doing one thing. It was two for a
+while (SNOW-507): a "Details" button hx-getting the card, and an "Open
+page →" link to the same content, since favourite_detail.html includes the
+very same _favourite_card.html. SNOW-658 collapsed them into a
+progressively-enhanced link and SNOW-711 made it the row's chevron: href
+navigates to the real page with no JS, hx-get expands the card in place
+with it. The hx-get is load-bearing beyond convenience — it is what drives
+the SNOW-418 offline cache write-through in favourites_offline.js, which
+fires on htmx:afterOnLoad and would never see a plain full-page
+navigation.
 
 Context:
     favourites     : list[Favourite] — the requesting user's own
@@ -26,35 +44,37 @@ Context:
     roster_payload : list[dict] — SNOW-418 offline-cache records, one per
                      favourite; written through into data:favourites by
                      favourites_offline.js.
+    rename_url_template : str — favourites:rename with ``__UUID__`` where
+                     the uuid goes, read by account_favourites.js off the
+                     wrapper below. It lives on the LIST rather than on
+                     each row because every row would carry the same
+                     string, and this element is re-rendered by the same
+                     endpoint that renders the rows.
 {% endcomment %}
-<div data-testid="favourite-list">
+<div
+    data-testid="favourite-list"
+    data-favourite-list
+    data-rename-url-template="{{ rename_url_template }}"
+>
     {{ roster_payload|json_script:"favourites-roster-cache" }}
-    {# Target for the detail link's hx-get below — starts empty. #}
-    <div id="favourite-card-panel" class="mb-4" data-testid="favourite-card-panel"></div>
-
-    {% for favourite in favourites %}
-        <div class="flex items-center gap-2 mb-2" data-testid="favourite-list-row">
-            <div class="flex-1">
-                {% include "favourites/partials/_favourite.html" with favourite=favourite %}
-            </div>
-            <a
-                href="{% url 'favourites:detail' favourite.uuid %}"
-                hx-get="{% url 'favourites:card' favourite.uuid %}"
-                hx-target="#favourite-card-panel"
-                hx-swap="innerHTML"
-                class="shrink-0 text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
-                data-testid="favourite-list-detail-link"
-            >
-                {% trans "Details →" %}
-            </a>
-        </div>
-    {% empty %}
-        <p class="text-sm text-text-2" data-testid="favourite-list-empty">
+    <ul class="flex flex-col">
+        {% for favourite in favourites %}
+            {# One <li> per favourite, and the row carries its own expand   #}
+            {# target inside it (includes/_ugc_panel_row.html's             #}
+            {# disclosure_panel_id). This loop emitted a SECOND <li> for    #}
+            {# that panel until SNOW-711: one favourite was two list items, #}
+            {# and Remove — which targets the row's id — deleted the header #}
+            {# while leaving the expanded card orphaned beneath it.         #}
+            {% include "favourites/partials/_favourite.html" with favourite=favourite %}
+        {% endfor %}
+    </ul>
+    {% if not favourites %}
+        <p class="py-2 text-sm text-text-2" data-testid="favourite-list-empty">
             {% trans "You have no saved favourites yet." %}
         </p>
-    {% endfor %}
+    {% endif %}
 
-    {# Plain navigation off the manage page, so a link is the right element.  #}
+    {# Plain navigation off the account page, so a link is the right element. #}
     {# The map sheet's variant drops it: there it would point at the page the #}
     {# user is already on, and the sheet's own "Display on the map"           #}
     {# switch is the control that actually changes what the map shows.        #}

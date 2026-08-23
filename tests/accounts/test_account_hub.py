@@ -33,7 +33,12 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.accounts.models import Account
-from tests.factories import AccountFactory, MicroRegionFactory, SubscriptionFactory
+from tests.factories import (
+    AccountFactory,
+    MicroRegionFactory,
+    PasskeyCredentialFactory,
+    SubscriptionFactory,
+)
 
 _TOKEN_BACKEND = "django.contrib.auth.backends.ModelBackend"
 
@@ -171,3 +176,88 @@ class TestDeleteAccountControl:
         from django.contrib.auth.models import User
 
         assert not User.objects.filter(pk=user_pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# The two Remove controls (SNOW-711)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRemoveControlsAreIconControls:
+    """A subscription and a passkey are removed the same way as everything else.
+
+    SNOW-658 gave every UGC row one icon language — a pencil, a trash, the
+    trash always last. These two cards were the last controls outside it:
+    bordered "Remove" pills wearing a class string nothing else in the
+    codebase used. Losing the visible word is what makes the aria-label
+    load-bearing, so both are asserted by the name they now carry.
+    """
+
+    def test_subscription_remove_is_a_trash_naming_its_region(self) -> None:
+        account = AccountFactory.create()
+        region = MicroRegionFactory.create(name="Alpstein")
+        SubscriptionFactory.create(account=account, region=region)
+
+        html = _client_for(account).get(reverse("accounts:hub")).content.decode()
+
+        assert 'aria-label="Remove Alpstein"' in html
+        # The shared 44x44 icon control, destructive variant — the same one
+        # every UGC row's trash carries.
+        assert "hover:text-status-error-text" in html
+        # The pill it replaced, and the class string only it and the passkey
+        # card ever used.
+        assert "border border-text-3/30 rounded-sm px-3 py-1.5" not in html
+
+    def test_subscription_remove_still_posts_to_remove_region(self) -> None:
+        """Restyling the control must not have moved its target."""
+        account = AccountFactory.create()
+        region = MicroRegionFactory.create(name="Alpstein")
+        SubscriptionFactory.create(account=account, region=region)
+
+        html = _client_for(account).get(reverse("accounts:hub")).content.decode()
+
+        assert (
+            reverse("accounts:remove_region", kwargs={"region_id": region.region_id})
+            in html
+        )
+        assert 'hx-target="closest .subscription-card"' in html
+
+    def test_passkey_remove_is_a_trash_naming_its_passkey(self) -> None:
+        account = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(
+            user=account.user, name="MacBook passkey"
+        )
+
+        html = _client_for(account).get(reverse("accounts:settings")).content.decode()
+
+        assert f'aria-label="Remove {passkey.display_name}"' in html
+        assert (
+            reverse("accounts:passkey_delete", kwargs={"passkey_uuid": passkey.uuid})
+            in html
+        )
+
+    def test_passkey_remove_keeps_its_confirmation(self) -> None:
+        """The one guard on an irreversible action that just lost its words.
+
+        Losing a device's passkey is losing a way in, and the control is now
+        a glyph — so the confirm matters more than it did, not less.
+        """
+        account = AccountFactory.create()
+        PasskeyCredentialFactory.create(user=account.user)
+
+        html = _client_for(account).get(reverse("accounts:settings")).content.decode()
+
+        assert "Remove this passkey?" in html
+
+    def test_change_email_is_the_shared_button_partial(self) -> None:
+        """Not an icon control: it navigates to a flow, so it keeps its words."""
+        account = AccountFactory.create()
+
+        html = _client_for(account).get(reverse("accounts:settings")).content.decode()
+
+        assert "Change email" in html
+        assert reverse("accounts:change_email") in html
+        # includes/_button.html's ghost variant, in place of the pill.
+        assert "border border-text-3/30" in html
+        assert "border border-text-3/30 rounded-sm px-3 py-1.5" not in html

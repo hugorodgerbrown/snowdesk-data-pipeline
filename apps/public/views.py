@@ -1552,7 +1552,7 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
 
     No ``__UUID__``-templated delete URL, unlike ``_favourites_context``. A
     route row's Remove is a plain HTMX form rendered server-side into the
-    row itself (routes/partials/_route_row_map_actions.html), so nothing
+    row itself (routes/partials/_route_row_actions.html), so nothing
     client-side ever has to build that URL; only rename does, because its
     commit is a fetch from an inline editor.
 

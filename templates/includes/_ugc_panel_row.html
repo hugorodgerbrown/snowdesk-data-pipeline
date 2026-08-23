@@ -18,6 +18,9 @@ one anatomy, five slots, always in this order:
   action  right-aligned icon controls, TRASH ALWAYS LAST. Remove is the
           only action every panel has; favourites and a renameable
           download add a pencil before it.
+  disclosure
+          an optional expand control at the row's trailing edge, OUTSIDE
+          the action cluster. See the note on `disclosure_template`.
 
 Rows are not cards. There are no boxes inside a panel — each row draws a
 hairline (`border-t`) and nothing else, so a list reads as a list.
@@ -93,80 +96,147 @@ Parameters (passed via {% include … with … %}):
                 row's icon controls. Receives this include's full
                 context, so a server row's own object is in scope for
                 the action's hx-post URLs. Trash last, always.
+  disclosure_template (string, optional) — template path rendering a
+                trailing expand control (includes/_row_disclosure.html is
+                the one there is), likewise receiving this include's full
+                context. Rendered AFTER the actions span, and deliberately
+                outside it: "trash always last" is a rule about the ACTION
+                cluster, and a disclosure is not an action. It changes
+                nothing — it reveals what the row already is — so it sits
+                at the row's trailing edge, where a list-row disclosure
+                belongs, rather than competing with Rename and Remove for
+                a place in that cluster. A row that passes none renders no
+                element at all rather than an empty one: the map panels
+                have no disclosure (SNOW-658 removed the "Details →" link
+                — a pin's page is reached by tapping its pin), and an
+                empty flex child would still take the row's gap.
+  disclosure_panel_id (string, optional) — DOM id for the expand target
+                rendered INSIDE this row's own `<li>`, below the header
+                line. The disclosure control fills it and empties it
+                again; passing no id renders no panel. Keeping it in the
+                row rather than in the caller's loop is what makes one
+                favourite one list item — see the note above the markup
+                for the delete bug that taught us so.
+  disclosure_panel_testid (string, optional) — `data-testid` on that
+                panel. Named by the caller because the panel holds
+                whatever that surface expands into, and the shared row
+                should not know it is a favourite's card.
+{% endcomment %}
+{% comment %}
+THE `<li>` IS THE WHOLE FAVOURITE, not just its header line. The flex line
+lives in a wrapper inside it, so a row that expands can put its detail
+panel in the SAME list item as the header that opened it.
+
+This cost a bug to learn (SNOW-711). The panel started life as a sibling
+`<li>` in the account list's own loop, which made one favourite two list
+items — wrong for a `<ul>`, and wrong for Remove: the trash targets the
+row's id, so deleting swapped out the header and left the expanded card
+orphaned on the page under no heading. Hugo: "The delete button doesn't
+delete the detail panel - it deletes the header only." Nesting the panel
+is what makes one delete remove one favourite, with no second target to
+remember and no JS to keep them in step.
+
+A row with no disclosure renders the wrapper and nothing else, which is
+visually identical to the bare flex `<li>` this replaced — the border and
+the padding just moved one level apart. map_downloads_manager.js's
+buildRow still finds its hooks by attribute, not by depth.
 {% endcomment %}
 <li
-    class="flex items-center gap-2 border-t border-border py-2.25"
+    class="border-t border-border"
     {% if row_id %}id="{{ row_id }}"{% endif %}
     {% if renameable %}data-row-renameable{% endif %}
 >
-    {% if rule %}
-        <span
-            data-row-rule
-            aria-hidden="true"
-            class="basemap-identity-fill w-0.75 shrink-0 self-stretch rounded-pill"
-        ></span>
-    {% endif %}
-    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-        {# The label's own box is the inline editor's box: identical        #}
-        {# padding, radius and negative margins in both states, so          #}
-        {# committing a rename does not make the row jump. The transparent  #}
-        {# border is part of that — it is what would otherwise shift the    #}
-        {# text by a pixel when the editor's own border appears.            #}
-        {#                                                                  #}
-        {# The label is NOT a rename trigger, on any panel. It carried      #}
-        {# `cursor-text hover:border-border-strong` for a day, and clicking #}
-        {# it opened the editor. Hugo: "We have inline editing & the pencil #}
-        {# - choose one." The pencil is the one kept: this is a `<span>`,   #}
-        {# so its click was mouse-only — nothing to tab to, nothing for a   #}
-        {# screen reader to announce — while the pencil is a real 44×44     #}
-        {# button naming the row it renames. With the label inert, a        #}
-        {# renameable row also reads exactly like a non-renameable one at   #}
-        {# rest, which is the point of a shared row.                        #}
-        {#                                                                  #}
-        {# The -6px bleed stays: it puts the label's TEXT on the row's own  #}
-        {# left edge, in line with the meta line below it, in both states.  #}
-        {# What made it visible as a defect was the scroll container it     #}
-        {# bled out of — fixed where that container is declared, in         #}
-        {# includes/_ugc_panel.html.                                        #}
-        <span
-            data-row-label
-            {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-            class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
-        >{{ label }}</span>
-        {% if renameable or js_filled %}
-            {# Hidden until inline_rename.js reveals it. Rendered here      #}
-            {# rather than created in JS so its own copy (the aria-label)   #}
-            {# passes through a template, where makemessages can see it.    #}
-            {#                                                              #}
-            {# No `w-full`: as a stretched flex child this box already      #}
-            {# fills the line, and `width: 100%` PLUS the -6px margins made #}
-            {# it 12px narrower than the label on the right — the two are   #}
-            {# meant to be the same box (measured in Chromium: label        #}
-            {# 11–373, editor 11–361).                                      #}
-            <input
-                type="text"
-                data-row-rename-input
-                hidden
-                value="{{ label }}"
-                maxlength="100"
-                aria-label="{{ rename_label }}"
-                class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
-            >
+    <div class="flex items-center gap-2 py-2.25">
+        {% if rule %}
+            <span
+                data-row-rule
+                aria-hidden="true"
+                class="basemap-identity-fill w-0.75 shrink-0 self-stretch rounded-pill"
+            ></span>
         {% endif %}
-        {% if meta or meta_template or js_filled %}
-            <span data-row-meta class="truncate text-summary text-text-3">
-                {% if meta_template %}
-                    {% include meta_template %}
-                {% else %}
-                    {{ meta }}
-                {% endif %}
-            </span>
+        <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            {# The label's own box is the inline editor's box: identical        #}
+            {# padding, radius and negative margins in both states, so          #}
+            {# committing a rename does not make the row jump. The transparent  #}
+            {# border is part of that — it is what would otherwise shift the    #}
+            {# text by a pixel when the editor's own border appears.            #}
+            {#                                                                  #}
+            {# The label is NOT a rename trigger, on any panel. It carried      #}
+            {# `cursor-text hover:border-border-strong` for a day, and clicking #}
+            {# it opened the editor. Hugo: "We have inline editing & the pencil #}
+            {# - choose one." The pencil is the one kept: this is a `<span>`,   #}
+            {# so its click was mouse-only — nothing to tab to, nothing for a   #}
+            {# screen reader to announce — while the pencil is a real 44×44     #}
+            {# button naming the row it renames. With the label inert, a        #}
+            {# renameable row also reads exactly like a non-renameable one at   #}
+            {# rest, which is the point of a shared row.                        #}
+            {#                                                                  #}
+            {# The -6px bleed stays: it puts the label's TEXT on the row's own  #}
+            {# left edge, in line with the meta line below it, in both states.  #}
+            {# What made it visible as a defect was the scroll container it     #}
+            {# bled out of — fixed where that container is declared, in         #}
+            {# includes/_ugc_panel.html.                                        #}
+            <span
+                data-row-label
+                {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
+                class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
+            >{{ label }}</span>
+            {% if renameable or js_filled %}
+                {# Hidden until inline_rename.js reveals it. Rendered here      #}
+                {# rather than created in JS so its own copy (the aria-label)   #}
+                {# passes through a template, where makemessages can see it.    #}
+                {#                                                              #}
+                {# No `w-full`: as a stretched flex child this box already      #}
+                {# fills the line, and `width: 100%` PLUS the -6px margins made #}
+                {# it 12px narrower than the label on the right — the two are   #}
+                {# meant to be the same box (measured in Chromium: label        #}
+                {# 11–373, editor 11–361).                                      #}
+                <input
+                    type="text"
+                    data-row-rename-input
+                    hidden
+                    value="{{ label }}"
+                    maxlength="100"
+                    aria-label="{{ rename_label }}"
+                    class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
+                >
+            {% endif %}
+            {% if meta or meta_template or js_filled %}
+                <span data-row-meta class="truncate text-summary text-text-3">
+                    {% if meta_template %}
+                        {% include meta_template %}
+                    {% else %}
+                        {{ meta }}
+                    {% endif %}
+                </span>
+            {% endif %}
+        </span>
+        {% if value or js_filled %}
+            <span data-row-value class="shrink-0 font-mono text-summary text-text-2">{{ value }}</span>
         {% endif %}
-    </span>
-    {% if value or js_filled %}
-        <span data-row-value class="shrink-0 font-mono text-summary text-text-2">{{ value }}</span>
-    {% endif %}
-    {% if actions_template %}
-        <span class="flex shrink-0 items-center">{% include actions_template %}</span>
+        {% if actions_template %}
+            <span class="flex shrink-0 items-center">{% include actions_template %}</span>
+        {% endif %}
+        {% if disclosure_template %}{% include disclosure_template %}{% endif %}
+    </div>
+    {% if disclosure_panel_id %}
+        {# The disclosure's expand target — empty until the chevron fills it, #}
+        {# and emptied again when the chevron closes. INSIDE the row's own    #}
+        {# <li>, so Remove takes the card with the header (see the note at    #}
+        {# the top of this file).                                             #}
+        {#                                                                    #}
+        {# The padding arrives with the card: an empty block box is 0px tall, #}
+        {# so a collapsed row's panel costs nothing, and the gap separating   #}
+        {# an expanded card from the rows around it appears only once there   #}
+        {# is a card. `:has(*)` rather than `:empty` because djangofmt puts   #}
+        {# the closing tag on its own line, and that whitespace text node is  #}
+        {# enough for `:empty` to stop matching.                              #}
+        <div
+            id="{{ disclosure_panel_id }}"
+            data-row-panel
+            {% if disclosure_panel_testid %}data-testid="{{ disclosure_panel_testid }}"{% endif %}
+            class="[&:has(*)]:pb-3"
+        >
+        </div>
     {% endif %}
 </li>

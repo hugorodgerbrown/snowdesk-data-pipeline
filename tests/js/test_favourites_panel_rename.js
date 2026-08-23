@@ -31,6 +31,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/inline_rename.js';
+import '../../static/js/row_rename_commit.js';
 import '../../static/js/map_sheet.js';
 
 const LIST_URL = '/favourites/partials/list/?variant=map';
@@ -76,7 +77,7 @@ const sheet = document.getElementById('favourite-sheet');
  *
  * Stands in for what favourites:list swaps in — the row's shape is
  * includes/_ugc_panel_row.html's plus
- * favourites/partials/_favourite_row_map_actions.html's, both asserted
+ * favourites/partials/_favourite_row_actions.html's, both asserted
  * server-side in tests/favourites/test_views.py.
  *
  * @returns {HTMLElement} The row.

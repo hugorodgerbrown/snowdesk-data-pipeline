@@ -17,4 +17,9 @@ beside the real ones, never included from a real surface.
 <ul class="flex flex-col">
     {% include "includes/_ugc_panel_row.html" with label="Verbier" meta="Snowdesk Terrain" value="18.2 MB" rule=True actions_template="includes/_map_downloads_row_actions.html" %}
     {% include "includes/_ugc_panel_row.html" with label="Arolla ridge" meta="Val d'Hérens" actions_template="includes/_map_downloads_row_actions.html" %}
+    {# SNOW-711: the third row carries a disclosure, so the panel shows    #}
+    {# where that control sits relative to the action cluster — outside    #}
+    {# it, at the trailing edge. No map panel has one; the account page's  #}
+    {# favourite row does.                                                 #}
+    {% include "includes/_ugc_panel_row.html" with label="Cabane des Dix" meta="Val des Dix · saved 3 Feb 2026" actions_template="includes/_map_downloads_row_actions.html" disclosure_template="includes/_row_disclosure.html" disclosure_href="#" disclosure_panel_id="ugc-panel-demo-disclosure-panel" disclosure_label="Show details for Cabane des Dix" %}
 </ul>
