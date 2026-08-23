@@ -12,9 +12,9 @@ For each unresolved ``Location``:
    whichever pin minted the cell, shared by everything in it, and Mont Fort
    must carry 3328 m rather than the cell's average. Two calls per location
    is the price of the distinction, and this is a one-shot backfill.
-2. ``resolve_forecast_point`` reuses (or creates) the shared cell the
+2. ``resolve_forecast_cell`` reuses (or creates) the shared cell the
    location's coordinates fall in, which is what puts the location into
-   ``ForecastPoint.objects.active()`` and so into the scheduled
+   ``ForecastCell.objects.active()`` and so into the scheduled
    ``fetch_weather`` point pass — no scheduler change needed.
 
 Both calls are made even in a dry run, so the reported outcome reflects
@@ -62,7 +62,7 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.core.command_iteration import iterate_rows
 from apps.locations.models import Location
 from apps.weather.services.elevation import fetch_elevation
-from apps.weather.services.forecast_points import resolve_forecast_point
+from apps.weather.services.forecast_cells import resolve_forecast_cell
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ class Command(BaseCommand):
     help = (
         "Resolve each unresolved curated Location's own elevation (via "
         "fetch_elevation) and its shared forecast cell (via "
-        "resolve_forecast_point), widening the point-weather polling set to "
+        "resolve_forecast_cell), widening the point-weather polling set to "
         "cover curated locations. Read-only unless --commit is passed."
     )
 
@@ -193,7 +193,7 @@ class Command(BaseCommand):
             # External HTTP calls — kept outside any transaction so a slow
             # or failing request never holds a DB lock.
             elevation = fetch_elevation(location.latitude, location.longitude)
-            cell = resolve_forecast_point(location.latitude, location.longitude)
+            cell = resolve_forecast_cell(location.latitude, location.longitude)
         except Exception:  # noqa: BLE001 — broad catch intentional: a per-location failure must not abort the batch
             logger.exception(
                 "link_location_forecast_cells: failed to resolve location %r (id=%s)",
@@ -210,7 +210,7 @@ class Command(BaseCommand):
         counts["linked"] += 1
         if verbosity >= 2:
             logger.info(
-                "Resolved location %r (id=%s) -> %.0fm, ForecastPoint id=%s",
+                "Resolved location %r (id=%s) -> %.0fm, ForecastCell id=%s",
                 location.name or "<anonymous>",
                 location.pk,
                 elevation,

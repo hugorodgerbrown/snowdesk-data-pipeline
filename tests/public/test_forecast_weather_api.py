@@ -3,7 +3,7 @@ tests/public/test_forecast_weather_api.py — Tests for GET /api/forecast-weathe
 
 Covers (SNOW-573):
 
-* Privacy — the load-bearing test: a ``ForecastPoint`` reachable only from
+* Privacy — the load-bearing test: a ``ForecastCell`` reachable only from
   a ``Favourite`` must never appear in this public endpoint.
 * Response shape: ``[lon, lat]`` ordering, ``resort_id``/``name``/
   ``region_id``/``days`` properties.
@@ -32,8 +32,8 @@ from waffle.testutils import override_flag
 from apps.core.freshness import GENERATED_AT_HEADER, MAX_AGE_HEADER, UNSAFE_AFTER_HEADER
 from tests.factories import (
     FavouriteFactory,
-    ForecastPointFactory,
-    ForecastPointWeatherFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherFactory,
     ResortFactory,
 )
 
@@ -58,28 +58,28 @@ class TestForecastWeatherGeojsonPrivacy:
     """The privacy contract is this ticket's most important test."""
 
     def test_favourite_only_point_never_appears(self) -> None:
-        """A ForecastPoint reachable only from a Favourite is never in the public payload.
+        """A ForecastCell reachable only from a Favourite is never in the public payload.
 
         This is the assertion the whole endpoint exists to uphold: favourite
         pins are private, and the public map layer must only ever surface
         resort-anchored weather. Deleting the ``forecast_point__isnull=False``
         + resort-anchoring filter in the view would make this test fail.
         """
-        favourite_point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
+        favourite_point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
         favourite = FavouriteFactory.create(
             forecast_point=favourite_point,
             latitude=47.0,
             longitude=8.0,
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=favourite_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=favourite_point,
             valid_for_date=timezone.localdate(),
         )
         # A resort-anchored point, so the response isn't trivially empty.
-        resort_point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        resort_point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
         ResortFactory.create(geocoded=True, forecast_point=resort_point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=resort_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=resort_point,
             valid_for_date=timezone.localdate(),
         )
 
@@ -112,7 +112,7 @@ class TestForecastWeatherGeojsonPrivacy:
 
     def test_ungeocoded_resort_with_forecast_point_is_skipped(self) -> None:
         """A resort missing coordinates is excluded even if linked to a point."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(latitude=None, longitude=None, forecast_point=point)
 
         response = Client().get(reverse("api:forecast_weather_geojson"))
@@ -134,12 +134,12 @@ class TestForecastWeatherGeojsonShape:
     @freeze_time("2026-08-07T12:00:00Z")
     def test_feature_shape(self) -> None:
         """[lon, lat] ordering and resort_id/name/region_id/days properties."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(
             name="Verbier", geocoded=True, forecast_point=point
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=dt.date(2026, 8, 7),
             weather_code=71,  # light snowfall
             sunrise=dt.datetime(2026, 8, 7, 6, 0, tzinfo=dt.UTC),
@@ -175,7 +175,7 @@ class TestForecastWeatherGeojsonShape:
 
     def test_geometry_is_resort_coordinates_not_point_coordinates(self) -> None:
         """Geometry is the resort's own coordinates, not the quantised point's."""
-        point = ForecastPointFactory.create(latitude=46.5, longitude=7.9)
+        point = ForecastCellFactory.create(latitude=46.5, longitude=7.9)
         resort = ResortFactory.create(
             geocoded=True, latitude=46.1, longitude=7.4, forecast_point=point
         )
@@ -188,7 +188,7 @@ class TestForecastWeatherGeojsonShape:
 
     def test_resort_with_no_weather_rows_yields_empty_days(self) -> None:
         """A newly-linked resort with no fetched weather yet still gets a feature."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
 
         response = Client().get(reverse("api:forecast_weather_geojson"))
@@ -204,13 +204,13 @@ class TestForecastWeatherGeojsonDateParam:
 
     def test_date_param_narrows_to_one_date(self) -> None:
         """?d= restricts every feature's days dict to the requested date."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=dt.date(2026, 8, 7)
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=dt.date(2026, 8, 7)
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=dt.date(2026, 8, 8)
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=dt.date(2026, 8, 8)
         )
 
         response = Client().get(
@@ -222,13 +222,13 @@ class TestForecastWeatherGeojsonDateParam:
 
     def test_no_date_param_returns_whole_window(self) -> None:
         """Without ?d=, days carries every stored date (mirrors /api/ratings/)."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=dt.date(2026, 8, 7)
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=dt.date(2026, 8, 7)
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=dt.date(2026, 8, 8)
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=dt.date(2026, 8, 8)
         )
 
         response = Client().get(reverse("api:forecast_weather_geojson"))
@@ -271,17 +271,17 @@ class TestForecastWeatherGeojsonHeaders:
 
     def test_generated_at_is_oldest_fetched_at(self) -> None:
         """generated_at is the OLDEST fetched_at across the payload's rows."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
         older = timezone.now() - dt.timedelta(hours=2)
         newer = timezone.now() - dt.timedelta(minutes=5)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=dt.date(2026, 8, 7),
             fetched_at=older,
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=dt.date(2026, 8, 8),
             fetched_at=newer,
         )
@@ -307,9 +307,9 @@ class TestForecastWeatherGeojsonQueryCount:
 
         ``index`` varies the point's coordinates so repeated calls land in
         distinct (lat_cell, lon_cell, elevation_band) cells rather than
-        tripping ``ForecastPoint``'s unique_together constraint.
+        tripping ``ForecastCell``'s unique_together constraint.
         """
-        point = ForecastPointFactory.create(
+        point = ForecastCellFactory.create(
             latitude=46.1 + index * 0.5, longitude=7.4 + index * 0.5
         )
         ResortFactory.create(
@@ -318,8 +318,8 @@ class TestForecastWeatherGeojsonQueryCount:
             longitude=point.longitude,
             forecast_point=point,
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=timezone.localdate()
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=timezone.localdate()
         )
 
     def test_query_count_is_flat_regardless_of_resort_count(self) -> None:
@@ -350,12 +350,12 @@ class TestForecastWeatherGeojsonShortWindowTolerance:
 
     def test_short_window_of_five_rows(self) -> None:
         """A point with only 5 stored rows (a model that ran short)."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
         start = dt.date(2026, 8, 7)
         for offset in range(5):
-            ForecastPointWeatherFactory.create(
-                forecast_point=point,
+            ForecastCellWeatherFactory.create(
+                forecast_cell=point,
                 valid_for_date=start + dt.timedelta(days=offset),
             )
 
@@ -367,10 +367,10 @@ class TestForecastWeatherGeojsonShortWindowTolerance:
 
     def test_null_temperature_and_snowfall_pass_through_as_none(self) -> None:
         """Nullable extended fields surface as None, not omitted or coerced."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=dt.date(2026, 8, 7),
             temperature_2m_max=None,
             temperature_2m_min=None,

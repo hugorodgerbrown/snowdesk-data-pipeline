@@ -1,6 +1,6 @@
 ---
 name: locations
-description: Coordinate reference — Favourite, Resort, ForecastPoint, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
+description: Coordinate reference — Favourite, Resort, ForecastCell, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
 last-reviewed: 2026-08-23
 ---
@@ -10,7 +10,7 @@ last-reviewed: 2026-08-23
 Snowdesk stores coordinates on seven models in five different shapes. Each
 shape is precise, quantised, derived or estimated for a reason, and until
 this document those reasons lived in scattered docstrings and in the heads of
-whoever wrote them. Someone reading `ForecastPoint.latitude` had no way to
+whoever wrote them. Someone reading `ForecastCell.latitude` had no way to
 learn that it is deliberately not a real position.
 
 This is a reference, not a decision. The decisions it points at are
@@ -32,11 +32,11 @@ it, and what may I safely conclude from it?**
 | `Location.latitude/longitude` | **The primitive** | Exact, immovable | Whoever curated or minted the row |
 | `Location.elevation_m` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
 | `Favourite.latitude/longitude` | Precise, user-supplied | Exact | The user, dropping a pin |
-| `Favourite.elevation` | Derived | Approximate | Copied from the resolved `ForecastPoint` |
+| `Favourite.elevation` | Derived | Approximate | Copied from the resolved `ForecastCell` |
 | `Resort.latitude/longitude` | Precise, curated | Exact as a *village* | Geocoder, on the resort's **name** |
-| `ForecastPoint.latitude/longitude` | Quantised, shared | **Not a position** | First pin to mint the cell |
-| `ForecastPoint.lat_cell/lon_cell/elevation_band` | Grid index | Exact index, coarse place | `quantise_*()` |
-| `ForecastPoint.elevation` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
+| `ForecastCell.latitude/longitude` | Quantised, shared | **Not a position** | First pin to mint the cell |
+| `ForecastCell.lat_cell/lon_cell/elevation_band` | Grid index | Exact index, coarse place | `quantise_*()` |
+| `ForecastCell.elevation` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
 | `FieldObservation.latitude/longitude` | Report location | Exact as *reported* | The user, possibly by dragging |
 | `FieldObservation.gps_latitude/gps_longitude` | Raw device fix | Exact as *measured* | The device |
 | `MicroRegion.centre` (and `SubRegion` / `MajorRegion`) | Derived centroid | Approximate | Polygon centroid, `refresh_eaws_fixtures` |
@@ -84,12 +84,12 @@ rounds them and nothing should.
 The pin's **name** is the user's own text, which is why `favourite_detail`
 is `sharing=False` with `Cache-Control: private, no-store` — a saved place
 must not be indexed. Note what this does *not* say: the coordinate is not
-anonymised anywhere, and the `ForecastPoint` it resolves to never made it
+anonymised anywhere, and the `ForecastCell` it resolves to never made it
 so. See [`location-is-the-primitive`](decisions/location-is-the-primitive.md),
 which corrected exactly that misreading.
 
 `elevation` is not user-supplied. It is copied from the resolved
-`ForecastPoint`'s sampling elevation, so it is the elevation of the shared
+`ForecastCell`'s sampling elevation, so it is the elevation of the shared
 cell, not of the pin — accurate to the 200 m band, not to the metre.
 
 ### Precise, curated — `Resort`
@@ -108,9 +108,9 @@ This is the fact `Location` exists to fix: a resort is an area, and an area
 needs several locations. See
 [`location-is-the-primitive`](decisions/location-is-the-primitive.md).
 
-### Quantised, shared — `ForecastPoint`
+### Quantised, shared — `ForecastCell`
 
-**A `ForecastPoint` is not a place.** It is the cell at which we call
+**A `ForecastCell` is not a place.** It is the cell at which we call
 Open-Meteo, and its `latitude`/`longitude` are whatever the first pin to
 mint that cell happened to hold. Nobody is there. Do not render it, do not
 reverse-geocode it, and do not treat two pins in one cell as two pins in one
@@ -126,7 +126,7 @@ is [`forecast-point-quantisation`](decisions/forecast-point-quantisation.md).
 `elevation` is the cell's sampling elevation from `fetch_elevation`, and is
 what `Favourite.elevation` copies.
 
-A cell survives only while something references it: `ForecastPointQuerySet`
+A cell survives only while something references it: `ForecastCellQuerySet`
 `.active()` / `.inactive()` count referents, and `prune_forecast_points`
 deletes the unreferenced ones **and their stored weather**. Anything that
 adds or removes a referent must move `active()` in the same change.
@@ -201,7 +201,7 @@ where anybody is.
 
 **1. Elevation is always derived, never supplied.**
 `apps/weather/services/elevation.py::fetch_elevation` resolves it from a
-lat/lon, and it is stored on `ForecastPoint.elevation` and copied to
+lat/lon, and it is stored on `ForecastCell.elevation` and copied to
 `Favourite.elevation` so the lookup happens once. No surface asks a user for
 an elevation, and no import should accept one.
 

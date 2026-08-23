@@ -10,7 +10,7 @@ Covers:
     plus mid-day and mid-night reference points.
   - build_weather_display: shape of the returned dict, ``None`` short-circuit
     when no snapshot is supplied, the new icon_bucket / condition_label /
-    icon_filename fields, and that it also accepts a ForecastPointWeather row.
+    icon_filename fields, and that it also accepts a ForecastCellWeather row.
   - build_point_forecast_panel (SNOW-417): per-day shape, ``None`` for an
     empty list, and hourly passthrough.
   - weather_icon_filename (SNOW-573): day/night suffix behaviour, extracted
@@ -40,7 +40,7 @@ from apps.weather.services.weather_display import (
     weather_code_icon_bucket,
     weather_icon_filename,
 )
-from tests.factories import ForecastPointWeatherFactory, WeatherSnapshotFactory
+from tests.factories import ForecastCellWeatherFactory, WeatherSnapshotFactory
 
 # ---------------------------------------------------------------------------
 # weather_code_bucket
@@ -341,9 +341,9 @@ class TestBuildWeatherDisplay:
         assert "day" not in display["icon_filename"]
         assert "night" not in display["icon_filename"]
 
-    def test_accepts_forecast_point_weather_row(self) -> None:
-        """build_weather_display also accepts a ForecastPointWeather row."""
-        weather = ForecastPointWeatherFactory.create(
+    def test_accepts_forecast_cell_weather_row(self) -> None:
+        """build_weather_display also accepts a ForecastCellWeather row."""
+        weather = ForecastCellWeatherFactory.create(
             weather_code=0,
             sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
             sunset=datetime.datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
@@ -428,7 +428,7 @@ class TestBuildPointForecastPanel:
 
     def test_per_day_shape(self) -> None:
         """Each day carries the icon/label fields plus the multi-day extras."""
-        snapshot = ForecastPointWeatherFactory.create(
+        snapshot = ForecastCellWeatherFactory.create(
             weather_code=71,  # snowfall
             valid_for_date=datetime.date(2026, 5, 1),  # a Friday
             sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
@@ -458,11 +458,11 @@ class TestBuildPointForecastPanel:
 
     def test_multiple_days_preserve_order(self) -> None:
         """Days are emitted in the order the snapshots list is passed in."""
-        day0 = ForecastPointWeatherFactory.create(
+        day0 = ForecastCellWeatherFactory.create(
             valid_for_date=datetime.date(2026, 5, 1)
         )
-        day1 = ForecastPointWeatherFactory.create(
-            forecast_point=day0.forecast_point,
+        day1 = ForecastCellWeatherFactory.create(
+            forecast_cell=day0.forecast_cell,
             valid_for_date=datetime.date(2026, 5, 2),
         )
         now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
@@ -477,7 +477,7 @@ class TestBuildPointForecastPanel:
 
     def test_none_hourly_series_becomes_empty_list(self) -> None:
         """A row with hourly_series=None surfaces as an empty list, not None."""
-        snapshot = ForecastPointWeatherFactory.create(hourly_series=None)
+        snapshot = ForecastCellWeatherFactory.create(hourly_series=None)
         now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
 
         panel = build_point_forecast_panel([snapshot], now)
@@ -521,7 +521,7 @@ class TestBuildPointWeatherDays:
 
     def test_keyed_by_iso_date_with_expected_shape(self) -> None:
         """Each entry is keyed by ISO date with icon/label/tmax/tmin/snow."""
-        row = ForecastPointWeatherFactory.create(
+        row = ForecastCellWeatherFactory.create(
             weather_code=71,  # light snowfall
             valid_for_date=datetime.date(2026, 5, 1),
             sunrise=datetime.datetime(2026, 5, 1, 6, 0, tzinfo=UTC),
@@ -546,14 +546,14 @@ class TestBuildPointWeatherDays:
 
     def test_multiple_rows_produce_multiple_keys(self) -> None:
         """A multi-day window yields one dict entry per date."""
-        point = ForecastPointWeatherFactory.create(
+        point = ForecastCellWeatherFactory.create(
             valid_for_date=datetime.date(2026, 5, 1)
-        ).forecast_point
-        row0 = ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=datetime.date(2026, 5, 2)
+        ).forecast_cell
+        row0 = ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=datetime.date(2026, 5, 2)
         )
-        row1 = ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=datetime.date(2026, 5, 3)
+        row1 = ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=datetime.date(2026, 5, 3)
         )
         now = datetime.datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -564,10 +564,10 @@ class TestBuildPointWeatherDays:
     def test_null_extended_fields_pass_through_as_none(self) -> None:
         """Nullable temperature/snowfall fields surface as None, not dropped.
 
-        ForecastPointWeatherFactory sets every extended field non-null by
+        ForecastCellWeatherFactory sets every extended field non-null by
         default, so nulls must be overridden explicitly here.
         """
-        row = ForecastPointWeatherFactory.create(
+        row = ForecastCellWeatherFactory.create(
             valid_for_date=datetime.date(2026, 5, 1),
             temperature_2m_max=None,
             temperature_2m_min=None,

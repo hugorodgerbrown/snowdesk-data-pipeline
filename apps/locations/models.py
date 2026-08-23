@@ -158,7 +158,7 @@ class Location(BaseModel):
         ),
     )
     forecast_cell = models.ForeignKey(
-        "weather.ForecastPoint",
+        "weather.ForecastCell",
         on_delete=models.PROTECT,
         null=True,
         blank=True,

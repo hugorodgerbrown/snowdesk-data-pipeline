@@ -56,12 +56,12 @@ deploy log.
   sheet — not to create the resort in the admin first.
 - The sheet carries **no coordinates**, by design. `import_resorts` never
   writes `latitude`/`longitude`, so an added resort arrives ungeocoded and
-  gets no `ForecastPoint` until someone places it in the map editor. That is
+  gets no `ForecastCell` until someone places it in the map editor. That is
   also why a coordinate placed on production cannot travel back to the
   fixture through the sheet — `dump_resorts_fixture` reads the *local* DB.
 - Deleting a resort is safe for user data: `Favourite.resort` is
   `SET_NULL`, so a favourite made from a deleted resort degrades to a plain
   pin with its snapshotted name, coordinates and region intact. It does
-  leave the resort's `ForecastPoint` unreferenced — run
+  leave the resort's `ForecastCell` unreferenced — run
   `prune_forecast_points --commit` after a bulk deletion to clear those and
   their cascaded weather rows (SNOW-633).

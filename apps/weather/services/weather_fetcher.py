@@ -52,17 +52,17 @@ dispatcher used by the bulletin page render:
   fetch_weather_for_point(point, target_date, *, commit, base_url, on_fetched)
       Fetches a POINT_FORECAST_DAYS-day (7-day) window of comprehensive daily
       forecast data, plus a POINT_HOURLY_DAYS-day (2-day) near-term hourly
-      series of ski-relevant variables, for one ForecastPoint from the
+      series of ski-relevant variables, for one ForecastCell from the
       Open-Meteo forecast endpoint, passing the point's ``elevation``
       explicitly so the forecast is statistically downscaled to the pin's
-      altitude. Persists one ``ForecastPointWeather`` row per day. Returns a
-      list of ``(ForecastPointWeather, created)`` tuples — one per day —
+      altitude. Persists one ``ForecastCellWeather`` row per day. Returns a
+      list of ``(ForecastCellWeather, created)`` tuples — one per day —
       when ``commit=True``, or an empty list when ``commit=False``. Points
       are forecast-only — there is no archive/backfill equivalent (SNOW-416,
       SNOW-417).
 
   fetch_all_points(target_date, *, commit, base_url, on_fetched)
-      Calls fetch_weather_for_point for every ``ForecastPoint.objects.active()``
+      Calls fetch_weather_for_point for every ``ForecastCell.objects.active()``
       row (points referenced by at least one Favourite); returns summary
       counters {created, updated, failed, skipped}.
 
@@ -98,9 +98,9 @@ from django.utils import timezone as django_timezone
 
 from apps.regions.models import Centre, MicroRegion
 from apps.weather.models import (
-    ForecastPoint,
-    ForecastPointWeather,
-    ForecastPointWeatherHistory,
+    ForecastCell,
+    ForecastCellWeather,
+    ForecastCellWeatherHistory,
     WeatherSnapshot,
 )
 from apps.weather.services import open_meteo
@@ -121,7 +121,7 @@ REGION_DAILY_VARIABLES = (
     "weather_code,sunrise,sunset,temperature_2m_max,temperature_2m_min,snowfall_sum"
 )
 
-# Comprehensive daily variable set requested for ForecastPoint forecasts — a
+# Comprehensive daily variable set requested for ForecastCell forecasts — a
 # favourited point is rendered as a personal detail card, so it asks for the
 # full daily block rather than the six variables REGION_DAILY_VARIABLES needs
 # for the bulletin header. The two sets overlap but are not nested by
@@ -148,7 +148,7 @@ POINT_HOURLY_DAYS = 2
 
 # Ski-relevant hourly variables for the near-term hourly series. Open-Meteo
 # has no daily freezing-level aggregate, so freezing_level_height is only
-# available hourly — the daily column on ForecastPointWeather is derived
+# available hourly — the daily column on ForecastCellWeather is derived
 # from this block (see _daily_max_freezing_level below).
 POINT_HOURLY_VARIABLES = (
     "temperature_2m,snowfall,precipitation,"
@@ -278,7 +278,7 @@ def _build_snapshot_defaults(
 
 def _build_point_defaults(daily: dict[str, Any], idx: int) -> dict[str, Any]:
     """
-    Build the ``defaults`` dict for a ForecastPointWeather update_or_create call.
+    Build the ``defaults`` dict for a ForecastCellWeather update_or_create call.
 
     Only ``weather_code``, ``sunrise``, and ``sunset`` are treated as
     required (a KeyError there is a genuine API-shape problem). Every
@@ -327,9 +327,9 @@ def _build_point_defaults(daily: dict[str, Any], idx: int) -> dict[str, Any]:
 
 def _build_history_defaults(point_defaults: dict[str, Any]) -> dict[str, Any]:
     """
-    Project a ForecastPointWeather defaults dict onto its history counterpart.
+    Project a ForecastCellWeather defaults dict onto its history counterpart.
 
-    ``ForecastPointWeatherHistory`` retains a deliberate subset of the
+    ``ForecastCellWeatherHistory`` retains a deliberate subset of the
     daily payload: the scalars whose movement between issue dates is the
     convergence signal. ``hourly_series`` is dropped (it exists for only
     the first ``POINT_HOURLY_DAYS`` days of a window, so it cannot form a
@@ -342,12 +342,12 @@ def _build_history_defaults(point_defaults: dict[str, Any]) -> dict[str, Any]:
 
     Args:
         point_defaults: The defaults dict built for the accompanying
-            ForecastPointWeather upsert, after the caller has layered on
+            ForecastCellWeather upsert, after the caller has layered on
             ``freezing_level_height``.
 
     Returns:
         A dict suitable for passing as ``defaults=`` to update_or_create
-        on ForecastPointWeatherHistory.
+        on ForecastCellWeatherHistory.
 
     """
     return {
@@ -643,7 +643,7 @@ def _point_daily_dates(daily: dict[str, Any], point_pk: int) -> list[date]:
 
     Args:
         daily: The ``"daily"`` block of an Open-Meteo forecast response.
-        point_pk: The ForecastPoint pk, for error messages only.
+        point_pk: The ForecastCell pk, for error messages only.
 
     Returns:
         The parsed provider dates, in response order.
@@ -677,7 +677,7 @@ def _day_is_complete(daily: dict[str, Any], idx: int) -> bool:
 
     ``_build_point_defaults`` treats ``weather_code``, ``sunrise`` and
     ``sunset`` as required — it indexes them directly rather than through
-    its degrade-to-``None`` helper — and ``ForecastPointWeather`` declares
+    its degrade-to-``None`` helper — and ``ForecastCellWeather`` declares
     all three non-null. A day missing any of them cannot be stored, so
     callers drop the day rather than let ``update_or_create`` raise
     (SNOW-628).
@@ -706,16 +706,16 @@ def _get_point_forecast(url: str, params: dict[str, str]) -> dict[str, Any]:
 
 
 def fetch_weather_for_point(
-    point: ForecastPoint,
+    point: ForecastCell,
     target_date: date,
     *,
     commit: bool,
     base_url: str | None = None,
     on_fetched: Callable[[dict[str, Any]], None] | None = None,
     add_history: bool = False,
-) -> list[tuple[ForecastPointWeather, bool]]:
+) -> list[tuple[ForecastCellWeather, bool]]:
     """
-    Fetch and optionally persist a 7-day comprehensive forecast for one ForecastPoint.
+    Fetch and optionally persist a 7-day comprehensive forecast for one ForecastCell.
 
     Calls the Open-Meteo forecast endpoint (or a mirror when ``base_url``
     is set) once, passing the point's ``elevation`` explicitly so the
@@ -723,7 +723,7 @@ def fetch_weather_for_point(
     the model cell's mean terrain. Requests ``POINT_FORECAST_DAYS`` days of
     the ``POINT_DAILY_VARIABLES`` daily set plus an hourly block
     (``POINT_HOURLY_VARIABLES``) spanning the same window, then persists one
-    ForecastPointWeather row per day via update_or_create — ``idx=0`` is
+    ForecastCellWeather row per day via update_or_create — ``idx=0`` is
     ``target_date``, ``idx=6`` is ``target_date + 6 days``.
 
     Days the backing model did not resolve are dropped before anything is
@@ -752,14 +752,14 @@ def fetch_weather_for_point(
     this function.
 
     When ``add_history`` is set, each day also writes a
-    ``ForecastPointWeatherHistory`` row keyed on ``(point, day,
+    ``ForecastCellWeatherHistory`` row keyed on ``(point, day,
     target_date)``, inside the same transaction, retaining this issue's
     view of the day before a later run overwrites the row above
     (SNOW-575). It defaults to off: history is analysis-only, so it is
     switchable independently of the operational write (SNOW-629).
 
     Args:
-        point: The ForecastPoint to fetch weather for.
+        point: The ForecastCell to fetch weather for.
         target_date: The first calendar date of the forecast window, and
             the ``issued_date`` recorded against every history row written
             by this call.
@@ -772,13 +772,13 @@ def fetch_weather_for_point(
             back to the configured host and sends the ``apikey`` parameter.
         on_fetched: Optional callback called once after the response is
             parsed, with a dict for the first stored day —
-            ``{forecast_point_id, date, weather_code, sunrise, sunset,
+            ``{forecast_cell_id, date, weather_code, sunrise, sunset,
             captured_at}``. Defaults to ``None`` (no-op).
-        add_history: If True, also retain a ForecastPointWeatherHistory
+        add_history: If True, also retain a ForecastCellWeatherHistory
             row per stored day. Defaults to False.
 
     Returns:
-        A list of ``(ForecastPointWeather, created)`` tuples — one per
+        A list of ``(ForecastCellWeather, created)`` tuples — one per
         stored day, which is at most one per day in the forecast window —
         when ``commit=True``, where ``created`` is True for a new row or
         False for an update. Returns an empty list when ``commit=False``.
@@ -881,7 +881,7 @@ def fetch_weather_for_point(
     if on_fetched is not None:
         on_fetched(
             {
-                "forecast_point_id": point.pk,
+                "forecast_cell_id": point.pk,
                 "date": dates[first].isoformat(),
                 "weather_code": weather_code,
                 "sunrise": sunrise_str,
@@ -893,7 +893,7 @@ def fetch_weather_for_point(
     if not commit:
         return []
 
-    results: list[tuple[ForecastPointWeather, bool]] = []
+    results: list[tuple[ForecastCellWeather, bool]] = []
     # One transaction for the whole window so a mid-loop failure can't commit
     # a partial date range (SNOW-546, same idiom as the archive path above).
     # _build_point_defaults parses sunrise/sunset inside this loop, so a single
@@ -909,14 +909,14 @@ def fetch_weather_for_point(
                 if hourly and idx < POINT_HOURLY_DAYS
                 else None
             )
-            weather, created = ForecastPointWeather.objects.update_or_create(
-                forecast_point=point,
+            weather, created = ForecastCellWeather.objects.update_or_create(
+                forecast_cell=point,
                 valid_for_date=day,
                 defaults=defaults,
             )
             action = "Created" if created else "Updated"
             logger.debug(
-                "%s ForecastPointWeather: point=%s date=%s code=%d",
+                "%s ForecastCellWeather: point=%s date=%s code=%d",
                 action,
                 point.pk,
                 day,
@@ -930,8 +930,8 @@ def fetch_weather_for_point(
             # user-facing reads history, so the retention is switchable
             # without touching the operational write above (SNOW-629).
             if add_history:
-                ForecastPointWeatherHistory.objects.update_or_create(
-                    forecast_point=point,
+                ForecastCellWeatherHistory.objects.update_or_create(
+                    forecast_cell=point,
                     valid_for_date=day,
                     issued_date=target_date,
                     defaults={
@@ -954,9 +954,9 @@ def fetch_all_points(
     add_history: bool = False,
 ) -> dict[str, int]:
     """
-    Fetch weather for every active ForecastPoint (referenced by a Favourite).
+    Fetch weather for every active ForecastCell (referenced by a Favourite).
 
-    Iterates ``ForecastPoint.objects.active()`` — points with no favourites
+    Iterates ``ForecastCell.objects.active()`` — points with no favourites
     simply fall out of scope (the eviction mechanism; rows are retained,
     not deleted). Per-point HTTP failures are caught, logged, and counted
     (counter: ``failed``) — they do not abort the batch. All active points
@@ -976,13 +976,13 @@ def fetch_all_points(
             Called once per fetched point, for day 0 of its window. Defaults
             to ``None`` (no-op).
         add_history: Forwarded to each per-point call — retain a
-            ForecastPointWeatherHistory row per stored day. Defaults to
+            ForecastCellWeatherHistory row per stored day. Defaults to
             False.
 
     Returns:
         A dict with integer counters:
-          ``created``  — new ForecastPointWeather rows written.
-          ``updated``  — existing ForecastPointWeather rows updated.
+          ``created``  — new ForecastCellWeather rows written.
+          ``updated``  — existing ForecastCellWeather rows updated.
           ``failed``   — points where the HTTP call raised an exception.
           ``skipped``  — kept for counter-shape symmetry; always 0.
 
@@ -995,7 +995,7 @@ def fetch_all_points(
     }
 
     # Materialise once so we can use len() without a second DB round-trip.
-    points = list(ForecastPoint.objects.active().order_by("id"))
+    points = list(ForecastCell.objects.active().order_by("id"))
     logger.info(
         "fetch_all_points: date=%s points=%d commit=%s",
         target_date,

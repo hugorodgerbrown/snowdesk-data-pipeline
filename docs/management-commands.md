@@ -143,7 +143,7 @@ This brings a freshly migrated DB to a fully navigable state:
   for CH-4115 (Martigny-Verbier) — 178 of each model.
 - All bulletins carry render models at `RENDER_MODEL_VERSION` (day ratings via the
   production `apply_bulletin_day_ratings` service); no rebuild step is needed.
-- A small standalone `ForecastPoint` / `ForecastPointWeather` / `Favourite` set.
+- A small standalone `ForecastCell` / `ForecastCellWeather` / `Favourite` set.
 - The two named dev accounts (a superuser and an active, CH-4115-subscribed
   normal user that owns the favourites — folded in from the former
   `seed_dev_users` command). Credentials: [`docs/worktrees.md`](worktrees.md).
@@ -162,7 +162,7 @@ populated DB raises a clean `CommandError`. Exactly one selection flag is requir
 
 Model names are case-insensitive and strongly typed against a `SeedModel`
 enumeration (`bulletin`, `regionbulletin`, `regiondayrating`, `weathersnapshot`,
-`forecastpoint`, `forecastpointweather`, `favourite`, `user`); an empty or unknown value
+`forecastcell`, `forecastcellweather`, `favourite`, `user`); an empty or unknown value
 lists the available models. FK prerequisites of a selected model are pulled in
 automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
@@ -363,8 +363,8 @@ Per unresolved location it makes **two** Open-Meteo calls. `fetch_elevation`
 gives the location's *own* height — deliberately not the forecast cell's
 `elevation`, which is the representative height of whichever pin minted the
 cell and is shared by everything in it. Mont Fort must carry 3328 m, not the
-cell's average. Then `resolve_forecast_point` reuses or creates the shared
-cell, which is what puts the location into `ForecastPoint.objects.active()`
+cell's average. Then `resolve_forecast_cell` reuses or creates the shared
+cell, which is what puts the location into `ForecastCell.objects.active()`
 and so into the scheduled `fetch_weather` point pass — no scheduler change.
 
 Both calls are made even in a dry run, so the reported outcome is real; only
@@ -425,7 +425,7 @@ uv run python manage.py link_region_centroid_locations --commit  # apply
 ### `backfill_favourite_locations` — mint a Location per existing Favourite
 
 One-shot backfill for SNOW-704. Every favourite created before that ticket
-stores its own coordinates and points straight at a `ForecastPoint`; this
+stores its own coordinates and points straight at a `ForecastCell`; this
 mints the `Location` each one *is* and repoints the FK.
 
 **Not a data migration** — CLAUDE.md forbids bulk dataset updates in
@@ -690,10 +690,10 @@ incident that invalidates derived state:
 - `audit_resort_regions --commit` — after editing resort coordinates or
   region polygons; refixes FKs and rewrites the resort fixture.
 - `link_resort_forecast_points --commit` — one-off backfill for SNOW-503:
-  anchors every geocoded, unlinked `Resort` to a shared `weather.ForecastPoint`
-  via `apps.weather.services.forecast_points.resolve_forecast_point` (the same
+  anchors every geocoded, unlinked `Resort` to a shared `weather.ForecastCell`
+  via `apps.weather.services.forecast_cells.resolve_forecast_cell` (the same
   SNOW-416 resolution/reuse machinery `create_favourite` uses). Widens
-  `ForecastPoint.objects.active()` (favourite-OR-resort) so the scheduled
+  `ForecastCell.objects.active()` (favourite-OR-resort) so the scheduled
   `fetch_weather` point pass picks up linked resorts automatically — no
   scheduler change. Read-only by default; pass `--commit` to persist the
   FK. Idempotent — a resort with `forecast_point` already set is excluded
@@ -715,13 +715,13 @@ incident that invalidates derived state:
 
   Flags: `--commit`, `--delay SECONDS` (default 1.0).
 
-- `prune_forecast_points --commit` — deletes every `ForecastPoint` that no
+- `prune_forecast_points --commit` — deletes every `ForecastCell` that no
   `Favourite` and no `Resort` references (SNOW-633). A point becomes
   unreferenced when the last pin holding it goes away: a favourite deleted
   by its owner, or a resort retired by `import_resorts`. It is already
   invisible to the pipeline at that moment — the `fetch_weather` point pass
-  iterates `ForecastPoint.objects.active()` — so its `ForecastPointWeather`
-  and `ForecastPointWeatherHistory` rows can only grow staler. Both child
+  iterates `ForecastCell.objects.active()` — so its `ForecastCellWeather`
+  and `ForecastCellWeatherHistory` rows can only grow staler. Both child
   tables are `CASCADE`, so they go with the point.
 
   Fail-safe by FK: `Favourite.forecast_point` and `Resort.forecast_point`
@@ -1123,19 +1123,19 @@ endpoint; today uses the forecast endpoint. A single invocation therefore
 covers the entire default window correctly regardless of what is already
 in the DB.
 
-**Active-ForecastPoint pass (SNOW-416, widened SNOW-417)** — when the
+**Active-ForecastCell pass (SNOW-416, widened SNOW-417)** — when the
 resolved window reaches today, the command also fetches a **7-day** window
 (`POINT_FORECAST_DAYS`) of daily forecast data — plus a **2-day**
 (`POINT_HOURLY_DAYS`) near-term hourly series of ski-relevant variables
 (temperature, snowfall, precipitation, wind speed/gusts, freezing level) —
-for every **active** `ForecastPoint` (a point referenced by at least one
+for every **active** `ForecastCell` (a point referenced by at least one
 `Favourite` **or** `regions.Resort` — widened by SNOW-503's
 `link_resort_forecast_points` backfill so every geocoded resort gets a
 precise, elevation-downscaled forecast too; see
 [`favourites`/`accounts` glossary entries](glossary.md)),
 passing the point's stored `elevation` explicitly so the forecast is
 statistically downscaled to the pin's altitude. One API call per point
-returns the whole window; one `ForecastPointWeather` row per day is
+returns the whole window; one `ForecastCellWeather` row per day is
 persisted. Each row's `freezing_level_height` is derived as the daily
 maximum of that day's hourly values (Open-Meteo has no daily freezing-level
 aggregate); `hourly_series` is populated for the first `POINT_HOURLY_DAYS`
@@ -1163,24 +1163,24 @@ short wrote nothing at all.
 
 **Forecast history (SNOW-575, opt-in since SNOW-629)** — with
 `--add-history`, each stored day of the point pass also writes a
-`ForecastPointWeatherHistory` row keyed on `(forecast_point,
+`ForecastCellWeatherHistory` row keyed on `(forecast_point,
 valid_for_date, issued_date)`, in the same transaction as its
-`ForecastPointWeather` twin. It is **off by default**: nothing user-facing
+`ForecastCellWeather` twin. It is **off by default**: nothing user-facing
 reads the table, so retention is switchable without touching the
 operational write. The scheduled run passes the flag when
 `FETCH_WEATHER_ADD_HISTORY` is set in the environment (read at fire time,
 so flipping the Render variable and restarting `snowdesk-scheduler` is
-enough — no deploy). Because `ForecastPointWeather` is upserted on
+enough — no deploy). Because `ForecastCellWeather` is upserted on
 `(point, date)`, a forecast day is overwritten on every run and only the
 final day-of view survives; the history table retains the earlier ones, so
 how a forecast moved as its day approached can be read back
-(`ForecastPointWeatherHistory.objects.convergence_for(point, day)`).
+(`ForecastCellWeatherHistory.objects.convergence_for(point, day)`).
 `issued_date` is the run's anchor date, so the four scheduled runs in a day
 collapse to one row and a forecast day accrues one row per day of its
 window. The payload is a narrow subset — the scalars whose movement is the
 signal — with `hourly_series` and sunrise/sunset excluded. The table starts
 empty and cannot be backfilled: a past forecast no longer exists to fetch.
-The counters above are unaffected; they still count `ForecastPointWeather`
+The counters above are unaffected; they still count `ForecastCellWeather`
 rows only.
 
 Read-only by default; the API is always called even without `--commit`,
@@ -1220,7 +1220,7 @@ uv run python manage.py fetch_weather --commit --stash
 uv run python manage.py fetch_weather \
     --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
 
-# Region weather only — skip the active-ForecastPoint pass.
+# Region weather only — skip the active-ForecastCell pass.
 uv run python manage.py fetch_weather --commit --skip-points
 
 # Also retain the per-issue point-forecast history (SNOW-575).
@@ -1230,18 +1230,18 @@ uv run python manage.py fetch_weather --commit --add-history
 #   --date         YYYY-MM-DD  single date; mutually exclusive with --start/--end
 #   --start        YYYY-MM-DD  start of window (inclusive); defaults to DB-derived
 #   --end          YYYY-MM-DD  end of window (inclusive); defaults to today
-#   --commit                   persist WeatherSnapshot/ForecastPointWeather rows;
+#   --commit                   persist WeatherSnapshot/ForecastCellWeather rows;
 #                              omit for a read-only run
 #   --local-mirror             replay from apps/weather/local_mirrors/openmeteo_archive.ndjson
 #                              via the dev-only view (development.py only); the
-#                              active-ForecastPoint pass is skipped under this flag
+#                              active-ForecastCell pass is skipped under this flag
 #   --delay        SECONDS     seconds between per-region archive calls (default 1.0;
 #                              pass 0 to disable; no effect on the forecast endpoint)
 #   --stash                    append fetched weather records to the on-disk archive
 #                              (region weather only — points never participate)
-#   --skip-points              skip the active-ForecastPoint forecast pass; fetch
+#   --skip-points              skip the active-ForecastCell forecast pass; fetch
 #                              region weather only
-#   --add-history              also retain a ForecastPointWeatherHistory row per
+#   --add-history              also retain a ForecastCellWeatherHistory row per
 #                              stored day (SNOW-575); off by default, and passed
 #                              by the scheduler when FETCH_WEATHER_ADD_HISTORY is set
 ```

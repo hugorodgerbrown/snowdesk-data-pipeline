@@ -1,15 +1,15 @@
 """
 apps/weather/admin.py — Django admin registrations for the weather models.
 
-Provides list views and detail views for WeatherSnapshot, ForecastPoint,
-ForecastPointWeather, and ForecastPointWeatherHistory so that operators
+Provides list views and detail views for WeatherSnapshot, ForecastCell,
+ForecastCellWeather, and ForecastCellWeatherHistory so that operators
 can inspect Open-Meteo data without needing direct database access.
 
 ``WeatherSnapshotAdmin`` carries a one-click "Fetch today's weather"
 button that calls ``fetch_all_regions()`` directly from the changelist
-page. ``ForecastPointWeatherAdmin`` (SNOW-416) is its point analogue
+page. ``ForecastCellWeatherAdmin`` (SNOW-416) is its point analogue
 without the button — the point pass runs from ``fetch_weather`` only, not
-the admin UI — and ``ForecastPointWeatherHistoryAdmin`` (SNOW-575) beside
+the admin UI — and ``ForecastCellWeatherHistoryAdmin`` (SNOW-575) beside
 it is the only read surface on the forecast-convergence series.
 
 Split out of ``apps.bulletins.admin`` by SNOW-654; the admin URL names
@@ -25,9 +25,9 @@ from django.urls import URLPattern, path, reverse
 from django.utils import timezone
 
 from apps.weather.models import (
-    ForecastPoint,
-    ForecastPointWeather,
-    ForecastPointWeatherHistory,
+    ForecastCell,
+    ForecastCellWeather,
+    ForecastCellWeatherHistory,
     WeatherSnapshot,
 )
 from apps.weather.services.weather_fetcher import fetch_all_regions
@@ -114,9 +114,9 @@ class WeatherSnapshotAdmin(admin.ModelAdmin):
         return HttpResponseRedirect(changelist_url)
 
 
-@admin.register(ForecastPoint)
-class ForecastPointAdmin(admin.ModelAdmin):
-    """Admin view for ForecastPoint."""
+@admin.register(ForecastCell)
+class ForecastCellAdmin(admin.ModelAdmin):
+    """Admin view for ForecastCell."""
 
     list_display = (
         "id",
@@ -132,13 +132,13 @@ class ForecastPointAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
 
 
-@admin.register(ForecastPointWeather)
-class ForecastPointWeatherAdmin(admin.ModelAdmin):
-    """Admin view for ForecastPointWeather."""
+@admin.register(ForecastCellWeather)
+class ForecastCellWeatherAdmin(admin.ModelAdmin):
+    """Admin view for ForecastCellWeather."""
 
     list_display = [
         "id",
-        "forecast_point",
+        "forecast_cell",
         "valid_for_date",
         "weather_code",
         "temperature_2m_max",
@@ -147,15 +147,15 @@ class ForecastPointWeatherAdmin(admin.ModelAdmin):
         "fetched_at",
     ]
     list_filter = ["valid_for_date"]
-    list_select_related = ("forecast_point",)
-    raw_id_fields = ("forecast_point",)
+    list_select_related = ("forecast_cell",)
+    raw_id_fields = ("forecast_cell",)
     readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
-    ordering = ["-valid_for_date", "forecast_point__id"]
+    ordering = ["-valid_for_date", "forecast_cell__id"]
 
 
-@admin.register(ForecastPointWeatherHistory)
-class ForecastPointWeatherHistoryAdmin(admin.ModelAdmin):
-    """Admin view for ForecastPointWeatherHistory.
+@admin.register(ForecastCellWeatherHistory)
+class ForecastCellWeatherHistoryAdmin(admin.ModelAdmin):
+    """Admin view for ForecastCellWeatherHistory.
 
     Ordered so that one forecast day's rows read oldest-issue-first —
     the direction a convergence series is read in.
@@ -163,7 +163,7 @@ class ForecastPointWeatherHistoryAdmin(admin.ModelAdmin):
 
     list_display = [
         "id",
-        "forecast_point",
+        "forecast_cell",
         "valid_for_date",
         "issued_date",
         "lead_days",
@@ -173,7 +173,7 @@ class ForecastPointWeatherHistoryAdmin(admin.ModelAdmin):
         "freezing_level_height",
     ]
     list_filter = ["valid_for_date", "lead_days"]
-    list_select_related = ("forecast_point",)
-    raw_id_fields = ("forecast_point",)
+    list_select_related = ("forecast_cell",)
+    raw_id_fields = ("forecast_cell",)
     readonly_fields = ("uuid", "created_at", "updated_at", "fetched_at")
     ordering = ["-valid_for_date", "issued_date"]

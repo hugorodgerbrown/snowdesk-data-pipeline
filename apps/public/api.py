@@ -10,7 +10,7 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
 * ``/api/resorts.geojson``                 — FeatureCollection of geocoded resorts.
 * ``/api/forecast-weather.geojson``        — SNOW-573: FeatureCollection of
-  resort-anchored ``ForecastPoint`` weather, keyed by ISO date. Flag-gated
+  resort-anchored ``ForecastCell`` weather, keyed by ISO date. Flag-gated
   on ``weather_layer``; resort-anchored only — a ``Favourite``-only point
   never appears here (see ``apps.favourites.views.favourites_geojson`` for
   the private half).
@@ -97,7 +97,7 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import blob_summary
-from apps.weather.models import ForecastPointWeather
+from apps.weather.models import ForecastCellWeather
 from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
@@ -490,7 +490,7 @@ def forecast_weather_geojson(request: HttpRequest) -> JsonResponse:
     ``weather_layer`` waffle flag — 404 while inactive.
 
     **Privacy contract**: one feature per geocoded ``Resort`` with a linked
-    ``forecast_point`` — never a ``ForecastPoint`` reachable only from a
+    ``forecast_point`` — never a ``ForecastCell`` reachable only from a
     ``Favourite``. Geometry is the *resort's* coordinates (not the
     quantised point's), so the symbol sits on the pin the user recognises.
     A signed-in visitor's own favourite-anchored points are merged into the
@@ -544,7 +544,7 @@ def forecast_weather_geojson(request: HttpRequest) -> JsonResponse:
     caching.
 
     ``generated_at`` (for the freshness headers) is the OLDEST
-    ``fetched_at`` across the payload's ``ForecastPointWeather`` rows,
+    ``fetched_at`` across the payload's ``ForecastCellWeather`` rows,
     following ``_card_freshness``'s rule that a record mixing several
     constituents is only as fresh as its stalest one.  ``unsafe_after`` is
     ``None`` — weather is not safety-critical, so the freshness state
@@ -603,9 +603,9 @@ def _build_forecast_weather_payload(
     Build the forecast-weather FeatureCollection from the DB.
 
     Two queries, no N+1 (SNOW-573): one over geocoded, resort-linked
-    ``ForecastPoint`` rows (``Resort.objects.resorts().geocoded()`` with
+    ``ForecastCell`` rows (``Resort.objects.resorts().geocoded()`` with
     ``select_related("forecast_point", "region")``), then one bulk
-    ``ForecastPointWeather`` fetch keyed by ``forecast_point_id`` and
+    ``ForecastCellWeather`` fetch keyed by ``forecast_cell_id`` and
     grouped into a dict in Python.
 
     Args:
@@ -615,7 +615,7 @@ def _build_forecast_weather_payload(
     Returns:
         A ``(payload, generated_at)`` pair — ``payload`` is a GeoJSON
         FeatureCollection dict; ``generated_at`` is the OLDEST
-        ``fetched_at`` across the payload's ``ForecastPointWeather`` rows,
+        ``fetched_at`` across the payload's ``ForecastCellWeather`` rows,
         or ``None`` when the payload carries no weather rows at all.
 
     """
@@ -627,12 +627,12 @@ def _build_forecast_weather_payload(
         .order_by("name")
     )
     point_ids = [resort.forecast_point_id for resort in resorts]
-    rows_by_point: dict[int, list[ForecastPointWeather]] = defaultdict(list)
-    weather_qs = ForecastPointWeather.objects.filter(forecast_point_id__in=point_ids)
+    rows_by_point: dict[int, list[ForecastCellWeather]] = defaultdict(list)
+    weather_qs = ForecastCellWeather.objects.filter(forecast_cell_id__in=point_ids)
     if target_date is not None:
         weather_qs = weather_qs.filter(valid_for_date=target_date)
     for row in weather_qs.iterator():
-        rows_by_point[row.forecast_point_id].append(row)
+        rows_by_point[row.forecast_cell_id].append(row)
 
     now = timezone.now()
     oldest_fetched_at: datetime | None = None

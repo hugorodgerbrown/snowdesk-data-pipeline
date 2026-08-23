@@ -17,7 +17,7 @@ Covers:
   - --commit vs read-only.
   - Banner content (READ-ONLY, LOCAL-MIRROR, DELAY, STASH flags).
   - --stash: writes records to the archive.
-  - Active-ForecastPoint pass (SNOW-416): invoked by default when the window
+  - Active-ForecastCell pass (SNOW-416): invoked by default when the window
     reaches today; --skip-points disables it; --local-mirror skips it
     cleanly (points don't participate in the mirror); point failures
     propagate into the same failed > 0 → CommandError gate.
@@ -908,13 +908,13 @@ class TestOutput:
 
 
 # ---------------------------------------------------------------------------
-# Active-ForecastPoint pass (SNOW-416)
+# Active-ForecastCell pass (SNOW-416)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestActiveForecastPointPass:
-    """Tests for the active-ForecastPoint forecast pass and --skip-points."""
+class TestActiveForecastCellPass:
+    """Tests for the active-ForecastCell forecast pass and --skip-points."""
 
     @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)

@@ -18,7 +18,7 @@ from django.db.models import ProtectedError
 
 from apps.locations.models import Location, ResortLocation
 from tests.factories import (
-    ForecastPointFactory,
+    ForecastCellFactory,
     LocationFactory,
     ResortFactory,
     ResortLocationFactory,
@@ -126,7 +126,7 @@ class TestLocationQuerySet:
         neither = LocationFactory.create()
         elevation_only = LocationFactory.create(elevation_m=1500.0)
         cell_only = LocationFactory.create(
-            forecast_cell=ForecastPointFactory.create(latitude=47.9, longitude=8.9)
+            forecast_cell=ForecastCellFactory.create(latitude=47.9, longitude=8.9)
         )
         done = LocationFactory.create(resolved=True)
 

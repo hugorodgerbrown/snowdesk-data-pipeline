@@ -3,16 +3,16 @@ apps/weather/management/commands/prune_forecast_points.py.
 
 Management command.
 
-Deletes every ``ForecastPoint`` that no ``Favourite`` and no ``Resort``
+Deletes every ``ForecastCell`` that no ``Favourite`` and no ``Resort``
 references (SNOW-633). A point becomes unreferenced when the last pin
 holding it goes away — a favourite deleted by its owner, or a resort
 removed by ``import_resorts``. The first production run of that command
 retired 22 resorts and left 15 such points behind.
 
 An unreferenced point is already invisible to the pipeline: the
-``fetch_weather`` point pass iterates ``ForecastPoint.objects.active()``,
+``fetch_weather`` point pass iterates ``ForecastCell.objects.active()``,
 so nothing refreshes it and nothing reads it. What remains is the row plus
-its ``ForecastPointWeather`` and ``ForecastPointWeatherHistory`` children,
+its ``ForecastCellWeather`` and ``ForecastCellWeatherHistory`` children,
 holding forecasts that can only grow staler. This command removes them.
 
 Both child tables are ``CASCADE``, so deleting the point takes its weather
@@ -44,13 +44,13 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import ProtectedError
 
 from apps.core.command_iteration import iterate_rows
-from apps.weather.models import ForecastPoint
+from apps.weather.models import ForecastCell
 
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Delete ForecastPoints that no favourite and no resort references.
+    """Delete ForecastCells that no favourite and no resort references.
 
     Read-only unless --commit is passed. Weather and history rows cascade
     away with the point; a point that is still referenced is protected by
@@ -58,7 +58,7 @@ class Command(BaseCommand):
     """
 
     help = (
-        "Delete every ForecastPoint with no Favourite and no Resort "
+        "Delete every ForecastCell with no Favourite and no Resort "
         "referencing it (SNOW-633), along with its cascaded weather and "
         "history rows. Read-only unless --commit is passed."
     )
@@ -94,7 +94,7 @@ class Command(BaseCommand):
         commit: bool = options["commit"]
         verbosity: int = options.get("verbosity", 1)
 
-        candidates = ForecastPoint.objects.inactive()
+        candidates = ForecastCell.objects.inactive()
         total = candidates.count()
 
         logger.info(
@@ -103,7 +103,7 @@ class Command(BaseCommand):
             commit,
         )
         if verbosity >= 1:
-            self.stdout.write(f"{total} unreferenced ForecastPoint(s)")
+            self.stdout.write(f"{total} unreferenced ForecastCell(s)")
 
         deleted = 0
         weather_deleted = 0

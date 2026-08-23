@@ -1,5 +1,5 @@
 """
-tests/weather/test_forecast_point_model.py — Tests for the ForecastPoint model.
+tests/weather/test_forecast_cell_model.py — Tests for the ForecastCell model.
 
 Covers:
   - Factory produces a valid instance via .create(), with cells consistent
@@ -7,18 +7,18 @@ Covers:
   - to_string() / __str__() format.
   - unique_together constraint on (lat_cell, lon_cell, elevation_band).
   - Quantisation edge cases: cell boundaries and negative-coordinate floors,
-    exercised via apps.weather.services.forecast_points.quantise_*.
-  - ForecastPointQuerySet.active() — points with at least one favourite,
+    exercised via apps.weather.services.forecast_cells.quantise_*.
+  - ForecastCellQuerySet.active() — points with at least one favourite,
     resort (SNOW-503) or location (SNOW-700).
-  - ForecastPointQuerySet.inactive() — the exact complement of active()
+  - ForecastCellQuerySet.inactive() — the exact complement of active()
     (SNOW-633).
 """
 
 import pytest
 from django.db import IntegrityError
 
-from apps.weather.models import ForecastPoint
-from apps.weather.services.forecast_points import (
+from apps.weather.models import ForecastCell
+from apps.weather.services.forecast_cells import (
     ELEVATION_BAND_SIZE,
     LAT_CELL_SIZE,
     LON_CELL_SIZE,
@@ -28,25 +28,25 @@ from apps.weather.services.forecast_points import (
 )
 from tests.factories import (
     FavouriteFactory,
-    ForecastPointFactory,
+    ForecastCellFactory,
     LocationFactory,
     ResortFactory,
 )
 
 
 @pytest.mark.django_db
-class TestForecastPointFactory:
-    """The factory produces valid, well-formed ForecastPoint instances."""
+class TestForecastCellFactory:
+    """The factory produces valid, well-formed ForecastCell instances."""
 
-    def test_create_returns_forecast_point(self) -> None:
-        """ForecastPointFactory.create() returns a persisted ForecastPoint."""
-        point = ForecastPointFactory.create()
-        assert isinstance(point, ForecastPoint)
+    def test_create_returns_forecast_cell(self) -> None:
+        """ForecastCellFactory.create() returns a persisted ForecastCell."""
+        point = ForecastCellFactory.create()
+        assert isinstance(point, ForecastCell)
         assert point.pk is not None
 
     def test_cells_consistent_with_coordinates(self) -> None:
         """Factory-derived cells match the quantisation of the coordinates."""
-        point = ForecastPointFactory.create(
+        point = ForecastCellFactory.create(
             latitude=46.123, longitude=7.456, elevation=1834.0
         )
         assert point.lat_cell == quantise_lat(46.123)
@@ -55,38 +55,36 @@ class TestForecastPointFactory:
 
 
 @pytest.mark.django_db
-class TestForecastPointStr:
+class TestForecastCellStr:
     """__str__ / to_string() format."""
 
     def test_to_string_format(self) -> None:
         """to_string() returns '<lat>,<lon> @<elevation>m'."""
-        point = ForecastPointFactory.create(
+        point = ForecastCellFactory.create(
             latitude=46.1, longitude=7.4, elevation=1500.0
         )
         assert point.to_string() == "46.10000,7.40000 @1500m"
 
     def test_str_delegates_to_to_string(self) -> None:
         """__str__ returns the same value as to_string()."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         assert str(point) == point.to_string()
 
 
 @pytest.mark.django_db
-class TestForecastPointConstraints:
+class TestForecastCellConstraints:
     """Model-level integrity constraints."""
 
     def test_unique_together_cell(self) -> None:
         """Inserting two points for the same cell raises IntegrityError."""
-        ForecastPointFactory.create(lat_cell=100, lon_cell=200, elevation_band=5)
+        ForecastCellFactory.create(lat_cell=100, lon_cell=200, elevation_band=5)
         with pytest.raises(IntegrityError):
-            ForecastPointFactory.create(lat_cell=100, lon_cell=200, elevation_band=5)
+            ForecastCellFactory.create(lat_cell=100, lon_cell=200, elevation_band=5)
 
     def test_different_elevation_band_same_lat_lon_cell_allowed(self) -> None:
         """Two points can share (lat_cell, lon_cell) with different bands."""
-        ForecastPointFactory.create(lat_cell=100, lon_cell=200, elevation_band=5)
-        other = ForecastPointFactory.create(
-            lat_cell=100, lon_cell=200, elevation_band=6
-        )
+        ForecastCellFactory.create(lat_cell=100, lon_cell=200, elevation_band=5)
+        other = ForecastCellFactory.create(lat_cell=100, lon_cell=200, elevation_band=6)
         assert other.pk is not None
 
 
@@ -139,32 +137,32 @@ class TestQuantisation:
 
 
 @pytest.mark.django_db
-class TestForecastPointActiveQuerySet:
+class TestForecastCellActiveQuerySet:
     """active() — points referenced by a favourite, resort or location."""
 
     def test_point_with_favourite_is_active(self) -> None:
         """A point with one favourite is included in active()."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         FavouriteFactory.create(forecast_point=point)
-        assert point in ForecastPoint.objects.active()
+        assert point in ForecastCell.objects.active()
 
     def test_point_without_favourite_is_not_active(self) -> None:
         """A point with no favourites is excluded from active()."""
-        point = ForecastPointFactory.create()
-        assert point not in ForecastPoint.objects.active()
+        point = ForecastCellFactory.create()
+        assert point not in ForecastCell.objects.active()
 
     def test_point_with_resort_is_active(self) -> None:
         """A point referenced only by a Resort is included in active()."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
-        assert point in ForecastPoint.objects.active()
+        assert point in ForecastCell.objects.active()
 
     def test_point_with_favourite_and_resort_appears_once(self) -> None:
         """A point shared by a favourite and a resort appears exactly once."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         FavouriteFactory.create(forecast_point=point)
         ResortFactory.create(geocoded=True, forecast_point=point)
-        assert ForecastPoint.objects.active().filter(pk=point.pk).count() == 1
+        assert ForecastCell.objects.active().filter(pk=point.pk).count() == 1
 
     def test_point_with_location_is_active(self) -> None:
         """A cell referenced only by a Location is included in active().
@@ -172,9 +170,9 @@ class TestForecastPointActiveQuerySet:
         The SNOW-700 referent. Without it a curated location's cell would
         never be fetched, and prune_forecast_points would delete it.
         """
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         LocationFactory.create(forecast_cell=point)
-        assert point in ForecastPoint.objects.active()
+        assert point in ForecastCell.objects.active()
 
     def test_point_held_by_all_three_referents_appears_once(self) -> None:
         """A cell held by a favourite, a resort and a location appears once.
@@ -184,38 +182,38 @@ class TestForecastPointActiveQuerySet:
         the pair test above, but the counts only actually multiply once
         three reverse relations are joined at the same time.
         """
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         FavouriteFactory.create(forecast_point=point)
         ResortFactory.create(geocoded=True, forecast_point=point)
         LocationFactory.create(forecast_cell=point)
-        assert ForecastPoint.objects.active().filter(pk=point.pk).count() == 1
+        assert ForecastCell.objects.active().filter(pk=point.pk).count() == 1
 
     def test_orphan_point_excluded(self) -> None:
         """A point with no favourite, resort or location is excluded."""
-        point = ForecastPointFactory.create()
-        assert point not in ForecastPoint.objects.active()
+        point = ForecastCellFactory.create()
+        assert point not in ForecastCell.objects.active()
 
 
 @pytest.mark.django_db
-class TestForecastPointInactiveQuerySet:
-    """ForecastPointQuerySet.inactive() — the complement of active() (SNOW-633)."""
+class TestForecastCellInactiveQuerySet:
+    """ForecastCellQuerySet.inactive() — the complement of active() (SNOW-633)."""
 
     def test_orphan_point_is_inactive(self) -> None:
         """A point with no favourite and no resort is included in inactive()."""
-        point = ForecastPointFactory.create()
-        assert point in ForecastPoint.objects.inactive()
+        point = ForecastCellFactory.create()
+        assert point in ForecastCell.objects.inactive()
 
     def test_point_with_favourite_is_not_inactive(self) -> None:
         """A point held by a favourite is excluded from inactive()."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         FavouriteFactory.create(forecast_point=point)
-        assert point not in ForecastPoint.objects.inactive()
+        assert point not in ForecastCell.objects.inactive()
 
     def test_point_with_resort_is_not_inactive(self) -> None:
         """A point held by a resort is excluded from inactive()."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
-        assert point not in ForecastPoint.objects.inactive()
+        assert point not in ForecastCell.objects.inactive()
 
     def test_point_with_location_is_not_inactive(self) -> None:
         """A cell held by a location is excluded from inactive().
@@ -224,20 +222,20 @@ class TestForecastPointInactiveQuerySet:
         inactive() did not, the same cell would sit in both, and
         prune_forecast_points would delete a cell still being fetched for.
         """
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         LocationFactory.create(forecast_cell=point)
-        assert point not in ForecastPoint.objects.inactive()
+        assert point not in ForecastCell.objects.inactive()
 
     def test_partitions_the_table(self) -> None:
         """active() and inactive() together cover every row, without overlap."""
-        held = ForecastPointFactory.create()
+        held = ForecastCellFactory.create()
         FavouriteFactory.create(forecast_point=held)
-        orphan = ForecastPointFactory.create(latitude=47.9, longitude=8.9)
+        orphan = ForecastCellFactory.create(latitude=47.9, longitude=8.9)
 
-        active = set(ForecastPoint.objects.active())
-        inactive = set(ForecastPoint.objects.inactive())
+        active = set(ForecastCell.objects.active())
+        inactive = set(ForecastCell.objects.inactive())
 
         assert active == {held}
         assert inactive == {orphan}
-        assert active | inactive == set(ForecastPoint.objects.all())
+        assert active | inactive == set(ForecastCell.objects.all())
         assert not active & inactive

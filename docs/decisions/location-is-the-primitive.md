@@ -1,6 +1,6 @@
 ---
 name: location-is-the-primitive
-description: Location is the domain primitive every place FKs to — resorts, favourites, observations; ForecastPoint is a quantised fetch cell
+description: Location is the domain primitive every place FKs to — resorts, favourites, observations; ForecastCell is a quantised fetch cell
 status: current
 last-reviewed: 2026-08-21
 ---
@@ -35,8 +35,8 @@ that has a `name`, so Mont Fort is one row referenced by Verbier, Nendaz,
 Veysonnaz and Thyon — the sharing falls out of the model rather than needing
 a table to express it.
 
-**`ForecastPoint` is a fetch cell, not a domain entity**, and is renamed
-`ForecastCell` to say so. It is the quantised cell at which we call
+**`ForecastPoint` is a fetch cell, not a domain entity**, and was renamed
+`ForecastCell` (SNOW-703) to say so. It is the quantised cell at which we call
 Open-Meteo — many `Location`s to one cell, weather rows hanging off the cell.
 The forecast is *for a location*; the cell is only how we avoid paying twice
 for two pins 300 m apart.

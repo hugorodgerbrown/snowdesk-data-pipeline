@@ -50,12 +50,12 @@ from apps.regions.models import (
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
 from apps.routes.models import Route
 from apps.weather.models import (
-    ForecastPoint,
-    ForecastPointWeather,
-    ForecastPointWeatherHistory,
+    ForecastCell,
+    ForecastCellWeather,
+    ForecastCellWeatherHistory,
     WeatherSnapshot,
 )
-from apps.weather.services.forecast_points import (
+from apps.weather.services.forecast_cells import (
     quantise_elevation,
     quantise_lat,
     quantise_lon,
@@ -145,7 +145,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     Factory for Resort instances.
 
     The ``geocoded`` trait sets ``latitude``/``longitude`` to the same
-    representative coordinates as ``ForecastPointFactory`` (46.1, 7.4) plus
+    representative coordinates as ``ForecastCellFactory`` (46.1, 7.4) plus
     ``geocode_source="MANUAL"``, so ``ResortFactory.create(geocoded=True)``
     builds a resort that ``Resort.objects.geocoded()`` — and
     ``link_resort_forecast_points`` — can pick up.
@@ -293,20 +293,20 @@ class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot])
     )
 
 
-class ForecastPointFactory(factory.django.DjangoModelFactory[ForecastPoint]):
+class ForecastCellFactory(factory.django.DjangoModelFactory[ForecastCell]):
     """
-    Factory for ForecastPoint instances.
+    Factory for ForecastCell instances.
 
     ``lat_cell``/``lon_cell``/``elevation_band`` are derived from the
     representative ``latitude``/``longitude``/``elevation`` via
     ``LazyAttribute`` so the quantised keys always stay consistent with the
-    coordinates, matching what ``resolve_forecast_point`` would compute.
+    coordinates, matching what ``resolve_forecast_cell`` would compute.
     """
 
     class Meta:
         """Factory metadata."""
 
-        model = ForecastPoint
+        model = ForecastCell
 
     latitude = 46.1
     longitude = 7.4
@@ -347,7 +347,7 @@ class LocationFactory(factory.django.DjangoModelFactory[Location]):
         # Elevation and cell filled in, as after link_location_forecast_cells.
         resolved = factory.Trait(
             elevation_m=1500.0,
-            forecast_cell=factory.SubFactory(ForecastPointFactory),
+            forecast_cell=factory.SubFactory(ForecastCellFactory),
         )
 
     name = factory.Sequence(lambda n: f"Location {n}")
@@ -376,11 +376,11 @@ class ResortLocationFactory(factory.django.DjangoModelFactory[ResortLocation]):
     is_primary = False
 
 
-class ForecastPointWeatherFactory(
-    factory.django.DjangoModelFactory[ForecastPointWeather]
+class ForecastCellWeatherFactory(
+    factory.django.DjangoModelFactory[ForecastCellWeather]
 ):
     """
-    Factory for ForecastPointWeather instances.
+    Factory for ForecastCellWeather instances.
 
     Extended fields default to non-null values (rather than ``None``) so
     factory-built rows exercise the "full daily payload" path by default;
@@ -391,9 +391,9 @@ class ForecastPointWeatherFactory(
     class Meta:
         """Factory metadata."""
 
-        model = ForecastPointWeather
+        model = ForecastCellWeather
 
-    forecast_point = factory.SubFactory(ForecastPointFactory)
+    forecast_cell = factory.SubFactory(ForecastCellFactory)
     valid_for_date = factory.LazyFunction(django_timezone.localdate)
     weather_code = 0  # clear sky
     sunrise = factory.LazyFunction(
@@ -441,15 +441,15 @@ class ForecastPointWeatherFactory(
     )
 
 
-class ForecastPointWeatherHistoryFactory(
-    factory.django.DjangoModelFactory[ForecastPointWeatherHistory]
+class ForecastCellWeatherHistoryFactory(
+    factory.django.DjangoModelFactory[ForecastCellWeatherHistory]
 ):
     """
-    Factory for ForecastPointWeatherHistory instances.
+    Factory for ForecastCellWeatherHistory instances.
 
     Defaults to a three-day-out view of a day, since a lead of zero is the
     degenerate case (the day-of forecast, which is what the accompanying
-    ForecastPointWeather row already holds). ``lead_days`` is set
+    ForecastCellWeather row already holds). ``lead_days`` is set
     explicitly rather than derived, so a test can construct a deliberately
     inconsistent row when that is the thing under test.
     """
@@ -457,9 +457,9 @@ class ForecastPointWeatherHistoryFactory(
     class Meta:
         """Factory metadata."""
 
-        model = ForecastPointWeatherHistory
+        model = ForecastCellWeatherHistory
 
-    forecast_point = factory.SubFactory(ForecastPointFactory)
+    forecast_cell = factory.SubFactory(ForecastCellFactory)
     valid_for_date = factory.LazyFunction(django_timezone.localdate)
     issued_date = factory.LazyFunction(
         lambda: django_timezone.localdate() - datetime.timedelta(days=3)
@@ -699,7 +699,7 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
     ``latitude``/``longitude`` vary per instance (``factory.Sequence``) and
     are threaded into the ``forecast_point`` SubFactory so each build lands
     in a distinct (lat_cell, lon_cell, elevation_band) triple — reusing
-    ``ForecastPointFactory``'s fixed defaults for every Favourite would trip
+    ``ForecastCellFactory``'s fixed defaults for every Favourite would trip
     its ``unique_together`` constraint on the second build.
     """
 
@@ -714,7 +714,7 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
     longitude = factory.Sequence(lambda n: 7.4 + n * 0.05)
     elevation = 1500.0
     forecast_point = factory.SubFactory(
-        ForecastPointFactory,
+        ForecastCellFactory,
         latitude=factory.LazyAttribute(lambda obj: obj.factory_parent.latitude),
         longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
         elevation=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),

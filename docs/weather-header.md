@@ -41,11 +41,11 @@ WeatherSnapshot         build_weather_display(...)        _weather_panel.html
 
 ### Daily temperature and snowfall (SNOW-571)
 
-`WeatherSnapshot` also stores `temperature_2m_max`/`temperature_2m_min` (°C) and `snowfall_sum` (cm) — the same field names and units as `ForecastPointWeather` (see [`docs/decisions/weather-snapshot-vs-forecast-point-weather.md`](decisions/weather-snapshot-vs-forecast-point-weather.md) for why the two models stay separate despite the overlap). All three are nullable: existing rows keep them `None` until re-fetched, and `_weather_panel.html` omits each independently rather than falling back to the no-weather state — a snapshot with temps but no snowfall still shows the temps.
+`WeatherSnapshot` also stores `temperature_2m_max`/`temperature_2m_min` (°C) and `snowfall_sum` (cm) — the same field names and units as `ForecastCellWeather` (see [`docs/decisions/weather-snapshot-vs-forecast-point-weather.md`](decisions/weather-snapshot-vs-forecast-point-weather.md) for why the two models stay separate despite the overlap). All three are nullable: existing rows keep them `None` until re-fetched, and `_weather_panel.html` omits each independently rather than falling back to the no-weather state — a snapshot with temps but no snowfall still shows the temps.
 
-Both `fetch_weather_for_region` (forecast) and `fetch_archive_for_region` (archive) in [`apps/weather/services/weather_fetcher.py`](../apps/weather/services/weather_fetcher.py) request `REGION_DAILY_VARIABLES`, reading the three extras via the same degrade-to-`None` accessor shape as the `ForecastPointWeather` fetch path — an Open-Meteo response that omits one of them still creates the row, with `None` for the missing field(s). `_archive_daily_dates` validates only the four required arrays (`time`/`weather_code`/`sunrise`/`sunset`); the extras are never folded into that check, so an omitted array can never reject a whole archive batch.
+Both `fetch_weather_for_region` (forecast) and `fetch_archive_for_region` (archive) in [`apps/weather/services/weather_fetcher.py`](../apps/weather/services/weather_fetcher.py) request `REGION_DAILY_VARIABLES`, reading the three extras via the same degrade-to-`None` accessor shape as the `ForecastCellWeather` fetch path — an Open-Meteo response that omits one of them still creates the row, with `None` for the missing field(s). `_archive_daily_dates` validates only the four required arrays (`time`/`weather_code`/`sunrise`/`sunset`); the extras are never folded into that check, so an omitted array can never reject a whole archive batch.
 
-`build_weather_display` surfaces the three as `temp_max`/`temp_min`/`snowfall_sum` on the `WeatherDisplay` dict, read via `getattr(weather, ..., None)` so the function stays honest about accepting either `WeatherSnapshot` or `ForecastPointWeather`. The template renders the hi/lo temperature group whenever either bound is non-null (`4°/-2°`, `&mdash;` for a missing half — the same idiom as `includes/_forecast_panel.html`'s day strip) and the snowfall group whenever `snowfall_sum` is non-null, **including an explicit `0`** — deliberately unlike the forecast panel's snowfall chip, which hides a zero. On an avalanche bulletin "no new snow" is a statement worth showing, not noise.
+`build_weather_display` surfaces the three as `temp_max`/`temp_min`/`snowfall_sum` on the `WeatherDisplay` dict, read via `getattr(weather, ..., None)` so the function stays honest about accepting either `WeatherSnapshot` or `ForecastCellWeather`. The template renders the hi/lo temperature group whenever either bound is non-null (`4°/-2°`, `&mdash;` for a missing half — the same idiom as `includes/_forecast_panel.html`'s day strip) and the snowfall group whenever `snowfall_sum` is non-null, **including an explicit `0`** — deliberately unlike the forecast panel's snowfall chip, which hides a zero. On an avalanche bulletin "no new snow" is a statement worth showing, not noise.
 
 ## Bucket map
 
@@ -139,7 +139,7 @@ Meteocons is MIT-licensed. The full licence text and provenance note live in [`s
 
 ## ForecastPanel — multi-day point forecast (SNOW-417, resort page SNOW-572)
 
-`build_weather_display` also accepts a `ForecastPointWeather` row (a
+`build_weather_display` also accepts a `ForecastCellWeather` row (a
 per-day forecast for a linked point) alongside `WeatherSnapshot` — both
 expose the same `weather_code`/`sunrise`/`sunset` trio, so the single-day
 builder is shared unchanged.
@@ -147,7 +147,7 @@ builder is shared unchanged.
 For the multi-day panel, `build_point_forecast_panel(snapshots, now)` in the same module wraps `build_weather_display` per day and layers on the fields a compact day strip + expandable hourly detail need:
 
 ```
-[ForecastPointWeather, ...]     build_point_forecast_panel(...)      includes/_forecast_panel.html
+[ForecastCellWeather, ...]     build_point_forecast_panel(...)      includes/_forecast_panel.html
 (7-day window, ascending  ───▶  ┌─ days: [ForecastPanelDay, ...]  ─▶  day strip (weekday, icon,
  via forecast_for_point())      │    each reusing build_weather_        hi/lo temp, snowfall chip)
                                 │    display's icon_bucket/            + expandable hourly detail
@@ -169,7 +169,7 @@ rather than a shared helper (the favourite card also needs
 use for):
 
 * `apps.favourites.views._point_forecast_panel` — queries
-  `ForecastPointWeather.objects.forecast_for_point(favourite.forecast_point, timezone.localdate())` (ascending order — the model's default ordering is
+  `ForecastCellWeather.objects.forecast_for_point(favourite.forecast_point, timezone.localdate())` (ascending order — the model's default ordering is
   `-valid_for_date`, the opposite of what a forward-looking panel wants),
   slices to `POINT_FORECAST_DAYS`, and passes the panel or `None` into
   `_favourite_card.html` as `forecast_panel`. `None` renders the existing

@@ -1322,7 +1322,7 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "hi/lo, snowfall chip) plus an expandable hourly detail for the "
             "near-term days, built from _collapsible_panel.html + "
             "_chip.html. Rendered on the favourite detail card ('Weather — "
-            "this spot') and, when the resort has a linked ForecastPoint "
+            "this spot') and, when the resort has a linked ForecastCell "
             "with rows, the resort page ('Weather — this resort')."
         ),
         kind="components",

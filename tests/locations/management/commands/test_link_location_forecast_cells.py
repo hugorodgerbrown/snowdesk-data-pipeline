@@ -8,7 +8,7 @@ Covers ``link_location_forecast_cells`` (SNOW-701):
   - Two locations inside the reuse thresholds share one cell.
   - A per-location failure is counted, does not abort the batch, and makes
     the command exit non-zero.
-  - The resolved cell puts the location into ForecastPoint.active(), so
+  - The resolved cell puts the location into ForecastCell.active(), so
     prune_forecast_points leaves it alone.
   - Anonymous locations are never candidates — the filter that keeps this
     command's cost bounded once SNOW-704 and SNOW-709 start minting rows.
@@ -27,14 +27,14 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from apps.locations.models import Location
-from apps.weather.models import ForecastPoint
-from tests.factories import ForecastPointFactory, LocationFactory
+from apps.weather.models import ForecastCell
+from tests.factories import ForecastCellFactory, LocationFactory
 
 COMMAND = "link_location_forecast_cells"
 _ELEVATION = (
     "apps.locations.management.commands.link_location_forecast_cells.fetch_elevation"
 )
-_RESOLVE = "apps.locations.management.commands.link_location_forecast_cells.resolve_forecast_point"
+_RESOLVE = "apps.locations.management.commands.link_location_forecast_cells.resolve_forecast_cell"
 
 
 @pytest.mark.django_db
@@ -44,7 +44,7 @@ class TestLinkLocationForecastCellsCommit:
     def test_resolves_an_unresolved_location(self) -> None:
         """Both fields are written under --commit."""
         location = LocationFactory.create()
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
@@ -62,7 +62,7 @@ class TestLinkLocationForecastCellsCommit:
         command pays for a second Open-Meteo call.
         """
         location = LocationFactory.create(name="Mont Fort")
-        cell = ForecastPointFactory.create(elevation=1500.0)
+        cell = ForecastCellFactory.create(elevation=1500.0)
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
@@ -75,7 +75,7 @@ class TestLinkLocationForecastCellsCommit:
     def test_second_run_selects_nothing(self) -> None:
         """Idempotent — a resolved location is out of the candidate set."""
         LocationFactory.create()
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
@@ -93,13 +93,13 @@ class TestLinkLocationForecastCellsCommit:
         """
         for _ in range(4):
             LocationFactory.create(latitude=46.1036, longitude=7.2989)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
 
         assert Location.objects.filter(forecast_cell=cell).count() == 4
-        assert ForecastPoint.objects.count() == 1
+        assert ForecastCell.objects.count() == 1
 
     def test_resolved_location_survives_the_prune_pass(self) -> None:
         """The cell a location holds is active(), so prune leaves it alone.
@@ -109,14 +109,14 @@ class TestLinkLocationForecastCellsCommit:
         weather.
         """
         LocationFactory.create()
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
 
         call_command("prune_forecast_points", "--commit", stdout=StringIO())
 
-        assert ForecastPoint.objects.filter(pk=cell.pk).exists()
+        assert ForecastCell.objects.filter(pk=cell.pk).exists()
 
 
 @pytest.mark.django_db
@@ -126,7 +126,7 @@ class TestLinkLocationForecastCellsDryRun:
     def test_dry_run_writes_nothing(self) -> None:
         """The default invocation is read-only."""
         location = LocationFactory.create()
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             out = StringIO()
@@ -145,7 +145,7 @@ class TestLinkLocationForecastCellsDryRun:
         an operator needs before committing.
         """
         LocationFactory.create()
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with (
             patch(_ELEVATION, return_value=3328.0) as lookup,
@@ -164,7 +164,7 @@ class TestLinkLocationForecastCellsFailures:
         """A failing lookup is counted; the rest of the batch still runs."""
         LocationFactory.create(latitude=46.1, longitude=7.4)
         LocationFactory.create(latitude=47.9, longitude=8.9)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with (
             patch(_ELEVATION, side_effect=[RuntimeError("boom"), 3328.0]),
@@ -206,7 +206,7 @@ class TestLinkLocationForecastCellsScope:
     def test_anonymous_locations_are_not_candidates(self) -> None:
         """A location minted from user data is never resolved here."""
         minted = LocationFactory.create(anonymous=True)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
@@ -232,7 +232,7 @@ class TestLinkLocationForecastCellsScope:
         """The filter narrows the set; it does not disable the command."""
         curated = LocationFactory.create(name="Mont Fort")
         LocationFactory.create(anonymous=True)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())

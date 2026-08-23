@@ -104,7 +104,7 @@ def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the Open-Meteo elevation lookup for every e2e test.
 
     Creating a ``Favourite`` runs ``apps.favourites.services.create_favourite`` →
-    ``resolve_forecast_point`` → ``fetch_elevation``, which makes a live
+    ``resolve_forecast_cell`` → ``fetch_elevation``, which makes a live
     ``requests.get`` to ``https://api.open-meteo.com/v1/elevation`` with a
     30s timeout. The favourite-submit / drain tests replay that POST against
     the real ``live_server`` (deliberately un-mocked at the ``page.route``
@@ -115,14 +115,14 @@ def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     test_favourites.
 
     ``live_server`` runs in-process, so patching the name in
-    ``forecast_points``'s namespace (where it's looked up at call time) is
+    ``forecast_cells``'s namespace (where it's looked up at call time) is
     visible to the server thread — the same mechanism that makes
     ``override_flag`` work here. Patched autouse because no e2e test should
     depend on an external API; tests that never create a favourite are
     unaffected.
     """
     monkeypatch.setattr(
-        "apps.weather.services.forecast_points.fetch_elevation",
+        "apps.weather.services.forecast_cells.fetch_elevation",
         lambda latitude, longitude, base_url=None: 1500.0,
     )
 

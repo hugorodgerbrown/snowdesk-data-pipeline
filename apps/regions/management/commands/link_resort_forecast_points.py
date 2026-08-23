@@ -1,17 +1,17 @@
 """
-link_resort_forecast_points — anchor geocoded Resorts to a shared ForecastPoint.
+link_resort_forecast_points — anchor geocoded Resorts to a shared ForecastCell.
 
 One-shot backfill that anchors every geocoded ``Resort`` with no
-``forecast_point`` yet to a shared ``weather.ForecastPoint`` (SNOW-503),
+``forecast_point`` yet to a shared ``weather.ForecastCell`` (SNOW-503),
 reusing the SNOW-416 machinery
-(``apps.weather.services.forecast_points.resolve_forecast_point``). Widening
-``ForecastPoint.objects.active()`` to favourite-OR-resort (see
+(``apps.weather.services.forecast_cells.resolve_forecast_cell``). Widening
+``ForecastCell.objects.active()`` to favourite-OR-resort (see
 ``apps/weather/models.py``) means the scheduled ``fetch_weather`` point pass
 picks up every linked resort automatically — no scheduler change needed.
 
-For each candidate resort, ``resolve_forecast_point`` performs its own
+For each candidate resort, ``resolve_forecast_cell`` performs its own
 Open-Meteo elevation lookup and reuses (or creates) the nearest matching
-``ForecastPoint``; that external call is always made — even in a dry-run —
+``ForecastCell``; that external call is always made — even in a dry-run —
 so the reported outcome reflects reality, but the resulting FK is only
 written under ``--commit``. The lookup is kept outside any DB transaction
 (mirroring ``apps.favourites.services.create_favourite``) so a slow or failing
@@ -49,7 +49,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.regions.models import Resort
-from apps.weather.services.forecast_points import resolve_forecast_point
+from apps.weather.services.forecast_cells import resolve_forecast_cell
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def _non_negative_float(raw: str) -> float:
 
 
 class Command(BaseCommand):
-    """Link every geocoded, unlinked Resort to a shared ForecastPoint.
+    """Link every geocoded, unlinked Resort to a shared ForecastCell.
 
     Read-only by default; pass --commit to persist the FK. Resorts that
     are not geocoded (missing latitude/longitude) or already linked are
@@ -88,8 +88,8 @@ class Command(BaseCommand):
     """
 
     help = (
-        "Resolve every geocoded, unlinked Resort to a shared ForecastPoint "
-        "via apps.weather.services.forecast_points.resolve_forecast_point, "
+        "Resolve every geocoded, unlinked Resort to a shared ForecastCell "
+        "via apps.weather.services.forecast_cells.resolve_forecast_cell, "
         "widening the point-weather polling set to cover resorts. "
         "Read-only unless --commit is passed."
     )
@@ -151,7 +151,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.MIGRATE_HEADING(
                 f"Linking {candidate_count} geocoded resort(s) to a "
-                f"ForecastPoint{flag_label}"
+                f"ForecastCell{flag_label}"
             )
         )
         logger.info(
@@ -210,10 +210,10 @@ def _link_resorts(
     verbosity: int,
 ) -> dict[str, int]:
     """
-    Resolve a ForecastPoint for each candidate resort, optionally persisting it.
+    Resolve a ForecastCell for each candidate resort, optionally persisting it.
 
     Iterates the candidates in order, resolving each via
-    ``resolve_forecast_point`` (an Open-Meteo elevation lookup kept outside
+    ``resolve_forecast_cell`` (an Open-Meteo elevation lookup kept outside
     any transaction). A per-resort failure is caught, logged, and counted
     under ``failed`` — it never aborts the rest of the batch. Under
     ``--commit`` a successfully resolved resort has its ``forecast_point``
@@ -245,7 +245,7 @@ def _link_resorts(
             # External HTTP call (Open-Meteo elevation lookup) — kept
             # outside any transaction so a slow or failing request never
             # holds a DB lock, mirroring create_favourite.
-            forecast_point = resolve_forecast_point(resort.latitude, resort.longitude)
+            forecast_point = resolve_forecast_cell(resort.latitude, resort.longitude)
         except Exception:  # noqa: BLE001 — broad catch intentional: per-resort failure must not abort the batch
             logger.exception(
                 "link_resort_forecast_points: failed to resolve resort %r (id=%s)",
@@ -260,7 +260,7 @@ def _link_resorts(
             counts["linked"] += 1
             if verbosity >= 2:
                 logger.info(
-                    "Resolved resort %r (id=%s) -> ForecastPoint id=%s",
+                    "Resolved resort %r (id=%s) -> ForecastCell id=%s",
                     resort.name,
                     resort.pk,
                     forecast_point.pk,

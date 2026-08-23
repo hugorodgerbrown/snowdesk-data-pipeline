@@ -19,7 +19,7 @@ today (and any future date) is fetched via the forecast endpoint. The command
 splits the resolved window at the day boundary automatically.
 
 After the region pass, when the window includes today, the command also
-fetches today's forecast for every **active** ``ForecastPoint`` (a point
+fetches today's forecast for every **active** ``ForecastCell`` (a point
 referenced by at least one ``Favourite`` — see SNOW-412/SNOW-413), passing
 the point's stored elevation so the forecast is downscaled to the pin's
 altitude. Points are forecast-only — there is no archive/backfill path for
@@ -29,7 +29,7 @@ merged into the same ``failed`` total that triggers the command's non-zero
 exit — but a point whose backing model runs short of the 7-day window is
 not a failure: it stores the days that resolved (SNOW-628).
 
-``--add-history`` additionally retains a ``ForecastPointWeatherHistory``
+``--add-history`` additionally retains a ``ForecastCellWeatherHistory``
 row per stored day (SNOW-575) — this issue's view of each forecast day,
 kept for convergence analysis. Off by default, because nothing
 user-facing reads it. The scheduled run passes the flag when
@@ -62,10 +62,10 @@ Usage:
     python manage.py fetch_weather --start 2026-01-01 --end 2026-04-30 --commit
 
     # Replay from the local mirror (dev server must be running).
-    # Note: the active-ForecastPoint pass is skipped under --local-mirror.
+    # Note: the active-ForecastCell pass is skipped under --local-mirror.
     python manage.py fetch_weather --local-mirror --commit
 
-    # Region weather only — skip the active-ForecastPoint pass.
+    # Region weather only — skip the active-ForecastCell pass.
     python manage.py fetch_weather --commit --skip-points
 
     # Also retain the per-issue point-forecast history (SNOW-575).
@@ -96,7 +96,7 @@ from django.utils import timezone
 # only useful for days a bulletin exists for.
 from apps.bulletins.models import Bulletin
 from apps.regions.models import MicroRegion
-from apps.weather.models import ForecastPoint, WeatherSnapshot
+from apps.weather.models import ForecastCell, WeatherSnapshot
 from apps.weather.services.openmeteo_archive import flush_stash
 from apps.weather.services.weather_fetcher import (
     SOURCE_LIVE,
@@ -135,7 +135,7 @@ class Command(BaseCommand):
     not a queryset over a growable local table.
     Automatically routes past dates to the archive endpoint and today to the
     forecast endpoint. When the window reaches today, also fetches today's
-    forecast for every active ForecastPoint (forecast-only; pass
+    forecast for every active ForecastCell (forecast-only; pass
     --skip-points to fetch region weather only).
     """
 
@@ -144,7 +144,7 @@ class Command(BaseCommand):
         "window (default: latest snapshot → today). Splits the window at today: "
         "past dates use the archive endpoint; today uses the forecast endpoint. "
         "When the window reaches today, also fetches today's forecast for every "
-        "active ForecastPoint (forecast-only — pass --skip-points to skip it). "
+        "active ForecastCell (forecast-only — pass --skip-points to skip it). "
         "Read-only by default; pass --commit to persist."
     )
 
@@ -200,7 +200,7 @@ class Command(BaseCommand):
                 "via the dev-only view. Requires "
                 "settings.WEATHER_API_LOCAL_MIRROR_BASE_URL (development.py); "
                 "raises CommandError otherwise. Points are forecast-only and do "
-                "not participate in the mirror — the active-ForecastPoint pass "
+                "not participate in the mirror — the active-ForecastCell pass "
                 "is skipped entirely under --local-mirror."
             ),
         )
@@ -233,15 +233,14 @@ class Command(BaseCommand):
             "--skip-points",
             action="store_true",
             help=(
-                "Skip the active-ForecastPoint forecast pass; fetch region "
-                "weather only."
+                "Skip the active-ForecastCell forecast pass; fetch region weather only."
             ),
         )
         parser.add_argument(
             "--add-history",
             action="store_true",
             help=(
-                "Also retain a ForecastPointWeatherHistory row per stored day "
+                "Also retain a ForecastCellWeatherHistory row per stored day "
                 "(SNOW-575) — this issue's view of each forecast day, for "
                 "convergence analysis. Off by default: nothing user-facing "
                 "reads it. The scheduled run passes this flag when "
@@ -275,7 +274,7 @@ class Command(BaseCommand):
 
         days = (end - start).days + 1
         region_count = MicroRegion.objects.count()
-        point_count = ForecastPoint.objects.active().count()
+        point_count = ForecastCell.objects.active().count()
 
         self._announce(
             start,
@@ -301,7 +300,7 @@ class Command(BaseCommand):
             on_fetched=on_fetched,
         )
 
-        # Active-ForecastPoint pass — forecast-only, so it only runs when the
+        # Active-ForecastCell pass — forecast-only, so it only runs when the
         # window reaches today, and it is suppressed under --local-mirror (the
         # mirror replays region archive data only). Points are also outside the
         # on-disk archive contract: the pass never forwards on_fetched, so point

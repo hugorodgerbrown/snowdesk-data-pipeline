@@ -2,8 +2,8 @@
 apps/weather/apps.py — AppConfig for the weather application.
 
 Owns the Open-Meteo domain end to end: the ``WeatherSnapshot`` /
-``ForecastPoint`` / ``ForecastPointWeather`` /
-``ForecastPointWeatherHistory`` models, the fetch, quantisation, elevation
+``ForecastCell`` / ``ForecastCellWeather`` /
+``ForecastCellWeatherHistory`` models, the fetch, quantisation, elevation
 and display services that produce and render them, and the
 ``fetch_weather`` / ``prune_forecast_points`` commands. The CAAML
 avalanche bulletins (SLF, ALBINA, Météo-France) live in ``bulletins``;
