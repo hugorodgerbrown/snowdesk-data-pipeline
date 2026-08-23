@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 favourites/partials/_favourite_list.html — Owner favourites list, account
 page.
@@ -69,9 +69,20 @@ Context:
         {% endfor %}
     </ul>
     {% if not favourites %}
-        <p class="py-2 text-sm text-text-2" data-testid="favourite-list-empty">
+        {% comment %}
+            SNOW-705: the same quiet card the hub's empty-subscriptions
+            state uses, rather than a bare paragraph. This list renders
+            directly under that one on /account/, so a brand-new user —
+            no subscriptions, no favourites — saw the page's two empty
+            states given two different treatments: one a centred card,
+            one an unstyled line of text that read as a rendering fault
+            rather than an intended state.
+        {% endcomment %}
+        {% card padding="px-6 py-8" center=True %}
+        <p class="text-sm text-text-2" data-testid="favourite-list-empty">
             {% trans "You have no saved favourites yet." %}
         </p>
+        {% endcard %}
     {% endif %}
 
     {# Plain navigation off the account page, so a link is the right element. #}
