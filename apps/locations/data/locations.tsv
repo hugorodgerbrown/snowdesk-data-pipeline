@@ -1,0 +1,5 @@
+uuid	name	kind	latitude	longitude	note
+0d0a2b6e-3f1f-4a9d-9f5b-1b0f6c2a7d01	Verbier village	VILLAGE	46.09610	7.22860	4 Vallées. Verified: resolves to 1494 m against the resort sheet's base of 1500 m.
+0d0a2b6e-3f1f-4a9d-9f5b-1b0f6c2a7d06	Thyon 2000	VILLAGE	46.16970	7.36280	4 Vallées; the base is itself at altitude. Verified: resolves to 2144 m against a sheet base of 2095 m.
+0d0a2b6e-3f1f-4a9d-9f5b-1b0f6c2a7d0a	Silvaplana	VILLAGE	46.45830	9.79360	Engadin. Verified: resolves to 1815 m, matching the resort sheet's base exactly.
+0d0a2b6e-3f1f-4a9d-9f5b-1b0f6c2a7d0b	Sils-Maria	VILLAGE	46.43000	9.76140	Engadin. Verified: resolves to 1805 m against a sheet base of 1797 m.
