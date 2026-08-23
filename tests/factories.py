@@ -38,6 +38,7 @@ from apps.bulletins.services.day_rating import (
 )
 from apps.core.models import RequestLog
 from apps.favourites.models import Favourite
+from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.models import (
     MajorRegion,
@@ -315,6 +316,64 @@ class ForecastPointFactory(factory.django.DjangoModelFactory[ForecastPoint]):
     elevation_band = factory.LazyAttribute(
         lambda obj: quantise_elevation(obj.elevation)
     )
+
+
+class LocationFactory(factory.django.DjangoModelFactory[Location]):
+    """
+    Factory for Location instances.
+
+    Defaults to a **named, curated** location, because that is the case
+    almost every test is about — the anonymous rows SNOW-704 and SNOW-709
+    mint are the exception, and the ``anonymous`` trait produces one.
+
+    ``elevation_m`` and ``forecast_cell`` are left null by default, matching
+    a freshly imported row: both are resolved out-of-band by
+    ``link_location_forecast_cells``, which makes an Open-Meteo call. The
+    ``resolved`` trait supplies both for tests that need a location the
+    weather layer can already reach.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Location
+
+    class Params:
+        """Traits for common variations."""
+
+        # A location minted from a favourite or an observation: no name and
+        # no kind, because naming is a curation act.
+        anonymous = factory.Trait(name="", kind="")
+        # Elevation and cell filled in, as after link_location_forecast_cells.
+        resolved = factory.Trait(
+            elevation_m=1500.0,
+            forecast_cell=factory.SubFactory(ForecastPointFactory),
+        )
+
+    name = factory.Sequence(lambda n: f"Location {n}")
+    kind = Location.KIND.PEAK
+    latitude = 46.1
+    longitude = 7.4
+
+
+class ResortLocationFactory(factory.django.DjangoModelFactory[ResortLocation]):
+    """
+    Factory for ResortLocation instances.
+
+    Defaults to a non-primary ``TOP`` link, so a test that wants the resort
+    page's hero has to say ``is_primary=True`` rather than getting it by
+    accident.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = ResortLocation
+
+    resort = factory.SubFactory(ResortFactory)
+    location = factory.SubFactory(LocationFactory)
+    role = ResortLocation.ROLE.TOP
+    is_primary = False
 
 
 class ForecastPointWeatherFactory(

@@ -4,7 +4,7 @@ tests/weather/management/commands/test_prune_forecast_points.py
 Covers ``prune_forecast_points`` (SNOW-633):
   - Deletes an unreferenced point under --commit, cascading its weather and
     history rows.
-  - Leaves points held by a favourite or by a resort alone.
+  - Leaves points held by a favourite, a resort or a location alone.
   - Dry-run (no --commit) reports the same population but deletes nothing.
   - Idempotent — a second --commit run selects nothing.
   - A point that becomes referenced between the walk and the delete is
@@ -32,6 +32,7 @@ from tests.factories import (
     ForecastPointFactory,
     ForecastPointWeatherFactory,
     ForecastPointWeatherHistoryFactory,
+    LocationFactory,
     ResortFactory,
 )
 
@@ -72,6 +73,20 @@ class TestPruneForecastPointsCommit:
         """A point referenced by a resort is never deleted."""
         point = ForecastPointFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
+
+        call_command("prune_forecast_points", "--commit", stdout=StringIO())
+
+        assert ForecastPoint.objects.filter(pk=point.pk).exists()
+
+    def test_keeps_point_held_by_location(self) -> None:
+        """A cell referenced by a location is never deleted (SNOW-700).
+
+        The consequence of the active()/inactive() widening, checked at the
+        command rather than at the queryset: a curated location's weather
+        must survive the prune pass, and would not have before SNOW-700.
+        """
+        point = ForecastPointFactory.create()
+        LocationFactory.create(forecast_cell=point)
 
         call_command("prune_forecast_points", "--commit", stdout=StringIO())
 

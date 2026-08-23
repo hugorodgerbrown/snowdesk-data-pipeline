@@ -157,6 +157,7 @@ INSTALLED_APPS = [
     "waffle",
     # Local
     "apps.core",
+    "apps.locations",
     "apps.regions",
     "apps.bulletins",
     "apps.weather",

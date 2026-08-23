@@ -10,6 +10,8 @@ import logging
 
 from django.contrib import admin
 
+from apps.locations.admin import ResortLocationInline
+
 from .models import (
     MajorRegion,
     MicroRegion,
@@ -98,7 +100,15 @@ class RegionAliasAdmin(admin.ModelAdmin):
 
 @admin.register(Resort)
 class ResortAdmin(admin.ModelAdmin):
-    """Admin view for Resort."""
+    """Admin view for Resort.
+
+    Carries ``ResortLocationInline`` so a curator opens Verbier and adds its
+    village and its top without leaving the page — the surface SNOW-701's
+    data work is done through. The inline is defined in
+    ``apps/locations/admin.py``, beside the model it edits.
+    """
+
+    inlines = [ResortLocationInline]
 
     list_display = [
         "name",

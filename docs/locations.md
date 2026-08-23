@@ -29,6 +29,8 @@ it, and what may I safely conclude from it?**
 
 | Model · field | Shape | Exact? | Derived by |
 |---|---|---|---|
+| `Location.latitude/longitude` | **The primitive** | Exact, immovable | Whoever curated or minted the row |
+| `Location.elevation_m` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
 | `Favourite.latitude/longitude` | Precise, user-supplied | Exact | The user, dropping a pin |
 | `Favourite.elevation` | Derived | Approximate | Copied from the resolved `ForecastPoint` |
 | `Resort.latitude/longitude` | Precise, curated | Exact as a *village* | Geocoder, on the resort's **name** |
@@ -42,6 +44,37 @@ it, and what may I safely conclude from it?**
 | `RequestLog.latitude/longitude` | IP-estimated | Approximate | MaxMind GeoLite2-City |
 
 ## The shapes
+
+### The primitive — `Location`
+
+Since SNOW-700, everything below that is a **place** feeds a `Location`
+(`apps/locations/`). Its `latitude`/`longitude` are exact and immovable: a
+place at a different coordinate is a different location, and nothing rounds
+them.
+
+A **curated place is a `Location` that has a `name`**. There is no separate
+model for one, which is the whole point — Mont Fort is a single row that
+Verbier, Nendaz, Veysonnaz and Thyon all reference through `ResortLocation`,
+so the sharing falls out of the model instead of being four copies of the
+scalar `3330`. A location minted from a favourite or an observation carries
+no `name` and no `kind`, and is an anonymous point like any other.
+
+`elevation_m` and `forecast_cell` are nullable and resolved out-of-band by
+`link_location_forecast_cells`, because both need an Open-Meteo call that
+cannot ride on a model save.
+
+**A row exists for a place we keep.** A live GPS fix and a GPX trackpoint
+resolve *against* locations without minting one. "Everything is a location"
+means every *place*, not every *coordinate* — `Route.points` below is the
+standing example.
+
+`Location.kind` (`VILLAGE`/`MID`/`PEAK`) describes the place;
+`ResortLocation.role` (`BASE`/`MID`/`TOP`) describes what it is to one
+resort. They are not duplicates: one point can be a small area's top and
+Verbier's mid-station.
+
+The sections below describe what *feeds* a location, and what the migration
+tickets (SNOW-696, SNOW-704, SNOW-709) are moving onto it.
 
 ### Precise, user-supplied — `Favourite`
 
