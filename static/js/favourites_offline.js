@@ -213,16 +213,24 @@
    * ``innerHTML`` with user-supplied data (the favourite's own name) —
    * per the "no mark_safe on user-supplied content" invariant.
    *
+   * ``headingTag`` mirrors the server card's ``heading_tag``
+   * (favourites/partials/_favourite_card.html): this card stands in for
+   * that one, in the same slot, so it has to rank its title the same way
+   * — otherwise a pin's outline level would depend on whether the request
+   * reached the server. Callers below choose it from where they are
+   * painting; see ``_renderFromCache``.
+   *
    * @param {object} record
+   * @param {string} [headingTag] — "h2" (default) or "h3".
    * @returns {HTMLElement}
    */
-  function renderOfflineCard(record) {
+  function renderOfflineCard(record, headingTag) {
     const root = document.createElement('div');
     root.className = 'bg-card border border-border rounded-card p-6';
     root.setAttribute('data-testid', 'favourite-card');
     root.setAttribute('data-favourite-uuid', record.uuid);
 
-    const title = document.createElement('h2');
+    const title = document.createElement(headingTag || 'h2');
     title.className = 'text-lg font-semibold text-text-1';
     title.setAttribute('data-testid', 'favourite-card-title');
     title.textContent =
@@ -339,6 +347,18 @@
   }
 
   /**
+   * Is this element the map sheet's rows container, or inside it?
+   *
+   * @param {Element} target
+   * @returns {boolean}
+   */
+  function _inMapPanel(target) {
+    return !!(
+      target && target.closest && target.closest('[data-favourites-rows]')
+    );
+  }
+
+  /**
    * Offline-read fallback: on a failed roster or card request, repaint
    * the target element from the cached ``data:favourites`` record(s).
    * Leaves HTMX's own failure UI in place when the cache has nothing to
@@ -359,8 +379,16 @@
       if (path.indexOf(LIST_PATH_SUFFIX) !== -1) {
         const records = await window.pwaDb.getAll(STORE);
         if (!records || records.length === 0 || !target) return;
+        // One endpoint, two surfaces, two outlines. The map sheet swaps
+        // this list into [data-favourites-rows], inside a panel whose
+        // title is a <span> (includes/_sheet_header.html) — no section
+        // heading to rank under, so h2. Everywhere else is the account
+        // hub's "My favourites" <section>, headed by an <h2>, so h3.
+        const headingTag = _inMapPanel(target) ? 'h2' : 'h3';
         target.textContent = '';
-        records.forEach((record) => target.appendChild(renderOfflineCard(record)));
+        records.forEach((record) =>
+          target.appendChild(renderOfflineCard(record, headingTag))
+        );
         return;
       }
 
@@ -369,14 +397,17 @@
         if (!uuid) return;
         const record = await window.pwaDb.get(STORE, uuid);
         if (!record) return;
-        // The request's own target: on /account/ that is the panel under
-        // the row whose chevron asked for the card (SNOW-711 gave every
-        // row its own; there was one #favourite-card-panel above the whole
-        // list before it), and on the detail page the element HTMX aimed
-        // at. Either way it is where the card that failed was going.
+        // The request's own target — the panel under the row whose chevron
+        // asked for the card (SNOW-711 gave every row its own; there was
+        // one #favourite-card-panel above the whole list before it). That
+        // is the account hub and only the account hub: the map renders its
+        // rows with ``hide_disclosure``, so nothing there has a chevron to
+        // ask with, and the detail page has its card server-rendered. So
+        // the target is always inside the hub's <h2>-headed "My
+        // favourites" section, and the card that failed was an h3.
         if (!target) return;
         target.textContent = '';
-        target.appendChild(renderOfflineCard(record));
+        target.appendChild(renderOfflineCard(record, 'h3'));
       }
     } catch (_e) {
       // Non-fatal — leave HTMX's own failure state in place.

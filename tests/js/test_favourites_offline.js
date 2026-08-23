@@ -215,3 +215,60 @@ describe('translated card copy (SNOW-620)', () => {
     expect(asOf.textContent).toMatch(/^Showing cached data — as of \d{2}:\d{2}$/);
   });
 });
+
+
+describe('the stand-in card ranks its title like the server card', () => {
+  /*
+   * This card stands in for favourites/partials/_favourite_card.html in
+   * the same slot, so it takes the same heading level the server would
+   * have sent — otherwise a pin's outline depth would depend on whether
+   * the request reached the server. The server picks by caller
+   * (``heading_tag``); this module picks by where it is painting.
+   */
+
+  const CARD_PATH = '/favourites/partials/fav-a/card/';
+
+  it('is an h3 in the account hub list, under the "My favourites" h2', async () => {
+    await replayRoster([record('fav-a', 'Verbier')]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const title = target.querySelector('[data-testid="favourite-card-title"]');
+    expect(title.tagName).toBe('H3');
+  });
+
+  it('is an h2 in the map sheet, whose panel title is not a heading', async () => {
+    await replayRoster([record('fav-a', 'Verbier')]);
+    // The map swaps the same endpoint's ?variant=map response into this
+    // container (static/js/favourites.js), inside a panel headed by a
+    // <span> — so a card in it has no section heading to rank under.
+    const target = document.createElement('div');
+    target.setAttribute('data-favourites-rows', '');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const title = target.querySelector('[data-testid="favourite-card-title"]');
+    expect(title.tagName).toBe('H2');
+  });
+
+  it('is an h3 for a failed single-card request — only the hub asks for one', async () => {
+    await replayRoster([record('fav-a', 'Verbier')]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    document.body.dispatchEvent(
+      new CustomEvent('htmx:sendError', {
+        detail: { requestConfig: { path: CARD_PATH }, target },
+      }),
+    );
+    await waitFor(
+      () => target.querySelectorAll('[data-testid="favourite-card"]').length > 0,
+    );
+
+    const title = target.querySelector('[data-testid="favourite-card-title"]');
+    expect(title.tagName).toBe('H3');
+  });
+});

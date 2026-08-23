@@ -84,6 +84,41 @@ Context:
     freshness_state      : "fresh" | "stale" | "unsafe" — passed to
                             _freshness_indicator.html.
     freshness_generated_at : datetime — passed to _freshness_indicator.html.
+    heading_tag          : str, optional — element for the card's title,
+                            default "h2". The card is a whole document on
+                            one caller and a nested disclosure panel on
+                            another, so its title's RANK is the caller's to
+                            state; its size never changes (text-lg in every
+                            case). Same shape as includes/_eyebrow.html's
+                            ``tag``. See "WHO OWNS THE TITLE'S RANK" below.
+
+WHO OWNS THE TITLE'S RANK. This partial has two callers and they sit at
+different depths, so a fixed heading level is wrong for one of them
+whichever level is picked:
+
+  favourite_detail.html   the pin's own page, and the pin's name is what
+                          that page is about — so the title is its ``h1``.
+                          The page carries no other heading (no separate
+                          page header above the card), so an ``h2`` here
+                          would leave a page whose outline starts at
+                          level 2.
+  the account hub panel   apps.favourites.views.favourite_card, hx-getting
+                          this card into the panel under the row that
+                          asked for it. That panel sits inside the hub's
+                          "My favourites" ``<section>``, whose own heading
+                          is an ``h2`` — so one favourite's title is an
+                          ``h3``, ranked under the section that lists it
+                          rather than beside it.
+
+The default is ``h2`` — the right answer for a card painted into a page
+with an ``h1`` and no intervening section heading, which is what a third
+caller would most likely be. The map's favourites panel is NOT such a
+caller: it renders the row (_favourite.html) with ``hide_disclosure``, so
+no card is ever fetched there. What the map does paint is
+static/js/favourites_offline.js's stand-in card when the list request
+fails, and that one keeps ``h2`` — the map panel's own title is a
+``<span>`` (includes/_sheet_header.html), not a heading, so a card in it
+has no section heading to rank under.
 {% endcomment %}
 <div
     id="favourite-card-{{ favourite.uuid }}"
@@ -94,9 +129,9 @@ Context:
     {{ cache_payload|json_script:"favourite-card-cache" }}
     {# 1. Title + altitude + locate link #}
     {% trans "Unnamed pin" as unnamed_pin %}
-    <h2 class="text-lg font-semibold text-text-1" data-testid="favourite-card-title">
+    <{{ heading_tag|default:"h2" }} class="text-lg font-semibold text-text-1" data-testid="favourite-card-title">
         {% firstof favourite.name unnamed_pin %}
-    </h2>
+    </{{ heading_tag|default:"h2" }}>
     <p class="text-sm text-text-2 mt-0.5" data-testid="favourite-card-altitude">
         {% blocktrans with m=favourite.elevation|floatformat:0 trimmed %}{{ m }} m altitude{% endblocktrans %}
     </p>

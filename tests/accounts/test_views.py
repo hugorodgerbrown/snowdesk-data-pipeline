@@ -1453,6 +1453,23 @@ class TestHubViewFavouritesSection:
         assert b"My favourites" in response.content
         assert reverse("favourites:list").encode() in response.content
 
+    def test_section_heading_is_an_h2(self) -> None:
+        """The section heading is an h2 — which is why a card inside it is an h3.
+
+        ``favourites.views.favourite_card`` renders a single pin's title as
+        an ``h3`` on the strength of this: the card is swapped into a panel
+        inside this section, so its title ranks UNDER this heading rather
+        than level with it. Promoting or demoting this heading without
+        moving the card's would put a pin's title back beside the section
+        that lists it, so the two are asserted together.
+        """
+        account = AccountFactory.create()
+        client = _make_session_client(account)
+        response = client.get(reverse("accounts:hub"))
+        assert re.search(
+            r"<h2[^>]*>\s*My favourites\s*</h2>", response.content.decode()
+        )
+
 
 # ---------------------------------------------------------------------------
 # settings_view — "Sync log" panel (SNOW-482)
