@@ -52,6 +52,11 @@ test = [
     "pytest-xdist>=3.8.0,<4",
     "factory-boy>=3.3.3,<4",
     "freezegun>=1.5.5,<2",
+    # tests/public/test_pwa_icons.py samples pixels out of the checked-in
+    # PWA icon PNGs (SNOW-724). Pillow already resolves as a transitive of
+    # the runtime pdfplumber dependency; declared here so the assertion
+    # doesn't rest on someone else's dependency tree.
+    "pillow>=12,<13",
 ]
 type = [
     "mypy>=2.3.0,<2.4",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream

@@ -14,10 +14,9 @@
  *                               icons cleanly)
  *
  * Staging set (static/icons/pwa-staging/, SNOW-399) — same four files but
- * on an amber canvas (#7c2d12) with an amber rect fill (#b45309) and a
- * "STAGING" wordmark composited across the middle. The wordmark sits
- * inside the maskable safe zone (80% of the canvas) so Android's adaptive
- * mask never crops it.
+ * on an amber tile with an asterisk set off the mountain's top right.
+ * Both sit inside the maskable safe zone (80% of the canvas) so
+ * Android's adaptive mask never crops them.
  *
  * Snowdesk deploys the same codebase to staging (*.onrender.com) and
  * production (snowdesk.info). Once a tester has both installed as PWAs,
@@ -25,39 +24,64 @@
  * that reads as unambiguously non-production from three feet away, so
  * staging sessions can't be confused for production ones.
  *
+ * SEASON LABEL
+ * ------------
+ * Every PWA icon carries the two-year season identifier ("25/26") in a
+ * band at the foot of the tile, so an installed home-screen icon says
+ * which season the app is serving without launching it. The mountain
+ * glyph is lifted by MOUNTAIN_LIFT units of the 32-unit viewBox to clear
+ * the band. static/favicon.svg itself is left untouched: the browser-tab
+ * favicon renders at 16px, where five glyphs are illegible — the label
+ * is a home-screen-tile affordance only.
+ *
+ * The label is derived from SEASON_START_DATE, which mirrors the Django
+ * setting of the same name (config/settings/base.py). Because the PNGs
+ * are checked in, they go stale the moment that setting rolls over to a
+ * new season; ``static/icons/pwa-build.json`` records the label baked
+ * into the committed PNGs and tests/public/test_pwa_icons.py asserts it
+ * still matches the configured season, so the roll-over surfaces as a
+ * failing test rather than a wrong icon nobody notices.
+ *
  * Run via ``npm run build:icons`` (see package.json). The PNGs are
- * checked in alongside ``static/favicon.svg`` — when the SVG changes,
- * regenerate and commit the new outputs.
+ * checked in alongside ``static/favicon.svg`` — when the SVG or the
+ * season changes, regenerate and commit the new outputs.
  *
- * The maskable variant pads the source artwork inside a "safe zone"
- * (80% of the canvas) so adaptive icon shapes on Android don't crop
- * the glyph. On the production set the canvas is filled with
- * MASKABLE_CANVAS_COLOUR (the brand green, #2d4a3e) rather than the
- * manifest background_color (cream, #f4f1e8). Without this, Android's
- * circular crop clips into the cream padding at the cardinal edges and
- * shows a visible cream border against the launcher background — the
- * green-on-green canvas ensures those clipped areas are indistinguishable
- * from the icon's own green rect (SNOW-151). The apple-touch-icon and
- * purpose:any variants are unaffected and continue to use
- * BACKGROUND_COLOUR (cream). The maskable PNG must be opaque (no alpha
- * channel) — Android's adaptive-icon mask leaks transparency at the
- * masked corners if the PNG retains an alpha channel, causing the logo
- * to appear shrunken on a white background. ``flatten`` composites
- * transparent pixels onto the supplied background colour; ``removeAlpha``
- * then drops the alpha channel so the PNG encoder writes RGB
- * (color_type 2) not RGBA (color_type 6). Both steps are required under
- * sharp >= 0.33 — ``flatten`` alone no longer drops the channel. The
- * apple-touch-icon variant uses the same two-step sequence so the icon
- * reads as a solid tile under iOS's automatic corner rounding.
+ * OPAQUE VARIANTS AND THE TILE COLOUR
+ * -----------------------------------
+ * Two of the four files are flattened onto an opaque backdrop rather
+ * than keeping the SVG's transparent corners: the maskable PNG (which
+ * pads the artwork inside a "safe zone", 80% of the canvas, so adaptive
+ * icon shapes on Android don't crop the glyph) and the apple-touch icon
+ * (iOS can't render transparency in home-screen icons cleanly).
  *
- * The staging set uses MASKABLE_CANVAS_COLOUR_STAGING (#7c2d12 — a
- * darker rust) for the maskable canvas and BACKGROUND_COLOUR_STAGING
- * (#7c2d12 too) so all four staging PNGs read as a single amber tile.
- * Keep MASKABLE_CANVAS_COLOUR_STAGING and the theme_color in
- * apps/public/site_environment.PWAEnvironmentIdentity.STAGING (#b45309, one
- * shade brighter for the OS chrome tint) in the same amber family — the
- * two are seen side by side (status bar next to icon) on installed
- * Android PWAs.
+ * Both use the set's own TILE_COLOUR — the fill of the rounded rect in
+ * the artwork itself — never the manifest background_color. Any other
+ * choice shows as a visible border once the OS masks the icon: Android's
+ * circular crop clips into the maskable padding at the cardinal edges,
+ * and iOS's squircle leaves slivers at the corners of the apple-touch
+ * icon. A backdrop that matches the tile makes those areas
+ * indistinguishable from the icon's own rect. SNOW-151 established this for the
+ * production maskable; the staging maskable (whose canvas, #7c2d12, was
+ * a shade darker than its rect fill, #b45309) and the production
+ * apple-touch icon (flattened onto the cream background_color) were
+ * later fixed the same way.
+ *
+ * The flattened PNGs must be opaque (no alpha channel) — Android's
+ * adaptive-icon mask leaks transparency at the masked corners if the
+ * PNG retains an alpha channel, causing the logo to appear shrunken on
+ * a white background. ``flatten`` composites transparent pixels onto
+ * the supplied background colour; ``removeAlpha`` then drops the alpha
+ * channel so the PNG encoder writes RGB (color_type 2) not RGBA
+ * (color_type 6). Both steps are required under sharp >= 0.33 —
+ * ``flatten`` alone no longer drops the channel.
+ *
+ * The purpose:any variants (192 and 512) keep their alpha: the browser
+ * composites them itself and a transparent corner is correct there.
+ *
+ * Keep TILE_COLOUR_STAGING and the theme_color in
+ * apps/public/site_environment.PWAEnvironmentIdentity.STAGING in the same
+ * amber family — the two are seen side by side (status bar next to
+ * icon) on installed Android PWAs.
  */
 
 'use strict';
@@ -70,57 +94,114 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const SRC_SVG = path.join(REPO_ROOT, 'static', 'favicon.svg');
 const OUT_DIR_PROD = path.join(REPO_ROOT, 'static', 'icons', 'pwa');
 const OUT_DIR_STAGING = path.join(REPO_ROOT, 'static', 'icons', 'pwa-staging');
+const BUILD_MANIFEST = path.join(REPO_ROOT, 'static', 'icons', 'pwa-build.json');
 
-// Manifest background_color — used as the padding fill for the
-// apple-touch-icon and purpose:any variants so the icon reads as a
-// solid tile. Keep in sync with static/manifest.webmanifest.
-const BACKGROUND_COLOUR = '#f4f1e8';
+// Brand green — must match the rect fill in static/favicon.svg. Doubles
+// as the opaque backdrop for the production maskable and apple-touch
+// PNGs, so a masked corner clips green-on-green (SNOW-151).
+const TILE_COLOUR_PRODUCTION = '#2d4a3e';
 
-// Brand green — must match the rect fill in static/favicon.svg.
-// Used as the maskable canvas fill so Android's circular crop clips
-// green-on-green and shows no cream border (SNOW-151).
-const MASKABLE_CANVAS_COLOUR = '#2d4a3e';
-
-// SNOW-399 — staging palette. The rect fill and both canvases share the
-// darker rust (#7c2d12) so every staging PNG reads as one amber tile.
-// The theme colour (#b45309, one shade brighter) lives in
+// SNOW-399 — the staging tile colour, replacing the brand green in the
+// recoloured artwork and backing the same two flattened PNGs.
+// The matching theme colour lives in
 // apps/public/site_environment.PWAEnvironmentIdentity.STAGING and drives the
 // OS status-bar tint next to the installed icon.
-const BACKGROUND_COLOUR_STAGING = '#7c2d12';
-const MASKABLE_CANVAS_COLOUR_STAGING = '#7c2d12';
-const RECT_FILL_STAGING = '#b45309';
+const TILE_COLOUR_STAGING = '#b45309';
+
+// Brand cream — must match the mountain fill in static/favicon.svg. The
+// season band and the staging asterisk reuse it so every light mark on
+// the tile is the same white.
+const FOREGROUND_COLOUR = '#f2f0ec';
 
 const SAFE_ZONE_RATIO = 0.8;
 
+// Units of the 32-unit viewBox the mountain glyph is raised by to clear
+// the season band at the foot of the tile.
+const MOUNTAIN_LIFT = 4;
+
+// Default season start — mirrors SEASON_START_DATE in
+// config/settings/base.py. Override via the environment variable of the
+// same name when building icons for a different season.
+const SEASON_START_DEFAULT = '2025-11-01';
+
 /**
- * Read the checked-in production favicon SVG and, for the staging set,
- * recolour the rect fill and composite a "STAGING" wordmark across the
- * middle. The wordmark is drawn in near-black (#1a1a1a) so it reads on
- * both the cream mountain glyph and the amber background — a cream fill
- * would disappear where it overlaps the cream mountain. Font size is
- * 4.6 units of the 32-unit viewBox and the text sits at y=17.5 (near
- * vertical centre), which stays well inside the maskable safe zone
- * (~y=3.2 to y=28.8) so Android's adaptive mask never crops it.
+ * Build the SLF-style two-year season identifier (e.g. "25/26") from an
+ * ISO season-start date. Mirrors ``_season_label`` in
+ * apps/public/season_calendar.py — the Northern-hemisphere avalanche
+ * season runs from autumn through to late spring of the following year,
+ * so the label is always two two-digit years separated by a slash.
  */
-function loadSourceSvg(variant) {
-  const svg = fs.readFileSync(SRC_SVG, 'utf8');
-  if (variant === 'production') {
-    return Buffer.from(svg, 'utf8');
+function seasonLabelFor(startIso) {
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(startIso);
+  if (!match) {
+    throw new Error(
+      `SEASON_START_DATE must be an ISO date (YYYY-MM-DD), got: ${startIso}`,
+    );
   }
-  // Replace the rect fill and append the wordmark just before the closing
-  // </svg>. Regex targets the exact production shape (see the check in
-  // main()); a future SVG rewrite that changes it will surface as a
-  // build-time mismatch, not a silent recolour.
-  const recoloured = svg.replace(
-    /fill="#2d4a3e"/,
-    `fill="${RECT_FILL_STAGING}"`,
+  const year = Number(match[1]);
+  const pad = (n) => String(n % 100).padStart(2, '0');
+  return `${pad(year)}/${pad(year + 1)}`;
+}
+
+/**
+ * Render the season band as an SVG <text> element.
+ *
+ * Font size 7 and baseline y=29 of the 32-unit viewBox put the label in
+ * the 11 units the lifted mountain vacates, with roughly equal air above
+ * the cap height and below the baseline. Both sit inside the maskable
+ * safe zone (~y=3.2 to y=28.8 before the lift is applied, and the whole
+ * 32-unit tile is scaled into that zone) so Android's adaptive mask
+ * never crops the label.
+ */
+function seasonBand(label) {
+  return (
+    `<text x="16" y="29" font-family="Arial, Helvetica, sans-serif"` +
+    ` font-size="7" font-weight="700" text-anchor="middle"` +
+    ` fill="${FOREGROUND_COLOUR}" letter-spacing="0.1">${label}</text>`
   );
-  const wordmark =
-    '<text x="16" y="17.5" font-family="Arial, Helvetica, sans-serif"' +
-    ' font-size="4.6" font-weight="700" text-anchor="middle"' +
-    ' fill="#1a1a1a" letter-spacing="0.15">STAGING</text>';
+}
+
+/**
+ * Read the checked-in production favicon SVG, lift the mountain glyph to
+ * clear the season band, and composite the band itself.
+ *
+ * For the staging set the rect fill is also recoloured and an asterisk
+ * is set off the mountain's top right, the way a footnote marker hangs
+ * off a word. It is drawn in the brand cream, the same fill as the
+ * mountain and the season band — the tile has no other white, and a
+ * pure #ffffff sitting inches from the cream glyph would read as a
+ * mistake. Placed at (26.5, 13) of the 32-unit viewBox it clears both
+ * the lifted mountain's right peak and the rounded corner, and survives
+ * iOS's squircle crop on the apple-touch icon; on the maskable variant
+ * the whole tile is scaled into the safe zone first, so Android's mask
+ * never reaches it.
+ *
+ * The string replacements target the exact production shape (see the
+ * check in main()); a future SVG rewrite that changes it surfaces as a
+ * build-time mismatch, not a silent no-op.
+ */
+function loadSourceSvg(variant, label) {
+  const svg = fs.readFileSync(SRC_SVG, 'utf8');
+  const lifted = svg.replace(
+    '<path ',
+    `<path transform="translate(0 -${MOUNTAIN_LIFT})" `,
+  );
+  if (variant === 'production') {
+    return Buffer.from(
+      lifted.replace('</svg>', `${seasonBand(label)}</svg>`),
+      'utf8',
+    );
+  }
+  const recoloured = lifted.replace(
+    `fill="${TILE_COLOUR_PRODUCTION}"`,
+    `fill="${TILE_COLOUR_STAGING}"`,
+  );
+  const asterisk =
+    '<text x="26.5" y="13" font-family="Arial, Helvetica, sans-serif"' +
+    ' font-size="16" font-weight="700" text-anchor="middle"' +
+    ` fill="${FOREGROUND_COLOUR}">*</text>`;
   return Buffer.from(
-    recoloured.replace('</svg>', `${wordmark}</svg>`),
+    recoloured.replace('</svg>', `${asterisk}${seasonBand(label)}</svg>`),
     'utf8',
   );
 }
@@ -131,7 +212,7 @@ async function buildAny(size, outName, outDir, srcSvg) {
   console.log(`wrote ${path.relative(REPO_ROOT, outPath)} (${size}×${size}, any)`);
 }
 
-async function buildMaskable(size, outName, outDir, srcSvg, canvasColour) {
+async function buildMaskable(size, outName, outDir, srcSvg, tileColour) {
   const outPath = path.join(outDir, outName);
   const inner = Math.round(size * SAFE_ZONE_RATIO);
   const pad = Math.round((size - inner) / 2);
@@ -141,17 +222,17 @@ async function buildMaskable(size, outName, outDir, srcSvg, canvasColour) {
       width: size,
       height: size,
       channels: 4,
-      background: canvasColour,
+      background: tileColour,
     },
   })
     .composite([{ input: innerBuffer, top: pad, left: pad }])
-    // Flatten fills transparent areas with the canvas colour, then
+    // Flatten fills transparent areas with the tile colour, then
     // removeAlpha drops the alpha channel entirely so the PNG is written
     // as RGB (color_type 2) not RGBA (color_type 6). Both steps are needed:
     // flatten alone doesn't drop the channel in sharp >= 0.33; removeAlpha
     // alone would fill with black. Together they ensure Android's adaptive-
     // icon mask doesn't leak transparency at the masked corners.
-    .flatten({ background: canvasColour })
+    .flatten({ background: tileColour })
     .removeAlpha()
     .png()
     .toFile(outPath);
@@ -160,17 +241,18 @@ async function buildMaskable(size, outName, outDir, srcSvg, canvasColour) {
   );
 }
 
-async function buildAppleTouchIcon(size, outName, outDir, srcSvg, backgroundColour) {
+async function buildAppleTouchIcon(size, outName, outDir, srcSvg, tileColour) {
   const outPath = path.join(outDir, outName);
   // iOS home-screen icons cannot be transparent — flatten the SVG over
-  // the manifest background colour so corners don't render black after
-  // iOS's automatic corner rounding. ``flatten`` composites transparent
-  // pixels onto the background; ``removeAlpha`` then drops the alpha
-  // channel so the PNG is written as opaque RGB (color_type 2). Both
-  // steps are required under sharp >= 0.33 (see buildMaskable).
+  // the tile colour so the corners iOS's squircle mask leaves behind
+  // clip tile-on-tile rather than showing a lighter fringe. ``flatten``
+  // composites transparent pixels onto the background; ``removeAlpha``
+  // then drops the alpha channel so the PNG is written as opaque RGB
+  // (color_type 2). Both steps are required under sharp >= 0.33 (see
+  // buildMaskable).
   await sharp(srcSvg)
     .resize(size, size)
-    .flatten({ background: backgroundColour })
+    .flatten({ background: tileColour })
     .removeAlpha()
     .png()
     .toFile(outPath);
@@ -179,13 +261,13 @@ async function buildAppleTouchIcon(size, outName, outDir, srcSvg, backgroundColo
   );
 }
 
-async function buildSet({ variant, outDir, canvasColour, backgroundColour }) {
+async function buildSet({ variant, outDir, tileColour, label }) {
   fs.mkdirSync(outDir, { recursive: true });
-  const srcSvg = loadSourceSvg(variant);
+  const srcSvg = loadSourceSvg(variant, label);
   await buildAny(192, 'icon-192.png', outDir, srcSvg);
   await buildAny(512, 'icon-512.png', outDir, srcSvg);
-  await buildMaskable(512, 'icon-maskable-512.png', outDir, srcSvg, canvasColour);
-  await buildAppleTouchIcon(180, 'apple-touch-icon-180.png', outDir, srcSvg, backgroundColour);
+  await buildMaskable(512, 'icon-maskable-512.png', outDir, srcSvg, tileColour);
+  await buildAppleTouchIcon(180, 'apple-touch-icon-180.png', outDir, srcSvg, tileColour);
 }
 
 async function main() {
@@ -193,29 +275,51 @@ async function main() {
     console.error(`source SVG not found: ${SRC_SVG}`);
     process.exit(1);
   }
-  // The staging recolour depends on the exact production rect-fill string.
-  // Guard here so a future SVG rewrite surfaces as a build error rather
-  // than a silent no-op recolour that ships an amber-less staging tile.
+  // The staging recolour and the mountain lift depend on the exact
+  // production SVG shape. Guard here so a future SVG rewrite surfaces as
+  // a build error rather than a silent no-op that ships an amber-less
+  // staging tile or a mountain overlapping the season band.
   const svg = fs.readFileSync(SRC_SVG, 'utf8');
-  if (!svg.includes('fill="#2d4a3e"')) {
+  if (!svg.includes(`fill="${TILE_COLOUR_PRODUCTION}"`)) {
     console.error(
-      'expected fill="#2d4a3e" in static/favicon.svg — update the staging' +
-        ' recolour in loadSourceSvg() if the brand colour has moved',
+      `expected fill="${TILE_COLOUR_PRODUCTION}" in static/favicon.svg — update` +
+        ' TILE_COLOUR_PRODUCTION if the brand colour has moved',
     );
     process.exit(1);
   }
+  if (!svg.includes('<path ')) {
+    console.error(
+      'expected a single <path> (the mountain glyph) in static/favicon.svg —' +
+        ' update the mountain lift in loadSourceSvg() if the artwork has changed',
+    );
+    process.exit(1);
+  }
+
+  const seasonStart = process.env.SEASON_START_DATE || SEASON_START_DEFAULT;
+  const label = seasonLabelFor(seasonStart);
+  console.log(`season label: ${label} (from SEASON_START_DATE=${seasonStart})`);
+
   await buildSet({
     variant: 'production',
     outDir: OUT_DIR_PROD,
-    canvasColour: MASKABLE_CANVAS_COLOUR,
-    backgroundColour: BACKGROUND_COLOUR,
+    tileColour: TILE_COLOUR_PRODUCTION,
+    label,
   });
   await buildSet({
     variant: 'staging',
     outDir: OUT_DIR_STAGING,
-    canvasColour: MASKABLE_CANVAS_COLOUR_STAGING,
-    backgroundColour: BACKGROUND_COLOUR_STAGING,
+    tileColour: TILE_COLOUR_STAGING,
+    label,
   });
+
+  // Record what was baked into the committed PNGs so a test can fail when
+  // the configured season moves on and the icons aren't regenerated.
+  fs.writeFileSync(
+    BUILD_MANIFEST,
+    `${JSON.stringify({ season_label: label, season_start_date: seasonStart }, null, 2)}\n`,
+    'utf8',
+  );
+  console.log(`wrote ${path.relative(REPO_ROOT, BUILD_MANIFEST)}`);
 }
 
 main().catch((err) => {
