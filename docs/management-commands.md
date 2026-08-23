@@ -381,6 +381,36 @@ Run it **before** the follow-up that drops `Favourite.forecast_point` /
 `latitude` / `longitude` / `elevation`. Those columns stay in place for now
 precisely because `build.sh` migrates on every deploy: a migration removing
 them would land before an operator could run this.
+### `backfill_observation_locations` — mint a Location per field report
+
+One-shot backfill for SNOW-709, the sibling of
+`backfill_favourite_locations`. Mints the `Location` each pre-SNOW-709
+report happened at and points its FK there. **Not a data migration**, for
+the same reason.
+
+**Field observations are user data and immutable event records.** The
+provenance model does not move and is not touched: `gps_latitude` /
+`gps_longitude` (the raw device fix), `location_source` and
+`accuracy_radius_km` are data about the *report*, not about the place. The
+gap between the report coordinate and the device fix — "I was standing
+here" versus "I tapped roughly here" — stays recoverable.
+
+**No forecast cell.** An observation shows no forecast panel, so resolving
+one would mean an Open-Meteo round trip per historical report for weather
+nothing renders. `link_location_forecast_cells` is scoped to `named()` for
+the same reason, so these rows are never picked up by it either.
+
+One row per report — coordinates are not merged on equality. Exact float
+equality on a user coordinate is a false economy, and wrongly merging two
+reports into one place is worse than an extra row. Locations are shared by
+*curation*, not by automatic dedup.
+
+```bash
+uv run python manage.py backfill_observation_locations           # preview
+uv run python manage.py backfill_observation_locations --commit  # apply
+```
+
+Run it before SNOW-714 drops `FieldObservation.latitude`/`longitude`.
 
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 

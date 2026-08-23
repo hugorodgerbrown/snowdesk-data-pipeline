@@ -110,10 +110,16 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
         """Return observations within ``radius_km`` of a point on a calendar day.
 
         Filters to the given calendar day with a SQL ``observed_at__date``
-        filter, then loads ``(pk, latitude, longitude)`` for that day and
-        runs a pure-Python haversine pass (no PostGIS dependency) to find
-        rows within range. The boundary is **inclusive** — a point exactly
-        ``radius_km`` away is included.
+        filter, then runs a pure-Python haversine pass (no PostGIS
+        dependency) to find rows within range. The boundary is
+        **inclusive** — a point exactly ``radius_km`` away is included.
+
+        Distances are computed **once per distinct location**, not once per
+        report (SNOW-709). Several reports at one spot is the common case
+        this model expects, and each one used to pay for the same
+        arithmetic; sharing a ``Location`` is what makes the saving
+        available. A report the backfill has not reached yet has no
+        location and falls back to its own coordinates.
 
         Args:
             latitude: WGS-84 latitude of the centre point, in degrees.
@@ -127,13 +133,32 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
 
         """
         candidates = self.filter(observed_at__date=day).values_list(
-            "pk", "latitude", "longitude"
+            "pk",
+            "location_id",
+            "location__latitude",
+            "location__longitude",
+            "latitude",
+            "longitude",
         )
-        near_pks = [
-            pk
-            for pk, obs_lat, obs_lon in candidates
-            if haversine_km(latitude, longitude, obs_lat, obs_lon) <= radius_km
-        ]
+        # location_id -> whether that location is inside the radius. Keyed on
+        # the id rather than the coordinate pair so two locations that
+        # genuinely share a coordinate still each get an entry; the point is
+        # to stop N reports at one location costing N haversines.
+        by_location: dict[int, bool] = {}
+        near_pks = []
+        for pk, location_id, loc_lat, loc_lon, own_lat, own_lon in candidates:
+            if location_id is None:
+                # Pre-backfill row: no location to share, so no saving to be
+                # had. Its own coordinates are still authoritative.
+                if haversine_km(latitude, longitude, own_lat, own_lon) <= radius_km:
+                    near_pks.append(pk)
+                continue
+            near = by_location.get(location_id)
+            if near is None:
+                near = haversine_km(latitude, longitude, loc_lat, loc_lon) <= radius_km
+                by_location[location_id] = near
+            if near:
+                near_pks.append(pk)
         return self.filter(pk__in=near_pks)
 
     def counts_near_point_for_day(
@@ -321,6 +346,18 @@ class FieldObservation(BaseModel):
     The ``region`` FK is best-effort — it may be null when the report
     location cannot be matched to a known MicroRegion boundary.
 
+    ``location`` is the ``locations.Location`` this observation happened at
+    (SNOW-709). Several observations sharing one location is correct and is
+    the point — "three reports near Mont Fort this week" becomes a join
+    rather than a distance scan over every row.
+
+    The provenance model stays **on the observation**, because it is data
+    about the *report* and not about the place: ``gps_latitude`` /
+    ``gps_longitude`` (the raw device fix), ``location_source`` and
+    ``accuracy_radius_km`` do not move. ``latitude``/``longitude`` are
+    retained but superseded by ``location``, and drop in a later ticket
+    (SNOW-714) once nothing reads them.
+
     ``location_source`` records how the report coordinate was obtained:
     raw GPS fix (``GPS``), GPS fix manually refined by dragging the pin
     (``GPS_REFINED``), or entirely manual placement with no GPS involved
@@ -378,19 +415,35 @@ class FieldObservation(BaseModel):
         ),
     )
 
+    location = models.ForeignKey(
+        "locations.Location",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="field_observations",
+        help_text=(
+            "Where this observation happened. Shared with any other "
+            "observation at the same point. Null only for a row the "
+            "SNOW-709 backfill has not reached yet."
+        ),
+    )
+
     # Report location — the point attributed to this observation.
     # Populated from the GPS fix (GPS path) or from a pin placed/dragged
-    # by the user (GPS_REFINED / MANUAL paths).
+    # by the user (GPS_REFINED / MANUAL paths). Superseded by ``location``
+    # (SNOW-709); dropped once nothing reads them (SNOW-714).
     latitude = models.FloatField(
         help_text=(
             "WGS-84 latitude of the report location "
-            "(GPS fix, refined pin, or manually-placed pin)."
+            "(GPS fix, refined pin, or manually-placed pin). Superseded by "
+            "location.latitude."
         ),
     )
     longitude = models.FloatField(
         help_text=(
             "WGS-84 longitude of the report location "
-            "(GPS fix, refined pin, or manually-placed pin)."
+            "(GPS fix, refined pin, or manually-placed pin). Superseded by "
+            "location.longitude."
         ),
     )
     accuracy_radius_km = models.FloatField(

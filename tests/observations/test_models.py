@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime
 from datetime import UTC
+from unittest.mock import patch
 
 import pytest
 from django.db import IntegrityError, transaction
@@ -28,6 +29,7 @@ from apps.core.geo import haversine_km
 from apps.observations.models import FieldObservation
 from tests.factories import (
     FieldObservationFactory,
+    LocationFactory,
     MicroRegionFactory,
     UserFactory,
 )
@@ -638,3 +640,105 @@ class TestFieldObservationCoordinateConstraints:
         """A negative accuracy radius is rejected at the DB layer."""
         with pytest.raises(IntegrityError), transaction.atomic():
             FieldObservationFactory.create(accuracy_radius_km=-1.0)
+
+
+@pytest.mark.django_db
+class TestNearPointSharesDistanceWorkPerLocation:
+    """near_point_for_day computes one distance per location (SNOW-709).
+
+    Several reports at one spot is the common case this model expects, and
+    each one used to pay for the same arithmetic. Sharing a ``Location`` is
+    what makes the saving available.
+    """
+
+    CENTRE_LAT = 46.10
+    CENTRE_LON = 7.10
+    RADIUS_KM = 25.0
+
+    def _day(self) -> datetime.date:
+        """Return the calendar day the fixtures sit on."""
+        return timezone.now().date()
+
+    def test_reports_sharing_a_location_cost_one_distance(self) -> None:
+        """Five reports at one location compute the distance once."""
+        location = LocationFactory.create(
+            anonymous=True, latitude=46.11, longitude=7.11
+        )
+        for _ in range(5):
+            FieldObservationFactory.create(
+                location=location,
+                latitude=location.latitude,
+                longitude=location.longitude,
+                observed_at=timezone.now(),
+            )
+
+        with patch("apps.observations.models.haversine_km", wraps=haversine_km) as spy:
+            result = FieldObservation.objects.get_queryset().near_point_for_day(
+                self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+            )
+            assert result.count() == 5
+
+        assert spy.call_count == 1
+
+    def test_distinct_locations_each_cost_one(self) -> None:
+        """Two distinct locations are two distance calls, not one."""
+        for index in range(2):
+            FieldObservationFactory.create(
+                latitude=46.11 + index * 0.01,
+                longitude=7.11,
+                observed_at=timezone.now(),
+            )
+
+        with patch("apps.observations.models.haversine_km", wraps=haversine_km) as spy:
+            FieldObservation.objects.get_queryset().near_point_for_day(
+                self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+            ).count()
+
+        assert spy.call_count == 2
+
+    def test_a_report_with_no_location_still_matches(self) -> None:
+        """A pre-backfill row falls back to its own coordinates.
+
+        The migration window must not make reports invisible on the map.
+        """
+        near = FieldObservationFactory.create(
+            location=None,
+            latitude=46.11,
+            longitude=7.11,
+            observed_at=timezone.now(),
+        )
+        far = FieldObservationFactory.create(
+            location=None,
+            latitude=47.90,
+            longitude=8.90,
+            observed_at=timezone.now(),
+        )
+
+        result = FieldObservation.objects.get_queryset().near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+
+        assert near in result
+        assert far not in result
+
+    def test_the_location_is_what_decides_membership(self) -> None:
+        """When a report has a location, the location's coordinate wins.
+
+        Belt and braces for the migration window: the two are equal today,
+        so a test that did not force them apart would pass either way and
+        stop meaning anything once the row columns drop (SNOW-714).
+        """
+        FieldObservationFactory.create(
+            location=LocationFactory.create(
+                anonymous=True, latitude=47.90, longitude=8.90
+            ),
+            latitude=46.11,
+            longitude=7.11,
+            observed_at=timezone.now(),
+        )
+
+        result = FieldObservation.objects.get_queryset().near_point_for_day(
+            self.CENTRE_LAT, self.CENTRE_LON, self.RADIUS_KM, self._day()
+        )
+
+        assert result.count() == 0

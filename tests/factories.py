@@ -675,6 +675,15 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
     # WGS-84 coordinates inside Martigny / CH-4115 territory.
     latitude = 46.10
     longitude = 7.10
+    # The anonymous Location this report happened at (SNOW-709), threaded
+    # from the same coordinates. No forecast_cell: an observation shows no
+    # forecast panel. Pass ``location=None`` for a pre-SNOW-709 row.
+    location = factory.SubFactory(
+        LocationFactory,
+        anonymous=True,
+        latitude=factory.LazyAttribute(lambda obj: obj.factory_parent.latitude),
+        longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
+    )
     accuracy_radius_km = None
     # Raw GPS fix — defaults to None (gps_lat/gps_lon not set separately).
     gps_latitude = None

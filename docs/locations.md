@@ -142,6 +142,12 @@ load-bearing for a safety report:
 - `location_source` — `GPS` / `GPS_REFINED` / `MANUAL`.
 - `accuracy_radius_km` — how far to trust it.
 
+Since SNOW-709 the report coordinate also reaches a `Location`, and several
+observations sharing one is correct — that is what makes "three reports near
+Mont Fort this week" a join rather than a distance scan over every row. The
+provenance fields above stay on the report: they are data about the
+*report*, not about the place.
+
 The gap between the two pairs is the difference between "I was standing
 here" and "I tapped roughly here", and it is recoverable by subtraction.
 **This is a precision model, never an anonymisation one** — nothing here

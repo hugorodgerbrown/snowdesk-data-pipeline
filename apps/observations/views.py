@@ -63,6 +63,7 @@ from django_ratelimit.decorators import ratelimit
 from apps.accounts.models import user_is_verified
 from apps.core.coordinates import validate_accuracy_radius_km, validate_coordinates
 from apps.core.decorators import require_htmx
+from apps.locations.models import Location
 from apps.observations.models import FieldObservation
 from apps.regions.services.point_match import region_for_point
 
@@ -344,9 +345,22 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     # Best-effort region resolution — no region-required rejection.
     region = region_for_point(lat, lon)
 
+    # The Location this observation happened at (SNOW-709). Minted per
+    # report rather than matched against an existing one: exact float
+    # equality on a user coordinate is a false economy, and wrongly merging
+    # two reports into one place is worse than an extra row. Locations are
+    # *shared* by curation — an observation pinned to a curated Mont Fort —
+    # not by automatic dedup.
+    #
+    # No forecast_cell: an observation shows no forecast panel, and
+    # resolving one would put an Open-Meteo call on the report path.
+    # link_location_forecast_cells is scoped to named() for the same reason.
+    location = Location.objects.create(latitude=lat, longitude=lon)
+
     # _auth_gate above guarantees an authenticated User; cast narrows for mypy.
     create_kwargs: dict[str, object] = {
         "user": cast(User, request.user),
+        "location": location,
         "region": region,
         "latitude": lat,
         "longitude": lon,
