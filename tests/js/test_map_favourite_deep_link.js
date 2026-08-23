@@ -9,13 +9,16 @@
  * that promise is made of — where the camera went, and what was mounted in
  * the popup — rather than on any internal the deep-link code owns.
  *
- * Three of the four cases are things that must NOT happen, and each one is
- * a way the feature could be shipped looking correct:
+ * Most of the cases are things that must NOT happen, and each is a way the
+ * feature could ship looking correct:
  *
  *   - no ?favourite= at all leaves the map alone AND leaves no listener
  *     bound, which is asserted by firing the signal it would have used;
  *   - a UUID matching nothing (deleted favourite, or somebody else's, since
- *     the URL is guessable) does nothing and says nothing;
+ *     the URL is guessable) does nothing and says nothing, and neither does
+ *     an arrival by a visitor not eligible for favourites at all;
+ *   - the parameter is consumed, so the refetch behind every rename and
+ *     delete cannot fly the map back here an hour later;
  *   - the favourites overlay switched off is switched back ON through the
  *     panel's own path, not by painting layers whose stored preference
  *     still reads 'false' — the state that looks right until the next thing
@@ -161,15 +164,20 @@ function stubMapLibre(record) {
   return map;
 }
 
-/** The DOM map.js's boot reads. */
-function buildFixture() {
+/**
+ * The DOM map.js's boot reads.
+ *
+ * @param {boolean} eligible - Value for `data-favourites-eligible`.
+ * @returns {void}
+ */
+function buildFixture(eligible) {
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
          data-ratings-url="/api/ratings/"
          data-resorts-url="/api/resorts.json"
          data-favourites-url="/favourites/favourites.geojson"
-         data-favourites-eligible="true"
+         data-favourites-eligible="${eligible}"
          data-default-basemap-key="openfreemap_liberty"
          data-season-end="2026-05-31"></div>
     <div id="search-pill" data-state="collapsed">
@@ -198,12 +206,15 @@ async function waitFor(predicate, timeoutMs = 1000) {
  * listener here is what makes a mounted popup observable at all.
  *
  * @param {string} url - The address the visitor arrives on.
+ * @param {boolean} eligible - Whether the visitor may see favourites at all
+ *   (`data-favourites-eligible`); false is an anonymous or ineligible
+ *   visitor guessing the URL.
  * @returns {Promise<object>} The stub map, the recorded flights and popups,
  *   and the UUIDs favourites.js was asked to render.
  */
-async function bootAt(url) {
+async function bootAt(url, eligible = true) {
   window.history.replaceState({}, '', url);
-  buildFixture();
+  buildFixture(eligible);
 
   const record = { flights: [], popups: [], selected: [] };
   document.addEventListener('snowdesk:favourite-selected', (event) => {
@@ -226,7 +237,10 @@ async function bootAt(url) {
   // The favourites fetch is async on every path — the boot restore when the
   // overlay is on, showPanelOverlay's lazy load when the deep link switches
   // it back on — so nothing is installed yet at this point.
-  await waitFor(() => !!mapStub.getLayer('favourites-pin'));
+  // An ineligible visitor never fetches the layer, so this is a wait for
+  // something that will not arrive — bounded low, since nothing after it
+  // depends on the layer existing.
+  await waitFor(() => !!mapStub.getLayer('favourites-pin'), eligible ? 1000 : 100);
   await new Promise((resolve) => setTimeout(resolve, 50));
   return { map: mapStub, ...record };
 }
@@ -299,6 +313,22 @@ describe('/map/?favourite=<uuid>', () => {
     expect(booted.flights).toEqual([]);
     expect(booted.popups).toEqual([]);
     expect(booted.selected).toEqual([]);
+  });
+
+  it('does nothing for a visitor who may not see favourites at all', async () => {
+    // The crosshair link is only rendered for the favourite's owner, but the
+    // URL is guessable — so an anonymous or ineligible visitor arriving here
+    // must not fetch the collection, must not flip the overlay preference on
+    // their behalf, and above all must not throw on the way to a map that
+    // otherwise opens normally.
+    const booted = await bootAt(`/map/?favourite=${TARGET_UUID}`, false);
+
+    emitSourceData(booted.map);
+
+    expect(booted.flights).toEqual([]);
+    expect(booted.popups).toEqual([]);
+    expect(booted.map.getLayer('favourites-pin')).toBeNull();
+    expect(localStorage.getItem(FAVOURITES_KEY)).toBeNull();
   });
 
   it('switches the favourites overlay back on rather than flying to nothing', async () => {
