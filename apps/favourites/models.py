@@ -73,12 +73,20 @@ class Favourite(BaseModel):
     ``name`` is an optional user-supplied label — when blank, the view
     layer falls back to a coordinate-derived display string.
 
-    ``forecast_point`` is the shared ``weather.ForecastPoint`` the pin's
-    coordinates were resolved to (see
-    ``apps.weather.services.forecast_points.resolve_forecast_point``);
-    ``on_delete=PROTECT`` because the point may be shared by other users'
-    favourites and by weather-fetch bookkeeping — a Favourite row is
-    deleted long before its ForecastPoint ever could be.
+    ``location`` is the ``locations.Location`` this pin **is** (SNOW-704).
+    A favourite reaches its coordinates, elevation and weather through it:
+    weather via ``location.forecast_cell``, elevation via
+    ``location.elevation_m``. The row minted for a favourite carries no
+    ``name`` and no ``kind`` — naming is a curation act, and a saved pin's
+    label is the user's own text, which stays on the favourite.
+
+    ``forecast_point``, ``latitude``, ``longitude`` and ``elevation`` are
+    **retained but no longer authoritative** — the pre-SNOW-704 storage.
+    They stay while the backfill runs and are dropped in a later ticket
+    once nothing reads them, because ``build.sh`` migrates on every deploy:
+    a migration removing them would land before an operator could run the
+    backfill, taking every pin's weather link with it. Read ``location`` in
+    new code.
 
     ``region`` is a best-effort MicroRegion resolution, mirroring
     ``apps.observations.models.FieldObservation.region`` — it may be null when
@@ -105,23 +113,45 @@ class Favourite(BaseModel):
         blank=True,
         help_text="Optional user-supplied label for this favourite.",
     )
+    location = models.ForeignKey(
+        "locations.Location",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="favourites",
+        help_text=(
+            "The Location this pin is. Reaches coordinates, elevation and "
+            "weather. Null only for a row the SNOW-704 backfill has not "
+            "reached yet."
+        ),
+    )
     latitude = models.FloatField(
-        help_text="WGS-84 latitude of the saved pin.",
+        help_text=(
+            "WGS-84 latitude of the saved pin. Superseded by "
+            "location.latitude (SNOW-704); dropped once nothing reads it."
+        ),
     )
     longitude = models.FloatField(
-        help_text="WGS-84 longitude of the saved pin.",
+        help_text=(
+            "WGS-84 longitude of the saved pin. Superseded by "
+            "location.longitude (SNOW-704); dropped once nothing reads it."
+        ),
     )
     elevation = models.FloatField(
         help_text=(
-            "Elevation in metres, taken from the resolved ForecastPoint's "
-            "sampling elevation."
+            "Elevation in metres. Superseded by location.elevation_m "
+            "(SNOW-704); dropped once nothing reads it."
         ),
     )
     forecast_point = models.ForeignKey(
         "weather.ForecastPoint",
         on_delete=models.PROTECT,
         related_name="favourites",
-        help_text="Shared ForecastPoint this pin's coordinates resolved to.",
+        help_text=(
+            "Shared ForecastPoint this pin's coordinates resolved to. "
+            "Superseded by location.forecast_cell (SNOW-704); dropped once "
+            "nothing reads it."
+        ),
     )
     region = models.ForeignKey(
         "regions.MicroRegion",

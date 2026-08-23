@@ -352,6 +352,36 @@ uv run python manage.py link_region_centroid_locations           # preview + cos
 uv run python manage.py link_region_centroid_locations --commit  # apply
 ```
 
+### `backfill_favourite_locations` — mint a Location per existing Favourite
+
+One-shot backfill for SNOW-704. Every favourite created before that ticket
+stores its own coordinates and points straight at a `ForecastPoint`; this
+mints the `Location` each one *is* and repoints the FK.
+
+**Not a data migration** — CLAUDE.md forbids bulk dataset updates in
+migrations, so this is a `--commit`-gated command.
+
+**No external calls.** The favourite already carries the elevation and the
+resolved cell from when it was created; copying them is correct and free,
+and re-resolving could return a *different* answer for a pin whose weather
+users have already been reading.
+
+One transaction **per favourite**, not one for the batch: a pin that fails
+must not roll back the pins already migrated, and a single transaction over
+a growable user table is the lock this command exists to avoid. The minted
+location carries no name and no kind — a pin's label is the user's own text
+and stays on the favourite.
+
+```bash
+uv run python manage.py backfill_favourite_locations           # preview
+uv run python manage.py backfill_favourite_locations --commit  # apply
+```
+
+Run it **before** the follow-up that drops `Favourite.forecast_point` /
+`latitude` / `longitude` / `elevation`. Those columns stay in place for now
+precisely because `build.sh` migrates on every deploy: a migration removing
+them would land before an operator could run this.
+
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 
 Reconciles the DB's `waffle.Flag` rows to the declarative manifest at
