@@ -29,7 +29,7 @@ Bulletin-layer coverage:
 
 It also seeds two named dev accounts (a superuser and an active, CH-4115-subscribed
 normal user — folded in from the former ``seed_dev_users`` command) plus a small
-standalone set of ForecastPoints, a ForecastPointWeather per point per April date,
+standalone set of ForecastCells, a ForecastCellWeather per point per April date,
 and one Favourite per point (all owned by the seeded normal dev user).
 
 Region/resort reference data (MajorRegion/SubRegion/MicroRegion/Resort) is a
@@ -77,7 +77,7 @@ if TYPE_CHECKING:
 
     from apps.bulletins.models import Bulletin
     from apps.regions.models import MicroRegion
-    from apps.weather.models import ForecastPoint
+    from apps.weather.models import ForecastCell
 
 logger = logging.getLogger(__name__)
 
@@ -456,7 +456,7 @@ def _make_weather_snapshot_params(
     target_date: date,
 ) -> dict[str, Any]:
     """
-    Build kwargs for a deterministic WeatherSnapshot / ForecastPointWeather row.
+    Build kwargs for a deterministic WeatherSnapshot / ForecastCellWeather row.
 
     Uses WMO code 1 (mainly clear), sunrise 06:30 Europe/Zurich,
     sunset 18:30 Europe/Zurich for the given date.
@@ -467,7 +467,7 @@ def _make_weather_snapshot_params(
         target_date: The calendar date the snapshot applies to.
 
     Returns:
-        A dict of shared weather field values (region/forecast_point FK excluded).
+        A dict of shared weather field values (region/forecast_cell FK excluded).
 
     """
     zurich = zoneinfo.ZoneInfo("Europe/Zurich")
@@ -498,8 +498,8 @@ class SeedModel(enum.StrEnum):
     REGIONDAYRATING = "regiondayrating"
     BULLETINGROUPING = "bulletingrouping"
     WEATHERSNAPSHOT = "weathersnapshot"
-    FORECASTPOINT = "forecastpoint"
-    FORECASTPOINTWEATHER = "forecastpointweather"
+    FORECASTCELL = "forecastcell"
+    FORECASTCELLWEATHER = "forecastcellweather"
     FAVOURITE = "favourite"
     USER = "user"
 
@@ -518,16 +518,16 @@ _DEPENDENCIES: dict[SeedModel, tuple[SeedModel, ...]] = {
     # those links every bulletin looks region-less and no grouping is written.
     SeedModel.BULLETINGROUPING: (SeedModel.BULLETIN, SeedModel.REGIONBULLETIN),
     SeedModel.WEATHERSNAPSHOT: (),
-    SeedModel.FORECASTPOINT: (),
-    SeedModel.FORECASTPOINTWEATHER: (SeedModel.FORECASTPOINT,),
+    SeedModel.FORECASTCELL: (),
+    SeedModel.FORECASTCELLWEATHER: (SeedModel.FORECASTCELL,),
     # Favourites are owned by the seeded normal dev user, so USER is a prerequisite.
-    SeedModel.FAVOURITE: (SeedModel.FORECASTPOINT, SeedModel.USER),
+    SeedModel.FAVOURITE: (SeedModel.FORECASTCELL, SeedModel.USER),
     SeedModel.USER: (),
 }
 
 # Dependency-safe seeding order, split into the two independent families the run
 # is organised around (the bulletin layer shares created Bulletins; the point layer
-# shares created ForecastPoints). The families have no cross-dependencies.
+# shares created ForecastCells). The families have no cross-dependencies.
 _BULLETIN_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.BULLETIN,
     SeedModel.REGIONBULLETIN,
@@ -536,8 +536,8 @@ _BULLETIN_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.WEATHERSNAPSHOT,
 )
 _POINT_FAMILY: tuple[SeedModel, ...] = (
-    SeedModel.FORECASTPOINT,
-    SeedModel.FORECASTPOINTWEATHER,
+    SeedModel.FORECASTCELL,
+    SeedModel.FORECASTCELLWEATHER,
     SeedModel.FAVOURITE,
 )
 # The account layer has no cross-dependencies on the other families and is seeded
@@ -546,7 +546,7 @@ _ACCOUNT_FAMILY: tuple[SeedModel, ...] = (SeedModel.USER,)
 
 _CHOICES: list[str] = [m.value for m in SeedModel]
 
-# Coordinates for the seeded ForecastPoints — spaced (0.1° / 300 m apart) so each
+# Coordinates for the seeded ForecastCells — spaced (0.1° / 300 m apart) so each
 # resolves to a distinct (lat_cell, lon_cell, elevation_band) triple, around the
 # Verbier detail region.
 _FORECAST_POINT_COORDS: tuple[tuple[float, float, float], ...] = (
@@ -1017,7 +1017,7 @@ class Command(BaseCommand):
     def _seed_point_family(
         self, resolved: "set[SeedModel]", dev_user: "User | None", verbosity: int
     ) -> dict[str, int]:
-        """Seed the point-layer models (ForecastPoint/ForecastPointWeather/Favourite).
+        """Seed the point-layer models (ForecastCell/ForecastCellWeather/Favourite).
 
         Args:
             resolved: Models to seed (already expanded with prerequisites).
@@ -1031,16 +1031,16 @@ class Command(BaseCommand):
 
         """
         counts: dict[str, int] = {}
-        forecast_points: list[ForecastPoint] = []
+        forecast_cells: list[ForecastCell] = []
         for model in _POINT_FAMILY:
             if model not in resolved:
                 continue
-            if model is SeedModel.FORECASTPOINT:
-                forecast_points = self._seed_forecast_points(verbosity)
-                counts[model.value] = len(forecast_points)
-            elif model is SeedModel.FORECASTPOINTWEATHER:
-                counts[model.value] = self._seed_forecast_point_weather(
-                    forecast_points, verbosity
+            if model is SeedModel.FORECASTCELL:
+                forecast_cells = self._seed_forecast_cells(verbosity)
+                counts[model.value] = len(forecast_cells)
+            elif model is SeedModel.FORECASTCELLWEATHER:
+                counts[model.value] = self._seed_forecast_cell_weather(
+                    forecast_cells, verbosity
                 )
             elif model is SeedModel.FAVOURITE:
                 if dev_user is None:  # pragma: no cover — FAVOURITE pulls in USER
@@ -1049,7 +1049,7 @@ class Command(BaseCommand):
                         "have been pulled in as a prerequisite."
                     )
                 counts[model.value] = self._seed_favourites(
-                    forecast_points, dev_user, verbosity
+                    forecast_cells, dev_user, verbosity
                 )
         return counts
 
@@ -1254,55 +1254,55 @@ class Command(BaseCommand):
             self.stdout.write(f"  Created {created} WeatherSnapshot rows")
         return created
 
-    def _seed_forecast_points(self, verbosity: int) -> "list[ForecastPoint]":
-        """Create the fixed set of ForecastPoints from ``_FORECAST_POINT_COORDS``.
+    def _seed_forecast_cells(self, verbosity: int) -> "list[ForecastCell]":
+        """Create the fixed set of ForecastCells from ``_FORECAST_POINT_COORDS``.
 
         Args:
             verbosity: Verbosity level.
 
         Returns:
-            The created ForecastPoint instances.
+            The created ForecastCell instances.
 
         """
-        from tests.factories import ForecastPointFactory
+        from tests.factories import ForecastCellFactory
 
         points = [
-            ForecastPointFactory.create(
+            ForecastCellFactory.create(
                 latitude=latitude, longitude=longitude, elevation=elevation
             )
             for latitude, longitude, elevation in _FORECAST_POINT_COORDS
         ]
 
         if verbosity >= 2:
-            self.stdout.write(f"  Created {len(points)} ForecastPoint rows")
+            self.stdout.write(f"  Created {len(points)} ForecastCell rows")
         return points
 
-    def _seed_forecast_point_weather(
-        self, forecast_points: "list[ForecastPoint]", verbosity: int
+    def _seed_forecast_cell_weather(
+        self, forecast_cells: "list[ForecastCell]", verbosity: int
     ) -> int:
-        """Create a ForecastPointWeather per point across every April date.
+        """Create a ForecastCellWeather per point across every April date.
 
         Sunrise/sunset/weather-code come from the same helper as the region
         snapshots; the extended daily fields use the factory defaults.
 
         Args:
-            forecast_points: The seeded ForecastPoint instances.
+            forecast_cells: The seeded ForecastCell instances.
             verbosity: Verbosity level.
 
         Returns:
-            The number of ForecastPointWeather rows created.
+            The number of ForecastCellWeather rows created.
 
         """
-        from tests.factories import ForecastPointWeatherFactory
+        from tests.factories import ForecastCellWeatherFactory
 
         created = 0
-        for point in forecast_points:
+        for point in forecast_cells:
             for target_date in APRIL_DATES:
                 # region_id is unused by the helper (it derives sunrise/sunset from
                 # the date alone); "" keeps the call honest for point weather.
                 params = _make_weather_snapshot_params("", target_date)
-                ForecastPointWeatherFactory.create(
-                    forecast_point=point,
+                ForecastCellWeatherFactory.create(
+                    forecast_cell=point,
                     valid_for_date=params["valid_for_date"],
                     weather_code=params["weather_code"],
                     sunrise=params["sunrise"],
@@ -1312,24 +1312,24 @@ class Command(BaseCommand):
                 created += 1
 
         if verbosity >= 2:
-            self.stdout.write(f"  Created {created} ForecastPointWeather rows")
+            self.stdout.write(f"  Created {created} ForecastCellWeather rows")
         return created
 
     def _seed_favourites(
         self,
-        forecast_points: "list[ForecastPoint]",
+        forecast_cells: "list[ForecastCell]",
         owner: "User",
         verbosity: int,
     ) -> int:
-        """Create one Favourite per ForecastPoint, all owned by the dev user.
+        """Create one Favourite per ForecastCell, all owned by the dev user.
 
-        Each Favourite references a seeded ForecastPoint (so its coordinates line
+        Each Favourite references a seeded ForecastCell (so its coordinates line
         up with real point weather) rather than letting the factory synthesise a
         fresh point. Ownership is the seeded normal dev user (``owner``) so the
         Favourites appear on that account during manual testing.
 
         Args:
-            forecast_points: The seeded ForecastPoint instances.
+            forecast_cells: The seeded ForecastCell instances.
             owner: The seeded normal dev user that owns the Favourites.
             verbosity: Verbosity level.
 
@@ -1340,7 +1340,7 @@ class Command(BaseCommand):
         from tests.factories import FavouriteFactory
 
         created = 0
-        for point in forecast_points:
+        for point in forecast_cells:
             FavouriteFactory.create(
                 user=owner,
                 forecast_point=point,

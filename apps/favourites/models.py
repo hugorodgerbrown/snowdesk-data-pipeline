@@ -3,7 +3,7 @@ apps/favourites/models.py — Database models for the favourites application.
 
 Defines ``Favourite``: a saved map pin created by an authenticated user.
 Each row records the user's chosen location (latitude, longitude, optional
-name), the shared ``weather.ForecastPoint`` it was resolved to (so the
+name), the shared ``weather.ForecastCell`` it was resolved to (so the
 pin reuses that point's Open-Meteo weather sampling), and a best-effort
 ``MicroRegion`` resolution.
 
@@ -144,11 +144,11 @@ class Favourite(BaseModel):
         ),
     )
     forecast_point = models.ForeignKey(
-        "weather.ForecastPoint",
+        "weather.ForecastCell",
         on_delete=models.PROTECT,
         related_name="favourites",
         help_text=(
-            "Shared ForecastPoint this pin's coordinates resolved to. "
+            "Shared ForecastCell this pin's coordinates resolved to. "
             "Superseded by location.forecast_cell (SNOW-704); dropped once "
             "nothing reads it."
         ),

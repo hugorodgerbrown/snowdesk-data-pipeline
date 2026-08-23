@@ -6,8 +6,8 @@ Contains a single function:
   fetch_elevation(latitude, longitude, base_url=None)
       Calls the Open-Meteo elevation endpoint for one lat/lon pair and
       returns the elevation in metres above sea level. Used by
-      ``apps.weather.services.forecast_points.resolve_forecast_point`` to
-      populate the ``ForecastPoint.elevation`` field before quantising a
+      ``apps.weather.services.forecast_cells.resolve_forecast_cell`` to
+      populate the ``ForecastCell.elevation`` field before quantising a
       new pin into an elevation band.
 
 Follows the same idiom as ``weather_fetcher.py``: plain ``requests.get``

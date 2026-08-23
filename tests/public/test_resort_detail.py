@@ -50,8 +50,8 @@ from apps.weather.services.weather_fetcher import POINT_FORECAST_DAYS
 from tests.factories import (
     FavouriteFactory,
     FieldObservationFactory,
-    ForecastPointFactory,
-    ForecastPointWeatherFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     ResortFactory,
@@ -218,7 +218,7 @@ class TestResortDetailFavouriteState:
         """An already-favourited resort shows the toggle in its saved state."""
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
         user = UserFactory.create()
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
         FavouriteFactory.create(
             user=user,
             resort=resort,
@@ -521,7 +521,7 @@ class TestResortDetailWeather:
 class TestResortDetailPointForecast:
     """The resort's own multi-day point forecast (SNOW-572).
 
-    Reads the same forward ``ForecastPointWeather`` window and
+    Reads the same forward ``ForecastCellWeather`` window and
     ``build_point_forecast_panel`` the favourite detail card uses, rendered
     below the region weather panel via the shared
     ``includes/_forecast_panel.html`` partial with
@@ -532,11 +532,11 @@ class TestResortDetailPointForecast:
 
     def test_linked_point_with_rows_renders_day_strip(self) -> None:
         """A linked forecast_point with a forward row renders the day strip."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
         today = timezone.localdate()
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=today, hourly_series=[]
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=today, hourly_series=[]
         )
 
         client = Client()
@@ -556,11 +556,11 @@ class TestResortDetailPointForecast:
         plan's "Deviation from the scope" note: ``<details>``/``<summary>``
         is native, zero-JavaScript markup, so the assertion belongs here.
         """
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
         today = timezone.localdate()
         # Default factory hourly_series is non-empty.
-        ForecastPointWeatherFactory.create(forecast_point=point, valid_for_date=today)
+        ForecastCellWeatherFactory.create(forecast_cell=point, valid_for_date=today)
 
         client = Client()
         response = client.get(resort.get_absolute_url())
@@ -583,10 +583,10 @@ class TestResortDetailPointForecast:
         assert 'data-testid="resort-weather-section"' in content
 
     def test_linked_point_with_no_rows_omits_section(self) -> None:
-        """A linked point with no ForecastPointWeather rows omits the section."""
-        point = ForecastPointFactory.create()
+        """A linked point with no ForecastCellWeather rows omits the section."""
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
-        # Deliberately no ForecastPointWeather rows for this point.
+        # Deliberately no ForecastCellWeather rows for this point.
 
         client = Client()
         response = client.get(resort.get_absolute_url())
@@ -596,14 +596,14 @@ class TestResortDetailPointForecast:
 
     def test_other_points_rows_do_not_leak(self) -> None:
         """Rows for a different point never surface on this resort's page."""
-        point = ForecastPointFactory.create()
-        other_point = ForecastPointFactory.create(
+        point = ForecastCellFactory.create()
+        other_point = ForecastCellFactory.create(
             latitude=47.0, longitude=8.0, elevation=2000.0
         )
         resort = ResortFactory.create(forecast_point=point)
         today = timezone.localdate()
-        ForecastPointWeatherFactory.create(
-            forecast_point=other_point, valid_for_date=today
+        ForecastCellWeatherFactory.create(
+            forecast_cell=other_point, valid_for_date=today
         )
 
         client = Client()
@@ -614,15 +614,15 @@ class TestResortDetailPointForecast:
 
     def test_only_forward_rows_within_window_appear(self) -> None:
         """A yesterday row is excluded and the window caps at POINT_FORECAST_DAYS."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
         today = timezone.localdate()
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=today - datetime.timedelta(days=1)
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=today - datetime.timedelta(days=1)
         )
         for offset in range(POINT_FORECAST_DAYS + 3):
-            ForecastPointWeatherFactory.create(
-                forecast_point=point,
+            ForecastCellWeatherFactory.create(
+                forecast_cell=point,
                 valid_for_date=today + datetime.timedelta(days=offset),
             )
 
@@ -648,10 +648,10 @@ class TestResortDetailPointForecast:
         """
         region = MicroRegionFactory.create()
         resort_without = ResortFactory.create(region=region, forecast_point=None)
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort_with = ResortFactory.create(region=region, forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=timezone.localdate()
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=timezone.localdate()
         )
 
         client = Client()
@@ -744,10 +744,10 @@ class TestResortDetailFreezingLevel:
 
     def test_freezing_level_renders_on_the_day_strip(self) -> None:
         """A day carrying a freezing level renders it in metres."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=timezone.localdate(),
             freezing_level_height=2450.0,
             hourly_series=[],
@@ -766,10 +766,10 @@ class TestResortDetailFreezingLevel:
         explicit zero for the same reason. A truthiness test here would
         drop exactly the reading a tourer most wants to see.
         """
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=timezone.localdate(),
             freezing_level_height=0.0,
             hourly_series=[],
@@ -783,10 +783,10 @@ class TestResortDetailFreezingLevel:
 
     def test_null_freezing_level_omits_only_that_cell(self) -> None:
         """The rest of the day strip survives a null freezing level."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=timezone.localdate(),
             freezing_level_height=None,
             hourly_series=[],
@@ -812,10 +812,10 @@ class TestResortDetailHourlyColumns:
 
     def test_hourly_body_renders_the_three_new_columns(self) -> None:
         """The factory's default hourly rows render gusts, precipitation and level."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=timezone.localdate()
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=timezone.localdate()
         )
 
         client = Client()
@@ -829,10 +829,10 @@ class TestResortDetailHourlyColumns:
 
     def test_row_missing_gusts_renders_an_em_dash(self) -> None:
         """A null key leaves an em-dash so the other columns stay aligned."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         resort = ResortFactory.create(forecast_point=point)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=timezone.localdate(),
             hourly_series=[
                 {

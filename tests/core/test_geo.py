@@ -48,7 +48,7 @@ _REF_EARTH_RADIUS_M = 6_371_008.8
 def _ref_weather_haversine_m(
     lat1: float, lon1: float, lat2: float, lon2: float
 ) -> float:
-    """apps/weather/services/forecast_points.py::_haversine_m, as it stood."""
+    """apps/weather/services/forecast_cells.py::_haversine_m, as it stood."""
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
     dphi = math.radians(lat2 - lat1)

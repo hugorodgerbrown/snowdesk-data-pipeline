@@ -15,7 +15,7 @@ Defines four concrete reference-data models:
 
 Bulletin-derived models (PipelineRun, Bulletin, RegionBulletin,
 RegionDayRating) live in ``apps.bulletins.models``; the Open-Meteo
-weather models (WeatherSnapshot, ForecastPoint, …) live in
+weather models (WeatherSnapshot, ForecastCell, …) live in
 ``apps.weather.models``.
 
 Each model uses a custom Manager + QuerySet pair so that domain-specific
@@ -599,7 +599,7 @@ class Resort(BaseModel):
     run ``manage.py dump_resorts_fixture --commit`` to refresh it after a
     session of edits, or those edits reach no other worktree.
 
-    ``forecast_point`` (SNOW-503) is the shared ``weather.ForecastPoint``
+    ``forecast_point`` (SNOW-503) is the shared ``weather.ForecastCell``
     a geocoded resort's coordinates resolve to, set by
     ``manage.py link_resort_forecast_points --commit``; it is what widens
     the point-weather polling set to cover resorts, not just favourites.
@@ -769,7 +769,7 @@ class Resort(BaseModel):
         help_text="Typical season closing as month-day, e.g. 04-30.",
     )
     forecast_point = models.ForeignKey(
-        "weather.ForecastPoint",
+        "weather.ForecastCell",
         on_delete=models.PROTECT,
         null=True,
         blank=True,

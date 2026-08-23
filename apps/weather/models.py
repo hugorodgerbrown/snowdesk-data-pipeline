@@ -9,21 +9,21 @@ bulletin models that stayed behind):
     fetched from Open-Meteo. Used by the render model (SNOW-98) to
     determine whether a day is daytime or night, and by the weather panel
     (SNOW-571) to show a hi/lo temperature and a snowfall total.
-  - ForecastPoint: canonical weather-sampling location that many nearby
+  - ForecastCell: canonical weather-sampling location that many nearby
     map pins snap to, keyed on a quantised lat/lon grid cell and an
     elevation band. Resolved by
-    ``apps.weather.services.forecast_points.resolve_forecast_point``
+    ``apps.weather.services.forecast_cells.resolve_forecast_cell``
     (SNOW-412, phase 1 of the Favourites feature).
-  - ForecastPointWeather: one row per (ForecastPoint, date) storing the
+  - ForecastCellWeather: one row per (ForecastCell, date) storing the
     comprehensive Open-Meteo daily forecast block for that point —
     the point analogue of WeatherSnapshot, but with a richer field set
     (temperature, precipitation, wind, UV) since a favourited point is a
     personal detail card rather than a bulletin-page header. Fetched by
-    the ``fetch_weather`` management command's active-ForecastPoint pass
+    the ``fetch_weather`` management command's active-ForecastCell pass
     (SNOW-416).
-  - ForecastPointWeatherHistory: one row per (ForecastPoint, valid date,
+  - ForecastCellWeatherHistory: one row per (ForecastCell, valid date,
     issue date) retaining how a forecast for a given day evolved as that
-    day approached. ForecastPointWeather is upserted on (point, date) and
+    day approached. ForecastCellWeather is upserted on (point, date) and
     so keeps only the final, day-of view; this table keeps the earlier
     ones, which are otherwise destroyed on every run (SNOW-575).
 
@@ -112,7 +112,7 @@ class WeatherSnapshot(BaseModel):
     panel (SNOW-571).
 
     ``temperature_2m_max``, ``temperature_2m_min``, and ``snowfall_sum``
-    mirror ``ForecastPointWeather``'s fields of the same name (same units:
+    mirror ``ForecastCellWeather``'s fields of the same name (same units:
     °C, °C, cm) — see
     ``docs/decisions/weather-snapshot-vs-forecast-point-weather.md`` for why
     the two models stay separate rather than merging. All three are
@@ -194,14 +194,14 @@ class WeatherSnapshot(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# ForecastPoint
+# ForecastCell
 # ---------------------------------------------------------------------------
 
 
-class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
-    """Custom queryset for ForecastPoint."""
+class ForecastCellQuerySet(models.QuerySet["ForecastCell"]):
+    """Custom queryset for ForecastCell."""
 
-    def active(self) -> "ForecastPointQuerySet":
+    def active(self) -> "ForecastCellQuerySet":
         """Return points referenced by a favourite, a resort or a location.
 
         Annotates over the reverse FKs created by ``favourites.Favourite``
@@ -220,7 +220,7 @@ class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
         ``prune_forecast_points`` — taking its stored weather with it.
 
         Returns:
-            Filtered queryset of ForecastPoints with one or more
+            Filtered queryset of ForecastCells with one or more
             favourites, resorts or locations.
 
         """
@@ -234,7 +234,7 @@ class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
             | models.Q(location_count__gt=0)
         )
 
-    def inactive(self) -> "ForecastPointQuerySet":
+    def inactive(self) -> "ForecastCellQuerySet":
         """Return points referenced by no favourite, resort or location.
 
         The exact complement of ``active()`` — a point lands here when the
@@ -249,7 +249,7 @@ class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
         fetched for.
 
         Returns:
-            Filtered queryset of ForecastPoints with no favourites, no
+            Filtered queryset of ForecastCells with no favourites, no
             resorts and no locations.
 
         """
@@ -260,7 +260,7 @@ class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
         ).filter(favourite_count=0, resort_count=0, location_count=0)
 
 
-class ForecastPoint(BaseModel):
+class ForecastCell(BaseModel):
     """
     A canonical weather-sampling location shared by nearby map pins.
 
@@ -268,11 +268,11 @@ class ForecastPoint(BaseModel):
     elevation) should reuse the same Open-Meteo forecast fetch rather than
     each triggering its own. To make "close together" a stable, indexable
     concept, every pin is quantised onto a coarse lat/lon grid cell plus
-    an elevation band, and one ``ForecastPoint`` row is kept per distinct
+    an elevation band, and one ``ForecastCell`` row is kept per distinct
     (lat_cell, lon_cell, elevation_band) triple.
 
     Rows are created and reused by
-    ``apps.weather.services.forecast_points.resolve_forecast_point``, which
+    ``apps.weather.services.forecast_cells.resolve_forecast_cell``, which
     also decides whether a pin should reuse an existing nearby point (via
     haversine distance and elevation difference) or mint a new one. See
     ``docs/decisions/forecast-point-quantisation.md`` for the grid sizing
@@ -284,13 +284,13 @@ class ForecastPoint(BaseModel):
     """
 
     lat_cell = models.IntegerField(
-        help_text="floor(latitude / LAT_CELL_SIZE) — see forecast_points.py.",
+        help_text="floor(latitude / LAT_CELL_SIZE) — see forecast_cells.py.",
     )
     lon_cell = models.IntegerField(
-        help_text="floor(longitude / LON_CELL_SIZE) — see forecast_points.py.",
+        help_text="floor(longitude / LON_CELL_SIZE) — see forecast_cells.py.",
     )
     elevation_band = models.IntegerField(
-        help_text="floor(elevation / ELEVATION_BAND_SIZE) — see forecast_points.py.",
+        help_text="floor(elevation / ELEVATION_BAND_SIZE) — see forecast_cells.py.",
     )
     latitude = models.FloatField(
         help_text="Representative latitude of the pin that resolved to this point.",
@@ -302,7 +302,7 @@ class ForecastPoint(BaseModel):
         help_text="Representative elevation in metres, from the Open-Meteo lookup.",
     )
 
-    objects = ForecastPointQuerySet.as_manager()
+    objects = ForecastCellQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
@@ -326,14 +326,14 @@ class ForecastPoint(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# ForecastPointWeather
+# ForecastCellWeather
 # ---------------------------------------------------------------------------
 
 
-class ForecastPointWeatherQuerySet(models.QuerySet["ForecastPointWeather"]):
-    """Custom queryset for ForecastPointWeather."""
+class ForecastCellWeatherQuerySet(models.QuerySet["ForecastCellWeather"]):
+    """Custom queryset for ForecastCellWeather."""
 
-    def for_date(self, target_date: _date) -> "ForecastPointWeatherQuerySet":
+    def for_date(self, target_date: _date) -> "ForecastCellWeatherQuerySet":
         """
         Return all rows valid for a given calendar date.
 
@@ -341,14 +341,14 @@ class ForecastPointWeatherQuerySet(models.QuerySet["ForecastPointWeather"]):
             target_date: The calendar date to filter by.
 
         Returns:
-            A filtered queryset of ForecastPointWeather rows for that date.
+            A filtered queryset of ForecastCellWeather rows for that date.
 
         """
         return self.filter(valid_for_date=target_date)
 
     def forecast_for_point(
-        self, point: "ForecastPoint", start_date: _date
-    ) -> "ForecastPointWeatherQuerySet":
+        self, point: "ForecastCell", start_date: _date
+    ) -> "ForecastCellWeatherQuerySet":
         """
         Return the forward-looking forecast window for one point.
 
@@ -356,25 +356,25 @@ class ForecastPointWeatherQuerySet(models.QuerySet["ForecastPointWeather"]):
         ascending — a multi-day forecast panel wants chronological order.
 
         Args:
-            point: The ForecastPoint to filter by.
+            point: The ForecastCell to filter by.
             start_date: The earliest calendar date to include (inclusive).
 
         Returns:
-            A queryset of ForecastPointWeather rows for that point, from
+            A queryset of ForecastCellWeather rows for that point, from
             start_date onwards, ordered by valid_for_date ascending.
 
         """
         return self.filter(
-            forecast_point=point, valid_for_date__gte=start_date
+            forecast_cell=point, valid_for_date__gte=start_date
         ).order_by("valid_for_date")
 
 
-class ForecastPointWeather(BaseModel):
+class ForecastCellWeather(BaseModel):
     """
-    Open-Meteo daily forecast data for one ForecastPoint on one calendar day.
+    Open-Meteo daily forecast data for one ForecastCell on one calendar day.
 
-    One row per (forecast_point, valid_for_date) pair. Fetched by the
-    ``fetch_weather`` management command's active-ForecastPoint pass —
+    One row per (forecast_cell, valid_for_date) pair. Fetched by the
+    ``fetch_weather`` management command's active-ForecastCell pass —
     the point analogue of ``WeatherSnapshot``, storing the comprehensive
     daily Open-Meteo block rather than just the WMO code and sunrise/sunset,
     since a favourited point is rendered as a personal detail card (SNOW-416).
@@ -384,10 +384,14 @@ class ForecastPointWeather(BaseModel):
     every field beyond the core trio is nullable.
     """
 
-    forecast_point = models.ForeignKey(
-        "weather.ForecastPoint",
+    forecast_cell = models.ForeignKey(
+        "weather.ForecastCell",
         on_delete=CASCADE,
         related_name="weather_snapshots",
+        # Pinned to the pre-SNOW-703 column: the rename moved the field
+        # name, not the data. Without this the migration would emit a real
+        # ALTER and sqlmigrate would stop being a no-op.
+        db_column="forecast_point_id",
     )
     fetched_at = models.DateTimeField(
         default=timezone.now,
@@ -507,7 +511,7 @@ class ForecastPointWeather(BaseModel):
         ),
     )
 
-    objects = ForecastPointWeatherQuerySet.as_manager()
+    objects = ForecastCellWeatherQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
@@ -515,10 +519,17 @@ class ForecastPointWeather(BaseModel):
         # Pinned to the pre-SNOW-654 table name: the app split moved code,
         # not data. Renaming the table is a separate ticket.
         db_table = "bulletins_forecastpointweather"
-        unique_together = [("forecast_point", "valid_for_date")]
-        ordering = ["-valid_for_date", "forecast_point__id"]
+        unique_together = [("forecast_cell", "valid_for_date")]
+        ordering = ["-valid_for_date", "forecast_cell__id"]
         indexes = [
-            models.Index(fields=["forecast_point", "valid_for_date"]),
+            # Name pinned: without it the index name is derived from the
+            # field names, so the SNOW-703 rename would drop and recreate
+            # it — real DDL on a large table, and sqlmigrate would stop
+            # being a no-op.
+            models.Index(
+                fields=["forecast_cell", "valid_for_date"],
+                name="bulletins_f_forecas_e18a91_idx",
+            ),
         ]
 
     def to_string(self) -> str:
@@ -527,7 +538,7 @@ class ForecastPointWeather(BaseModel):
         Format: ``46.80000,7.50000 @1500m 2026-05-01 wmo=1``
         """
         return (
-            f"{self.forecast_point.to_string()} "
+            f"{self.forecast_cell.to_string()} "
             f"{self.valid_for_date} wmo={self.weather_code}"
         )
 
@@ -537,59 +548,57 @@ class ForecastPointWeather(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# ForecastPointWeatherHistory
+# ForecastCellWeatherHistory
 # ---------------------------------------------------------------------------
 
 
-class ForecastPointWeatherHistoryQuerySet(
-    models.QuerySet["ForecastPointWeatherHistory"]
-):
-    """Custom queryset for ForecastPointWeatherHistory."""
+class ForecastCellWeatherHistoryQuerySet(models.QuerySet["ForecastCellWeatherHistory"]):
+    """Custom queryset for ForecastCellWeatherHistory."""
 
     def convergence_for(
-        self, point: "ForecastPoint", valid_for_date: _date
-    ) -> "ForecastPointWeatherHistoryQuerySet":
+        self, point: "ForecastCell", valid_for_date: _date
+    ) -> "ForecastCellWeatherHistoryQuerySet":
         """
         Return how the forecast for one date evolved, oldest issue first.
 
         Unlike the model's default ordering, this is ascending by
         ``issued_date`` — a convergence series wants to read from the
         earliest view of the day through to the day-of one, the same way
-        ``ForecastPointWeather.objects.forecast_for_point`` inverts its
+        ``ForecastCellWeather.objects.forecast_for_point`` inverts its
         model's default ordering for a forward-looking panel.
 
         Args:
-            point: The ForecastPoint to filter by.
+            point: The ForecastCell to filter by.
             valid_for_date: The forecast day whose history is wanted.
 
         Returns:
-            A queryset of ForecastPointWeatherHistory rows for that
+            A queryset of ForecastCellWeatherHistory rows for that
             (point, day), ordered by issued_date ascending.
 
         """
-        return self.filter(
-            forecast_point=point, valid_for_date=valid_for_date
-        ).order_by("issued_date")
+        return self.filter(forecast_cell=point, valid_for_date=valid_for_date).order_by(
+            "issued_date"
+        )
 
 
-class ForecastPointWeatherHistory(BaseModel):
+class ForecastCellWeatherHistory(BaseModel):
     """
-    How the forecast for one ForecastPoint-day evolved as the day approached.
+    How the forecast for one ForecastCell-day evolved as the day approached.
 
-    ``ForecastPointWeather`` is upserted on ``(forecast_point,
+    ``ForecastCellWeather`` is upserted on ``(forecast_cell,
     valid_for_date)``, so a given day is overwritten on every run and only
     the final, day-of forecast survives. That final row is the most
     accurate one, but the earlier views of the same day — issued three or
     six days out — are what show whether a forecast was stable or swung
     late, and they are destroyed as a side effect of the upsert.
 
-    This table retains them: one row per ``(forecast_point,
+    This table retains them: one row per ``(forecast_cell,
     valid_for_date, issued_date)``. Because ``issued_date`` is part of the
     key, the four runs within a single day collapse to one row (the last
     run of that day wins), so a forecast day accrues one row per day of
     its window rather than one per run.
 
-    Deliberately narrower than ``ForecastPointWeather``. ``hourly_series``
+    Deliberately narrower than ``ForecastCellWeather``. ``hourly_series``
     is excluded — it is the bulk of the payload and is populated for only
     the first ``POINT_HOURLY_DAYS`` days of a window, so it cannot form a
     series across lead times. ``sunrise``/``sunset`` are excluded because
@@ -597,17 +606,19 @@ class ForecastPointWeatherHistory(BaseModel):
     carry no convergence signal.
 
     Written by ``fetch_weather_for_point`` alongside its
-    ``ForecastPointWeather`` upsert, inside the same transaction, so the
+    ``ForecastCellWeather`` upsert, inside the same transaction, so the
     pair lands together or not at all (SNOW-575).
 
     Rows accrue only from the moment this shipped — a past forecast cannot
     be reconstructed after the fact.
     """
 
-    forecast_point = models.ForeignKey(
-        "weather.ForecastPoint",
+    forecast_cell = models.ForeignKey(
+        "weather.ForecastCell",
         on_delete=CASCADE,
         related_name="forecast_history",
+        # See ForecastCellWeather.forecast_cell — column pinned, name moved.
+        db_column="forecast_point_id",
     )
     fetched_at = models.DateTimeField(
         default=timezone.now,
@@ -634,7 +645,7 @@ class ForecastPointWeatherHistory(BaseModel):
     )
 
     # Payload — the scalars worth watching converge. weather_code is
-    # required, mirroring ForecastPointWeather; the rest are nullable
+    # required, mirroring ForecastCellWeather; the rest are nullable
     # because Open-Meteo omits some variables depending on the backing
     # weather model.
     weather_code = models.PositiveSmallIntegerField(
@@ -671,7 +682,7 @@ class ForecastPointWeatherHistory(BaseModel):
         help_text="Daily maximum freezing level height, in metres.",
     )
 
-    objects = ForecastPointWeatherHistoryQuerySet.as_manager()
+    objects = ForecastCellWeatherHistoryQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
@@ -680,11 +691,18 @@ class ForecastPointWeatherHistory(BaseModel):
         # not data. Renaming the table is a separate ticket.
         db_table = "bulletins_forecastpointweatherhistory"
         verbose_name_plural = "forecast point weather history"
-        unique_together = [("forecast_point", "valid_for_date", "issued_date")]
+        unique_together = [("forecast_cell", "valid_for_date", "issued_date")]
         ordering = ["-valid_for_date", "issued_date"]
         indexes = [
-            models.Index(fields=["forecast_point", "valid_for_date"]),
-            models.Index(fields=["valid_for_date", "lead_days"]),
+            # Names pinned — see ForecastCellWeather.Meta.indexes.
+            models.Index(
+                fields=["forecast_cell", "valid_for_date"],
+                name="bulletins_f_forecas_95f2d5_idx",
+            ),
+            models.Index(
+                fields=["valid_for_date", "lead_days"],
+                name="bulletins_f_valid_f_dd24eb_idx",
+            ),
         ]
 
     def to_string(self) -> str:
@@ -694,7 +712,7 @@ class ForecastPointWeatherHistory(BaseModel):
         (+3d) wmo=1``
         """
         return (
-            f"{self.forecast_point.to_string()} "
+            f"{self.forecast_cell.to_string()} "
             f"{self.valid_for_date} issued {self.issued_date} "
             f"({self.lead_days:+d}d) wmo={self.weather_code}"
         )

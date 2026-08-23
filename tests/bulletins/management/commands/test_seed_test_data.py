@@ -60,8 +60,8 @@ from apps.bulletins.models import (
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.weather.models import (
-    ForecastPoint,
-    ForecastPointWeather,
+    ForecastCell,
+    ForecastCellWeather,
     WeatherSnapshot,
 )
 
@@ -151,8 +151,8 @@ class TestSelectionValidation:
             "regionbulletin",
             "regiondayrating",
             "weathersnapshot",
-            "forecastpoint",
-            "forecastpointweather",
+            "forecastcell",
+            "forecastcellweather",
             "favourite",
             "user",
         ):
@@ -318,47 +318,47 @@ class TestCommit:
         assert "bulletin" in capsys.readouterr().out
 
     def test_all_seeds_the_new_models(self) -> None:
-        """--all seeds the stage-2 ForecastPoint/weather/Favourite layer."""
+        """--all seeds the stage-2 ForecastCell/weather/Favourite layer."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
-        assert ForecastPointWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
+        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert ForecastCellWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
         assert Favourite.objects.count() == _EXPECTED_FAVOURITES
 
-    def test_include_forecastpoint_only(self) -> None:
-        """--include forecastpoint seeds points but no weather or favourites."""
+    def test_include_forecastcell_only(self) -> None:
+        """--include forecastcell seeds points but no weather or favourites."""
         call_command(
-            "seed_test_data", "--include", "forecastpoint", commit=True, verbosity=0
+            "seed_test_data", "--include", "forecastcell", commit=True, verbosity=0
         )
-        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
-        assert ForecastPointWeather.objects.count() == 0
+        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert ForecastCellWeather.objects.count() == 0
         assert Favourite.objects.count() == 0
 
-    def test_include_forecastpointweather_pulls_in_forecast_point(self) -> None:
-        """--include forecastpointweather auto-creates its ForecastPoint prerequisite."""
+    def test_include_forecastcellweather_pulls_in_forecast_cell(self) -> None:
+        """--include forecastcellweather auto-creates its ForecastCell prerequisite."""
         call_command(
             "seed_test_data",
             "--include",
-            "forecastpointweather",
+            "forecastcellweather",
             commit=True,
             verbosity=0,
         )
-        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
-        assert ForecastPointWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
+        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert ForecastCellWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
         assert Favourite.objects.count() == 0
 
     def test_include_favourite_pulls_in_forecast_point(self) -> None:
-        """--include favourite auto-creates the ForecastPoint prerequisite."""
+        """--include favourite auto-creates the ForecastCell prerequisite."""
         call_command(
             "seed_test_data", "--include", "favourite", commit=True, verbosity=0
         )
-        assert ForecastPoint.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
         assert Favourite.objects.count() == _EXPECTED_FAVOURITES
-        assert ForecastPointWeather.objects.count() == 0
+        assert ForecastCellWeather.objects.count() == 0
 
     def test_favourites_reference_seeded_points(self) -> None:
-        """Each Favourite points at a seeded ForecastPoint with matching coords."""
+        """Each Favourite points at a seeded ForecastCell with matching coords."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        seeded_point_ids = set(ForecastPoint.objects.values_list("pk", flat=True))
+        seeded_point_ids = set(ForecastCell.objects.values_list("pk", flat=True))
         for favourite in Favourite.objects.select_related("forecast_point"):
             assert favourite.forecast_point.pk in seeded_point_ids
             assert favourite.latitude == favourite.forecast_point.latitude
@@ -411,7 +411,7 @@ class TestUserSeeding:
         """--include user creates only the accounts, no bulletin/point rows."""
         call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
         assert Bulletin.objects.count() == 0
-        assert ForecastPoint.objects.count() == 0
+        assert ForecastCell.objects.count() == 0
         assert Favourite.objects.count() == 0
 
     def test_include_user_is_idempotent(self) -> None:

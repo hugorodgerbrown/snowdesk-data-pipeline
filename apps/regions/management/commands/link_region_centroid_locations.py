@@ -64,9 +64,9 @@ from django.db import transaction
 from apps.core.command_iteration import iterate_rows
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion
-from apps.weather.models import ForecastPoint
+from apps.weather.models import ForecastCell
 from apps.weather.services.elevation import fetch_elevation
-from apps.weather.services.forecast_points import resolve_forecast_point
+from apps.weather.services.forecast_cells import resolve_forecast_cell
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +187,7 @@ class Command(BaseCommand):
 
         # Counted so the dry-run can report the real cost: a reused cell is
         # free, a created one is an extra Open-Meteo call every fetch cycle.
-        cells_before = ForecastPoint.objects.count()
+        cells_before = ForecastCell.objects.count()
         counts = {"linked": 0, "skipped": 0, "failed": 0}
         for index, region in enumerate(
             iterate_rows(
@@ -201,7 +201,7 @@ class Command(BaseCommand):
             if delay > 0 and index < total - 1:
                 time.sleep(delay)
 
-        cells_created = ForecastPoint.objects.count() - cells_before
+        cells_created = ForecastCell.objects.count() - cells_before
         self._report_outcome(counts, cells_created, commit=commit, verbosity=verbosity)
 
         if counts["failed"] > 0:
@@ -247,7 +247,7 @@ class Command(BaseCommand):
             # or failing request never holds a DB lock. Both are made even
             # in a dry run, so the reported cell count is real.
             elevation = fetch_elevation(latitude, longitude)
-            cell = resolve_forecast_point(latitude, longitude)
+            cell = resolve_forecast_cell(latitude, longitude)
         except Exception:  # noqa: BLE001 — broad catch intentional: one region must not abort the batch
             logger.exception(
                 "link_region_centroid_locations: failed to resolve region %s",
@@ -272,7 +272,7 @@ class Command(BaseCommand):
         counts["linked"] += 1
         if verbosity >= 2:
             logger.info(
-                "Resolved region %s -> %.0fm, ForecastPoint id=%s",
+                "Resolved region %s -> %.0fm, ForecastCell id=%s",
                 region.region_id,
                 elevation,
                 cell.pk,

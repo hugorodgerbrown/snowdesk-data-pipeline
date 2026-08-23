@@ -7,8 +7,8 @@ last-reviewed: 2026-08-09
 
 # Weather is its own app (SNOW-654)
 
-**Decision.** The Open-Meteo domain — `WeatherSnapshot`, `ForecastPoint`,
-`ForecastPointWeather`, `ForecastPointWeatherHistory`, the six services that
+**Decision.** The Open-Meteo domain — `WeatherSnapshot`, `ForecastCell`,
+`ForecastCellWeather`, `ForecastCellWeatherHistory`, the six services that
 fetch, quantise and render them, the `fetch_weather` and
 `prune_forecast_points` commands, the dev mirror and the admin classes —
 lives in `apps/weather/`, not `apps/bulletins/`.
@@ -19,7 +19,7 @@ is no foreign key in either direction between the CAAML bulletin models and
 the Open-Meteo ones, and no bulletin-domain service (`render_model`,
 `day_rating`, `grouping`, `coverage`, `settled`, or any of the three
 provider fetchers) reads weather at all. The models that genuinely depend on
-`ForecastPoint` are `favourites.Favourite` and `regions.Resort` — neither of
+`ForecastCell` are `favourites.Favourite` and `regions.Resort` — neither of
 which is a bulletin.
 
 The original placement followed
@@ -38,12 +38,17 @@ they stayed in `bulletins`.
 Renaming `bulletins_weathersnapshot` to `weather_weathersnapshot` is a
 separate ticket. This one moved code only:
 
+SNOW-703 later renamed three of these models to `ForecastCell*`, again
+without touching a table — so the names below are pinned twice over, and
+a `bulletins_forecastpoint*` table now backs a `weather.ForecastCell*`
+model. Both pins are asserted in `tests/weather/test_migrations.py`.
+
 | Model | `db_table` |
 |---|---|
 | `WeatherSnapshot` | `bulletins_weathersnapshot` |
-| `ForecastPoint` | `bulletins_forecastpoint` |
-| `ForecastPointWeather` | `bulletins_forecastpointweather` |
-| `ForecastPointWeatherHistory` | `bulletins_forecastpointweatherhistory` |
+| `ForecastCell` | `bulletins_forecastpoint` |
+| `ForecastCellWeather` | `bulletins_forecastpointweather` |
+| `ForecastCellWeatherHistory` | `bulletins_forecastpointweatherhistory` |
 
 Each model pins its old table name in `Meta.db_table`, and all four
 migrations the move generated — `weather/0001`, `bulletins/0018`,

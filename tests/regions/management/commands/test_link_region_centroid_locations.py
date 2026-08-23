@@ -25,13 +25,13 @@ from django.core.management.base import CommandError
 
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion
-from apps.weather.models import ForecastPoint
-from tests.factories import ForecastPointFactory, MicroRegionFactory
+from apps.weather.models import ForecastCell
+from tests.factories import ForecastCellFactory, MicroRegionFactory
 
 COMMAND = "link_region_centroid_locations"
 _BASE = "apps.regions.management.commands.link_region_centroid_locations"
 _ELEVATION = f"{_BASE}.fetch_elevation"
-_RESOLVE = f"{_BASE}.resolve_forecast_point"
+_RESOLVE = f"{_BASE}.resolve_forecast_cell"
 
 CENTRE = {"lat": 46.1, "lon": 7.4}
 
@@ -43,7 +43,7 @@ class TestLinkRegionCentroidLocations:
     def test_mints_a_resolved_centroid_location(self) -> None:
         """The region ends up reaching weather through a location."""
         region = MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
@@ -63,7 +63,7 @@ class TestLinkRegionCentroidLocations:
         nobody goes to.
         """
         MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
@@ -91,7 +91,7 @@ class TestLinkRegionCentroidLocations:
         scheduled run.
         """
         MicroRegionFactory.create(centre={"lat": "north", "lon": 7.4})
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         out = StringIO()
         with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
@@ -103,7 +103,7 @@ class TestLinkRegionCentroidLocations:
     def test_dry_run_writes_nothing_but_still_resolves(self) -> None:
         """The reported cost has to be real, so the lookups still happen."""
         region = MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         out = StringIO()
         with (
@@ -126,7 +126,7 @@ class TestLinkRegionCentroidLocations:
         only number worth checking before a 461-region run.
         """
         MicroRegionFactory.create(centre=CENTRE)
-        existing = ForecastPointFactory.create()
+        existing = ForecastCellFactory.create()
 
         out = StringIO()
         with (
@@ -140,7 +140,7 @@ class TestLinkRegionCentroidLocations:
     def test_second_run_selects_nothing(self) -> None:
         """Idempotent — a linked region is out of the candidate set."""
         MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
@@ -152,20 +152,20 @@ class TestLinkRegionCentroidLocations:
     def test_the_linked_cell_survives_the_prune_pass(self) -> None:
         """A region-held cell is active(), so prune leaves it alone."""
         MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
 
         call_command("prune_forecast_points", "--commit", stdout=StringIO())
 
-        assert ForecastPoint.objects.filter(pk=cell.pk).exists()
+        assert ForecastCell.objects.filter(pk=cell.pk).exists()
 
     def test_one_failure_does_not_stop_the_batch(self) -> None:
         """A failing region is counted; the rest still link."""
         MicroRegionFactory.create(centre=CENTRE)
         MicroRegionFactory.create(centre={"lat": 47.9, "lon": 8.9})
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
 
         with (
             patch(_ELEVATION, side_effect=[RuntimeError("boom"), 2100.0]),

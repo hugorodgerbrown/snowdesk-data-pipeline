@@ -11,7 +11,7 @@ Covers:
     point makes exactly one request, and every non-2xx status surfaces as a
     failure rather than being retried.
   - 7-day window — a single API call returns POINT_FORECAST_DAYS days of
-    daily data; one ForecastPointWeather row is persisted per day.
+    daily data; one ForecastCellWeather row is persisted per day.
   - extended fields round-trip — a mocked full daily payload persists
     temperature/snowfall/wind/uv/etc. onto each row.
   - null tolerance — a payload omitting precipitation_probability_max /
@@ -51,7 +51,7 @@ import requests
 from django.db import IntegrityError
 from django.test import override_settings
 
-from apps.weather.models import ForecastPointWeather, ForecastPointWeatherHistory
+from apps.weather.models import ForecastCellWeather, ForecastCellWeatherHistory
 from apps.weather.services.weather_fetcher import (
     POINT_FORECAST_DAYS,
     POINT_HOURLY_DAYS,
@@ -60,8 +60,8 @@ from apps.weather.services.weather_fetcher import (
 )
 from tests.factories import (
     FavouriteFactory,
-    ForecastPointFactory,
-    ForecastPointWeatherFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ class TestFetchWeatherForPoint:
 
     def test_elevation_passed_through_to_api(self) -> None:
         """The point's elevation is forwarded to Open-Meteo as a string param."""
-        point = ForecastPointFactory.create(elevation=1834.0)
+        point = ForecastCellFactory.create(elevation=1834.0)
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -209,7 +209,7 @@ class TestFetchWeatherForPoint:
 
     def test_daily_params_contain_extended_variables(self) -> None:
         """The daily params include the comprehensive variable set, not just the core trio."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -227,7 +227,7 @@ class TestFetchWeatherForPoint:
 
     def test_hourly_params_contain_ski_relevant_variables(self) -> None:
         """The hourly param requests temperature/snowfall/precip/wind/freezing level."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -260,7 +260,7 @@ class TestFetchWeatherForPoint:
         — one squarely inside the old box, one far outside it — so the
         geography cannot quietly come back without a test failing.
         """
-        point = ForecastPointFactory.create(latitude=latitude, longitude=longitude)
+        point = ForecastCellFactory.create(latitude=latitude, longitude=longitude)
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -274,7 +274,7 @@ class TestFetchWeatherForPoint:
 
     def test_request_window_spans_seven_days(self) -> None:
         """start_date/end_date span POINT_FORECAST_DAYS consecutive days."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -287,7 +287,7 @@ class TestFetchWeatherForPoint:
 
     def test_lat_lon_passed_through(self) -> None:
         """The point's latitude/longitude are forwarded (not a region centre dict)."""
-        point = ForecastPointFactory.create(latitude=47.2, longitude=8.1)
+        point = ForecastCellFactory.create(latitude=47.2, longitude=8.1)
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -299,8 +299,8 @@ class TestFetchWeatherForPoint:
         assert params["longitude"] == "8.1"
 
     def test_persists_one_row_per_day(self) -> None:
-        """A 7-day daily payload persists 7 ForecastPointWeather rows."""
-        point = ForecastPointFactory.create()
+        """A 7-day daily payload persists 7 ForecastCellWeather rows."""
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response()
 
@@ -313,10 +313,10 @@ class TestFetchWeatherForPoint:
         assert len(results) == POINT_FORECAST_DAYS
         assert all(created for _, created in results)
         assert (
-            ForecastPointWeather.objects.filter(forecast_point=point).count()
+            ForecastCellWeather.objects.filter(forecast_cell=point).count()
             == POINT_FORECAST_DAYS
         )
-        rows = ForecastPointWeather.objects.filter(forecast_point=point).order_by(
+        rows = ForecastCellWeather.objects.filter(forecast_cell=point).order_by(
             "valid_for_date"
         )
         assert list(rows.values_list("valid_for_date", flat=True)) == [
@@ -325,7 +325,7 @@ class TestFetchWeatherForPoint:
 
     def test_extended_fields_round_trip(self) -> None:
         """A full daily payload persists temperature/snowfall/wind/uv onto each row."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response()
 
@@ -354,7 +354,7 @@ class TestFetchWeatherForPoint:
 
     def test_freezing_level_height_derived_as_daily_max(self) -> None:
         """freezing_level_height is the max of that day's hourly values."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response()
 
@@ -373,7 +373,7 @@ class TestFetchWeatherForPoint:
 
     def test_hourly_series_populated_for_near_term_days_only(self) -> None:
         """hourly_series is populated for the first POINT_HOURLY_DAYS rows; None beyond."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response()
 
@@ -402,7 +402,7 @@ class TestFetchWeatherForPoint:
 
     def test_omitted_extended_variables_land_as_none(self) -> None:
         """Omitted precipitation_probability_max/uv_index_max persist as None, not KeyError."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_partial_point_response()
 
@@ -424,7 +424,7 @@ class TestFetchWeatherForPoint:
 
     def test_commit_false_returns_empty_list_but_calls_api(self) -> None:
         """commit=False calls the API but does not write to the database."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -433,11 +433,11 @@ class TestFetchWeatherForPoint:
 
         assert results == []
         mock.assert_called_once()
-        assert not ForecastPointWeather.objects.filter(forecast_point=point).exists()
+        assert not ForecastCellWeather.objects.filter(forecast_cell=point).exists()
 
     def test_http_error_raises(self) -> None:
         """requests.HTTPError propagates to the caller."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = requests.HTTPError(
@@ -460,7 +460,7 @@ class TestFetchWeatherForPoint:
         wrote — and ``fetch_all_points`` counted the point as failed,
         masking that a partial window had actually been persisted.
         """
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response()
         api_data["daily"]["sunrise"][3] = "not-a-timestamp"
@@ -474,13 +474,13 @@ class TestFetchWeatherForPoint:
         ):
             fetch_weather_for_point(point, target, commit=True)
 
-        assert ForecastPointWeather.objects.filter(forecast_point=point).count() == 0
+        assert ForecastCellWeather.objects.filter(forecast_cell=point).count() == 0
 
     def test_write_failure_rolls_back_the_whole_window(self) -> None:
         """A mid-loop DB failure rolls back the days already written."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
-        real_uoc = ForecastPointWeather.objects.update_or_create
+        real_uoc = ForecastCellWeather.objects.update_or_create
         call_count = {"n": 0}
 
         def _fail_on_third(*args: Any, **kwargs: Any) -> Any:
@@ -496,7 +496,7 @@ class TestFetchWeatherForPoint:
                 _mock_get(_make_full_point_response()),
             ),
             patch.object(
-                ForecastPointWeather.objects,
+                ForecastCellWeather.objects,
                 "update_or_create",
                 side_effect=_fail_on_third,
             ),
@@ -504,14 +504,14 @@ class TestFetchWeatherForPoint:
         ):
             fetch_weather_for_point(point, target, commit=True)
 
-        assert ForecastPointWeather.objects.filter(forecast_point=point).count() == 0
+        assert ForecastCellWeather.objects.filter(forecast_cell=point).count() == 0
 
     def test_upsert_updates_existing_rows(self) -> None:
-        """A second call updates the existing ForecastPointWeather rows, not duplicates."""
-        point = ForecastPointFactory.create()
+        """A second call updates the existing ForecastCellWeather rows, not duplicates."""
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
-        ForecastPointWeatherFactory.create(
-            forecast_point=point, valid_for_date=target, weather_code=0
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point, valid_for_date=target, weather_code=0
         )
 
         api_data = _make_full_point_response(weather_codes=[5] * POINT_FORECAST_DAYS)
@@ -525,13 +525,13 @@ class TestFetchWeatherForPoint:
         assert created_day0 is False
         assert weather_day0.weather_code == 5
         assert (
-            ForecastPointWeather.objects.filter(forecast_point=point).count()
+            ForecastCellWeather.objects.filter(forecast_cell=point).count()
             == POINT_FORECAST_DAYS
         )
 
     def test_base_url_threading(self) -> None:
         """When base_url is set, the request goes to {base_url}/forecast."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -549,7 +549,7 @@ class TestFetchWeatherForPoint:
     @override_settings(OPEN_METEO_API_BASE_URL="https://api.example/v1")
     def test_falls_back_to_configured_host_when_base_url_none(self) -> None:
         """When base_url=None, the configured forecast host is used."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         mock = _mock_get(_make_full_point_response())
 
         with patch("apps.weather.services.weather_fetcher.requests.get", mock):
@@ -563,7 +563,7 @@ class TestFetchWeatherForPoint:
     )
     def test_sends_apikey_when_configured(self) -> None:
         """A configured key is appended to the point forecast params (SNOW-577)."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         mock = _mock_get(_make_full_point_response())
 
         with patch("apps.weather.services.weather_fetcher.requests.get", mock):
@@ -573,7 +573,7 @@ class TestFetchWeatherForPoint:
 
     def test_on_fetched_callback(self) -> None:
         """on_fetched is called once with the expected shape, for day 0."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response(weather_codes=[7] * POINT_FORECAST_DAYS)
         captured: list[dict[str, Any]] = []
@@ -590,7 +590,7 @@ class TestFetchWeatherForPoint:
 
         assert len(captured) == 1
         record = captured[0]
-        assert record["forecast_point_id"] == point.pk
+        assert record["forecast_cell_id"] == point.pk
         assert record["date"] == "2026-05-01"
         assert record["weather_code"] == 7
         assert "sunrise" in record
@@ -611,7 +611,7 @@ class TestFetchAllPoints:
         """Only points with at least one Favourite are fetched; others are skipped."""
         favourite = FavouriteFactory.create()
         active_point = favourite.forecast_point
-        ForecastPointFactory.create(latitude=50.0, longitude=10.0)  # unreferenced
+        ForecastCellFactory.create(latitude=50.0, longitude=10.0)  # unreferenced
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -622,13 +622,13 @@ class TestFetchAllPoints:
         assert counts["created"] == POINT_FORECAST_DAYS
         assert counts["skipped"] == 0
         assert (
-            ForecastPointWeather.objects.filter(forecast_point=active_point).count()
+            ForecastCellWeather.objects.filter(forecast_cell=active_point).count()
             == POINT_FORECAST_DAYS
         )
 
     def test_no_active_points_makes_no_calls(self) -> None:
         """With no favourited points, fetch_all_points is a no-op."""
-        ForecastPointFactory.create()  # unreferenced
+        ForecastCellFactory.create()  # unreferenced
         target = datetime.date(2026, 5, 1)
         mock = _mock_get(_make_full_point_response())
 
@@ -655,8 +655,8 @@ class TestFetchAllPoints:
         assert second["created"] == 0
         assert second["updated"] == POINT_FORECAST_DAYS
         assert (
-            ForecastPointWeather.objects.filter(
-                forecast_point=favourite.forecast_point
+            ForecastCellWeather.objects.filter(
+                forecast_cell=favourite.forecast_point
             ).count()
             == POINT_FORECAST_DAYS
         )
@@ -711,7 +711,7 @@ class TestFetchAllPoints:
         mock.assert_called_once()
         assert counts["created"] == 0
         assert counts["updated"] == 0
-        assert ForecastPointWeather.objects.count() == 0
+        assert ForecastCellWeather.objects.count() == 0
 
 
 @pytest.mark.django_db
@@ -720,7 +720,7 @@ class TestFetchWeatherForPointProviderDates:
 
     def test_shifted_dates_stored_under_provider_dates(self) -> None:
         """A response shifted a day forward stores rows under the provider dates."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         # Provider returns May 2..8 even though we requested from May 1.
         api_data = _make_full_point_response(start_date="2026-05-02")
@@ -732,7 +732,7 @@ class TestFetchWeatherForPointProviderDates:
             fetch_weather_for_point(point, target, commit=True)
 
         stored = list(
-            ForecastPointWeather.objects.filter(forecast_point=point)
+            ForecastCellWeather.objects.filter(forecast_cell=point)
             .order_by("valid_for_date")
             .values_list("valid_for_date", flat=True)
         )
@@ -745,7 +745,7 @@ class TestFetchWeatherForPointProviderDates:
 
     def test_gapped_dates_do_not_fabricate_the_missing_day(self) -> None:
         """A gap in the provider dates is stored as-is, never back-filled."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response()  # 7 aligned arrays
         gapped = [
@@ -766,7 +766,7 @@ class TestFetchWeatherForPointProviderDates:
             fetch_weather_for_point(point, target, commit=True)
 
         stored = list(
-            ForecastPointWeather.objects.filter(forecast_point=point)
+            ForecastCellWeather.objects.filter(forecast_cell=point)
             .order_by("valid_for_date")
             .values_list("valid_for_date", flat=True)
         )
@@ -775,7 +775,7 @@ class TestFetchWeatherForPointProviderDates:
 
     def test_misaligned_array_lengths_raise_and_write_nothing(self) -> None:
         """A required array shorter than time raises and writes no rows."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         api_data = _make_full_point_response()
         api_data["daily"]["weather_code"].pop()  # 6 codes vs 7 dates
@@ -789,7 +789,7 @@ class TestFetchWeatherForPointProviderDates:
         ):
             fetch_weather_for_point(point, target, commit=True)
 
-        assert ForecastPointWeather.objects.filter(forecast_point=point).count() == 0
+        assert ForecastCellWeather.objects.filter(forecast_cell=point).count() == 0
 
 
 @pytest.mark.django_db
@@ -812,7 +812,7 @@ class TestSingleModelPolicy:
         belongs in ``fetch_all_points``' failed counter like any other
         error.
         """
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
 
         rejected = MagicMock()
         rejected.status_code = 400
@@ -830,7 +830,7 @@ class TestSingleModelPolicy:
 
     def test_http_500_propagates(self) -> None:
         """A real outage still surfaces — no status is swallowed by a retry."""
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
 
         broken = MagicMock()
         broken.status_code = 500
@@ -854,7 +854,7 @@ class TestSingleModelPolicy:
         fatal either: the six days that did resolve are kept and day 0 is
         logged, rather than the whole window being discarded for it.
         """
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
         target = datetime.date(2026, 5, 1)
         degraded = _make_full_point_response()
         degraded["daily"]["weather_code"][0] = None
@@ -865,7 +865,7 @@ class TestSingleModelPolicy:
 
         assert mock.call_count == 1
         assert len(results) == POINT_FORECAST_DAYS - 1
-        stored = ForecastPointWeather.objects.filter(forecast_point=point)
+        stored = ForecastCellWeather.objects.filter(forecast_cell=point)
         assert stored.count() == POINT_FORECAST_DAYS - 1
         assert not stored.filter(valid_for_date=target).exists()
 
@@ -874,15 +874,15 @@ class TestSingleModelPolicy:
 class TestHistoryIsOptIn:
     """History retention is off unless asked for (SNOW-629).
 
-    Nothing user-facing reads ForecastPointWeatherHistory — it exists for
+    Nothing user-facing reads ForecastCellWeatherHistory — it exists for
     future convergence analysis — so it is switchable independently of the
-    operational ForecastPointWeather write, which must never be affected
+    operational ForecastCellWeather write, which must never be affected
     by the setting either way.
     """
 
     def test_history_not_written_by_default(self) -> None:
         """Without add_history, the weather rows land and no history does."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -892,14 +892,14 @@ class TestHistoryIsOptIn:
             fetch_weather_for_point(point, target, commit=True)
 
         assert (
-            ForecastPointWeather.objects.filter(forecast_point=point).count()
+            ForecastCellWeather.objects.filter(forecast_cell=point).count()
             == POINT_FORECAST_DAYS
         )
-        assert not ForecastPointWeatherHistory.objects.exists()
+        assert not ForecastCellWeatherHistory.objects.exists()
 
     def test_history_written_when_requested(self) -> None:
         """add_history=True restores the SNOW-575 retention."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -909,7 +909,7 @@ class TestHistoryIsOptIn:
             fetch_weather_for_point(point, target, commit=True, add_history=True)
 
         assert (
-            ForecastPointWeatherHistory.objects.filter(forecast_point=point).count()
+            ForecastCellWeatherHistory.objects.filter(forecast_cell=point).count()
             == POINT_FORECAST_DAYS
         )
 
@@ -925,11 +925,11 @@ class TestHistoryIsOptIn:
             counts = fetch_all_points(target, commit=True, add_history=True)
 
         assert counts["created"] == POINT_FORECAST_DAYS
-        assert ForecastPointWeatherHistory.objects.count() == POINT_FORECAST_DAYS
+        assert ForecastCellWeatherHistory.objects.count() == POINT_FORECAST_DAYS
 
     def test_weather_rows_are_unaffected_by_the_flag(self) -> None:
         """Turning history off changes nothing about the operational rows."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -973,7 +973,7 @@ class TestTruncatedModelHorizon:
 
     def test_short_window_is_stored_not_rejected(self) -> None:
         """Five resolved days persist five rows; the null tail is dropped."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -983,7 +983,7 @@ class TestTruncatedModelHorizon:
             results = fetch_weather_for_point(point, target, commit=True)
 
         assert len(results) == 5
-        rows = ForecastPointWeather.objects.filter(forecast_point=point).order_by(
+        rows = ForecastCellWeather.objects.filter(forecast_cell=point).order_by(
             "valid_for_date"
         )
         assert list(rows.values_list("valid_for_date", flat=True)) == [
@@ -992,7 +992,7 @@ class TestTruncatedModelHorizon:
 
     def test_near_term_days_survive_the_null_tail(self) -> None:
         """Day 0 is written — the regression was the tail rolling it back."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -1001,15 +1001,15 @@ class TestTruncatedModelHorizon:
         ):
             fetch_weather_for_point(point, target, commit=True)
 
-        day_zero = ForecastPointWeather.objects.get(
-            forecast_point=point, valid_for_date=target
+        day_zero = ForecastCellWeather.objects.get(
+            forecast_cell=point, valid_for_date=target
         )
         assert day_zero.weather_code == 1
         assert day_zero.hourly_series is not None
 
     def test_history_follows_the_short_window(self) -> None:
         """History rows are written for the stored days only."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -1018,7 +1018,7 @@ class TestTruncatedModelHorizon:
         ):
             fetch_weather_for_point(point, target, commit=True, add_history=True)
 
-        history = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
+        history = ForecastCellWeatherHistory.objects.filter(forecast_cell=point)
         assert history.count() == 5
         assert sorted(history.values_list("lead_days", flat=True)) == [0, 1, 2, 3, 4]
 
@@ -1049,11 +1049,11 @@ class TestTruncatedModelHorizon:
 
         assert counts["failed"] == 1
         assert counts["created"] == 0
-        assert ForecastPointWeather.objects.count() == 0
+        assert ForecastCellWeather.objects.count() == 0
 
 
 # ---------------------------------------------------------------------------
-# ForecastPointWeatherHistory (SNOW-575)
+# ForecastCellWeatherHistory (SNOW-575)
 # ---------------------------------------------------------------------------
 
 
@@ -1063,7 +1063,7 @@ class TestForecastHistoryCapture:
 
     def test_one_history_row_per_day_of_the_window(self) -> None:
         """A single run writes one history row per day, stamped with the run date."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -1072,13 +1072,13 @@ class TestForecastHistoryCapture:
         ):
             fetch_weather_for_point(point, target, commit=True, add_history=True)
 
-        rows = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
+        rows = ForecastCellWeatherHistory.objects.filter(forecast_cell=point)
         assert rows.count() == POINT_FORECAST_DAYS
         assert {row.issued_date for row in rows} == {target}
 
     def test_lead_days_span_the_window_from_zero(self) -> None:
         """lead_days runs 0..N-1 across the window, day 0 being the day-of view."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -1088,20 +1088,20 @@ class TestForecastHistoryCapture:
             fetch_weather_for_point(point, target, commit=True, add_history=True)
 
         leads = sorted(
-            ForecastPointWeatherHistory.objects.filter(
-                forecast_point=point
-            ).values_list("lead_days", flat=True)
+            ForecastCellWeatherHistory.objects.filter(forecast_cell=point).values_list(
+                "lead_days", flat=True
+            )
         )
         assert leads == list(range(POINT_FORECAST_DAYS))
 
     def test_later_issue_appends_rather_than_overwrites(self) -> None:
         """A run on a later date adds a second view of an overlapping day.
 
-        This is the behaviour the model exists for: ForecastPointWeather
+        This is the behaviour the model exists for: ForecastCellWeather
         keeps only the newer forecast for the shared day, while the history
         table keeps both.
         """
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         first_run = datetime.date(2026, 5, 1)
         second_run = datetime.date(2026, 5, 2)
         shared_day = datetime.date(2026, 5, 2)
@@ -1117,22 +1117,22 @@ class TestForecastHistoryCapture:
         ):
             fetch_weather_for_point(point, second_run, commit=True, add_history=True)
 
-        series = ForecastPointWeatherHistory.objects.convergence_for(point, shared_day)
+        series = ForecastCellWeatherHistory.objects.convergence_for(point, shared_day)
         assert [(row.issued_date, row.lead_days) for row in series] == [
             (first_run, 1),
             (second_run, 0),
         ]
         # The live table still holds exactly one row for that day.
         assert (
-            ForecastPointWeather.objects.filter(
-                forecast_point=point, valid_for_date=shared_day
+            ForecastCellWeather.objects.filter(
+                forecast_cell=point, valid_for_date=shared_day
             ).count()
             == 1
         )
 
     def test_same_day_rerun_updates_rather_than_appends(self) -> None:
         """The four runs within one day collapse to a single history row."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
         first = _make_full_point_response()
         second = _make_full_point_response(weather_codes=[73] * POINT_FORECAST_DAYS)
@@ -1146,14 +1146,14 @@ class TestForecastHistoryCapture:
         ):
             fetch_weather_for_point(point, target, commit=True, add_history=True)
 
-        rows = ForecastPointWeatherHistory.objects.filter(forecast_point=point)
+        rows = ForecastCellWeatherHistory.objects.filter(forecast_cell=point)
         assert rows.count() == POINT_FORECAST_DAYS
         # Last run of the day wins.
         assert {row.weather_code for row in rows} == {73}
 
     def test_payload_is_the_retained_subset(self) -> None:
         """History carries the convergence scalars and omits the rest."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -1162,22 +1162,22 @@ class TestForecastHistoryCapture:
         ):
             fetch_weather_for_point(point, target, commit=True, add_history=True)
 
-        row = ForecastPointWeatherHistory.objects.get(
-            forecast_point=point, valid_for_date=target
+        row = ForecastCellWeatherHistory.objects.get(
+            forecast_cell=point, valid_for_date=target
         )
         assert row.temperature_2m_max == 4.2
         assert row.temperature_2m_min == -3.1
         assert row.precipitation_sum == 1.5
         assert row.snowfall_sum == 12.0
         assert row.wind_speed_10m_max == 18.0
-        # Derived from the hourly block, same as its ForecastPointWeather twin.
+        # Derived from the hourly block, same as its ForecastCellWeather twin.
         assert row.freezing_level_height == 1680.0
         assert not hasattr(row, "hourly_series")
         assert not hasattr(row, "sunrise")
 
     def test_partial_payload_degrades_to_none(self) -> None:
         """A response omitting extended variables still writes history rows."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         target = datetime.date(2026, 5, 1)
 
         with patch(
@@ -1186,8 +1186,8 @@ class TestForecastHistoryCapture:
         ):
             fetch_weather_for_point(point, target, commit=True, add_history=True)
 
-        row = ForecastPointWeatherHistory.objects.get(
-            forecast_point=point, valid_for_date=target
+        row = ForecastCellWeatherHistory.objects.get(
+            forecast_cell=point, valid_for_date=target
         )
         assert row.weather_code == 2
         assert row.snowfall_sum is None
@@ -1195,7 +1195,7 @@ class TestForecastHistoryCapture:
 
     def test_commit_false_writes_no_history(self) -> None:
         """A dry run calls the API but persists nothing."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         mock = _mock_get(_make_full_point_response())
 
         with patch("apps.weather.services.weather_fetcher.requests.get", mock):
@@ -1204,7 +1204,7 @@ class TestForecastHistoryCapture:
             )
 
         assert mock.call_count == 1
-        assert not ForecastPointWeatherHistory.objects.exists()
+        assert not ForecastCellWeatherHistory.objects.exists()
 
     def test_history_rolls_back_with_its_partner_row(self) -> None:
         """A mid-window failure leaves no history rows behind (SNOW-546).
@@ -1215,7 +1215,7 @@ class TestForecastHistoryCapture:
         the write at all. A value that is present but unparseable still
         raises inside the transaction, which is what this asserts.
         """
-        point = ForecastPointFactory.create(latitude=51.5, longitude=-0.13)
+        point = ForecastCellFactory.create(latitude=51.5, longitude=-0.13)
         degraded = _make_full_point_response()
         degraded["daily"]["sunrise"][3] = "not-a-timestamp"
 
@@ -1230,5 +1230,5 @@ class TestForecastHistoryCapture:
                 point, datetime.date(2026, 5, 1), commit=True, add_history=True
             )
 
-        assert not ForecastPointWeatherHistory.objects.exists()
-        assert not ForecastPointWeather.objects.exists()
+        assert not ForecastCellWeatherHistory.objects.exists()
+        assert not ForecastCellWeather.objects.exists()

@@ -1,17 +1,17 @@
 ---
 name: weather-snapshot-vs-forecast-point-weather
-description: WeatherSnapshot and ForecastPointWeather stay separate models — the split is archive vs forecast, not region vs point
+description: WeatherSnapshot and ForecastCellWeather stay separate models — the split is archive vs forecast, not region vs point
 status: current
 last-reviewed: 2026-08-09
 ---
 
-# WeatherSnapshot and ForecastPointWeather stay separate models
+# WeatherSnapshot and ForecastCellWeather stay separate models
 
 **Decision.** `WeatherSnapshot` (one row per region-day, forecast or
-backfilled archive) and `ForecastPointWeather` (one row per favourited
+backfilled archive) and `ForecastCellWeather` (one row per favourited
 point-day, forecast-only) remain two models rather than merging into one.
 SNOW-571 added `temperature_2m_max`/`temperature_2m_min`/`snowfall_sum` to
-`WeatherSnapshot` — the same names and units `ForecastPointWeather` already
+`WeatherSnapshot` — the same names and units `ForecastCellWeather` already
 uses — narrowing the field overlap, but the two tables still do not merge.
 
 **Why.** The real dividing line is **archive vs forecast**, not **region vs
@@ -23,26 +23,26 @@ point**:
   exactly as it reads yesterday's. It carries only the fields that make
   sense on an archived day: the WMO code, sunrise/sunset, and (as of
   SNOW-571) the daily temperature/snowfall trio.
-- `ForecastPointWeather` is rich, rolling, and evictable. It is upserted on
+- `ForecastCellWeather` is rich, rolling, and evictable. It is upserted on
   `(forecast_point, valid_for_date)` for a `POINT_FORECAST_DAYS`-day
   window and carries sixteen nullable columns plus an hourly-detail JSON
   blob — apparent temperature, precipitation, wind, UV, freezing level —
   because a favourited pin is a personal detail card, not an archive
   record. There is no archive/backfill equivalent (SNOW-416, SNOW-417):
   Open-Meteo has no meaningful "what would the forecast for this point
-  have been three years ago" answer, and `ForecastPoint` rows themselves are
+  have been three years ago" answer, and `ForecastCell` rows themselves are
   pruned once their last favourite/resort goes away
   (`docs/decisions/forecast-point-quantisation.md`), so old point-weather
   rows are routinely discarded rather than retained.
 
-Merging would push all sixteen extended `ForecastPointWeather` columns
+Merging would push all sixteen extended `ForecastCellWeather` columns
 (nullable, since Open-Meteo omits some depending on the backing model) plus
 the hourly JSON blob onto a table growing roughly one row per region per
 day across a whole season (~30k rows/season) that can never populate them
 — every archived day would carry sixteen permanent NULLs for fields an
 archive fetch never requests. It would also trade
 `unique_together(region, valid_for_date)` — a direct, indexable key — for a
-nullable FK hop through a `ForecastPoint`, whose identity is shared by
+nullable FK hop through a `ForecastCell`, whose identity is shared by
 reuse-first quantisation rather than being unique per region.
 
 **Consequences.**
@@ -61,4 +61,4 @@ reuse-first quantisation rather than being unique per region.
   None)`) — that duck-typing is the seam, not a shared base class or table.
 - If a future ticket wants a genuinely richer region-day record (e.g. wind,
   UV), it should ask the same archive-vs-forecast question again rather
-  than assuming parity with `ForecastPointWeather`'s field list.
+  than assuming parity with `ForecastCellWeather`'s field list.

@@ -20,7 +20,7 @@ Fort · 3328 m" — with the resort's primary location leading, then the rest
 by ascending elevation.
 
 The **hero band is fed from the primary location's day-0
-`ForecastPointWeather` row**, not from the parent region's
+`ForecastCellWeather` row**, not from the parent region's
 `WeatherSnapshot`. The snapshot remains the fallback for a resort with no
 linked location.
 

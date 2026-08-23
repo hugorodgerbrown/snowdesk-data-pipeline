@@ -2,7 +2,7 @@
 apps/favourites/apps.py — AppConfig for the favourites application.
 
 The favourites app owns the ``Favourite`` model: a saved map pin (with a
-resolved ``ForecastPoint`` and best-effort ``MicroRegion``) that an
+resolved ``ForecastCell`` and best-effort ``MicroRegion``) that an
 authenticated user creates, renames, or deletes from the map page.
 """
 

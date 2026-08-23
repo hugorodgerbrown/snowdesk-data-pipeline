@@ -114,7 +114,7 @@ from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.weather.models import (
-    ForecastPointWeather,
+    ForecastCellWeather,
     WeatherSnapshot,
 )
 from apps.weather.services.weather_display import (
@@ -3564,7 +3564,7 @@ def _region_forecast_panel(
     """Build the bulletin page's multi-day forecast panel for a region.
 
     Reads through the region's centroid ``Location`` (SNOW-696) — the same
-    ``ForecastPointWeather`` window and the same ``_forecast_panel.html``
+    ``ForecastCellWeather`` window and the same ``_forecast_panel.html``
     partial the resort page and the favourite card already use, so the
     bulletin page gets wind and freezing level with no new display code.
 
@@ -3584,8 +3584,8 @@ def _region_forecast_panel(
         return None
     return build_point_forecast_panel(
         list(
-            ForecastPointWeather.objects.filter(
-                forecast_point_id=location.forecast_cell_id,
+            ForecastCellWeather.objects.filter(
+                forecast_cell_id=location.forecast_cell_id,
                 valid_for_date__gte=target_date,
             ).order_by("valid_for_date")[:POINT_FORECAST_DAYS]
         ),
@@ -3690,7 +3690,7 @@ def _bulletin_detail_response(
     # masthead's day/night visual; this is the numbers, and the numbers
     # come from a point (docs/locations.md).
     #
-    # Only from today forward. The window ForecastPointWeather holds is a
+    # Only from today forward. The window ForecastCellWeather holds is a
     # *forecast*, so rendering it beside a historical bulletin would put
     # next week's weather under last week's danger rating — and the
     # ``valid_for_date__gte=target_date`` filter below would silently
@@ -4104,7 +4104,7 @@ class ResortLocationForecast(NamedTuple):
             resort, used as the section's ``data-testid`` suffix.
         is_primary: Whether the resort leads with this one.
         panel: The multi-day panel from ``build_point_forecast_panel``.
-        today_row: The day-0 ``ForecastPointWeather`` row, which the hero
+        today_row: The day-0 ``ForecastCellWeather`` row, which the hero
             band is fed from when this is the primary location. Separate
             from ``panel`` because the panel is a rendered projection and
             the hero needs the row itself.
@@ -4156,15 +4156,15 @@ def _resort_location_forecasts(
         for link in links
         if link.location.forecast_cell_id is not None
     }
-    rows_by_cell: dict[int, list[ForecastPointWeather]] = defaultdict(list)
+    rows_by_cell: dict[int, list[ForecastCellWeather]] = defaultdict(list)
     for row in (
-        ForecastPointWeather.objects.filter(
-            forecast_point_id__in=cell_ids, valid_for_date__gte=today
+        ForecastCellWeather.objects.filter(
+            forecast_cell_id__in=cell_ids, valid_for_date__gte=today
         )
         .order_by("valid_for_date")
         .iterator()
     ):
-        rows_by_cell[row.forecast_point_id].append(row)
+        rows_by_cell[row.forecast_cell_id].append(row)
 
     now = timezone.now()
     forecasts = []
@@ -4285,7 +4285,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     forecast_panel = None
     if not location_forecasts and resort.forecast_point is not None:
         forecast_snapshots = list(
-            ForecastPointWeather.objects.forecast_for_point(
+            ForecastCellWeather.objects.forecast_for_point(
                 resort.forecast_point, today
             )[:POINT_FORECAST_DAYS]
         )

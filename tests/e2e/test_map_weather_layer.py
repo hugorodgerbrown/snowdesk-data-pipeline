@@ -43,8 +43,8 @@ from pytest_django.live_server_helper import LiveServer
 from waffle.testutils import override_flag
 
 from tests.factories import (
-    ForecastPointFactory,
-    ForecastPointWeatherFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherFactory,
     ResortFactory,
 )
 
@@ -120,15 +120,15 @@ _ROW_DISABLED_JS = (
 def _seed_verbier_weather(django_db_blocker: Any) -> None:
     """Seed one resort-anchored forecast point carrying today's weather."""
     with django_db_blocker.unblock():
-        point = ForecastPointFactory.create(latitude=46.2, longitude=7.6)
+        point = ForecastCellFactory.create(latitude=46.2, longitude=7.6)
         ResortFactory.create(
             name="Verbier",
             latitude=46.2,
             longitude=7.6,
             forecast_point=point,
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=point,
             valid_for_date=datetime.date.today(),
         )
 

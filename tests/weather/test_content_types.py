@@ -31,6 +31,10 @@ from django.contrib.contenttypes.models import ContentType
 # reached via importlib — a plain ``from … import`` is a syntax error.
 _migration = importlib.import_module("apps.weather.migrations.0002_move_content_types")
 
+# The names as they stood when SNOW-654 moved them — which is what
+# ``0002``'s own ``MOVED_MODELS`` still holds, because a migration
+# describes history. SNOW-703 later renamed three of these; that rename has
+# its own migration and its own tests (``test_content_type_rename.py``).
 MOVED_MODELS = (
     "weathersnapshot",
     "forecastpoint",
@@ -38,9 +42,18 @@ MOVED_MODELS = (
     "forecastpointweatherhistory",
 )
 
+# The same four models under their current names, which is what a migrated
+# database actually holds once ``0005`` has run.
+CURRENT_MODELS = (
+    "weathersnapshot",
+    "forecastcell",
+    "forecastcellweather",
+    "forecastcellweatherhistory",
+)
+
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("model_name", MOVED_MODELS)
+@pytest.mark.parametrize("model_name", CURRENT_MODELS)
 def test_content_type_resolves_under_the_weather_label(model_name: str) -> None:
     """Each moved model has exactly one ContentType, labelled ``weather``."""
     rows = ContentType.objects.filter(app_label="weather", model=model_name)
@@ -99,19 +112,19 @@ def test_relabel_keeps_the_pre_split_row_when_both_labels_hold_one() -> None:
     exists to preserve.
     """
     post_migrate_row = ContentType.objects.get(
-        app_label="weather", model="forecastpoint"
+        app_label="weather", model="weathersnapshot"
     )
     pre_split_row = ContentType.objects.create(
-        app_label="bulletins", model="forecastpoint"
+        app_label="bulletins", model="weathersnapshot"
     )
 
     _migration._relabel(global_apps, "bulletins", "weather")
 
-    surviving = ContentType.objects.get(app_label="weather", model="forecastpoint")
+    surviving = ContentType.objects.get(app_label="weather", model="weathersnapshot")
     assert surviving.pk == pre_split_row.pk
     assert not ContentType.objects.filter(pk=post_migrate_row.pk).exists()
     assert not ContentType.objects.filter(
-        app_label="bulletins", model="forecastpoint"
+        app_label="bulletins", model="weathersnapshot"
     ).exists()
 
 
@@ -152,7 +165,7 @@ def test_forwards_and_backwards_move_the_rows_in_opposite_directions() -> None:
     ``_relabel`` is symmetric, so a swapped argument order in either
     wrapper would be invisible to every test that only calls the helper.
     """
-    row = ContentType.objects.get(app_label="weather", model="forecastpointweather")
+    row = ContentType.objects.get(app_label="weather", model="weathersnapshot")
     ContentType.objects.filter(pk=row.pk).update(app_label="bulletins")
 
     _migration.forwards(global_apps, None)

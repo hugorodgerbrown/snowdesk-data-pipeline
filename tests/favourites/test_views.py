@@ -25,7 +25,7 @@ Covers:
                     no-coverage note; region + rating → danger tile +
                     bulletin link; unnamed favourite → coordinate
                     fallback; no weather snapshot yet → "coming soon"
-                    empty state (SNOW-415); with ForecastPointWeather
+                    empty state (SNOW-415); with ForecastCellWeather
                     rows → forecast panel (day strip + hourly detail)
                     renders, response carries X-Data-Generated-At
                     (SNOW-417).
@@ -74,7 +74,7 @@ Covers:
                         count.
 
 The Open-Meteo network call is avoided throughout by patching
-``apps.favourites.services.resolve_forecast_point``.
+``apps.favourites.services.resolve_forecast_cell``.
 """
 
 from __future__ import annotations
@@ -99,8 +99,8 @@ from apps.favourites.models import Favourite
 from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
-    ForecastPointFactory,
-    ForecastPointWeatherFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
@@ -242,9 +242,9 @@ def _create_via_service(
     """Create a Favourite directly via the service, mocking the Open-Meteo call."""
     from apps.favourites.services import create_favourite  # noqa: PLC0415
 
-    point = ForecastPointFactory.create(latitude=latitude, longitude=longitude)
+    point = ForecastCellFactory.create(latitude=latitude, longitude=longitude)
     with (
-        patch("apps.favourites.services.resolve_forecast_point", return_value=point),
+        patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
         patch("apps.favourites.services.region_for_point", return_value=None),
     ):
         return create_favourite(user, latitude, longitude)
@@ -328,7 +328,7 @@ class TestFavouriteCreateValidation:
         """
         user = UserFactory.create()
         client.force_login(user)
-        with patch("apps.favourites.services.resolve_forecast_point") as mock_resolve:
+        with patch("apps.favourites.services.resolve_forecast_cell") as mock_resolve:
             response = client.post(CREATE_URL, {"lat": lat, "lon": lon}, **HTMX_HEADERS)
         assert response.status_code == 400
         assert not Favourite.objects.filter(user=user).exists()
@@ -343,12 +343,10 @@ class TestFavouriteCreateSuccess:
         """Valid lat/lon creates a Favourite and returns 200."""
         user = UserFactory.create()
         client.force_login(user)
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
 
         with (
-            patch(
-                "apps.favourites.services.resolve_forecast_point", return_value=point
-            ),
+            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             response = client.post(
@@ -381,11 +379,9 @@ class TestFavouriteCreateCap:
         client.force_login(user)
         _create_via_service(user)
 
-        point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
+        point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
         with (
-            patch(
-                "apps.favourites.services.resolve_forecast_point", return_value=point
-            ),
+            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             response = client.post(
@@ -565,10 +561,10 @@ class TestFavouriteCreateFromResortSuccess:
         resort = ResortFactory.create(
             name="Verbier", region=region, latitude=46.1, longitude=7.4
         )
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
 
         with patch(
-            "apps.favourites.services.resolve_forecast_point", return_value=point
+            "apps.favourites.services.resolve_forecast_cell", return_value=point
         ):
             response = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
@@ -585,10 +581,10 @@ class TestFavouriteCreateFromResortSuccess:
         user = UserFactory.create()
         client.force_login(user)
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
 
         with patch(
-            "apps.favourites.services.resolve_forecast_point", return_value=point
+            "apps.favourites.services.resolve_forecast_cell", return_value=point
         ):
             first = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
@@ -618,9 +614,9 @@ class TestFavouriteCreateFromResortCap:
         _create_via_service(user)
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
-        point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
+        point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
         with patch(
-            "apps.favourites.services.resolve_forecast_point", return_value=point
+            "apps.favourites.services.resolve_forecast_cell", return_value=point
         ):
             response = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
@@ -740,10 +736,10 @@ class TestFavouriteResortToggleSuccess:
         resort = ResortFactory.create(
             name="Verbier", region=region, latitude=46.1, longitude=7.4
         )
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
 
         with patch(
-            "apps.favourites.services.resolve_forecast_point", return_value=point
+            "apps.favourites.services.resolve_forecast_cell", return_value=point
         ):
             first = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
             assert first.status_code == 200
@@ -770,9 +766,9 @@ class TestFavouriteResortToggleCap:
         _create_via_service(user)
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
-        point = ForecastPointFactory.create(latitude=47.0, longitude=8.0)
+        point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
         with patch(
-            "apps.favourites.services.resolve_forecast_point", return_value=point
+            "apps.favourites.services.resolve_forecast_cell", return_value=point
         ):
             response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
 
@@ -1019,7 +1015,7 @@ class TestFavouriteCard:
         assert region.get_absolute_url() in content
 
     def test_no_weather_snapshot_shows_coming_soon(self, client: Client) -> None:
-        """Without a ForecastPointWeather snapshot, the weather slot shows 'coming soon'."""
+        """Without a ForecastCellWeather snapshot, the weather slot shows 'coming soon'."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
@@ -1033,17 +1029,17 @@ class TestFavouriteCard:
     def test_forecast_panel_renders_day_strip_and_hourly_detail(
         self, client: Client
     ) -> None:
-        """With ForecastPointWeather rows, the day strip + hourly detail render (SNOW-417)."""
+        """With ForecastCellWeather rows, the day strip + hourly detail render (SNOW-417)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
         today = django_timezone.localdate()
-        ForecastPointWeatherFactory.create(
-            forecast_point=favourite.forecast_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=favourite.forecast_point,
             valid_for_date=today,
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=favourite.forecast_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=favourite.forecast_point,
             valid_for_date=today + datetime.timedelta(days=1),
         )
 
@@ -1058,7 +1054,7 @@ class TestFavouriteCard:
         assert "X-Data-Generated-At" in response
 
     def test_no_forecast_rows_omits_generated_at_fallback(self, client: Client) -> None:
-        """With no ForecastPointWeather rows, freshness headers still stamp (fallback to now)."""
+        """With no ForecastCellWeather rows, freshness headers still stamp (fallback to now)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
@@ -1810,9 +1806,9 @@ class TestFavouritesGeojson:
         user = UserFactory.create()
         client.force_login(user)
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
         with patch(
-            "apps.favourites.services.resolve_forecast_point", return_value=point
+            "apps.favourites.services.resolve_forecast_cell", return_value=point
         ):
             create_resort_favourite(user, resort)
 
@@ -1848,8 +1844,8 @@ class TestFavouritesGeojson:
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
-        ForecastPointWeatherFactory.create(
-            forecast_point=favourite.forecast_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=favourite.forecast_point,
             valid_for_date=datetime.date(2026, 8, 7),
         )
 
@@ -1863,8 +1859,8 @@ class TestFavouritesGeojson:
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
-        ForecastPointWeatherFactory.create(
-            forecast_point=favourite.forecast_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=favourite.forecast_point,
             valid_for_date=datetime.date(2026, 8, 7),
             weather_code=0,  # clear sky
             sunrise=datetime.datetime(2026, 8, 7, 6, 0, tzinfo=datetime.UTC),
@@ -1910,12 +1906,12 @@ class TestFavouritesGeojson:
         client.force_login(user)
         mine = FavouriteFactory.create(user=user)
         other = FavouriteFactory.create(user=UserFactory.create())
-        ForecastPointWeatherFactory.create(
-            forecast_point=mine.forecast_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=mine.forecast_point,
             valid_for_date=datetime.date(2026, 8, 7),
         )
-        ForecastPointWeatherFactory.create(
-            forecast_point=other.forecast_point,
+        ForecastCellWeatherFactory.create(
+            forecast_cell=other.forecast_point,
             valid_for_date=datetime.date(2026, 8, 7),
         )
 

@@ -45,7 +45,7 @@ urlpatterns = [
     path("ratings/", api.ratings, name="ratings"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
-    # SNOW-573: map weather layer — resort-anchored ForecastPoint weather,
+    # SNOW-573: map weather layer — resort-anchored ForecastCell weather,
     # keyed by ISO date. The view inline-gates on the ``weather_layer``
     # waffle flag and 404s when inactive.
     path(

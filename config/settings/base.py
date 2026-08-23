@@ -644,7 +644,7 @@ OPEN_METEO_ARCHIVE_BASE_URL = config(
 OPEN_METEO_API_KEY = config("OPEN_METEO_API_KEY", default="")
 
 # Whether the scheduled ``fetch_weather`` run also retains a
-# ForecastPointWeatherHistory row per stored day (SNOW-575).
+# ForecastCellWeatherHistory row per stored day (SNOW-575).
 #
 # History is analysis data for future forecast-convergence work — nothing
 # user-facing reads it, and it grows by one row per point per day of each

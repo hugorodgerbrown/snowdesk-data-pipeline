@@ -2,20 +2,20 @@
 tests/regions/management/commands/test_link_resort_forecast_points.py
 
 Covers ``link_resort_forecast_points`` (SNOW-503):
-  - Links a geocoded, unlinked resort to a resolved ForecastPoint under
+  - Links a geocoded, unlinked resort to a resolved ForecastCell under
     --commit.
   - Ungeocoded resorts (missing latitude/longitude) are never selected.
   - Already-linked resorts are never selected — a second run is a no-op
     (idempotency).
-  - Two nearby geocoded resorts share one ForecastPoint (the reuse path);
+  - Two nearby geocoded resorts share one ForecastCell (the reuse path);
     elevation-band separation mints a distinct point for each.
   - Dry-run (no --commit) resolves but writes no FK.
   - A per-resort resolve failure increments ``failed``, raises
     CommandError (non-zero exit), and does not abort the rest of the
     batch — the other resort is still linked.
 
-``fetch_elevation`` is mocked at the ``apps.weather.services.forecast_points``
-module seam (the same seam ``tests/weather/services/test_forecast_points.py``
+``fetch_elevation`` is mocked at the ``apps.weather.services.forecast_cells``
+module seam (the same seam ``tests/weather/services/test_forecast_cells.py``
 patches) so no live Open-Meteo call happens anywhere in this suite.
 """
 
@@ -33,20 +33,20 @@ from django.core.management.base import CommandError
 from apps.regions.management.commands.link_resort_forecast_points import (
     _non_negative_float,
 )
-from apps.weather.models import ForecastPoint
-from tests.factories import ForecastPointFactory, ResortFactory
+from apps.weather.models import ForecastCell
+from tests.factories import ForecastCellFactory, ResortFactory
 
 
 def _patch_elevation(elevation: float) -> AbstractContextManager[MagicMock]:
     """Patch fetch_elevation (module seam) to return a fixed elevation."""
     return patch(
-        "apps.weather.services.forecast_points.fetch_elevation",
+        "apps.weather.services.forecast_cells.fetch_elevation",
         return_value=elevation,
     )
 
 
 @pytest.mark.django_db
-class TestLinkResortForecastPointsCommit:
+class TestLinkResortForecastCellsCommit:
     """--commit behaviour: resolves and persists the FK."""
 
     def test_links_geocoded_unlinked_resort(self) -> None:
@@ -64,7 +64,7 @@ class TestLinkResortForecastPointsCommit:
 
         resort.refresh_from_db()
         assert resort.forecast_point is not None
-        assert ForecastPoint.objects.count() == 1
+        assert ForecastCell.objects.count() == 1
 
     def test_skips_ungeocoded_resort(self) -> None:
         """A resort with no latitude/longitude is never selected."""
@@ -85,7 +85,7 @@ class TestLinkResortForecastPointsCommit:
 
     def test_skips_already_linked_resort(self) -> None:
         """A resort that already has a forecast_point is never re-resolved."""
-        existing_point = ForecastPointFactory.create()
+        existing_point = ForecastCellFactory.create()
         resort = ResortFactory.create(geocoded=True, forecast_point=existing_point)
 
         with _patch_elevation(1500.0) as mock_fetch:
@@ -144,7 +144,7 @@ class TestLinkResortForecastPointsCommit:
 
         resort_a.refresh_from_db()
         resort_b.refresh_from_db()
-        assert ForecastPoint.objects.count() == 1
+        assert ForecastCell.objects.count() == 1
         assert resort_a.forecast_point_id == resort_b.forecast_point_id
 
     def test_elevation_band_separation_mints_distinct_points(self) -> None:
@@ -158,7 +158,7 @@ class TestLinkResortForecastPointsCommit:
             return 1500.0 if latitude == 46.1 else 1750.0
 
         with patch(
-            "apps.weather.services.forecast_points.fetch_elevation",
+            "apps.weather.services.forecast_cells.fetch_elevation",
             side_effect=_elevation_side_effect,
         ):
             call_command(
@@ -171,12 +171,12 @@ class TestLinkResortForecastPointsCommit:
 
         resort_high.refresh_from_db()
         resort_low.refresh_from_db()
-        assert ForecastPoint.objects.count() == 2
+        assert ForecastCell.objects.count() == 2
         assert resort_high.forecast_point_id != resort_low.forecast_point_id
 
 
 @pytest.mark.django_db
-class TestLinkResortForecastPointsDryRun:
+class TestLinkResortForecastCellsDryRun:
     """Dry-run (no --commit) behaviour."""
 
     def test_dry_run_writes_nothing(self) -> None:
@@ -199,7 +199,7 @@ class TestLinkResortForecastPointsDryRun:
 
 
 @pytest.mark.django_db
-class TestLinkResortForecastPointsFailureIsolation:
+class TestLinkResortForecastCellsFailureIsolation:
     """A per-resort failure never aborts the batch."""
 
     def test_one_bad_resort_fails_others_still_link(self) -> None:
@@ -213,7 +213,7 @@ class TestLinkResortForecastPointsFailureIsolation:
             return 1500.0
 
         with patch(
-            "apps.weather.services.forecast_points.fetch_elevation",
+            "apps.weather.services.forecast_cells.fetch_elevation",
             side_effect=_elevation_side_effect,
         ):
             with pytest.raises(CommandError, match="1 resort failure"):
@@ -250,7 +250,7 @@ class TestNonNegativeFloat:
 
 
 @pytest.mark.django_db
-class TestLinkResortForecastPointsVerbosityAndPacing:
+class TestLinkResortForecastCellsVerbosityAndPacing:
     """--verbosity and --delay behaviour beyond the default test pacing."""
 
     def test_verbosity_2_logs_each_resolved_resort(

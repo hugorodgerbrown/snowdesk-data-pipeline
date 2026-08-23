@@ -30,8 +30,8 @@ from django.utils import timezone
 from apps.locations.models import ResortLocation
 from apps.regions.models import Resort
 from tests.factories import (
-    ForecastPointFactory,
-    ForecastPointWeatherFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherFactory,
     LocationFactory,
     ResortFactory,
     ResortLocationFactory,
@@ -73,12 +73,12 @@ def _linked(
         The created link.
 
     """
-    cell = ForecastPointFactory.create(latitude=lat, longitude=lon)
+    cell = ForecastCellFactory.create(latitude=lat, longitude=lon)
     if with_rows:
         today = timezone.localdate()
         for offset in range(3):
-            ForecastPointWeatherFactory.create(
-                forecast_point=cell,
+            ForecastCellWeatherFactory.create(
+                forecast_cell=cell,
                 valid_for_date=today + timedelta(days=offset),
                 temperature_2m_max=temp_max if offset == 0 else temp_max - 1,
             )
@@ -218,9 +218,9 @@ class TestResortLocationForecasts:
         One Location row, four resort pages, each rendering it as their
         top — where the resort sheet holds four copies of the scalar 3330.
         """
-        cell = ForecastPointFactory.create()
+        cell = ForecastCellFactory.create()
         today = timezone.localdate()
-        ForecastPointWeatherFactory.create(forecast_point=cell, valid_for_date=today)
+        ForecastCellWeatherFactory.create(forecast_cell=cell, valid_for_date=today)
         mont_fort = LocationFactory.create(
             name="Mont Fort", elevation_m=3328, forecast_cell=cell
         )
@@ -299,9 +299,9 @@ class TestResortHeroBand:
             valid_for_date=timezone.localdate(),
             temperature_2m_max=-3.0,
         )
-        cell = ForecastPointFactory.create()
-        ForecastPointWeatherFactory.create(
-            forecast_point=cell,
+        cell = ForecastCellFactory.create()
+        ForecastCellWeatherFactory.create(
+            forecast_cell=cell,
             valid_for_date=timezone.localdate() + timedelta(days=1),
             temperature_2m_max=12.0,
         )
@@ -327,9 +327,9 @@ class TestLegacyPanelIsMutuallyExclusive:
         self, client: Client
     ) -> None:
         """A resort SNOW-701 has not reached keeps what SNOW-572 gave it."""
-        cell = ForecastPointFactory.create()
-        ForecastPointWeatherFactory.create(
-            forecast_point=cell, valid_for_date=timezone.localdate()
+        cell = ForecastCellFactory.create()
+        ForecastCellWeatherFactory.create(
+            forecast_cell=cell, valid_for_date=timezone.localdate()
         )
         resort = ResortFactory.create(geocoded=True, forecast_point=cell)
 
@@ -342,9 +342,9 @@ class TestLegacyPanelIsMutuallyExclusive:
         self, client: Client
     ) -> None:
         """The two sections never render together."""
-        cell = ForecastPointFactory.create(latitude=47.9, longitude=8.9)
-        ForecastPointWeatherFactory.create(
-            forecast_point=cell, valid_for_date=timezone.localdate()
+        cell = ForecastCellFactory.create(latitude=47.9, longitude=8.9)
+        ForecastCellWeatherFactory.create(
+            forecast_cell=cell, valid_for_date=timezone.localdate()
         )
         resort = ResortFactory.create(geocoded=True, forecast_point=cell)
         _linked(

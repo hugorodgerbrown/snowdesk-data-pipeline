@@ -1,5 +1,5 @@
 """
-tests/weather/test_forecast_history_admin.py — ForecastPointWeatherHistoryAdmin.
+tests/weather/test_forecast_history_admin.py — ForecastCellWeatherHistoryAdmin.
 
 The admin is the only read surface on the convergence series (SNOW-575
 ships no public UI or API), so these cover that it is registered, renders,
@@ -21,14 +21,14 @@ from django.contrib import admin as django_admin
 from django.test import Client
 from django.urls import reverse
 
-from apps.weather.models import ForecastPointWeatherHistory
+from apps.weather.models import ForecastCellWeatherHistory
 from tests.factories import (
-    ForecastPointFactory,
-    ForecastPointWeatherHistoryFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherHistoryFactory,
     UserFactory,
 )
 
-CHANGELIST_URL = reverse("admin:weather_forecastpointweatherhistory_changelist")
+CHANGELIST_URL = reverse("admin:weather_forecastcellweatherhistory_changelist")
 VALID_DAY = datetime.date(2026, 5, 8)
 
 
@@ -46,12 +46,12 @@ class TestRegistration:
     """The model is wired into the admin site."""
 
     def test_model_is_registered(self) -> None:
-        """ForecastPointWeatherHistory has an explicit admin class."""
-        assert ForecastPointWeatherHistory in django_admin.site._registry
+        """ForecastCellWeatherHistory has an explicit admin class."""
+        assert ForecastCellWeatherHistory in django_admin.site._registry
 
     def test_lead_days_is_filterable(self) -> None:
         """lead_days is offered as a filter — the axis analysis slices on."""
-        model_admin = django_admin.site._registry[ForecastPointWeatherHistory]
+        model_admin = django_admin.site._registry[ForecastCellWeatherHistory]
         assert "lead_days" in model_admin.list_filter
 
 
@@ -61,16 +61,16 @@ class TestChangelist:
 
     def test_renders_for_staff(self, staff_client: Client) -> None:
         """A staff GET returns 200 once rows exist."""
-        ForecastPointWeatherHistoryFactory.create()
+        ForecastCellWeatherHistoryFactory.create()
         response = staff_client.get(CHANGELIST_URL)
         assert response.status_code == 200
 
     def test_orders_oldest_issue_first_within_a_day(self, staff_client: Client) -> None:
         """Rows for one forecast day read from earliest issue to latest."""
-        point = ForecastPointFactory.create()
+        point = ForecastCellFactory.create()
         for lead in (0, 4, 2):
-            ForecastPointWeatherHistoryFactory.create(
-                forecast_point=point,
+            ForecastCellWeatherHistoryFactory.create(
+                forecast_cell=point,
                 valid_for_date=VALID_DAY,
                 issued_date=VALID_DAY - datetime.timedelta(days=lead),
                 lead_days=lead,

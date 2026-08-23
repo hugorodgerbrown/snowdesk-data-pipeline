@@ -33,7 +33,7 @@ def test_weather_app_owns_the_expected_models() -> None:
     model_names = {m.__name__ for m in config.get_models()}
     assert model_names == {
         "WeatherSnapshot",
-        "ForecastPoint",
-        "ForecastPointWeather",
-        "ForecastPointWeatherHistory",
+        "ForecastCell",
+        "ForecastCellWeather",
+        "ForecastCellWeatherHistory",
     }

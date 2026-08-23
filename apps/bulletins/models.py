@@ -27,8 +27,8 @@ Owns the seven bulletin-driven models:
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``apps.regions.models`` — those are stable lookup tables shared across the
 whole project, not bulletin-derived data. The Open-Meteo models
-(WeatherSnapshot, ForecastPoint, ForecastPointWeather,
-ForecastPointWeatherHistory) live in ``apps.weather.models`` — they were
+(WeatherSnapshot, ForecastCell, ForecastCellWeather,
+ForecastCellWeatherHistory) live in ``apps.weather.models`` — they were
 split out by SNOW-654 because nothing here reads them and no foreign key
 runs in either direction.
 

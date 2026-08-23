@@ -64,7 +64,7 @@ from tests.factories import (
     BulletinGroupingFactory,
     FavouriteFactory,
     FieldObservationFactory,
-    ForecastPointFactory,
+    ForecastCellFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
@@ -994,7 +994,7 @@ def test_resort_popup_authenticated_already_favourited_shows_saved_state() -> No
     """An already-favourited resort shows data-favourited=true + the favourite's uuid."""
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
     user = UserFactory.create()
-    point = ForecastPointFactory.create(latitude=46.1, longitude=7.4)
+    point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
     favourite = FavouriteFactory.create(
         user=user,
         resort=resort,

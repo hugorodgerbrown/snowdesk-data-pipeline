@@ -1,5 +1,5 @@
 """
-apps/weather/services/forecast_points.py — Snapping pins onto shared ForecastPoints.
+apps/weather/services/forecast_cells.py — Snapping pins onto shared ForecastCells.
 
 Contains the quantisation helpers and the resolution entry point:
 
@@ -9,12 +9,12 @@ Contains the quantisation helpers and the resolution entry point:
       negative coordinates quantise consistently — see
       ``docs/decisions/forecast-point-quantisation.md``.
 
-  resolve_forecast_point(latitude, longitude)
+  resolve_forecast_cell(latitude, longitude)
       Given a raw pin location, fetches its elevation via
       ``apps.weather.services.elevation.fetch_elevation``, then either reuses
-      the nearest existing ``ForecastPoint`` within the reuse thresholds
+      the nearest existing ``ForecastCell`` within the reuse thresholds
       or creates a new one keyed on the quantised grid cell. Returns the
-      resolved ``ForecastPoint``.
+      resolved ``ForecastCell``.
 
 The reuse check runs before cell creation so that pins sitting near a
 grid-cell boundary — whose quantised cell differs from a physically
@@ -31,7 +31,7 @@ import math
 
 from apps.core.coordinates import validate_coordinates
 from apps.core.geo import haversine_m
-from apps.weather.models import ForecastPoint
+from apps.weather.models import ForecastCell
 from apps.weather.services.elevation import fetch_elevation
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ LON_CELL_SIZE = 0.015
 # Elevation band size, in metres.
 ELEVATION_BAND_SIZE = 200
 
-# Reuse thresholds: a pin reuses the nearest existing ForecastPoint only if
+# Reuse thresholds: a pin reuses the nearest existing ForecastCell only if
 # it falls within both of these.
 REUSE_HORIZONTAL_THRESHOLD_M = 750
 REUSE_ELEVATION_THRESHOLD_M = 150
@@ -101,9 +101,9 @@ def _find_reusable_point(
     lat_cell: int,
     lon_cell: int,
     elevation_band: int,
-) -> ForecastPoint | None:
+) -> ForecastCell | None:
     """
-    Find the nearest existing ForecastPoint this pin can reuse, if any.
+    Find the nearest existing ForecastCell this pin can reuse, if any.
 
     Loads candidates from the 3x3x3 neighbourhood of grid cells around
     the pin's own cell, then returns the nearest one within both the
@@ -118,17 +118,17 @@ def _find_reusable_point(
         elevation_band: The pin's quantised elevation band.
 
     Returns:
-        The nearest ForecastPoint within the reuse thresholds, or ``None``
+        The nearest ForecastCell within the reuse thresholds, or ``None``
         if no candidate qualifies.
 
     """
-    candidates = ForecastPoint.objects.filter(
+    candidates = ForecastCell.objects.filter(
         lat_cell__in=(lat_cell - 1, lat_cell, lat_cell + 1),
         lon_cell__in=(lon_cell - 1, lon_cell, lon_cell + 1),
         elevation_band__in=(elevation_band - 1, elevation_band, elevation_band + 1),
     )
 
-    best: ForecastPoint | None = None
+    best: ForecastCell | None = None
     best_distance_m = math.inf
     for candidate in candidates:
         if abs(candidate.elevation - elevation) > REUSE_ELEVATION_THRESHOLD_M:
@@ -145,12 +145,12 @@ def _find_reusable_point(
     return best
 
 
-def resolve_forecast_point(latitude: float, longitude: float) -> ForecastPoint:
+def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
     """
-    Resolve a raw pin location to a shared ForecastPoint, creating one if needed.
+    Resolve a raw pin location to a shared ForecastCell, creating one if needed.
 
     Fetches the pin's elevation, then either reuses the nearest existing
-    ForecastPoint within 750m horizontally and 150m in elevation, or
+    ForecastCell within 750m horizontally and 150m in elevation, or
     creates a new row keyed on the pin's quantised grid cell.
 
     Args:
@@ -158,7 +158,7 @@ def resolve_forecast_point(latitude: float, longitude: float) -> ForecastPoint:
         longitude: The pin's longitude in degrees.
 
     Returns:
-        The resolved (existing or newly created) ForecastPoint.
+        The resolved (existing or newly created) ForecastCell.
 
     Raises:
         InvalidCoordinatesError: If the coordinates are non-finite or out of
@@ -182,7 +182,7 @@ def resolve_forecast_point(latitude: float, longitude: float) -> ForecastPoint:
     )
     if reusable is not None:
         logger.debug(
-            "Reusing ForecastPoint id=%s for latitude=%s longitude=%s elevation=%s",
+            "Reusing ForecastCell id=%s for latitude=%s longitude=%s elevation=%s",
             reusable.pk,
             latitude,
             longitude,
@@ -195,7 +195,7 @@ def resolve_forecast_point(latitude: float, longitude: float) -> ForecastPoint:
     # the resulting IntegrityError in a savepoint and re-fetches by the
     # lookup kwargs (which are exactly the unique key here) — no bespoke
     # handling needed on top of that.
-    point, created = ForecastPoint.objects.get_or_create(
+    point, created = ForecastCell.objects.get_or_create(
         lat_cell=lat_cell,
         lon_cell=lon_cell,
         elevation_band=elevation_band,
@@ -207,7 +207,7 @@ def resolve_forecast_point(latitude: float, longitude: float) -> ForecastPoint:
     )
 
     logger.debug(
-        "Resolved ForecastPoint id=%s created=%s for latitude=%s longitude=%s "
+        "Resolved ForecastCell id=%s created=%s for latitude=%s longitude=%s "
         "elevation=%s",
         point.pk,
         created,

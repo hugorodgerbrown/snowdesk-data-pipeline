@@ -29,7 +29,7 @@ WMO code reference:
 
 ``build_weather_display`` builds the single-day ``WeatherDisplay`` context
 consumed by the bulletin page header; it accepts either a ``WeatherSnapshot``
-(region) or a ``ForecastPointWeather`` row (favourited point), since both
+(region) or a ``ForecastCellWeather`` row (favourited point), since both
 expose the same ``weather_code``/``sunrise``/``sunset`` trio. The returned
 dict also carries ``temp_max``/``temp_min``/``snowfall_sum`` (SNOW-571),
 read via ``getattr(weather, ..., None)`` so a stub object missing them still
@@ -38,9 +38,9 @@ produces a usable dict rather than raising.
 ``build_point_forecast_panel`` (SNOW-417) builds the multi-day
 ``ForecastPanel`` context consumed by ``includes/_forecast_panel.html`` — a
 compact day strip plus an expandable near-term hourly detail — from a
-chronologically-ordered list of ``ForecastPointWeather`` rows. Rendered on
+chronologically-ordered list of ``ForecastCellWeather`` rows. Rendered on
 the favourite detail card's forecast panel and, since SNOW-572, on the
-resort page when the resort's linked ``ForecastPoint`` has rows.
+resort page when the resort's linked ``ForecastCell`` has rows.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
-    from apps.weather.models import ForecastPointWeather, WeatherSnapshot
+    from apps.weather.models import ForecastCellWeather, WeatherSnapshot
 
 
 # Bucket identifiers — kept short and dash-free so they sit cleanly inside
@@ -248,7 +248,7 @@ def weather_icon_filename(icon_bucket: str, time_of_day: str) -> str:
 
 
 def is_day(
-    weather: "WeatherSnapshot | ForecastPointWeather", now: datetime.datetime
+    weather: "WeatherSnapshot | ForecastCellWeather", now: datetime.datetime
 ) -> bool:
     """
     Return ``True`` if the wall-clock ``now`` sits inside the day window.
@@ -272,7 +272,7 @@ def is_day(
 
     Args:
         weather: The :class:`apps.weather.models.WeatherSnapshot` or
-            :class:`apps.weather.models.ForecastPointWeather` to evaluate.
+            :class:`apps.weather.models.ForecastCellWeather` to evaluate.
         now: The reference instant (typically ``timezone.now()``).
 
     Returns:
@@ -291,7 +291,7 @@ class WeatherDisplay(TypedDict):
     + weather-band stack.
     """
 
-    weather: "WeatherSnapshot | ForecastPointWeather"
+    weather: "WeatherSnapshot | ForecastCellWeather"
     bucket: str
     is_day: bool
     time_of_day: str  # "day" or "night" — pre-computed for template clarity.
@@ -306,7 +306,7 @@ class WeatherDisplay(TypedDict):
 
 
 def build_weather_display(
-    weather: "WeatherSnapshot | ForecastPointWeather | None",
+    weather: "WeatherSnapshot | ForecastCellWeather | None",
     now: datetime.datetime,
 ) -> WeatherDisplay | None:
     """
@@ -317,7 +317,7 @@ def build_weather_display(
     ``time_of_day`` here (rather than via template tags) to keep the
     partial dumb — it only emits attributes it is handed. Accepts either a
     ``WeatherSnapshot`` (region bulletin header) or a
-    ``ForecastPointWeather`` row (favourite forecast panel, SNOW-417) — both
+    ``ForecastCellWeather`` row (favourite forecast panel, SNOW-417) — both
     expose ``weather_code``/``sunrise``/``sunset``, plus
     ``temperature_2m_max``/``temperature_2m_min``/``snowfall_sum``
     (SNOW-571), read via ``getattr(..., None)`` rather than a direct
@@ -387,7 +387,7 @@ class ForecastPanel(TypedDict):
 
 
 def build_point_forecast_panel(
-    snapshots: list["ForecastPointWeather"], now: datetime.datetime
+    snapshots: list["ForecastCellWeather"], now: datetime.datetime
 ) -> ForecastPanel | None:
     """
     Build the template context for the multi-day point-forecast panel.
@@ -397,11 +397,11 @@ def build_point_forecast_panel(
     day strip and expandable hourly detail need: hi/lo temperature,
     snowfall total, derived freezing level, and that day's hourly series
     (empty list when the row carries none — near-term days only, see
-    ``ForecastPointWeather.hourly_series``).
+    ``ForecastCellWeather.hourly_series``).
 
     Args:
         snapshots: The forecast window for one point, ordered chronologically
-            (e.g. via ``ForecastPointWeather.objects.forecast_for_point``).
+            (e.g. via ``ForecastCellWeather.objects.forecast_for_point``).
         now: The reference instant for each day's day/night icon decision.
 
     Returns:
@@ -449,14 +449,14 @@ class PointWeatherDay(TypedDict):
 
 
 def build_point_weather_days(
-    rows: list["ForecastPointWeather"], now: datetime.datetime
+    rows: list["ForecastCellWeather"], now: datetime.datetime
 ) -> dict[str, PointWeatherDay]:
     """
     Project a forecast window into the map weather layer's ``days`` dict.
 
     The single place both ``forecast_weather_geojson`` (public,
     resort-anchored points) and ``favourites_geojson`` (private,
-    favourite-anchored points) turn ``ForecastPointWeather`` rows into
+    favourite-anchored points) turn ``ForecastCellWeather`` rows into
     the payload shape, so the two endpoints cannot drift on icon or
     label derivation.
 

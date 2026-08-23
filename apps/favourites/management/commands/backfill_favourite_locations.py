@@ -2,7 +2,7 @@
 
 One-shot backfill for SNOW-704. Every ``Favourite`` created before that
 ticket stores its own ``latitude``/``longitude``/``elevation`` and points
-straight at a ``ForecastPoint``; this mints the ``Location`` each one *is*
+straight at a ``ForecastCell``; this mints the ``Location`` each one *is*
 and repoints the FK, so weather is reached through
 ``location.forecast_cell`` from then on.
 

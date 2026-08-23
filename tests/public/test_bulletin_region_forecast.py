@@ -26,8 +26,8 @@ from django.utils import timezone
 
 from apps.regions.models import MicroRegion
 from tests.factories import (
-    ForecastPointFactory,
-    ForecastPointWeatherFactory,
+    ForecastCellFactory,
+    ForecastCellWeatherFactory,
     LocationFactory,
     MicroRegionFactory,
 )
@@ -62,13 +62,13 @@ def _anchored_region(with_weather: bool = True) -> MicroRegion:
 
     Args:
         with_weather: Whether to write a forward window of
-            ``ForecastPointWeather`` rows for the cell.
+            ``ForecastCellWeather`` rows for the cell.
 
     Returns:
         The MicroRegion.
 
     """
-    cell = ForecastPointFactory.create()
+    cell = ForecastCellFactory.create()
     region = MicroRegionFactory.create(
         centre={"lat": 46.1, "lon": 7.4},
         centroid_location=LocationFactory.create(
@@ -78,8 +78,8 @@ def _anchored_region(with_weather: bool = True) -> MicroRegion:
     if with_weather:
         today = timezone.localdate()
         for offset in range(3):
-            ForecastPointWeatherFactory.create(
-                forecast_point=cell, valid_for_date=today + timedelta(days=offset)
+            ForecastCellWeatherFactory.create(
+                forecast_cell=cell, valid_for_date=today + timedelta(days=offset)
             )
     return region
 

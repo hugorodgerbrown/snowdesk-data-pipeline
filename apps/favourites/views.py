@@ -90,7 +90,7 @@ from apps.favourites.services import (
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
 from apps.regions.models import Resort
-from apps.weather.models import ForecastPointWeather
+from apps.weather.models import ForecastCellWeather
 from apps.weather.services.weather_display import (
     build_point_forecast_panel,
     build_point_weather_days,
@@ -180,7 +180,7 @@ def _point_forecast_panel(
 ) -> tuple["ForecastPanel | None", datetime.datetime | None]:
     """Return the multi-day point forecast panel for a favourite, or None.
 
-    Queries the forward-looking ``ForecastPointWeather`` window for the
+    Queries the forward-looking ``ForecastCellWeather`` window for the
     favourite's ``forecast_point`` (today onwards, capped at
     ``POINT_FORECAST_DAYS`` rows) and builds the panel context via
     ``build_point_forecast_panel``. Deliberately does **not** fall back to
@@ -204,7 +204,7 @@ def _point_forecast_panel(
 
     """
     snapshots = list(
-        ForecastPointWeather.objects.forecast_for_point(
+        ForecastCellWeather.objects.forecast_for_point(
             favourite.forecast_point, timezone.localdate()
         )[:POINT_FORECAST_DAYS]
     )
@@ -626,7 +626,7 @@ def _favourite_card_context(
     When ``region`` is ``None`` (the pin falls outside every known
     boundary), the card renders a "no bulletin coverage here" note
     instead. The point's own forecast comes from ``_point_forecast_panel``,
-    which returns ``None`` until at least one ``ForecastPointWeather`` row
+    which returns ``None`` until at least one ``ForecastCellWeather`` row
     has been fetched for the point (empty "coming soon" state).
 
     When a region and today's default bulletin both resolve, also builds
@@ -913,8 +913,8 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     empty ``days`` dict, not an error).
 
     One extra bulk query when the flag is active — ``select_related`` on
-    ``forecast_point`` plus a single ``ForecastPointWeather`` fetch keyed by
-    ``forecast_point_id__in=…``, never one query per favourite.
+    ``forecast_point`` plus a single ``ForecastCellWeather`` fetch keyed by
+    ``forecast_cell_id__in=…``, never one query per favourite.
 
     The response is marked ``Cache-Control: private, no-store`` — the
     inverse of the public ``resorts_geojson`` layer — since this payload is
@@ -936,13 +936,13 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
         Favourite.objects.for_user(request.user).select_related("forecast_point")
     )
 
-    rows_by_point: dict[int, list[ForecastPointWeather]] = defaultdict(list)
+    rows_by_point: dict[int, list[ForecastCellWeather]] = defaultdict(list)
     if weather_layer_active:
         point_ids = [favourite.forecast_point_id for favourite in favourites]
-        for row in ForecastPointWeather.objects.filter(
-            forecast_point_id__in=point_ids
+        for row in ForecastCellWeather.objects.filter(
+            forecast_cell_id__in=point_ids
         ).iterator():
-            rows_by_point[row.forecast_point_id].append(row)
+            rows_by_point[row.forecast_cell_id].append(row)
 
     now = timezone.now()
     features: list[dict[str, Any]] = []
