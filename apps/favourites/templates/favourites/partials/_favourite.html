@@ -47,30 +47,21 @@ No `value` slot: that column is for measured quantities (downloads' size)
 and a favourite has none. Leaving it out is the point — a column that
 means "size" on one panel and something else on another means nothing.
 
-THE DISCLOSURE IS ON BY DEFAULT, and two callers turn it off. That is the
+THE DISCLOSURE IS ON BY DEFAULT, and one caller turns it off. That is the
 right way round because of who this row is answered TO: favourite_rename
 returns it to the account page, which swaps it straight back into the row
 it came from, and a row that lost its chevron on rename would be a row
-that quietly stopped expanding. The map sheet suppresses it (SNOW-658,
+that quietly stopped expanding. The map sheet is the exception (SNOW-658,
 Hugo's design: a pin's detail is reached by tapping the pin, which is
-where that user already is) and so does the detail card's own copy, where
-a control expanding the card you are already looking at would be circular.
+where that user already is).
 
 Context:
     favourite       : Favourite — the saved pin to render.
     hide_disclosure : bool, optional — drop the trailing chevron. Passed
-                      by _favourite_list_map.html and _favourite_card.html;
-                      see above.
-    row_id          : str, optional — override the row's DOM id. Only
-                      _favourite_card.html passes one, because its copy of
-                      the row can sit on the same page as the list's copy
-                      of the same pin, and two elements cannot share an id.
-                      Every control in the row addresses whichever id it
-                      was given, so the card's controls act on the card's
-                      row and the list's on the list's.
+                      by _favourite_list_map.html; see above.
 {% endcomment %}
 {% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
-    {% firstof row_id "favourite-"|add:uuid as row_dom_id %}
+    {% firstof "favourite-"|add:uuid as row_dom_id %}
     {% blocktrans trimmed with when=when asvar row_meta %}Saved {{ when }}{% endblocktrans %}
     {% if favourite.region %}
         {% blocktrans trimmed with region=favourite.region.name when=when asvar row_meta %}{{ region }} · saved

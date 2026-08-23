@@ -27,14 +27,25 @@ Content:
      altitude annotation relative to favourite.elevation — every problem
      the bulletin publishes is always shown; the annotation only
      highlights relevance, it never suppresses a card.
-  5. Rename / delete controls — the same row the lists render
-     (_favourite.html), so a favourite is managed identically wherever it
-     is met. Two things are passed to fit it here: ``hide_disclosure``,
-     since a control expanding the card you are already reading would be
-     circular, and its own ``row_id`` — on the account page this card is
-     expanded UNDER the list's row for the same pin, and two elements
-     cannot share an id. It is a one-item ``<ul>`` because the row is a
-     ``<li>``.
+THE CARD SHOWS A FAVOURITE; IT DOES NOT MANAGE ONE. It carried a fifth
+section until SNOW-711 — "Rename / delete controls", a copy of the list's
+own row (_favourite.html). That made sense while the card appeared in
+#favourite-card-panel at the TOP of the account page, detached from the row
+that opened it: the card was the only place its own pin's controls were
+within reach.
+
+SNOW-711 moved the card UNDER its row, and the section became a second copy
+of that row sitting fourteen pixels below the first — same label, same meta
+line, same pencil and trash. Hugo, seeing it: "There is a rogue repeat of
+the row?" It was, and giving the copy its own id (which this file did for
+one commit) fixed the id collision while leaving the duplication on screen.
+
+So managing a favourite belongs to the surface that LISTS it — the account
+row and the map row, both of which are one row per pin. The same split the
+map already had: its row manages, its card reads. On the standalone
+favourite_detail.html the controls are not replaced by anything, and are
+not missed: that page has never loaded htmx, so the rename form and Remove
+button it inherited here were inert from the day SNOW-507 shipped them.
 
 Context:
     favourite            : Favourite — the pin being detailed.
@@ -141,15 +152,4 @@ Context:
             {% endfor %}
         </div>
     {% endif %}
-
-    {# 5. Rename / delete controls #}
-    <div class="mt-4 pt-4 border-t border-border">
-        {# The uuid is stringified FIRST: the ``add`` filter given a UUID   #}
-        {# object falls through both of its branches and returns "".        #}
-        {% with uuid=favourite.uuid|stringformat:"s" %}
-            <ul class="flex flex-col">
-                {% include "favourites/partials/_favourite.html" with favourite=favourite hide_disclosure=True row_id="favourite-card-row-"|add:uuid %}
-            </ul>
-        {% endwith %}
-    </div>
 </div>

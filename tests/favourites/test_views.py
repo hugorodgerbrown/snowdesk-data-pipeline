@@ -917,14 +917,14 @@ class TestFavouriteCard:
         assert "My spot" in content
         assert "1834" in content
 
-    def test_its_row_is_the_shared_row_under_its_own_id(self, client: Client) -> None:
-        """The card's rename/delete controls are the shared row (SNOW-711).
+    def test_it_carries_no_row_of_its_own(self, client: Client) -> None:
+        """The card shows a favourite; it does not manage one (SNOW-711).
 
-        Under its OWN id, and with no disclosure. On /account/ this card is
-        expanded under the list's row for the same pin, so a shared id
-        would put two elements on the page answering to it — and the
-        card's Remove would empty whichever came first. A chevron here
-        would expand the card the user is already reading.
+        It rendered a copy of the list's row until SNOW-711 put the card
+        UNDERNEATH that very row, at which point the copy read as the same
+        row printed twice. Managing a pin belongs to the surface that
+        lists it, so the card carries no row, no rename control and no
+        Remove — the ones fourteen pixels above it already do that job.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -932,12 +932,11 @@ class TestFavouriteCard:
 
         content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
 
-        assert f'id="favourite-card-row-{favourite.uuid}"' in content
-        assert f'id="favourite-{favourite.uuid}"' not in content
-        assert f'hx-target="#favourite-card-row-{favourite.uuid}"' in content
-        assert "data-row-disclosure" not in content
-        # It is a real list item, so it is wrapped in a list.
-        assert "<ul" in content
+        # The card still names the pin — in its heading, not in a row.
+        assert "My spot" in content
+        assert "data-row-label" not in content
+        assert "data-row-rename" not in content
+        assert f"{favourite.uuid}/delete" not in content
 
     def test_unnamed_favourite_falls_back_to_coordinates(self, client: Client) -> None:
         """An unnamed favourite's title falls back to formatted coordinates."""

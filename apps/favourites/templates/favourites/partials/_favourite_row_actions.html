@@ -30,10 +30,16 @@ Remove stays a plain HTMX form — the delete endpoint returns an empty
 200, so ``hx-target``/``hx-swap`` on the row's own id removes exactly that
 row with no JS involved.
 
-``row_target`` rather than a hardcoded ``#favourite-<uuid>``: the detail
-card renders this row a second time, under its own id, and can sit on the
-same page as the list's copy of the same pin. Each copy's Remove has to
-address the copy it is part of.
+``row_target`` rather than a hardcoded ``#favourite-<uuid>``: the row's id
+is _favourite.html's to decide, and an actions partial that rebuilt the
+same string from the uuid would be a second place to change if it ever
+does. The one caller passes ``#<the row's id>``; this file just points at
+whatever it was handed.
+
+(For one commit there was a second reason — the detail card rendered this
+row again under its own id. That copy is gone: it sat fourteen pixels
+below the list's identical row once SNOW-711 moved the card underneath it.
+See _favourite_card.html.)
 
 Both aria-labels name the row, because "Rename" alone names nothing with
 a list of rows on screen. They interpolate ``label`` —
