@@ -1547,6 +1547,53 @@ UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
             "actions_template": "includes/_map_downloads_row_actions.html",
         },
     },
+    {
+        # SNOW-711. The account page's favourite row is the only one with
+        # a disclosure: the map panels reach a pin's detail by tapping the
+        # pin, which is a control they already have and this page has not.
+        "caption": "Row with a trailing disclosure — expands under itself",
+        "context": {
+            "label": "Cabane des Dix",
+            "meta": "Val des Dix · saved 3 Feb 2026",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+            "disclosure_template": "includes/_row_disclosure.html",
+            "disclosure_href": "#",
+            "disclosure_panel_id": "component-library-row-disclosure-panel",
+            "disclosure_label": "Show details for Cabane des Dix",
+        },
+    },
+)
+
+
+# Row disclosure (SNOW-711) ----------------------------------------------------
+# The UGC row's trailing expand control, rendered on its own so the glyph
+# and its 44×44 target are visible outside a row. Both states are shown:
+# `aria-expanded` is flipped by the owning surface's module, and the
+# chevron's rotation is a `group-aria-expanded:` variant of that one
+# attribute, so a broken rotation is a broken state read.
+
+ROW_DISCLOSURE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Collapsed — the state every row renders in",
+        "context": {
+            "disclosure_href": "#",
+            "disclosure_hx_get": "#",
+            "disclosure_panel_id": "component-library-disclosure-collapsed",
+            "disclosure_label": "Show details for Cabane des Dix",
+        },
+    },
+    {
+        # Rendered by the library only. A real row starts collapsed and is
+        # expanded by its module, which this page does not load.
+        "caption": "Expanded — chevron rotated by aria-expanded",
+        "context": {
+            "disclosure_href": "#",
+            "disclosure_hx_get": "#",
+            "disclosure_panel_id": "component-library-disclosure-expanded",
+            "disclosure_label": "Hide details for Cabane des Dix",
+            "disclosure_expanded": True,
+        },
+    },
 )
 
 

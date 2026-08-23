@@ -1,0 +1,38 @@
+{% comment %}
+templates/includes/_icon_chevron.html — the expand glyph: a chevron
+pointing down (SNOW-711).
+
+One source for one mark, the same reason the pencil and the trash beside
+it are partials. Its caller is includes/_row_disclosure.html, the UGC
+row's trailing expand control.
+
+It points DOWN at rest and is rotated 180° by its own control when the
+row is expanded, so the mark always points at where the content will
+appear (or at the row it will fold back into). That is the meaning
+`includes/_collapsible_panel.html` and static/js/map_controls_collapse.js
+already give a chevron in this codebase: expand in place, not navigate
+away. An arrow would say the opposite — the "Details →" link this
+replaced said exactly that, and led somewhere.
+
+Stroke width 2, matching every other glyph in this codebase — see
+includes/_icon_pencil.html's own note.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17, the
+            design's row-action glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M6 9.5 12 15.5l6-6" />
+</svg>

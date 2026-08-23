@@ -57,6 +57,7 @@ from apps.public._component_fixtures import (
     RESORT_FACTS_VARIANTS,
     RESORT_META_ROW_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
+    ROW_DISCLOSURE_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
     SHEET_HEADER_VARIANTS,
@@ -1260,11 +1261,35 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "and right-aligned icon actions with the trash always last. "
             "Rows are not cards — a hairline separates them and nothing "
             "boxes them. A renameable row edits its label in place. Serves "
-            "both a server-side loop and a JS-cloned <template>."
+            "both a server-side loop and a JS-cloned <template>. SNOW-711 "
+            "adds an optional trailing disclosure (see Row disclosure "
+            "below), outside the action cluster because it is not an "
+            "action, and puts the account page's favourite rows on this "
+            "same row — the last surface still managing user data with an "
+            "always-visible text field and an underlined 'Remove'."
         ),
         kind="components",
         partial="includes/_ugc_panel_row.html",
         variants=UGC_PANEL_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="row-disclosure",
+        label="Row disclosure",
+        description=(
+            "The chevron at a UGC row's trailing edge (SNOW-711), filling "
+            "includes/_ugc_panel_row.html's disclosure_template slot: it "
+            "expands that row's own detail underneath it. A chevron rather "
+            "than an arrow because it expands in place — the meaning "
+            "_collapsible_panel.html already gives the mark — and a real "
+            "<a href> rather than a button, so it navigates to the same "
+            "detail with no JavaScript. Its one caller is the account "
+            "page's favourite row, where it replaced a 'Details →' text "
+            "link sitting beside two icon controls."
+        ),
+        kind="components",
+        partial="includes/_row_disclosure.html",
+        variants=ROW_DISCLOSURE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

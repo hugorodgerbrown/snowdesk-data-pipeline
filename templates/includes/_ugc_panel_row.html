@@ -18,6 +18,9 @@ one anatomy, five slots, always in this order:
   action  right-aligned icon controls, TRASH ALWAYS LAST. Remove is the
           only action every panel has; favourites and a renameable
           download add a pencil before it.
+  disclosure
+          an optional expand control at the row's trailing edge, OUTSIDE
+          the action cluster. See the note on `disclosure_template`.
 
 Rows are not cards. There are no boxes inside a panel — each row draws a
 hairline (`border-t`) and nothing else, so a list reads as a list.
@@ -93,6 +96,20 @@ Parameters (passed via {% include … with … %}):
                 row's icon controls. Receives this include's full
                 context, so a server row's own object is in scope for
                 the action's hx-post URLs. Trash last, always.
+  disclosure_template (string, optional) — template path rendering a
+                trailing expand control (includes/_row_disclosure.html is
+                the one there is), likewise receiving this include's full
+                context. Rendered AFTER the actions span, and deliberately
+                outside it: "trash always last" is a rule about the ACTION
+                cluster, and a disclosure is not an action. It changes
+                nothing — it reveals what the row already is — so it sits
+                at the row's trailing edge, where a list-row disclosure
+                belongs, rather than competing with Rename and Remove for
+                a place in that cluster. A row that passes none renders no
+                element at all rather than an empty one: the map panels
+                have no disclosure (SNOW-658 removed the "Details →" link
+                — a pin's page is reached by tapping its pin), and an
+                empty flex child would still take the row's gap.
 {% endcomment %}
 <li
     class="flex items-center gap-2 border-t border-border py-2.25"
@@ -169,4 +186,5 @@ Parameters (passed via {% include … with … %}):
     {% if actions_template %}
         <span class="flex shrink-0 items-center">{% include actions_template %}</span>
     {% endif %}
+    {% if disclosure_template %}{% include disclosure_template %}{% endif %}
 </li>

@@ -409,3 +409,86 @@ class TestUgcPanelSkeleton:
             body = _panel_body(home_html, template_id)
             assert "text-lg font-semibold text-text-1" in body
             assert "text-sm font-semibold text-text-1" not in body
+
+
+class TestRowDisclosureSlot:
+    """The row's optional trailing disclosure (SNOW-711).
+
+    The account page's favourite row expands its own detail card
+    underneath itself, which no map panel does — a pin's page is reached
+    by tapping the pin. That makes the disclosure a slot rather than a
+    fixture of the row, and these tests pin the two things a slot has to
+    get right: it renders where the design puts it, and a row that has
+    none renders nothing at all in its place.
+    """
+
+    def test_a_row_without_one_renders_no_element(self) -> None:
+        """No disclosure passed, no element — not an empty one.
+
+        An empty flex child still takes the row's ``gap-2``, so the three
+        map panels' rows would each grow 8px of trailing whitespace for a
+        control they do not have.
+        """
+        row = render_to_string(
+            "includes/_ugc_panel_row.html",
+            {
+                "label": "Verbier",
+                "actions_template": "includes/_map_downloads_row_actions.html",
+            },
+        )
+
+        assert "data-row-disclosure" not in row
+
+    def test_the_disclosure_follows_the_action_cluster(self) -> None:
+        """It sits after the trash, and outside the actions span.
+
+        "Trash always last" is a rule about the ACTION cluster, and a
+        disclosure is not an action — it reveals what the row already is
+        rather than changing it. So the rule still holds inside the
+        cluster, and the disclosure sits past it at the row's trailing
+        edge, where a list-row disclosure belongs.
+        """
+        row = render_to_string(
+            "includes/_ugc_panel_row.html",
+            {
+                "label": "Verbier",
+                "actions_template": "includes/_map_downloads_row_actions.html",
+                "disclosure_template": "includes/_row_disclosure.html",
+                "disclosure_href": "/favourites/x/",
+                "disclosure_panel_id": "panel-x",
+                "disclosure_label": "Show details for Verbier",
+            },
+        )
+
+        trash = row.index("M4 7h16")  # the bin's lid — includes/_icon_trash.html
+        disclosure = row.index("data-row-disclosure")
+        assert trash < disclosure
+        # Outside the actions span, not the last child inside it: the span
+        # closes before the disclosure opens.
+        assert "</span>" in row[trash:disclosure]
+
+    def test_the_control_is_a_link_before_it_is_a_disclosure(self) -> None:
+        """href first, hx-get second — it works with no JavaScript.
+
+        The row it replaced carried a "Details →" link to the same page,
+        and losing the plain navigation would be a real regression for a
+        control that is now a glyph.
+        """
+        control = render_to_string(
+            "includes/_row_disclosure.html",
+            {
+                "disclosure_href": "/favourites/abc/",
+                "disclosure_hx_get": "/favourites/partials/abc/card/",
+                "disclosure_panel_id": "favourite-panel-abc",
+                "disclosure_label": "Show details for Verbier",
+            },
+        )
+
+        assert 'href="/favourites/abc/"' in control
+        assert 'hx-get="/favourites/partials/abc/card/"' in control
+        assert 'hx-target="#favourite-panel-abc"' in control
+        # Closed at rest, and naming the panel it opens.
+        assert 'aria-expanded="false"' in control
+        assert 'aria-controls="favourite-panel-abc"' in control
+        # The same 44x44 target as the pencil and the trash beside it.
+        assert "hover-affordance" in control
