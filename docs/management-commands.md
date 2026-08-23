@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, import_resorts, prune_forecast_points, sync_waffle_flags, fixture builders, bootstrap-dev-db
+description: Commands — fetch_bulletins, fetch_weather, import_resorts, import_locations, prune_forecast_points, sync_waffle_flags, fixture builders
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -313,6 +313,69 @@ After applying it locally, refresh the seed fixture with
 `dump_resorts_fixture --commit` so fresh worktrees and CI start from the
 same data. Against staging/production, run it by hand — it is not part of
 any deploy.
+
+### `import_locations` — reconcile the curated location estate
+
+Locations are curated data on exactly the `import_resorts` conventions:
+uuid-keyed, `--mode add/update/delete`, read-only unless `--commit`. It
+reads **two** sheets, both under `apps/locations/data/`:
+
+| File | One row per | Keyed by |
+|---|---|---|
+| `locations.tsv` | a place | `uuid` |
+| `resort_locations.tsv` | a resort-to-location link | `(resort_uuid, location_uuid)` |
+
+Two sheets rather than extra columns on the resort sheet, because
+flattening would cap how many locations a resort can have and force Mont
+Fort to be repeated once per resort — the duplication `Location` exists to
+remove. One command applies both in one transaction: a link is meaningless
+without its location, and a half-applied run would leave links dangling.
+
+**`delete` is scoped to the curated estate** — the sweep runs over
+`Location.objects.named()` only. Anonymous rows minted from favourites and
+observations are not the sheet's to own, and deleting them would destroy
+user data.
+
+**There is no elevation column.** Elevation is always derived
+([`docs/locations.md`](locations.md)); `link_location_forecast_cells`
+resolves it. That makes it a **check on the curation**: compare a resolved
+height against the resort sheet's `base_elevation_m` / `top_elevation_m`
+before committing, because a location whose height is nowhere near the
+expected figure has been mis-pinned.
+
+Like `import_resorts`, deliberately **not** wired into `build.sh` — these
+rows are editable data owned by each environment's database.
+
+```bash
+uv run python manage.py import_locations                    # preview everything
+uv run python manage.py import_locations -v2                # row-level diff
+uv run python manage.py import_locations --commit           # apply
+uv run python manage.py import_locations --mode update --commit  # fields only
+```
+
+### `link_location_forecast_cells` — resolve each Location's height and cell
+
+The companion to `import_locations`, in the role
+`link_resort_forecast_points` plays for `import_resorts`: the import writes
+what a curator typed, this resolves the two fields needing an external call.
+
+Per unresolved location it makes **two** Open-Meteo calls. `fetch_elevation`
+gives the location's *own* height — deliberately not the forecast cell's
+`elevation`, which is the representative height of whichever pin minted the
+cell and is shared by everything in it. Mont Fort must carry 3328 m, not the
+cell's average. Then `resolve_forecast_point` reuses or creates the shared
+cell, which is what puts the location into `ForecastPoint.objects.active()`
+and so into the scheduled `fetch_weather` point pass — no scheduler change.
+
+Both calls are made even in a dry run, so the reported outcome is real; only
+the writes are gated. A per-location failure is logged and counted, never
+aborts the batch, and makes the command exit non-zero.
+
+```bash
+uv run python manage.py link_location_forecast_cells             # preview
+uv run python manage.py link_location_forecast_cells --commit    # persist
+uv run python manage.py link_location_forecast_cells --commit --delay 2
+```
 
 ### `link_region_centroid_locations` — anchor each region to a Location
 
