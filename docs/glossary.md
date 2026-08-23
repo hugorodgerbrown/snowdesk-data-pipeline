@@ -89,6 +89,20 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Start / finish markers | The two symbols at a Route's ends on the map — a filled dot in the route colour where the track starts, a checkered flag where it ends. Shown from zoom 10, matching the resort labels. A closed track (an out-and-back) gets the flag alone, since both ends are the same place | `static/js/route_markers_core.js`; the `routes-endpoints` layer in `static/js/map.js` |
 | Ascent / descent | A Route's total climb and total drop in metres, both positive magnitudes, measured independently at ingest on the full-resolution track and never netted against each other. Null — not zero — when the source GPX carried no elevation at all | `Route.ascent_m` / `Route.descent_m`; `_total_ascent_descent_m` in `apps/routes/services/gpx.py` |
 
+## Coordinates and locations
+
+Which coordinate on which model is exact, approximate or derived:
+[`docs/locations.md`](locations.md).
+
+| Term | Meaning | Code |
+|------|---------|------|
+| Fetch cell | A `ForecastPoint` — the quantised cell at which Open-Meteo is called, **not a place**. Its `latitude`/`longitude` are whichever pin minted the cell; identity is the `(lat_cell, lon_cell, elevation_band)` triple. Renamed `ForecastCell` by SNOW-703 | `ForecastPoint` in `apps/weather/models.py`; `docs/decisions/forecast-point-quantisation.md` |
+| Reuse threshold | 750 m horizontal / 150 m vertical — how close a pin must be to share an existing fetch cell rather than mint its own, so a pin near a grid boundary still shares the neighbouring row | `REUSE_HORIZONTAL_THRESHOLD_M` / `REUSE_ELEVATION_THRESHOLD_M` in `apps/weather/services/forecast_points.py` |
+| Referent | Anything holding an FK to a fetch cell. A cell with none falls out of `active()`, stops being fetched, and is deleted **with its stored weather** by `prune_forecast_points` | `ForecastPointQuerySet.active()` / `.inactive()` in `apps/weather/models.py` |
+| Report location vs raw fix | On a field observation, `latitude`/`longitude` is where the report says it happened (possibly dragged); `gps_latitude`/`gps_longitude` is the device's own fix. The gap is precision, never anonymisation | `FieldObservation` in `apps/observations/models.py` |
+| Region centroid | `MicroRegion.centre` — the polygon's centroid, representing the region rather than any place anyone goes. Region weather means "somewhere in this region" | `centre` on `MicroRegion` / `SubRegion` / `MajorRegion`; computed by `refresh_eaws_fixtures` |
+| Village coordinate | `Resort.latitude`/`longitude` — the geocoder's hit for the resort's *name*, which lands in the village (Verbier 1436 m against terrain to 3330 m), not on the terrain | `Resort` in `apps/regions/models.py` |
+
 ## Terrain
 
 | Term | Meaning | Code |

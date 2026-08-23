@@ -32,13 +32,13 @@ timestamp untouched.)
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from django.core.cache import cache
 from django.db.models import Count, Max, QuerySet
 from rapidfuzz import fuzz, process
 
+from apps.core.geo import haversine_km
 from apps.mcp_server.normalise import normalise
 from apps.public.api import COUNTRY_NAMES
 from apps.regions.models import MajorRegion, MicroRegion, RegionAlias, Resort
@@ -62,12 +62,6 @@ _PROVIDER_BY_COUNTRY: dict[str, str] = {
     "IT": "ALBINA",
     "FR": "METEOFRANCE",
 }
-
-# Approximate mean earth radius in kilometres — good to five significant
-# figures at the mid-latitudes Snowdesk covers, which is well below the
-# accuracy floor of MicroRegion.centre (a single lon/lat pair per region,
-# so distance to any specific point is already a coarse estimate).
-_EARTH_RADIUS_KM = 6371.0088
 
 # How long a built candidate pool stays in cache once computed. The cache
 # *key* already changes whenever underlying data changes (see
@@ -384,35 +378,6 @@ def _match_exact_region_id(
     return None
 
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Return the great-circle distance in kilometres between two lat/lon pairs.
-
-    Pure-Python haversine (no PostGIS, no Shapely) — mirrors the same
-    dependency-free precedent the request-path point-in-polygon lookup
-    established. Accuracy is ~0.5% at continental distances, far better
-    than the ~10 km scale of a MicroRegion centroid.
-
-    Args:
-        lat1: Latitude of point one, in degrees.
-        lon1: Longitude of point one, in degrees.
-        lat2: Latitude of point two, in degrees.
-        lon2: Longitude of point two, in degrees.
-
-    Returns:
-        The great-circle distance in kilometres.
-
-    """
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    )
-    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
-
-
 def find_places_near(
     lat: float, lon: float, radius_km: float, limit: int = 10
 ) -> list[dict[str, Any]]:
@@ -448,7 +413,7 @@ def find_places_near(
             centre_lon, int | float
         ):
             continue
-        distance = _haversine_km(lat, lon, float(centre_lat), float(centre_lon))
+        distance = haversine_km(lat, lon, float(centre_lat), float(centre_lon))
         if distance > radius_km:
             continue
         provider = _PROVIDER_BY_COUNTRY.get(region.subregion.major.country)

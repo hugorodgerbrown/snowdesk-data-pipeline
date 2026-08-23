@@ -24,7 +24,8 @@ import pytest
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.observations.models import FieldObservation, _haversine_km
+from apps.core.geo import haversine_km
+from apps.observations.models import FieldObservation
 from tests.factories import (
     FieldObservationFactory,
     MicroRegionFactory,
@@ -301,13 +302,14 @@ class TestNearPointForDay:
     def test_boundary_point_is_included(self) -> None:
         """A point at exactly the radius edge is included (inclusive boundary).
 
-        The radius passed in is derived from ``_haversine_km`` applied to
-        the same two points the queryset method will compare against, so
-        the comparison is an exact float equality (``distance <= radius``
-        with ``distance == radius``) rather than a fragile near-miss.
+        The radius passed in is derived from ``apps.core.geo.haversine_km``
+        applied to the same two points the queryset method will compare
+        against, so the comparison is an exact float equality
+        (``distance <= radius`` with ``distance == radius``) rather than a
+        fragile near-miss.
         """
         edge_lat, edge_lon = 46.19, self.CENTRE_LON
-        exact_radius_km = _haversine_km(
+        exact_radius_km = haversine_km(
             self.CENTRE_LAT, self.CENTRE_LON, edge_lat, edge_lon
         )
         edge = FieldObservationFactory.create(
