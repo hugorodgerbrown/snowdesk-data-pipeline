@@ -382,48 +382,37 @@
    * the sheet's body in place, so there is no reason to hide the click
    * from every other document-level listener.
    *
-   * Online-only, matching the manage page's own rename (a plain HTMX post)
-   * and this module's resort-unfavourite path — creates are queued for
-   * offline replay, edits to existing rows are not.
+   * Online-only, matching the account page's own rename and this module's
+   * resort-unfavourite path — creates are queued for offline replay, edits
+   * to existing rows are not.
+   *
+   * SNOW-711: the POST itself is window.pwaRowRenameCommit's, shared with
+   * the routes panel and the account page. What is left here is the part
+   * that is this panel's own — which hook carries the uuid, where the CSRF
+   * token lives, and what to do once the write lands.
    *
    * @param {MouseEvent} event
    * @returns {boolean} Whether this click was a rename, so the caller
    *   stops rather than also testing the add CTA.
    */
   function handleRenameClick(event) {
-    const row = window.pwaInlineRename?.rowFor(event.target);
-    if (!row) return false;
-    if (!RENAME_URL_TEMPLATE) return true;
-
-    const button = row.querySelector('[data-favourite-rename]');
-    const favUuid = button ? button.getAttribute('data-favourite-rename') : '';
-    if (!favUuid) return true;
-
-    window.pwaInlineRename.begin(row, function (name) {
-      fetch(RENAME_URL_TEMPLATE.replace('__UUID__', favUuid), {
-        method: 'POST',
-        headers: {
-          // favourite_rename is @require_htmx; this is a plain fetch.
-          'HX-Request': 'true',
-          'X-CSRFToken': getCsrfToken(),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ name: name }).toString(),
-      })
-        .then(function (resp) {
-          if (!resp.ok) throw new Error('rename failed');
-          // Re-read the list rather than patch the row: the response is
-          // the MANAGE page's row partial, which is deliberately a
-          // different shape from the map's, so it cannot be swapped in
-          // here.
-          loadRows();
-          document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-        })
-        .catch(function () {
-          showToast(STRINGS['rename-failed']);
-        });
+    if (!window.pwaRowRenameCommit) return false;
+    return window.pwaRowRenameCommit.handleClick(event, {
+      uuidAttribute: 'data-favourite-rename',
+      urlTemplate: RENAME_URL_TEMPLATE,
+      csrfToken: getCsrfToken,
+      onCommitted: function () {
+        // Re-read the list rather than patch the row: the response is the
+        // ACCOUNT page's row partial, which carries a detail disclosure
+        // this panel's row deliberately has none of (a pin's page is
+        // reached by tapping the pin), so it cannot be swapped in here.
+        loadRows();
+        document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+      },
+      onFailed: function () {
+        showToast(STRINGS['rename-failed']);
+      },
     });
-    return true;
   }
 
   // SNOW-658: the overlay switch drives window.pwaFavouritesOverlay directly —

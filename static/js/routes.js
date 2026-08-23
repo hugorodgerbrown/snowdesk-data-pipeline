@@ -310,47 +310,38 @@
    *
    * Online-only, matching every other panel's rename.
    *
+   * SNOW-711: the POST itself is window.pwaRowRenameCommit's, shared with
+   * the favourites panel and the account page. What is left here is this
+   * panel's own share — which hook carries the uuid, where the CSRF token
+   * lives, and what to do once the write lands.
+   *
    * @param {MouseEvent} event
    * @returns {boolean} Whether this click was a rename, so the caller stops
    *   rather than also testing the add CTA.
    */
   function handleRenameClick(event) {
-    const row = window.pwaInlineRename?.rowFor(event.target);
-    if (!row) return false;
-    if (!RENAME_URL_TEMPLATE) return true;
-
-    const button = row.querySelector('[data-route-rename]');
-    const routeUuid = button ? button.getAttribute('data-route-rename') : '';
-    if (!routeUuid) return true;
-
-    window.pwaInlineRename.begin(row, function (name) {
-      fetch(RENAME_URL_TEMPLATE.replace('__UUID__', routeUuid), {
-        method: 'POST',
-        headers: {
-          // route_rename is @require_htmx; this is a plain fetch.
-          'HX-Request': 'true',
-          'X-CSRFToken': getCsrfToken(),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ name: name }).toString(),
-      })
-        .then(function (resp) {
-          if (!resp.ok) throw new Error('rename failed');
-          // Re-read the list rather than swap the response in: route_rename
-          // returns routes/partials/_route.html — the DEFAULT variant's row,
-          // deliberately a different shape from this panel's
-          // (_route_row_map.html) — so it cannot be swapped in here. That
-          // endpoint is left exactly as SNOW-685 shipped it: teaching it the
-          // ``?variant=`` parameter would buy one avoided refetch and put a
-          // second surface's concern into a create/rename endpoint, and
-          // favourites.js already re-reads for the same reason.
-          loadRows();
-        })
-        .catch(function () {
-          showToast(STRINGS['rename-failed']);
-        });
+    if (!window.pwaRowRenameCommit) return false;
+    return window.pwaRowRenameCommit.handleClick(event, {
+      uuidAttribute: 'data-route-rename',
+      urlTemplate: RENAME_URL_TEMPLATE,
+      csrfToken: getCsrfToken,
+      onCommitted: function () {
+        // Re-read the list rather than swap the response in: route_rename
+        // answers with routes/partials/_route.html — the row the DEFAULT
+        // variant renders, and after SNOW-711 the shared UGC row too, but
+        // rendered for a surface that swaps it into itself. This panel
+        // clones its own body on every open, so re-reading is both the
+        // cheaper move and the one that cannot leave two sources of truth
+        // about what the list holds. That endpoint is left exactly as
+        // SNOW-685 shipped it: teaching it a ``?variant=`` parameter would
+        // buy one avoided refetch and put a second surface's concern into
+        // a create/rename endpoint.
+        loadRows();
+      },
+      onFailed: function () {
+        showToast(STRINGS['rename-failed']);
+      },
     });
-    return true;
   }
 
   // ---------------------------------------------------------------------------

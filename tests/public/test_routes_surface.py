@@ -191,15 +191,21 @@ class TestRoutesScriptStaysOutsideTheMapBundle:
         """map_sheet.js and inline_rename.js must run before routes.js.
 
         routes.js calls ``window.MapSheet.attach`` at parse time, and reads
-        ``window.pwaInlineRename`` on a click. These are deferred classic
-        scripts, so document order is execution order — the first of those
-        would throw if its module had not run.
+        ``window.pwaInlineRename`` and ``window.pwaRowRenameCommit`` on a
+        click. These are deferred classic scripts, so document order is
+        execution order — the first of those would throw if its module had
+        not run.
         """
         client.force_login(UserFactory.create())
         rendered = _SCRIPT_SRC_RE.findall(_home(client))
         routes_at = rendered.index("routes.js")
 
-        for name in ("map_sheet.js", "inline_rename.js", "i18n_strings.js"):
+        for name in (
+            "map_sheet.js",
+            "inline_rename.js",
+            "row_rename_commit.js",
+            "i18n_strings.js",
+        ):
             assert rendered.index(name) < routes_at, (
                 f"{name} loads after routes.js, but routes.js depends on it."
             )
