@@ -24,6 +24,32 @@ venv/
 env/
 node_modules/
 
+# Stray tox environments in the repository root. `toxworkdir` normally puts
+# these under .tox/, but a mis-set one writes a virtualenv named after each
+# tox env straight into the root instead — four of them (2 GB) accumulated
+# unnoticed, and because they are trees of third-party source they broke
+# `makemessages` and slowed every tool that walks the tree. Anchored with a
+# leading slash: a bare `test` or `lint` would match those names anywhere.
+# Generated from tox.ini's [testenv:*] sections — add a line when a new env
+# is added there.
+/audit/
+/audit-dev/
+/django-checks/
+/djangofmt/
+/docs-lint/
+/ds-lint/
+/e2e/
+/e2e-lint/
+/fmt/
+/i18n-lint/
+/js/
+/js-globals-lint/
+/lint/
+/migrations-lint/
+/mypy/
+/sast/
+/test/
+
 # Tailwind CLI build output (regenerated from static/css/main.css)
 static/css/output.css
 

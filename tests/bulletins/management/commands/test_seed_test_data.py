@@ -30,6 +30,7 @@ wires real MicroRegion FKs), so the commit tests load them first.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import date
 
 import pytest
@@ -37,6 +38,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
+from pytest_django import DjangoDbBlocker
 
 from apps.accounts.models import Account, Subscription
 from apps.bulletins.management.commands.seed_test_data import (
@@ -82,6 +84,32 @@ _EXPECTED_TOTAL = 178
 # detail-day bulletins. One BulletinGrouping is computed per bulletin.
 _EXPECTED_BULLETINS = 39
 _EXPECTED_MAP_DATE_GROUPS = 10
+
+
+@pytest.fixture(scope="class")
+def _regions(
+    django_db_setup: None,
+    django_db_blocker: DjangoDbBlocker,
+) -> Iterator[None]:
+    """Load the region reference data once per class, then clean the worker DB.
+
+    ``loaddata eaws_CH resorts`` costs ~0.4s, and it used to run per *test* —
+    around thirty times in this module alone. Class scope commits the rows
+    outside any test transaction, so each test's own writes still roll back
+    around them; the ``flush`` on teardown puts the worker database back to
+    empty for whatever runs next, which is what lets
+    ``TestUserSeedingWithoutRegion`` still observe a database with no
+    CH-4115 in it. Mirrors the ``_regions`` fixture in
+    ``test_seed_test_week.py``.
+    """
+    del django_db_setup
+    with django_db_blocker.unblock():
+        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+
+    yield
+
+    with django_db_blocker.unblock():
+        call_command("flush", interactive=False, verbosity=0)
 
 
 @pytest.mark.django_db
@@ -138,13 +166,13 @@ class TestSelectionValidation:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_data_dry_run")
+@pytest.mark.usefixtures("_regions")
 class TestDryRun:
-    """Without --commit the command writes nothing."""
+    """Without --commit the command writes nothing.
 
-    @pytest.fixture(autouse=True)
-    def _load_region_fixtures(self) -> None:
-        """Pre-load region data — --all seeds the USER model, which needs CH-4115."""
-        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+    Region data is pre-loaded — --all seeds the USER model, which needs CH-4115.
+    """
 
     def test_dry_run_writes_no_rows(self) -> None:
         """--all without --commit leaves the DB untouched (incl. the seeded users)."""
@@ -163,13 +191,10 @@ class TestDryRun:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_data_commit")
+@pytest.mark.usefixtures("_regions")
 class TestCommit:
     """--commit persists the dataset. Region fixtures are pre-loaded."""
-
-    @pytest.fixture(autouse=True)
-    def _load_region_fixtures(self) -> None:
-        """Pre-load the region reference data seed_test_data depends on."""
-        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
 
     def test_all_creates_full_dataset(self) -> None:
         """--commit --all creates 178 region rows across 39 grouped bulletins."""
@@ -350,17 +375,14 @@ class TestCommit:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_data_users")
+@pytest.mark.usefixtures("_regions")
 class TestUserSeeding:
     """The USER model seeds the two named dev accounts (from seed_dev_users).
 
     Region fixtures are pre-loaded because the normal user is subscribed to the
     CH-4115 MicroRegion.
     """
-
-    @pytest.fixture(autouse=True)
-    def _load_region_fixtures(self) -> None:
-        """Pre-load the region reference data the CH-4115 subscription needs."""
-        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
 
     def test_include_user_creates_superuser(self) -> None:
         """--include user creates a superuser with is_staff and is_superuser."""
@@ -438,6 +460,7 @@ class TestUserSeeding:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_data_no_region")
 class TestUserSeedingWithoutRegion:
     """USER seeding requires the CH-4115 MicroRegion to exist."""
 

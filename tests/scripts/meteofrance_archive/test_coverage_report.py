@@ -3,6 +3,9 @@
 
 import sys
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "scripts" / "meteofrance-archive"))
 
@@ -11,9 +14,13 @@ from mf_bra_to_caaml import (  # noqa: E402
     _check_field,
     generate_coverage_report,
     main,
-    parse_pdf,
     run,
 )
+
+# Shares the ``parsed_chablais`` fixture with the other CHABLAIS modules, so
+# the PDF is parsed once per worker rather than once per module. See the
+# comment on the same marker in test_page2_chablais.py.
+pytestmark = pytest.mark.xdist_group(name="mf_pdf_chablais")
 
 
 class TestCheckField:
@@ -63,41 +70,32 @@ class TestGenerateCoverageReport:
         report = generate_coverage_report([])
         assert "No bulletins" in report
 
-    def test_report_contains_all_check_labels(self, chablais_pdf_path: Path) -> None:
+    def test_report_contains_all_check_labels(
+        self, parsed_chablais: dict[str, Any]
+    ) -> None:
         """Every coverage check label must appear in the report."""
-        import pdfplumber
-
-        with pdfplumber.open(chablais_pdf_path) as pdf:
-            _ = pdf.pages[0]  # ensure the PDF opens correctly
-
-        result = parse_pdf(chablais_pdf_path)
-        assert result is not None
-        report = generate_coverage_report([result])
+        report = generate_coverage_report([parsed_chablais])
         for _, label in COVERAGE_CHECKS:
             assert label in report, f"Label missing from report: {label}"
 
-    def test_report_header_shows_bulletin_count(self, chablais_pdf_path: Path) -> None:
+    def test_report_header_shows_bulletin_count(
+        self, parsed_chablais: dict[str, Any]
+    ) -> None:
         """The report header should state the number of bulletins."""
-        result = parse_pdf(chablais_pdf_path)
-        assert result is not None
-        report = generate_coverage_report([result])
+        report = generate_coverage_report([parsed_chablais])
         assert "1 bulletin" in report
 
     def test_report_shows_100_percent_for_present_field(
-        self, chablais_pdf_path: Path
+        self, parsed_chablais: dict[str, Any]
     ) -> None:
         """A field present in all envelopes should show 100%."""
-        result = parse_pdf(chablais_pdf_path)
-        assert result is not None
-        report = generate_coverage_report([result])
+        report = generate_coverage_report([parsed_chablais])
         # highlights is always present for CHABLAIS
         assert "100%" in report
 
-    def test_bar_chart_format(self, chablais_pdf_path: Path) -> None:
+    def test_bar_chart_format(self, parsed_chablais: dict[str, Any]) -> None:
         """Each line should contain a progress bar with '[' and ']'."""
-        result = parse_pdf(chablais_pdf_path)
-        assert result is not None
-        report = generate_coverage_report([result])
+        report = generate_coverage_report([parsed_chablais])
         lines = [ln for ln in report.splitlines() if "[" in ln and "]" in ln]
         assert len(lines) == len(COVERAGE_CHECKS)
 

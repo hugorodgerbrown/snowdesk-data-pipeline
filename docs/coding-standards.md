@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-23
 ---
 
 # Coding Standards — Snowdesk Data Pipeline
@@ -421,7 +421,46 @@ catalogue and flag reference.
 - `response.url` is not typed on `HttpResponseBase`. Use
   `response["Location"]` for redirect assertions.
 
-### 5.5 Coverage
+### 5.5 Expensive setup is shared, not repeated
+
+Two costs dominated test *setup* until they were addressed, and both come
+back the moment a new test reintroduces the pattern.
+
+**Password hashing.** `tests/conftest.py`'s `pytest_configure` swaps
+`PASSWORD_HASHERS` for MD5 for the duration of the run. `PBKDF2` runs
+1,500,000 iterations by design — around 0.11s per hash — and every factory
+that builds a `User` pays it. Do not re-enable the real hasher globally; a
+test that genuinely asserts on the production algorithm sets
+`PASSWORD_HASHERS` itself via the `settings` fixture.
+
+**Fixture loads and corpus seeds.** `loaddata` of an EAWS region fixture
+costs ~0.5s and `seed_test_week --commit` ~10s. Neither belongs in a
+function-scoped fixture. Load once per class or module through
+`django_db_blocker.unblock()`, `flush` on teardown, and mark the class with
+`@pytest.mark.xdist_group` so its tests stay on one worker:
+
+```python
+@pytest.fixture(scope="class")
+def _regions(django_db_setup: None, django_db_blocker: DjangoDbBlocker) -> Iterator[None]:
+    with django_db_blocker.unblock():
+        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+    yield
+    with django_db_blocker.unblock():
+        call_command("flush", interactive=False, verbosity=0)
+```
+
+The data is committed outside any test transaction, so each test's own
+writes still roll back around it, and the `flush` is what lets a sibling
+class still observe an empty database. `tests/regions/conftest.py`'s
+`load_eaws_fixture_once` is the ready-made version for the per-country
+fixture modules.
+
+The same rule applies to any expensive pure computation — parsing a
+fixture PDF, for instance. Session-scoped fixtures cache it, but an xdist
+session is *per worker*, so a module whose tests scatter across eight
+workers pays the cost eight times. Group the module by what it caches.
+
+### 5.6 Coverage
 
 - Target: **all new code has covering tests**; aim for ≥90% total
   coverage across the project apps.

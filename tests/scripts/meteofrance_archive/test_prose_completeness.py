@@ -25,7 +25,16 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "scripts" / "meteofrance-archive"))
 
+import pytest
 from _pdf_extract import BAND_STABILITY, COLUMN_SPLIT_X  # noqa: E402
+
+# Pin this module to one xdist worker. The ``parsed_*`` fixtures in
+# conftest.py are session-scoped, but an xdist session is *per worker* —
+# under the default distribution these tests scatter across all of them
+# and each worker re-parses the same PDF (~2s a time). Grouping by PDF
+# means one parse per fixture, not one per worker.
+pytestmark = pytest.mark.xdist_group(name="mf_pdf_mont_blanc")
+
 
 # The clip width in characters that 280 pt of this PDF's body text works out to.
 # Lines at or beyond it in the old output were the truncated ones.
