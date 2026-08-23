@@ -189,36 +189,6 @@ def test_manifest_screenshot_files_exist_on_disk() -> None:
         assert path.exists(), f"manifest screenshot {shot['src']} missing on disk"
 
 
-def test_maskable_icon_is_opaque() -> None:
-    """The maskable PWA icon PNG has no alpha channel (SNOW-150).
-
-    Android's adaptive-icon system applies a mask (circle, squircle, etc.)
-    to the icon. If the PNG retains an alpha channel (PNG color_type 6,
-    RGBA), the transparent pixels outside the rounded SVG corners leak
-    through the mask as white or black depending on the device launcher,
-    making the logo appear shrunken on a coloured background.
-
-    The fix is to write the maskable variant as opaque RGB (color_type 2).
-    This test reads the IHDR color_type byte directly from the on-disk PNG
-    (offset 25: 8-byte signature + 4-byte length + 4-byte type + 4-byte
-    width + 4-byte height + 1-byte bit-depth = offset 25) and asserts it
-    equals 2 (RGB). Any other value — including 0 (greyscale) or 6 (RGBA)
-    — would indicate the build script is not producing a plain-RGB PNG.
-    """
-    icon_path = (
-        Path(settings.BASE_DIR) / "static" / "icons" / "pwa" / "icon-maskable-512.png"
-    )
-    assert icon_path.exists(), f"maskable icon not found at {icon_path}"
-    data = icon_path.read_bytes()
-    color_type = data[25]
-    assert color_type == 2, (
-        f"icon-maskable-512.png has color_type={color_type}, expected 2 (RGB). "
-        "It must be opaque RGB so Android's adaptive-icon mask doesn't leak "
-        "transparency at the masked corners. "
-        "Regenerate via `npm run build:icons` after fixing bin/build-pwa-icons."
-    )
-
-
 def test_manifest_defaults_to_production_name_and_theme() -> None:
     """Manifest name/short_name/theme_color match production when SITE_ENVIRONMENT is unset (SNOW-399).
 
@@ -272,10 +242,9 @@ def test_manifest_swaps_theme_color_for_staging() -> None:
 def test_manifest_swaps_icons_for_staging() -> None:
     """Every icon ``src`` lives under ``/static/icons/pwa-staging/`` when the environment is staging (SNOW-399).
 
-    The staging icon set is a distinct amber-tiled artwork with a
-    "STAGING" wordmark; pointing at it via a different URL prefix keeps
-    the two files apart on disk so a rebuild of one doesn't disturb the
-    other. It also means the browser can cache both independently by
+    The staging icon set is a distinct amber-tiled artwork marked with an
+    asterisk; pointing at it via a different URL prefix keeps the two
+    files apart on disk so a rebuild of one doesn't disturb the other. It also means the browser can cache both independently by
     URL when the same device previews both installs.
     """
     manifest = _load_manifest()

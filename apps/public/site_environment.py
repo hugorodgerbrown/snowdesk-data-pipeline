@@ -29,9 +29,12 @@ The identity is keyed on ``settings.SITE_ENVIRONMENT`` (``"production"``
 by default; anything else is treated as a staging-style non-production
 install). The production values are the canonical Snowdesk brand
 constants; the staging values reuse the same rectangle glyph on an amber
-canvas with a ``"STAGING"`` wordmark composited inside the maskable safe
-zone by ``bin/build-pwa-icons`` — a launcher tile that reads as
-unambiguously non-production from three feet away.
+tile with an asterisk set off the mountain's top right by
+``bin/build-pwa-icons`` — a launcher tile that reads as unambiguously
+non-production from three feet away. Both sets also carry
+the season label ("25/26") in a band at the foot of the tile; that is a
+brand constant, not an environment one, so it lives in the build script
+rather than here.
 """
 
 from __future__ import annotations
@@ -146,9 +149,9 @@ PWAEnvironmentIdentity.PRODUCTION = PWAEnvironmentIdentity(
 
 # Amber theme colour keeps the staging PWA tile clearly non-production on
 # both the OS status bar (installed app) and the browser chrome (open
-# tab). The matching maskable canvas colour lives in bin/build-pwa-icons
-# as MASKABLE_CANVAS_COLOUR_STAGING — keep the two in sync if either is
-# changed so the theme-color meta tag and the icon backdrop don't clash.
+# tab). The matching icon tile colour lives in bin/build-pwa-icons as
+# TILE_COLOUR_STAGING — keep the two in the same amber family if either is
+# changed so the theme-color meta tag and the icon don't clash.
 PWAEnvironmentIdentity.STAGING = PWAEnvironmentIdentity(
     environment="staging",
     name_display="Snowdesk (Staging)",
