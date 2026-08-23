@@ -6,18 +6,19 @@ Rendered by apps.favourites.views.favourite_list for ``?variant=map`` and
 swapped into [data-favourites-rows] inside the map's favourites panel
 (public/partials/_favourites_surface.html) by static/js/favourites.js.
 
-The lean sibling of _favourite_list.html. Same favourites, same roster
-sidecar, a different row — _favourite_row_map.html rather than
-_favourite.html — and two things dropped, each because the sheet is not
-the manage page:
+The lean sibling of _favourite_list.html. Same favourites, same row
+(_favourite.html — SNOW-711 retired the map's own fork of it), same roster
+sidecar, and two things dropped, each because the sheet is not the account
+page:
 
-  #favourite-card-panel   the sheet is height-bounded and scrolls, so
-                          swapping a full detail card into it is the wrong
-                          shape. The map row has no detail control at all
-                          now (SNOW-658, Hugo's design — see
-                          _favourite_row_map.html): a pin's own page is
-                          reached by tapping the pin, which is where the
-                          user already is.
+  the row's disclosure   the sheet is height-bounded and scrolls, so
+                          expanding a full detail card inside it is the
+                          wrong shape — and a pin's own page is reached by
+                          tapping the pin, which is where this user
+                          already is (SNOW-658, Hugo's design). Passing
+                          ``hide_disclosure`` is what drops it; every
+                          other slot in the row is identical to the
+                          account page's.
   "View favourites on the map →"
                           it would point at the page the user is already
                           looking at. The panel's own "Display on the map"
@@ -33,7 +34,7 @@ valid child of a list.
 The rows are a real ``<ul>``: each row is a ``<li>`` from
 includes/_ugc_panel_row.html, drawing its own separator via ``border-t``
 rather than sitting in a bordered box of its own — rows are not cards, on
-any of the three panels.
+any of the four panels or on the account page.
 
 Context:
     favourites     : list[Favourite] — the requesting user's own
@@ -46,7 +47,7 @@ Context:
     {{ roster_payload|json_script:"favourites-roster-cache" }}
     <ul class="flex flex-col">
         {% for favourite in favourites %}
-            {% include "favourites/partials/_favourite_row_map.html" with favourite=favourite %}
+            {% include "favourites/partials/_favourite.html" with favourite=favourite hide_disclosure=True %}
         {% endfor %}
     </ul>
     {% if not favourites %}

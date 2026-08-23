@@ -39,6 +39,26 @@ any cache-avoidance here.
 
 {% block extra_head %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
+    {% comment %}
+        SNOW-711: the favourites list below renders the shared UGC row, so
+        this page needs the three modules that row is driven by. All three
+        are deferred, so document order is execution order and each one's
+        window.pwa* global exists before the next reads it:
+
+          inline_rename.js     the pencil's in-place label edit, shared
+                               unchanged with the map's four panels.
+          row_rename_commit.js the POST that commits it, likewise shared.
+          account_favourites.js this page's own half — swapping the
+                               renamed row back in, and the chevron's
+                               expand/collapse state.
+
+        htmx.min.js above is parser-blocking and therefore already run:
+        account_favourites.js calls htmx.process on a row it swapped in
+        itself.
+    {% endcomment %}
+    <script defer src="{% static 'js/inline_rename.js' %}"></script>
+    <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
+    <script defer src="{% static 'js/account_favourites.js' %}"></script>
 {% endblock %}
 
 {% block content %}

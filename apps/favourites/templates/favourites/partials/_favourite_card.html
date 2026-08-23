@@ -3,10 +3,9 @@
 favourites/partials/_favourite_card.html — Favourite detail card.
 
 Rendered by apps.favourites.views.favourite_card. Shown in-page (the
-manage-page list row's "Details →" link hx-gets it into
-#favourite-card-panel — the same content its href leads to, since
-favourite_detail.html includes this very partial);
-the map pin-tap trigger is SNOW-414 (out of scope here).
+account list row's chevron hx-gets it into that row's own panel — the same
+content its href leads to, since favourite_detail.html includes this very
+partial); the map pin-tap trigger is SNOW-414 (out of scope here).
 
 Content:
   1. Title — favourite.name, falling back to formatted coordinates — plus
@@ -28,8 +27,14 @@ Content:
      altitude annotation relative to favourite.elevation — every problem
      the bulletin publishes is always shown; the annotation only
      highlights relevance, it never suppresses a card.
-  5. Rename / delete controls — reuses the SNOW-413 row partial so the
-     card's controls hit the existing endpoints.
+  5. Rename / delete controls — the same row the lists render
+     (_favourite.html), so a favourite is managed identically wherever it
+     is met. Two things are passed to fit it here: ``hide_disclosure``,
+     since a control expanding the card you are already reading would be
+     circular, and its own ``row_id`` — on the account page this card is
+     expanded UNDER the list's row for the same pin, and two elements
+     cannot share an id. It is a one-item ``<ul>`` because the row is a
+     ``<li>``.
 
 Context:
     favourite            : Favourite — the pin being detailed.
@@ -139,6 +144,12 @@ Context:
 
     {# 5. Rename / delete controls #}
     <div class="mt-4 pt-4 border-t border-border">
-        {% include "favourites/partials/_favourite.html" with favourite=favourite %}
+        {# The uuid is stringified FIRST: the ``add`` filter given a UUID   #}
+        {# object falls through both of its branches and returns "".        #}
+        {% with uuid=favourite.uuid|stringformat:"s" %}
+            <ul class="flex flex-col">
+                {% include "favourites/partials/_favourite.html" with favourite=favourite hide_disclosure=True row_id="favourite-card-row-"|add:uuid %}
+            </ul>
+        {% endwith %}
     </div>
 </div>

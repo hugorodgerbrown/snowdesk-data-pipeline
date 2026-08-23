@@ -1,48 +1,89 @@
 {% load i18n %}
 {% comment %}
-favourites/partials/_favourite.html — Saved-pin row partial.
+favourites/partials/_favourite.html — one saved-pin row. The ONE saved-pin
+row: every surface that lists a favourite renders this file (SNOW-711).
 
-Rendered by apps.favourites.views.favourite_create/favourite_rename after a
-Favourite is created or renamed. The name field auto-saves on blur/change
-(rename), and the remove button deletes the row — both HTMX swaps target
-this same row element.
+Rendered directly by apps.favourites.views.favourite_create,
+favourite_resort_create and favourite_rename after a write, and looped over
+by both list variants (_favourite_list.html on /account/,
+_favourite_list_map.html in the map sheet).
+
+WHAT THIS REPLACED. Until SNOW-711 this row was a bordered box holding an
+always-visible text input and an underlined "Remove", and the map sheet had
+a SECOND row (_favourite_row_map.html) built from the shared UGC row —
+because SNOW-658 gave the map panels one row anatomy and the account page
+never adopted it. So the same pin read one way on the map and another on
+/account/, and the account page was the last surface in the codebase
+managing user data with a text field and a text button. Both files are this
+one now, and the map row's own rationale is kept below.
+
+  * a row is not a card. It draws a hairline and nothing else
+    (includes/_ugc_panel_row.html), so a list reads as a list;
+  * rename is the pencil, and happens IN PLACE on the label. The
+    always-visible input it replaces was not reachable without JS anyway —
+    the hub loads this list by hx-get, so a no-JS visitor gets "Loading…"
+    and nothing else — and a list of live inputs is not a list at rest;
+  * Remove is the trash, last in the row, in the same place on every list
+    a user meets.
+
+Meta line: when the pin was saved, prefixed with its region when one
+matched — "Alpstein · saved 3 Feb 2026", Hugo's own design for this row.
+
+It used to be the region, falling back to the pin's coordinates. Two
+problems with that. The coordinates are the wrong reading: a pair of
+four-decimal numbers is precise, unmemorable and impossible to place, so
+the line said least exactly where it was the only thing on offer (an
+unnamed pin outside every known boundary). And the date was missing
+altogether, though it is the one fact that orders a list of saved places
+and tells a user which of two similar pins is the recent one.
+
+Region is nullable — a pin can fall outside every known boundary — so the
+date alone is the default and the joined form exists only for the case
+that has both. Same shape, and the same date format, as the observation
+row (observations/partials/_observation.html), which had the pairing
+right first.
+
+No `value` slot: that column is for measured quantities (downloads' size)
+and a favourite has none. Leaving it out is the point — a column that
+means "size" on one panel and something else on another means nothing.
+
+THE DISCLOSURE IS ON BY DEFAULT, and two callers turn it off. That is the
+right way round because of who this row is answered TO: favourite_rename
+returns it to the account page, which swaps it straight back into the row
+it came from, and a row that lost its chevron on rename would be a row
+that quietly stopped expanding. The map sheet suppresses it (SNOW-658,
+Hugo's design: a pin's detail is reached by tapping the pin, which is
+where that user already is) and so does the detail card's own copy, where
+a control expanding the card you are already looking at would be circular.
 
 Context:
-    favourite : Favourite — the saved pin to render.
+    favourite       : Favourite — the saved pin to render.
+    hide_disclosure : bool, optional — drop the trailing chevron. Passed
+                      by _favourite_list_map.html and _favourite_card.html;
+                      see above.
+    row_id          : str, optional — override the row's DOM id. Only
+                      _favourite_card.html passes one, because its copy of
+                      the row can sit on the same page as the list's copy
+                      of the same pin, and two elements cannot share an id.
+                      Every control in the row addresses whichever id it
+                      was given, so the card's controls act on the card's
+                      row and the list's on the list's.
 {% endcomment %}
-<div
-    id="favourite-{{ favourite.uuid }}"
-    class="flex items-center gap-2 rounded-tag border border-border bg-card px-3 py-2 text-sm"
-    data-favourite-uuid="{{ favourite.uuid }}"
->
-    <form
-        hx-post="{% url 'favourites:rename' favourite.uuid %}"
-        hx-target="#favourite-{{ favourite.uuid }}"
-        hx-swap="outerHTML"
-        hx-trigger="change"
-        class="flex-1"
-    >
-        {% csrf_token %}
-        <input
-            type="text"
-            name="name"
-            value="{{ favourite.name }}"
-            placeholder="{% trans 'Unnamed pin' %}"
-            class="w-full bg-transparent text-text-1 placeholder:text-text-3 focus:outline-none"
-            aria-label="{% trans 'Favourite name' %}"
-        >
-    </form>
-    <form
-        hx-post="{% url 'favourites:delete' favourite.uuid %}"
-        hx-target="#favourite-{{ favourite.uuid }}"
-        hx-swap="outerHTML"
-    >
-        {% csrf_token %}
-        <button
-            type="submit"
-            class="shrink-0 text-xs font-medium text-text-3 underline hover:text-status-error-text"
-        >
-            {% trans "Remove" %}
-        </button>
-    </form>
-</div>
+{% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
+    {% firstof row_id "favourite-"|add:uuid as row_dom_id %}
+    {% blocktrans trimmed with when=when asvar row_meta %}Saved {{ when }}{% endblocktrans %}
+    {% if favourite.region %}
+        {% blocktrans trimmed with region=favourite.region.name when=when asvar row_meta %}{{ region }} · saved
+            {{ when }}{% endblocktrans %}
+    {% endif %}
+    {% trans "Unnamed pin" as unnamed_pin %}
+    {% firstof favourite.name unnamed_pin as row_label %}
+    {% trans "Favourite name" as rename_label %}
+    {% if not hide_disclosure %}
+        {% firstof "includes/_row_disclosure.html" as row_disclosure %}
+    {% endif %}
+    {% blocktrans trimmed with name=row_label asvar disclosure_label %}Show details for {{ name }}{% endblocktrans %}
+    {% url 'favourites:detail' favourite.uuid as detail_url %}
+    {% url 'favourites:card' favourite.uuid as card_url %}
+    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id="favourite-panel-"|add:uuid disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
+{% endwith %}

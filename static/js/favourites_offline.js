@@ -369,10 +369,14 @@
         if (!uuid) return;
         const record = await window.pwaDb.get(STORE, uuid);
         if (!record) return;
-        const panel = document.getElementById('favourite-card-panel') || target;
-        if (!panel) return;
-        panel.textContent = '';
-        panel.appendChild(renderOfflineCard(record));
+        // The request's own target: on /account/ that is the panel under
+        // the row whose chevron asked for the card (SNOW-711 gave every
+        // row its own; there was one #favourite-card-panel above the whole
+        // list before it), and on the detail page the element HTMX aimed
+        // at. Either way it is where the card that failed was going.
+        if (!target) return;
+        target.textContent = '';
+        target.appendChild(renderOfflineCard(record));
       }
     } catch (_e) {
       // Non-fatal — leave HTMX's own failure state in place.
