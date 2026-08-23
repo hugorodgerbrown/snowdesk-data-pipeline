@@ -202,44 +202,62 @@ class ForecastPointQuerySet(models.QuerySet["ForecastPoint"]):
     """Custom queryset for ForecastPoint."""
 
     def active(self) -> "ForecastPointQuerySet":
-        """Return points referenced by at least one favourite or resort.
+        """Return points referenced by a favourite, a resort or a location.
 
         Annotates over the reverse FKs created by ``favourites.Favourite``
-        and ``regions.Resort`` (SNOW-503) and filters to rows with a
-        non-zero count on either side — see
-        ``docs/decisions/forecast-point-quantisation.md``. Each count is
-        annotated with ``distinct=True`` so joining both reverse relations
-        at once cannot inflate either count; a point shared by a favourite
-        and a resort still appears exactly once in the result.
+        and ``regions.Resort`` (SNOW-503), plus ``locations.Location``
+        (SNOW-700), and filters to rows with a non-zero count on any side —
+        see ``docs/decisions/forecast-point-quantisation.md``. Each count is
+        annotated with ``distinct=True`` so joining three reverse relations
+        at once cannot inflate any of them; a point shared by a favourite, a
+        resort and a location still appears exactly once in the result.
+
+        The referent set is edited across several tickets and the ordering
+        matters: SNOW-700 **adds** ``Location`` while SNOW-703 and SNOW-704
+        remove ``Resort`` and ``Favourite`` once those have migrated. The
+        removals come last, because a point that falls out of ``active()``
+        stops being fetched and is then deleted by
+        ``prune_forecast_points`` — taking its stored weather with it.
 
         Returns:
             Filtered queryset of ForecastPoints with one or more
-            favourites or resorts.
+            favourites, resorts or locations.
 
         """
         return self.annotate(
             favourite_count=models.Count("favourites", distinct=True),
             resort_count=models.Count("resorts", distinct=True),
-        ).filter(models.Q(favourite_count__gt=0) | models.Q(resort_count__gt=0))
+            location_count=models.Count("locations", distinct=True),
+        ).filter(
+            models.Q(favourite_count__gt=0)
+            | models.Q(resort_count__gt=0)
+            | models.Q(location_count__gt=0)
+        )
 
     def inactive(self) -> "ForecastPointQuerySet":
-        """Return points referenced by no favourite and no resort.
+        """Return points referenced by no favourite, resort or location.
 
         The exact complement of ``active()`` — a point lands here when the
-        last favourite or resort holding it goes away (SNOW-633). Such a
-        point is already excluded from the ``fetch_weather`` point pass, so
-        its stored weather can only go stale; ``prune_forecast_points``
-        deletes it.
+        last referent holding it goes away (SNOW-633). Such a point is
+        already excluded from the ``fetch_weather`` point pass, so its
+        stored weather can only go stale; ``prune_forecast_points`` deletes
+        it.
+
+        Must be kept the exact complement: a referent added to ``active()``
+        and forgotten here would put the same point in both, and
+        ``prune_forecast_points`` would delete a point that is still being
+        fetched for.
 
         Returns:
-            Filtered queryset of ForecastPoints with no favourites and no
-            resorts.
+            Filtered queryset of ForecastPoints with no favourites, no
+            resorts and no locations.
 
         """
         return self.annotate(
             favourite_count=models.Count("favourites", distinct=True),
             resort_count=models.Count("resorts", distinct=True),
-        ).filter(favourite_count=0, resort_count=0)
+            location_count=models.Count("locations", distinct=True),
+        ).filter(favourite_count=0, resort_count=0, location_count=0)
 
 
 class ForecastPoint(BaseModel):

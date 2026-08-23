@@ -19,11 +19,19 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the eleven Django apps (SNOW-557 — moved
+apps/            Parent package for the twelve Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
                  plus HTTP-layer middleware and the monitor_query_counts command
+  locations/     Location — the domain primitive every place reaches (SNOW-700):
+                 a resort's village, mid-station and peak, a favourite, an
+                 observation, a region centroid. A curated place is simply a
+                 Location with a ``name``, so Mont Fort is one row that four
+                 resorts share. Plus ``ResortLocation``, the through model
+                 carrying the role each location plays for a resort. Its own
+                 app because regions, weather, favourites and observations all
+                 reference it (see docs/decisions/)
   regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_fixture, refresh_eaws_fixtures) and the

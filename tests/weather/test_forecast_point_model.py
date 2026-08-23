@@ -8,8 +8,8 @@ Covers:
   - unique_together constraint on (lat_cell, lon_cell, elevation_band).
   - Quantisation edge cases: cell boundaries and negative-coordinate floors,
     exercised via apps.weather.services.forecast_points.quantise_*.
-  - ForecastPointQuerySet.active() — points with at least one favourite or
-    resort (SNOW-503).
+  - ForecastPointQuerySet.active() — points with at least one favourite,
+    resort (SNOW-503) or location (SNOW-700).
   - ForecastPointQuerySet.inactive() — the exact complement of active()
     (SNOW-633).
 """
@@ -26,7 +26,12 @@ from apps.weather.services.forecast_points import (
     quantise_lat,
     quantise_lon,
 )
-from tests.factories import FavouriteFactory, ForecastPointFactory, ResortFactory
+from tests.factories import (
+    FavouriteFactory,
+    ForecastPointFactory,
+    LocationFactory,
+    ResortFactory,
+)
 
 
 @pytest.mark.django_db
@@ -135,7 +140,7 @@ class TestQuantisation:
 
 @pytest.mark.django_db
 class TestForecastPointActiveQuerySet:
-    """ForecastPointQuerySet.active() — points referenced by a favourite or resort."""
+    """active() — points referenced by a favourite, resort or location."""
 
     def test_point_with_favourite_is_active(self) -> None:
         """A point with one favourite is included in active()."""
@@ -161,8 +166,32 @@ class TestForecastPointActiveQuerySet:
         ResortFactory.create(geocoded=True, forecast_point=point)
         assert ForecastPoint.objects.active().filter(pk=point.pk).count() == 1
 
+    def test_point_with_location_is_active(self) -> None:
+        """A cell referenced only by a Location is included in active().
+
+        The SNOW-700 referent. Without it a curated location's cell would
+        never be fetched, and prune_forecast_points would delete it.
+        """
+        point = ForecastPointFactory.create()
+        LocationFactory.create(forecast_cell=point)
+        assert point in ForecastPoint.objects.active()
+
+    def test_point_held_by_all_three_referents_appears_once(self) -> None:
+        """A cell held by a favourite, a resort and a location appears once.
+
+        The three-way join is what ``distinct=True`` exists to stop
+        inflating — with two referents a duplicate would still be caught by
+        the pair test above, but the counts only actually multiply once
+        three reverse relations are joined at the same time.
+        """
+        point = ForecastPointFactory.create()
+        FavouriteFactory.create(forecast_point=point)
+        ResortFactory.create(geocoded=True, forecast_point=point)
+        LocationFactory.create(forecast_cell=point)
+        assert ForecastPoint.objects.active().filter(pk=point.pk).count() == 1
+
     def test_orphan_point_excluded(self) -> None:
-        """A point referenced by neither a favourite nor a resort is excluded."""
+        """A point with no favourite, resort or location is excluded."""
         point = ForecastPointFactory.create()
         assert point not in ForecastPoint.objects.active()
 
@@ -186,6 +215,17 @@ class TestForecastPointInactiveQuerySet:
         """A point held by a resort is excluded from inactive()."""
         point = ForecastPointFactory.create()
         ResortFactory.create(geocoded=True, forecast_point=point)
+        assert point not in ForecastPoint.objects.inactive()
+
+    def test_point_with_location_is_not_inactive(self) -> None:
+        """A cell held by a location is excluded from inactive().
+
+        The other half of the SNOW-700 referent: if active() gained it and
+        inactive() did not, the same cell would sit in both, and
+        prune_forecast_points would delete a cell still being fetched for.
+        """
+        point = ForecastPointFactory.create()
+        LocationFactory.create(forecast_cell=point)
         assert point not in ForecastPoint.objects.inactive()
 
     def test_partitions_the_table(self) -> None:
