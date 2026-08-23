@@ -710,6 +710,20 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
         longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
         elevation=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),
     )
+    # The anonymous Location this pin is (SNOW-704), threaded from the same
+    # coordinates and sharing the pin's forecast cell — which is what
+    # ``create_favourite`` builds. Pass ``location=None`` to get a
+    # pre-SNOW-704 row for the backfill command's tests.
+    location = factory.SubFactory(
+        LocationFactory,
+        anonymous=True,
+        latitude=factory.LazyAttribute(lambda obj: obj.factory_parent.latitude),
+        longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
+        elevation_m=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),
+        forecast_cell=factory.LazyAttribute(
+            lambda obj: obj.factory_parent.forecast_point
+        ),
+    )
     region = None
     resort = None
 

@@ -31,6 +31,7 @@ class FavouriteAdmin(admin.ModelAdmin):
         "latitude",
         "longitude",
         "elevation",
+        "location",
         "forecast_point",
         "created_at",
     ]
@@ -51,6 +52,7 @@ class FavouriteAdmin(admin.ModelAdmin):
         "latitude",
         "longitude",
         "elevation",
+        "location",
         "forecast_point",
         "region",
         "resort",

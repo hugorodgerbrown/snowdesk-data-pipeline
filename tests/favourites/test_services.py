@@ -37,11 +37,14 @@ from apps.favourites.services import (
     create_resort_favourite,
     delete_favourite,
 )
+from apps.locations.models import Location
 from apps.weather.models import ForecastPoint
 from tests.factories import (
+    FavouriteFactory,
     ForecastPointFactory,
     MicroRegionFactory,
     ResortFactory,
+    ResortLocationFactory,
     UserFactory,
 )
 
@@ -475,3 +478,147 @@ class TestDeleteFavourite:
 
         with pytest.raises(Favourite.DoesNotExist):
             delete_favourite(other_user, favourite.uuid)
+
+
+@pytest.mark.django_db
+class TestFavouriteLocation:
+    """Every favourite is a Location, and takes its anonymous one with it.
+
+    SNOW-704: a favourite *is* a location, so creating one mints a row and
+    deleting one takes that row away again — otherwise the orphan keeps its
+    forecast cell inside ``active()``, fetched from Open-Meteo four times a
+    day forever and never reached by ``prune_forecast_points``.
+    """
+
+    def _location(self, favourite: Favourite) -> Location:
+        """Return a favourite's location, narrowing the nullable FK.
+
+        Every favourite these tests create goes through ``create_favourite``,
+        which always mints one — the field is nullable only for rows the
+        SNOW-704 backfill has not reached.
+
+        Args:
+            favourite: The favourite to read.
+
+        Returns:
+            Its location.
+
+        """
+        assert favourite.location is not None
+        return favourite.location
+
+    def _create(self, user: User, name: str = "") -> Favourite:
+        """Create a favourite with both external calls patched out.
+
+        Args:
+            user: The owner.
+            name: Optional label.
+
+        Returns:
+            The created Favourite.
+
+        """
+        point = ForecastPointFactory.create(elevation=2410.0)
+        with (
+            patch(
+                "apps.favourites.services.resolve_forecast_point", return_value=point
+            ),
+            patch("apps.favourites.services.region_for_point", return_value=None),
+        ):
+            return create_favourite(user, 46.4321, 7.8765, name=name)
+
+    def test_create_mints_an_anonymous_location(self) -> None:
+        """The minted location copies the pin and carries no name.
+
+        A pin's label is the user's own text and stays on the favourite —
+        it must never reach a shared, curatable table.
+        """
+        favourite = self._create(UserFactory.create(), name="Powder stash")
+
+        location = self._location(favourite)
+        assert location.latitude == 46.4321
+        assert location.longitude == 7.8765
+        assert location.elevation_m == 2410.0
+        assert location.forecast_cell == favourite.forecast_point
+        assert location.name == ""
+        assert location.kind == ""
+
+    def test_resort_favourite_mints_one_too(self) -> None:
+        """create_resort_favourite takes the same path."""
+        resort = ResortFactory.create(geocoded=True)
+        point = ForecastPointFactory.create()
+        with patch(
+            "apps.favourites.services.resolve_forecast_point", return_value=point
+        ):
+            favourite = create_resort_favourite(UserFactory.create(), resort)
+
+        assert favourite.location is not None
+        assert favourite.location.name == ""
+
+    def test_delete_removes_the_orphaned_location(self) -> None:
+        """Deleting the last referent deletes the anonymous location."""
+        user = UserFactory.create()
+        favourite = self._create(user)
+        location_pk = self._location(favourite).pk
+
+        delete_favourite(user, favourite.uuid)
+
+        assert not Location.objects.filter(pk=location_pk).exists()
+
+    def test_delete_keeps_a_location_another_favourite_still_holds(self) -> None:
+        """A shared location outlives one of its favourites."""
+        user = UserFactory.create()
+        favourite = self._create(user)
+        location = self._location(favourite)
+        other = FavouriteFactory.create(location=location)
+
+        delete_favourite(user, favourite.uuid)
+
+        assert Location.objects.filter(pk=location.pk).exists()
+        other.refresh_from_db()
+        assert other.location_id == location.pk
+
+    def test_delete_never_removes_a_curated_location(self) -> None:
+        """A named location is curated data and survives regardless.
+
+        A user deleting a favourite that happened to sit on Mont Fort must
+        not delete Mont Fort.
+        """
+        user = UserFactory.create()
+        favourite = self._create(user)
+        location = self._location(favourite)
+        location.name = "Mont Fort"
+        location.save(update_fields=["name"])
+
+        delete_favourite(user, favourite.uuid)
+
+        assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_delete_keeps_a_location_a_resort_links_to(self) -> None:
+        """A location a ResortLocation points at is not the pin's to delete.
+
+        The PROTECT-based orphan test must answer "something references
+        this" for referents ``delete_favourite`` has never heard of.
+        """
+        user = UserFactory.create()
+        favourite = self._create(user)
+        location = self._location(favourite)
+        ResortLocationFactory.create(location=location)
+
+        delete_favourite(user, favourite.uuid)
+
+        assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_delete_leaves_the_shared_forecast_cell_alone(self) -> None:
+        """Removing the location must not touch the cell it pointed at.
+
+        The cell is shared by every pin in it; only prune_forecast_points
+        may delete one, and only once nothing references it.
+        """
+        user = UserFactory.create()
+        favourite = self._create(user)
+        cell_pk = favourite.forecast_point.pk
+
+        delete_favourite(user, favourite.uuid)
+
+        assert ForecastPoint.objects.filter(pk=cell_pk).exists()

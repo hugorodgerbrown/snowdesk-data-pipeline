@@ -21,8 +21,10 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 
 from apps.favourites.models import Favourite
+from apps.locations.models import Location
 from apps.regions.services.point_match import region_for_point
 from apps.weather.services.forecast_points import resolve_forecast_point
 
@@ -99,9 +101,21 @@ def create_favourite(
                 f"User {user.pk} has reached the "
                 f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
             )
+        # The Location is minted inside the transaction with the favourite,
+        # so a failed cap re-check cannot leave an orphan behind. It carries
+        # no name and no kind: naming is a curation act, and this pin's
+        # label is the user's own text, which stays on the favourite
+        # (SNOW-704).
+        location = Location.objects.create(
+            latitude=latitude,
+            longitude=longitude,
+            elevation_m=forecast_point.elevation,
+            forecast_cell=forecast_point,
+        )
         favourite = Favourite.objects.create(
             user=user,
             name=name,
+            location=location,
             latitude=latitude,
             longitude=longitude,
             elevation=forecast_point.elevation,
@@ -175,9 +189,17 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
                     f"User {user.pk} has reached the "
                     f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
                 )
+            # See create_favourite: minted inside the transaction, unnamed.
+            location = Location.objects.create(
+                latitude=resort.latitude,
+                longitude=resort.longitude,
+                elevation_m=forecast_point.elevation,
+                forecast_cell=forecast_point,
+            )
             favourite = Favourite.objects.create(
                 user=user,
                 name=resort.name,
+                location=location,
                 latitude=resort.latitude,
                 longitude=resort.longitude,
                 elevation=forecast_point.elevation,
@@ -210,6 +232,14 @@ def delete_favourite(user: "User", uuid: UUID) -> None:
     ``ForecastPoint`` is never touched — ``on_delete=PROTECT`` means it
     survives regardless (it may be shared by other favourites).
 
+    The favourite's **anonymous** ``Location`` is deleted with it, once
+    nothing else references it. Leaving it would leak: an orphan location
+    keeps its forecast cell inside ``ForecastPoint.objects.active()``, so
+    the cell is fetched from Open-Meteo four times a day forever and is
+    never reached by ``prune_forecast_points`` — the exact cost SNOW-633
+    existed to stop. A **named** location is curated data and is never
+    deleted here, whatever referenced it.
+
     Args:
         user: The authenticated user requesting the deletion.
         uuid: The Favourite's uuid.
@@ -220,5 +250,37 @@ def delete_favourite(user: "User", uuid: UUID) -> None:
 
     """
     favourite = Favourite.objects.for_user(user).get(uuid=uuid)
-    favourite.delete()
+    location = favourite.location
+    with transaction.atomic():
+        favourite.delete()
+        if location is not None:
+            _delete_location_if_orphaned(location)
     logger.info("Favourite deleted: user=%s uuid=%s", user.pk, uuid)
+
+
+def _delete_location_if_orphaned(location: Location) -> None:
+    """Delete an anonymous Location that nothing references any more.
+
+    Called after the row that referenced it has gone. Inline at the delete
+    site rather than via a signal, per the project's no-signals-for-side-
+    effects rule.
+
+    Args:
+        location: The location whose last known referent was just removed.
+
+    """
+    if location.name:
+        # Curated data. A user deleting a favourite that happened to sit on
+        # Mont Fort must not delete Mont Fort.
+        return
+    try:
+        # Ask the database rather than enumerating reverse relations. Every
+        # referent of Location is PROTECT, so a ProtectedError *is* the
+        # answer "something still references this" — and it stays correct as
+        # SNOW-709 and SNOW-696 add referents this function has never heard
+        # of. A savepoint keeps the failed delete from poisoning the
+        # surrounding atomic block.
+        with transaction.atomic():
+            location.delete()
+    except ProtectedError:
+        logger.debug("Location id=%s still referenced; left in place.", location.pk)
