@@ -314,6 +314,44 @@ After applying it locally, refresh the seed fixture with
 same data. Against staging/production, run it by hand — it is not part of
 any deploy.
 
+### `link_region_centroid_locations` — anchor each region to a Location
+
+Backfill for SNOW-696. Gives every `MicroRegion` with a `centre` a
+`Location` at that centroid, with its elevation and forecast cell resolved
+— which is what lets the bulletin page render the same multi-day forecast
+panel the resort page and the favourite card already have, instead of the
+one-day condition icon, hi/lo and snowfall total `WeatherSnapshot` carries.
+
+⚠️ **Read the cost before running with `--commit`.** Up to 461 new forecast
+cells, one per micro-region across AT (153), CH (149), IT (124) and FR (35)
+— fewer in practice, since the 750 m / 150 m reuse thresholds fold a region
+centre onto an existing resort cell where the two are close. Each new cell
+adds one Open-Meteo call per fetch cycle and `fetch_weather` runs four
+times daily, so roughly **1,800 additional calls per day**. Confirm the
+headroom on the current plan first — the dry run reports created-versus-
+reused, which is the number to check against.
+
+**A centroid is not a place anyone goes.** The minted location carries no
+name and no kind: it represents the region and sits at whatever elevation
+the polygon's middle happens to fall at. Any surface showing its weather
+must say which elevation it represents — the bulletin page's eyebrow reads
+"Weather — region centre" for exactly this reason.
+
+It resolves its own cell rather than deferring to
+`link_location_forecast_cells`, which is scoped to `named()` so an
+observation's location is never billed for a lookup it has no use for. A
+region centroid is anonymous but *does* need a cell, so it resolves here,
+where the candidate set is bounded by the region fixture rather than by
+user activity.
+
+`WeatherSnapshot` is untouched and keeps its job as the masthead's
+day/night visual.
+
+```bash
+uv run python manage.py link_region_centroid_locations           # preview + cost
+uv run python manage.py link_region_centroid_locations --commit  # apply
+```
+
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 
 Reconciles the DB's `waffle.Flag` rows to the declarative manifest at

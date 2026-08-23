@@ -160,6 +160,13 @@ surface showing it must say so. A centroid is the right anchor for a region
 — the multi-point model does not extend upward from resorts to regions — but
 only if the surface names the elevation it represents.
 
+Since SNOW-696 the centroid also reaches a `Location`
+(`MicroRegion.centroid_location`), which is how the bulletin page gets a
+real multi-day forecast. That location is **anonymous**: naming it would
+put it in the curated estate `import_locations` owns, and ask a curator to
+maintain a point nobody goes to. The bulletin page's eyebrow reads "Weather
+— region centre" to keep the promise honest.
+
 Region *membership* is a separate question, answered by ray-casting in
 `apps/regions/services/point_match.py::region_for_point`. See below.
 

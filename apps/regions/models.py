@@ -329,6 +329,19 @@ class MicroRegion(BaseModel):
             "Stored as JSON; uses WGS 84 coordinates."
         ),
     )
+    centroid_location = models.ForeignKey(
+        "locations.Location",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="micro_regions",
+        help_text=(
+            "The Location at this region's centroid, which the bulletin "
+            "page reads its forecast through (SNOW-696). Resolved by "
+            "link_region_centroid_locations from ``centre``. Null until "
+            "that has run."
+        ),
+    )
     boundary = models.JSONField(
         null=True,
         blank=True,
