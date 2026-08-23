@@ -1,0 +1,97 @@
+{% extends "public/base.html" %}
+{% comment %}
+observations/my_observations.html — /account/observations/: the signed-in
+user's own field reports (SNOW-677).
+
+Rendered by apps.observations.views.my_observations for any authenticated
+user (the view redirects anonymous visitors to /account/sign-in/ before this
+template is reached). A user who has never reported sees the page with the
+list partial's own empty clause under the heading.
+
+This page is a full-page HOST for partials the map panel already owns —
+observations/partials/_observation_list.html, and through it _observation.html,
+_observation_meta.html and _observation_row_actions.html. It authors no second
+row treatment: SNOW-711 settled one anatomy for every UGC row
+(includes/_ugc_panel_row.html) and this surface conforms to it rather than
+extending it.
+
+What it does NOT reuse is includes/_ugc_panel.html, the shared sheet shell.
+That partial's five parts are map furniture — a roundel icon in its header, a
+bounded scroll region, and a "show on the map" toggle at its foot — and none
+of the three is true of a page. The page-level treatment here is the one the
+account area already uses for its own lists: heading, muted context line,
+then the rows (see the "My favourites" section of accounts/hub.html).
+
+Rows are not cards, so the list is not wrapped in one: each row draws its own
+hairline via includes/_ugc_panel_row.html's `border-t`.
+
+Navigation: this page has no menu entry yet. SNOW-705 is designing the
+account area's navigation and owns the nav.html change, so the link is
+deliberately not added here — reaching this page means typing the URL until
+that lands. Do not add a sub-nav: the account area is not getting one.
+{% endcomment %}
+{% load i18n static %}
+
+{# SNOW-553: sharing=False, for the same reason accounts/hub.html opts out.  #}
+{# Every /account/ URL is disallowed in robots.txt, and this page is one     #}
+{# user's own reports — a share card for it would be an information leak     #}
+{# rather than a preview. The tab title and description still render; it is  #}
+{# only the og:/twitter: card identity that is withheld.                     #}
+{% block page_meta %}
+    {% trans "Observations — Snowdesk" as page_title %}
+    {% trans "The field observations you have reported to Snowdesk." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block extra_head %}
+    {% comment %}
+        Two modules, for the two things a row here does on its own.
+
+        htmx.min.js is what makes Remove work: the trash in
+        _observation_row_actions.html is a plain HTMX form posting to
+        observations:delete, which answers an empty 200 that the row's own
+        hx-target/hx-swap turns into a removal. It is parser-blocking, as on
+        accounts/hub.html, so it has run before any row is swapped.
+
+        relative_time.js keeps each row's age honest. _observation_meta.html
+        renders the age server-side into a <time data-relative-time> and this
+        module recomputes it from the datetime attribute on a tick and on
+        visibility change — so a page left open, or a phone back out of a
+        pocket, does not still read "1 hour ago". That arithmetic needs no
+        network, which is the whole point of putting the instant in the
+        attribute.
+    {% endcomment %}
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+    <script defer src="{% static 'js/relative_time.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+    <div class="px-4 py-10">
+        <div class="max-w-narrow mx-auto">
+            <h1 class="text-2xl font-semibold text-text-1 mb-1">
+                {% trans "Observations" %}
+            </h1>
+
+            {% comment %}
+                The context strip, saying where this data goes — the same
+                sentence the map panel carries above its own copy of this
+                list (public/partials/_report_surface.html). One claim about
+                one dataset, so a user reading their reports in the account
+                area is told what a user reading them on the map is told.
+            {% endcomment %}
+            <p class="text-sm text-text-2 mb-6">
+                {% trans "Reports are shared with the community." %}
+            </p>
+
+            {% comment %}
+                Rendered server-side rather than lazy-loaded by hx-get, which
+                is how the hub reaches its favourites list. The hub does that
+                because that list feeds the offline roster from its response
+                sidecars; this page has no such consumer, so a second
+                round-trip would buy nothing and would leave the page briefly
+                claiming "Loading…" for content the view already has.
+            {% endcomment %}
+            {% include "observations/partials/_observation_list.html" %}
+        </div>
+    </div>
+{% endblock %}
