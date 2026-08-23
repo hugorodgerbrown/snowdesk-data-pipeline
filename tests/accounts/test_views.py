@@ -1431,17 +1431,23 @@ class TestHubViewAuthenticated:
 
 
 # ---------------------------------------------------------------------------
-# hub_view — "My favourites" section (SNOW-415)
+# hub_view — Favourites section (SNOW-415)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestHubViewFavouritesSection:
-    """The 'My favourites' section lazy-loads favourites:list.
+    """The Favourites section lazy-loads favourites:list.
 
     Asserted purely via the reversed ``favourites:list`` URL appearing in
     the response HTML — this test module carries no import from the
     ``favourites`` app, matching ``manage_view`` itself.
+
+    The heading read "My favourites" until SNOW-705 dropped the possessive:
+    inside ``/account/`` every page is the signed-in user's, so "My" and
+    "Your" carried no information and were applied inconsistently. The
+    heading's own rank and treatment are pinned in ``test_account_layout``;
+    this test cares only that the section is on the page and wired up.
     """
 
     def test_section_present(self) -> None:
@@ -1450,7 +1456,7 @@ class TestHubViewFavouritesSection:
         client = _make_session_client(account)
         response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
-        assert b"My favourites" in response.content
+        assert b"Favourites" in response.content
         assert reverse("favourites:list").encode() in response.content
 
     def test_section_heading_is_an_h2(self) -> None:
@@ -1462,13 +1468,17 @@ class TestHubViewFavouritesSection:
         than level with it. Promoting or demoting this heading without
         moving the card's would put a pin's title back beside the section
         that lists it, so the two are asserted together.
+
+        SNOW-705 changed the heading's text and treatment but deliberately
+        not its rank: it reads "Favourites" and renders through
+        ``includes/_eyebrow.html``, whose default tag is ``h2``. The
+        coupling this test protects is therefore intact — which is the
+        point of asserting the level rather than the styling.
         """
         account = AccountFactory.create()
         client = _make_session_client(account)
         response = client.get(reverse("accounts:hub"))
-        assert re.search(
-            r"<h2[^>]*>\s*My favourites\s*</h2>", response.content.decode()
-        )
+        assert re.search(r"<h2[^>]*>\s*Favourites\s*</h2>", response.content.decode())
 
 
 # ---------------------------------------------------------------------------

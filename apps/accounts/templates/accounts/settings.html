@@ -31,7 +31,7 @@ the label now names that. Behaviour is unchanged.
 {# email address and passkeys, so it has no business producing an unfurl    #}
 {# card. Title and description still render.                               #}
 {% block page_meta %}
-    {% trans "Account settings — Snowdesk" as page_title %}
+    {% trans "Settings — Snowdesk" as page_title %}
     {% trans "Manage your Snowdesk email address, passkeys and device data." as page_description %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
 {% endblock page_meta %}
@@ -41,7 +41,7 @@ the label now names that. Behaviour is unchanged.
 {% endblock %}
 
 {% block content %}
-    <div class="px-4 py-10">
+    <div class="px-4 pt-3 pb-10">
         <div class="max-w-narrow mx-auto">
             {% comment %}
                 hx-headers on this wrapper injects the CSRF token on every
@@ -53,31 +53,66 @@ the label now names that. Behaviour is unchanged.
                 {% include "accounts/partials/_htmx_error_banner.html" %}
 
                 {% comment %}
-                    No sub-nav here yet. SNOW-667 built one and it did not
-                    earn its place — two group headings above one link each.
-                    Navigation between the account pages is carried by the
-                    nav dropdown until SNOW-705 designs this area properly.
-                {% endcomment %}
+                    SNOW-705: no sub-nav here, and that is the decision rather
+                    than a gap. SNOW-667 cut a grouped one; SNOW-705 built a
+                    flat tab strip and removed that too. Both were horizontal,
+                    and a horizontal strip is width-bound — at 375px it left
+                    ~343px, which five short English labels almost exactly
+                    fill, so every future account page would have had to be
+                    named to fit rather than named to be clear.
 
-                <h1 class="text-2xl font-semibold text-text-1 mb-6">
+                    The account area's navigation is the nav dropdown, which
+                    is vertical and has no such budget. Each section is its
+                    own page reached from there. See templates/includes/nav.html
+                    and docs/decisions/account-area-navigation-lives-in-the-nav-menu.md.
+                {% endcomment %}
+                <h1 class="text-2xl font-semibold text-text-1 mb-8">
                     {% trans "Settings" %}
                 </h1>
 
                 {% comment %}
-                    Account email — SNOW-433. Shows the current verified address
-                    with a "Change email" control that starts the re-verification
-                    flow (the address is not changed until the new one is
-                    confirmed).
+                    SNOW-705: the seven blocks below are grouped into four
+                    clusters — Account, This device, Privacy, Danger zone —
+                    each opened by one _eyebrow heading and separated by one
+                    hairline. Before this they were seven flat hairlines with
+                    heading weights that disagreed (text-lg for email and
+                    passkeys, text-sm for telemetry and delete), which gave a
+                    settings page no shape: every block looked equally
+                    important, and "Reset local data" sat at the same rank as
+                    "Delete account".
+
+                    Group headings are eyebrows, matching the hub's two
+                    section labels, so the whole account area uses one
+                    heading system and the block headings inside each group
+                    stay the loudest thing in it.
                 {% endcomment %}
-                <div class="mb-10">
-                    <h2 class="text-lg font-semibold text-text-1 mb-3">
-                        {% trans "Account email" %}
-                    </h2>
-                    <div class="flex items-center justify-between gap-4">
-                        <p class="text-sm text-text-2 min-w-0 truncate">
-                            {{ request.user.email }}
-                        </p>
-                        {% comment %}
+
+                {# —— Account ———————————————————————————————— #}
+                <section aria-labelledby="settings-group-account">
+                    {% trans "Account" as t_group_account %}
+                    {% include "includes/_eyebrow.html" with text=t_group_account heading_id="settings-group-account" data_testid="settings-group-account" class_extra="mb-4" %}
+
+                    {% comment %}
+                        Account email — SNOW-433. Shows the current verified
+                        address with a "Change email" control that starts the
+                        re-verification flow (the address is not changed until
+                        the new one is confirmed).
+
+                        SNOW-705: stacks below sm. The address is the one
+                        value on this page that can be arbitrarily long, and
+                        beside a shrink-0 button at 375px it was truncating to
+                        a few characters — the row now gives it the full width
+                        and puts the button underneath.
+                    {% endcomment %}
+                    <div class="mb-8">
+                        <h3 class="text-sm font-semibold text-text-1 mb-2">
+                            {% trans "Account email" %}
+                        </h3>
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                            <p class="text-sm text-text-2 min-w-0 truncate">
+                                {{ request.user.email }}
+                            </p>
+                            {% comment %}
                             SNOW-711: includes/_button.html, ghost, rather
                             than the hand-rolled pill this and the passkey
                             card shared. That class string was the one
@@ -86,40 +121,41 @@ the label now names that. Behaviour is unchanged.
                             "Change email" is not an icon control: it is a
                             navigation to a flow, and it keeps its words.
                         {% endcomment %}
-                        {% trans "Change email" as change_email_label %}
-                        {% url 'accounts:change_email' as change_email_href %}
-                        {% include "includes/_button.html" with label=change_email_label href=change_email_href variant="ghost" size="compact" extra_classes="shrink-0" %}
+                            {% trans "Change email" as change_email_label %}
+                            {% url 'accounts:change_email' as change_email_href %}
+                            {% include "includes/_button.html" with label=change_email_label href=change_email_href variant="ghost" size="compact" extra_classes="self-start" %}
+                        </div>
                     </div>
-                </div>
 
-                {% comment %}
-                    Passkeys section — lists registered platform passkeys with
-                    delete buttons, and offers an "add passkey" button.
-                {% endcomment %}
-                <div class="border-t border-border pt-8 mb-10">
-                    <h2 class="text-lg font-semibold text-text-1 mb-4">
-                        {% trans "Passkeys" %}
-                    </h2>
+                    {% comment %}
+                        Passkeys section — lists registered platform passkeys
+                        with delete buttons, and offers an "add passkey"
+                        button.
+                    {% endcomment %}
+                    <div>
+                        <h3 class="text-sm font-semibold text-text-1 mb-3">
+                            {% trans "Passkeys" %}
+                        </h3>
 
-                    {% with passkeys=request.user.passkeys.all %}
-                        {# Existing passkey cards #}
-                        {% for passkey in passkeys %}
-                            {% card padding="p-4" extra="passkey-card mb-3 flex items-center justify-between gap-4" %}
-                            <div class="min-w-0">
-                                <p class="text-sm font-medium text-text-1 truncate">
-                                    {{ passkey.display_name }}
-                                </p>
-                                <p class="text-xs text-text-3 mt-0.5">
-                                    {% if passkey.last_used_at %}
-                                        {% blocktrans with date=passkey.last_used_at|date:"j N Y" trimmed %}
-                                            Last used {{ date }}
-                                        {% endblocktrans %}
-                                    {% else %}
-                                        {% trans "Never used" %}
-                                    {% endif %}
-                                </p>
-                            </div>
-                            {% comment %}
+                        {% with passkeys=request.user.passkeys.all %}
+                            {# Existing passkey cards #}
+                            {% for passkey in passkeys %}
+                                {% card padding="p-4" extra="passkey-card mb-3 flex items-center justify-between gap-4" %}
+                                <div class="min-w-0">
+                                    <p class="text-sm font-medium text-text-1 truncate">
+                                        {{ passkey.display_name }}
+                                    </p>
+                                    <p class="text-xs text-text-3 mt-0.5">
+                                        {% if passkey.last_used_at %}
+                                            {% blocktrans with date=passkey.last_used_at|date:"j N Y" trimmed %}
+                                                Last used {{ date }}
+                                            {% endblocktrans %}
+                                        {% else %}
+                                            {% trans "Never used" %}
+                                        {% endif %}
+                                    </p>
+                                </div>
+                                {% comment %}
                                 SNOW-711: the trash, in the same place and
                                 the same shape as Remove on every UGC row
                                 and on the hub's subscription cards.
@@ -133,106 +169,122 @@ the label now names that. Behaviour is unchanged.
                                 just lost its words — and losing a device's
                                 passkey is losing a way in.
                             {% endcomment %}
-                            {% blocktrans trimmed with name=passkey.display_name asvar remove_aria_label %}
-                                Remove {{ name }}
-                            {% endblocktrans %}
-                            <button
-                                hx-post="{% url 'accounts:passkey_delete' passkey_uuid=passkey.uuid %}"
-                                hx-target="closest .passkey-card"
-                                hx-swap="outerHTML"
-                                hx-confirm='{% trans "Remove this passkey?" %}'
-                                aria-label="{{ remove_aria_label }}"
-                                class="{% icon_button_classes variant='destructive' %}"
-                            >
-                                {% include "includes/_icon_trash.html" only %}
-                            </button>
-                            {% endcard %}
-                        {% empty %}
-                            <p class="text-sm text-text-3 mb-4">
-                                {% trans "No passkeys saved for this account yet." %}
-                            </p>
-                        {% endfor %}
+                                {% blocktrans trimmed with name=passkey.display_name asvar remove_aria_label %}
+                                    Remove {{ name }}
+                                {% endblocktrans %}
+                                <button
+                                    hx-post="{% url 'accounts:passkey_delete' passkey_uuid=passkey.uuid %}"
+                                    hx-target="closest .passkey-card"
+                                    hx-swap="outerHTML"
+                                    hx-confirm='{% trans "Remove this passkey?" %}'
+                                    aria-label="{{ remove_aria_label }}"
+                                    class="{% icon_button_classes variant='destructive' %}"
+                                >
+                                    {% include "includes/_icon_trash.html" only %}
+                                </button>
+                                {% endcard %}
+                            {% empty %}
+                                <p class="text-sm text-text-3 mb-4">
+                                    {% trans "No passkeys saved for this account yet." %}
+                                </p>
+                            {% endfor %}
 
-                        {% trans "Add a passkey for this device" as label %}
-                        {% include "includes/_button.html" with label=label variant="ghost" size="compact" button_type="button" button_id="btn-register-passkey" %}
-                    {% endwith %}
+                            {% trans "Add a passkey for this device" as label %}
+                            {% include "includes/_button.html" with label=label variant="ghost" size="compact" button_type="button" button_id="btn-register-passkey" extra_classes="self-start" %}
+                        {% endwith %}
 
-                    {# Passkey feedback banner — shown/hidden by JS #}
-                    <div
-                        id="passkey-feedback"
-                        role="status"
-                        aria-live="polite"
-                        class="hidden mt-4 text-sm text-text-2"
-                    >
-                    </div>
-                </div>
-
-                {% comment %}
-                    SNOW-616: sign out, on the page as well as in the nav
-                    disclosure. The nav control is the primary one and now
-                    works without JavaScript too (templates/includes/nav.html
-                    is a native <details>), but a session-ending control is
-                    worth being able to find from the account page itself —
-                    it is the page a user lands on when they go looking for
-                    "my account", and on a borrowed device it is the one
-                    thing they need.
-                {% endcomment %}
-                <div class="border-t border-border pt-8 flex flex-col gap-2">
-                    <form method="post" action="{% url 'accounts:sign_out' %}">
-                        {% csrf_token %}
-                        <button
-                            type="submit"
-                            data-testid="manage-sign-out"
-                            class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                        {# Passkey feedback banner — shown/hidden by JS #}
+                        <div
+                            id="passkey-feedback"
+                            role="status"
+                            aria-live="polite"
+                            class="hidden mt-4 text-sm text-text-2"
                         >
-                            {% trans "Sign out" %}
-                        </button>
-                    </form>
-                    <p class="text-xs text-text-3">
-                        {% blocktrans trimmed %}
-                            Ends this session on this device. Anything already saved offline stays until you reset local
-                            data below.
-                        {% endblocktrans %}
-                    </p>
-                </div>
+                        </div>
+                    </div>
+                </section>
 
                 {% comment %}
-                    SNOW-378: Reset local data escape hatch.
-                    Discoverable, not hidden. Wipes cached bulletins,
-                    the SW, cache storage, IndexedDB, and web storage;
-                    the server-side subscription is untouched. Copy
-                    lives here in the template so the visible label +
-                    helper line can be translated; the confirmation
-                    dialog message lives in pwa_reset.js.
-                {% endcomment %}
-                <div class="border-t border-border pt-8 flex flex-col gap-2">
-                    <button
-                        type="button"
-                        data-pwa-reset-trigger
-                        class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
-                    >
-                        {% trans "Reset local data on this device" %}
-                    </button>
-                    <p class="text-xs text-text-3">
-                        {% blocktrans trimmed %}
-                            Clears cached bulletins, offline data, and saved preferences on this device. Your
-                            subscription is not affected.
-                        {% endblocktrans %}
-                    </p>
-                </div>
+                    —— This device ————————————————————————————
 
-                {% if sync_log_visible %}
+                    SNOW-705: sign out, reset local data and the sync log are
+                    one group because they share a subject — this browser, on
+                    this machine — and none of them touch the account on the
+                    server. Grouping them says that once, so each control's
+                    helper line no longer has to.
+                {% endcomment %}
+                <section aria-labelledby="settings-group-device" class="mt-10 border-t border-border pt-8">
+                    {% trans "This device" as t_group_device %}
+                    {% include "includes/_eyebrow.html" with text=t_group_device heading_id="settings-group-device" data_testid="settings-group-device" class_extra="mb-4" %}
+
                     {% comment %}
-                        SNOW-482: Sync-log panel — read-out of the client-side
-                        log:sync IndexedDB store. Rows are painted by
-                        static/js/sync_log.js on load; the body_template
-                        shell only carries the <ul> it targets.
+                        SNOW-616: sign out, on the page as well as in the nav
+                        disclosure. The nav control is the primary one and now
+                        works without JavaScript too
+                        (templates/includes/nav.html is a native <details>),
+                        but a session-ending control is worth being able to
+                        find from the account page itself — it is the page a
+                        user lands on when they go looking for "my account",
+                        and on a borrowed device it is the one thing they need.
                     {% endcomment %}
-                    <div class="border-t border-border pt-8">
-                        {% translate "Sync log" as t_sync_log %}
-                        {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="sync-log-panel" body_template="accounts/partials/_sync_log_body.html" %}
+                    <div class="flex flex-col gap-2 mb-8">
+                        <form method="post" action="{% url 'accounts:sign_out' %}">
+                            {% csrf_token %}
+                            <button
+                                type="submit"
+                                data-testid="manage-sign-out"
+                                class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                            >
+                                {% trans "Sign out" %}
+                            </button>
+                        </form>
+                        <p class="text-xs text-text-3">
+                            {% blocktrans trimmed %}
+                                Ends this session on this device. Anything already saved offline stays until you reset
+                                local data below.
+                            {% endblocktrans %}
+                        </p>
                     </div>
-                {% endif %}
+
+                    {% comment %}
+                        SNOW-378: Reset local data escape hatch.
+                        Discoverable, not hidden. Wipes cached bulletins,
+                        the SW, cache storage, IndexedDB, and web storage;
+                        the server-side subscription is untouched. Copy
+                        lives here in the template so the visible label +
+                        helper line can be translated; the confirmation
+                        dialog message lives in pwa_reset.js.
+                    {% endcomment %}
+                    <div class="flex flex-col gap-2">
+                        <button
+                            type="button"
+                            data-pwa-reset-trigger
+                            class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                        >
+                            {% trans "Reset local data on this device" %}
+                        </button>
+                        <p class="text-xs text-text-3">
+                            {% blocktrans trimmed %}
+                                Clears cached bulletins, offline data, and saved preferences on this device. Your
+                                subscription is not affected.
+                            {% endblocktrans %}
+                        </p>
+                    </div>
+
+                    {% if sync_log_visible %}
+                        {% comment %}
+                            SNOW-482: Sync-log panel — read-out of the
+                            client-side log:sync IndexedDB store. Rows are
+                            painted by static/js/sync_log.js on load; the
+                            body_template shell only carries the <ul> it
+                            targets.
+                        {% endcomment %}
+                        <div class="mt-8">
+                            {% translate "Sync log" as t_sync_log %}
+                            {% include "includes/_collapsible_panel.html" with title=t_sync_log data_testid="sync-log-panel" body_template="accounts/partials/_sync_log_body.html" %}
+                        </div>
+                    {% endif %}
+                </section>
 
                 {% comment %}
                     SNOW-387: Telemetry opt-in/opt-out toggle.
@@ -245,20 +297,25 @@ the label now names that. Behaviour is unchanged.
                     policy so the toggle copy and the policy stay
                     consistent (SNOW-387 also rewrote privacy.html §5/§8).
                 {% endcomment %}
-                <div class="border-t border-border pt-8 flex flex-col gap-2">
-                    <h2 class="text-sm font-semibold text-text-1">
-                        {% trans "Anonymous usage data" %}
-                    </h2>
-                    <div class="flex items-start justify-between gap-4">
-                        {% url 'public:privacy' as privacy_url %}
-                        <p class="text-xs text-text-3 max-w-prose">
-                            {% blocktrans trimmed %}
-                                We collect a small stream of anonymous events (installs, updates, push delivery, errors)
-                                so we can keep the app working across browsers. No bulletin content, no email address,
-                                no location.
-                                <a href="{{ privacy_url }}" class="underline">Read the full policy</a>.
-                            {% endblocktrans %}
-                        </p>
+                <section aria-labelledby="settings-group-privacy" class="mt-10 border-t border-border pt-8">
+                    {% trans "Privacy" as t_group_privacy %}
+                    {% include "includes/_eyebrow.html" with text=t_group_privacy heading_id="settings-group-privacy" data_testid="settings-group-privacy" class_extra="mb-4" %}
+
+                    {% comment %}
+                        SNOW-705: the switch sits on the heading's line, not
+                        the paragraph's. Beside the paragraph it took 44px out
+                        of a four-line block at 375px and left the text in a
+                        gutter; above the paragraph on its own line it read as
+                        orphaned, floating right with nothing beside it. On the
+                        heading line it is unambiguously the control for
+                        "Anonymous usage data", the explanation gets the full
+                        column beneath, and the row needs no breakpoint at all
+                        — it is the same shape at 375px and at desktop.
+                    {% endcomment %}
+                    <div class="flex items-center justify-between gap-4">
+                        <h3 class="text-sm font-semibold text-text-1">
+                            {% trans "Anonymous usage data" %}
+                        </h3>
                         <button
                             type="button"
                             data-telemetry-toggle
@@ -275,7 +332,16 @@ the label now names that. Behaviour is unchanged.
                             ></span>
                         </button>
                     </div>
-                </div>
+                    {% url 'public:privacy' as privacy_url %}
+                    <p class="mt-2 text-xs text-text-3 max-w-prose">
+                        {% blocktrans trimmed %}
+                            We collect a small stream of anonymous events (installs, updates, push delivery, errors) so
+                            we can keep the app working across browsers. No bulletin content, no email address, no
+                            location.
+                            <a href="{{ privacy_url }}" class="underline">Read the full policy</a>.
+                        {% endblocktrans %}
+                    </p>
+                </section>
 
                 {% comment %}
                     Destructive account deletion — visually separated under a
@@ -290,10 +356,10 @@ the label now names that. Behaviour is unchanged.
                     account with no subscriptions — delete_account is the sole
                     hard-delete path, available to any authenticated account.
                 {% endcomment %}
-                <div class="border-t border-border pt-8">
-                    <h2 class="text-sm font-semibold text-text-1 mb-2">
-                        {% trans "Delete account" %}
-                    </h2>
+                <section aria-labelledby="settings-group-danger" class="mt-10 border-t border-border pt-8">
+                    {% trans "Danger zone" as t_group_danger %}
+                    {% include "includes/_eyebrow.html" with text=t_group_danger heading_id="settings-group-danger" data_testid="settings-group-danger" class_extra="mb-4" %}
+
                     <p class="text-xs text-text-3 max-w-prose mb-3">
                         {% blocktrans trimmed %}
                             Permanently deletes your account and everything saved to it — subscriptions, favourites,
@@ -308,7 +374,7 @@ the label now names that. Behaviour is unchanged.
                     >
                         {% trans "Delete your account" %}
                     </button>
-                </div>
+                </section>
             </div>
             {# /hx-headers wrapper #}
 

@@ -189,11 +189,28 @@ Usage
                         >
                             {% trans "My account" %}
                         </a>
-                        {# SNOW-667: the only route to /account/settings/ until  #}
-                        {# SNOW-705 designs the account area's own navigation.   #}
-                        {# Deliberately reuses this menu's existing item styling #}
-                        {# rather than inventing a surface the design pass would #}
-                        {# only have to undo.                                    #}
+                        {% comment %}
+                            SNOW-705: this menu IS the account-area navigation
+                            — not a placeholder for one, which is how SNOW-667
+                            left the Settings entry below.
+
+                            SNOW-667 cut a grouped sub-nav from the account
+                            pages; SNOW-705 built a flat tab strip to replace
+                            it and removed that too. Both were horizontal, and
+                            a horizontal strip has a width budget: at 375px it
+                            leaves ~343px, which five short English labels
+                            almost exactly fill, so every future section had to
+                            be named to fit rather than named to be clear.
+
+                            This menu is vertical. It has no such budget, it is
+                            already the way into the area from every other page,
+                            and it costs nothing above the <h1> of the pages it
+                            points at. Each account section is its own page,
+                            reached from here: Settings today, and Favourites,
+                            Routes, Observations and Subscriptions as SNOW-668,
+                            SNOW-677 and their successors split them out of the
+                            hub. Adding one is adding one <a> to this list.
+                        {% endcomment %}
                         <a
                             role="menuitem"
                             href="{% url 'accounts:settings' %}"
