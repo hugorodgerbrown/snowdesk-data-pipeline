@@ -19,7 +19,15 @@ plus one plain-JSON endpoint:
   the requesting user's own routes, for the map's routes layer. Not
   ``@require_htmx`` — consumed by a JS ``fetch()`` call, not an HTMX swap.
 
-All of them are authentication-gated (403 for anonymous users) and
+Alongside them sits one full page, which shares none of the fragment rules
+because it is not a fragment:
+
+- ``my_routes`` (GET) — SNOW-713: ``/account/routes/``, the account area's
+  list of the signed-in user's own routes. No ``@require_htmx``; anonymous
+  redirects to sign-in rather than answering 403; gated on the ``routes``
+  waffle flag, 404 when inactive.
+
+All the fragment endpoints are authentication-gated (403 for anonymous) and
 owner-scoped via ``Route.objects.for_user()`` — another user's uuid returns
 404, never 403, so a probing request can't distinguish "not yours" from
 "doesn't exist" (no existence oracle). This mirrors
@@ -38,9 +46,11 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+import waffle
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
+from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
@@ -54,6 +64,34 @@ from apps.routes.services.gpx import GPXParseError
 from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
 
 logger = logging.getLogger(__name__)
+
+# Stand-in uuid for reversing a __UUID__-templated rename URL. Mirrors
+# ``apps.favourites.views._DUMMY_UUID``.
+_DUMMY_UUID = UUID(int=0)
+
+
+def _rename_url_template() -> str:
+    """Return routes:rename with ``__UUID__`` where the uuid goes.
+
+    Handed to the account page's template so ``static/js/account_routes.js``
+    can build one row's rename URL at commit time, from the uuid riding on
+    that row's own pencil — the module must not know how this project spells
+    its URLs. The same trick ``apps.favourites.views._rename_url_template``
+    uses for the account favourites list, and
+    ``apps.public.views`` for the map panel's own copy.
+
+    Reversed per call rather than once at import — this module is imported by
+    ``apps.routes.urls``, so reversing at import time would ask the URLconf to
+    resolve itself while it is still being built.
+
+    Returns:
+        The rename URL with the uuid replaced by ``__UUID__``.
+
+    """
+    return reverse("routes:rename", args=[_DUMMY_UUID]).replace(
+        str(_DUMMY_UUID), "__UUID__"
+    )
+
 
 # SNOW-686: route_list serves two row shapes. The ``variant`` query
 # parameter selects a template out of this fixed map — an unknown (or
@@ -367,4 +405,83 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
         generated_at=newest or timezone.now(),
         unsafe_after=None,
     )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Full-page views
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def my_routes(request: HttpRequest) -> HttpResponse:
+    """Render the signed-in user's own saved routes as a full page (SNOW-713).
+
+    The account area's routes surface, mounted at ``/account/routes/``. Until
+    this existed a user could upload a GPX and then reach it only from the
+    map: SNOW-686 gave routes a roundel and a panel over the map canvas, and
+    nothing listed what was saved.
+
+    The routes twin of ``apps.observations.views.my_observations``, and
+    deliberately the same shape — a full-page host for
+    ``routes/partials/_route_list.html``, whose rows have been the shared UGC
+    row since SNOW-711. No second listing is authored here.
+
+    Deliberately NOT ``@require_htmx``, unlike every other GET in this
+    module: this is a page a user navigates to, and applying that decorator
+    by habit would make it unreachable by the only means anyone reaches it.
+
+    Gating follows the account area rather than the fragment endpoints
+    above. An anonymous visitor is redirected to sign-in, as ``accounts:hub``
+    and ``accounts:settings`` do, not answered 403 — a page can render the
+    way in; a fragment cannot.
+
+    Flag-gated on ``routes``, and a **404** when the flag is inactive. The
+    flag is seeded superusers-only and today hides only the map surface
+    (``apps.public.views`` passes ``routes_visible`` to the template); a page
+    is a user-visible surface in a way an endpoint is not, so it takes the
+    gate. 404 rather than 403 because the flag hides the feature's
+    existence, and a 403 would admit there is something behind the URL.
+    Putting the gate on the view rather than in the template also means the
+    menu entry SNOW-705 will add cannot arrive without it.
+
+    Ownership is enforced by the query (``for_user``), so nothing here
+    depends on an id supplied by the client.
+
+    The response carries ``Cache-Control: private, no-store`` — per-user
+    content that must never land in a shared cache, mirroring
+    ``routes_geojson`` below. That also keeps it out of the PWA shell cache:
+    caching routes for offline reads belongs with the map layer, as
+    ``_route_list_map.html`` already records.
+
+    Args:
+        request: The incoming GET request.
+
+    Returns:
+        Rendered ``routes/my_routes.html``, a redirect to sign-in for an
+        anonymous visitor, or 404 when the ``routes`` flag is inactive.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    if not waffle.flag_is_active(request, "routes"):
+        raise Http404("Routes are not enabled for this account.")
+
+    routes = list(Route.objects.for_user(request.user))
+
+    response = render(
+        request,
+        "routes/my_routes.html",
+        {
+            "routes": routes,
+            # The ``__UUID__``-templated rename endpoint, resolved here
+            # rather than built in JS: static/js/account_routes.js must not
+            # know how this project spells its URLs. Same contract as the
+            # map panel's ``data-route-rename-url-template`` and the
+            # favourites list's ``rename_url_template``.
+            "rename_url_template": _rename_url_template(),
+        },
+    )
+    response["Cache-Control"] = "private, no-store"
     return response
