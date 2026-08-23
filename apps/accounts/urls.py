@@ -9,6 +9,7 @@ URL map
 -------
 /account/                             hub                    GET  — account hub (authed)
 /account/settings/                    settings               GET  — settings (authed)
+/account/observations/                observations           GET  — own reports (authed)
 /account/subscribe/                   subscribe              POST-only HTMX form
 /account/add/<region_id>/             add_region             POST HTMX (authed)
 /account/remove-region/<region_id>/   remove_region_from_bulletin  POST HTMX (authed)
@@ -33,6 +34,8 @@ URL map
 from django.urls import path
 from django.views.generic import RedirectView
 
+from apps.observations import views as observation_views
+
 from . import push_views, views, views_passkey
 
 app_name = "accounts"
@@ -45,6 +48,16 @@ urlpatterns = [
     # transparent to templates.
     path("", views.hub_view, name="hub"),
     path("settings/", views.settings_view, name="settings"),
+    # SNOW-677: the route lives here because this app owns the ``/account/``
+    # prefix; the view lives in ``apps.observations`` because that app owns
+    # the model. Splitting one URL prefix across two urls.py files would be
+    # the worse trade — the import is explicit and one-way (accounts reads
+    # observations, never the reverse).
+    path(
+        "observations/",
+        observation_views.my_observations,
+        name="observations",
+    ),
     path("subscribe/", views.subscribe_partial, name="subscribe"),
     path("add/<region_id:region_id>/", views.add_region, name="add_region"),
     path(

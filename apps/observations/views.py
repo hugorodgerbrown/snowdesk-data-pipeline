@@ -26,7 +26,7 @@ location flow directly):
   Validated for shape and plausibility (see ``_parse_observed_at``); falls
   back to the model's ``timezone.now`` default when absent.
 
-Every endpoint here is:
+Every endpoint above is:
   - authentication-gated (403 for anonymous users);
   - verification-gated (403 unless the user has a verified ``Account``,
     SNOW-430);
@@ -34,6 +34,14 @@ Every endpoint here is:
 
 ``report_submit`` additionally applies django-ratelimit (5/m per IP, block=False)
 and returns 429 when the limit is exceeded.
+
+Alongside them sits one full page, which shares none of those three rules
+because it is not a fragment:
+
+- ``my_observations`` (GET) — ``/account/observations/``, the account
+  area's list of the signed-in user's own reports (SNOW-677). No
+  ``@require_htmx``; an anonymous visitor is redirected to sign-in rather
+  than answered 403, matching the account pages it sits beside.
 """
 
 from __future__ import annotations
@@ -45,7 +53,7 @@ from uuid import UUID
 
 from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -438,3 +446,78 @@ def observation_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
     observation.delete()
     logger.info("FieldObservation deleted: user=%s uuid=%s", request.user.pk, uuid)
     return HttpResponse("")
+
+
+# ---------------------------------------------------------------------------
+# Full-page views
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def my_observations(request: HttpRequest) -> HttpResponse:
+    """Render the signed-in user's own field reports as a full page (SNOW-677).
+
+    The account area's observations surface, mounted at
+    ``/account/observations/``. Until this existed a user could submit a
+    report from the map or the bulletin page and then had nowhere to see
+    what they had submitted: ``/observations/`` is the 48-hour anonymised
+    community stream, not a personal record, and the map panel's own list
+    is only reachable behind a roundel on the map canvas.
+
+    Deliberately NOT ``@require_htmx`` — this is a real page a user
+    navigates to, not a fragment. It is the full-page host for the same
+    partials the map panel uses (``_observation_list.html`` and, through it,
+    ``_observation.html``), the relationship
+    ``apps.favourites.views.favourite_detail`` has to ``_favourite_card.html``.
+
+    Gating follows the account area rather than the map endpoints above: an
+    anonymous visitor is redirected to sign-in, as ``accounts:hub`` and
+    ``accounts:settings`` do, not answered 403 the way the HTMX fragments
+    are — a person who followed a link to a page should be offered the way
+    in, and a fragment has nowhere to render one. There is no verification
+    gate either: ``_auth_gate`` keeps unverified users from *creating*
+    reports, so an unverified account simply has none and sees the empty
+    state.
+
+    Ownership is enforced by the query (``for_user``), so nothing here
+    depends on an id supplied by the client.
+
+    No 48-hour cutoff. That window is a property of the community overlay,
+    where it bounds what strangers can see; a user's own record has no
+    reason to end.
+
+    Timestamps render exactly as recorded. The 15-minute flooring applied
+    by ``apps.public.api.community_reports_geojson`` is an anonymisation
+    rule for *other people's* reports and must not be applied to the
+    owner's own.
+
+    The response carries ``Cache-Control: private, no-store`` — per-user
+    content that must never land in a shared cache, mirroring
+    ``favourite_detail``. That also keeps it out of the PWA shell cache;
+    reading these reports offline is SNOW-661, not this ticket.
+
+    Args:
+        request: The incoming GET request.
+
+    Returns:
+        Rendered ``observations/my_observations.html``, or a redirect to
+        sign-in for an anonymous visitor.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    # No ``cast(User, ...)`` here, unlike the HTMX views above: those narrow
+    # via ``_auth_gate``, whose return type mypy cannot follow, while the
+    # inline ``is_authenticated`` guard above narrows on its own.
+    observations = FieldObservation.objects.for_user(request.user).select_related(
+        "region"
+    )
+
+    response = render(
+        request,
+        "observations/my_observations.html",
+        {"observations": observations},
+    )
+    response["Cache-Control"] = "private, no-store"
+    return response
