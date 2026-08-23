@@ -3557,6 +3557,41 @@ def _build_period_transition_chip(
     }
 
 
+def _region_forecast_panel(
+    region: MicroRegion, target_date: datetime.date
+) -> Any | None:
+    """Build the bulletin page's multi-day forecast panel for a region.
+
+    Reads through the region's centroid ``Location`` (SNOW-696) — the same
+    ``ForecastPointWeather`` window and the same ``_forecast_panel.html``
+    partial the resort page and the favourite card already use, so the
+    bulletin page gets wind and freezing level with no new display code.
+
+    Args:
+        region: The region whose bulletin is being rendered.
+        target_date: The first day of the forward window.
+
+    Returns:
+        The panel, or ``None`` when the region has no centroid location
+        yet, its location has no forecast cell, or the cell has no rows in
+        the window. Callers render nothing at all in that case — a section
+        promising weather it cannot show is worse than no section.
+
+    """
+    location = region.centroid_location
+    if location is None or location.forecast_cell_id is None:
+        return None
+    return build_point_forecast_panel(
+        list(
+            ForecastPointWeather.objects.filter(
+                forecast_point_id=location.forecast_cell_id,
+                valid_for_date__gte=target_date,
+            ).order_by("valid_for_date")[:POINT_FORECAST_DAYS]
+        ),
+        timezone.now(),
+    )
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -3648,6 +3683,26 @@ def _bulletin_detail_response(
     )
     weather_display = build_weather_display(weather_snapshot, timezone.now())
 
+    # Region forecast (SNOW-696) — the same multi-day panel the resort page
+    # and the favourite card already show, read through the region's
+    # centroid Location. WeatherSnapshot above keeps its job as the
+    # masthead's day/night visual; this is the numbers, and the numbers
+    # come from a point (docs/locations.md).
+    #
+    # Only from today forward. The window ForecastPointWeather holds is a
+    # *forecast*, so rendering it beside a historical bulletin would put
+    # next week's weather under last week's danger rating — and the
+    # ``valid_for_date__gte=target_date`` filter below would silently
+    # return today's rows for a date in the past, which is worse than
+    # showing nothing.
+    #
+    # Gated on the date rather than on ``canonical_is_today``: that flag
+    # selects which canonical URL to advertise, and is False on the
+    # perfectly live dated form (/<region>/<slug>/<today>/).
+    forecast_panel = (
+        _region_forecast_panel(region, target_date) if target_date >= today else None
+    )
+
     # When the page would otherwise emit the HTMX trigger for a past date,
     # warm the snapshot on a background thread so the user's actual click —
     # which comes seconds after the browser prefetch — lands on a server
@@ -3715,6 +3770,7 @@ def _bulletin_detail_response(
                 "favourites_in_region": favourites_in_region,
                 "season_calendar": season_header(today),
                 "weather_display": weather_display,
+                "forecast_panel": forecast_panel,
                 "weather_htmx_trigger": weather_display is None,
                 "canonical_url": canonical_url,
                 "map_url": map_url,
@@ -3863,6 +3919,7 @@ def _bulletin_detail_response(
         "favourites_in_region": favourites_in_region,
         # Weather-driven header — see SNOW-98.
         "weather_display": weather_display,
+        "forecast_panel": forecast_panel,
         # Trigger HTMX just-in-time fetch when no snapshot exists (SNOW-159).
         "weather_htmx_trigger": weather_display is None,
         # Canonical form-3 URL — see SNOW-99.
