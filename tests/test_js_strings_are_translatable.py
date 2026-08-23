@@ -154,6 +154,31 @@ def test_no_template_renders_a_string_nothing_reads(template_id: str) -> None:
     )
 
 
+def _virtualenv_dir_names() -> list[str]:
+    """Return the name of every virtualenv sitting in the repository root.
+
+    ``makemessages`` walks the whole tree, and a virtualenv is a tree of
+    third-party source: ``click``'s own catalogue strings raise a *fatal*
+    xgettext error, which fails this test for a reason that has nothing to
+    do with the repository. Ignoring ``.venv`` and ``.tox`` by name is not
+    enough — a tox run with a mis-set ``toxworkdir`` leaves envs named after
+    their tox environment (``test/``, ``lint/``, ``django-checks/``) in the
+    root, and those are what actually broke this test locally. Detect them
+    by their ``pyvenv.cfg`` instead, which is what makes a directory a
+    virtualenv regardless of its name.
+
+    Returns:
+        Directory names, relative to the repo root, safe to pass to
+        ``makemessages --ignore``.
+
+    """
+    return sorted(
+        child.name
+        for child in REPO_ROOT.iterdir()
+        if child.is_dir() and (child / "pyvenv.cfg").exists()
+    )
+
+
 class TestMakemessages:
     """The end-to-end claim: these strings now reach the catalogue."""
 
@@ -177,6 +202,12 @@ class TestMakemessages:
         locale_dir = tmp_path / "locale"
         locale_dir.mkdir()
 
+        ignore_args: list[str] = []
+        # ``.tox`` is the tox workdir: a directory *of* virtualenvs rather
+        # than one itself, so the pyvenv.cfg probe below does not see it.
+        for pattern in ("node_modules", ".tox", *_virtualenv_dir_names()):
+            ignore_args += ["--ignore", pattern]
+
         result = subprocess.run(  # noqa: S603
             [
                 sys.executable,
@@ -185,10 +216,7 @@ class TestMakemessages:
                 "-l",
                 "de",
                 "--no-location",
-                "--ignore",
-                "node_modules",
-                "--ignore",
-                ".venv",
+                *ignore_args,
             ],
             capture_output=True,
             text=True,

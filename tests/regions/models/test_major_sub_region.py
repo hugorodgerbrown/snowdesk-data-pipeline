@@ -6,8 +6,9 @@ factory validity, natural keys, string representations, the
 ``MicroRegion.major_region`` traversal, and fixture loading.
 """
 
+from collections.abc import Callable
+
 import pytest
-from django.core.management import call_command
 
 from apps.regions.models import MajorRegion, MicroRegion, SubRegion
 from tests.factories import (
@@ -131,8 +132,15 @@ class TestMicroRegionSubregionFK:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="eaws_ch_major_sub_fixture")
 class TestEawsFixtures:
     """Tests for the EAWS reference fixtures (consolidated eaws_CH.json)."""
+
+    @pytest.fixture(autouse=True, scope="class")
+    @staticmethod
+    def _loaded(load_eaws_fixture_once: Callable[[str], None]) -> None:
+        """Load eaws_CH.json once for this class (see tests/regions/conftest.py)."""
+        load_eaws_fixture_once("apps/regions/fixtures/eaws_CH.json")
 
     def test_major_fixture_loads(self) -> None:
         """eaws_CH.json loads cleanly and populates MajorRegion rows.
@@ -140,20 +148,17 @@ class TestEawsFixtures:
         Note: migration 0012 already loaded the EAWS fixtures during test DB
         setup, so ``loaddata`` here is a no-op idempotency check.
         """
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         assert MajorRegion.objects.count() >= 9
         assert MajorRegion.objects.filter(prefix="CH-4").exists()
 
     def test_sub_fixture_loads(self) -> None:
         """eaws_CH.json loads cleanly and links SubRegion rows to MajorRegion."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         assert SubRegion.objects.count() >= 21
         sub = SubRegion.objects.get(prefix="CH-41")
         assert sub.major.prefix == "CH-4"
 
     def test_regions_fixture_links_to_subregions(self) -> None:
         """Loading eaws_CH.json populates subregion FKs via natural key."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         region = MicroRegion.objects.get(region_id="CH-4115")
         assert region.subregion is not None
         assert region.subregion.prefix == "CH-41"

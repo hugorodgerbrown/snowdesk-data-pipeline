@@ -3,6 +3,15 @@
 
 from typing import Any
 
+import pytest
+
+# Pin this module to one xdist worker. The ``parsed_*`` fixtures in
+# conftest.py are session-scoped, but an xdist session is *per worker* —
+# under the default distribution these tests scatter across all of them
+# and each worker re-parses the same PDF (~2s a time). Grouping by PDF
+# means one parse per fixture, not one per worker.
+pytestmark = pytest.mark.xdist_group(name="mf_pdf_chablais")
+
 
 class TestChablaisdangerRatings:
     """Verify danger rating extraction for a single-level bulletin."""

@@ -8,18 +8,27 @@ Names are now resolved from EAWS de/en.json (no more placeholder IDs).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
-from django.core.management import call_command
 from django.db.models import F
 
 from apps.regions.models import MajorRegion, MicroRegion
+
+# Pinned to one xdist worker so the module-scoped load below is paid once
+# rather than once per worker that happens to receive one of these tests.
+pytestmark = pytest.mark.xdist_group(name="eaws_at_fixture")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _loaded(load_eaws_fixture_once: Callable[[str], None]) -> None:
+    """Load the country fixture once for this module (see tests/regions/conftest.py)."""
+    load_eaws_fixture_once("apps/regions/fixtures/eaws_AT.json")
 
 
 @pytest.mark.django_db
 def test_austria_fixture_loads() -> None:
     """loaddata succeeds and inserts 7 + 111 + 153 rows."""
-    call_command("loaddata", "apps/regions/fixtures/eaws_AT.json", verbosity=0)
-
     assert MajorRegion.objects.filter(country="AT").count() == 7
     assert MicroRegion.objects.filter(subregion__major__country="AT").count() == 153
 
@@ -27,8 +36,6 @@ def test_austria_fixture_loads() -> None:
 @pytest.mark.django_db
 def test_austria_fixture_state_prefixes() -> None:
     """All seven Austrian state L1 prefixes are present."""
-    call_command("loaddata", "apps/regions/fixtures/eaws_AT.json", verbosity=0)
-
     prefixes = set(
         MajorRegion.objects.filter(country="AT").values_list("prefix", flat=True)
     )
@@ -38,8 +45,6 @@ def test_austria_fixture_state_prefixes() -> None:
 @pytest.mark.django_db
 def test_austria_fixture_spot_check() -> None:
     """AT-02-01 loads as a MicroRegion with the expected slug and canonical name."""
-    call_command("loaddata", "apps/regions/fixtures/eaws_AT.json", verbosity=0)
-
     region = MicroRegion.objects.get(region_id="AT-02-01")
     assert region.slug == "at-02-01"
     # Name comes from EAWS de.json — no longer a placeholder ID.
@@ -50,8 +55,6 @@ def test_austria_fixture_spot_check() -> None:
 @pytest.mark.django_db
 def test_austria_fixture_all_l1_have_boundary() -> None:
     """All 7 L1 MajorRegions carry a non-null boundary after fixture load."""
-    call_command("loaddata", "apps/regions/fixtures/eaws_AT.json", verbosity=0)
-
     majors = MajorRegion.objects.filter(country="AT")
     assert majors.count() == 7
     assert all(m.boundary is not None for m in majors)
@@ -60,8 +63,6 @@ def test_austria_fixture_all_l1_have_boundary() -> None:
 @pytest.mark.django_db
 def test_austria_fixture_fk_relationships() -> None:
     """Each L4 MicroRegion can navigate to its L1 MajorRegion via FKs."""
-    call_command("loaddata", "apps/regions/fixtures/eaws_AT.json", verbosity=0)
-
     for region in MicroRegion.objects.filter(subregion__major__country="AT"):
         assert region.subregion is not None
         assert region.major_region is not None
@@ -71,8 +72,6 @@ def test_austria_fixture_fk_relationships() -> None:
 @pytest.mark.django_db
 def test_austria_fixture_canonical_l1_names() -> None:
     """L1 MajorRegions have canonical EAWS names, not placeholder IDs."""
-    call_command("loaddata", "apps/regions/fixtures/eaws_AT.json", verbosity=0)
-
     at02 = MajorRegion.objects.get(prefix="AT-02")
     assert at02.name_native == "Kärnten"
     assert at02.name_en == "Carinthia"
@@ -81,8 +80,6 @@ def test_austria_fixture_canonical_l1_names() -> None:
 @pytest.mark.django_db
 def test_austria_fixture_no_placeholder_names() -> None:
     """No L4 MicroRegion name should equal its region_id (no more placeholders)."""
-    call_command("loaddata", "apps/regions/fixtures/eaws_AT.json", verbosity=0)
-
     placeholders = MicroRegion.objects.filter(
         subregion__major__country="AT",
         name=F("region_id"),

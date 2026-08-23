@@ -5,8 +5,9 @@ Covers model creation, string representation, ordering, natural key support,
 the auto-slug behaviour, and the new centre and boundary JSON fields.
 """
 
+from collections.abc import Callable
+
 import pytest
-from django.core.management import call_command
 
 from apps.regions.models import MicroRegion
 from tests.factories import MicroRegionFactory, SubRegionFactory
@@ -193,17 +194,22 @@ class TestMicroRegionNeighbours:
 
 
 @pytest.mark.django_db
+@pytest.mark.xdist_group(name="eaws_ch_micro_region_fixture")
 class TestMicroRegionsFixture:
     """Tests for the regions.json fixture."""
 
+    @pytest.fixture(autouse=True, scope="class")
+    @staticmethod
+    def _loaded(load_eaws_fixture_once: Callable[[str], None]) -> None:
+        """Load eaws_CH.json once for this class (see tests/regions/conftest.py)."""
+        load_eaws_fixture_once("apps/regions/fixtures/eaws_CH.json")
+
     def test_fixture_loads_successfully(self) -> None:
         """The regions fixture loads 149 MicroRegion rows without errors."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         assert MicroRegion.objects.count() == 149
 
     def test_fixture_regions_have_centre_and_boundary(self) -> None:
         """Every region loaded from the fixture has non-null centre and boundary."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         without_centre = MicroRegion.objects.filter(centre__isnull=True).count()
         without_boundary = MicroRegion.objects.filter(boundary__isnull=True).count()
         assert without_centre == 0
@@ -211,7 +217,6 @@ class TestMicroRegionsFixture:
 
     def test_fixture_first_region_has_expected_data(self) -> None:
         """The CH-1111 region has the correct name, centre, and boundary."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         region = MicroRegion.objects.get(region_id="CH-1111")
         assert region.name == "Waadtländer Voralpen"  # updated SNOW-178
         assert region.centre is not None
@@ -222,7 +227,6 @@ class TestMicroRegionsFixture:
 
     def test_fixture_loads_neighbour_pairs(self) -> None:
         """The fixture rehydrates MicroRegion.neighbours via natural-key M2M."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         # Every region should have at least one neighbour — SLF micro-regions
         # tessellate a contiguous country, so isolated nodes would indicate a
         # bug in the build script.
@@ -235,7 +239,6 @@ class TestMicroRegionsFixture:
 
     def test_fixture_neighbour_graph_is_symmetric(self) -> None:
         """For every (A, B) edge, A appears in B.neighbours and vice versa."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         for region in MicroRegion.objects.prefetch_related("neighbours"):
             for neighbour in region.neighbours.all():
                 back_edge = neighbour.neighbours.filter(pk=region.pk).exists()
@@ -246,7 +249,6 @@ class TestMicroRegionsFixture:
 
     def test_fixture_known_neighbour_pair(self) -> None:
         """CH-4115 (Martigny-Verbier) borders CH-4116 (Haut Val de Bagnes)."""
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         a = MicroRegion.objects.get(region_id="CH-4115")
         b = MicroRegion.objects.get(region_id="CH-4116")
         assert b in a.neighbours.all()
@@ -259,7 +261,6 @@ class TestMicroRegionsFixture:
         even though MapLibre auto-closes the fill. This assertion guards
         the CSV source from regressing to unclosed rings.
         """
-        call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
         offenders: list[str] = []
         for region in MicroRegion.objects.all():
             assert region.boundary is not None
