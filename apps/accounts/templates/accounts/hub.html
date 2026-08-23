@@ -170,13 +170,32 @@ any cache-avoidance here.
                                     {{ subscription.region.subregion.name_en|default:subscription.region.subregion.name_native }}
                                 </p>
                             </div>
+                            {% comment %}
+                                SNOW-711: the trash, in the same place and
+                                the same shape as Remove on every UGC row.
+                                It was a bordered "Remove" pill — the last
+                                of two orphan controls in the codebase
+                                (the other was the passkey card's, on
+                                /account/settings/), sharing a class string
+                                nothing else used and no glyph with
+                                anything.
+
+                                The aria-label names the region, because
+                                the visible text label is what went: with
+                                one card per subscription, "Remove" alone
+                                names nothing.
+                            {% endcomment %}
+                            {% blocktrans trimmed with region=subscription.region.name asvar remove_aria_label %}
+                                Remove {{ region }}
+                            {% endblocktrans %}
                             <button
                                 hx-post="{% url 'accounts:remove_region' region_id=subscription.region.region_id %}"
                                 hx-target="closest .subscription-card"
                                 hx-swap="outerHTML"
-                                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                                aria-label="{{ remove_aria_label }}"
+                                class="{% icon_button_classes variant='destructive' %}"
                             >
-                                {% trans "Remove" %}
+                                {% include "includes/_icon_trash.html" only %}
                             </button>
                         </div>
 

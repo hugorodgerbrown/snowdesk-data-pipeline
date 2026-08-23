@@ -77,12 +77,18 @@ the label now names that. Behaviour is unchanged.
                         <p class="text-sm text-text-2 min-w-0 truncate">
                             {{ request.user.email }}
                         </p>
-                        <a
-                            href="{% url 'accounts:change_email' %}"
-                            class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
-                        >
-                            {% trans "Change email" %}
-                        </a>
+                        {% comment %}
+                            SNOW-711: includes/_button.html, ghost, rather
+                            than the hand-rolled pill this and the passkey
+                            card shared. That class string was the one
+                            control pattern in the codebase with no partial
+                            and no other caller — and unlike Remove below,
+                            "Change email" is not an icon control: it is a
+                            navigation to a flow, and it keeps its words.
+                        {% endcomment %}
+                        {% trans "Change email" as change_email_label %}
+                        {% url 'accounts:change_email' as change_email_href %}
+                        {% include "includes/_button.html" with label=change_email_label href=change_email_href variant="ghost" size="compact" extra_classes="shrink-0" %}
                     </div>
                 </div>
 
@@ -113,14 +119,32 @@ the label now names that. Behaviour is unchanged.
                                     {% endif %}
                                 </p>
                             </div>
+                            {% comment %}
+                                SNOW-711: the trash, in the same place and
+                                the same shape as Remove on every UGC row
+                                and on the hub's subscription cards.
+
+                                The aria-label names the passkey, because
+                                the visible text label is what went and a
+                                user may have several registered.
+
+                                hx-confirm STAYS. It is the only guard on
+                                an irreversible action whose control has
+                                just lost its words — and losing a device's
+                                passkey is losing a way in.
+                            {% endcomment %}
+                            {% blocktrans trimmed with name=passkey.display_name asvar remove_aria_label %}
+                                Remove {{ name }}
+                            {% endblocktrans %}
                             <button
                                 hx-post="{% url 'accounts:passkey_delete' passkey_uuid=passkey.uuid %}"
                                 hx-target="closest .passkey-card"
                                 hx-swap="outerHTML"
                                 hx-confirm='{% trans "Remove this passkey?" %}'
-                                class="shrink-0 text-xs text-text-3 border border-text-3/30 rounded-sm px-3 py-1.5 hover:text-text-1 hover:border-text-2 transition-colors"
+                                aria-label="{{ remove_aria_label }}"
+                                class="{% icon_button_classes variant='destructive' %}"
                             >
-                                {% trans "Remove" %}
+                                {% include "includes/_icon_trash.html" only %}
                             </button>
                             {% endcard %}
                         {% empty %}
