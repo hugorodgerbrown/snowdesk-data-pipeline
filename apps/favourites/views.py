@@ -712,6 +712,9 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     pin for offline reads. Context-building is shared with
     ``favourite_detail`` (SNOW-507) via ``_favourite_card_context``.
 
+    Renders the card's title as an ``<h3>`` — see the inline note below;
+    the full-page caller ranks the same title differently.
+
     Args:
         request: The incoming HTMX GET request.
         uuid: The Favourite's uuid, from the URL.
@@ -735,6 +738,15 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     context, generated_at, unsafe_after = _favourite_card_context(
         favourite, timezone.now(), timezone.localdate()
     )
+    # This endpoint has exactly one surface: the account hub's per-row
+    # disclosure panel. That panel sits inside the hub's "My favourites"
+    # <section>, whose heading is an <h2>, so a single favourite's title is
+    # an <h3> — ranked under the section that lists it rather than beside
+    # it. The map's favourites panel never reaches here: its rows are
+    # rendered with ``hide_disclosure``, so no chevron ever asks for a card.
+    # The partial defaults to <h2>; favourite_detail passes <h1> for its own
+    # page. See _favourite_card.html's "WHO OWNS THE TITLE'S RANK".
+    context["heading_tag"] = "h3"
     response = render(request, "favourites/partials/_favourite_card.html", context)
     return apply_freshness_headers(response, generated_at, unsafe_after=unsafe_after)
 

@@ -33,6 +33,12 @@ Covers:
                     plus the card content; non-owner uuid → 404; unknown
                     uuid → 404; anon → 403; response carries
                     Cache-Control: private, no-store.
+  card heading rank — the card's title states its own level per caller
+                    (``heading_tag``): ``h1`` on favourite_detail (the pin's
+                    name IS that page, which carries no other heading),
+                    ``h3`` on the account hub's hx-get panel (it ranks under
+                    the "My favourites" ``h2``, not beside it), ``h2`` by
+                    default; the size is ``text-lg`` in every case.
   favourite_card problems — elevation-aware avalanche-problem highlighting
                     (SNOW-422): a region + today's bulletin renders one
                     rating-block per problem card plus an altitude-relevance
@@ -81,6 +87,7 @@ from unittest.mock import patch
 
 import pytest
 from django.db import connection
+from django.template.loader import render_to_string
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone as django_timezone
@@ -1175,6 +1182,95 @@ class TestFavouriteDetail:
         response = client.get(_detail_url(favourite.uuid))
 
         assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# _favourite_card.html — the title's heading rank, per caller
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestFavouriteCardHeadingRank:
+    """The card's title ranks itself for the outline it lands in.
+
+    One partial, two callers at two depths, so the level is the caller's
+    to state (``heading_tag``) and the size never moves — ``text-lg`` in
+    both cases. The card was a fixed ``<h2>`` before this: correct for
+    neither caller, since the full page then had no ``<h1>`` at all, and
+    the hub panel put a single pin's title level with the "My favourites"
+    section heading that contains it.
+    """
+
+    def _title_tag(self, content: str) -> str:
+        """Return the element name the card's title is rendered as.
+
+        Args:
+            content: The rendered HTML.
+
+        Returns:
+            The tag name, e.g. "h1".
+
+        """
+        match = re.search(r'<(h[1-6])[^>]*data-testid="favourite-card-title"', content)
+        assert match is not None, "card title heading not found"
+        return match.group(1)
+
+    def test_full_page_title_is_the_pages_h1(self, client: Client) -> None:
+        """On its own page the pin's name IS the page — so it is the h1.
+
+        favourite_detail.html renders no other heading (its back-link is a
+        link), so an h2 here would leave a page whose outline starts at
+        level 2.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="My spot")
+
+        content = client.get(_detail_url(favourite.uuid)).content.decode()
+
+        assert self._title_tag(content) == "h1"
+
+    def test_hub_panel_title_is_an_h3(self, client: Client) -> None:
+        """The hx-get card is an h3 — it ranks under "My favourites", not beside it."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="My spot")
+
+        content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        assert self._title_tag(content) == "h3"
+
+    def test_the_rank_is_the_only_thing_that_changes(self, client: Client) -> None:
+        """Both callers draw the same title at the same size — this is not a visual change."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="My spot")
+
+        page = client.get(_detail_url(favourite.uuid)).content.decode()
+        card = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        for content in (page, card):
+            assert (
+                'class="text-lg font-semibold text-text-1" '
+                'data-testid="favourite-card-title"'
+            ) in content
+
+    def test_default_is_h2_for_a_caller_that_states_nothing(self) -> None:
+        """A third caller that passes no heading_tag gets the h2 the partial had.
+
+        The map's favourites panel is not such a caller — it renders rows
+        with ``hide_disclosure``, so it never fetches a card — but the
+        default is what any future surface inherits, and h2 is right for a
+        card dropped into a page with an h1 and no section heading between.
+        """
+        favourite = FavouriteFactory.create(name="My spot")
+
+        content = render_to_string(
+            "favourites/partials/_favourite_card.html",
+            {"favourite": favourite, "problem_cards": []},
+        )
+
+        assert self._title_tag(content) == "h2"
 
 
 # ---------------------------------------------------------------------------
