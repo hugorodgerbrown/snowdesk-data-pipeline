@@ -1,11 +1,21 @@
 ---
 name: resort-page-shows-point-forecast
 description: Resort page shows the resort's own ForecastPointWeather via _forecast_panel.html below the region snapshot header
-status: current
+status: historical
 last-reviewed: 2026-08-09
 ---
 
 # Resort page shows the resort's own point forecast (SNOW-572) — supersedes resort-page-weather-shows-region-snapshot
+
+> **Superseded by
+> [`resort-page-shows-location-forecasts`](resort-page-shows-location-forecasts.md)**
+> (SNOW-702). The page now renders one labelled forecast per linked
+> `Location` and feeds the hero band from the primary location's day-0 row.
+> What carries forward: the `_forecast_panel.html` reuse rationale, the
+> `testid_prefix` idiom, the `?variant=panel` HTMX retry, and the rule that
+> no resort loses weather. What is withdrawn: the region `WeatherSnapshot`
+> as the unconditional header, which put region-centroid numbers directly
+> above point numbers for the same day.
 
 **Decision.** The public resort page (`/resorts/<id>/<slug>/`,
 `apps.public.views.resort_detail`) renders two weather layers. The parent

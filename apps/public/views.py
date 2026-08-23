@@ -40,7 +40,8 @@ import json
 import logging
 import random
 import uuid
-from typing import Any, cast
+from collections import defaultdict
+from typing import Any, NamedTuple, cast
 
 import waffle
 from django.conf import settings
@@ -4093,6 +4094,102 @@ def _bulletin_detail_render(
 # ---------------------------------------------------------------------------
 
 
+class ResortLocationForecast(NamedTuple):
+    """One linked location's labelled forecast, for the resort page.
+
+    Attributes:
+        location: The ``Location`` itself — the template reads its ``name``
+            and ``elevation_m`` for the label.
+        role: The ``ResortLocation.ROLE`` this location plays for this
+            resort, used as the section's ``data-testid`` suffix.
+        is_primary: Whether the resort leads with this one.
+        panel: The multi-day panel from ``build_point_forecast_panel``.
+        today_row: The day-0 ``ForecastPointWeather`` row, which the hero
+            band is fed from when this is the primary location. Separate
+            from ``panel`` because the panel is a rendered projection and
+            the hero needs the row itself.
+
+    """
+
+    location: Any
+    role: str
+    is_primary: bool
+    panel: Any
+    today_row: Any
+
+
+def _resort_location_forecasts(
+    resort: Resort, today: datetime.date
+) -> list[ResortLocationForecast]:
+    """Return one labelled forecast per linked Location, primary first.
+
+    Ordered primary-first then by ascending elevation, which reads as the
+    way up the mountain: village, mid-station, top. Locations with no
+    forecast cell, or a cell with no rows in the forward window, are
+    omitted rather than rendered empty — the page shows what it has.
+
+    Two queries regardless of how many locations a resort has: one for the
+    links (joined to their locations) and one bulk fetch of the window for
+    every cell at once, grouped in Python. A per-location query would put
+    an unbounded N+1 on a public page.
+
+    Args:
+        resort: The resort being rendered.
+        today: The first day of the forward window.
+
+    Returns:
+        The forecasts, primary first. Empty for an uncurated resort.
+
+    """
+    links = list(
+        resort.resort_locations.select_related("location")
+        .filter(location__forecast_cell__isnull=False)
+        .order_by("-is_primary", "location__elevation_m")
+    )
+    if not links:
+        return []
+
+    # The queryset already excludes a null cell; narrowing again here keeps
+    # mypy honest and costs nothing.
+    cell_ids = {
+        link.location.forecast_cell_id
+        for link in links
+        if link.location.forecast_cell_id is not None
+    }
+    rows_by_cell: dict[int, list[ForecastPointWeather]] = defaultdict(list)
+    for row in (
+        ForecastPointWeather.objects.filter(
+            forecast_point_id__in=cell_ids, valid_for_date__gte=today
+        )
+        .order_by("valid_for_date")
+        .iterator()
+    ):
+        rows_by_cell[row.forecast_point_id].append(row)
+
+    now = timezone.now()
+    forecasts = []
+    for link in links:
+        cell_id = link.location.forecast_cell_id
+        if cell_id is None:
+            continue
+        rows = rows_by_cell.get(cell_id, [])[:POINT_FORECAST_DAYS]
+        if not rows:
+            continue
+        forecasts.append(
+            ResortLocationForecast(
+                location=link.location,
+                role=link.role,
+                is_primary=link.is_primary,
+                panel=build_point_forecast_panel(rows, now),
+                # Only the day-0 row, and only when it is actually today —
+                # a cell whose window starts tomorrow must not hand the
+                # hero band a figure for the wrong day.
+                today_row=rows[0] if rows[0].valid_for_date == today else None,
+            )
+        )
+    return forecasts
+
+
 def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpResponse:
     """
     Render the public resort detail page.
@@ -4116,18 +4213,20 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     coordinates (SNOW-508) — falling back to the region-wide count when the
     resort has no coordinates.
 
-    Weather has two layers. The parent region's ``WeatherSnapshot`` remains
-    the page header and the fallback for every resort (SNOW-509) — the
-    page issues zero Open-Meteo fetches of its own for it; the
-    belt-and-braces HTMX retry (when no snapshot exists yet) hits
-    ``public:weather_snippet``, same as the bulletin masthead. Below it,
-    when ``resort.forecast_point`` is set and its forward window has rows,
-    the resort's own multi-day point forecast renders too (SNOW-572) —
-    the same ``ForecastPointWeather`` window and
-    ``includes/_forecast_panel.html`` partial the favourite detail card
-    uses, so no resort loses weather and a linked resort shows richer,
-    point-local data. See
-    ``docs/decisions/resort-page-shows-point-forecast.md``.
+    Weather is **one forecast per linked ``Location``** (SNOW-702), each
+    labelled with its name and elevation — "Verbier village · 1436 m",
+    "Mont Fort · 3328 m" — with the resort's primary location leading. A
+    resort with one linked location renders exactly what it rendered
+    before, plus the label it was always missing, so the page degrades
+    cleanly across a partially-curated estate.
+
+    The hero band is fed from the **primary location's day-0 row**, not
+    from the parent region's ``WeatherSnapshot``. The accepted
+    weather-sourcing rule is numbers from points, decoration from
+    snapshots, and the page previously broke it by stacking
+    region-centroid figures directly above point figures for the same day.
+    The snapshot remains the fallback so an uncurated resort loses
+    nothing. See ``docs/decisions/resort-page-shows-location-forecasts.md``.
 
     Args:
         request: The incoming HTTP request.
@@ -4158,23 +4257,33 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         can_favourite = True
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
-    # Weather (SNOW-509) — the region snapshot remains the page header and
-    # the fallback for every resort; this keeps that part of the page free
-    # of any per-resort Open-Meteo fetch. Same lookup pattern as
-    # ``_bulletin_detail_response`` — ``.first()`` is safe because
-    # ``unique_together = (region, valid_for_date)``.
-    weather_snapshot = (
-        WeatherSnapshot.objects.for_date(today).filter(region=region).first()
-    )
-    weather_display = build_weather_display(weather_snapshot, timezone.now())
+    # One forecast per linked Location (SNOW-702), primary first.
+    location_forecasts = _resort_location_forecasts(resort, today)
 
-    # Point forecast (SNOW-572) — the resort's own multi-day forecast, read
-    # from the ForecastPointWeather window already written by the
-    # fetch_weather point pass (SNOW-503). None when the resort has no
-    # linked forecast_point, or the point has no rows in the forward
-    # window yet — the resort-forecast section is simply omitted then.
+    # The hero band takes its numbers from the primary location's day-0
+    # row. Falling back to the region's WeatherSnapshot when the resort has
+    # no curated location yet, or its cell has no rows — an uncurated
+    # resort must lose nothing, which is what makes SNOW-701's incremental
+    # curation safe to land a few resorts at a time.
+    #
+    # ``.first()`` on the snapshot is safe because
+    # ``unique_together = (region, valid_for_date)``.
+    hero_row = location_forecasts[0].today_row if location_forecasts else None
+    weather_snapshot = None
+    if hero_row is None:
+        weather_snapshot = (
+            WeatherSnapshot.objects.for_date(today).filter(region=region).first()
+        )
+    weather_display = build_weather_display(
+        hero_row or weather_snapshot, timezone.now()
+    )
+
+    # Retained for the legacy single-panel section until every resort is
+    # curated: a resort with no linked location still shows the point
+    # forecast SNOW-572 gave it, rather than dropping to the region
+    # snapshot alone.
     forecast_panel = None
-    if resort.forecast_point is not None:
+    if not location_forecasts and resort.forecast_point is not None:
         forecast_snapshots = list(
             ForecastPointWeather.objects.forecast_for_point(
                 resort.forecast_point, today
@@ -4204,6 +4313,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         "weather_display": weather_display,
         "weather_htmx_trigger": weather_display is None,
         "forecast_panel": forecast_panel,
+        "location_forecasts": location_forecasts,
     }
     return render(request, "public/resort.html", context)
 
