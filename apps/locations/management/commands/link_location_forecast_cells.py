@@ -30,8 +30,14 @@ A location that fails to resolve is logged and counted under ``failed``; it
 never aborts the batch, and the command exits non-zero when any failed, so
 cron/CI can detect a partial run.
 
-Idempotent — ``Location.objects.unresolved()`` excludes rows that already
-have both fields, so a second run with nothing new selects zero.
+Scoped to ``Location.objects.named()`` — the curated estate. A favourite's
+location already carries its cell from creation and is never unresolved; an
+observation's deliberately has none, because an observation shows no
+forecast panel. Without that filter every historical report would bill an
+elevation lookup for weather nothing renders.
+
+Idempotent — ``unresolved()`` excludes rows that already have both fields,
+so a second run with nothing new selects zero.
 
 Usage:
     # Preview — resolves and reports, writes nothing.
@@ -85,16 +91,17 @@ def _non_negative_float(raw: str) -> float:
 
 
 class Command(BaseCommand):
-    """Resolve elevation and forecast cell for every unresolved Location.
+    """Resolve elevation and forecast cell for unresolved curated Locations.
 
-    Read-only by default; pass --commit to persist. Locations that already
-    carry both fields are excluded from the candidate set. Per-location
+    Read-only by default; pass --commit to persist. Anonymous locations —
+    those minted from favourites and observations — and locations that
+    already carry both fields are excluded from the candidate set. Per-location
     failures are caught, logged and counted — they never abort the batch —
     and the command exits non-zero when any location failed to resolve.
     """
 
     help = (
-        "Resolve each unresolved Location's own elevation (via "
+        "Resolve each unresolved curated Location's own elevation (via "
         "fetch_elevation) and its shared forecast cell (via "
         "resolve_forecast_point), widening the point-weather polling set to "
         "cover curated locations. Read-only unless --commit is passed."
@@ -129,9 +136,17 @@ class Command(BaseCommand):
         delay: float = options["delay"]
         verbosity: int = options["verbosity"]
 
-        # Streamed, not materialised: Location is a growable table — SNOW-704
-        # and SNOW-709 mint a row per favourite and per observation.
-        candidates = Location.objects.unresolved()
+        # Scoped to the **curated** estate, and streamed rather than
+        # materialised: Location is a growable table — SNOW-704 and
+        # SNOW-709 mint a row per favourite and per observation.
+        #
+        # named() is what keeps this command's cost bounded. A favourite's
+        # location already carries its cell from creation, so it is never
+        # unresolved; an observation's deliberately has none, because an
+        # observation shows no forecast panel. Without the named() filter
+        # every historical report would bill an Open-Meteo elevation lookup
+        # for weather nothing renders.
+        candidates = Location.objects.named().unresolved()
         total = candidates.count()
 
         self._announce(total, commit=commit, delay=delay)

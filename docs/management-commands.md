@@ -371,6 +371,13 @@ Both calls are made even in a dry run, so the reported outcome is real; only
 the writes are gated. A per-location failure is logged and counted, never
 aborts the batch, and makes the command exit non-zero.
 
+**Scoped to `Location.objects.named()`** — the curated estate. That filter
+is what keeps the cost bounded: a favourite's location already carries its
+cell from creation and is never unresolved, and an observation's
+deliberately has none, because an observation shows no forecast panel.
+Without it, every historical field report would bill an elevation lookup
+for weather nothing renders.
+
 ```bash
 uv run python manage.py link_location_forecast_cells             # preview
 uv run python manage.py link_location_forecast_cells --commit    # persist

@@ -10,6 +10,8 @@ Covers ``link_location_forecast_cells`` (SNOW-701):
     the command exit non-zero.
   - The resolved cell puts the location into ForecastPoint.active(), so
     prune_forecast_points leaves it alone.
+  - Anonymous locations are never candidates — the filter that keeps this
+    command's cost bounded once SNOW-704 and SNOW-709 start minting rows.
 
 Every Open-Meteo call is patched out — the command's own tests must not
 depend on a live external API.
@@ -187,3 +189,53 @@ class TestLinkLocationForecastCellsFailures:
         """--delay validates as non-negative."""
         with pytest.raises(CommandError):
             call_command(COMMAND, "--delay", "-1", stdout=StringIO())
+
+
+@pytest.mark.django_db
+class TestLinkLocationForecastCellsScope:
+    """Only the curated estate is a candidate.
+
+    ``named()`` is what keeps this command's cost bounded. A favourite's
+    location already carries its cell from creation, so it is never
+    unresolved; an observation's deliberately has none, because an
+    observation shows no forecast panel. Without the filter, every
+    historical report would bill an Open-Meteo elevation lookup for weather
+    nothing renders.
+    """
+
+    def test_anonymous_locations_are_not_candidates(self) -> None:
+        """A location minted from user data is never resolved here."""
+        minted = LocationFactory.create(anonymous=True)
+        cell = ForecastPointFactory.create()
+
+        with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
+            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
+
+        minted.refresh_from_db()
+        assert minted.elevation_m is None
+        assert minted.forecast_cell is None
+
+    def test_no_external_call_is_made_for_an_anonymous_location(self) -> None:
+        """The cost, not just the write, is avoided.
+
+        A candidate queryset that included these would pay for the lookup
+        even in a dry run — this command resolves before it decides.
+        """
+        LocationFactory.create(anonymous=True)
+
+        with patch(_ELEVATION) as lookup, patch(_RESOLVE):
+            call_command(COMMAND, "--delay", "0", stdout=StringIO())
+
+        lookup.assert_not_called()
+
+    def test_a_curated_location_alongside_them_is_still_resolved(self) -> None:
+        """The filter narrows the set; it does not disable the command."""
+        curated = LocationFactory.create(name="Mont Fort")
+        LocationFactory.create(anonymous=True)
+        cell = ForecastPointFactory.create()
+
+        with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE, return_value=cell):
+            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
+
+        curated.refresh_from_db()
+        assert curated.elevation_m == 3328.0
