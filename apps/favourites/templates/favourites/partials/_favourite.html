@@ -70,11 +70,15 @@ Context:
     {% trans "Unnamed pin" as unnamed_pin %}
     {% firstof favourite.name unnamed_pin as row_label %}
     {% trans "Favourite name" as rename_label %}
+    {# The chevron and the panel it fills are one decision, so they are      #}
+    {# gated together. A map row that kept the panel would carry an empty    #}
+    {# expand target nothing on that surface can ever open.                  #}
     {% if not hide_disclosure %}
         {% firstof "includes/_row_disclosure.html" as row_disclosure %}
+        {% firstof "favourite-panel-"|add:uuid as row_panel_id %}
     {% endif %}
     {% blocktrans trimmed with name=row_label asvar disclosure_label %}Show details for {{ name }}{% endblocktrans %}
     {% url 'favourites:detail' favourite.uuid as detail_url %}
     {% url 'favourites:card' favourite.uuid as card_url %}
-    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id="favourite-panel-"|add:uuid disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
+    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
 {% endwith %}

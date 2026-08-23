@@ -1,0 +1,47 @@
+{% comment %}
+templates/includes/_icon_locate.html — the "find this point on the map"
+glyph: a crosshair (SNOW-711).
+
+One source for one mark, like the four glyphs beside it. Its caller is the
+favourite detail card's coordinate link, which flies the map to that pin
+and opens its popup (/map/?favourite=<uuid>).
+
+A CROSSHAIR RATHER THAN A PIN OR A STAR, and the distinction is the whole
+point of adding a fifth glyph rather than reusing one:
+
+  * the star (_icon_favourite.html) already means "a favourite" — it is
+    the favourites roundel's own mark and the pin drawn on the map. Using
+    it here would say "this is a favourite", which the card the link sits
+    in has already said;
+  * a map pin would mean "a place", which the coordinates beside it
+    already say more precisely.
+
+A crosshair means neither — it means LOCATE THIS, an action, which is what
+the link does. It is also the one mark of the five that names no object,
+so it cannot be misread as a second identity for the thing it sits next to.
+
+Stroke width 2, matching every other glyph in this codebase. The centre dot
+carries its own ``fill`` because the root sets ``fill="none"`` for the
+strokes — without it the dot renders as a tiny ring rather than a point.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 15, sized to
+            sit on a 13px coordinate line rather than in a 44×44 control.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:15 }}"
+    height="{{ size|default:15 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="12" cy="12" r="7" />
+    <path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+</svg>

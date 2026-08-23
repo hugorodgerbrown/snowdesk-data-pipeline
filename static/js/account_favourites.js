@@ -46,6 +46,10 @@
 
   var LIST_SELECTOR = '[data-favourite-list]';
   var DISCLOSURE_SELECTOR = '[data-row-disclosure]';
+  // The expand target inside a row. Found by attribute rather than by the
+  // `favourite-panel-<uuid>` id the template builds, so this module needs
+  // no opinion about how that id is spelled.
+  var PANEL_SELECTOR = '[data-row-panel]';
 
   /**
    * The CSRF token for a plain fetch off this page.
@@ -93,12 +97,20 @@
     var next = holder.content.firstElementChild;
     if (!next) return;
 
-    // The row's panel is its next sibling and is NOT part of the response.
-    // If it is holding a card, the pin is expanded — and the fresh row
-    // renders closed, so say so before it goes in or the next click on the
-    // chevron would expand an already-open row.
-    var panel = row.nextElementSibling;
-    if (panel && panel.children.length) {
+    // SNOW-711: the panel lives INSIDE the row's own <li>, so this swap
+    // would take an expanded card down with the row it replaces. Carry the
+    // card across instead: a rename changes the pin's label, not whether
+    // the user has it open. The fresh row always renders closed and empty,
+    // so its `aria-expanded` has to be corrected to match what we moved.
+    //
+    // (The panel used to be the row's next SIBLING, which survived this
+    // swap by accident of not being part of it. Nesting is what makes
+    // Remove take the card with the header — see _ugc_panel_row.html — and
+    // it is why the rename path now has to do this deliberately.)
+    var panel = row.querySelector(PANEL_SELECTOR);
+    var nextPanel = next.querySelector(PANEL_SELECTOR);
+    if (panel && nextPanel && panel.children.length) {
+      nextPanel.replaceChildren.apply(nextPanel, Array.prototype.slice.call(panel.children));
       var control = next.querySelector(DISCLOSURE_SELECTOR);
       if (control) control.setAttribute('aria-expanded', 'true');
     }

@@ -59,20 +59,13 @@ Context:
     {{ roster_payload|json_script:"favourites-roster-cache" }}
     <ul class="flex flex-col">
         {% for favourite in favourites %}
+            {# One <li> per favourite, and the row carries its own expand   #}
+            {# target inside it (includes/_ugc_panel_row.html's             #}
+            {# disclosure_panel_id). This loop emitted a SECOND <li> for    #}
+            {# that panel until SNOW-711: one favourite was two list items, #}
+            {# and Remove — which targets the row's id — deleted the header #}
+            {# while leaving the expanded card orphaned beneath it.         #}
             {% include "favourites/partials/_favourite.html" with favourite=favourite %}
-            {# The row's own expand target — empty until its chevron fills   #}
-            {# it, and emptied again when the chevron closes. A list item    #}
-            {# rather than a sibling <div>: a <ul> takes no other child.     #}
-            {#                                                               #}
-            {# The padding arrives with the card: an empty block box is 0px  #}
-            {# tall, so a collapsed row's panel costs nothing, and the gap   #}
-            {# separating an expanded card from the rows around it appears   #}
-            {# only once there is a card. `:has(*)` rather than `:empty`     #}
-            {# because djangofmt puts the closing tag on its own line, and   #}
-            {# that whitespace text node is enough for `:empty` to stop      #}
-            {# matching.                                                     #}
-            <li id="favourite-panel-{{ favourite.uuid }}" data-testid="favourite-card-panel" class="[&:has(*)]:py-3">
-            </li>
         {% endfor %}
     </ul>
     {% if not favourites %}

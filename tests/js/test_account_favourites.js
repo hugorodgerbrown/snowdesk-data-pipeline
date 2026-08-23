@@ -40,25 +40,32 @@ await import('../../static/js/account_favourites.js');
 
 /** The row markup favourites:list renders, cut to what this module reads.
  *
+ * The expand panel is INSIDE the row's own `<li>` (SNOW-711), which is
+ * what makes Remove take an expanded card down with the header that
+ * opened it. It was a sibling `<li>` for one commit, and a delete left the
+ * orphaned card behind on screen.
+ *
  * @param {string} name The pin's name.
- * @returns {string} One row plus its own (empty) expand panel.
+ * @returns {string} One row, its header line and its own (empty) panel.
  */
 function rowMarkup(name) {
   return `
     <li id="favourite-${UUID}" data-row-renameable>
-      <span data-row-label>${name}</span>
-      <input type="text" data-row-rename-input hidden aria-label="Favourite name">
-      <button type="button" data-row-rename data-favourite-rename="${UUID}"
-              aria-label="Rename ${name}">edit</button>
-      <form hx-post="/favourites/partials/${UUID}/delete/">
-        <input type="hidden" name="csrfmiddlewaretoken" value="tok">
-        <button type="submit" aria-label="Remove ${name}">bin</button>
-      </form>
-      <a href="/favourites/${UUID}/" hx-get="${CARD_URL}"
-         hx-target="#favourite-panel-${UUID}" data-row-disclosure
-         aria-controls="favourite-panel-${UUID}" aria-expanded="false">chevron</a>
-    </li>
-    <li id="favourite-panel-${UUID}"></li>`;
+      <div>
+        <span data-row-label>${name}</span>
+        <input type="text" data-row-rename-input hidden aria-label="Favourite name">
+        <button type="button" data-row-rename data-favourite-rename="${UUID}"
+                aria-label="Rename ${name}">edit</button>
+        <form hx-post="/favourites/partials/${UUID}/delete/">
+          <input type="hidden" name="csrfmiddlewaretoken" value="tok">
+          <button type="submit" aria-label="Remove ${name}">bin</button>
+        </form>
+        <a href="/favourites/${UUID}/" hx-get="${CARD_URL}"
+           hx-target="#favourite-panel-${UUID}" data-row-disclosure
+           aria-controls="favourite-panel-${UUID}" aria-expanded="false">chevron</a>
+      </div>
+      <div id="favourite-panel-${UUID}" data-row-panel></div>
+    </li>`;
 }
 
 /** Paint the page as it stands once favourites:list has been swapped in.
@@ -104,10 +111,10 @@ beforeEach(() => {
     Promise.resolve({
       ok: true,
       status: 200,
-      text: () =>
-        Promise.resolve(
-          rowMarkup('Renamed').split('<li id="favourite-panel-')[0],
-        ),
+      // favourite_rename returns the whole row, panel included and empty —
+      // the endpoint has no idea the user has this pin expanded. Carrying
+      // the open card across that swap is swapRow's job, asserted below.
+      text: () => Promise.resolve(rowMarkup('Renamed')),
     }),
   );
 });
@@ -150,10 +157,10 @@ describe('renaming a row', () => {
   });
 
   it('keeps an expanded row expanded across the swap', async () => {
-    // The panel is the row's sibling and is not part of the response, so a
-    // fresh row arrives rendered closed while its card is still on screen.
-    // Left alone, the next click on the chevron would expand what is
-    // already open.
+    // The response carries this row's panel, empty — the endpoint has no
+    // idea the user has the pin open. So the swap would drop the card on
+    // the floor, and the fresh row would read closed while its card was
+    // still on screen. swapRow carries the card across and says so.
     panel().innerHTML = '<div>card</div>';
 
     await rename('Renamed');
