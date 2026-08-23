@@ -1466,7 +1466,7 @@ def _boundary_bbox(boundary: Any) -> dict[str, float] | None:
     """Compute a ``{min_lon, min_lat, max_lon, max_lat}`` bbox from GeoJSON.
 
     Pure-Python — no Shapely, no PostGIS — the same dependency-free
-    precedent as ``resolvers._haversine_km``. Handles both ``Polygon`` and
+    precedent as ``apps.core.geo``. Handles both ``Polygon`` and
     ``MultiPolygon`` geometry types.
 
     Args:

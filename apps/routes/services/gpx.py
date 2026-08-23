@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING
 from defusedxml.ElementTree import ParseError, fromstring
 
 from apps.core.coordinates import InvalidCoordinatesError, validate_coordinates
+from apps.core.geo import haversine_m
 
 if TYPE_CHECKING:
     # The ``Element`` type lives in the stdlib; defusedxml.fromstring returns
@@ -53,12 +54,6 @@ if TYPE_CHECKING:
     from xml.etree.ElementTree import Element  # noqa: S405
 
 logger = logging.getLogger(__name__)
-
-# Mean Earth radius in metres (IUGG). The track lengths this serves are
-# tens of kilometres over mountain terrain, where the difference between a
-# spherical and an ellipsoidal model is far below the GPS noise already in
-# the source data.
-_EARTH_RADIUS_M = 6_371_008.8
 
 # Upper bound on the number of coordinates stored in ``Route.points``. A
 # 30,000-point ride is perfectly ordinary for a watch recording at 1 Hz, and
@@ -274,29 +269,6 @@ def _select_track(root: "Element") -> tuple[list["Element"], int, str]:
 # ---------------------------------------------------------------------------
 
 
-def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-    """Return the great-circle distance between two WGS-84 points, in metres.
-
-    Args:
-        lon1: Longitude of the first point, in degrees.
-        lat1: Latitude of the first point, in degrees.
-        lon2: Longitude of the second point, in degrees.
-        lat2: Latitude of the second point, in degrees.
-
-    Returns:
-        Distance in metres.
-
-    """
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    delta_phi = phi2 - phi1
-    delta_lambda = math.radians(lon2 - lon1)
-    a = (
-        math.sin(delta_phi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
-    )
-    return 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
-
-
 def _total_distance_m(points: list[tuple[float, float, float | None]]) -> float:
     """Return the summed great-circle length of a point list, in metres.
 
@@ -307,8 +279,11 @@ def _total_distance_m(points: list[tuple[float, float, float | None]]) -> float:
         Total distance in metres; 0.0 for a list too short to have a leg.
 
     """
+    # Points are ``(lon, lat, ele)`` — GeoJSON order — while ``haversine_m``
+    # takes latitude first, per the project convention. Swap here rather than
+    # keeping a second argument order in ``apps/core/geo.py``.
     return sum(
-        _haversine_m(first[0], first[1], second[0], second[1])
+        haversine_m(first[1], first[0], second[1], second[0])
         for first, second in zip(points, points[1:], strict=False)
     )
 

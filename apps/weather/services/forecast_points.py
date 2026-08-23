@@ -30,6 +30,7 @@ import logging
 import math
 
 from apps.core.coordinates import validate_coordinates
+from apps.core.geo import haversine_m
 from apps.weather.models import ForecastPoint
 from apps.weather.services.elevation import fetch_elevation
 
@@ -49,8 +50,6 @@ ELEVATION_BAND_SIZE = 200
 # it falls within both of these.
 REUSE_HORIZONTAL_THRESHOLD_M = 750
 REUSE_ELEVATION_THRESHOLD_M = 150
-
-_EARTH_RADIUS_KM = 6371.0088
 
 
 def quantise_lat(latitude: float) -> int:
@@ -95,38 +94,6 @@ def quantise_elevation(elevation: float) -> int:
     return math.floor(elevation / ELEVATION_BAND_SIZE)
 
 
-def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Return the great-circle distance in metres between two lat/lon pairs.
-
-    Pure-Python haversine, mirroring ``apps/mcp_server/resolvers.py::_haversine_km``
-    (same earth radius constant). Kept as a local, private copy per the
-    scope's touch list — see
-    ``docs/decisions/forecast-point-quantisation.md`` for why a shared
-    ``core`` extraction is deferred.
-
-    Args:
-        lat1: Latitude of point one, in degrees.
-        lon1: Longitude of point one, in degrees.
-        lat2: Latitude of point two, in degrees.
-        lon2: Longitude of point two, in degrees.
-
-    Returns:
-        The great-circle distance in metres.
-
-    """
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    )
-    distance_km = 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
-    return distance_km * 1000
-
-
 def _find_reusable_point(
     latitude: float,
     longitude: float,
@@ -166,7 +133,7 @@ def _find_reusable_point(
     for candidate in candidates:
         if abs(candidate.elevation - elevation) > REUSE_ELEVATION_THRESHOLD_M:
             continue
-        distance_m = _haversine_m(
+        distance_m = haversine_m(
             latitude, longitude, candidate.latitude, candidate.longitude
         )
         if distance_m > REUSE_HORIZONTAL_THRESHOLD_M:

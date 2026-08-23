@@ -17,13 +17,13 @@ from __future__ import annotations
 import collections
 import datetime
 import logging
-import math
 from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.core.geo import haversine_km
 from apps.core.models import BaseModel
 
 if TYPE_CHECKING:
@@ -32,44 +32,6 @@ if TYPE_CHECKING:
     from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
-
-# Mean earth radius in kilometres (IUGG). Mirrors
-# ``apps/weather/services/forecast_points.py::_haversine_m`` and
-# ``apps/mcp_server/resolvers.py::_haversine_km`` — kept as an independent copy
-# per ``docs/decisions/forecast-point-quantisation.md`` (a shared ``core``
-# extraction is deferred until a third distinct caller shape emerges).
-_EARTH_RADIUS_KM = 6371.0088
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Return the great-circle distance in kilometres between two lat/lon pairs.
-
-    Pure-Python haversine, mirroring ``apps/weather/services/forecast_points.py::
-    _haversine_m`` and ``apps/mcp_server/resolvers.py::_haversine_km`` (same earth
-    radius constant, kept as an independent copy — see
-    ``docs/decisions/forecast-point-quantisation.md``).
-
-    Args:
-        lat1: Latitude of point one, in degrees.
-        lon1: Longitude of point one, in degrees.
-        lat2: Latitude of point two, in degrees.
-        lon2: Longitude of point two, in degrees.
-
-    Returns:
-        The great-circle distance in kilometres.
-
-    """
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    )
-    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
-
 
 # ---------------------------------------------------------------------------
 # QuerySet / Manager
@@ -170,7 +132,7 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
         near_pks = [
             pk
             for pk, obs_lat, obs_lon in candidates
-            if _haversine_km(latitude, longitude, obs_lat, obs_lon) <= radius_km
+            if haversine_km(latitude, longitude, obs_lat, obs_lon) <= radius_km
         ]
         return self.filter(pk__in=near_pks)
 
