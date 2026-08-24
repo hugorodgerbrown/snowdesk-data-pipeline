@@ -105,8 +105,19 @@ step 6 is optional there — it only front-runs the wait.
 
 **Staging has no scheduler**, so nothing populates weather unless step 6 is
 run by hand. Without it the panels stay empty even though every location and
-cell exists. On an empty weather table `fetch_weather` also needs a pinned
-`--date`.
+cell exists.
+
+⚠️ **Always pin `--date` on staging.** With no `--date`, `fetch_weather`
+derives its start from the latest stored `WeatherSnapshot` and runs to today
+— and because staging only ever fetches when someone runs it by hand, that
+gap is however long it has been since the last run. Each day in the window
+costs one paced archive call per micro-region, so a two-week gap is
+~7,000 calls at 1s each: over two hours. Pinning `--date` to today fetches
+one day of region archive plus the whole active-cell forecast pass, which is
+all a freshly-backfilled environment needs.
+
+The point pass only runs when the window reaches today, so a window that
+ends in the past populates no forecast cells at all.
 
 ## Verification
 
@@ -129,9 +140,16 @@ Record each environment as it is done, so a resumed run knows where it is.
 | 2. observations | ✅ 3 minted, 0 failed |
 | 3. import_locations | ✅ 4 locations, 4 links added |
 | 4. link_location_forecast_cells | ✅ 4 resolved, 3 new cells; elevations match notes |
-| 5. link_region_centroid_locations | ⬜ not started |
+| 5. link_region_centroid_locations | ✅ 461 linked, 0 failed; 461 new cells, 0 reused |
 | 6. fetch_weather | ⬜ not started |
 | verification | ⬜ not started |
+
+The region-centroid preview's upper bound was exact: every one of the 461
+centroids minted its own cell, none reused an existing resort cell. A
+micro-region's centroid is the geometric centre of a large polygon, so it
+rarely lands within both the 750 m and 150 m reuse thresholds of a resort.
+Staging's active cell count is now ~544, and each one is an Open-Meteo call
+per fetch cycle.
 
 Staging is on the **paid** Open-Meteo tier
 (`customer-api.open-meteo.com`), so the free-tier quota does not constrain
