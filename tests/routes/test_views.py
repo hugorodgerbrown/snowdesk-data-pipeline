@@ -79,6 +79,10 @@ LIST_URL = "/routes/partials/list/"
 # The map sheet's variant, as apps.public.views._routes_context builds it.
 MAP_LIST_URL = f"{LIST_URL}?variant={ROUTE_LIST_MAP_VARIANT}"
 
+# SNOW-721: the planner the empty clause links, in one place so a change of
+# destination touches one line rather than every assertion.
+PLANNER_URL = "https://routeplanner.suunto.com/"
+
 # SNOW-687: the map layer's data endpoint. Outside the ``partials/`` prefix
 # on purpose — it is a plain-JSON fetch target, not an HTMX fragment.
 GEOJSON_URL = "/routes/routes.geojson"
@@ -560,6 +564,31 @@ class TestRouteListScoping:
 
         assert response.status_code == 200
         assert 'data-testid="route-list-empty"' in body
+
+    def test_empty_state_links_a_route_planner(self, client: Client) -> None:
+        """The map panel's empty clause names a source for a .gpx (SNOW-721).
+
+        The same clause the account page renders — one partial, included by
+        both variants — so this asserts the map sheet really does get it and
+        the two surfaces cannot drift back apart.
+        """
+        client.force_login(UserFactory.create())
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert PLANNER_URL in body
+        assert 'rel="noopener"' in body
+
+    def test_empty_state_is_absent_once_a_route_exists(self, client: Client) -> None:
+        """A user WITH a route gets neither the clause nor the outbound link."""
+        user = UserFactory.create()
+        RouteFactory.create(user=user)
+        client.force_login(user)
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="route-list-empty"' not in body
+        assert PLANNER_URL not in body
 
 
 @pytest.mark.django_db
