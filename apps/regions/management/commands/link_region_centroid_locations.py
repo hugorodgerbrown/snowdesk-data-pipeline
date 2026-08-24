@@ -55,13 +55,17 @@ from __future__ import annotations
 
 import logging
 import time
-from argparse import ArgumentParser, ArgumentTypeError
+from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from apps.core.command_iteration import iterate_rows
+from apps.core.command_iteration import (
+    announce_link_run,
+    iterate_rows,
+    non_negative_float,
+)
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion
 from apps.weather.models import ForecastCell
@@ -69,29 +73,6 @@ from apps.weather.services.elevation import fetch_elevation
 from apps.weather.services.forecast_cells import resolve_forecast_cell
 
 logger = logging.getLogger(__name__)
-
-
-def _non_negative_float(raw: str) -> float:
-    """
-    Argparse ``type=`` helper for non-negative float arguments.
-
-    Args:
-        raw: The raw command-line string.
-
-    Returns:
-        The parsed, non-negative float.
-
-    Raises:
-        ArgumentTypeError: if the value is unparseable or negative.
-
-    """
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ArgumentTypeError(f"invalid float value: {raw!r}") from exc
-    if value < 0:
-        raise ArgumentTypeError(f"delay must be non-negative (got {value})")
-    return value
 
 
 def _centre_of(region: MicroRegion) -> tuple[float, float] | None:
@@ -148,7 +129,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--delay",
-            type=_non_negative_float,
+            type=non_negative_float,
             default=1.0,
             metavar="SECONDS",
             help=(
@@ -172,17 +153,14 @@ class Command(BaseCommand):
         )
         total = candidates.count()
 
-        flag_label = "" if commit else " [READ-ONLY]"
-        self.stdout.write(
-            self.style.MIGRATE_HEADING(
-                f"Resolving a centroid Location for {total} region(s){flag_label}"
-            )
-        )
-        logger.info(
-            "link_region_centroid_locations started: candidates=%d commit=%s delay=%s",
-            total,
-            commit,
-            delay,
+        announce_link_run(
+            self,
+            logger=logger,
+            command_name="link_region_centroid_locations",
+            banner=f"Resolving a centroid Location for {total} region(s)",
+            candidate_count=total,
+            commit=commit,
+            delay=delay,
         )
 
         # Counted so the dry-run can report the real cost: a reused cell is

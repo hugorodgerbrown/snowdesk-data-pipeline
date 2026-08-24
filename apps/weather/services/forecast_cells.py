@@ -94,7 +94,7 @@ def quantise_elevation(elevation: float) -> int:
     return math.floor(elevation / ELEVATION_BAND_SIZE)
 
 
-def _find_reusable_point(
+def _find_reusable_cell(
     latitude: float,
     longitude: float,
     elevation: float,
@@ -177,7 +177,7 @@ def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
     lon_cell = quantise_lon(longitude)
     elevation_band = quantise_elevation(elevation)
 
-    reusable = _find_reusable_point(
+    reusable = _find_reusable_cell(
         latitude, longitude, elevation, lat_cell, lon_cell, elevation_band
     )
     if reusable is not None:
@@ -195,7 +195,7 @@ def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
     # the resulting IntegrityError in a savepoint and re-fetches by the
     # lookup kwargs (which are exactly the unique key here) — no bespoke
     # handling needed on top of that.
-    point, created = ForecastCell.objects.get_or_create(
+    cell, created = ForecastCell.objects.get_or_create(
         lat_cell=lat_cell,
         lon_cell=lon_cell,
         elevation_band=elevation_band,
@@ -209,10 +209,10 @@ def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
     logger.debug(
         "Resolved ForecastCell id=%s created=%s for latitude=%s longitude=%s "
         "elevation=%s",
-        point.pk,
+        cell.pk,
         created,
         latitude,
         longitude,
         elevation,
     )
-    return point
+    return cell

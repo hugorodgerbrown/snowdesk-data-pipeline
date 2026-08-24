@@ -24,7 +24,7 @@ point**:
   sense on an archived day: the WMO code, sunrise/sunset, and (as of
   SNOW-571) the daily temperature/snowfall trio.
 - `ForecastCellWeather` is rich, rolling, and evictable. It is upserted on
-  `(forecast_point, valid_for_date)` for a `POINT_FORECAST_DAYS`-day
+  `(forecast_cell, valid_for_date)` for a `POINT_FORECAST_DAYS`-day
   window and carries sixteen nullable columns plus an hourly-detail JSON
   blob — apparent temperature, precipitation, wind, UV, freezing level —
   because a favourited pin is a personal detail card, not an archive

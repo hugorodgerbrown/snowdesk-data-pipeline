@@ -21,6 +21,11 @@ with a primary key. ``countdown`` covers the minority case where the unit of
 work is a derived value with no id of its own (e.g. a ``(region, date)``
 pair) — there, the countdown counts down a known total instead of an id.
 
+``non_negative_float`` is unrelated to iteration, but lives here for the
+same reason: it is an argparse ``type=`` helper that half a dozen fetch/link
+commands each need for a ``--delay`` argument, and this is where cross-app
+command call sites already look for a shared helper rather than copying one.
+
 Lives in ``apps/core/`` alongside the other flat cross-app helpers
 (``freshness.py``, ``coordinates.py``, ``http.py``) since every app with
 management commands needs it.
@@ -28,12 +33,81 @@ management commands needs it.
 
 from __future__ import annotations
 
+import logging
+from argparse import ArgumentTypeError
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any, TypeVar
 
 from django.core.management.base import BaseCommand
 
 _T = TypeVar("_T")
+
+
+def non_negative_float(raw: str) -> float:
+    """
+    Argparse ``type=`` helper for non-negative float arguments.
+
+    Args:
+        raw: The raw command-line string.
+
+    Returns:
+        The parsed, non-negative float.
+
+    Raises:
+        ArgumentTypeError: if the value is unparseable or negative.
+
+    """
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ArgumentTypeError(f"invalid float value: {raw!r}") from exc
+    if value < 0:
+        raise ArgumentTypeError(f"delay must be non-negative (got {value})")
+    return value
+
+
+def announce_link_run(
+    cmd: BaseCommand,
+    *,
+    logger: logging.Logger,
+    command_name: str,
+    banner: str,
+    candidate_count: int,
+    commit: bool,
+    delay: float,
+) -> None:
+    """
+    Write the shared start-of-run banner and log line for a ``link_*`` command.
+
+    Every ``link_*`` backfill command (``link_resort_forecast_points``,
+    ``link_region_centroid_locations``, ``link_location_forecast_cells``)
+    opens the same way: a ``MIGRATE_HEADING`` banner suffixed
+    ``" [READ-ONLY]"`` unless ``--commit`` was passed, and a matching
+    ``"<command> started: candidates=%d commit=%s delay=%s"`` log line.
+    This is that shared shape.
+
+    Args:
+        cmd: The calling command, used for ``cmd.stdout``/``cmd.style``.
+        logger: The calling module's own logger, so the log record keeps
+            its original module-qualified name rather than this module's.
+        command_name: The command's name, as it appears in its own log
+            lines (e.g. ``"link_resort_forecast_points"``).
+        banner: The caller's descriptive sentence, with no flag suffix —
+            this appends it.
+        candidate_count: How many candidates were found.
+        commit: Whether ``--commit`` was passed.
+        delay: The resolved ``--delay`` value.
+
+    """
+    flag_label = "" if commit else " [READ-ONLY]"
+    cmd.stdout.write(cmd.style.MIGRATE_HEADING(f"{banner}{flag_label}"))
+    logger.info(
+        "%s started: candidates=%d commit=%s delay=%s",
+        command_name,
+        candidate_count,
+        commit,
+        delay,
+    )
 
 
 def iterate_rows(

@@ -54,40 +54,21 @@ from __future__ import annotations
 
 import logging
 import time
-from argparse import ArgumentParser, ArgumentTypeError
+from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.core.command_iteration import iterate_rows
+from apps.core.command_iteration import (
+    announce_link_run,
+    iterate_rows,
+    non_negative_float,
+)
 from apps.locations.models import Location
 from apps.weather.services.elevation import fetch_elevation
 from apps.weather.services.forecast_cells import resolve_forecast_cell
 
 logger = logging.getLogger(__name__)
-
-
-def _non_negative_float(raw: str) -> float:
-    """
-    Argparse ``type=`` helper for non-negative float arguments.
-
-    Args:
-        raw: The raw command-line string.
-
-    Returns:
-        The parsed, non-negative float.
-
-    Raises:
-        ArgumentTypeError: if the value is unparseable or negative.
-
-    """
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ArgumentTypeError(f"invalid float value: {raw!r}") from exc
-    if value < 0:
-        raise ArgumentTypeError(f"delay must be non-negative (got {value})")
-    return value
 
 
 class Command(BaseCommand):
@@ -120,7 +101,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--delay",
-            type=_non_negative_float,
+            type=non_negative_float,
             default=1.0,
             metavar="SECONDS",
             help=(
@@ -219,18 +200,17 @@ class Command(BaseCommand):
 
     def _announce(self, candidate_count: int, *, commit: bool, delay: float) -> None:
         """Write the start-of-run banner and matching log line."""
-        flag_label = "" if commit else " [READ-ONLY]"
-        self.stdout.write(
-            self.style.MIGRATE_HEADING(
+        announce_link_run(
+            self,
+            logger=logger,
+            command_name="link_location_forecast_cells",
+            banner=(
                 f"Resolving {candidate_count} location(s) to an elevation "
-                f"and a forecast cell{flag_label}"
-            )
-        )
-        logger.info(
-            "link_location_forecast_cells started: candidates=%d commit=%s delay=%s",
-            candidate_count,
-            commit,
-            delay,
+                "and a forecast cell"
+            ),
+            candidate_count=candidate_count,
+            commit=commit,
+            delay=delay,
         )
 
     def _report_outcome(

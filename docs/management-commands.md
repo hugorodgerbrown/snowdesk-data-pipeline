@@ -1163,7 +1163,7 @@ short wrote nothing at all.
 
 **Forecast history (SNOW-575, opt-in since SNOW-629)** — with
 `--add-history`, each stored day of the point pass also writes a
-`ForecastCellWeatherHistory` row keyed on `(forecast_point,
+`ForecastCellWeatherHistory` row keyed on `(forecast_cell,
 valid_for_date, issued_date)`, in the same transaction as its
 `ForecastCellWeather` twin. It is **off by default**: nothing user-facing
 reads the table, so retention is switchable without touching the

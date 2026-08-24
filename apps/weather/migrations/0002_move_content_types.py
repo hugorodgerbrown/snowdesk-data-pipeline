@@ -24,6 +24,8 @@ from django.apps.registry import Apps
 from django.db import migrations
 from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 
+from apps.core.contenttype_migrations import rewrite_content_type_rows
+
 # The four models that moved. Values are the lowercased ``model`` column
 # in ``django_content_type``.
 MOVED_MODELS = (
@@ -40,16 +42,13 @@ NEW_LABEL = "weather"
 def _relabel(apps: Apps, from_label: str, to_label: str) -> None:
     """Move the four moved models' ContentType rows between app labels.
 
-    Idempotent in both directions, and converges on exactly one row per
-    model whichever order things happened in.
-
-    When both labels somehow hold a row for the same model, the
-    ``from_label`` one is always the survivor: it is the pre-split row, so
-    it is the one every ``auth_permission`` and admin ``LogEntry`` points
-    at via ``content_type_id``. The ``to_label`` row in that case was
-    minted by ``post_migrate`` and carries no history, so it is the one
-    that can be dropped without losing anything. Deleting the wrong one
-    cascades exactly the rows this migration exists to preserve.
+    Routes through
+    ``apps.core.contenttype_migrations.rewrite_content_type_rows`` for the
+    row-rewrite itself (tie-break-on-collision behaviour documented
+    there). Permission codenames don't embed the app label, so — unlike
+    the model rename in the sibling ``0005_rename_content_types`` — the
+    permissions that follow each row across are already correctly named
+    and ``post_migrate`` re-creates nothing; no extra step is needed here.
 
     Args:
         apps: The historical app registry supplied by ``RunPython``.
@@ -57,35 +56,17 @@ def _relabel(apps: Apps, from_label: str, to_label: str) -> None:
         to_label: The ``app_label`` they should carry.
 
     """
-    ContentType = apps.get_model("contenttypes", "ContentType")
-
-    for model in MOVED_MODELS:
-        target = ContentType.objects.filter(app_label=to_label, model=model).first()
-        source = ContentType.objects.filter(app_label=from_label, model=model).first()
-
-        if source is None:
-            # Nothing to move — a fresh database, or already migrated.
-            continue
-
-        if target is not None:
-            # Drop the history-less duplicate first: (app_label, model) is
-            # unique, so the rename below would collide with it. Permission
-            # codenames don't embed the app label, so the permissions that
-            # follow ``source`` across are already correctly named and
-            # post_migrate re-creates nothing.
-            target.delete()
-
-        source.app_label = to_label
-        source.save(update_fields=["app_label"])
-
-    # The real ContentType manager caches lookups per (app_label, model);
-    # the historical model above has no such cache, so clear it on the
-    # concrete class or the rest of this migrate run reads stale rows.
-    from django.contrib.contenttypes.models import (  # noqa: PLC0415 — deferred so the module stays importable without app loading
-        ContentType as ConcreteContentType,
+    rewrite_content_type_rows(
+        apps,
+        (
+            (
+                {"app_label": from_label, "model": model},
+                {"app_label": to_label, "model": model},
+                {"app_label": to_label},
+            )
+            for model in MOVED_MODELS
+        ),
     )
-
-    ConcreteContentType.objects.clear_cache()
 
 
 def forwards(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None:

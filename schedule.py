@@ -72,7 +72,7 @@ def _run_fetch_weather() -> None:
     Adds ``--add-history`` when ``settings.FETCH_WEATHER_ADD_HISTORY`` is
     set, so point-forecast retention (SNOW-575) can be turned on or off by
     changing the environment variable and restarting this worker — no
-    deploy, and no effect on the operational ForecastPointWeather write.
+    deploy, and no effect on the operational ForecastCellWeather write.
     """
     from django.conf import (
         settings,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring

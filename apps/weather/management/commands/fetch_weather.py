@@ -83,7 +83,7 @@ Usage:
 """
 
 import logging
-from argparse import ArgumentParser, ArgumentTypeError
+from argparse import ArgumentParser
 from datetime import date, timedelta
 from typing import Any
 
@@ -95,6 +95,7 @@ from django.utils import timezone
 # legitimately defaults to the start of the bulletin archive, since weather is
 # only useful for days a bulletin exists for.
 from apps.bulletins.models import Bulletin
+from apps.core.command_iteration import non_negative_float
 from apps.regions.models import MicroRegion
 from apps.weather.models import ForecastCell, WeatherSnapshot
 from apps.weather.services.openmeteo_archive import flush_stash
@@ -108,23 +109,6 @@ from apps.weather.services.weather_fetcher import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _non_negative_float(raw: str) -> float:
-    """
-    Argparse ``type=`` helper for non-negative float arguments.
-
-    Raises:
-        ArgumentTypeError: if the value is unparseable or negative.
-
-    """
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ArgumentTypeError(f"invalid float value: {raw!r}") from exc
-    if value < 0:
-        raise ArgumentTypeError(f"delay must be non-negative (got {value})")
-    return value
 
 
 class Command(BaseCommand):
@@ -206,7 +190,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--delay",
-            type=_non_negative_float,
+            type=non_negative_float,
             default=1.0,
             metavar="SECONDS",
             help=(

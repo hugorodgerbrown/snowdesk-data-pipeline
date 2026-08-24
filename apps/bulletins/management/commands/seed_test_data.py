@@ -549,7 +549,7 @@ _CHOICES: list[str] = [m.value for m in SeedModel]
 # Coordinates for the seeded ForecastCells — spaced (0.1° / 300 m apart) so each
 # resolves to a distinct (lat_cell, lon_cell, elevation_band) triple, around the
 # Verbier detail region.
-_FORECAST_POINT_COORDS: tuple[tuple[float, float, float], ...] = (
+_FORECAST_CELL_COORDS: tuple[tuple[float, float, float], ...] = (
     (46.10, 7.40, 1500.0),
     (46.20, 7.50, 1800.0),
     (46.30, 7.60, 2100.0),
@@ -1255,7 +1255,7 @@ class Command(BaseCommand):
         return created
 
     def _seed_forecast_cells(self, verbosity: int) -> "list[ForecastCell]":
-        """Create the fixed set of ForecastCells from ``_FORECAST_POINT_COORDS``.
+        """Create the fixed set of ForecastCells from ``_FORECAST_CELL_COORDS``.
 
         Args:
             verbosity: Verbosity level.
@@ -1270,7 +1270,7 @@ class Command(BaseCommand):
             ForecastCellFactory.create(
                 latitude=latitude, longitude=longitude, elevation=elevation
             )
-            for latitude, longitude, elevation in _FORECAST_POINT_COORDS
+            for latitude, longitude, elevation in _FORECAST_CELL_COORDS
         ]
 
         if verbosity >= 2:
