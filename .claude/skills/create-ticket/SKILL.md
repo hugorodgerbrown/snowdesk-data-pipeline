@@ -12,7 +12,7 @@ description: >
   traps (priority/estimate enums, exact state names, the unreliable `blocks`
   relationship). Do NOT use to scope a ticket that already exists (`scope`) or
   to implement one that is already scoped (`implement`).
-allowed-tools: Read, mcp__linear-server
+allowed-tools: Read, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Create a Linear ticket
