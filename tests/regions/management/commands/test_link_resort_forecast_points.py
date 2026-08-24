@@ -21,7 +21,6 @@ patches) so no live Open-Meteo call happens anywhere in this suite.
 
 from __future__ import annotations
 
-from argparse import ArgumentTypeError
 from contextlib import AbstractContextManager
 from io import StringIO
 from unittest.mock import MagicMock, patch
@@ -30,9 +29,6 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.regions.management.commands.link_resort_forecast_points import (
-    _non_negative_float,
-)
 from apps.weather.models import ForecastCell
 from tests.factories import ForecastCellFactory, ResortFactory
 
@@ -229,24 +225,6 @@ class TestLinkResortForecastCellsFailureIsolation:
         resort_bad.refresh_from_db()
         assert resort_ok.forecast_point is not None
         assert resort_bad.forecast_point is None
-
-
-class TestNonNegativeFloat:
-    """Unit tests for the --delay argparse type helper."""
-
-    def test_parses_valid_float(self) -> None:
-        """A valid non-negative string parses to a float."""
-        assert _non_negative_float("2.5") == 2.5
-
-    def test_rejects_unparseable_value(self) -> None:
-        """A non-numeric string raises ArgumentTypeError."""
-        with pytest.raises(ArgumentTypeError, match="invalid float value"):
-            _non_negative_float("not-a-number")
-
-    def test_rejects_negative_value(self) -> None:
-        """A negative value raises ArgumentTypeError."""
-        with pytest.raises(ArgumentTypeError, match="must be non-negative"):
-            _non_negative_float("-1")
 
 
 @pytest.mark.django_db

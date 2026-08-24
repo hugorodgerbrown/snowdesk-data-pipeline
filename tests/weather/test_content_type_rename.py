@@ -133,6 +133,80 @@ def test_rename_preserves_permissions_and_their_assignments() -> None:
 
 
 @pytest.mark.django_db
+def test_rename_updates_a_permission_codename_to_match_the_new_model() -> None:
+    """A default-style permission codename is rewritten to match the rename.
+
+    ``Permission.codename`` is derived once from the model name and never
+    revisited by Django itself — the branch ``0002`` never needed, because
+    a codename doesn't embed the app label it moved. A real deployed
+    database holds an ``auth_permission`` row named ``view_forecastpoint``
+    from before this migration ever ran; simulate that here rather than
+    relying on the fresh test database's ``post_migrate`` hook, which
+    already writes the new-model permission.
+    """
+    row = ContentType.objects.get(app_label="weather", model="forecastcell")
+    ContentType.objects.filter(pk=row.pk).update(model="forecastpoint")
+    row.refresh_from_db()
+
+    permission = Permission.objects.create(
+        content_type=row,
+        codename="view_forecastpoint",
+        name="Can view forecast point",
+    )
+    user = User.objects.create_user(username="snow703b", password="unused-in-this-test")
+    user.user_permissions.add(permission)
+
+    _migration.forwards(global_apps, None)
+
+    permission.refresh_from_db()
+    assert permission.codename == "view_forecastcell"
+    assert permission.content_type.model == "forecastcell"
+    assert (
+        User.objects.get(pk=user.pk).user_permissions.filter(pk=permission.pk).exists()
+    )
+
+
+@pytest.mark.django_db
+def test_rename_drops_the_duplicate_codename_post_migrate_already_minted() -> None:
+    """When both codenames exist on the row, the granted one survives.
+
+    The test database's own ``post_migrate`` hook already minted
+    ``view_forecastcell`` for this content type, exactly as it would on a
+    fresh production database — that row is the history-less duplicate a
+    real deployment would also have once the ContentType is renamed. A
+    real deployment additionally holds a pre-rename ``view_forecastpoint``
+    row with an actual grant, which this test adds; the duplicate must be
+    the one that goes, mirroring the ContentType-row tie-break above.
+    """
+    row = ContentType.objects.get(app_label="weather", model="forecastcell")
+    duplicate_permission = Permission.objects.get(
+        content_type=row, codename="view_forecastcell"
+    )
+
+    ContentType.objects.filter(pk=row.pk).update(model="forecastpoint")
+    row.refresh_from_db()
+
+    granted_permission = Permission.objects.create(
+        content_type=row,
+        codename="view_forecastpoint",
+        name="Can view forecast point",
+    )
+    user = User.objects.create_user(username="snow703c", password="unused-in-this-test")
+    user.user_permissions.add(granted_permission)
+
+    _migration.forwards(global_apps, None)
+
+    granted_permission.refresh_from_db()
+    assert granted_permission.codename == "view_forecastcell"
+    assert not Permission.objects.filter(pk=duplicate_permission.pk).exists()
+    assert (
+        User.objects.get(pk=user.pk)
+        .user_permissions.filter(pk=granted_permission.pk)
+        .exists()
+    )
+
+
+@pytest.mark.django_db
 def test_forwards_and_backwards_move_in_opposite_directions() -> None:
     """The two ``RunPython`` wrappers pass their pairs the right way round.
 

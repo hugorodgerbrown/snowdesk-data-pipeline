@@ -9,16 +9,27 @@ fresh rows under the new names and every ``auth_permission`` and admin
 are the first thing a later cleanup would delete.
 
 Sibling of ``0002_move_content_types``, which did the same for the SNOW-654
-app-label move. The only difference is the column being rewritten: that one
-moved ``app_label``, this one moves ``model``.
+app-label move — both route through
+``apps.core.contenttype_migrations.rewrite_content_type_rows`` for the
+row-rewrite itself. Where this migration differs is the column: that one
+rewrote ``app_label``, this one rewrites ``model`` — and unlike
+``app_label``, ``model`` is embedded in every affected ``auth_permission``
+row's ``codename`` (``add_forecastpoint``, ``view_forecastpoint``, …),
+which Django derives once at creation time and never revisits. Left alone,
+a previously-granted permission's codename would keep saying the old model
+name forever, silently mismatching the codename Django's own permission
+checks build from the live (renamed) model — so this migration also
+rewrites that codename suffix, which ``0002`` never needed to.
 
-Touches at most three rows and takes no meaningful lock, so it cannot stall
-a Render deploy.
+Touches at most three ContentType rows and their permissions, and takes no
+meaningful lock, so it cannot stall a Render deploy.
 """
 
 from django.apps.registry import Apps
 from django.db import migrations
 from django.db.backends.base.schema import BaseDatabaseSchemaEditor
+
+from apps.core.contenttype_migrations import rewrite_content_type_rows
 
 # Old -> new, as the lowercased ``model`` column in ``django_content_type``.
 RENAMED_MODELS = (
@@ -30,54 +41,86 @@ RENAMED_MODELS = (
 APP_LABEL = "weather"
 
 
+def _rename_permission_codenames(
+    apps: Apps, pairs: tuple[tuple[str, str], ...]
+) -> None:
+    """Rewrite the codename suffix of every Permission tied to a renamed model.
+
+    ``ContentType.model`` is rewritten by ``rewrite_content_type_rows``
+    above, but ``Permission.codename`` is a separate column Django derives
+    once at creation time (``add_<model>``, ``change_<model>``, …) and
+    never revisits. Left alone, a codename like ``view_forecastpoint``
+    keeps pointing at the renamed content type while Django's own
+    permission checks (which build the string from the *live* model name)
+    look for ``view_forecastcell`` — so a previously-granted, non-superuser
+    permission silently stops matching, and ``post_migrate`` mints a fresh,
+    zero-grant duplicate under the new codename.
+
+    Idempotent, and safe on a database where ``post_migrate`` already
+    created the new-codename permissions: the history-less duplicate is
+    dropped first, exactly as ``rewrite_content_type_rows`` does for
+    ContentType rows themselves, so a permission's grants and its
+    ``content_type_id`` never move — only the codename text changes.
+
+    Args:
+        apps: The historical app registry supplied by ``RunPython``.
+        pairs: ``(from_model, to_model)`` pairs, as passed to ``_rename``.
+
+    """
+    ContentType = apps.get_model("contenttypes", "ContentType")
+    Permission = apps.get_model("auth", "Permission")
+
+    for old_model, new_model in pairs:
+        content_type = ContentType.objects.filter(
+            app_label=APP_LABEL, model=new_model
+        ).first()
+        if content_type is None:
+            # Nothing rewritten above (fresh database) — nothing to fix here.
+            continue
+
+        old_suffix = f"_{old_model}"
+        new_suffix = f"_{new_model}"
+        for permission in Permission.objects.filter(
+            content_type=content_type, codename__endswith=old_suffix
+        ):
+            new_codename = permission.codename[: -len(old_suffix)] + new_suffix
+
+            duplicate = (
+                Permission.objects.filter(
+                    content_type=content_type, codename=new_codename
+                )
+                .exclude(pk=permission.pk)
+                .first()
+            )
+            if duplicate is not None:
+                # Drop the history-less duplicate first: (content_type,
+                # codename) is unique, so the rewrite below would collide.
+                duplicate.delete()
+
+            permission.codename = new_codename
+            permission.save(update_fields=["codename"])
+
+
 def _rename(apps: Apps, pairs: tuple[tuple[str, str], ...]) -> None:
-    """Rewrite the ``model`` column of the renamed models' ContentType rows.
-
-    Idempotent in both directions, and converges on exactly one row per
-    model whichever order things happened in.
-
-    When both names somehow hold a row for the same model, the **old** one
-    survives: it is the pre-rename row, so it is the one every
-    ``auth_permission`` and admin ``LogEntry`` points at via
-    ``content_type_id``. The new-name row in that case was minted by
-    ``post_migrate`` and carries no history, so it is the one that can be
-    dropped without losing anything. Deleting the wrong one cascades
-    exactly the rows this migration exists to preserve.
+    """Rewrite the renamed models' ContentType rows and permission codenames.
 
     Args:
         apps: The historical app registry supplied by ``RunPython``.
         pairs: ``(from_model, to_model)`` pairs to rewrite.
 
     """
-    ContentType = apps.get_model("contenttypes", "ContentType")
-
-    for old_model, new_model in pairs:
-        source = ContentType.objects.filter(
-            app_label=APP_LABEL, model=old_model
-        ).first()
-        if source is None:
-            # Nothing to rename — a fresh database, or already migrated.
-            continue
-
-        target = ContentType.objects.filter(
-            app_label=APP_LABEL, model=new_model
-        ).first()
-        if target is not None:
-            # Drop the history-less duplicate first: (app_label, model) is
-            # unique, so the rename below would collide with it.
-            target.delete()
-
-        source.model = new_model
-        source.save(update_fields=["model"])
-
-    # The real ContentType manager caches lookups per (app_label, model);
-    # the historical model above has no such cache, so clear it on the
-    # concrete class or the rest of this migrate run reads stale rows.
-    from django.contrib.contenttypes.models import (  # noqa: PLC0415 — deferred so the module stays importable without app loading
-        ContentType as ConcreteContentType,
+    rewrite_content_type_rows(
+        apps,
+        (
+            (
+                {"app_label": APP_LABEL, "model": old_model},
+                {"app_label": APP_LABEL, "model": new_model},
+                {"model": new_model},
+            )
+            for old_model, new_model in pairs
+        ),
     )
-
-    ConcreteContentType.objects.clear_cache()
+    _rename_permission_codenames(apps, pairs)
 
 
 def forwards(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None:
@@ -96,6 +139,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("weather", "0004_alter_forecastcellweather_options_and_more"),
         ("contenttypes", "__first__"),
+        ("auth", "__first__"),
     ]
 
     operations = [

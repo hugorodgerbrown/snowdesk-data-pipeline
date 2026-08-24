@@ -4,16 +4,19 @@ tests/core/test_command_iteration.py — Tests for apps.core.command_iteration.
 Covers ``iterate_rows`` (newest-id-first streaming with a per-row countdown
 line) and ``countdown`` (decreasing-remaining-count driver for derived,
 non-row units of work) — the two shared helpers every SNOW-602 management
-command call site routes through instead of a hand-rolled loop.
+command call site routes through instead of a hand-rolled loop — plus
+``non_negative_float``, the ``--delay`` argparse ``type=`` helper shared by
+every fetch/link command with a pacing flag.
 """
 
 from __future__ import annotations
 
+from argparse import ArgumentTypeError
 from typing import Any
 
 import pytest
 
-from apps.core.command_iteration import countdown, iterate_rows
+from apps.core.command_iteration import countdown, iterate_rows, non_negative_float
 
 
 class _FakeStdout:
@@ -204,3 +207,21 @@ class TestCountdown:
 
         assert result == []
         assert cmd.stdout.lines == []
+
+
+class TestNonNegativeFloat:
+    """Unit tests for the shared ``--delay`` argparse type helper."""
+
+    def test_parses_valid_float(self) -> None:
+        """A valid non-negative string parses to a float."""
+        assert non_negative_float("2.5") == 2.5
+
+    def test_rejects_unparseable_value(self) -> None:
+        """A non-numeric string raises ArgumentTypeError."""
+        with pytest.raises(ArgumentTypeError, match="invalid float value"):
+            non_negative_float("not-a-number")
+
+    def test_rejects_negative_value(self) -> None:
+        """A negative value raises ArgumentTypeError."""
+        with pytest.raises(ArgumentTypeError, match="must be non-negative"):
+            non_negative_float("-1")

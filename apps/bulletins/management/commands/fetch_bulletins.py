@@ -62,7 +62,6 @@ Usage::
         --start-date 2014-11-01 --delay 5 --commit
 """
 
-import argparse
 import logging
 from argparse import ArgumentParser
 from datetime import date
@@ -78,29 +77,13 @@ from apps.bulletins.services.slf_fetcher import (
     BulletinSource,
     get_sources,
 )
+from apps.core.command_iteration import non_negative_float
 
 logger = logging.getLogger(__name__)
 
 _START_SOURCE_EXPLICIT = "explicit"
 _START_SOURCE_LATEST_BULLETIN = "latest_bulletin"
 _START_SOURCE_SEASON_BACKSTOP = "season_backstop"
-
-
-def _non_negative_float(raw: str) -> float:
-    """
-    Argparse ``type=`` helper for non-negative float arguments.
-
-    Raises:
-        argparse.ArgumentTypeError: if the value is unparseable or negative.
-
-    """
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"invalid float value: {raw!r}") from exc
-    if value < 0:
-        raise argparse.ArgumentTypeError(f"delay must be non-negative (got {value})")
-    return value
 
 
 class Command(BaseCommand):
@@ -202,7 +185,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--delay",
-            type=_non_negative_float,
+            type=non_negative_float,
             default=0.0,
             metavar="SECONDS",
             help=(
