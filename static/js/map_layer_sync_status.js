@@ -28,7 +28,11 @@
  * by the picker's click handler and dimmed by map.css). Basemaps are gated
  * too: each basemap row carries its own dot, and a basemap whose style
  * isn't cached is non-selectable offline — except the active basemap, which
- * is always available (you're already on it). Disabling a row never hides a
+ * stays selectable because you're already on it. SNOW-722: that exception
+ * applies to the ROW ONLY. The active basemap's dot reports its real cache
+ * state like every other; it used to be forced green, which is how the
+ * layers menu could promise "available offline" for a basemap with nothing
+ * stored. Disabling a row never hides a
  * layer already on the map; it only locks the menu control ("keep shown,
  * lock the toggle"). Online, an uncached row stays the grey advisory
  * "view online first" and fully interactive.
@@ -422,25 +426,36 @@
    * on-map layer (this only locks the menu control; it never hides a
    * visible layer), matching the "keep shown, lock the toggle" rule.
    *
+   * SNOW-722: ``selectable`` splits the two decisions the one ``cached``
+   * boolean used to make. The active basemap must never be disabled (or the
+   * user is stranded on a map they can't leave), and the only way to say so
+   * was to claim its style was cached — which painted the dot green while
+   * offline whether or not anything was actually stored. Callers that need
+   * the row usable for a reason other than cache state now say that
+   * directly, and the dot stays honest. It defaults to ``cached``, so the
+   * eight callers with nothing to add keep their existing behaviour.
+   *
    * @param {Element | null} dot
-   * @param {boolean} cached
+   * @param {boolean} cached - is the resource actually in a cache?
    * @param {string} cachedLabel
    * @param {string} uncachedLabel
    * @param {string} blockedLabel
+   * @param {boolean} [selectable=cached] - may the row be used offline?
    * @returns {void}
    */
-  function _applyState(dot, cached, cachedLabel, uncachedLabel, blockedLabel) {
+  function _applyState(dot, cached, cachedLabel, uncachedLabel, blockedLabel, selectable) {
     const offline = _offline();
+    const usable = selectable === undefined ? cached : selectable;
     if (cached) {
       _paintDot(dot, 'cached', cachedLabel);
-      _setRowDisabled(_rowOf(dot), false);
     } else if (offline) {
       _paintDot(dot, 'unavailable-offline', blockedLabel);
-      _setRowDisabled(_rowOf(dot), true);
     } else {
       _paintDot(dot, 'uncached', uncachedLabel);
-      _setRowDisabled(_rowOf(dot), false);
     }
+    // Only an offline miss locks a row: online, anything uncached is one
+    // fetch away, so the control stays live whatever the dot says.
+    _setRowDisabled(_rowOf(dot), offline && !usable);
   }
 
   /**
@@ -723,12 +738,18 @@
       );
     }
 
-    // Per-basemap availability. A basemap is available offline if its style
-    // is cached (browsed/downloaded before) OR it is the active basemap
-    // (already loaded this session — never disabled, or the user would be
-    // stranded on a map they can't leave). Offline + unavailable ⟹ red dot
-    // and a disabled row, so switching to a basemap that can't load offline
-    // (the trigger for the micro-region overlay loss) is simply not offered.
+    // Per-basemap availability. The dot answers one question — is this
+    // basemap's style in a cache? — and offline + uncached ⟹ red dot and a
+    // disabled row, so switching to a basemap that can't load offline (the
+    // trigger for the micro-region overlay loss) is simply not offered.
+    //
+    // SNOW-722: the active basemap is the one exception, and only to the
+    // ROW. It is already loaded this session, so it must stay selectable or
+    // the user is stranded on a map they can't leave — but that says
+    // nothing about what is stored, so it is passed as ``selectable``
+    // rather than folded into ``cached``. It used to be folded in, which
+    // painted the active basemap green offline whether or not its style had
+    // ever been cached.
     for (const item of _basemapItems()) {
       const dot = item.querySelector('.sync-dot');
       if (!dot) continue;
@@ -738,19 +759,21 @@
           .then((cached) =>
             _applyState(
               dot,
-              cached || isActive,
+              cached,
               BASEMAP_CACHED_LABEL,
               BASEMAP_UNCACHED_LABEL,
               BASEMAP_OFFLINE_BLOCKED_LABEL,
+              cached || isActive,
             ),
           )
           .catch(() =>
             _applyState(
               dot,
-              isActive,
+              false,
               BASEMAP_CACHED_LABEL,
               BASEMAP_UNCACHED_LABEL,
               BASEMAP_OFFLINE_BLOCKED_LABEL,
+              isActive,
             ),
           ),
       );

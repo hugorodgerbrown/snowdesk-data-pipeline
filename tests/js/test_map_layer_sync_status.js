@@ -543,13 +543,26 @@ describe('per-basemap rows', () => {
 
     await window.pwaLayerSyncStatus.refresh();
 
-    // Standard is the active basemap (aria-checked="true") → always available
-    // even with no cache hit; you can't be stranded on a map you can't leave.
-    expect(basemapDotState('standard')).toBe('cached');
+    // SNOW-722: Standard is the ACTIVE basemap (aria-checked="true"), so its
+    // row stays selectable — you can't be stranded on a map you can't leave
+    // — but its dot reports the truth: nothing is cached. It used to read
+    // green here, which is the layers menu promising offline availability
+    // for a basemap with nothing stored.
+    expect(basemapDotState('standard')).toBe('unavailable-offline');
     expect(basemapRowDisabled('standard')).toBe(false);
     // Swisstopo isn't active and isn't cached → unavailable offline.
     expect(basemapDotState('swisstopo')).toBe('unavailable-offline');
     expect(basemapRowDisabled('swisstopo')).toBe(true);
+  });
+
+  it('offline: the active basemap reads green once its style IS cached', async () => {
+    setOnline(false);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [STANDARD_STYLE] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('standard')).toBe('cached');
+    expect(basemapRowDisabled('standard')).toBe(false);
   });
 
   it('offline: a downloaded (style-cached) non-active basemap stays selectable', async () => {
@@ -560,6 +573,30 @@ describe('per-basemap rows', () => {
 
     expect(basemapDotState('swisstopo')).toBe('cached');
     expect(basemapRowDisabled('swisstopo')).toBe(false);
+  });
+
+  // SNOW-722: the dot and the row answer two different questions, and
+  // _applyState used to take one boolean for both. Keeping the active
+  // basemap's row usable therefore required claiming its style was cached.
+  // These two pin the split in both directions.
+  it('offline + uncached ACTIVE basemap: red dot, row still enabled', async () => {
+    setOnline(false);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('standard')).toBe('unavailable-offline');
+    expect(basemapRowDisabled('standard')).toBe(false);
+  });
+
+  it('offline + uncached INACTIVE basemap: red dot and a disabled row', async () => {
+    setOnline(false);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('swisstopo')).toBe('unavailable-offline');
+    expect(basemapRowDisabled('swisstopo')).toBe(true);
   });
 });
 
@@ -625,8 +662,11 @@ describe('probes that throw', () => {
 
     expect(dotState('l1')).toBe('uncached');
     expect(basemapDotState('swisstopo')).toBe('uncached');
-    // The active basemap is available regardless of the probe outcome.
-    expect(basemapDotState('standard')).toBe('cached');
+    // SNOW-722: a probe that threw tells us nothing was found, so the active
+    // basemap's dot reads like any other uncached one. Its ROW stays
+    // selectable regardless of the probe outcome.
+    expect(basemapDotState('standard')).toBe('uncached');
+    expect(basemapRowDisabled('standard')).toBe(false);
   });
 });
 
