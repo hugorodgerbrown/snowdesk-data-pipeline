@@ -249,12 +249,17 @@ def resolve_forecast_cell(
         latitude, longitude, elevation, lat_cell, lon_cell, elevation_band
     )
     if reusable is not None:
+        # Logged by quantised cell key, never by raw coordinates. A pin's
+        # latitude/longitude is a precise personal location — often a
+        # user's own saved place — and this is the debug log of a path
+        # every favourite goes through. The key is what identifies the row
+        # anyway, so this is both safer and more useful (SNOW-718).
         logger.debug(
-            "Reusing ForecastCell id=%s for latitude=%s longitude=%s elevation=%s",
+            "Reusing ForecastCell id=%s for cell=(%s, %s, %s)",
             reusable.pk,
-            latitude,
-            longitude,
-            elevation,
+            lat_cell,
+            lon_cell,
+            elevation_band,
         )
         return reusable
 
@@ -275,12 +280,11 @@ def resolve_forecast_cell(
     )
 
     logger.debug(
-        "Resolved ForecastCell id=%s created=%s for latitude=%s longitude=%s "
-        "elevation=%s",
+        "Resolved ForecastCell id=%s created=%s for cell=(%s, %s, %s)",
         cell.pk,
         created,
-        latitude,
-        longitude,
-        elevation,
+        lat_cell,
+        lon_cell,
+        elevation_band,
     )
     return cell
