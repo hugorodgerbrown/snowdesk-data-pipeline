@@ -1972,17 +1972,20 @@ Offline, the dashboard stops being merely advisory and **gates** the menu —
 the offline-integrity rule: *nothing that can't be loaded offline is
 offered offline.* While `navigator.onLine === false`:
 
-- An overlay/basemap whose resource isn't cached gets the red
+- An overlay row whose resource isn't cached gets the red
   `unavailable-offline` dot and its row is disabled (`aria-disabled`, which
   the picker's click handler in `map.js` honours and `map.css` dims). Every
-  uncached row/basemap follows the same rule.
+  uncached overlay row follows the same rule; basemap rows have a third
+  state, below.
 - The **active** basemap is never disabled — you can't be stranded on a map
-  you can't leave. A non-active basemap is selectable offline only if its
-  style is cached (the "downloaded/browsed before" proxy; the residual
-  per-viewport tile gap is covered by the SNOW-483 fallback + overlay
-  reinstall). Locking the picker to what's actually cached is what removes
-  the trigger for the micro-region overlay-loss bug (switching to an
-  uncached basemap offline).
+  you can't leave. Its dot still reports its real cache state (SNOW-722);
+  it used to be forced green, which is how the menu could promise
+  "available offline" for a basemap with nothing stored.
+- A basemap other than the active one is disabled offline only when it has
+  **neither** downloaded coverage nor a cached style — see the three states
+  below. Locking the picker against a basemap that would come up blank is
+  what removes the trigger for the micro-region overlay-loss bug (switching
+  to an uncached basemap offline).
 - Disabling a row never hides a layer already on the map — it only locks the
   control. A layer switched on before going offline stays rendered ("keep
   shown, lock the toggle").
@@ -1997,6 +2000,44 @@ layers, toggling Micro regions back on used to silently no-op. `map.js` now
 dropping its layers), and (b) makes the L4 toggle dispatch
 `snowdesk:regions-reinstall`, rebuilding the layers from the in-memory
 GeoJSON cache — so toggling Micro regions on always restores them.
+
+### What a basemap dot means (SNOW-722)
+
+Availability and gating are separate questions, and only the gating is
+offline-only. `_applyBasemapState` in `map_layer_sync_status.js` resolves
+every basemap row on **three** states, in both connectivity states:
+
+| State | Dot | Label | Offline |
+|-------|-----|-------|---------|
+| Downloaded area coverage | green `cached` | "Available offline" | selectable |
+| Style cached, nothing downloaded | grey `uncached` | "Partly cached — may not load everywhere" | **selectable** |
+| Neither | grey `uncached` online, red `unavailable-offline` offline | "Not cached — view online first" / "Unavailable offline — switch back online to load" | disabled (unless active) |
+
+Coverage comes from `window.pwaBasemapDownloads.areas()` — read **once per
+refresh pass**, not per row — matching each area's `basemapKey` against the
+row's `data-basemap-key`. A keyless area (a pre-SNOW-645 record, or a
+reconciled orphan — "downloaded, basemap unknown") counts for the **active**
+basemap only, mirroring `basemapDownloadedTemplates`' `basemapKey ||
+activeKey`: crediting every basemap off one legacy record would restore the
+over-claim, crediting none would regress the basemap in use.
+
+The middle state is what this used to get wrong, and it got it wrong
+**online**, which is where it mattered. `_basemapStaleWhileRevalidate`
+writes the style JSON of any basemap the user merely *glanced at* in the
+picker, and style-presence alone was the whole green signal — so a basemap
+with nothing downloaded read "Available offline", and selecting it offline
+produced a style with essentially no tiles: a blank map. The user checking
+the layers menu at home before a flight is exactly the one who could still
+fix it by downloading the area, so the honest answer has to be there before
+the connection goes, not after. Such a basemap does draw wherever tiles were
+picked up online (the residual per-viewport gap is covered by the SNOW-483
+fallback + overlay reinstall), which is why the middle state stays
+selectable: an advisory, not a gate.
+
+Online, nothing is ever disabled and nothing is ever red — every basemap is
+one fetch away. With `window.pwaBasemapDownloads` unavailable, or its read
+failing, coverage is unknowable and a row falls back to the pre-SNOW-722
+style-only signal rather than reporting everything red.
 
 ## Cache version (derived, SNOW-590)
 
