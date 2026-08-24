@@ -141,8 +141,19 @@ Record each environment as it is done, so a resumed run knows where it is.
 | 3. import_locations | ✅ 4 locations, 4 links added |
 | 4. link_location_forecast_cells | ✅ 4 resolved, 3 new cells; elevations match notes |
 | 5. link_region_centroid_locations | ✅ 461 linked, 0 failed; 461 new cells, 0 reused |
-| 6. fetch_weather | ⬜ not started |
-| verification | ⬜ not started |
+| 6. fetch_weather | ✅ `--date` pinned to today; 4290 created, 0 failed |
+| verification | ✅ both surfaces render |
+
+Verified on staging 2026-08-24: Thyon's resort page shows the labelled
+per-location panel (`THYON 2000 · 2144 M`) where uncurated Nendaz still
+shows the unlabelled legacy panel, and `/ch-4115/` shows
+`WEATHER — REGION CENTRE` with its seven-day panel. The region panel renders
+in the no-bulletin empty state too, which is what makes this verifiable
+out of season.
+
+Thyon reads 18°/11° for the day where Nendaz reads 24°/16° — same domain,
+same "shared 4 Vallées figures" note, different weather because 2144 m is
+not 1400 m. That gap is what the single unlabelled panel used to hide.
 
 The region-centroid preview's upper bound was exact: every one of the 461
 centroids minted its own cell, none reused an existing resort cell. A
