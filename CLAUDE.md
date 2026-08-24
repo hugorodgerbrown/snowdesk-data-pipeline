@@ -415,6 +415,22 @@ via `bin/i18n-lint --show-allows` — staff-only surfaces are the legitimate use
 Full pattern, including the `|escapejs` rule for `{% trans %}` values
 interpolated into JS literals: [`docs/i18n.md`](docs/i18n.md).
 
+**Fourth guard: `tox -e fidelity-lint`.** Not a design-system guard, but
+the same family. Snowdesk claims to show the provider's bulletin in full
+rather than a simplified subset; `tests/sentinels/fidelity.py` holds one
+row per dotted CAAML path across the nine sentinels, each either declared
+**rendered** (with a probe naming the surface) or **excluded** (with a
+written reason). `bin/fidelity-lint` checks every path is classified —
+that half is dependency-free and runs in the lint matrix, and it is what
+catches a provider adding a field. `tests/sentinels/test_fidelity.py`
+renders each sentinel's page and checks every rendered path arrives —
+that half needs Django and runs under `tox -e test`, and it is what
+catches a template refactor dropping one. Audit the omissions with
+`bin/fidelity-lint --show-exclusions`. The guard exists because
+`metadata.unscheduled` was fetched, translated, stored and versioned for
+the project's whole life while no template read it (SNOW-670/671). Full
+contract: [`tests/sentinels/README.md`](tests/sentinels/README.md).
+
 ## Local CI — always run tox
 
 **`tox` is the single entry point** for running linters, type checks, Django
@@ -425,7 +441,7 @@ so a tox run installs exactly what local dev and CI already resolved —
 catching the "works on my machine" class of failure before a PR is opened.
 
 ```bash
-uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, js-globals-lint, i18n-lint, docs-lint, test, js)
+uv run tox                    # run every default env (fmt, lint, mypy, django-checks, ds-lint, js-globals-lint, i18n-lint, docs-lint, fidelity-lint, test, js)
 uv run tox -e test            # one env at a time
 uv run tox -e mypy
 uv run tox -e django-checks
@@ -435,6 +451,7 @@ uv run tox -e ds-lint         # design-system linter — templates + static/js (
 uv run tox -e js-globals-lint # fails on reads of window/self globals nothing assigns
 uv run tox -e i18n-lint       # fails on user-facing strings hardcoded in static/js
 uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see "Documentation" below)
+uv run tox -e fidelity-lint   # every CAAML sentinel path is rendered or reasoned away
 uv run tox -e migrations-lint # duplicate migration numbers / multi-leaf migration graph
 uv run tox -e e2e-lint        # Playwright guard: suite-size backstop, ≤40 lines each, scenario-mapped
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
