@@ -180,16 +180,25 @@ function basicResponse(body, init = {}) {
  */
 function makeCaches() {
   const buckets = new Map();
-  const counters = { keys: 0 };
+  // SNOW-722: ``open`` and ``match`` are counted per bucket name as well,
+  // because the read-only cross-origin probe's cost bound is a claim about
+  // exactly those two — "one BASEMAP_CACHE lookup, and the pinned walk only
+  // when something is pinned". Counting only ``keys`` let the docstring
+  // overstate the guard for a release without a test noticing.
+  const counters = { keys: 0, open: 0, match: 0, openedNames: [], matchedNames: [] };
   const entriesFor = (name) => {
     if (!buckets.has(name)) buckets.set(name, new Map());
     return buckets.get(name);
   };
   return {
     open: async (name) => {
+      counters.open += 1;
+      counters.openedNames.push(name);
       const entries = entriesFor(name);
       return {
         async match(request, matchOptions) {
+          counters.match += 1;
+          counters.matchedNames.push(name);
           const url = typeof request === 'string' ? request : request.url;
           if (entries.has(url)) return entries.get(url).clone();
           if (matchOptions && matchOptions.ignoreSearch) {
@@ -1240,6 +1249,33 @@ describe('cross-origin routing when the basemap allowlist is empty (SNOW-722)', 
     expect(await sw._classifyCrossOriginGet(new URL(TILE_URL))).toBe('network');
   });
 
+  it('does not let a superseded attempt spend a freshly-reset retry budget', async () => {
+    // A register-basemap-origins message resets both the memo and the retry
+    // budget. An attempt that was already in flight when it landed is news
+    // about a worker state that no longer applies, so its eventual failure
+    // must not be charged against the new budget — otherwise a rapid
+    // register/idle-terminate sequence hits the cap an attempt early.
+    await resetDbWithoutMetaStore();
+    const sw = loadSw();
+
+    const superseded = sw._hydrateBasemapOrigins();
+    // An empty list keeps _basemapOrigins empty (so later calls still try to
+    // hydrate) while resetting the memo and the failure count, exactly as a
+    // live page's registration does.
+    sw.__listeners.message({ data: { type: 'register-basemap-origins', origins: [] } });
+    await superseded;
+
+    // The full budget must still be there: one short of the cap, the memo is
+    // still being dropped, so a DB that becomes readable is picked up.
+    for (let i = 0; i < sw.BASEMAP_HYDRATION_MAX_ATTEMPTS - 1; i += 1) {
+      await sw._hydrateBasemapOrigins();
+    }
+    await resetDb();
+    await setStoredBasemapOrigins([TILE_ORIGIN]);
+
+    expect(await sw._classifyCrossOriginGet(new URL(TILE_URL))).toBe('basemap');
+  });
+
   it('serves a tile left in BASEMAP_CACHE by an earlier session', async () => {
     // Nothing pinned at all — but the passive cache holds tiles written
     // when the allowlist WAS populated, and they must still read back.
@@ -1278,8 +1314,11 @@ describe('cross-origin routing when the basemap allowlist is empty (SNOW-722)', 
 
   it('goes straight to the network, with no pinned walk, when nothing is pinned', async () => {
     // The regression guard for 2a's blast radius: EVERY cross-origin GET
-    // now reaches the probe, so a user with no downloads must pay nothing
-    // beyond the one memoised caches.keys() per worker lifetime.
+    // now reaches the probe, so what it costs a user with no downloads is
+    // the whole question. The bound is asserted here in the same terms the
+    // docstring states it, so the two cannot drift apart silently — the
+    // first draft of that docstring claimed the guard made the probe free,
+    // and nothing here could tell that it doesn't.
     await resetDbWithoutMetaStore();
     const cachesStub = makeCaches();
     const fetched = [];
@@ -1301,9 +1340,43 @@ describe('cross-origin routing when the basemap allowlist is empty (SNOW-722)', 
       'https://cdn.example/pixel.gif',
       'https://other.example/thing.json',
     ]);
+    // Exactly one BASEMAP_CACHE lookup per request — a keyed match in one
+    // bucket, no enumeration. It is deliberately NOT skipped when nothing
+    // is pinned: BASEMAP_CACHE is the passive cache ordinary browsing
+    // fills, so a user who has panned a basemap but never downloaded an
+    // area has tiles there and no pinned buckets at all.
+    expect(cachesStub.counters.matchedNames).toEqual([
+      sw.BASEMAP_CACHE,
+      sw.BASEMAP_CACHE,
+      sw.BASEMAP_CACHE,
+    ]);
+    // And nothing beyond it: no pinned bucket is opened, let alone walked.
+    expect(
+      cachesStub.counters.openedNames.filter((name) =>
+        name.startsWith(sw.BASEMAP_PINNED_CACHE_PREFIX),
+      ),
+    ).toEqual([]);
     // One enumeration for all three — the memo — and no per-request
     // re-enumeration from the after-miss retry, which is skipped entirely
     // while the bucket list is empty.
     expect(cachesStub.counters.keys - keysBefore).toBe(1);
+  });
+
+  it('does walk the pinned buckets once something IS pinned', async () => {
+    // The other half of the bound: the short-circuit must be about there
+    // being nothing to search, not about skipping the search.
+    await resetDbWithoutMetaStore();
+    const cachesStub = makeCaches();
+    cachesStub.seed(PINNED_BUCKET, TILE_URL, basicResponse('pinned tile bytes'));
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: async () => basicResponse('network bytes'),
+    });
+
+    // A miss, so the walk runs to completion rather than stopping at a hit.
+    await dispatchFetch(sw, `${TILE_ORIGIN}/12/9999/9999.pbf`);
+
+    expect(cachesStub.counters.matchedNames).toContain(PINNED_BUCKET);
+    expect(cachesStub.counters.matchedNames[0]).toBe(sw.BASEMAP_CACHE);
   });
 });

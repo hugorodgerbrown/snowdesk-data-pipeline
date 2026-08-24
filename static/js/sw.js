@@ -526,11 +526,24 @@ async function _searchPinnedBuckets(request) {
  * buckets, because it can hold tiles written in an earlier session when
  * the allowlist WAS populated.
  *
- * Cost guard: the pinned walk is skipped entirely when there are no pinned
- * buckets, so a user with no downloads pays nothing beyond the one
- * memoised ``caches.keys()`` per worker lifetime. Every cross-origin GET
- * reaches this function, so that short-circuit is what bounds its blast
- * radius.
+ * Cost, stated exactly, because every unclassified cross-origin GET on the
+ * page reaches this function:
+ *
+ *   - ONE ``caches.open(BASEMAP_CACHE)`` + ``cache.match(request)``,
+ *     unconditionally. No enumeration; a keyed lookup in one bucket.
+ *   - The pinned-bucket walk ONLY when at least one pinned bucket exists.
+ *     ``_pinnedCacheNames()`` is memoised, so establishing that costs one
+ *     ``caches.keys()`` per worker lifetime; with nothing pinned the walk —
+ *     and the per-miss ``_pinnedCacheNamesAfterMiss`` re-enumeration behind
+ *     it — is skipped entirely.
+ *
+ * The ``BASEMAP_CACHE`` match is deliberately NOT behind the
+ * pinned-emptiness check, and moving it there would reintroduce the bug
+ * this function exists to kill. ``BASEMAP_CACHE`` is the PASSIVE cache
+ * ordinary online browsing fills, so a user who has panned around a
+ * basemap but never run an explicit "Download basemap" has tiles in it and
+ * ZERO pinned buckets. Gating the match on a pinned bucket existing would
+ * hand exactly that user a blank map over a full cache.
  *
  * @param {Request} request
  * @returns {Promise<Response|undefined>} A cached response, or
@@ -538,9 +551,12 @@ async function _searchPinnedBuckets(request) {
  */
 async function _readOnlyBasemapCacheProbe(request) {
   try {
+    // Unconditional, and it must stay that way — see the docstring's note
+    // on the browsed-but-never-downloaded case.
     const cache = await caches.open(BASEMAP_CACHE);
     const cached = await cache.match(request);
     if (cached) return cached;
+    // Nothing pinned: skip the walk, and the re-enumeration behind it.
     const pinnedNames = await _pinnedCacheNames();
     if (pinnedNames.length === 0) return undefined;
   } catch (_err) {
@@ -919,14 +935,20 @@ function _hydrateBasemapOrigins() {
   // only while under the attempt cap — the permanent missing-store case
   // lands in that catch too and must not buy a DB open per request forever.
   // Registered before the caller's own await, so a retrying caller sees the
-  // cleared memo. Guarded on identity: a register-basemap-origins message
-  // that landed while this read was in flight has already replaced the
-  // memo, and clearing that would undo an authoritative registration.
+  // cleared memo.
+  //
+  // The identity guard comes FIRST, before the counter bump: a
+  // register-basemap-origins message that landed while this read was in
+  // flight has already replaced the memo AND reset the retry budget, so a
+  // superseded attempt must neither clear the fresh memo nor spend the
+  // fresh budget. Its failure is news about a worker state that no longer
+  // applies.
   attempt.then(() => {
     if (!failed) return;
+    if (_basemapHydration !== attempt) return;
     _basemapHydrationFailures += 1;
     if (_basemapHydrationFailures >= BASEMAP_HYDRATION_MAX_ATTEMPTS) return;
-    if (_basemapHydration === attempt) _basemapHydration = null;
+    _basemapHydration = null;
   });
   return attempt;
 }

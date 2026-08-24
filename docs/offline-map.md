@@ -384,9 +384,16 @@ The SW classifies every fetch into one of four buckets:
   The allowlist still governs what may be **written** — an unregistered
   origin may serve from these caches but never populates one — so a lost
   allowlist can no longer blank a basemap the device already holds. The
-  pinned walk is skipped entirely when no pinned bucket exists, so a user
-  with no downloads pays one memoised `caches.keys()` per worker
-  lifetime. Strategy: **stale-while-revalidate** against a
+  cost, precisely: one `BASEMAP_CACHE` open + keyed `match` per
+  unclassified cross-origin GET (no enumeration), plus the pinned-bucket
+  walk *only* when at least one pinned bucket exists — and establishing
+  that costs one memoised `caches.keys()` per worker lifetime. The
+  `BASEMAP_CACHE` match is deliberately unconditional rather than gated on
+  a pinned bucket existing: `BASEMAP_CACHE` is the passive cache ordinary
+  browsing fills, so someone who has panned around a basemap but never run
+  an explicit area download has tiles there and no pinned buckets at all,
+  and gating the match would hand exactly that user the blank map this
+  change exists to prevent. Strategy: **stale-while-revalidate** against a
   dedicated `snowdesk-basemap-v1` cache (`BASEMAP_CACHE`), kept separate from the
   shell's `CACHE_VERSION` cache so bumping the shell version on an
   unrelated change never evicts previously-cached basemap tiles. Only
