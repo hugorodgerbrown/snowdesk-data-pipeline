@@ -359,6 +359,36 @@ reachable via the SNOW-81 deep-link in the masthead.
             {% else %}
                 {% with rm=panel.render_model %}
                     {% comment %}
+                       Off-schedule marker (SNOW-670).
+
+                       ``metadata.unscheduled`` means the provider did not
+                       wait for the normal publication cycle — conditions
+                       changed enough that they reissued mid-cycle. That
+                       changes how the whole page should be read, so it sits
+                       above the day character rather than in the metadata
+                       strip alone: a reader who saw this morning's version
+                       is not looking at that version now.
+
+                       Nothing renders when the flag is false. An
+                       "off-schedule: no" line on every normal bulletin would
+                       spend the reader's attention to serve the rare one.
+                    {% endcomment %}
+                    {% if rm.metadata.unscheduled %}
+                        {% translate "Updated off-schedule" as unscheduled_heading %}
+                        {% if rm.metadata.publication_time %}
+                            {% blocktrans with issued=rm.metadata.publication_time|parse_iso|date:"j M H:i" trimmed asvar unscheduled_body %}
+                                The provider reissued this bulletin at {{ issued }} UTC, outside the normal publication
+                                cycle.
+                            {% endblocktrans %}
+                        {% else %}
+                            {% translate "The provider reissued this bulletin outside the normal publication cycle." as unscheduled_body %}
+                        {% endif %}
+                        <div data-testid="unscheduled-marker">
+                            {% include "includes/_callout.html" with kind="info" heading=unscheduled_heading body=unscheduled_body only %}
+                        </div>
+                    {% endif %}
+
+                    {% comment %}
                        Day-character callout banner — editorial commentary
                        produced by compute_day_character() in the render-model
                        service. Suppressed when no day_character is available
@@ -587,6 +617,21 @@ reachable via the SNOW-81 deep-link in the masthead.
                                         {% endif %}
                                     </p>
                                 </div>
+                                {# SNOW-670. Present only on an off-schedule    #}
+                                {# bulletin. The other four cells render an     #}
+                                {# em-dash when their value is absent because   #}
+                                {# the reader is looking for that timestamp; no #}
+                                {# reader arrives wondering whether the         #}
+                                {# bulletin was on schedule, so a "Schedule: —" #}
+                                {# cell on every normal bulletin would be noise #}
+                                {# in the one place the page is already dense.  #}
+                                {% if meta.unscheduled %}
+                                    <div data-testid="unscheduled-cell">
+                                        {% translate "Schedule" as schedule_label %}
+                                        {% include "includes/_meta_cell.html" with text=schedule_label %}
+                                        <p class="text-text-2">{% translate "Off-schedule" %}</p>
+                                    </div>
+                                {% endif %}
                             </div>
                         {% endif %}
                     {% endwith %}
