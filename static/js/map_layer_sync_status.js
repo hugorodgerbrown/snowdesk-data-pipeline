@@ -545,7 +545,8 @@
   }
 
   /**
-   * Low-level dot painter behind ``_applyState``:
+   * Low-level dot painter behind ``_applyState`` and
+   * ``_applyBasemapState``:
    * set ``data-sync-state`` plus an accessible name (``role="img"`` +
    * ``aria-label``) and a ``title`` tooltip, and reveal the dot (dots start
    * ``aria-hidden="true"`` in the server-rendered ``unknown`` state).
