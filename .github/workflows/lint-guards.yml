@@ -10,8 +10,12 @@
 # ``pull_request`` checkout is the MERGE commit, so the tree already holds
 # main's migrations alongside the PR's, which is exactly the union each
 # PR's own ``django-checks`` run cannot see under a non-strict ruleset)
-# and ``tox -e djangofmt`` (template formatting — the CI backstop
-# for the bypassable pre-commit hook).
+# ``tox -e fidelity-lint`` (SNOW-671 — every CAAML path in every committed
+# sentinel is either rendered or carries a written reason for not being;
+# only the structural half runs here, since the rendering half needs
+# Django and runs under ``tox -e test``) and ``tox -e djangofmt``
+# (template formatting — the CI backstop for the bypassable pre-commit
+# hook).
 #
 # SNOW-619 added the JavaScript half. The project has deliberately avoided
 # a JS toolchain, so rather than adopt ESLint these extend the guards
@@ -70,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toxenv: [ds-lint, js-globals-lint, i18n-lint, docs-lint, e2e-lint, migrations-lint, djangofmt]
+        toxenv: [ds-lint, js-globals-lint, i18n-lint, docs-lint, e2e-lint, fidelity-lint, migrations-lint, djangofmt]
     env:
       TOXENV: ${{ matrix.toxenv }}
 

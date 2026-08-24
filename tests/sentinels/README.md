@@ -87,5 +87,74 @@ tests/sentinels/
 4. The smoke test in `test_sentinel_round_trip.py` is fully parametrised — it will
    automatically pick up the new `source.json` and `source.xml` without any code
    change.
-5. Run `uv run tox -e test -- tests/sentinels/` to confirm the new sentinel
-   passes before committing.
+5. Run `uv run tox -e test -- tests/sentinels/` and `uv run tox -e fidelity-lint`
+   to confirm the new sentinel passes before committing. If it carries a field
+   no existing sentinel does, the fidelity guard will fail until that field is
+   classified — see "The fidelity contract" below.
+
+---
+
+## The fidelity contract (SNOW-671)
+
+Snowdesk claims to show the provider's bulletin in full rather than a
+simplified subset — follow the source link and you find the same data. The
+sentinels are where that claim is enforced, because they are the committed,
+graded, per-provider payloads the project already treats as canonical.
+
+`tests/sentinels/fidelity.py` holds one row for **every dotted path in every
+sentinel**. A path is either:
+
+- **rendered** — it reaches a reader, and the row carries a *probe* saying how
+  to recognise its value on the page plus the *surface* it lands on; or
+- **excluded** — no surface shows it, and the row carries a written *reason*.
+
+Two checks run against that table, deliberately split:
+
+| Check | Asks | Needs | Runs in |
+|---|---|---|---|
+| `bin/fidelity-lint` | Is every path classified? Does every exclusion have a reason? Are any rows stale? | Nothing — pure JSON and Python | `tox -e fidelity-lint`, in the `lint-guards` CI matrix |
+| `test_fidelity.py` | Does each rendered path's value actually reach the page? | Django, a DB, the whole template stack | `tox -e test` |
+
+The first catches a provider adding a field; the second catches a template
+refactor dropping one. `fidelity.py` therefore imports **nothing** from Django
+or `apps/` — a test asserts this, because breaking it would pass locally and
+fail in CI.
+
+### The exclusion list is the point
+
+A field no surface shows is a decision, and the table's job is that somebody
+had to write the decision down. Review the whole list cold with:
+
+```bash
+bin/fidelity-lint --show-exclusions
+```
+
+A reason should say what a reader loses and why that is acceptable — not
+restate the field name. Where the value does reach a reader under another
+path's name, set `duplicate_of` to that path; the "excluded paths stay off the
+page" check then skips the row, because the value legitimately does appear.
+
+### Provider scoping
+
+A table key may be scoped as `"<provider>:<path>"`, which wins over the bare
+path for that provider's sentinels. This is not a convenience — the same CAAML
+field can be a different kind of thing depending on who sent it.
+`tendency[].highlights` is forecaster prose from ALBINA and the French name of
+a danger level from Météo-France, and one shared row would have to lie about
+one of them.
+
+### When the guard fails
+
+- **"unclassified CAAML path"** — a sentinel gained a field. Decide: add it to
+  `RENDERED` with a probe, or to `EXCLUDED` with a reason. This failing is the
+  feature.
+- **"declared rendered but no representation was found"** — either a surface
+  stopped rendering the field, which is the regression the guard exists to
+  catch, or the field moved and its probe needs updating.
+- **"stale row"** — the payload moved and the table didn't. Delete the row.
+
+### Adding a sentinel
+
+Step 5 of the procedure above covers this: a new `source.json` with a field no
+existing sentinel carries will fail `bin/fidelity-lint` until it is classified.
+Run `uv run tox -e fidelity-lint` alongside `tox -e test`.

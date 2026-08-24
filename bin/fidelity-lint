@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+# bin/fidelity-lint — CAAML fidelity guard, structural half.
+#
+# Snowdesk claims to show the provider's bulletin in full rather than a
+# simplified subset: follow the source link and you find the same data.
+# That claim can go quietly false in two directions, and this is the
+# check for the first of them — a provider adds a field and nobody
+# notices it reaching no surface.
+#
+# It asks three questions of tests/sentinels/fidelity.py:
+#
+#   1. Is every dotted path in every committed sentinel classified,
+#      either as rendered or as a deliberate exclusion? An unclassified
+#      path fails the build. That failure is the feature: a new field
+#      arrives as a decision somebody has to make, not as silence.
+#
+#   2. Does every exclusion carry a non-empty reason? The exclusion list
+#      is the valuable half of the table. A row with a blank reason is
+#      indistinguishable from an oversight, which is exactly what the
+#      table exists to prevent.
+#
+#   3. Is every row still earning its place? A row for a path no sentinel
+#      carries any more is stale — the payload moved and the table
+#      didn't. Left alone these accumulate until nobody trusts the list.
+#
+# What it deliberately does NOT do is check that a rendered path actually
+# renders. That needs Django, a database and the whole template stack, so
+# it lives in tests/sentinels/test_fidelity.py and runs under tox -e test.
+# The split is what lets this half run in the dependency-free lint matrix
+# alongside ds-lint, i18n-lint, js-globals-lint, e2e-lint and docs-lint.
+#
+# The escape hatch is the exclusion list itself, and it is audit-visible
+# in the same spirit as ds-lint --show-allows:
+#
+#   bin/fidelity-lint --show-exclusions
+#
+# Exit code: 0 = clean; 1 = one or more violations.
+#
+# Usage:
+#   bin/fidelity-lint                    # check the table against the sentinels
+#   bin/fidelity-lint --show-exclusions  # print every omission and its reason
+"""CAAML fidelity guard, structural half — see module docstring."""
+
+# ruff: noqa: T201
+# CLI script — print() is the intended output channel.
+
+from __future__ import annotations
+
+import argparse
+import sys
+import textwrap
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+# Imported after the path insert so the script runs from anywhere. This
+# module imports nothing from Django or the app tree, which is what keeps
+# this check installable-free.
+from tests.sentinels.fidelity import (  # noqa: E402
+    EXCLUDED,
+    PROVIDERS,
+    RENDERED,
+    Excluded,
+    provider_of,
+    resolve,
+    sentinel_paths,
+    split_key,
+)
+
+
+def _check_every_path_is_classified(per_sentinel: dict[str, set[str]]) -> list[str]:
+    """Check 1 — no sentinel carries a path the table has never seen.
+
+    This is the half that catches a provider adding a field. Grouped by
+    path rather than by sentinel, because one new field usually lands in
+    several sentinels at once and three copies of the same violation is
+    three times the noise for one decision.
+
+    Args:
+        per_sentinel: Sentinel id → the dotted paths it carries.
+
+    Returns:
+        One violation per unclassified path.
+
+    """
+    unclassified: dict[str, set[str]] = {}
+    for sentinel_id, paths in per_sentinel.items():
+        provider = provider_of(sentinel_id)
+        for path in paths:
+            if resolve(path, provider) is None:
+                unclassified.setdefault(path, set()).add(sentinel_id)
+
+    return [
+        f"unclassified CAAML path: {path}\n"
+        f"    carried by: {', '.join(sorted(sentinels))}\n"
+        "    Add it to RENDERED with a probe, or to EXCLUDED with a reason,\n"
+        "    in tests/sentinels/fidelity.py."
+        for path, sentinels in sorted(unclassified.items())
+    ]
+
+
+def _check_every_exclusion_has_a_reason() -> list[str]:
+    """Check 2 — no omission is recorded without saying why.
+
+    The exclusion list is the valuable half of the table. A row with a
+    blank reason is indistinguishable from an oversight, which is exactly
+    what the table exists to prevent.
+
+    Returns:
+        One violation per exclusion with an empty reason.
+
+    """
+    return [
+        f"exclusion with no reason: {key}\n"
+        "    Every omission is a decision. Write down why a reader does\n"
+        "    not need this field."
+        for key, entry in sorted(EXCLUDED.items())
+        if not isinstance(entry, Excluded) or not entry.reason.strip()
+    ]
+
+
+def _check_no_row_is_stale(per_sentinel: dict[str, set[str]]) -> list[str]:
+    """Check 3 — no row has outlived the payload it was written for.
+
+    A row for a path no sentinel carries any more means the payload moved
+    and the table did not. Left alone these accumulate until nobody
+    trusts the list, and an untrusted list is the same as no list.
+
+    Args:
+        per_sentinel: Sentinel id → the dotted paths it carries.
+
+    Returns:
+        One violation per stale row, bare or provider-scoped.
+
+    """
+    live = {
+        (provider_of(sentinel_id), path)
+        for sentinel_id, paths in per_sentinel.items()
+        for path in paths
+    }
+    live_paths = {path for _, path in live}
+
+    violations: list[str] = []
+    for key in sorted(set(RENDERED) | set(EXCLUDED)):
+        scope, path = split_key(key)
+        if scope is None and path not in live_paths:
+            violations.append(
+                f"stale row: {key}\n"
+                "    No committed sentinel carries this path any more. Delete\n"
+                "    the row, or add a sentinel that exercises it."
+            )
+        elif scope is not None and (scope, path) not in live:
+            violations.append(
+                f"stale provider-scoped row: {key}\n"
+                f"    No {scope} sentinel carries {path}. Delete the row, or drop\n"
+                "    the scope if the bare path still applies."
+            )
+    return violations
+
+
+def check() -> list[str]:
+    """Run every structural check and return the violations found.
+
+    Returns:
+        Human-readable violation lines, empty when the table is clean.
+
+    """
+    per_sentinel = sentinel_paths()
+    return [
+        *_check_every_path_is_classified(per_sentinel),
+        *_check_every_exclusion_has_a_reason(),
+        *_check_no_row_is_stale(per_sentinel),
+    ]
+
+
+def show_exclusions() -> None:
+    """Print every excluded path with its reason, for cold review."""
+    by_scope: dict[str, list[tuple[str, Excluded]]] = {}
+    for key, entry in EXCLUDED.items():
+        scope, path = split_key(key)
+        by_scope.setdefault(scope or "all providers", []).append((path, entry))
+
+    total = len(EXCLUDED)
+    print(f"{total} CAAML path(s) deliberately reach no reader.\n")
+    for scope in sorted(by_scope, key=lambda s: (s != "all providers", s)):
+        print(f"── {scope} " + "─" * max(0, 60 - len(scope)))
+        for path, entry in sorted(by_scope[scope]):
+            print(f"\n  {path}")
+            for line in textwrap.wrap(entry.reason, width=72):
+                print(f"      {line}")
+            if entry.duplicate_of:
+                print(f"      → rendered instead as: {entry.duplicate_of}")
+        print()
+
+    rendered = len(RENDERED)
+    print(
+        f"{rendered} path(s) are declared rendered. Providers: {', '.join(PROVIDERS)}."
+    )
+
+
+def main() -> int:
+    """Parse arguments and run the requested mode.
+
+    Returns:
+        Process exit code: 0 clean, 1 violations found.
+
+    """
+    parser = argparse.ArgumentParser(
+        description="CAAML fidelity guard — every sentinel path is classified."
+    )
+    parser.add_argument(
+        "--show-exclusions",
+        action="store_true",
+        help="print every excluded path and its reason, then exit",
+    )
+    args = parser.parse_args()
+
+    if args.show_exclusions:
+        show_exclusions()
+        return 0
+
+    violations = check()
+    if not violations:
+        paths = {p for paths in sentinel_paths().values() for p in paths}
+        print(
+            f"fidelity-lint: {len(paths)} CAAML path(s) across "
+            f"{len(sentinel_paths())} sentinels, all classified."
+        )
+        return 0
+
+    print(f"fidelity-lint: {len(violations)} violation(s)\n")
+    for violation in violations:
+        print(f"  {violation}\n")
+    print(
+        "The coverage table lives in tests/sentinels/fidelity.py.\n"
+        "Run bin/fidelity-lint --show-exclusions to review what is already "
+        "omitted and why."
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,8 +1,8 @@
 ---
 name: render-model
-description: Bulletin.render_model JSON shape — danger ratings, traits, prose, RENDER_MODEL_VERSION, enrich_render_model, day character
+description: Bulletin.render_model JSON shape — danger ratings, traits, prose, RENDER_MODEL_VERSION, enrich_render_model, CAAML fidelity guard
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-24
 ---
 
 # Render model
@@ -41,3 +41,5 @@ Each `Bulletin` stores a pre-computed `render_model` JSONField built at ingest t
 **Services**:
 - `apps/bulletins/services/render_model.py` — `build_render_model()`, `compute_day_character()`, `RenderModelBuildError`, `RENDER_MODEL_VERSION`.
 - `apps/bulletins/services/slf_fetcher.py` — `upsert_bulletin` calls `build_render_model` inline (never via a signal); increments `run.records_failed` on `RenderModelBuildError`.
+
+**Fidelity guard** (SNOW-671): the render model is one half of a claim — that Snowdesk shows the provider's bulletin in full rather than a simplified subset. `tests/sentinels/fidelity.py` makes that claim enforceable by holding one row for every dotted CAAML path across the nine committed sentinels, each either declared rendered (with a probe naming the surface it lands on) or excluded (with a written reason). `bin/fidelity-lint` checks that every path is classified and every exclusion is reasoned; `tests/sentinels/test_fidelity.py` renders each sentinel's page and checks that every rendered path's value actually arrives. Adding a field to the builder or a surface to the templates means adding or moving a row — the contract, the failure messages and the `--show-exclusions` audit view are in [`tests/sentinels/README.md`](../tests/sentinels/README.md). The guard exists because `metadata.unscheduled` was built, stored and versioned for the project's whole life without any template reading it (SNOW-670).
