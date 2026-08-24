@@ -138,6 +138,37 @@ function basemapRowDisabled(key) {
   return row ? row.getAttribute('aria-disabled') === 'true' : undefined;
 }
 
+function basemapDotLabel(key) {
+  const dot = document.querySelector(`[data-basemap-key="${key}"] .sync-dot`);
+  return dot ? dot.getAttribute('aria-label') : undefined;
+}
+
+/**
+ * SNOW-722: a fake `window.pwaBasemapDownloads` exposing the one method
+ * this module uses. `areas()` is the real thing's normalised record list —
+ * only `basemapKey` matters here, and it is `null` on a record written
+ * before SNOW-645 (or on a reconciled orphan), meaning "downloaded,
+ * basemap unknown".
+ *
+ * Absent from every test that doesn't call this, which is deliberate: with
+ * no downloads module there is no coverage to read, and the module falls
+ * back to the pre-SNOW-722 style-only signal — which is what the
+ * `per-basemap rows` block above still exercises.
+ *
+ * @param {Array<Object>} areas
+ * @param {{rejects?: boolean}} [options]
+ */
+function fakeDownloads(areas, { rejects = false } = {}) {
+  const downloads = {
+    areas: vi.fn(async () => {
+      if (rejects) throw new Error('areas() failed');
+      return areas;
+    }),
+  };
+  window.pwaBasemapDownloads = downloads;
+  return downloads;
+}
+
 function setOnline(value) {
   Object.defineProperty(window.navigator, 'onLine', { value, configurable: true });
 }
@@ -184,6 +215,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   setOnline(true);
   delete window.pwaDb;
+  delete window.pwaBasemapDownloads;
 });
 
 describe('GeoJSON overlay rows (l1/l2/l4/resorts) — online', () => {
@@ -525,38 +557,50 @@ describe('IndexedDB overlay rows (weather)', () => {
   });
 });
 
+// SNOW-722: a basemap dot's green means real downloaded area coverage; a
+// style cached by merely browsing means the grey "partly cached" advisory.
+// Both answers hold ONLINE as well as offline — the journey this ticket
+// exists for is the pre-flight check (open the layers menu at home on wifi,
+// then get on a plane), so a dot that only turns honest once the user is
+// offline lies at the one moment they could still act on it by downloading
+// the area. Only the red state and the row-disabling are offline-only.
+//
+// Every test here stubs `window.pwaBasemapDownloads`, because that is the
+// primary path. The style-only fallback, for when coverage is unknowable,
+// is the small block after this one.
 describe('per-basemap rows', () => {
-  it('online: style cached → green; not cached → grey; both selectable', async () => {
-    vi.stubGlobal('caches', fakeCaches({ hitUrls: [STANDARD_STYLE] }));
+  it('online: coverage → green; a merely-browsed basemap → grey "partly cached"', async () => {
+    // The regression this ticket is about, and it bites ONLINE: Swisstopo's
+    // style is cached because the user opened the picker and looked at it,
+    // which used to be the whole green signal.
+    fakeDownloads([{ id: 'area-1', basemapKey: 'standard' }]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [STANDARD_STYLE, SWISSTOPO_STYLE] }));
 
     await window.pwaLayerSyncStatus.refresh();
 
     expect(basemapDotState('standard')).toBe('cached');
     expect(basemapDotState('swisstopo')).toBe('uncached');
+    expect(basemapDotLabel('swisstopo')).toBe('Partly cached — may not load everywhere');
+    // Online nothing is ever disabled — every basemap is one fetch away.
     expect(basemapRowDisabled('standard')).toBe(false);
     expect(basemapRowDisabled('swisstopo')).toBe(false);
   });
 
-  it('offline: a basemap whose style is not cached is red + disabled', async () => {
-    setOnline(false);
+  it('online: neither → the unchanged grey "view online first"; never red', async () => {
+    fakeDownloads([]);
     vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
 
     await window.pwaLayerSyncStatus.refresh();
 
-    // SNOW-722: Standard is the ACTIVE basemap (aria-checked="true"), so its
-    // row stays selectable — you can't be stranded on a map you can't leave
-    // — but its dot reports the truth: nothing is cached. It used to read
-    // green here, which is the layers menu promising offline availability
-    // for a basemap with nothing stored.
-    expect(basemapDotState('standard')).toBe('unavailable-offline');
-    expect(basemapRowDisabled('standard')).toBe(false);
-    // Swisstopo isn't active and isn't cached → unavailable offline.
-    expect(basemapDotState('swisstopo')).toBe('unavailable-offline');
-    expect(basemapRowDisabled('swisstopo')).toBe(true);
+    expect(basemapDotState('standard')).toBe('uncached');
+    expect(basemapDotState('swisstopo')).toBe('uncached');
+    expect(basemapDotLabel('swisstopo')).toBe('Not cached — view online first');
+    expect(basemapRowDisabled('swisstopo')).toBe(false);
   });
 
-  it('offline: the active basemap reads green once its style IS cached', async () => {
+  it('offline: the active basemap reads green once it HAS downloaded coverage', async () => {
     setOnline(false);
+    fakeDownloads([{ id: 'area-1', basemapKey: 'standard' }]);
     vi.stubGlobal('caches', fakeCaches({ hitUrls: [STANDARD_STYLE] }));
 
     await window.pwaLayerSyncStatus.refresh();
@@ -565,22 +609,38 @@ describe('per-basemap rows', () => {
     expect(basemapRowDisabled('standard')).toBe(false);
   });
 
-  it('offline: a downloaded (style-cached) non-active basemap stays selectable', async () => {
+  it('offline: a downloaded non-active basemap stays selectable', async () => {
     setOnline(false);
+    fakeDownloads([{ id: 'area-1', basemapKey: 'swisstopo' }]);
     vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
 
     await window.pwaLayerSyncStatus.refresh();
 
     expect(basemapDotState('swisstopo')).toBe('cached');
+    expect(basemapDotLabel('swisstopo')).toBe('Available offline');
     expect(basemapRowDisabled('swisstopo')).toBe(false);
   });
 
-  // SNOW-722: the dot and the row answer two different questions, and
-  // _applyState used to take one boolean for both. Keeping the active
-  // basemap's row usable therefore required claiming its style was cached.
-  // These two pin the split in both directions.
+  it('offline: style cached but nothing downloaded → grey advisory, still selectable', async () => {
+    setOnline(false);
+    fakeDownloads([]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    // The point of the middle state: a basemap that renders in some places
+    // must stay choosable. Disabling it would take away a map that works.
+    expect(basemapDotState('swisstopo')).toBe('uncached');
+    expect(basemapRowDisabled('swisstopo')).toBe(false);
+    expect(basemapDotLabel('swisstopo')).toBe('Partly cached — may not load everywhere');
+  });
+
+  // SNOW-722 (a3a5e3f): the dot and the row answer two different questions.
+  // Keeping the active basemap's row usable used to require claiming its
+  // style was cached. These two pin the split in both directions.
   it('offline + uncached ACTIVE basemap: red dot, row still enabled', async () => {
     setOnline(false);
+    fakeDownloads([]);
     vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
 
     await window.pwaLayerSyncStatus.refresh();
@@ -591,12 +651,104 @@ describe('per-basemap rows', () => {
 
   it('offline + uncached INACTIVE basemap: red dot and a disabled row', async () => {
     setOnline(false);
+    fakeDownloads([]);
     vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
 
     await window.pwaLayerSyncStatus.refresh();
 
     expect(basemapDotState('swisstopo')).toBe('unavailable-offline');
     expect(basemapRowDisabled('swisstopo')).toBe(true);
+  });
+
+  it('a legacy keyless area counts for the ACTIVE basemap only', async () => {
+    setOnline(false);
+    // basemapKey null = "downloaded, basemap unknown" (a pre-SNOW-645
+    // record, or a reconciled orphan). Attributing it to every basemap
+    // would restore the very over-claim this ticket removes; attributing it
+    // to none would regress the basemap the user is actually on.
+    fakeDownloads([{ id: 'area-1', basemapKey: null }]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [STANDARD_STYLE, SWISSTOPO_STYLE] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('standard')).toBe('cached');
+    // Swisstopo's style is cached too, so it lands in the middle state —
+    // NOT green off someone else's keyless download.
+    expect(basemapDotState('swisstopo')).toBe('uncached');
+    expect(basemapRowDisabled('swisstopo')).toBe(false);
+  });
+
+  it('reads areas() once per pass, not once per basemap row', async () => {
+    setOnline(false);
+    const downloads = fakeDownloads([]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    // Two basemap rows in the fixture; an IndexedDB read plus a possible
+    // Cache Storage walk is not something to repeat per row.
+    expect(downloads.areas).toHaveBeenCalledTimes(1);
+  });
+
+  it('coming back online re-enables a basemap row this module disabled', async () => {
+    setOnline(false);
+    fakeDownloads([]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
+    await window.pwaLayerSyncStatus.refresh();
+    expect(basemapRowDisabled('swisstopo')).toBe(true);
+
+    setOnline(true);
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('swisstopo')).toBe('uncached');
+    expect(basemapRowDisabled('swisstopo')).toBe(false);
+    expect(
+      document.querySelector('[data-basemap-key="swisstopo"]').hasAttribute('aria-disabled'),
+    ).toBe(false);
+  });
+});
+
+// SNOW-722: with no readable downloads module there is no coverage to ask
+// about, so a basemap row degrades to the style-only signal this module
+// used before the ticket — the alternative, reporting everything red,
+// would break a page that simply loads this module without the map bundle.
+// Deliberately a small, named block: the primary path above is the default.
+describe('per-basemap rows (no downloads module — style-only fallback)', () => {
+  it('offline: a cached style alone still reads green', async () => {
+    setOnline(false);
+    expect(window.pwaBasemapDownloads).toBeUndefined();
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
+
+    await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
+
+    expect(basemapDotState('swisstopo')).toBe('cached');
+    expect(basemapRowDisabled('swisstopo')).toBe(false);
+  });
+
+  it('offline: a basemap whose style is not cached is red + disabled', async () => {
+    setOnline(false);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    // Standard is the ACTIVE basemap (aria-checked="true"), so its row stays
+    // selectable — you can't be stranded on a map you can't leave — but its
+    // dot reports the truth: nothing is cached.
+    expect(basemapDotState('standard')).toBe('unavailable-offline');
+    expect(basemapRowDisabled('standard')).toBe(false);
+    expect(basemapDotState('swisstopo')).toBe('unavailable-offline');
+    expect(basemapRowDisabled('swisstopo')).toBe(true);
+  });
+
+  it('degrades the same way, without throwing, when areas() rejects', async () => {
+    setOnline(false);
+    fakeDownloads([], { rejects: true });
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
+
+    await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
+
+    expect(basemapDotState('swisstopo')).toBe('cached');
+    expect(basemapRowDisabled('swisstopo')).toBe(false);
   });
 });
 

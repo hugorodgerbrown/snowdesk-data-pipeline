@@ -561,7 +561,14 @@ async function renameCustomArea(areaId, name) {
 // recorded, so nothing to evict", never to blocking a download outright
 // over a transient IndexedDB error.
 //
-// @returns {Promise<Array<{id: string, name?: string, bytes: number, savedAt: string}>>}
+// @returns {Promise<Array<{id: string, name?: string, bytes: number,
+//   savedAt: string, basemapKey: string|null}>>} `basemapKey` (SNOW-645)
+//   is the basemap the area was fetched under, null for a record written
+//   before that ticket or for a reconciled orphan — "downloaded, basemap
+//   unknown". SNOW-722: named here because it is load-bearing outside the
+//   eviction path now (map_layer_sync_status.js decides each basemap
+//   row's dot on it), and the abbreviated shape above read as though it
+//   were dropped.
 async function basemapDownloadedAreas() {
   const core = self.pwaBasemapDownloadCore;
   const areas = [];
@@ -918,8 +925,18 @@ async function evictBasemapAreas(areaIds) {
 // this file already uses for its sibling IIFEs.
 window.pwaBasemapDownloads = Object.freeze({
   /**
-   * Every recorded area, normalised to `{id, name, bytes, savedAt}` and
-   * keyed by the id that also names its pinned Cache Storage bucket.
+   * Every recorded area, normalised to
+   * `{id, name, bytes, savedAt, basemapKey}` and keyed by the id that also
+   * names its pinned Cache Storage bucket.
+   *
+   * SNOW-722: `basemapKey` was omitted from that shape above while the
+   * only consumers were the eviction planner and the Manage downloads
+   * sheet, and it read as though the key were normalised away — it never
+   * was. It is now what map_layer_sync_status.js matches each basemap
+   * row's `data-basemap-key` against to decide whether that basemap has
+   * real downloaded coverage, so the omission is no longer harmless.
+   * Null means "downloaded, basemap unknown" (a pre-SNOW-645 record, or a
+   * reconciled orphan) — never a wrong basemap.
    *
    * @returns {Promise<Array<Object>>} Empty when nothing is recorded or
    *   the read fails — never rejects.
