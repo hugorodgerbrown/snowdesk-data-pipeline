@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -5909,3 +5910,159 @@ class TestArticleOpenGraph:
         assert 'property="og:type" content="website"' in content
         assert "article:published_time" not in content
         assert "article:modified_time" not in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-670 — the off-schedule (``unscheduled``) marker
+# ---------------------------------------------------------------------------
+
+
+_SENTINEL_DIR = Path(__file__).resolve().parents[1] / "sentinels"
+
+
+def _albina_unscheduled_props() -> dict[str, Any]:
+    """Return the ALBINA A-single-level sentinel's CAAML properties.
+
+    This sentinel is the one committed payload that genuinely carries
+    ``unscheduled: true``, so the assertions below are tied to a real
+    provider shape rather than a hand-built dict that could drift from
+    what ALBINA actually sends.
+    """
+    path = _SENTINEL_DIR / "albina" / "A-single-level" / "source.json"
+    props: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    assert props["unscheduled"] is True, (
+        f"{path}: sentinel no longer carries unscheduled=true — these tests "
+        "depend on it; pick another sentinel or restore the payload."
+    )
+    return props
+
+
+@pytest.mark.django_db
+class TestUnscheduledMarker:
+    """
+    The off-schedule marker and metadata cell on the bulletin page.
+
+    ``unscheduled`` means the provider reissued mid-cycle rather than
+    waiting for the normal publication slot. It reaches
+    ``render_model["metadata"]["unscheduled"]`` and, before SNOW-670, no
+    template read it — the reader had no way to know they were looking at
+    a revision.
+
+    Both surfaces are all-or-nothing: a false (or absent) flag renders
+    neither, so a normal bulletin carries no trace of the check.
+    """
+
+    def _bulletin_for(self, unscheduled: bool | None) -> tuple[MicroRegion, Bulletin]:
+        """Build an ALBINA-sentinel bulletin with *unscheduled* set as given.
+
+        Args:
+            unscheduled: Value for the payload's ``unscheduled`` key, or
+                ``None`` to delete the key entirely.
+
+        Returns:
+            The region the bulletin is attached to, and the bulletin.
+
+        """
+        props = _albina_unscheduled_props()
+        if unscheduled is None:
+            props.pop("unscheduled", None)
+        else:
+            props["unscheduled"] = unscheduled
+
+        region = MicroRegionFactory.create(
+            region_id=props["regions"][0]["regionID"],
+            name="Allgäu Alps East",
+            slug="at-07-01",
+        )
+        valid_from = datetime.fromisoformat(
+            props["validTime"]["startTime"].replace("Z", "+00:00")
+        )
+        valid_to = datetime.fromisoformat(
+            props["validTime"]["endTime"].replace("Z", "+00:00")
+        )
+        bulletin = BulletinFactory.create(
+            source=Bulletin.Source.ALBINA,
+            # render_model_version stays at the factory default of 0 so the
+            # view rebuilds the render model from raw_data — which is what
+            # makes the edited payload above actually reach the page.
+            raw_data={"type": "Feature", "geometry": None, "properties": props},
+            issued_at=valid_from,
+            valid_from=valid_from,
+            valid_to=valid_to,
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin,
+            region=region,
+            region_name_at_time=region.name,
+        )
+        return region, bulletin
+
+    def _render(self, client: Client, unscheduled: bool | None) -> str:
+        """Render the bulletin page for a payload with the given flag."""
+        region, bulletin = self._bulletin_for(unscheduled)
+        response = client.get(region.get_absolute_url(bulletin.target_date))
+        assert response.status_code == 200
+        return response.content.decode()
+
+    def test_marker_renders_when_flag_is_true(self, client: Client) -> None:
+        """An off-schedule bulletin carries the header marker."""
+        content = self._render(client, True)
+        assert 'data-testid="unscheduled-marker"' in content
+        assert "Updated off-schedule" in content
+
+    def test_marker_names_the_publication_time(self, client: Client) -> None:
+        """The marker body carries the reissue time, not just the fact of it.
+
+        Knowing a bulletin was reissued is only actionable next to *when* —
+        that is what tells a reader whether the version they saw earlier
+        predates it.
+
+        The assertion is scoped to the marker's own markup on purpose: the
+        metadata strip renders the same timestamp in its Issued cell, so a
+        whole-page substring search would pass with the marker body empty.
+        """
+        content = self._render(client, True)
+        marker = re.search(
+            r'<div data-testid="unscheduled-marker">(.*?)</div>\s*</div>',
+            content,
+            re.S,
+        )
+        assert marker is not None, "unscheduled marker not found in the page"
+        # publicationTime is 2025-11-28T18:06:01Z.
+        assert "28 Nov 18:06 UTC" in marker.group(1)
+
+    def test_metadata_cell_renders_when_flag_is_true(self, client: Client) -> None:
+        """The metadata strip gains a Schedule / Off-schedule cell."""
+        content = self._render(client, True)
+        assert 'data-testid="unscheduled-cell"' in content
+        assert "Off-schedule" in content
+
+    def test_neither_surface_renders_when_flag_is_false(self, client: Client) -> None:
+        """A normally-scheduled bulletin shows no marker and no extra cell."""
+        content = self._render(client, False)
+        assert 'data-testid="unscheduled-marker"' not in content
+        assert 'data-testid="unscheduled-cell"' not in content
+        assert "off-schedule" not in content.lower()
+
+    def test_neither_surface_renders_when_key_is_absent(self, client: Client) -> None:
+        """A payload with no ``unscheduled`` key behaves as if false."""
+        content = self._render(client, None)
+        assert 'data-testid="unscheduled-marker"' not in content
+        assert 'data-testid="unscheduled-cell"' not in content
+
+    def test_strings_are_translated(self, client: Client) -> None:
+        """Both user-facing strings go through the translation catalogue.
+
+        Rendering under a locale with no catalogue entries still yields the
+        English source strings, so this asserts the wrapping rather than a
+        translation: it fails if a later edit inlines a bare literal, which
+        ``makemessages`` would then never see.
+        """
+        region, bulletin = self._bulletin_for(True)
+        url = region.get_absolute_url(bulletin.target_date)
+        with language_override("de"):
+            content = client.get(
+                url, headers={"accept-language": "de"}
+            ).content.decode()
+        assert 'data-testid="unscheduled-marker"' in content
+        assert 'data-testid="unscheduled-cell"' in content
