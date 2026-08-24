@@ -14,7 +14,13 @@ Contains the quantisation helpers and the resolution entry point:
       ``apps.weather.services.elevation.fetch_elevation``, then either reuses
       the nearest existing ``ForecastCell`` within the reuse thresholds
       or creates a new one keyed on the quantised grid cell. Returns the
-      resolved ``ForecastCell``.
+      resolved ``ForecastCell``. **Writes.**
+
+  find_forecast_cell(latitude, longitude, elevation)
+      The read-only twin of the above, for a ``--commit``-less backfill
+      pass: makes the same decision and returns the cell that would be
+      used, or ``None`` where one would be created. Never writes, and takes
+      the already-fetched elevation rather than looking it up again.
 
 The reuse check runs before cell creation so that pins sitting near a
 grid-cell boundary — whose quantised cell differs from a physically
@@ -145,7 +151,64 @@ def _find_reusable_cell(
     return best
 
 
-def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
+def find_forecast_cell(
+    latitude: float, longitude: float, elevation: float
+) -> ForecastCell | None:
+    """
+    Return the ForecastCell this pin would resolve to, without creating one.
+
+    The read-only twin of ``resolve_forecast_cell``, for the ``--commit``-less
+    pass of a backfill command. It must mirror that function's decision
+    exactly or a preview reports a cost the commit run does not incur, so it
+    repeats **both** of its lookups in the same order: the reuse check over
+    the 3x3x3 neighbourhood, then the exact grid-cell key that
+    ``get_or_create`` would otherwise satisfy with a ``get``.
+
+    Elevation is an argument rather than a lookup because every caller has
+    already fetched it. ``resolve_forecast_cell`` takes the coordinates alone
+    and fetches its own, which costs a second Open-Meteo call on a path that
+    has one in hand.
+
+    Args:
+        latitude: The pin's latitude in degrees.
+        longitude: The pin's longitude in degrees.
+        elevation: The pin's elevation in metres, as already resolved by
+            ``apps.weather.services.elevation.fetch_elevation``.
+
+    Returns:
+        The ForecastCell ``resolve_forecast_cell`` would return for these
+        coordinates, or ``None`` when it would create a new one.
+
+    Raises:
+        InvalidCoordinatesError: If the coordinates are non-finite or out of
+            range — rejected here for the same reason as in
+            ``resolve_forecast_cell``, so a preview fails on bad input rather
+            than silently reporting "would create".
+
+    """
+    validate_coordinates(latitude, longitude)
+
+    lat_cell = quantise_lat(latitude)
+    lon_cell = quantise_lon(longitude)
+    elevation_band = quantise_elevation(elevation)
+
+    reusable = _find_reusable_cell(
+        latitude, longitude, elevation, lat_cell, lon_cell, elevation_band
+    )
+    if reusable is not None:
+        return reusable
+
+    # Not reusable, but the exact key may still be taken: a row in this
+    # grid cell more than REUSE_HORIZONTAL_THRESHOLD_M away fails the reuse
+    # check and is still what get_or_create would hand back.
+    return ForecastCell.objects.filter(
+        lat_cell=lat_cell, lon_cell=lon_cell, elevation_band=elevation_band
+    ).first()
+
+
+def resolve_forecast_cell(
+    latitude: float, longitude: float, elevation: float | None = None
+) -> ForecastCell:
     """
     Resolve a raw pin location to a shared ForecastCell, creating one if needed.
 
@@ -156,6 +219,10 @@ def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
     Args:
         latitude: The pin's latitude in degrees.
         longitude: The pin's longitude in degrees.
+        elevation: The pin's elevation in metres, when the caller already
+            holds it. Backfill commands fetch it for the ``Location`` row
+            itself and would otherwise pay a second Open-Meteo call here for
+            the same answer. Omit it and this fetches its own.
 
     Returns:
         The resolved (existing or newly created) ForecastCell.
@@ -171,7 +238,8 @@ def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
     # external elevation lookup and any DB write.
     validate_coordinates(latitude, longitude)
 
-    elevation = fetch_elevation(latitude, longitude)
+    if elevation is None:
+        elevation = fetch_elevation(latitude, longitude)
 
     lat_cell = quantise_lat(latitude)
     lon_cell = quantise_lon(longitude)
@@ -181,12 +249,17 @@ def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
         latitude, longitude, elevation, lat_cell, lon_cell, elevation_band
     )
     if reusable is not None:
+        # Logged by quantised cell key, never by raw coordinates. A pin's
+        # latitude/longitude is a precise personal location — often a
+        # user's own saved place — and this is the debug log of a path
+        # every favourite goes through. The key is what identifies the row
+        # anyway, so this is both safer and more useful (SNOW-718).
         logger.debug(
-            "Reusing ForecastCell id=%s for latitude=%s longitude=%s elevation=%s",
+            "Reusing ForecastCell id=%s for cell=(%s, %s, %s)",
             reusable.pk,
-            latitude,
-            longitude,
-            elevation,
+            lat_cell,
+            lon_cell,
+            elevation_band,
         )
         return reusable
 
@@ -207,12 +280,11 @@ def resolve_forecast_cell(latitude: float, longitude: float) -> ForecastCell:
     )
 
     logger.debug(
-        "Resolved ForecastCell id=%s created=%s for latitude=%s longitude=%s "
-        "elevation=%s",
+        "Resolved ForecastCell id=%s created=%s for cell=(%s, %s, %s)",
         cell.pk,
         created,
-        latitude,
-        longitude,
-        elevation,
+        lat_cell,
+        lon_cell,
+        elevation_band,
     )
     return cell

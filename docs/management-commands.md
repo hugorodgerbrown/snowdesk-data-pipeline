@@ -359,17 +359,22 @@ The companion to `import_locations`, in the role
 `link_resort_forecast_points` plays for `import_resorts`: the import writes
 what a curator typed, this resolves the two fields needing an external call.
 
-Per unresolved location it makes **two** Open-Meteo calls. `fetch_elevation`
+Per unresolved location it makes **one** Open-Meteo call. `fetch_elevation`
 gives the location's *own* height — deliberately not the forecast cell's
 `elevation`, which is the representative height of whichever pin minted the
 cell and is shared by everything in it. Mont Fort must carry 3328 m, not the
-cell's average. Then `resolve_forecast_cell` reuses or creates the shared
-cell, which is what puts the location into `ForecastCell.objects.active()`
-and so into the scheduled `fetch_weather` point pass — no scheduler change.
+cell's average. That elevation is then handed to `resolve_forecast_cell`,
+which reuses or creates the shared cell without looking it up again, and is
+what puts the location into `ForecastCell.objects.active()` and so into the
+scheduled `fetch_weather` point pass — no scheduler change.
 
-Both calls are made even in a dry run, so the reported outcome is real; only
-the writes are gated. A per-location failure is logged and counted, never
-aborts the batch, and makes the command exit non-zero.
+The elevation call is made in a dry run too, so the reported outcome is
+real. The cell is not: a dry run asks `find_forecast_cell`, the read-only
+twin, which cell *would* be used, and reports "at most N new cell(s)" — an
+upper bound, because two locations close enough to share a cell both count
+as new when neither is written for the other to find. A per-location failure
+is logged and counted, never aborts the batch, and makes the command exit
+non-zero.
 
 **Scoped to `Location.objects.named()`** — the curated estate. That filter
 is what keeps the cost bounded: a favourite's location already carries its
@@ -399,7 +404,14 @@ centre onto an existing resort cell where the two are close. Each new cell
 adds one Open-Meteo call per fetch cycle and `fetch_weather` runs four
 times daily, so roughly **1,800 additional calls per day**. Confirm the
 headroom on the current plan first — the dry run reports created-versus-
-reused, which is the number to check against.
+reused, which is the number to check against. It is an upper bound on the
+created side: two region centres close enough to share a cell both count as
+new, because a dry run writes neither for the other to find.
+
+The dry run itself writes nothing and makes one Open-Meteo call per region
+(SNOW-719). Before that fix it called `resolve_forecast_cell` — a
+`get_or_create` — on the read-only path, so a "preview" created the very
+cells it was reporting on.
 
 **A centroid is not a place anyone goes.** The minted location carries no
 name and no kind: it represents the region and sits at whatever elevation

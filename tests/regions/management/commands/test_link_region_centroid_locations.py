@@ -5,7 +5,9 @@ Covers ``link_region_centroid_locations`` (SNOW-696):
   - Mints a centroid Location with its elevation and cell resolved.
   - The location is anonymous — a centroid is not a place anyone goes.
   - Regions with no usable ``centre`` are skipped, not failed.
-  - Dry-run writes nothing but still resolves, so the reported cost is real.
+  - A dry run writes nothing at all — not even the ForecastCell that
+    resolve_forecast_cell's get_or_create would mint (SNOW-719) — while
+    still reporting the cost it would incur, as an upper bound.
   - The reported new-cell count is the number to check the Open-Meteo plan
     against, so it must distinguish a created cell from a reused one.
   - Idempotent; one failing region does not abort the batch.
@@ -100,23 +102,53 @@ class TestLinkRegionCentroidLocations:
         assert "1 skipped" in out.getvalue()
         assert not Location.objects.exists()
 
-    def test_dry_run_writes_nothing_but_still_resolves(self) -> None:
-        """The reported cost has to be real, so the lookups still happen."""
+    def test_dry_run_creates_no_forecast_cell(self) -> None:
+        """SNOW-719: the preview must not write the rows it reports on.
+
+        ``resolve_forecast_cell`` ends in ``get_or_create``. Calling it on
+        the read-only path created a ForecastCell per region — several
+        hundred of them on a full fixture — under a banner reading
+        READ-ONLY. It is deliberately left unpatched here: patching it is
+        what hid the write from this suite in the first place.
+        """
         region = MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastCellFactory.create()
+        cells_before = ForecastCell.objects.count()
 
         out = StringIO()
         with (
             patch(_ELEVATION, return_value=2100.0) as lookup,
-            patch(_RESOLVE, return_value=cell),
+            patch(_RESOLVE) as resolve,
         ):
             call_command(COMMAND, "--delay", "0", stdout=out)
 
+        resolve.assert_not_called()
+        assert ForecastCell.objects.count() == cells_before
         lookup.assert_called_once()
         region.refresh_from_db()
         assert region.centroid_location is None
         assert not Location.objects.exists()
         assert "Read-only run complete" in out.getvalue()
+
+    def test_dry_run_reports_the_cell_it_would_create(self) -> None:
+        """The preview still has to name the cost, upper-bounded."""
+        MicroRegionFactory.create(centre=CENTRE)
+
+        out = StringIO()
+        with patch(_ELEVATION, return_value=2100.0):
+            call_command(COMMAND, "--delay", "0", stdout=out)
+
+        assert "at most 1 new forecast cell(s), 0 reused" in out.getvalue()
+
+    def test_dry_run_reports_a_reusable_cell_as_reused(self) -> None:
+        """A preview that over-reported cost would block a safe run."""
+        MicroRegionFactory.create(centre=CENTRE)
+        ForecastCellFactory.create(elevation=2100.0)
+
+        out = StringIO()
+        with patch(_ELEVATION, return_value=2100.0):
+            call_command(COMMAND, "--delay", "0", stdout=out)
+
+        assert "at most 0 new forecast cell(s), 1 reused" in out.getvalue()
 
     def test_reports_new_cells_separately_from_reused_ones(self) -> None:
         """The new-cell count is what the Open-Meteo plan must absorb.
@@ -126,16 +158,17 @@ class TestLinkRegionCentroidLocations:
         only number worth checking before a 461-region run.
         """
         MicroRegionFactory.create(centre=CENTRE)
-        existing = ForecastCellFactory.create()
+        # Same coordinates and elevation as the region centre, so it falls
+        # inside both reuse thresholds. resolve_forecast_cell is left
+        # unpatched: the reuse decision under test is its own.
+        existing = ForecastCellFactory.create(elevation=2100.0)
 
         out = StringIO()
-        with (
-            patch(_ELEVATION, return_value=2100.0),
-            patch(_RESOLVE, return_value=existing),
-        ):
+        with patch(_ELEVATION, return_value=2100.0):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=out)
 
         assert "0 new forecast cell(s), 1 reused" in out.getvalue()
+        assert Location.objects.get().forecast_cell == existing
 
     def test_second_run_selects_nothing(self) -> None:
         """Idempotent — a linked region is out of the candidate set."""
