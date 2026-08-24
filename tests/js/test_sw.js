@@ -84,6 +84,15 @@ const SW_EXPORTS = [
   '_clearWarmCacheCancelled',
   '_handleWarmCacheCancelMessage',
   'WARM_CACHE_CANCEL_SET_MAX',
+  // SNOW-722: the cross-origin routing fix — classification, its
+  // IndexedDB rehydration, and the two cache searches behind it.
+  '_classifyCrossOriginGet',
+  '_hydrateBasemapOrigins',
+  '_searchPinnedBuckets',
+  '_readOnlyBasemapCacheProbe',
+  'BASEMAP_CACHE',
+  'BASEMAP_PINNED_CACHE_PREFIX',
+  'BASEMAP_HYDRATION_MAX_ATTEMPTS',
 ];
 
 /**
@@ -97,9 +106,15 @@ const SW_EXPORTS = [
  * @returns {object} The helpers named in ``SW_EXPORTS``.
  */
 function loadSw(options = {}) {
+  const listeners = {};
   const selfStub = {
     location: { origin: ORIGIN },
-    addEventListener: () => {},
+    // SNOW-722: captured rather than discarded, so a test can dispatch a
+    // synthetic ``fetch`` event at the real listener and exercise the
+    // cross-origin routing decision end to end.
+    addEventListener: (type, handler) => {
+      listeners[type] = handler;
+    },
     clients: {
       get: () => Promise.resolve(null),
       matchAll: () => Promise.resolve([]),
@@ -113,11 +128,13 @@ function loadSw(options = {}) {
     'fetch',
     `${SW_SOURCE}\nreturn { ${SW_EXPORTS.join(', ')} };`,
   );
-  return factory(
+  const api = factory(
     selfStub,
     options.caches || makeCaches(),
     options.fetch || (() => Promise.reject(new TypeError('Failed to fetch'))),
   );
+  api.__listeners = listeners;
+  return api;
 }
 
 /**
@@ -163,16 +180,25 @@ function basicResponse(body, init = {}) {
  */
 function makeCaches() {
   const buckets = new Map();
-  const counters = { keys: 0 };
+  // SNOW-722: ``open`` and ``match`` are counted per bucket name as well,
+  // because the read-only cross-origin probe's cost bound is a claim about
+  // exactly those two — "one BASEMAP_CACHE lookup, and the pinned walk only
+  // when something is pinned". Counting only ``keys`` let the docstring
+  // overstate the guard for a release without a test noticing.
+  const counters = { keys: 0, open: 0, match: 0, openedNames: [], matchedNames: [] };
   const entriesFor = (name) => {
     if (!buckets.has(name)) buckets.set(name, new Map());
     return buckets.get(name);
   };
   return {
     open: async (name) => {
+      counters.open += 1;
+      counters.openedNames.push(name);
       const entries = entriesFor(name);
       return {
         async match(request, matchOptions) {
+          counters.match += 1;
+          counters.matchedNames.push(name);
           const url = typeof request === 'string' ? request : request.url;
           if (entries.has(url)) return entries.get(url).clone();
           if (matchOptions && matchOptions.ignoreSearch) {
@@ -1067,9 +1093,9 @@ describe('the cancelled-requestId set stays bounded (SNOW-632)', () => {
     expect(sw._warmCacheCancelledIds.size).toBe(0);
   });
 
-  // Vitest's sandbox stubs addEventListener as a no-op (see loadSw above),
-  // so nothing here can invoke the 'message' listener itself. This exercises
-  // the extracted handler body directly instead, proving the field name it
+  // The sandbox records the worker's listeners but dispatches nothing on
+  // its own, and the 'message' listener is not wired up here. This
+  // exercises the extracted handler body directly, proving the field name it
   // reads off the message ('requestId') is the one _markWarmCacheCancelled
   // ends up keyed on — a wrong field name here would leave every unit test
   // above green while cancelling nothing in production.
@@ -1080,5 +1106,277 @@ describe('the cancelled-requestId set stays bounded (SNOW-632)', () => {
 
     expect(sw._warmCacheCancelledIds.has('req-live')).toBe(true);
     expect(sw._warmCacheCancelledIds.has('req-other')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-722 — a restarted worker must still serve a downloaded basemap
+// ---------------------------------------------------------------------------
+
+describe('cross-origin routing when the basemap allowlist is empty (SNOW-722)', () => {
+  /*
+   * Offline on a plane, the basemap rendered blank inside an area the app
+   * itself had marked as downloaded. ``_basemapStaleWhileRevalidate`` was
+   * never at fault — it already searches BASEMAP_CACHE and every pinned
+   * bucket. The request never reached it: ``_classifyCrossOriginGet``
+   * answers 'basemap' only for an origin in the in-memory
+   * ``_basemapOrigins`` allowlist, that Set does not survive the browser
+   * terminating an idle worker, and its recovery read froze an empty
+   * result for the worker's lifetime the first time it failed.
+   */
+
+  const TILE_ORIGIN = 'https://tiles.example';
+  const TILE_URL = `${TILE_ORIGIN}/12/2145/1436.pbf`;
+  const PINNED_BUCKET = 'snowdesk-basemap-pinned-area-alps';
+
+  /** A cross-origin tile GET, as the fetch listener receives one. */
+  function tileRequest(url) {
+    return { url, method: 'GET', mode: 'cors', destination: 'image' };
+  }
+
+  /**
+   * Dispatch a synthetic ``fetch`` event at the worker's real listener and
+   * resolve whatever it responded with (``undefined`` when it declined to
+   * respond, which is the browser-handles-it-natively case).
+   *
+   * @param {object} sw
+   * @param {string} url
+   * @returns {Promise<object|undefined>}
+   */
+  async function dispatchFetch(sw, url) {
+    let responded;
+    sw.__listeners.fetch({
+      request: tileRequest(url),
+      clientId: '',
+      respondWith(promise) {
+        responded = promise;
+      },
+    });
+    return responded === undefined ? undefined : responded;
+  }
+
+  /** Recreate the DB with ONLY queue:mutations — no meta:app to read. */
+  function resetDbWithoutMetaStore() {
+    return new Promise((resolve, reject) => {
+      const del = indexedDB.deleteDatabase(DB_NAME);
+      del.onerror = () => reject(del.error);
+      del.onsuccess = () => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          req.result.createObjectStore('queue:mutations', {
+            keyPath: 'id',
+            autoIncrement: true,
+          });
+        };
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          req.result.close();
+          resolve();
+        };
+      };
+    });
+  }
+
+  /** Write the basemap.origins mirror static/js/map.js maintains. */
+  function setStoredBasemapOrigins(origins) {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('meta:app', 'readwrite');
+        tx.objectStore('meta:app').put({ key: 'basemap.origins', value: origins });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error);
+        };
+      };
+    });
+  }
+
+  it('rehydrates the allowlist from meta:app and classifies the tile as basemap', async () => {
+    await resetDb();
+    await setStoredBasemapOrigins([TILE_ORIGIN]);
+    // A fresh sandbox is a freshly-restarted worker: _basemapOrigins empty.
+    const sw = loadSw();
+
+    expect(await sw._classifyCrossOriginGet(new URL(TILE_URL))).toBe('basemap');
+  });
+
+  it('still serves a pinned tile when the meta:app read fails, and retries the read', async () => {
+    // No meta:app store at all — the read rejects, so classification can
+    // only ever answer 'network' for this tile.
+    await resetDbWithoutMetaStore();
+    const cachesStub = makeCaches();
+    cachesStub.seed(PINNED_BUCKET, TILE_URL, basicResponse('pinned tile bytes'));
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: () => Promise.reject(new TypeError('Failed to fetch')),
+    });
+
+    expect(await sw._classifyCrossOriginGet(new URL(TILE_URL))).toBe('network');
+
+    // 2a: the read-only probe finds it in the pinned bucket regardless.
+    const response = await dispatchFetch(sw, TILE_URL);
+    expect(await response.text()).toBe('pinned tile bytes');
+
+    // 2b: the failed read was not memoised — once meta:app is readable
+    // again the next classification picks the allowlist up.
+    await resetDb();
+    await setStoredBasemapOrigins([TILE_ORIGIN]);
+    expect(await sw._classifyCrossOriginGet(new URL(TILE_URL))).toBe('basemap');
+  });
+
+  it('stops retrying a persistently failing read after the attempt cap', async () => {
+    // The same catch covers the permanent "worker-created DB has no
+    // meta:app store" case, so the retry is bounded: an unbounded one
+    // would buy a DB open on every cross-origin request, forever.
+    await resetDbWithoutMetaStore();
+    const sw = loadSw();
+
+    for (let i = 0; i < sw.BASEMAP_HYDRATION_MAX_ATTEMPTS; i += 1) {
+      await sw._hydrateBasemapOrigins();
+    }
+
+    // Cap reached: the empty result is now memoised, so a readable DB no
+    // longer changes the answer without a register-basemap-origins message.
+    await resetDb();
+    await setStoredBasemapOrigins([TILE_ORIGIN]);
+    expect(await sw._classifyCrossOriginGet(new URL(TILE_URL))).toBe('network');
+  });
+
+  it('does not let a superseded attempt spend a freshly-reset retry budget', async () => {
+    // A register-basemap-origins message resets both the memo and the retry
+    // budget. An attempt that was already in flight when it landed is news
+    // about a worker state that no longer applies, so its eventual failure
+    // must not be charged against the new budget — otherwise a rapid
+    // register/idle-terminate sequence hits the cap an attempt early.
+    await resetDbWithoutMetaStore();
+    const sw = loadSw();
+
+    const superseded = sw._hydrateBasemapOrigins();
+    // An empty list keeps _basemapOrigins empty (so later calls still try to
+    // hydrate) while resetting the memo and the failure count, exactly as a
+    // live page's registration does.
+    sw.__listeners.message({ data: { type: 'register-basemap-origins', origins: [] } });
+    await superseded;
+
+    // The full budget must still be there: one short of the cap, the memo is
+    // still being dropped, so a DB that becomes readable is picked up.
+    for (let i = 0; i < sw.BASEMAP_HYDRATION_MAX_ATTEMPTS - 1; i += 1) {
+      await sw._hydrateBasemapOrigins();
+    }
+    await resetDb();
+    await setStoredBasemapOrigins([TILE_ORIGIN]);
+
+    expect(await sw._classifyCrossOriginGet(new URL(TILE_URL))).toBe('basemap');
+  });
+
+  it('serves a tile left in BASEMAP_CACHE by an earlier session', async () => {
+    // Nothing pinned at all — but the passive cache holds tiles written
+    // when the allowlist WAS populated, and they must still read back.
+    await resetDbWithoutMetaStore();
+    const cachesStub = makeCaches();
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: () => Promise.reject(new TypeError('Failed to fetch')),
+    });
+    cachesStub.seed(sw.BASEMAP_CACHE, TILE_URL, basicResponse('passive tile bytes'));
+
+    const response = await dispatchFetch(sw, TILE_URL);
+
+    expect(await response.text()).toBe('passive tile bytes');
+  });
+
+  it('never writes on the read-only path', async () => {
+    await resetDbWithoutMetaStore();
+    const cachesStub = makeCaches();
+    cachesStub.seed(PINNED_BUCKET, TILE_URL, basicResponse('pinned tile bytes'));
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: async () => basicResponse('network bytes'),
+    });
+
+    // Both a hit (served from the pinned bucket) and a miss (fetched).
+    await dispatchFetch(sw, TILE_URL);
+    await dispatchFetch(sw, `${TILE_ORIGIN}/12/9999/9999.pbf`);
+    await flush();
+
+    // The allowlist still governs what may be CACHED: an origin that is not
+    // on it may read from these buckets but must never populate one.
+    expect(cachesStub.size(sw.BASEMAP_CACHE)).toBe(0);
+    expect(cachesStub.size(PINNED_BUCKET)).toBe(1);
+  });
+
+  it('goes straight to the network, with no pinned walk, when nothing is pinned', async () => {
+    // The regression guard for 2a's blast radius: EVERY cross-origin GET
+    // now reaches the probe, so what it costs a user with no downloads is
+    // the whole question. The bound is asserted here in the same terms the
+    // docstring states it, so the two cannot drift apart silently — the
+    // first draft of that docstring claimed the guard made the probe free,
+    // and nothing here could tell that it doesn't.
+    await resetDbWithoutMetaStore();
+    const cachesStub = makeCaches();
+    const fetched = [];
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: async (request) => {
+        fetched.push(request.url);
+        return basicResponse('network bytes');
+      },
+    });
+    const keysBefore = cachesStub.counters.keys;
+
+    await dispatchFetch(sw, 'https://cdn.example/analytics.js');
+    await dispatchFetch(sw, 'https://cdn.example/pixel.gif');
+    await dispatchFetch(sw, 'https://other.example/thing.json');
+
+    expect(fetched).toEqual([
+      'https://cdn.example/analytics.js',
+      'https://cdn.example/pixel.gif',
+      'https://other.example/thing.json',
+    ]);
+    // Exactly one BASEMAP_CACHE lookup per request — a keyed match in one
+    // bucket, no enumeration. It is deliberately NOT skipped when nothing
+    // is pinned: BASEMAP_CACHE is the passive cache ordinary browsing
+    // fills, so a user who has panned a basemap but never downloaded an
+    // area has tiles there and no pinned buckets at all.
+    expect(cachesStub.counters.matchedNames).toEqual([
+      sw.BASEMAP_CACHE,
+      sw.BASEMAP_CACHE,
+      sw.BASEMAP_CACHE,
+    ]);
+    // And nothing beyond it: no pinned bucket is opened, let alone walked.
+    expect(
+      cachesStub.counters.openedNames.filter((name) =>
+        name.startsWith(sw.BASEMAP_PINNED_CACHE_PREFIX),
+      ),
+    ).toEqual([]);
+    // One enumeration for all three — the memo — and no per-request
+    // re-enumeration from the after-miss retry, which is skipped entirely
+    // while the bucket list is empty.
+    expect(cachesStub.counters.keys - keysBefore).toBe(1);
+  });
+
+  it('does walk the pinned buckets once something IS pinned', async () => {
+    // The other half of the bound: the short-circuit must be about there
+    // being nothing to search, not about skipping the search.
+    await resetDbWithoutMetaStore();
+    const cachesStub = makeCaches();
+    cachesStub.seed(PINNED_BUCKET, TILE_URL, basicResponse('pinned tile bytes'));
+    const sw = loadSw({
+      caches: cachesStub,
+      fetch: async () => basicResponse('network bytes'),
+    });
+
+    // A miss, so the walk runs to completion rather than stopping at a hit.
+    await dispatchFetch(sw, `${TILE_ORIGIN}/12/9999/9999.pbf`);
+
+    expect(cachesStub.counters.matchedNames).toContain(PINNED_BUCKET);
+    expect(cachesStub.counters.matchedNames[0]).toBe(sw.BASEMAP_CACHE);
   });
 });

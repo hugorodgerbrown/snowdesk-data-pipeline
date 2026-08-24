@@ -26,12 +26,38 @@
  * so its row gets the red
  * ``unavailable-offline`` dot AND is disabled (``aria-disabled``, honoured
  * by the picker's click handler and dimmed by map.css). Basemaps are gated
- * too: each basemap row carries its own dot, and a basemap whose style
- * isn't cached is non-selectable offline — except the active basemap, which
- * is always available (you're already on it). Disabling a row never hides a
- * layer already on the map; it only locks the menu control ("keep shown,
- * lock the toggle"). Online, an uncached row stays the grey advisory
- * "view online first" and fully interactive.
+ * too — each basemap row carries its own dot — with one exception: the
+ * ACTIVE basemap's row is never disabled, because you can't be stranded on
+ * a map you can't leave. SNOW-722: that exception applies to the ROW ONLY.
+ * The active basemap's dot reports its real cache state like every other;
+ * it used to be forced green, which is how the layers menu could promise
+ * "available offline" for a basemap with nothing stored. Disabling a row
+ * never hides a layer already on the map; it only locks the menu control
+ * ("keep shown, lock the toggle"). Online, an uncached row stays the grey
+ * advisory "view online first" and fully interactive.
+ *
+ * What a basemap dot MEANS is a separate question from the gating, and
+ * SNOW-722 gives it THREE answers rather than two (``_applyBasemapState``,
+ * which is why basemap rows don't go through ``_applyState``):
+ *
+ *   - downloaded area coverage for that basemap → green "available
+ *     offline";
+ *   - style cached but nothing downloaded → grey "partly cached — may not
+ *     load everywhere". Such a basemap genuinely draws wherever tiles were
+ *     picked up online, so the row stays SELECTABLE offline: an advisory,
+ *     not a gate. Refusing it would take away a map that works;
+ *   - neither → the existing grey "view online first" online, red
+ *     ``unavailable-offline`` (and disabled) offline.
+ *
+ * Those answers do NOT depend on connectivity — only the red state and the
+ * disabling do. The middle state is what this module used to get wrong,
+ * and getting it wrong ONLINE is what mattered: a style JSON is cached by
+ * merely glancing at a basemap in the picker (sw.js's
+ * ``_basemapStaleWhileRevalidate``), so style-presence alone painted a
+ * green "available offline" dot for a basemap that offline resolves to a
+ * style with essentially no tiles — a blank map. The user who checks the
+ * menu at home before a flight is precisely the one who could still fix it
+ * by downloading the area, and precisely the one the green dot lied to.
  *
  * Row → resource map (the single source of truth driving every probe):
  *
@@ -68,11 +94,17 @@
  *                          probed the same way until their rows left this
  *                          menu for their own panels — see OVERLAY_RESOURCES
  *                          below.)
- *   basemap (one dot)    — the active/any basemap's tile cache,
- *                          discovered by the ``snowdesk-basemap-``
- *                          prefix (SNOW-484's BASEMAP_CACHE) rather than
- *                          a hardcoded version, so a cache-version bump
- *                          never breaks the probe. Non-empty → cached.
+ *   basemap (one per row)— TWO signals, resolved together (SNOW-722).
+ *                          Real downloaded area coverage for that basemap
+ *                          — ``window.pwaBasemapDownloads.areas()``, read
+ *                          ONCE per pass and matched on each area's
+ *                          ``basemapKey`` — is the green claim. Whether
+ *                          the row's own style URL is in any cache
+ *                          (``_probeUrlCached``) is the weaker second
+ *                          signal, and on its own means only "partly
+ *                          cached". With the downloads module absent
+ *                          there is no coverage to read, so the style
+ *                          signal stands alone exactly as it used to.
  *
  * Every probe is wrapped so a throw resolves to "uncached" —
  * ``refresh()`` must never reject, since it runs from a UI event handler
@@ -126,6 +158,11 @@
     'basemap-cached': 'Available offline',
     'basemap-uncached': 'Not cached — view online first',
     'basemap-offline-blocked': 'Unavailable offline — switch back online to load',
+    // SNOW-722: offline, the honest middle state — the style is cached from
+    // browsing, so this basemap draws where its tiles happen to be cached
+    // and blank where they aren't. Neither "available offline" nor
+    // "unavailable".
+    'basemap-partial': 'Partly cached — may not load everywhere',
     // SNOW-524: country rows claim only that the country's REGION DATA is
     // cached — basemap tiles are a separate row with a separate download
     // flow (SNOW-521), so the label deliberately doesn't say "available
@@ -143,6 +180,7 @@
   const BASEMAP_CACHED_LABEL = STRINGS['basemap-cached'];
   const BASEMAP_UNCACHED_LABEL = STRINGS['basemap-uncached'];
   const BASEMAP_OFFLINE_BLOCKED_LABEL = STRINGS['basemap-offline-blocked'];
+  const BASEMAP_PARTIAL_LABEL = STRINGS['basemap-partial'];
   const COUNTRY_CACHED_LABEL = STRINGS['country-cached'];
   const COUNTRY_UNCACHED_LABEL = STRINGS['country-uncached'];
   const COUNTRY_OFFLINE_BLOCKED_LABEL = STRINGS['country-offline-blocked'];
@@ -422,8 +460,12 @@
    * on-map layer (this only locks the menu control; it never hides a
    * visible layer), matching the "keep shown, lock the toggle" rule.
    *
+   * Overlay and country rows only. Basemap rows have a third state this
+   * two-way split can't express — see ``_applyBasemapState``, which owns
+   * the never-disable-the-active-basemap rule too.
+   *
    * @param {Element | null} dot
-   * @param {boolean} cached
+   * @param {boolean} cached - is the resource actually in a cache?
    * @param {string} cachedLabel
    * @param {string} uncachedLabel
    * @param {string} blockedLabel
@@ -433,18 +475,78 @@
     const offline = _offline();
     if (cached) {
       _paintDot(dot, 'cached', cachedLabel);
-      _setRowDisabled(_rowOf(dot), false);
     } else if (offline) {
       _paintDot(dot, 'unavailable-offline', blockedLabel);
-      _setRowDisabled(_rowOf(dot), true);
     } else {
       _paintDot(dot, 'uncached', uncachedLabel);
-      _setRowDisabled(_rowOf(dot), false);
     }
+    // Only an offline miss locks a row: online, anything uncached is one
+    // fetch away, so the control stays live whatever the dot says.
+    _setRowDisabled(_rowOf(dot), offline && !cached);
   }
 
   /**
-   * Low-level dot painter behind ``_applyState``:
+   * SNOW-722: the basemap rows' own applier — three states, not two.
+   *
+   * Deliberately NOT ``_applyState`` widened again. That function serves
+   * eight overlay/country call sites whose resource is a single cacheable
+   * thing: present or absent, and absent-while-offline means the row can't
+   * work. A basemap has a middle state those rows have no equivalent of —
+   * partly usable — so folding it in would mean a third boolean every
+   * other caller has to pass and ignore. Both share the ``_paintDot`` /
+   * ``_setRowDisabled`` primitives, including the ``DISABLED_MARKER``
+   * discipline that keeps the reverse transition to rows this module
+   * disabled.
+   *
+   *   downloaded        → green ``cached``, "Available offline".
+   *   style cached only → grey ``uncached``, "Partly cached — may not
+   *                       load everywhere".
+   *   neither           → grey ``uncached`` "view online first" ONLINE;
+   *                       red ``unavailable-offline`` offline.
+   *
+   * The availability answer is the same in both connectivity states, on
+   * purpose. The journey this ticket exists for is the pre-flight check —
+   * at home on wifi, open the layers menu, then get on a plane — so a dot
+   * that only turns honest once the user is offline lies at the one moment
+   * they could still act on it by downloading the area. Only the RED state
+   * and the GATING are offline-only: online every basemap is one fetch
+   * away, so nothing is ever disabled and nothing is ever red.
+   *
+   * Offline, a row is disabled unless it has coverage, a cached style, or
+   * is the active basemap — which is never disabled, because you can't be
+   * stranded on a map you can't leave. The middle state stays selectable
+   * deliberately: such a basemap draws wherever tiles were picked up
+   * online, so it is an advisory, not a gate.
+   *
+   * Note the ``cached`` / ``uncached`` / ``unavailable-offline``
+   * vocabulary is the EXISTING one; the middle state reuses ``uncached``
+   * (grey, advisory, interactive) and differs from it only in the label.
+   * No new ``data-sync-state`` value, so map.css needs no new rule.
+   *
+   * @param {Element | null} dot
+   * @param {boolean} downloaded - real downloaded area coverage for this
+   *   basemap (``_hasBasemapCoverage``).
+   * @param {boolean} styleCached - is its style URL in any cache?
+   * @param {boolean} isActive - is this the basemap currently displayed?
+   * @returns {void}
+   */
+  function _applyBasemapState(dot, downloaded, styleCached, isActive) {
+    const offline = _offline();
+    if (downloaded) {
+      _paintDot(dot, 'cached', BASEMAP_CACHED_LABEL);
+    } else if (styleCached) {
+      _paintDot(dot, 'uncached', BASEMAP_PARTIAL_LABEL);
+    } else if (offline) {
+      _paintDot(dot, 'unavailable-offline', BASEMAP_OFFLINE_BLOCKED_LABEL);
+    } else {
+      _paintDot(dot, 'uncached', BASEMAP_UNCACHED_LABEL);
+    }
+    _setRowDisabled(_rowOf(dot), offline && !(downloaded || styleCached || isActive));
+  }
+
+  /**
+   * Low-level dot painter behind ``_applyState`` and
+   * ``_applyBasemapState``:
    * set ``data-sync-state`` plus an accessible name (``role="img"`` +
    * ``aria-label``) and a ``title`` tooltip, and reveal the dot (dots start
    * ``aria-hidden="true"`` in the server-rendered ``unknown`` state).
@@ -566,21 +668,28 @@
 
   /**
    * True when ``url`` (a basemap's cross-origin style URL) is present in
-   * ANY Cache Storage cache — the per-basemap "available offline" proxy.
-   * The style JSON is cached both by passive browsing (sw.js's
-   * ``_basemapStaleWhileRevalidate`` writes ``BASEMAP_CACHE``) and by a
-   * deliberate "Download basemap" run (which pins the active basemap's
-   * style into that download's OWN per-area bucket — SNOW-586, one of
-   * potentially several ``snowdesk-basemap-pinned-*`` caches now), so a
-   * globally-searched ``caches.match`` covers every partition without
-   * hardcoding any of their names.
+   * ANY Cache Storage cache. The style JSON is cached both by passive
+   * browsing (sw.js's ``_basemapStaleWhileRevalidate`` writes
+   * ``BASEMAP_CACHE``) and by a deliberate "Download basemap" run (which
+   * pins the active basemap's style into that download's OWN per-area
+   * bucket — SNOW-586, one of potentially several
+   * ``snowdesk-basemap-pinned-*`` caches now), so a globally-searched
+   * ``caches.match`` covers every partition without hardcoding any of
+   * their names.
    *
-   * Limitation: a cached style proves the basemap has been loaded/downloaded
-   * before, not that every tile for the current viewport is present. The
-   * residual tile gap is handled downstream — sw.js serves cached tiles and
-   * the map's fallback style (SNOW-483) + overlay re-install cover a
-   * mid-pan miss — so style-presence is the honest, cheap availability
-   * signal for the menu. Never throws.
+   * SNOW-722: this used to BE the per-basemap "available offline" signal,
+   * on the reasoning that a cached style is a cheap proxy for a basemap
+   * the user has actually loaded. It isn't. Passive browsing caches the
+   * style of any basemap the user so much as glanced at, and selecting
+   * that basemap offline yields a style with essentially no tiles — a
+   * blank map behind a green dot. So it is now the WEAKER of two signals:
+   * downloaded area coverage (``_downloadedBasemapKeys``) is what earns
+   * green, and a bare cached style earns only the grey "partly cached"
+   * advisory — true, because sw.js does serve whatever tiles are cached
+   * and the map's fallback style (SNOW-483) + overlay re-install cover a
+   * mid-pan miss, so such a basemap draws in some places and not others.
+   *
+   * Never throws.
    *
    * @param {string} url - a basemap style URL (``data-basemap-url``).
    * @returns {Promise<boolean>}
@@ -593,6 +702,74 @@
     } catch (_e) {
       return false;
     }
+  }
+
+  /**
+   * SNOW-722: the set of basemap keys with real downloaded area coverage —
+   * the green claim behind each basemap row's dot.
+   *
+   * Read from ``window.pwaBasemapDownloads.areas()``
+   * (static/js/map_basemap_downloads.js), which returns every recorded
+   * area — regions, custom areas and reconciled orphans alike — each
+   * carrying the ``basemapKey`` it was fetched under. An area counts as
+   * coverage for exactly that basemap.
+   *
+   * ``basemapKey`` is null on a record written before SNOW-645 (and on an
+   * orphaned bucket, which has no record at all), meaning "downloaded,
+   * basemap unknown". Such an area is attributed to the ACTIVE basemap
+   * only, mirroring the ``basemapKey || activeKey`` convention in
+   * ``basemapDownloadedTemplates`` — greening every basemap off one
+   * keyless record would restore the very over-claim this exists to stop,
+   * and greening none of them would regress the basemap the user is
+   * actually on.
+   *
+   * Called ONCE per ``refresh()`` pass, not once per row: it is an
+   * IndexedDB read plus (for orphans) a Cache Storage walk, and every row
+   * wants the same answer.
+   *
+   * @param {string} activeKey - the active row's ``data-basemap-key``, or
+   *   ``''`` when no row is checked (then a keyless area counts for
+   *   nothing).
+   * @returns {Promise<Set<string>|null>} ``null`` — distinct from an empty
+   *   set — when the downloads module is unavailable or its read failed,
+   *   i.e. "coverage is unknowable here". Callers fall back to the
+   *   style-only signal, which is what this module did before SNOW-722.
+   *   Never throws.
+   */
+  async function _downloadedBasemapKeys(activeKey) {
+    try {
+      const downloads = window.pwaBasemapDownloads;
+      if (!downloads || typeof downloads.areas !== 'function') return null;
+      const areas = await downloads.areas();
+      if (!Array.isArray(areas)) return null;
+      const keys = new Set();
+      for (const area of areas) {
+        if (!area) continue;
+        const key = area.basemapKey || activeKey;
+        if (key) keys.add(key);
+      }
+      return keys;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  /**
+   * Does ``key`` have downloaded coverage, given the resolved key set?
+   *
+   * With coverage unknowable (``keys === null`` — no downloads module, see
+   * ``_downloadedBasemapKeys``) this falls back to ``styleCached``, the
+   * pre-SNOW-722 signal, so a page without the map bundle behaves exactly
+   * as it always did rather than reporting every basemap unavailable.
+   *
+   * @param {Set<string>|null} keys
+   * @param {string} key - the row's ``data-basemap-key``.
+   * @param {boolean} styleCached
+   * @returns {boolean}
+   */
+  function _hasBasemapCoverage(keys, key, styleCached) {
+    if (keys === null) return styleCached;
+    return !!key && keys.has(key);
   }
 
   // SNOW-613: the pass currently running, and the single trailing pass
@@ -723,37 +900,48 @@
       );
     }
 
-    // Per-basemap availability. A basemap is available offline if its style
-    // is cached (browsed/downloaded before) OR it is the active basemap
-    // (already loaded this session — never disabled, or the user would be
-    // stranded on a map they can't leave). Offline + unavailable ⟹ red dot
-    // and a disabled row, so switching to a basemap that can't load offline
-    // (the trigger for the micro-region overlay loss) is simply not offered.
-    for (const item of _basemapItems()) {
-      const dot = item.querySelector('.sync-dot');
-      if (!dot) continue;
-      const isActive = item.getAttribute('aria-checked') === 'true';
-      tasks.push(
-        _probeUrlCached(item.dataset.basemapUrl)
-          .then((cached) =>
-            _applyState(
-              dot,
-              cached || isActive,
-              BASEMAP_CACHED_LABEL,
-              BASEMAP_UNCACHED_LABEL,
-              BASEMAP_OFFLINE_BLOCKED_LABEL,
-            ),
-          )
-          .catch(() =>
-            _applyState(
-              dot,
-              isActive,
-              BASEMAP_CACHED_LABEL,
-              BASEMAP_UNCACHED_LABEL,
-              BASEMAP_OFFLINE_BLOCKED_LABEL,
-            ),
-          ),
-      );
+    // Per-basemap availability, on the two signals SNOW-722 splits it into
+    // — downloaded area coverage (green) and a cached style (grey "partly
+    // cached") — so switching to a basemap that would come up blank
+    // offline is not offered, while one that draws in some places still
+    // is. See ``_applyBasemapState``.
+    //
+    // The active basemap is the one exception, and only to the ROW. It is
+    // already loaded this session, so it must stay selectable or the user
+    // is stranded on a map they can't leave — but that says nothing about
+    // what is stored, so it never colours the dot.
+    const basemapItems = _basemapItems();
+    if (basemapItems.length > 0) {
+      const activeItem = basemapItems.find((item) => item.getAttribute('aria-checked') === 'true');
+      const activeKey = (activeItem && activeItem.dataset.basemapKey) || '';
+      // Started here, awaited per row: one read for the whole pass (it is
+      // an IndexedDB read plus a possible Cache Storage walk), and started
+      // alongside the style probes rather than before them, so the pass
+      // stays as concurrent as it was. Never rejects — see
+      // ``_downloadedBasemapKeys`` — so it needs no rejection handler of
+      // its own beyond each row's belt-and-braces ``.catch``.
+      const downloadedKeys = _downloadedBasemapKeys(activeKey);
+      for (const item of basemapItems) {
+        const dot = item.querySelector('.sync-dot');
+        if (!dot) continue;
+        const isActive = item.getAttribute('aria-checked') === 'true';
+        const key = item.dataset.basemapKey || '';
+        tasks.push(
+          Promise.all([_probeUrlCached(item.dataset.basemapUrl), downloadedKeys])
+            .then(([styleCached, keys]) =>
+              _applyBasemapState(
+                dot,
+                _hasBasemapCoverage(keys, key, styleCached),
+                styleCached,
+                isActive,
+              ),
+            )
+            // A throw tells us nothing was found either way, so the row
+            // resolves as the empty case: red offline, grey online, and
+            // still selectable when it is the active basemap.
+            .catch(() => _applyBasemapState(dot, false, false, isActive)),
+        );
+      }
     }
 
     await Promise.all(tasks);

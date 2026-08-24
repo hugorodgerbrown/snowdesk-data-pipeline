@@ -447,6 +447,124 @@ async function _pinnedCacheNamesAfterMiss(tried) {
   return fresh;
 }
 
+/**
+ * Search every live pinned basemap bucket for ``request``, READ-ONLY.
+ *
+ * SNOW-586: a tile from ANY deliberate download should serve offline
+ * regardless of which area's bucket holds it. Stops at the first hit; a
+ * tile shared by two overlapping areas is identical bytes in either, so
+ * which one answers first makes no difference to what is served.
+ *
+ * SNOW-613: the buckets are searched in parallel rather than walked in
+ * order. A device with several downloaded areas paid one round trip per
+ * bucket per tile, serially, on every offline pan. ``Promise.all`` turns N
+ * sequential waits into one. A miss then re-enumerates the bucket list and
+ * searches again, in case the memoised list was the stale half of the
+ * story.
+ *
+ * SNOW-722: extracted from ``_basemapStaleWhileRevalidate`` unchanged, so
+ * the fetch listener's read-only fallback for an UNCLASSIFIED cross-origin
+ * GET can reach the same search. Never writes to or trims a pinned bucket
+ * (that stays ``_warmCache``'s pinned path's job alone), so ordinary
+ * browsing can neither grow nor evict a deliberate download. Never throws:
+ * a lookup failure must not break a caller's miss -> network chain.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response|undefined>} The first bucket hit, or
+ *   ``undefined`` when no bucket holds it.
+ */
+async function _searchPinnedBuckets(request) {
+  const searchPinned = async (names) => {
+    const hits = await Promise.all(
+      names.map(async (name) => {
+        try {
+          const pinnedCache = await caches.open(name);
+          return await pinnedCache.match(request);
+        } catch (_e) {
+          // One bucket failing must not lose the others.
+          return undefined;
+        }
+      }),
+    );
+    return hits.find(Boolean);
+  };
+
+  try {
+    const pinnedNames = await _pinnedCacheNames();
+    const pinnedHit = await searchPinned(pinnedNames);
+    if (pinnedHit) return pinnedHit;
+
+    // Missed. The list may be the stale half of the story — re-enumerate
+    // and search again if anything has appeared since.
+    const freshNames = await _pinnedCacheNamesAfterMiss(pinnedNames);
+    if (freshNames) {
+      const freshHit = await searchPinned(freshNames);
+      if (freshHit) return freshHit;
+    }
+  } catch (_err) {
+    // Defensive: the caller falls through to the network.
+  }
+  return undefined;
+}
+
+/**
+ * SNOW-722: the read-only cache probe for a cross-origin GET that
+ * classification did NOT recognise as a basemap request.
+ *
+ * ``_classifyCrossOriginGet`` answers ``'basemap'`` only for an origin in
+ * the in-memory ``_basemapOrigins`` allowlist, and that Set does not
+ * survive the browser terminating an idle worker (Android Chrome does this
+ * aggressively). Its recovery path — ``_hydrateBasemapOrigins()`` — can
+ * itself fail, and the reported symptom was exactly that: a blank basemap
+ * inside an area the app had marked as downloaded, with the pinned buckets
+ * sitting full underneath. The allowlist decides what may be WRITTEN; it
+ * has no business deciding what may be READ back from a cache this device
+ * already holds.
+ *
+ * So: never writes. An unregistered origin may serve from cache but must
+ * never populate one. ``BASEMAP_CACHE`` is searched as well as the pinned
+ * buckets, because it can hold tiles written in an earlier session when
+ * the allowlist WAS populated.
+ *
+ * Cost, stated exactly, because every unclassified cross-origin GET on the
+ * page reaches this function:
+ *
+ *   - ONE ``caches.open(BASEMAP_CACHE)`` + ``cache.match(request)``,
+ *     unconditionally. No enumeration; a keyed lookup in one bucket.
+ *   - The pinned-bucket walk ONLY when at least one pinned bucket exists.
+ *     ``_pinnedCacheNames()`` is memoised, so establishing that costs one
+ *     ``caches.keys()`` per worker lifetime; with nothing pinned the walk —
+ *     and the per-miss ``_pinnedCacheNamesAfterMiss`` re-enumeration behind
+ *     it — is skipped entirely.
+ *
+ * The ``BASEMAP_CACHE`` match is deliberately NOT behind the
+ * pinned-emptiness check, and moving it there would reintroduce the bug
+ * this function exists to kill. ``BASEMAP_CACHE`` is the PASSIVE cache
+ * ordinary online browsing fills, so a user who has panned around a
+ * basemap but never run an explicit "Download basemap" has tiles in it and
+ * ZERO pinned buckets. Gating the match on a pinned bucket existing would
+ * hand exactly that user a blank map over a full cache.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response|undefined>} A cached response, or
+ *   ``undefined`` when the caller should go to the network.
+ */
+async function _readOnlyBasemapCacheProbe(request) {
+  try {
+    // Unconditional, and it must stay that way — see the docstring's note
+    // on the browsed-but-never-downloaded case.
+    const cache = await caches.open(BASEMAP_CACHE);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    // Nothing pinned: skip the walk, and the re-enumeration behind it.
+    const pinnedNames = await _pinnedCacheNames();
+    if (pinnedNames.length === 0) return undefined;
+  } catch (_err) {
+    return undefined;
+  }
+  return _searchPinnedBuckets(request);
+}
+
 // SNOW-484: the allowlist of cross-origin basemap origins it is safe to
 // cache. A service worker has no DOM, so it cannot itself read the
 // basemap picker's data-basemap-url attributes — map.js posts them here
@@ -470,6 +588,24 @@ let _basemapOrigins = new Set();
 // ``_basemapOrigins``, so a later explicit registration is never
 // shadowed by a stale memoised promise.
 let _basemapHydration = null;
+
+// SNOW-722: how many times a FAILED hydration read may be retried before
+// the empty result is memoised for the rest of the worker's lifetime.
+//
+// The memo above used to hold a failure just as firmly as a success, so one
+// transient IndexedDB error (a concurrent version upgrade, lock contention)
+// froze an empty allowlist until the next live page re-registered — every
+// tile classified ``network`` and died offline. But an unbounded retry is
+// not the answer either: the same ``catch`` covers the PERMANENT case of a
+// worker-created DB with no ``meta:app`` store (see ``_openMutationsDb()``'s
+// docstring), which would then cost a DB open on every cross-origin request
+// forever. A small cap is enough for the transient case, and the read-only
+// cache probe in the fetch listener is the actual guarantee behind it.
+const BASEMAP_HYDRATION_MAX_ATTEMPTS = 3;
+
+// Failed hydration reads so far, this worker lifetime. Reset alongside
+// ``_basemapHydration`` by the ``register-basemap-origins`` handler.
+let _basemapHydrationFailures = 0;
 
 // SNOW-585: whether the page has opted BACK IN to ordinary
 // stale-while-revalidate behaviour while DEV_SHELL_BYPASS is on (the
@@ -753,11 +889,18 @@ self.addEventListener('activate', (event) => {
  * DB only has ``queue:mutations`` (see ``_openMutationsDb()``'s
  * docstring) — by leaving the Set empty rather than throwing.
  *
+ * SNOW-722: a FAILED read is no longer memoised for the worker's whole
+ * lifetime. It drops the memo so the next request retries, up to
+ * ``BASEMAP_HYDRATION_MAX_ATTEMPTS`` — see that constant for why the retry
+ * is bounded rather than unconditional. A SUCCESSFUL read is still
+ * memoised exactly as before, failures or not.
+ *
  * @returns {Promise<void>}
  */
 function _hydrateBasemapOrigins() {
   if (_basemapHydration) return _basemapHydration;
-  _basemapHydration = (async () => {
+  let failed = false;
+  const attempt = (async () => {
     if (_basemapOrigins.size > 0) return;
     let db;
     try {
@@ -771,10 +914,12 @@ function _hydrateBasemapOrigins() {
       // meta:app missing (fresh worker-created DB), or a transient DB
       // open/read failure (blocked by a concurrent version upgrade, lock
       // contention) — leave _basemapOrigins empty; the cross-origin
-      // request just falls through to network-only, same as before
-      // SNOW-487. A transient failure memoises this empty result for the
-      // worker's lifetime; recovery comes from the next live page's
-      // register-basemap-origins message, which resets _basemapHydration.
+      // request falls through to the read-only cache probe and then to the
+      // network, as before SNOW-487.
+      //
+      // SNOW-722: flagged for the memo-drop below, so the next request
+      // re-reads rather than reusing this empty result.
+      failed = true;
     } finally {
       if (db) {
         try {
@@ -785,7 +930,27 @@ function _hydrateBasemapOrigins() {
       }
     }
   })();
-  return _basemapHydration;
+  _basemapHydration = attempt;
+  // SNOW-722: drop the memo on failure so the next request retries, but
+  // only while under the attempt cap — the permanent missing-store case
+  // lands in that catch too and must not buy a DB open per request forever.
+  // Registered before the caller's own await, so a retrying caller sees the
+  // cleared memo.
+  //
+  // The identity guard comes FIRST, before the counter bump: a
+  // register-basemap-origins message that landed while this read was in
+  // flight has already replaced the memo AND reset the retry budget, so a
+  // superseded attempt must neither clear the fresh memo nor spend the
+  // fresh budget. Its failure is news about a worker state that no longer
+  // applies.
+  attempt.then(() => {
+    if (!failed) return;
+    if (_basemapHydration !== attempt) return;
+    _basemapHydrationFailures += 1;
+    if (_basemapHydrationFailures >= BASEMAP_HYDRATION_MAX_ATTEMPTS) return;
+    _basemapHydration = null;
+  });
+  return attempt;
 }
 
 /**
@@ -1489,13 +1654,11 @@ async function _warmCache(urls, options) {
  * opportunistically promotes it into the passive cache too, which is the
  * existing SNOW-484 behaviour, unchanged.
  *
- * SNOW-586: iterates every LIVE pinned bucket (``_pinnedCacheNames()``,
- * re-derived per call — see its own docstring for why it is deliberately
- * not memoised here), not one shared cache, since a tile from ANY
- * deliberate download should still serve offline regardless of which
- * area's bucket holds it. Stops at the first hit; a tile shared by two
- * overlapping areas is identical bytes in either bucket, so which one
- * answers first makes no difference to what is served.
+ * SNOW-586/613/722: the pinned search itself lives in
+ * ``_searchPinnedBuckets()`` — every LIVE pinned bucket, in parallel, with
+ * a re-enumeration retry on a miss. Extracted so the fetch listener's
+ * read-only fallback can reach the same search; behaviour here is
+ * unchanged.
  */
 async function _basemapStaleWhileRevalidate(request) {
   const cache = await caches.open(BASEMAP_CACHE);
@@ -1512,45 +1675,9 @@ async function _basemapStaleWhileRevalidate(request) {
     .catch(() => null);
   if (cached) return cached;
   // SNOW-586: BASEMAP_CACHE miss — check every live pinned bucket before
-  // falling through to the network. Defensive: a pinned-cache lookup
-  // failure must not break the existing miss -> network -> 504 chain.
-  //
-  // SNOW-613: the buckets are searched in parallel rather than walked in
-  // order. A device with several downloaded areas paid one round trip per
-  // bucket per tile, serially, on every offline pan. Which bucket answers
-  // first is immaterial — a tile held by two overlapping areas is
-  // identical bytes in either — so there is nothing for the ordering to
-  // preserve, and `Promise.all` turns N sequential waits into one.
-  try {
-    const searchPinned = async (names) => {
-      const hits = await Promise.all(
-        names.map(async (name) => {
-          try {
-            const pinnedCache = await caches.open(name);
-            return await pinnedCache.match(request);
-          } catch (_e) {
-            // One bucket failing must not lose the others.
-            return undefined;
-          }
-        }),
-      );
-      return hits.find(Boolean);
-    };
-
-    const pinnedNames = await _pinnedCacheNames();
-    const pinnedHit = await searchPinned(pinnedNames);
-    if (pinnedHit) return pinnedHit;
-
-    // Missed. The list may be the stale half of the story — re-enumerate
-    // and search again if anything has appeared since.
-    const freshNames = await _pinnedCacheNamesAfterMiss(pinnedNames);
-    if (freshNames) {
-      const freshHit = await searchPinned(freshNames);
-      if (freshHit) return freshHit;
-    }
-  } catch (_err) {
-    // Fall through to the network/504 path below.
-  }
+  // falling through to the network.
+  const pinnedHit = await _searchPinnedBuckets(request);
+  if (pinnedHit) return pinnedHit;
   // Cache miss (both partitions): fall through to the network. If that
   // also fails (e.g. offline and never previously cached), this
   // deliberately does NOT throw — the caller (_guardedRespond via the
@@ -1907,6 +2034,15 @@ self.addEventListener('fetch', (event) => {
       if (strategy === 'basemap') {
         return _guardedRespond(_basemapStaleWhileRevalidate(request), request, event.clientId);
       }
+      // SNOW-722: unrecognised cross-origin GET. Before going to the
+      // network, probe the basemap caches READ-ONLY — the allowlist this
+      // classification rests on is in-memory and does not survive an idle
+      // worker being terminated, so "not a basemap origin" can simply mean
+      // "this worker restarted and could not rehydrate". Nothing is written
+      // on this path: the allowlist still governs caching, and a genuinely
+      // unrelated origin misses and falls through unchanged.
+      const cached = await _readOnlyBasemapCacheProbe(request);
+      if (cached) return cached;
       return fetch(request);
     })(),
   );
@@ -1960,6 +2096,9 @@ self.addEventListener('message', (event) => {
     // doesn't await a stale (already-resolved, pre-registration) promise
     // instead of using the Set we just replaced.
     _basemapHydration = null;
+    // SNOW-722: and the retry budget with it — a live page has just proved
+    // the allowlist is knowable, so a later idle-termination starts fresh.
+    _basemapHydrationFailures = 0;
   }
   // SNOW-585: static/js/pwa_dev_shell_toggle.js posts this when the
   // dev-only "restore shell cache" checkbox on /_sw-version/ changes.
