@@ -91,9 +91,9 @@ Three fields carry weight; the rest is prose.
   [tools reference](https://code.claude.com/docs/en/tools-reference) — in
   particular the subagent tool is **`Agent`**, not `Task`, and there is no
   `Task` alias. To actually withhold a tool, use `disallowed-tools`.
-- **MCP grants name a configured server**: `mcp__linear-server`, not
-  `mcp__linear`. A skill that a Routine runs remotely needs the connector UUID
-  as well — see "Linear MCP permissions" below.
+- **MCP grants name a configured server**: the Linear connector UUID
+  `mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8`, not `mcp__linear`. Required on
+  every skill, not just Routine ones — see "Linear MCP permissions" below.
 - **`disable-model-invocation: true` on anything with an irreversible side
   effect** (`release` deploys production, `merge-prs` squash-merges). It makes
   the skill human-only. Do **not** put it on a skill a Routine may fire —
@@ -176,20 +176,33 @@ the approval gate is restored: draft → review → post.
 
 ## Linear MCP permissions
 
-Every skill here talks to Linear over MCP, and the same Linear server reaches a
-session under **two different names** depending on where the session runs:
+Every skill here talks to Linear over MCP through **one** server: the claude.ai
+**Linear connector**, whose tools are namespaced by a connector UUID —
+`mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__<toolName>`. OAuth is held against
+the Anthropic account, so it works in local, remote and Routine sessions alike.
+The UUID is specific to this account's connector install; it is committed
+because this repo is single-author.
 
-| Name | Where it comes from | Which sessions see it |
-|---|---|---|
-| `linear-server` | Local config in `~/.claude.json`, project-scoped | Local sessions on this machine |
-| `bee16520-…` (UUID) | A claude.ai **connector**, OAuth held against the Anthropic account | Local **and** remote/cloud sessions |
+A second local server named `linear-server` pointed at the same URL until
+SNOW-717 and was removed: it could only be authorised interactively, so it
+reported "needs authentication" in every unattended session while the connector
+worked throughout, and it *shadowed* the connector in `claude mcp list`.
 
-Permission rules match the literal string `mcp__<serverName>__<toolName>`, so a
-rule written against one name does nothing for the other. `permissions.allow`
-in [`settings.json`](settings.json) therefore lists the same nine tools twice,
-once per name. The UUID is specific to this account's connector install; it is
-committed because this repo is single-author, and it is the only string that
-suppresses the approval prompt in a remote session.
+**Every skill's `allowed-tools` must name the connector UUID.** This is the only
+grant that survives a Routine: a remote run starts in a fresh checkout that has
+never been trusted, and Claude Code discards `permissions.allow` from a
+project's `settings.json` in an untrusted folder — but **workspace trust never
+gates a skill's `allowed-tools`**. A skill still naming `mcp__linear-server`
+gets no pre-approval at all, and its Linear calls stall an unattended run on an
+approval prompt nobody can answer. That is exactly what happened on 2026-08-23:
+`scope`, `implement`, `work-on` and `create-ticket` were left on the old name
+when the other three skills were migrated, and a Routine blocked on
+"Allow Claude to use Get issue (Linear)?".
+
+Note this is separate from the connector's **own** per-tool permissions, set at
+claude.ai → Settings → Connectors. A tool set to `ask` there prompts on every
+call and no allow rule or permission mode overrides it; keep the tools these
+skills use on *allow*.
 
 **Do not add a `.mcp.json` for Linear.** It would declare an OAuth-only server
 that a remote container cannot authenticate (the OAuth flow needs an

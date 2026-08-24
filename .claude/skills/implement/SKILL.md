@@ -8,7 +8,7 @@ description: |
   feature branch is already checked out. Do NOT use for: scoping a ticket
   (`scope` skill), ad-hoc edits unrelated to a ticket, or any message without
   either a SNOW-NN reference or an existing SNOW-NN branch checked out.
-allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__linear-server
+allowed-tools: Agent, Bash, Read, Edit, Write, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Implement SNOW-$1
