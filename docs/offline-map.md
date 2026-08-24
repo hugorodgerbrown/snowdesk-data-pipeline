@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-08-19
+last-reviewed: 2026-08-24
 ---
 
 # PWA shell
@@ -369,8 +369,24 @@ The SW classifies every fetch into one of four buckets:
   previously-cached tiles. `_classify()` lazily rehydrates
   `_basemapOrigins` from that `meta:app` row (`_hydrateBasemapOrigins()`,
   memoised per worker instance) before deciding a cross-origin request's
-  strategy, so the allowlist is durable across worker restarts rather
-  than purely in-memory. Strategy: **stale-while-revalidate** against a
+  strategy.
+
+  **That rehydration is the fast path, not the guarantee** (SNOW-722). It
+  can itself fail — the `meta:app` store is absent from a worker-created
+  DB, and a read can be blocked by a concurrent version upgrade — and
+  before SNOW-722 the memo held that failure for the worker's whole
+  lifetime, so every tile classified `network` and died offline while the
+  pinned buckets sat full underneath. Two changes: a failed read now drops
+  the memo and retries, bounded by `BASEMAP_HYDRATION_MAX_ATTEMPTS`; and,
+  the actual guarantee, a cross-origin GET that classification does *not*
+  recognise gets a **read-only** probe of `BASEMAP_CACHE` and every pinned
+  bucket (`_readOnlyBasemapCacheProbe()`) before it goes to the network.
+  The allowlist still governs what may be **written** — an unregistered
+  origin may serve from these caches but never populates one — so a lost
+  allowlist can no longer blank a basemap the device already holds. The
+  pinned walk is skipped entirely when no pinned bucket exists, so a user
+  with no downloads pays one memoised `caches.keys()` per worker
+  lifetime. Strategy: **stale-while-revalidate** against a
   dedicated `snowdesk-basemap-v1` cache (`BASEMAP_CACHE`), kept separate from the
   shell's `CACHE_VERSION` cache so bumping the shell version on an
   unrelated change never evicts previously-cached basemap tiles. Only
