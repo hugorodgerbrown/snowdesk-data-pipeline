@@ -51,6 +51,17 @@
   const RESOURCE = 'favourites';
   const LIST_PATH_SUFFIX = '/partials/list/';
   const CARD_PATH_SUFFIX = '/card/';
+  // SNOW-722: the ownership prefix. The two suffixes above are matched with
+  // bare ``indexOf``, and this module's error handlers are bound to
+  // ``document.body`` — so they see EVERY failed HTMX request on the page,
+  // not just the favourites ones. ``/routes/partials/list/`` contains
+  // ``/partials/list/``, so offline the routes panel's failed fetch was
+  // caught here, its [data-routes-rows] wiped, and favourite cards painted
+  // into the Routes panel under its "TRACKS" heading. Only paths under this
+  // prefix belong to this module. ``config/urls.py`` mounts favourites at an
+  // unprefixed ``favourites/`` and the project has no ``i18n_patterns``, so
+  // no language segment can precede it — do not loosen this to a suffix.
+  const OWNED_PATH_PREFIX = '/favourites/partials/';
 
   // SNOW-620: server-translated card copy, read back from the template
   // includes/_favourites_offline_strings.html renders. This module builds
@@ -347,6 +358,33 @@
   }
 
   /**
+   * SNOW-722: does this request path belong to the favourites app?
+   *
+   * The failure handlers below are bound to ``document.body``, so they are
+   * offered every failed HTMX request on the page. Anything that is not a
+   * favourites partial must be left to whoever owns it — the routes panel
+   * in particular renders its own "can't load offline" line (see
+   * ``static/js/routes.js``), and there is deliberately no offline cache
+   * behind it.
+   *
+   * Resolved through ``URL`` so a relative ``hx-get``, an absolute path and
+   * a fully-qualified URL all reduce to a comparable pathname, and a query
+   * string (``?variant=map``) can't defeat the prefix test.
+   *
+   * @param {string} path
+   * @returns {boolean}
+   */
+  function _isFavouritesPath(path) {
+    let pathname;
+    try {
+      pathname = new URL(path, window.location.origin).pathname;
+    } catch (_e) {
+      return false;
+    }
+    return pathname.indexOf(OWNED_PATH_PREFIX) === 0;
+  }
+
+  /**
    * Is this element the map sheet's rows container, or inside it?
    *
    * @param {Element} target
@@ -371,6 +409,9 @@
     if (!dbReady()) return;
     const path = _requestPath(evt);
     if (!path) return;
+    // SNOW-722: ownership guard — see _isFavouritesPath. Without it the bare
+    // suffix matches below claim /routes/partials/list/ as well.
+    if (!_isFavouritesPath(path)) return;
 
     const detail = evt.detail || {};
     const target = detail.target || (detail.elt && detail.elt.parentNode);

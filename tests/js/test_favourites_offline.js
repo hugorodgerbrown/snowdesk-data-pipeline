@@ -272,3 +272,81 @@ describe('the stand-in card ranks its title like the server card', () => {
     expect(title.tagName).toBe('H3');
   });
 });
+
+describe('the offline fallback only claims favourites requests (SNOW-722)', () => {
+  /*
+   * The handlers are bound to document.body, so they are offered every
+   * failed HTMX request on the page — and the suffix match is a bare
+   * substring. ``/routes/partials/list/`` contains ``/partials/list/``, so
+   * offline the routes panel was wiped and repainted with favourite cards
+   * under its own "TRACKS" heading. routes.js deliberately has no offline
+   * cache and renders its own "can't load offline" line instead.
+   */
+
+  const ROUTES_PATH = '/routes/partials/list/';
+
+  /** The routes panel's rows container, with the markup routes.js leaves. */
+  function routesRows() {
+    const rows = document.createElement('div');
+    rows.setAttribute('data-routes-rows', '');
+    rows.innerHTML = '<p data-testid="routes-offline">Routes need a connection</p>';
+    document.body.appendChild(rows);
+    return rows;
+  }
+
+  it('leaves a failed routes-list request untouched', async () => {
+    await replayRoster([record('fav-a', 'Verbier')]);
+    const rows = routesRows();
+    const before = rows.innerHTML;
+
+    document.body.dispatchEvent(
+      new CustomEvent('htmx:sendError', {
+        detail: { requestConfig: { path: ROUTES_PATH }, target: rows },
+      }),
+    );
+
+    // A favourites failure dispatched afterwards, on its own target, gives
+    // the routes one more than enough time to have done its damage: both
+    // take the same async path through the same IndexedDB store.
+    const favouritesTarget = document.createElement('div');
+    document.body.appendChild(favouritesTarget);
+    await failListRequest(favouritesTarget);
+
+    expect(rows.innerHTML).toBe(before);
+    expect(rows.querySelectorAll('[data-testid="favourite-card"]').length).toBe(0);
+  });
+
+  it('still repaints a failed favourites-list request', async () => {
+    await replayRoster([record('fav-a', 'Verbier')]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const titles = Array.from(
+      target.querySelectorAll('[data-testid="favourite-card-title"]'),
+    ).map((el) => el.textContent);
+    expect(titles).toEqual(['Verbier']);
+  });
+
+  it('still repaints a failed favourites card request', async () => {
+    await replayRoster([record('fav-a', 'Verbier')]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    document.body.dispatchEvent(
+      new CustomEvent('htmx:sendError', {
+        detail: {
+          requestConfig: { path: '/favourites/partials/fav-a/card/' },
+          target,
+        },
+      }),
+    );
+    await waitFor(
+      () => target.querySelectorAll('[data-testid="favourite-card"]').length > 0,
+    );
+
+    const title = target.querySelector('[data-testid="favourite-card-title"]');
+    expect(title.textContent).toBe('Verbier');
+  });
+});
