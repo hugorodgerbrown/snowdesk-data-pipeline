@@ -1,5 +1,5 @@
 """
-tests/weather/services/test_forecast_cells.py — Tests for resolve_forecast_cell.
+tests/weather/services/test_forecast_cells.py — Tests for forecast-cell resolution.
 
 Covers:
   - Reuse within the 750m horizontal / 150m elevation thresholds.
@@ -10,7 +10,12 @@ Covers:
     on one row (the guarantee resolve_forecast_cell relies on for race
     safety — Django's own get_or_create catches a concurrent IntegrityError
     internally and re-fetches by the lookup kwargs).
-  - fetch_elevation is called exactly once per resolution.
+  - fetch_elevation is called exactly once per resolution, and not at all
+    when the caller passes an elevation it already holds.
+  - find_forecast_cell, the read-only twin (SNOW-719): it must make the
+    same decision as resolve_forecast_cell without writing, which means
+    matching both of its lookups — the reuse neighbourhood and the exact
+    grid key get_or_create would otherwise satisfy with a get.
 
 fetch_elevation is mocked at the apps.weather.services.forecast_cells module
 seam so no HTTP mocking leaks into these DB-level resolution tests.
@@ -26,7 +31,10 @@ import pytest
 
 from apps.core.coordinates import InvalidCoordinatesError
 from apps.weather.models import ForecastCell
-from apps.weather.services.forecast_cells import resolve_forecast_cell
+from apps.weather.services.forecast_cells import (
+    find_forecast_cell,
+    resolve_forecast_cell,
+)
 from tests.factories import ForecastCellFactory
 
 
@@ -162,3 +170,84 @@ class TestResolveForecastCellInvalidCoordinates:
             with pytest.raises(InvalidCoordinatesError):
                 resolve_forecast_cell(latitude, longitude)
         mock_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestFindForecastCell:
+    """find_forecast_cell answers resolve_forecast_cell's question, read-only.
+
+    It exists because ``--commit``-less backfill runs were calling
+    ``resolve_forecast_cell`` purely to report which cell they *would* use,
+    and creating it in the process (SNOW-719).
+    """
+
+    def test_creates_nothing(self) -> None:
+        """The whole point: no row, whatever the answer."""
+        assert find_forecast_cell(46.1, 7.4, 1500.0) is None
+        assert ForecastCell.objects.count() == 0
+
+    def test_finds_a_cell_within_the_reuse_thresholds(self) -> None:
+        """~200m away and 20m up is the reuse case resolve would take."""
+        existing = ForecastCellFactory.create(
+            latitude=46.1, longitude=7.4, elevation=1500.0
+        )
+
+        found = find_forecast_cell(46.1018, 7.4, 1520.0)
+
+        assert found is not None
+        assert found.pk == existing.pk
+
+    def test_finds_a_cell_on_the_exact_grid_key_it_cannot_reuse(self) -> None:
+        """The get_or_create branch, which the reuse check alone misses.
+
+        A row in the same quantised cell but beyond the 750m horizontal
+        threshold fails the reuse check, and ``get_or_create`` still returns
+        it rather than creating a second row on a duplicate key. A preview
+        that reported "would create" here would overstate the cost.
+        """
+        # The 0.015-degree longitude cell is ~1,160m wide at this latitude,
+        # so two rows can share a key and still be beyond the 750m reuse
+        # threshold. These sit near its west and east edges, ~1,080m apart.
+        existing = ForecastCellFactory.create(
+            latitude=46.1000, longitude=7.3955, elevation=1500.0
+        )
+        latitude, longitude, elevation = 46.1000, 7.4095, 1500.0
+        assert find_forecast_cell(latitude, longitude, elevation) is not None
+
+        with _patch_elevation(elevation):
+            resolved = resolve_forecast_cell(latitude, longitude)
+
+        assert resolved.pk == existing.pk
+        assert ForecastCell.objects.count() == 1
+
+    def test_agrees_with_resolve_when_a_new_cell_is_needed(self) -> None:
+        """None here must mean "resolve would create" there."""
+        ForecastCellFactory.create(latitude=46.1, longitude=7.4, elevation=1500.0)
+
+        # Same place, 1,800m higher — outside the elevation threshold and
+        # in a different band, so neither lookup matches.
+        assert find_forecast_cell(46.1, 7.4, 3300.0) is None
+
+        with _patch_elevation(3300.0):
+            resolved = resolve_forecast_cell(46.1, 7.4)
+
+        assert ForecastCell.objects.count() == 2
+        assert resolved.elevation == 3300.0
+
+    def test_rejects_invalid_coordinates(self) -> None:
+        """A preview must fail on bad input, not report "would create"."""
+        with pytest.raises(InvalidCoordinatesError):
+            find_forecast_cell(math.nan, 7.4, 1500.0)
+
+
+@pytest.mark.django_db
+class TestResolveForecastCellSuppliedElevation:
+    """A caller holding the elevation should not pay for it twice."""
+
+    def test_supplied_elevation_skips_the_lookup(self) -> None:
+        """SNOW-719: halves the Open-Meteo bill of the backfill commands."""
+        with _patch_elevation(1500.0) as lookup:
+            resolved = resolve_forecast_cell(46.1, 7.4, elevation=3300.0)
+
+        lookup.assert_not_called()
+        assert resolved.elevation == 3300.0

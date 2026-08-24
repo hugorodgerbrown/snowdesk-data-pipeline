@@ -60,8 +60,8 @@ scalar `3330`. A location minted from a favourite or an observation carries
 no `name` and no `kind`, and is an anonymous point like any other.
 
 `elevation_m` and `forecast_cell` are nullable and resolved out-of-band by
-`link_location_forecast_cells`, because both need an Open-Meteo call that
-cannot ride on a model save.
+`link_location_forecast_cells`, because resolving them needs an Open-Meteo
+call that cannot ride on a model save.
 
 **A row exists for a place we keep.** A live GPS fix and a GPX trackpoint
 resolve *against* locations without minting one. "Everything is a location"

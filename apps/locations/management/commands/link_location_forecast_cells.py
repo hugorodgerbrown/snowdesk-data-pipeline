@@ -10,17 +10,21 @@ For each unresolved ``Location``:
 1. ``fetch_elevation`` gives the location's **own** height. This is not the
    forecast cell's ``elevation`` — that is the representative height of
    whichever pin minted the cell, shared by everything in it, and Mont Fort
-   must carry 3328 m rather than the cell's average. Two calls per location
-   is the price of the distinction, and this is a one-shot backfill.
+   must carry 3328 m rather than the cell's average.
 2. ``resolve_forecast_cell`` reuses (or creates) the shared cell the
    location's coordinates fall in, which is what puts the location into
    ``ForecastCell.objects.active()`` and so into the scheduled
-   ``fetch_weather`` point pass — no scheduler change needed.
+   ``fetch_weather`` point pass — no scheduler change needed. The elevation
+   from step 1 is handed to it, so this costs no second lookup.
 
-Both calls are made even in a dry run, so the reported outcome reflects
-reality; only the writes are gated on ``--commit``. They are kept outside
-any transaction (mirroring ``apps.favourites.services.create_favourite``) so
-a slow or failing request never holds a lock.
+A dry run resolves and reports without writing anything (SNOW-719). It
+makes the elevation call — that is what the report is *of* — and then asks
+``find_forecast_cell``, the read-only twin of ``resolve_forecast_cell``,
+which cell would be used. Calling ``resolve_forecast_cell`` on that path
+would create the row it was only meant to be asked about. The external call
+is kept outside any transaction (mirroring
+``apps.favourites.services.create_favourite``) so a slow or failing request
+never holds a lock.
 
 The elevation doubles as a **check on the curation**: a location whose
 resolved height is nowhere near the figure in its sheet ``note`` has been
@@ -66,7 +70,10 @@ from apps.core.command_iteration import (
 )
 from apps.locations.models import Location
 from apps.weather.services.elevation import fetch_elevation
-from apps.weather.services.forecast_cells import resolve_forecast_cell
+from apps.weather.services.forecast_cells import (
+    find_forecast_cell,
+    resolve_forecast_cell,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +139,7 @@ class Command(BaseCommand):
 
         self._announce(total, commit=commit, delay=delay)
 
-        counts = {"linked": 0, "skipped": 0, "failed": 0}
+        counts = {"linked": 0, "skipped": 0, "failed": 0, "created": 0}
         for index, location in enumerate(
             iterate_rows(
                 self,
@@ -171,10 +178,24 @@ class Command(BaseCommand):
 
         """
         try:
-            # External HTTP calls — kept outside any transaction so a slow
-            # or failing request never holds a DB lock.
+            # One external HTTP call — kept outside any transaction so a
+            # slow or failing request never holds a DB lock. The elevation
+            # is passed on to resolve_forecast_cell below rather than
+            # fetched twice for the same coordinates.
             elevation = fetch_elevation(location.latitude, location.longitude)
-            cell = resolve_forecast_cell(location.latitude, location.longitude)
+            # Read-only, and asked on both paths: it is what tells a preview
+            # whether a cell would be created, and a commit run whether one
+            # was (SNOW-719).
+            existing = find_forecast_cell(
+                location.latitude, location.longitude, elevation
+            )
+            cell = (
+                resolve_forecast_cell(
+                    location.latitude, location.longitude, elevation=elevation
+                )
+                if commit
+                else existing
+            )
         except Exception:  # noqa: BLE001 — broad catch intentional: a per-location failure must not abort the batch
             logger.exception(
                 "link_location_forecast_cells: failed to resolve location %r (id=%s)",
@@ -183,6 +204,9 @@ class Command(BaseCommand):
             )
             counts["failed"] += 1
             return
+
+        if existing is None:
+            counts["created"] += 1
 
         if commit:
             location.elevation_m = elevation
@@ -195,7 +219,7 @@ class Command(BaseCommand):
                 location.name or "<anonymous>",
                 location.pk,
                 elevation,
-                cell.pk,
+                cell.pk if cell is not None else "<would be created>",
             )
 
     def _announce(self, candidate_count: int, *, commit: bool, delay: float) -> None:
@@ -223,7 +247,8 @@ class Command(BaseCommand):
                     self.style.SUCCESS(
                         f"Done. {counts['linked']} resolved, "
                         f"{counts['skipped']} skipped, "
-                        f"{counts['failed']} failed."
+                        f"{counts['failed']} failed. "
+                        f"{counts['created']} new forecast cell(s) created."
                     )
                 )
             else:
@@ -234,12 +259,20 @@ class Command(BaseCommand):
                         "failed. No data written. Pass --commit to persist."
                     )
                 )
+                # An upper bound, not a count: two locations close enough to
+                # share a cell both report "would create" here, because
+                # neither is written for the other to find.
+                self.stdout.write(
+                    f"At most {counts['created']} new forecast cell(s) would "
+                    "be created; the rest reuse an existing one."
+                )
 
         logger.info(
             "link_location_forecast_cells finished: linked=%d skipped=%d "
-            "failed=%d commit=%s",
+            "failed=%d created=%d commit=%s",
             counts["linked"],
             counts["skipped"],
             counts["failed"],
+            counts["created"],
             commit,
         )

@@ -14,9 +14,16 @@ fold a region centre onto an existing resort cell where the two are close.
 Each cell adds one Open-Meteo call per fetch cycle and ``fetch_weather``
 runs four times daily, so roughly 1,800 additional calls per day against a
 region pass that already makes about the same number. Confirm the headroom
-on the current Open-Meteo plan first. The dry-run reports the exact count
-of cells that would be created versus reused, which is the number to check
-against.
+on the current Open-Meteo plan first. The dry run reports how many cells
+would be created versus reused, which is the number to check against — as
+an **upper bound**, since two region centres close enough to share a cell
+both report "would create" when neither is written for the other to find.
+
+The dry run writes nothing (SNOW-719). It makes the elevation call, then
+asks ``find_forecast_cell`` — the read-only twin of
+``resolve_forecast_cell`` — which cell would be used. Calling
+``resolve_forecast_cell`` on that path would create the row it was only
+meant to be asked about, several hundred times over.
 
 **A centroid is not a place anyone goes.** The minted location carries no
 ``name`` and no ``kind``: it represents the region, and it sits at whatever
@@ -68,9 +75,11 @@ from apps.core.command_iteration import (
 )
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion
-from apps.weather.models import ForecastCell
 from apps.weather.services.elevation import fetch_elevation
-from apps.weather.services.forecast_cells import resolve_forecast_cell
+from apps.weather.services.forecast_cells import (
+    find_forecast_cell,
+    resolve_forecast_cell,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -163,10 +172,12 @@ class Command(BaseCommand):
             delay=delay,
         )
 
-        # Counted so the dry-run can report the real cost: a reused cell is
+        # Counted so the run can report its real cost: a reused cell is
         # free, a created one is an extra Open-Meteo call every fetch cycle.
-        cells_before = ForecastCell.objects.count()
-        counts = {"linked": 0, "skipped": 0, "failed": 0}
+        # Counted per region from find_forecast_cell rather than by diffing
+        # ForecastCell.objects.count(), which reads zero in a dry run now
+        # that a dry run creates nothing (SNOW-719).
+        counts = {"linked": 0, "skipped": 0, "failed": 0, "created": 0}
         for index, region in enumerate(
             iterate_rows(
                 self,
@@ -179,8 +190,7 @@ class Command(BaseCommand):
             if delay > 0 and index < total - 1:
                 time.sleep(delay)
 
-        cells_created = ForecastCell.objects.count() - cells_before
-        self._report_outcome(counts, cells_created, commit=commit, verbosity=verbosity)
+        self._report_outcome(counts, commit=commit, verbosity=verbosity)
 
         if counts["failed"] > 0:
             raise CommandError(
@@ -221,11 +231,21 @@ class Command(BaseCommand):
 
         latitude, longitude = centre
         try:
-            # External HTTP calls — kept outside any transaction so a slow
-            # or failing request never holds a DB lock. Both are made even
-            # in a dry run, so the reported cell count is real.
+            # One external HTTP call — kept outside any transaction so a
+            # slow or failing request never holds a DB lock. The elevation
+            # is handed to resolve_forecast_cell rather than fetched twice.
             elevation = fetch_elevation(latitude, longitude)
-            cell = resolve_forecast_cell(latitude, longitude)
+            # Read-only, and asked on both paths: it is what tells a preview
+            # whether a cell would be created, and a commit run whether one
+            # was. A dry run must never call resolve_forecast_cell — that
+            # creates the row it was only meant to be asked about, and at
+            # this command's scale that is hundreds of them (SNOW-719).
+            existing = find_forecast_cell(latitude, longitude, elevation)
+            cell = (
+                resolve_forecast_cell(latitude, longitude, elevation=elevation)
+                if commit
+                else existing
+            )
         except Exception:  # noqa: BLE001 — broad catch intentional: one region must not abort the batch
             logger.exception(
                 "link_region_centroid_locations: failed to resolve region %s",
@@ -233,6 +253,9 @@ class Command(BaseCommand):
             )
             counts["failed"] += 1
             return
+
+        if existing is None:
+            counts["created"] += 1
 
         if commit:
             with transaction.atomic():
@@ -253,24 +276,28 @@ class Command(BaseCommand):
                 "Resolved region %s -> %.0fm, ForecastCell id=%s",
                 region.region_id,
                 elevation,
-                cell.pk,
+                cell.pk if cell is not None else "<would be created>",
             )
 
     def _report_outcome(
         self,
         counts: dict[str, int],
-        cells_created: int,
         *,
         commit: bool,
         verbosity: int,
     ) -> None:
         """Emit the post-run summary to stdout and the structured log."""
+        cells_created = counts["created"]
         if verbosity >= 1:
             reused = counts["linked"] - cells_created
+            # In a dry run this is an upper bound, not a count: two region
+            # centres close enough to share a cell both report "would
+            # create", because neither is written for the other to find.
+            qualifier = "" if commit else "at most "
             cost = (
-                f"{cells_created} new forecast cell(s), {reused} reused. "
-                "Each new cell is one extra Open-Meteo call per fetch "
-                "cycle, four times daily."
+                f"{qualifier}{cells_created} new forecast cell(s), "
+                f"{reused} reused. Each new cell is one extra Open-Meteo "
+                "call per fetch cycle, four times daily."
             )
             if commit:
                 self.stdout.write(

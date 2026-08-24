@@ -137,7 +137,24 @@ class TestLinkLocationForecastCellsDryRun:
         assert location.forecast_cell is None
         assert "Read-only run complete" in out.getvalue()
 
-    def test_dry_run_still_makes_the_external_calls(self) -> None:
+    def test_dry_run_creates_no_forecast_cell(self) -> None:
+        """SNOW-719: the preview must not write the rows it reports on.
+
+        ``resolve_forecast_cell`` ends in ``get_or_create``, so calling it
+        on the read-only path minted a ForecastCell per location. It is
+        deliberately left unpatched here: patching it is what hid the write
+        from this suite in the first place.
+        """
+        LocationFactory.create()
+        cells_before = ForecastCell.objects.count()
+
+        with patch(_ELEVATION, return_value=3328.0), patch(_RESOLVE) as resolve:
+            call_command(COMMAND, "--delay", "0", stdout=StringIO())
+
+        resolve.assert_not_called()
+        assert ForecastCell.objects.count() == cells_before
+
+    def test_dry_run_still_makes_the_external_call(self) -> None:
         """Resolution happens even in a dry run, so the report is real.
 
         A dry run that skipped the lookup could only report "1 candidate",
@@ -154,6 +171,16 @@ class TestLinkLocationForecastCellsDryRun:
             call_command(COMMAND, "--delay", "0", stdout=StringIO())
 
         lookup.assert_called_once()
+
+    def test_dry_run_reports_the_cell_it_would_create(self) -> None:
+        """The preview still has to name the cost, upper-bounded."""
+        LocationFactory.create()
+
+        out = StringIO()
+        with patch(_ELEVATION, return_value=3328.0):
+            call_command(COMMAND, "--delay", "0", stdout=out)
+
+        assert "At most 1 new forecast cell(s)" in out.getvalue()
 
 
 @pytest.mark.django_db
