@@ -10,10 +10,9 @@
  * noted below.
  *
  * Loaded from public/partials/_routes_surface.html (not home.html, and not
- * the map bundle — see that partial's own note) only when the ``routes``
- * waffle flag is active, regardless of whether the user is authenticated.
- * The floating #route-add-btn carries the data attributes that drive
- * branching:
+ * the map bundle — see that partial's own note) for every visitor,
+ * regardless of whether the user is authenticated. The floating
+ * #route-add-btn carries the data attributes that drive branching:
  *
  *   data-routes-eligible="true|false"         — True for authenticated users.
  *   data-signin-url="<url>"                   — Sign-in page for the anon CTA.

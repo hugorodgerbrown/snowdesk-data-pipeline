@@ -10,10 +10,10 @@ and rows rendered server-side and swapped in over HTMX. Mirrors
 _favourites_surface.html throughout — that file is the reference
 implementation, and the differences below are all deliberate.
 
-Included from home.html only when ``routes_visible`` (the ``routes`` waffle
-flag) is active, so nothing here reaches the DOM for a user the feature is
-not yet open to. See apps.public.views._routes_context for why the flag
-gates a whole surface rather than one control.
+Included from home.html unconditionally since SNOW-724 retired the
+``routes`` rollout flag that used to gate the whole surface. Authentication
+still decides what the panel shows: routes.js branches on
+``data-routes-eligible`` for the anonymous sign-in CTA.
 
 Three shared modules are loaded once each by home.html before this partial
 — none is repeated here:

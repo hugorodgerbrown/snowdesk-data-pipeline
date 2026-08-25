@@ -62,8 +62,8 @@
  *   extractWeatherFeatures(featureCollection)
  *     The subset of a FeatureCollection's features that carry a `days`
  *     property — pulls the weather-bearing subset out of
- *     `favourites.geojson` (only present when the `weather_layer` flag is
- *     active) for the client-side merge into the map's weather source. A
+ *     `favourites.geojson` (unconditional since SNOW-724) for the
+ *     client-side merge into the map's weather source. A
  *     favourite's synthetic offline `pending` feature (SNOW-479, no `days`
  *     yet) is naturally excluded.
  *   mergeFeatureCollections(a, b)

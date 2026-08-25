@@ -67,8 +67,6 @@ urlpatterns = [
         observation_views.my_observations,
         name="observations",
     ),
-    # The ``routes`` waffle gate is in ``my_routes``, not here, so it travels
-    # with the page rather than with its mounting.
     path("routes/", route_views.my_routes, name="routes"),
     path("subscribe/", views.subscribe_partial, name="subscribe"),
     path("add/<region_id:region_id>/", views.add_region, name="add_region"),

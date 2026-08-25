@@ -33,10 +33,10 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
-  HTMX swap. Carries a ``days`` weather property per feature (SNOW-573,
-  gated on the ``weather_layer`` waffle flag) — the private half of the
-  map weather layer; see ``apps.public.api.forecast_weather_geojson`` for
-  the public, resort-anchored half.
+  HTMX swap. Carries a ``days`` weather property per feature (SNOW-573)
+  — the private half of the map weather layer; see
+  ``apps.public.api.forecast_weather_geojson`` for the public,
+  resort-anchored half.
 
 All nine are authentication-gated (403 for anonymous users).
 
@@ -62,7 +62,6 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-import waffle
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -911,18 +910,18 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     renders it as a relative "saved" line must open offline, from the
     payload the map already holds.
 
-    SNOW-573: when the ``weather_layer`` waffle flag is active, every
-    feature also carries a ``days`` property — the same date-keyed shape
-    ``apps.public.api.forecast_weather_geojson`` serves for resort-anchored
-    points (built by the same ``build_point_weather_days`` helper), so the
-    map's Weather overlay can merge a signed-in visitor's own pins into the
-    layer with no shape difference. With the flag inactive the ``days`` key
-    is simply absent and nothing else about the endpoint changes.
-    ``Favourite.forecast_point`` is non-nullable, so only the weather row
-    itself needs null handling (a point with nothing fetched yet gets an
-    empty ``days`` dict, not an error).
+    SNOW-573: every feature also carries a ``days`` property — the same
+    date-keyed shape ``apps.public.api.forecast_weather_geojson`` serves
+    for resort-anchored points (built by the same
+    ``build_point_weather_days`` helper), so the map's Weather overlay can
+    merge a signed-in visitor's own pins into the layer with no shape
+    difference. It is unconditional since SNOW-724 retired the
+    ``weather_layer`` rollout flag. ``Favourite.forecast_point`` is
+    non-nullable, so only the weather row itself needs null handling (a
+    point with nothing fetched yet gets an empty ``days`` dict, not an
+    error).
 
-    One extra bulk query when the flag is active — ``select_related`` on
+    Weather costs one extra bulk query — ``select_related`` on
     ``forecast_point`` plus a single ``ForecastCellWeather`` fetch keyed by
     ``forecast_cell_id__in=…``, never one query per favourite.
 
@@ -941,18 +940,16 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 
-    weather_layer_active = waffle.flag_is_active(request, "weather_layer")
     favourites = list(
         Favourite.objects.for_user(request.user).select_related("forecast_point")
     )
 
     rows_by_point: dict[int, list[ForecastCellWeather]] = defaultdict(list)
-    if weather_layer_active:
-        point_ids = [favourite.forecast_point_id for favourite in favourites]
-        for row in ForecastCellWeather.objects.filter(
-            forecast_cell_id__in=point_ids
-        ).iterator():
-            rows_by_point[row.forecast_cell_id].append(row)
+    point_ids = [favourite.forecast_point_id for favourite in favourites]
+    for row in ForecastCellWeather.objects.filter(
+        forecast_cell_id__in=point_ids
+    ).iterator():
+        rows_by_point[row.forecast_cell_id].append(row)
 
     now = timezone.now()
     features: list[dict[str, Any]] = []
@@ -963,10 +960,9 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
             "created_at": favourite.created_at.isoformat(),
             "resort_id": favourite.resort_id,
         }
-        if weather_layer_active:
-            properties["days"] = build_point_weather_days(
-                rows_by_point.get(favourite.forecast_point_id, []), now
-            )
+        properties["days"] = build_point_weather_days(
+            rows_by_point.get(favourite.forecast_point_id, []), now
+        )
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(
             {

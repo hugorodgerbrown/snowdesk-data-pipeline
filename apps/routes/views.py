@@ -24,8 +24,8 @@ because it is not a fragment:
 
 - ``my_routes`` (GET) — SNOW-713: ``/account/routes/``, the account area's
   list of the signed-in user's own routes. No ``@require_htmx``; anonymous
-  redirects to sign-in rather than answering 403; gated on the ``routes``
-  waffle flag, 404 when inactive.
+  redirects to sign-in rather than answering 403. Authentication is the
+  only gate since SNOW-724 retired the ``routes`` rollout flag.
 
 All the fragment endpoints are authentication-gated (403 for anonymous) and
 owner-scoped via ``Route.objects.for_user()`` — another user's uuid returns
@@ -46,9 +46,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-import waffle
 from django.conf import settings
-from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -436,14 +435,10 @@ def my_routes(request: HttpRequest) -> HttpResponse:
     and ``accounts:settings`` do, not answered 403 — a page can render the
     way in; a fragment cannot.
 
-    Flag-gated on ``routes``, and a **404** when the flag is inactive. The
-    flag is seeded superusers-only and today hides only the map surface
-    (``apps.public.views`` passes ``routes_visible`` to the template); a page
-    is a user-visible surface in a way an endpoint is not, so it takes the
-    gate. 404 rather than 403 because the flag hides the feature's
-    existence, and a 403 would admit there is something behind the URL.
-    Putting the gate on the view rather than in the template also means the
-    menu entry SNOW-705 will add cannot arrive without it.
+    Authentication is the only gate. Until SNOW-724 the page also sat
+    behind the superusers-only ``routes`` waffle flag and answered 404 for
+    everyone else; the feature reached general availability, so the flag
+    and its 404 branch are both gone.
 
     Ownership is enforced by the query (``for_user``), so nothing here
     depends on an id supplied by the client.
@@ -458,15 +453,12 @@ def my_routes(request: HttpRequest) -> HttpResponse:
         request: The incoming GET request.
 
     Returns:
-        Rendered ``routes/my_routes.html``, a redirect to sign-in for an
-        anonymous visitor, or 404 when the ``routes`` flag is inactive.
+        Rendered ``routes/my_routes.html``, or a redirect to sign-in for an
+        anonymous visitor.
 
     """
     if not request.user.is_authenticated:
         return redirect("accounts:sign_in")
-
-    if not waffle.flag_is_active(request, "routes"):
-        raise Http404("Routes are not enabled for this account.")
 
     routes = list(Route.objects.for_user(request.user))
 

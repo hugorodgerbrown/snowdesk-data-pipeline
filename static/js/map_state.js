@@ -107,18 +107,21 @@ const OVERLAY_STORAGE_KEY = {
   // more, and nothing should start reading it again — reviving it would
   // silently turn the overlay on for a returning user who never asked to
   // see it this session.
-  // SNOW-573: flag-gated only — the toggle exists in the DOM (and this key
-  // is only ever read/written) when data-weather-layer-eligible="true".
+  // SNOW-573: ungated since SNOW-724 retired the weather_layer flag — the
+  // toggle is in the DOM for every visitor, so this key is always live.
   weather: 'snowdesk.map.overlay.weather',
   // SNOW-687: eligible-only, like favourites — the switch lives in the
   // routes panel and this key is only ever read/written when
-  // data-routes-eligible="true" (the ``routes`` waffle flag AND an
-  // authenticated user). Defaults OFF, unlike favourites: a GPX track is
+  // data-routes-eligible="true" (an authenticated user; SNOW-724 retired
+  // the ``routes`` flag that used to AND with it). Defaults OFF, unlike
+  // favourites: a GPX track is
   // visually far heavier than a pin, so the overlay is opt-in the way
   // community_reports and weather are.
   routes: 'snowdesk.map.overlay.routes',
-  // SNOW-691: flag-gated only, like weather — the row exists in the DOM (and
-  // this key is only ever read/written) when data-slope-layer-eligible="true".
+  // SNOW-691: gated on settings.SLOPE_TILE_URL (SNOW-724 moved the gate off
+  // a waffle flag and onto the setting) — the row exists in the DOM, and
+  // this key is only ever read/written, when
+  // data-slope-layer-eligible="true".
   // Defaults OFF: the raster covers the whole viewport wherever it has data,
   // and a visitor who opened the map to read danger ratings did not ask for a
   // second full-screen colour scheme under them.

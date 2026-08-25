@@ -79,22 +79,21 @@
   // unlike favourites).
   const COMMUNITY_REPORTS_URL = mapEl.dataset.communityReportsUrl || null;
   const COMMUNITY_REPORTS_ELIGIBLE = mapEl.dataset.communityReportsEligible === 'true';
-  // SNOW-573: map Weather overlay — public data (like community reports),
-  // but genuinely flag-gated (unlike community reports, which has no flag
-  // at all) — "eligible" means the weather_layer waffle flag is active for
-  // this request.
+  // SNOW-573: map Weather overlay — public data, like community reports,
+  // and ungated since SNOW-724 retired the weather_layer flag, so there is
+  // no eligibility constant to pair with the URL.
   const WEATHER_URL = mapEl.dataset.forecastWeatherUrl || null;
-  const WEATHER_ELIGIBLE = mapEl.dataset.weatherLayerEligible === 'true';
-  // SNOW-687: per-user saved-routes GeoJSON — eligibility is the ``routes``
-  // waffle flag AND an authenticated user (the endpoint 403s for anyone
-  // else, and there is nothing to draw), so this is gated the same way as
-  // favourites rather than as the two public layers above.
+  // SNOW-687: per-user saved-routes GeoJSON — eligibility is an
+  // authenticated user (the endpoint 403s for anyone else, and there is
+  // nothing to draw), so this is gated the same way as favourites rather
+  // than as the two public layers above.
   const ROUTES_URL = mapEl.dataset.routesUrl || null;
   const ROUTES_ELIGIBLE = mapEl.dataset.routesEligible === 'true';
-  // SNOW-691: the slope-angle raster's tile template and its flag gate.
-  // Public third-party tiles, so "eligible" is the ``slope_layer`` waffle
-  // flag alone — the same shape as WEATHER_* above rather than the
-  // flag-AND-authentication shape routes and favourites use. The template
+  // SNOW-691: the slope-angle raster's tile template and its gate. Public
+  // third-party tiles, so "eligible" is settings.SLOPE_TILE_URL being
+  // configured (SNOW-724 moved the gate off a waffle flag and onto the
+  // setting, which is the operator kill switch) rather than the
+  // gate-AND-authentication shape routes and favourites use. The template
   // is a swisstopo WMTS XYZ URL rather than a Snowdesk endpoint, which is
   // why it is rendered as a whole URL instead of being reversed here.
   const SLOPE_TILE_URL = mapEl.dataset.slopeTileUrl || null;
@@ -3217,10 +3216,10 @@
         installCommunityReportsLayer(communityReportsGeojsonCache);
       }
     } else if (key === 'weather') {
-      // SNOW-573: flag-gated only (no auth eligibility), like
-      // community_reports — guard the fetch in case this is ever reached
+      // SNOW-573: no eligibility gate at all, like community_reports —
+      // guard the fetch on the URL alone in case this is ever reached
       // some other way.
-      if (!WEATHER_ELIGIBLE || !WEATHER_URL) return;
+      if (!WEATHER_URL) return;
       const data = await fetch(WEATHER_URL).then(r => r.json()).catch(() => null);
       if (data) {
         // SNOW-492: write-through — the raw resort-anchored payload, before

@@ -2,9 +2,9 @@
 apps/public/templates/public/help/_topic_weather_layer.html — "Map weather" panel body.
 
 Content partial for the help page (SNOW-573); included via the
-body_template parameter of includes/_collapsible_panel.html. Gated on
-the weather_layer waffle flag, mirroring the flag that gates the map's
-Weather overlay this topic documents.
+body_template parameter of includes/_collapsible_panel.html. Rendered for
+every visitor since SNOW-724 retired the weather_layer flag that used to
+gate both this topic and the map's Weather overlay.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
