@@ -239,6 +239,11 @@ TEMPLATES = [
                 "django.template.context_processors.i18n",
                 # Injects nav_subscriptions for the subscriber avatar dropdown.
                 "apps.accounts.context_processors.nav_subscriptions",
+                # SNOW-668: injects routes_visible (the ``routes`` waffle flag)
+                # so the same dropdown can drop its Routes entry when the flag
+                # is off — accounts:routes answers 404 in that case, and
+                # nav.html renders on pages that pass no context of their own.
+                "apps.accounts.context_processors.routes_visible",
                 # SNOW-549: injects PWA_USER_ID (Account.uuid) so base.html can
                 # bake the signed-in user's public identifier into the
                 # pwa-user-id meta tag the mutation queue reads as its

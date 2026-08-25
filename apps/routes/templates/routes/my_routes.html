@@ -31,9 +31,13 @@ sheet too, since there is deliberately only one route row. That is a design
 change to a shared row, so it belongs to SNOW-705's account-area pass where
 both surfaces can be judged together.
 
-Navigation: no menu entry yet. SNOW-705 owns templates/includes/nav.html and
-the account area's navigation, so reaching this page means typing the URL
-until that lands. Do not add a sub-nav: the area is not getting one.
+Navigation: the nav avatar menu (templates/includes/nav.html), which SNOW-668
+gave its final shape. This page shipped with no inbound link anywhere — the
+entry was left to SNOW-705, which then decided the area's navigation without
+adding one — so for two tickets the only way here was typing the URL. The
+menu's Routes entry is behind the same ``routes`` flag this view gates on,
+because my_routes answers 404 when it is off. Do not add a sub-nav: the area
+is not getting one.
 {% endcomment %}
 {% load i18n static %}
 

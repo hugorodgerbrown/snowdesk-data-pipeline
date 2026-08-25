@@ -25,10 +25,11 @@ then the rows (see the "My favourites" section of accounts/hub.html).
 Rows are not cards, so the list is not wrapped in one: each row draws its own
 hairline via includes/_ugc_panel_row.html's `border-t`.
 
-Navigation: this page has no menu entry yet. SNOW-705 is designing the
-account area's navigation and owns the nav.html change, so the link is
-deliberately not added here — reaching this page means typing the URL until
-that lands. Do not add a sub-nav: the account area is not getting one.
+Navigation: the nav avatar menu (templates/includes/nav.html), which SNOW-668
+gave its final shape. This page shipped with no inbound link anywhere — the
+entry was left to SNOW-705, which then decided the area's navigation without
+adding one — so for two tickets the only way here was typing the URL. Do not
+add a sub-nav: the account area is not getting one.
 {% endcomment %}
 {% load i18n static %}
 

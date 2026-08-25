@@ -182,13 +182,6 @@ Usage
                         {% if nav_subscriptions %}
                             <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         {% endif %}
-                        <a
-                            role="menuitem"
-                            href="{% url 'accounts:hub' %}"
-                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
-                        >
-                            {% trans "My account" %}
-                        </a>
                         {% comment %}
                             SNOW-705: this menu IS the account-area navigation
                             — not a placeholder for one, which is how SNOW-667
@@ -206,11 +199,75 @@ Usage
                             already the way into the area from every other page,
                             and it costs nothing above the <h1> of the pages it
                             points at. Each account section is its own page,
-                            reached from here: Settings today, and Favourites,
-                            Routes, Observations and Subscriptions as SNOW-668,
-                            SNOW-677 and their successors split them out of the
-                            hub. Adding one is adding one <a> to this list.
+                            reached from here. Adding one is adding one <a> to
+                            this list.
+
+                            SNOW-668 completes the list SNOW-705 described, and
+                            that is not cosmetic: /account/observations/
+                            (SNOW-677) and /account/routes/ (SNOW-713) shipped
+                            MOUNTED AND TESTED WITH NOTHING LINKING TO THEM.
+                            Their tests reverse the URL directly, so a green
+                            suite said nothing about whether a user could get
+                            there — the only way in was typing the path. The
+                            entries below are asserted one by one in
+                            tests/public/test_nav_partial.py so a sixth page
+                            cannot ship the same way.
+
+                            Order is the SNOW-705 order: Subscriptions (the
+                            thing an account is for), then the three lists of
+                            saved things, then a rule, then Settings and — under
+                            the rule that was already here — Sign out. The last
+                            two are account machinery rather than content, which
+                            is what the new rule separates.
+
+                            "Subscriptions", not "My account": the hub stopped
+                            being a hub when SNOW-668 lifted favourites off it,
+                            and inside /account/ a possessive carries no
+                            information (see accounts/hub.html).
                         {% endcomment %}
+                        <a
+                            role="menuitem"
+                            href="{% url 'accounts:hub' %}"
+                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% trans "Subscriptions" %}
+                        </a>
+                        <a
+                            role="menuitem"
+                            href="{% url 'accounts:favourites' %}"
+                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% trans "Favourites" %}
+                        </a>
+                        {% comment %}
+                            Routes is the one entry behind a flag. The gate is
+                            in apps.routes.views.my_routes, which raises 404
+                            when ``routes`` is inactive, so an unconditional
+                            entry here would offer every user a broken
+                            destination — the flag is seeded superusers-only.
+                            ``routes_visible`` comes from
+                            apps.accounts.context_processors.routes_visible
+                            rather than from a view, because this partial
+                            renders on every page including ones that pass no
+                            context at all.
+                        {% endcomment %}
+                        {% if routes_visible %}
+                            <a
+                                role="menuitem"
+                                href="{% url 'accounts:routes' %}"
+                                class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                            >
+                                {% trans "Routes" %}
+                            </a>
+                        {% endif %}
+                        <a
+                            role="menuitem"
+                            href="{% url 'accounts:observations' %}"
+                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% trans "Observations" %}
+                        </a>
+                        <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         <a
                             role="menuitem"
                             href="{% url 'accounts:settings' %}"
