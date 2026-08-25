@@ -61,9 +61,7 @@ def _home(client: Client) -> str:
 class TestRoutesSurfaceRenders:
     """The roundel and the sheet ship together, for every visitor."""
 
-    def test_everything_renders_for_an_anonymous_visitor(
-        self, client: Client
-    ) -> None:
+    def test_everything_renders_for_an_anonymous_visitor(self, client: Client) -> None:
         """SNOW-724: the roundel, the sheet and the script are all present.
 
         The inverse of the assertion this test replaced, which pinned the

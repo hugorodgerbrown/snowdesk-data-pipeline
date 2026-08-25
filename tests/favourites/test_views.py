@@ -1871,9 +1871,7 @@ class TestFavouritesGeojson:
 
         assert "days" in response.json()["features"][0]["properties"]
 
-    def test_days_shape_matches_build_point_weather_days(
-        self, client: Client
-    ) -> None:
+    def test_days_shape_matches_build_point_weather_days(self, client: Client) -> None:
         """days mirrors build_point_weather_days's shape (SNOW-573)."""
         user = UserFactory.create()
         client.force_login(user)

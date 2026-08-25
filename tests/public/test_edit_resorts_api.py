@@ -59,6 +59,7 @@ def _ordinary_client() -> Client:
     client.force_login(UserFactory.create(is_staff=False))
     return client
 
+
 # ---------------------------------------------------------------------------
 # resorts_geojson
 # ---------------------------------------------------------------------------
