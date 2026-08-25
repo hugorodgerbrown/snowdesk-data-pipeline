@@ -226,6 +226,35 @@ rather than leaving a flag standing in for a permission.
 
 ---
 
+## The guard: names in the manifest match names in the code
+
+`tests/core/services/test_waffle_manifest_call_sites.py` sweeps `apps/`,
+`config/` and `templates/` for literal `flag_is_active(...)` calls and
+`{% flag %}` tags, and asserts that set matches the manifest's names in
+**both** directions:
+
+* a **name in code that the manifest omits** is a permanently-closed gate.
+  `WAFFLE_FLAG_DEFAULT = False` means the lookup answers `False` instead of
+  raising, so the feature is dark on every environment and nothing fails;
+* a **manifest name no call site reads** is a row created on every deploy
+  to gate nothing — a rename that landed on one side, or a removal that
+  stopped halfway.
+
+It exists because both halves have shipped. SNOW-685 added a `routes` call
+site whose flag was seeded by a migration and missing from the manifest,
+and the feature was invisible on staging until the entry landed. SNOW-724
+removed four flags and missed one call site — a context processor that
+arrived from a concurrent merge — which would have dropped the Routes entry
+from every signed-in user's nav, silently. The guard catches both.
+
+Only **literal** names are visible to it. A call site that builds its name
+dynamically would need the check to execute the code rather than read it;
+there are none today, and a third test pins the sweep against a call site
+known to exist so a drifted regex fails loudly instead of passing
+vacuously.
+
+---
+
 ## Local-development shortcut: `?dwf_<flag>=…`
 
 `config/settings/development.py` enables `WAFFLE_OVERRIDE = True`,
