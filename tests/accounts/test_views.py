@@ -16,9 +16,9 @@ Covers:
                         non-subscribed regions absent; just_confirmed banner;
                         telemetry toggle renders with role="switch", explainer
                         copy, and a link to the privacy policy (SNOW-387);
-                        the flag-gated "My favourites" section lazy-loads
-                        favourites:list when active, absent when inactive
-                        (SNOW-415).
+                        the favourites section that lazy-loaded
+                        favourites:list here (SNOW-415) is gone — it is
+                        /account/favourites/ now (SNOW-668).
   remove_region       — removes one region; last region → account and session
                         survive, no redirect; no session → 403; non-HTMX →
                         400; rate-limit 429.
@@ -1431,54 +1431,52 @@ class TestHubViewAuthenticated:
 
 
 # ---------------------------------------------------------------------------
-# hub_view — Favourites section (SNOW-415)
+# hub_view — the favourites section that used to be here (SNOW-415/SNOW-668)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestHubViewFavouritesSection:
-    """The Favourites section lazy-loads favourites:list.
+class TestHubViewNoLongerHostsFavourites:
+    """The hub lazy-loaded favourites:list from SNOW-415 until SNOW-668.
 
-    Asserted purely via the reversed ``favourites:list`` URL appearing in
-    the response HTML — this test module carries no import from the
-    ``favourites`` app, matching ``manage_view`` itself.
+    It is /account/favourites/ now (``tests/accounts/test_favourites_page.py``),
+    and the hub is the Subscriptions page. Asserted purely via the reversed
+    ``favourites:list`` URL — this test module carries no import from the
+    ``favourites`` app.
 
-    The heading read "My favourites" until SNOW-705 dropped the possessive:
-    inside ``/account/`` every page is the signed-in user's, so "My" and
-    "Your" carried no information and were applied inconsistently. The
-    heading's own rank and treatment are pinned in ``test_account_layout``;
-    this test cares only that the section is on the page and wired up.
+    What the old assertions here also pinned was a heading coupling:
+    "Favourites" was an ``<h2>`` (``includes/_eyebrow.html``'s default tag)
+    and ``favourites.views.favourite_card`` returned ``<h3>`` on the
+    strength of it. Both halves moved together in SNOW-668 — the new page's
+    ``<h1>`` is the only heading above a card, so the card is an ``<h2>``
+    (``tests/favourites/test_views.py``).
     """
 
-    def test_section_present(self) -> None:
-        """The section always lazy-loads favourites:list."""
+    def test_hub_does_not_lazy_load_the_list(self) -> None:
+        """No ``hx-get`` for favourites:list survives on the hub."""
         account = AccountFactory.create()
         client = _make_session_client(account)
         response = client.get(reverse("accounts:hub"))
         assert response.status_code == 200
-        assert b"Favourites" in response.content
-        assert reverse("favourites:list").encode() in response.content
+        assert reverse("favourites:list").encode() not in response.content
 
-    def test_section_heading_is_an_h2(self) -> None:
-        """The section heading is an h2 — which is why a card inside it is an h3.
+    def test_hub_loads_no_favourites_row_modules(self) -> None:
+        """The three rename modules went with the list.
 
-        ``favourites.views.favourite_card`` renders a single pin's title as
-        an ``h3`` on the strength of this: the card is swapped into a panel
-        inside this section, so its title ranks UNDER this heading rather
-        than level with it. Promoting or demoting this heading without
-        moving the card's would put a pin's title back beside the section
-        that lists it, so the two are asserted together.
-
-        SNOW-705 changed the heading's text and treatment but deliberately
-        not its rank: it reads "Favourites" and renders through
-        ``includes/_eyebrow.html``, whose default tag is ``h2``. The
-        coupling this test protects is therefore intact — which is the
-        point of asserting the level rather than the styling.
+        ``inline_rename.js``, ``row_rename_commit.js`` and
+        ``account_favourites.js`` have nothing to bind to here — a
+        subscription card has no pencil and no disclosure — so leaving them
+        loaded would be three requests per view for no behaviour. htmx
+        stays: the card's trash is a bare ``hx-post``.
         """
         account = AccountFactory.create()
         client = _make_session_client(account)
-        response = client.get(reverse("accounts:hub"))
-        assert re.search(r"<h2[^>]*>\s*Favourites\s*</h2>", response.content.decode())
+        html = client.get(reverse("accounts:hub")).content.decode()
+
+        assert "js/account_favourites.js" not in html
+        assert "js/inline_rename.js" not in html
+        assert "js/row_rename_commit.js" not in html
+        assert "js/htmx.min.js" in html
 
 
 # ---------------------------------------------------------------------------

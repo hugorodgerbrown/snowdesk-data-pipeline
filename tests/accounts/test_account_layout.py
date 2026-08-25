@@ -16,22 +16,25 @@ had to be named to fit rather than named to be clear. The nav dropdown is
 vertical, has no such budget, and is already the way in from every other
 page.
 
-What survives from the ticket is the layout work, which is what these tests
-pin:
+SNOW-668 then finished the area SNOW-705 described. Favourites left the hub
+for /account/favourites/, the menu gained the entries for it and for the two
+pages that had shipped orphaned, and the hub — one list again — got a
+visible <h1> saying what it is.
 
-  * **The nav dropdown reaches both account pages.** It is now the only
-    route to /account/settings/, so losing the entry would strand the page
-    behind a URL nobody links to.
-  * **Neither page carries a sub-nav.** A third attempt at one is the thing
-    this ticket concluded against, and it would arrive looking like an
+What these tests pin:
+
+  * **The nav dropdown reaches every account page.** It is the only route to
+    any of them, so losing an entry strands a page behind a URL nothing
+    links to. That is not hypothetical: /account/observations/ and
+    /account/routes/ shipped exactly that way. The per-entry assertions live
+    in tests/public/test_nav_partial.py; this file asserts the menu is on a
+    rendered page at all, which that isolated render cannot.
+  * **No account page carries a sub-nav.** A third attempt at one is the
+    thing SNOW-705 concluded against, and it would arrive looking like an
     improvement.
-  * **The account pages carry an sr-only <h1> and no visible heading naming
-    the page.** Nothing on the hub summarises anything, so there is no
-    honest name for it; the menu named the destination on the way in.
-  * **The hub's two sections are peers.** "Your subscriptions" was the <h1>
-    inherited from the combined manage.html and "My favourites" an <h2>
-    appended under it, so the markup claimed one contained the other and
-    rendered it smaller to match.
+  * **Each account page names itself in a visible <h1>.** The hub's was
+    sr-only for exactly as long as it held two unrelated lists and could not
+    be honestly named; one page per list removed the reason.
   * **The settings page's four groups, in rank order.** Danger zone is last
     on purpose.
 
@@ -68,34 +71,49 @@ def _client_for(account: Account) -> Client:
 class TestNavDropdownCarriesTheAccountArea:
     """The menu reaches every account page, because nothing else does."""
 
-    def test_dropdown_links_to_both_account_pages(self) -> None:
-        """Hub and settings are both reachable from the nav menu.
+    def test_dropdown_links_to_every_unflagged_account_page(self) -> None:
+        """Subscriptions, Favourites, Observations and Settings, on a real page.
 
         SNOW-667 added the settings entry as a placeholder "until SNOW-705
         designs the account area's own navigation". SNOW-705 decided the
-        area gets none: this menu is the navigation, so the entry is the
-        design and not a stopgap. It is also now the ONLY route to
-        /account/settings/ — remove it and the page is stranded behind a URL
-        nothing links to.
+        area gets none: this menu is the navigation, so the entries are the
+        design and not a stopgap. They are also the ONLY route to any of
+        these pages — remove one and the page is stranded behind a URL
+        nothing links to, which is precisely how /account/observations/
+        (SNOW-677) and /account/routes/ (SNOW-713) shipped.
+
+        Rendered through the full view stack here, rather than
+        ``render_to_string`` as in tests/public/test_nav_partial.py: that
+        file asserts the menu's contents entry by entry, and this one
+        asserts the menu survives onto a real page for a signed-in user.
+        Routes is omitted because it is flag-gated and off for this account;
+        the flag's two branches are asserted in that file.
         """
         client = _client_for(AccountFactory.create())
         html = client.get(reverse("public:home")).content.decode()
 
-        assert f'href="{reverse("accounts:hub")}"' in html
-        assert f'href="{reverse("accounts:settings")}"' in html
+        for url_name in (
+            "accounts:hub",
+            "accounts:favourites",
+            "accounts:observations",
+            "accounts:settings",
+        ):
+            assert f'href="{reverse(url_name)}"' in html, url_name
 
 
 @pytest.mark.django_db
 class TestNoSubNav:
-    """Neither account page grows a sub-nav of its own."""
+    """No account page grows a sub-nav of its own."""
 
-    @pytest.mark.parametrize("url_name", ["accounts:hub", "accounts:settings"])
+    @pytest.mark.parametrize(
+        "url_name", ["accounts:hub", "accounts:favourites", "accounts:settings"]
+    )
     def test_account_pages_carry_no_subnav(self, url_name: str) -> None:
         """Two attempts at a sub-nav were built and removed.
 
         This is a guard against a third, which would arrive looking like an
-        improvement — the pages do have two destinations between them, and a
-        strip tying them together is the obvious thing to reach for. The
+        improvement — the area now has five destinations, and a strip tying
+        them together is the obvious thing to reach for. The
         reasoning against it is in templates/includes/nav.html and
         docs/decisions/account-area-navigation-lives-in-the-nav-menu.md;
         read it before deleting this test.
@@ -115,18 +133,23 @@ class TestNoSubNav:
 class TestAccountHeadings:
     """The heading rules SNOW-705 settled, which are easy to undo by hand."""
 
-    def test_hub_has_no_visible_page_heading(self) -> None:
-        """The hub's ``<h1>`` is sr-only, because nothing names the page.
+    def test_hub_names_itself_as_the_subscriptions_page(self) -> None:
+        """The hub's ``<h1>`` is visible and reads "Subscriptions".
 
-        It holds two lists of saved things and summarises neither, so there
-        is no honest heading for it as a whole — and the nav dropdown named
-        the destination on the way in. The outline still needs an ``<h1>``,
-        so it stays and is hidden.
+        It was ``<h1 class="sr-only">Account</h1>`` from SNOW-705 until
+        SNOW-668, and the reason was the page's contents rather than a
+        heading style: it held two unrelated lists of saved things and
+        summarised neither, so there was no honest name for it as a whole.
+        Moving favourites to their own page removed the premise. One list,
+        one name, one visible heading — and the eyebrow that used to label
+        the section is gone, because under this ``<h1>`` it only repeated
+        it.
         """
         client = _client_for(AccountFactory.create())
         html = client.get(reverse("accounts:hub")).content.decode()
 
-        assert '<h1 class="sr-only">Account</h1>' in html
+        assert "Subscriptions" in html
+        assert '<h1 class="sr-only"' not in html
         assert html.count("<h1") == 1
 
     def test_settings_keeps_its_visible_heading(self) -> None:
@@ -138,32 +161,52 @@ class TestAccountHeadings:
         assert '<h1 class="sr-only"' not in html.split("</h1>")[0]
         assert html.count("<h1") == 1
 
-    def test_hub_sections_are_peers(self) -> None:
-        """Subscriptions and Favourites render as sibling section labels.
+    def test_favourites_page_names_itself(self) -> None:
+        """/account/favourites/ carries the same one-visible-``<h1>`` rule.
 
-        Before SNOW-705, "Your subscriptions" was the page ``<h1>`` at
-        text-2xl and "My favourites" an ``<h2>`` at text-lg beneath it: the
-        markup said one contained the other. They are two lists of saved
-        things at the same rank.
+        The pair to the hub assertion above, and the reason it can be made:
+        two lists that shared a page are two pages, each named for the one
+        list it holds. The rest of that page's contract is pinned in
+        tests/accounts/test_favourites_page.py.
+        """
+        client = _client_for(AccountFactory.create())
+        html = client.get(reverse("accounts:favourites")).content.decode()
+
+        assert "Favourites" in html
+        assert '<h1 class="sr-only"' not in html
+        assert html.count("<h1") == 1
+
+    def test_hub_no_longer_hosts_the_favourites_section(self) -> None:
+        """The section moved; it did not get copied.
+
+        The regression this guards is a merge or a revert restoring the
+        ``hx-get`` at the foot of the hub. Two surfaces lazy-loading
+        ``favourites:list`` is not a cosmetic duplication — the offline
+        write-through in static/js/favourites_offline.js keys on the request
+        path, so both would claim the roster and the outline ranks would
+        disagree between them.
         """
         client = _client_for(AccountFactory.create())
         html = client.get(reverse("accounts:hub")).content.decode()
 
-        assert 'data-testid="hub-section-subscriptions"' in html
-        assert 'data-testid="hub-section-favourites"' in html
+        assert reverse("favourites:list") not in html
+        assert 'data-testid="hub-section-favourites"' not in html
 
-    def test_hub_headings_carry_no_possessive(self) -> None:
+    def test_account_headings_carry_no_possessive(self) -> None:
         """Inside /account/ the possessive carries no information.
 
         Every page in the area is the signed-in user's by definition. Mixing
         "My account", "Your subscriptions" and "My favourites" across four
-        labels was where the inconsistency showed.
+        labels was where the inconsistency showed — and the nav menu, which
+        renders on both pages below, was the last holder of "My account"
+        until SNOW-668 renamed it "Subscriptions".
         """
         client = _client_for(AccountFactory.create())
-        html = client.get(reverse("accounts:hub")).content.decode()
-
-        assert "My favourites" not in html
-        assert "Your subscription" not in html
+        for url_name in ("accounts:hub", "accounts:favourites"):
+            html = client.get(reverse(url_name)).content.decode()
+            assert "My favourites" not in html, url_name
+            assert "Your subscription" not in html, url_name
+            assert "My account" not in html, url_name
 
     def test_settings_groups_render_in_order(self) -> None:
         """The four settings clusters, in the order they were ranked.

@@ -1444,19 +1444,23 @@ page. Cache-partitioning, not cache-avoidance — the same trade
 @require_GET
 def hub_view(request: HttpRequest) -> HttpResponse:
     """
-    Show the account hub — the user's own saved data.
+    Show ``/account/`` — the user's subscribed regions.
 
     Unauthenticated visitors are redirected to the sign-in page.  A registered
     user with no ``Subscription`` rows still sees the page (with no
     subscription cards) — this is the landing spot after registration.
 
-    Carries the subscribed-region cards and the lazy-loaded favourites panel.
-    SNOW-668 moves both to ``/account/places/`` once the unified place model
-    exists; until then the hub is where "your data" lives, so no surface is
-    unreachable mid-chain.
+    The Subscriptions page, despite the name: it carried the lazy-loaded
+    favourites panel as well until SNOW-668 gave that its own page, which is
+    what let the template's ``<h1>`` stop being sr-only. The view name, the
+    URL name and the template filename are unchanged deliberately —
+    renaming them is churn across every reverse in the codebase for no
+    user-visible gain.
 
-    Not ``@never_cache`` — the offline favourites roster depends on this page
-    reaching the PWA shell cache. See ``_ACCOUNT_PAGE_CACHE_NOTE``.
+    Not ``@never_cache``. The offline favourites roster now depends on
+    ``favourites_view`` rather than on this page, but both render inside the
+    same PWA shell and share one caching posture rather than inventing two.
+    See ``_ACCOUNT_PAGE_CACHE_NOTE``.
 
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).
