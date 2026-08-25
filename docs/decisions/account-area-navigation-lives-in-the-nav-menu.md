@@ -64,10 +64,15 @@ the honest answer to "grouped or flat?" turned out to be *neither, yet*.
   a link. **A new account page is not done until it has a menu entry and an
   assertion for that entry** in `tests/public/test_nav_partial.py`
   (SNOW-668).
-- **A flag-gated page needs a flag-gated entry.** `my_routes` answers 404
-  when `routes` is inactive, so the Routes entry is wrapped in
-  `routes_visible`, injected by `apps.accounts.context_processors` because
-  `nav.html` renders on pages that pass no context of their own.
+- **A gated page needs an equally gated entry**, or the menu offers a
+  broken destination. Routes was the worked example: `my_routes` answered
+  404 behind an inactive `routes` flag, so SNOW-668 wrapped its entry in a
+  `routes_visible` context processor — `nav.html` renders on pages that
+  pass no context of their own, so a per-view key would not reach it.
+  SNOW-724 retired the flag and that 404 with it, so the entry and the
+  processor are both gone; every entry in this menu is now gated by the
+  signed-in branch alone. The rule survives its example — a future gated
+  page needs the same treatment.
 - **New account sections are new pages plus one menu entry.** They do not
   need a navigation design, a label-length budget, or a decision about
   grouping.
