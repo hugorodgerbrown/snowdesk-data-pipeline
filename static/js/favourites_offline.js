@@ -385,18 +385,6 @@
   }
 
   /**
-   * Is this element the map sheet's rows container, or inside it?
-   *
-   * @param {Element} target
-   * @returns {boolean}
-   */
-  function _inMapPanel(target) {
-    return !!(
-      target && target.closest && target.closest('[data-favourites-rows]')
-    );
-  }
-
-  /**
    * Offline-read fallback: on a failed roster or card request, repaint
    * the target element from the cached ``data:favourites`` record(s).
    * Leaves HTMX's own failure UI in place when the cache has nothing to
@@ -420,15 +408,19 @@
       if (path.indexOf(LIST_PATH_SUFFIX) !== -1) {
         const records = await window.pwaDb.getAll(STORE);
         if (!records || records.length === 0 || !target) return;
-        // One endpoint, two surfaces, two outlines. The map sheet swaps
-        // this list into [data-favourites-rows], inside a panel whose
-        // title is a <span> (includes/_sheet_header.html) — no section
-        // heading to rank under, so h2. Everywhere else is the account
-        // hub's "My favourites" <section>, headed by an <h2>, so h3.
-        const headingTag = _inMapPanel(target) ? 'h2' : 'h3';
+        // One endpoint, two surfaces, ONE outline depth — h2 on both, which
+        // is why there is no branch here any more.
+        //
+        // The map sheet swaps this list into [data-favourites-rows], inside
+        // a panel whose title is a <span> (includes/_sheet_header.html), so
+        // a card in it has no section heading to rank under. The other
+        // surface is /account/favourites/, whose only heading above the
+        // list is the page <h1> — SNOW-668 moved it there from a
+        // <section> inside the account hub, headed by an <h2>, which is
+        // what the h3 branch this replaces was ranking under.
         target.textContent = '';
         records.forEach((record) =>
-          target.appendChild(renderOfflineCard(record, headingTag))
+          target.appendChild(renderOfflineCard(record, 'h2'))
         );
         return;
       }
@@ -441,14 +433,18 @@
         // The request's own target — the panel under the row whose chevron
         // asked for the card (SNOW-711 gave every row its own; there was
         // one #favourite-card-panel above the whole list before it). That
-        // is the account hub and only the account hub: the map renders its
+        // is /account/favourites/ and only that page: the map renders its
         // rows with ``hide_disclosure``, so nothing there has a chevron to
-        // ask with, and the detail page has its card server-rendered. So
-        // the target is always inside the hub's <h2>-headed "My
-        // favourites" section, and the card that failed was an h3.
+        // ask with, and the detail page has its card server-rendered.
+        //
+        // h2, matching what the server would have sent for the same
+        // request — apps.favourites.views.favourite_card passes
+        // heading_tag="h2" for exactly this panel. Both were h3 while the
+        // panel lived inside the account hub's <h2>-headed "Favourites"
+        // section; SNOW-668 made the page's <h1> the only heading above it.
         if (!target) return;
         target.textContent = '';
-        target.appendChild(renderOfflineCard(record, 'h3'));
+        target.appendChild(renderOfflineCard(record, 'h2'));
       }
     } catch (_e) {
       // Non-fatal — leave HTMX's own failure state in place.

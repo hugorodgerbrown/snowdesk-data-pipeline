@@ -223,12 +223,19 @@ describe('the stand-in card ranks its title like the server card', () => {
    * the same slot, so it takes the same heading level the server would
    * have sent — otherwise a pin's outline depth would depend on whether
    * the request reached the server. The server picks by caller
-   * (``heading_tag``); this module picks by where it is painting.
+   * (``heading_tag``); this module used to pick by where it was painting.
+   *
+   * It no longer branches, and that is the assertion: SNOW-668 moved the
+   * account surface out of a <section> inside the account hub — headed by
+   * an <h2>, which the old h3 ranked under — and onto /account/favourites/,
+   * whose <h1> is the only heading above the list. Both surfaces are now a
+   * card under a non-heading or a page title, so both are h2, and
+   * apps.favourites.views.favourite_card sends h2 to match.
    */
 
   const CARD_PATH = '/favourites/partials/fav-a/card/';
 
-  it('is an h3 in the account hub list, under the "My favourites" h2', async () => {
+  it('is an h2 on /account/favourites/, whose h1 is the only heading above it', async () => {
     await replayRoster([record('fav-a', 'Verbier')]);
     const target = document.createElement('div');
     document.body.appendChild(target);
@@ -236,10 +243,10 @@ describe('the stand-in card ranks its title like the server card', () => {
     await failListRequest(target);
 
     const title = target.querySelector('[data-testid="favourite-card-title"]');
-    expect(title.tagName).toBe('H3');
+    expect(title.tagName).toBe('H2');
   });
 
-  it('is an h2 in the map sheet, whose panel title is not a heading', async () => {
+  it('is an h2 in the map sheet too, whose panel title is not a heading', async () => {
     await replayRoster([record('fav-a', 'Verbier')]);
     // The map swaps the same endpoint's ?variant=map response into this
     // container (static/js/favourites.js), inside a panel headed by a
@@ -254,7 +261,7 @@ describe('the stand-in card ranks its title like the server card', () => {
     expect(title.tagName).toBe('H2');
   });
 
-  it('is an h3 for a failed single-card request — only the hub asks for one', async () => {
+  it('is an h2 for a failed single-card request — only the page asks for one', async () => {
     await replayRoster([record('fav-a', 'Verbier')]);
     const target = document.createElement('div');
     document.body.appendChild(target);
@@ -269,7 +276,7 @@ describe('the stand-in card ranks its title like the server card', () => {
     );
 
     const title = target.querySelector('[data-testid="favourite-card-title"]');
-    expect(title.tagName).toBe('H3');
+    expect(title.tagName).toBe('H2');
   });
 });
 

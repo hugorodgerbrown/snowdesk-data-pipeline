@@ -102,23 +102,28 @@ whichever level is picked:
                           page header above the card), so an ``h2`` here
                           would leave a page whose outline starts at
                           level 2.
-  the account hub panel   apps.favourites.views.favourite_card, hx-getting
+  the account page panel  apps.favourites.views.favourite_card, hx-getting
                           this card into the panel under the row that
-                          asked for it. That panel sits inside the hub's
-                          "My favourites" ``<section>``, whose own heading
-                          is an ``h2`` — so one favourite's title is an
-                          ``h3``, ranked under the section that lists it
-                          rather than beside it.
+                          asked for it, on /account/favourites/. The only
+                          heading above that panel is the page's ``h1``, so
+                          one favourite's title is an ``h2``.
+
+                          It was an ``h3`` until SNOW-668, when this list
+                          was a ``<section>`` inside the account hub headed
+                          by an ``h2`` eyebrow: the card ranked under the
+                          section that listed it rather than beside it.
+                          Giving the list a page of its own removed the
+                          intervening heading, and the rank moved with it.
 
 The default is ``h2`` — the right answer for a card painted into a page
-with an ``h1`` and no intervening section heading, which is what a third
-caller would most likely be. The map's favourites panel is NOT such a
+with an ``h1`` and no intervening section heading, which both callers above
+now are apart from the detail page. The map's favourites panel is NOT a
 caller: it renders the row (_favourite.html) with ``hide_disclosure``, so
 no card is ever fetched there. What the map does paint is
 static/js/favourites_offline.js's stand-in card when the list request
-fails, and that one keeps ``h2`` — the map panel's own title is a
+fails, and that one is ``h2`` too — the map panel's own title is a
 ``<span>`` (includes/_sheet_header.html), not a heading, so a card in it
-has no section heading to rank under.
+has no section heading to rank under either.
 {% endcomment %}
 <div
     id="favourite-card-{{ favourite.uuid }}"

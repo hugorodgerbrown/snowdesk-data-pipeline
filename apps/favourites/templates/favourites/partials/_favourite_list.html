@@ -3,10 +3,12 @@
 favourites/partials/_favourite_list.html — Owner favourites list, account
 page.
 
-Rendered by apps.favourites.views.favourite_list for /account/, which
-lazy-loads it into its "My favourites" section via hx-get on page load
-(SNOW-415). The map sheet gets the leaner _favourite_list_map.html instead
-(``?variant=map``) — see that file's header for what it drops and why.
+Rendered by apps.favourites.views.favourite_list for
+/account/favourites/, which lazy-loads it via hx-get on page load
+(SNOW-415; the page was a "Favourites" section on the account hub until
+SNOW-668 gave it one of its own). The map sheet gets the leaner
+_favourite_list_map.html instead (``?variant=map``) — see that file's
+header for what it drops and why.
 
 Both variants now loop over the same row (_favourite.html), which is the
 point of SNOW-711: until then this list carried a bordered box with an
@@ -71,12 +73,14 @@ Context:
     {% if not favourites %}
         {% comment %}
             SNOW-705: the same quiet card the hub's empty-subscriptions
-            state uses, rather than a bare paragraph. This list renders
-            directly under that one on /account/, so a brand-new user —
-            no subscriptions, no favourites — saw the page's two empty
-            states given two different treatments: one a centred card,
-            one an unstyled line of text that read as a rendering fault
-            rather than an intended state.
+            state uses, rather than a bare paragraph. The two lists
+            shared a page then, so a brand-new user — no subscriptions,
+            no favourites — saw its two empty states given two different
+            treatments: one a centred card, one an unstyled line of text
+            that read as a rendering fault rather than an intended state.
+            They are two pages since SNOW-668 and never appear together,
+            which is a reason to keep one treatment, not to drop it: a
+            user meets both within one visit to the account area.
         {% endcomment %}
         {% card padding="px-6 py-8" center=True %}
         <p class="text-sm text-text-2" data-testid="favourite-list-empty">
@@ -85,7 +89,7 @@ Context:
         {% endcard %}
     {% endif %}
 
-    {# Plain navigation off the account page, so a link is the right element. #}
+    {# Plain navigation off /account/favourites/, so a link is the right one. #}
     {# The map sheet's variant drops it: there it would point at the page the #}
     {# user is already on, and the sheet's own "Display on the map"           #}
     {# switch is the control that actually changes what the map shows.        #}

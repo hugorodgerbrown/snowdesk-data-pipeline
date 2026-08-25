@@ -35,10 +35,12 @@ Covers:
                     Cache-Control: private, no-store.
   card heading rank — the card's title states its own level per caller
                     (``heading_tag``): ``h1`` on favourite_detail (the pin's
-                    name IS that page, which carries no other heading),
-                    ``h3`` on the account hub's hx-get panel (it ranks under
-                    the "My favourites" ``h2``, not beside it), ``h2`` by
-                    default; the size is ``text-lg`` in every case.
+                    name IS that page, which carries no other heading), and
+                    ``h2`` on /account/favourites/'s hx-get panel, whose
+                    page ``h1`` is the only heading above it. It was ``h3``
+                    there until SNOW-668, when the list was a ``<section>``
+                    on the account hub headed by an ``h2`` eyebrow. The size
+                    is ``text-lg`` in every case.
   favourite_card problems — elevation-aware avalanche-problem highlighting
                     (SNOW-422): a region + today's bulletin renders one
                     rating-block per problem card plus an altitude-relevance
@@ -1191,10 +1193,16 @@ class TestFavouriteCardHeadingRank:
 
     One partial, two callers at two depths, so the level is the caller's
     to state (``heading_tag``) and the size never moves — ``text-lg`` in
-    both cases. The card was a fixed ``<h2>`` before this: correct for
-    neither caller, since the full page then had no ``<h1>`` at all, and
-    the hub panel put a single pin's title level with the "My favourites"
-    section heading that contains it.
+    both cases. The card was a fixed ``<h2>`` before SNOW-507: correct for
+    neither caller then, since the full page had no ``<h1>`` at all and the
+    account hub's panel put a single pin's title level with the
+    "Favourites" section heading that contained it.
+
+    The panel's own rank has since moved from ``h3`` to ``h2``, and not
+    because the card changed: SNOW-668 lifted the list out of that section
+    onto /account/favourites/, where the page ``<h1>`` is the only heading
+    above it. static/js/favourites_offline.js paints its offline stand-in
+    into the same slot and matches, so the two are changed together.
     """
 
     def _title_tag(self, content: str) -> str:
@@ -1226,15 +1234,23 @@ class TestFavouriteCardHeadingRank:
 
         assert self._title_tag(content) == "h1"
 
-    def test_hub_panel_title_is_an_h3(self, client: Client) -> None:
-        """The hx-get card is an h3 — it ranks under "My favourites", not beside it."""
+    def test_account_page_panel_title_is_an_h2(self, client: Client) -> None:
+        """The hx-get card is an h2 — the page's own h1 is all that outranks it.
+
+        It was an h3 while this list was a section inside the account hub,
+        ranking under that section's eyebrow heading. SNOW-668 gave the list
+        a page, which removed the intervening heading — and the offline
+        stand-in in static/js/favourites_offline.js moved with it, because a
+        pin's outline depth must not depend on whether the request reached
+        the server.
+        """
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="My spot")
 
         content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
 
-        assert self._title_tag(content) == "h3"
+        assert self._title_tag(content) == "h2"
 
     def test_the_rank_is_the_only_thing_that_changes(self, client: Client) -> None:
         """Both callers draw the same title at the same size — this is not a visual change."""

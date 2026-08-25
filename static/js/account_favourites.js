@@ -2,11 +2,12 @@
  * static/js/account_favourites.js — the account page's favourites list
  * (SNOW-711).
  *
- * /account/ lazy-loads favourites:list into its "My favourites" section and
- * gets the same row the map panels render (favourites/partials/
- * _favourite.html) — a label, a pencil, a trash, and one thing the map row
- * has not: a trailing chevron that expands the pin's detail card under its
- * own row. This module is the two behaviours that row needs on this page.
+ * /account/favourites/ lazy-loads favourites:list — it was a section at the
+ * foot of /account/ until SNOW-668 — and gets the same row the map panels
+ * render (favourites/partials/_favourite.html): a label, a pencil, a trash,
+ * and one thing the map row has not, a trailing chevron that expands the
+ * pin's detail card under its own row. This module is the two behaviours
+ * that row needs on this page.
  *
  * 1 — RENAME. The pencil turns the label into an inline edit
  * (window.pwaInlineRename) and window.pwaRowRenameCommit posts the
