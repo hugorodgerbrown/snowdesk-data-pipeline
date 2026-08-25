@@ -1,8 +1,8 @@
 ---
 name: account-area-navigation-lives-in-the-nav-menu
-description: The account area has no sub-nav, tab strip or hub heading — the vertical nav dropdown is its navigation and each section is a sibling page
+description: No sub-nav or tab strip on /account/ pages — the nav.html dropdown is the area's only navigation, and a new page needs a menu entry
 status: current
-last-reviewed: 2026-08-23
+last-reviewed: 2026-08-25
 ---
 
 # Account-area navigation lives in the nav menu
@@ -11,13 +11,14 @@ last-reviewed: 2026-08-23
 own** — no tab strip, no segmented control, no group headings above the
 content. Navigation between them is the subscriber dropdown in
 `templates/includes/nav.html`. Each account section is its own page, listed
-there: Settings today, and Favourites, Routes, Observations and
-Subscriptions as SNOW-668, SNOW-677 and their successors split them out of
-the hub. Adding a destination is adding one `<a>` to that list.
+there — Subscriptions, Favourites, Routes, Observations, Settings, in that
+order, since SNOW-668 completed the list. Adding a destination is adding one
+`<a>` to it, plus an assertion in `tests/public/test_nav_partial.py`.
 
-The hub at `/account/` carries an `sr-only` `<h1>` and no visible page
-heading. Its sections are peer `_eyebrow` labels, the same primitive the
-settings page uses for its groups.
+Every account page carries a visible `<h1>` naming itself. The hub's was
+`sr-only` between SNOW-705 and SNOW-668 for a reason that has since gone:
+it held subscriptions *and* favourites, summarised neither, and so had no
+honest name. One list per page restored one.
 
 **Why.** Two horizontal sub-navs were built for this area and both were
 removed. SNOW-667 grouped two links under two eyebrow headings and spent
@@ -41,10 +42,11 @@ above the content of the pages it points at. A second surface duplicating it
 was never earning its keep — least of all on a phone, where the strip's cost
 is highest and the menu is one tap away.
 
-There was also nothing to navigate *between*. The area has two pages, one of
-which — the hub — summarises nothing: it is two lists of saved things, so
-"Overview" named the slot rather than the contents. The page audit of
-2026-08-23 reached the same read independently: *"the account area is a
+There was also nothing to navigate *between* at the time. The area had two
+pages, one of which — the hub — summarised nothing: it was two lists of
+saved things, so "Overview" named the slot rather than the contents. (It is
+five pages now, and the conclusion holds: the menu simply lists five.) The
+page audit of 2026-08-23 reached the same read independently: *"the account area is a
 settings screen with a hub in front of it."* SNOW-705's own ticket named the
 trap — *"Building the container before its contents was the mistake"* — and
 the honest answer to "grouped or flat?" turned out to be *neither, yet*.
@@ -54,15 +56,25 @@ the honest answer to "grouped or flat?" turned out to be *neither, yet*.
 - **Do not add a sub-nav, tab strip or breadcrumb to `/account/` pages.**
   `tests/accounts/test_account_layout.py::TestNoSubNav` fails if one appears.
   A third attempt will look like an improvement; read this file first.
-- **The nav dropdown's Settings entry is load-bearing**, not the placeholder
-  SNOW-667 labelled it. It is the only route to `/account/settings/`.
+- **Every entry in the dropdown is load-bearing**, not a placeholder — each
+  is the only route to the page it names. SNOW-677 and SNOW-713 proved the
+  converse the hard way: `/account/observations/` and `/account/routes/`
+  both shipped mounted, covered by passing tests and reachable only by
+  typing the URL, because those tests reverse the URL rather than following
+  a link. **A new account page is not done until it has a menu entry and an
+  assertion for that entry** in `tests/public/test_nav_partial.py`
+  (SNOW-668).
+- **A flag-gated page needs a flag-gated entry.** `my_routes` answers 404
+  when `routes` is inactive, so the Routes entry is wrapped in
+  `routes_visible`, injected by `apps.accounts.context_processors` because
+  `nav.html` renders on pages that pass no context of their own.
 - **New account sections are new pages plus one menu entry.** They do not
   need a navigation design, a label-length budget, or a decision about
-  grouping. SNOW-677 is free to call its page "Observations".
-- **No page-level heading is added to the hub** to fill the gap the strip
-  left. Nothing there summarises anything; the menu named the destination on
-  the way in.
-- If the menu itself grows past roughly seven or eight entries — subscribed
-  regions plus every account section plus sign-out — it becomes long enough
-  to need grouping, and *that* is the point to revisit this. Grouping a
-  vertical list is cheap; it was only ever expensive horizontally.
+  grouping.
+- **Each page names itself in a visible `<h1>`.** The hub's was hidden only
+  while it held two unrelated lists (see above); that is not a rule for the
+  area.
+- The menu is now at or near the size this decision named as the point to
+  revisit: up to three subscribed regions, five account entries and sign
+  out. Grouping a vertical list is cheap — it was only ever expensive
+  horizontally — so revisiting means adding rules, not rebuilding a strip.

@@ -20,15 +20,17 @@ That partial's five parts are map furniture — a roundel icon in its header, a
 bounded scroll region, and a "show on the map" toggle at its foot — and none
 of the three is true of a page. The page-level treatment here is the one the
 account area already uses for its own lists: heading, muted context line,
-then the rows (see the "My favourites" section of accounts/hub.html).
+then the rows (see accounts/favourites.html, which SNOW-668 lifted out of a
+"Favourites" section on accounts/hub.html).
 
 Rows are not cards, so the list is not wrapped in one: each row draws its own
 hairline via includes/_ugc_panel_row.html's `border-t`.
 
-Navigation: this page has no menu entry yet. SNOW-705 is designing the
-account area's navigation and owns the nav.html change, so the link is
-deliberately not added here — reaching this page means typing the URL until
-that lands. Do not add a sub-nav: the account area is not getting one.
+Navigation: the nav avatar menu (templates/includes/nav.html), which SNOW-668
+gave its final shape. This page shipped with no inbound link anywhere — the
+entry was left to SNOW-705, which then decided the area's navigation without
+adding one — so for two tickets the only way here was typing the URL. Do not
+add a sub-nav: the account area is not getting one.
 {% endcomment %}
 {% load i18n static %}
 
@@ -85,8 +87,8 @@ that lands. Do not add a sub-nav: the account area is not getting one.
 
             {% comment %}
                 Rendered server-side rather than lazy-loaded by hx-get, which
-                is how the hub reaches its favourites list. The hub does that
-                because that list feeds the offline roster from its response
+                is how /account/favourites/ reaches its list. That page does
+                it because the list feeds the offline roster from its response
                 sidecars; this page has no such consumer, so a second
                 round-trip would buy nothing and would leave the page briefly
                 claiming "Loading…" for content the view already has.

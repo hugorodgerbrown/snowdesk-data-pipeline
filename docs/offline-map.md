@@ -448,7 +448,7 @@ that gate, and its scope is narrow by design: `change_email_view`
 already applies `never_cache` to every admin view — which counts here
 because `templates/admin/base_site.html` registers this same worker on
 the admin. `manage_view` deliberately does **not** carry it; guard 2 is
-what holds that page, and "The manage page is partitioned, not excluded"
+what holds that page, and "The account pages are partitioned, not excluded"
 below is the reason it has to.
 
 **2. Every cached navigation carries an `X-SW-Principal` header** naming
@@ -510,19 +510,23 @@ shown when nothing else can be.
   serve. It is a mutation form and nothing needs it offline, so that
   costs no feature.
 
-#### The manage page is partitioned, not excluded
+#### The account pages are partitioned, not excluded
 
-`/account/manage/` **is** written to the shell cache, stamped with the
-account it was rendered for, and served offline to that account alone. It
-is the one authenticated page held in a shared cache on purpose, and the
-`X-SW-Principal` stamp is what makes holding it safe.
+The account pages **are** written to the shell cache, stamped with the
+account they were rendered for, and served offline to that account alone.
+They are the authenticated pages held in a shared cache on purpose, and
+the `X-SW-Principal` stamp is what makes holding them safe.
 
-`@never_cache` on `manage_view` was the first shape of this fix and was
-backed out. The offline favourites roster is built on the manage page
-being in the shell cache, so `no-store` took a shipped feature offline
-with it — `tests/e2e/test_favourites_offline.py` fails both
-`test_offline_reload_repaints_favourites_list_from_cache` and
-`test_offline_expired_rating_shows_expired_not_stale_chip` under it.
+The page this actually turns on is whichever one hosts the favourites
+list: `/account/manage/` when this was written, then the favourites
+section of `/account/`, and since SNOW-668 `/account/favourites/`
+(`apps.accounts.views.favourites_view`).
+
+`@never_cache` was the first shape of this fix and was backed out. The
+offline favourites roster is built on that page being in the shell cache,
+so `no-store` took a shipped feature offline with it. The guard is now
+`tests/accounts/test_favourites_page.py::TestFavouritesPageCaching`, which
+fails the moment that page answers `no-store`.
 Guard 2 already closes the leak on its own: a page stamped for user A is
 refused to anyone whose current principal is not A, which is the whole
 of what C1 asked for. Cache-**partitioned**, not cache-**avoided** — the
@@ -2349,10 +2353,11 @@ underlying PNGs.
   the module docstring).
 - `tests/accounts/test_views.py::test_response_is_not_no_store`
   (SNOW-607, `tox -e test`) — the server-side half of the same choice:
-  `/account/manage/` must not answer `no-store`. It guards the round
-  trip described under "The manage page is partitioned, not excluded"
-  above, where re-adding `@never_cache` silently takes the two
-  `tests/e2e/test_favourites_offline.py` cases with it.
+  `/account/` must not answer `no-store`. Its twin for the page that
+  actually hosts the roster is
+  `tests/accounts/test_favourites_page.py::TestFavouritesPageCaching`
+  (SNOW-668), and that is the one re-adding `@never_cache` would take the
+  offline favourites reads with.
 
 Beyond `test_sw.js`'s sandboxed helpers there are no unit tests for the
 SW's lifecycle behaviour — install/activate/claim run inside a browser

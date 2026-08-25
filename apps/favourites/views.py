@@ -3,7 +3,7 @@ apps/favourites/views.py — HTMX endpoints + GeoJSON layer for the favourites a
 
 Provides five HTMX-only fragment views and one plain-JSON endpoint used by
 the map page's saved-pins feature (SNOW-413) and the favourite detail card
-/ manage-page list (SNOW-415):
+/ account-page list (SNOW-415):
 
 - ``favourite_create`` (POST) — validates lat/lon/name, creates a
   Favourite, returns the saved-pin partial.
@@ -28,7 +28,8 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   (``/favourites/<uuid>/``) rather than an HTMX-only fragment. Shares its
   context-building with ``favourite_card`` via ``_favourite_card_context``.
 - ``favourite_list`` (GET) — the requesting user's own favourites,
-  rendered for the manage page's "My favourites" section (SNOW-415).
+  rendered for /account/favourites/ (SNOW-415, moved off the account
+  hub by SNOW-668) and, as ``?variant=map``, for the map sheet.
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
@@ -108,8 +109,8 @@ _NAME_MAX_LENGTH = 100
 
 # SNOW-658: favourite_list serves two surfaces. The ``variant`` query
 # parameter selects a template out of this fixed map — an unknown (or
-# absent) value falls back to the manage-page default, so nothing a caller
-# sends ever reaches a template path.
+# absent) value falls back to the account page's default, so nothing a
+# caller sends ever reaches a template path.
 _LIST_TEMPLATE_DEFAULT = "favourites/partials/_favourite_list.html"
 _LIST_TEMPLATES = {
     FAVOURITE_LIST_MAP_VARIANT: "favourites/partials/_favourite_list_map.html",
@@ -712,7 +713,7 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     pin for offline reads. Context-building is shared with
     ``favourite_detail`` (SNOW-507) via ``_favourite_card_context``.
 
-    Renders the card's title as an ``<h3>`` — see the inline note below;
+    Renders the card's title as an ``<h2>`` — see the inline note below;
     the full-page caller ranks the same title differently.
 
     Args:
@@ -738,15 +739,24 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     context, generated_at, unsafe_after = _favourite_card_context(
         favourite, timezone.now(), timezone.localdate()
     )
-    # This endpoint has exactly one surface: the account hub's per-row
-    # disclosure panel. That panel sits inside the hub's "My favourites"
-    # <section>, whose heading is an <h2>, so a single favourite's title is
-    # an <h3> — ranked under the section that lists it rather than beside
-    # it. The map's favourites panel never reaches here: its rows are
-    # rendered with ``hide_disclosure``, so no chevron ever asks for a card.
-    # The partial defaults to <h2>; favourite_detail passes <h1> for its own
-    # page. See _favourite_card.html's "WHO OWNS THE TITLE'S RANK".
-    context["heading_tag"] = "h3"
+    # This endpoint has exactly one surface: the per-row disclosure panel on
+    # /account/favourites/. The only heading above that panel is the page's
+    # own <h1>, so a single favourite's title is an <h2>.
+    #
+    # It was an <h3> until SNOW-668, and correctly so: the panel sat inside
+    # the account hub's "Favourites" <section>, whose _eyebrow heading is an
+    # <h2>, and a card ranked beside its own section heading would have been
+    # wrong. Moving the list to a page of its own removed that intervening
+    # heading, so the rank moved with it — as did the stand-in card
+    # static/js/favourites_offline.js paints into this same panel offline,
+    # which has to match what this endpoint would have sent.
+    #
+    # The map's favourites panel never reaches here: its rows are rendered
+    # with ``hide_disclosure``, so no chevron ever asks for a card. The
+    # partial's default is <h2> and favourite_detail passes <h1> for its own
+    # page; this stays explicit because the rank is the caller's to state.
+    # See _favourite_card.html's "WHO OWNS THE TITLE'S RANK".
+    context["heading_tag"] = "h2"
     response = render(request, "favourites/partials/_favourite_card.html", context)
     return apply_freshness_headers(response, generated_at, unsafe_after=unsafe_after)
 
@@ -808,13 +818,13 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     """Render the requesting user's own favourites list partial.
 
     Powers two surfaces from one endpoint, chosen by the ``variant`` query
-    parameter: the manage page's "My favourites" section, which lazy-loads
-    this endpoint via ``hx-get`` on page load (no parameter), and the map
-    sheet's favourites panel (``?variant=map``, SNOW-658), which gets the
-    leaner ``_favourite_list_map.html`` — no row disclosure, no
-    "view on the map" link. Anything other than a known variant falls back
-    to the manage-page template; the value picks a template out of a fixed
-    map, it is never interpolated into a template path.
+    parameter: ``/account/favourites/``, which lazy-loads this endpoint via
+    ``hx-get`` on page load (no parameter), and the map sheet's favourites
+    panel (``?variant=map``, SNOW-658), which gets the leaner
+    ``_favourite_list_map.html`` — no row disclosure, no "view on the map"
+    link. Anything other than a known variant falls back to the account
+    page's template; the value picks a template out of a fixed map, it is
+    never interpolated into a template path.
 
     Batches today's ``RegionDayRating`` lookup for every favourite's
     region into a single query (never N+1 as the favourite count grows),

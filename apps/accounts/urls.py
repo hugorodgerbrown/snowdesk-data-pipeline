@@ -9,6 +9,7 @@ URL map
 -------
 /account/                             hub                    GET  — account hub (authed)
 /account/settings/                    settings               GET  — settings (authed)
+/account/favourites/                  favourites             GET  — own pins (authed)
 /account/observations/                observations           GET  — own reports (authed)
 /account/routes/                      routes                 GET  — own routes (authed)
 /account/subscribe/                   subscribe              POST-only HTMX form
@@ -50,6 +51,12 @@ urlpatterns = [
     # transparent to templates.
     path("", views.hub_view, name="hub"),
     path("settings/", views.settings_view, name="settings"),
+    # SNOW-668: favourites were a lazy-loaded section on the hub (SNOW-415)
+    # until this route existed. The view lives in this app, not in
+    # apps.favourites, because it is a page of the account area that happens
+    # to host that app's list partial — the boundary is the URL name the
+    # template reverses, and nothing is imported across it.
+    path("favourites/", views.favourites_view, name="favourites"),
     # SNOW-677 / SNOW-713: these two account pages are mounted here because
     # this app owns the ``/account/`` prefix, while each view lives in the app
     # that owns its model. Splitting one URL prefix across two urls.py files

@@ -1410,24 +1410,32 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# hub_view / settings_view — the account area (SNOW-667)
+# hub_view / settings_view / favourites_view — the account area (SNOW-667)
 # ---------------------------------------------------------------------------
 #
-# These two replace the former ``manage_view``, a single page that had
+# These replace the former ``manage_view``, a single page that had
 # accumulated nine unranked sections. The split is by what the user is doing:
-# the hub holds their own data, settings holds everything they can change
-# about the account itself. ``/account/manage/`` is now a permanent redirect
-# to the hub (see urls.py).
+# the hub holds their subscriptions, favourites holds their saved pins, and
+# settings holds everything they can change about the account itself.
+# ``/account/manage/`` is now a permanent redirect to the hub (see urls.py).
 #
-# Neither view is ``@never_cache``, and that is deliberate — see
+# SNOW-668 added the third: favourites had been a lazy-loaded section at the
+# foot of the hub since SNOW-415, which left the hub a page with no honest
+# name for itself. It is the Subscriptions page now.
+#
+# None of the three is ``@never_cache``, and that is deliberate — see
 # ``_ACCOUNT_PAGE_CACHE_NOTE`` below.
 
 _ACCOUNT_PAGE_CACHE_NOTE = """
 Deliberately NOT ``@never_cache``, unlike ``change_email_view`` (C1,
 ``docs/code-reviews/2026-08-03-js-review.md``). These pages render the
 signed-in user's own data, so they must never be served to anyone else — but
-the offline favourites roster is built on the hub being in the PWA shell
-cache, so ``no-store`` would break a shipped feature. The ``X-SW-Principal``
+the offline favourites roster is built on ``/account/favourites/``
+(``favourites_view``) being in the PWA shell cache, so ``no-store`` would
+break a shipped feature. SNOW-668 moved that dependency off the hub with the
+list itself; the hub and settings keep this posture because they render in
+the same shell under the same principal guard, not because either still
+feeds the roster. The ``X-SW-Principal``
 stamp is what makes that safe: ``_networkFirst`` in ``static/js/sw.js``
 records the account this HTML was rendered for and the offline read refuses
 an entry whose stamp is not the principal signed in now, so a sign-out or a
@@ -1440,19 +1448,23 @@ page. Cache-partitioning, not cache-avoidance — the same trade
 @require_GET
 def hub_view(request: HttpRequest) -> HttpResponse:
     """
-    Show the account hub — the user's own saved data.
+    Show ``/account/`` — the user's subscribed regions.
 
     Unauthenticated visitors are redirected to the sign-in page.  A registered
     user with no ``Subscription`` rows still sees the page (with no
     subscription cards) — this is the landing spot after registration.
 
-    Carries the subscribed-region cards and the lazy-loaded favourites panel.
-    SNOW-668 moves both to ``/account/places/`` once the unified place model
-    exists; until then the hub is where "your data" lives, so no surface is
-    unreachable mid-chain.
+    The Subscriptions page, despite the name: it carried the lazy-loaded
+    favourites panel as well until SNOW-668 gave that its own page, which is
+    what let the template's ``<h1>`` stop being sr-only. The view name, the
+    URL name and the template filename are unchanged deliberately —
+    renaming them is churn across every reverse in the codebase for no
+    user-visible gain.
 
-    Not ``@never_cache`` — the offline favourites roster depends on this page
-    reaching the PWA shell cache. See ``_ACCOUNT_PAGE_CACHE_NOTE``.
+    Not ``@never_cache``. The offline favourites roster now depends on
+    ``favourites_view`` rather than on this page, but both render inside the
+    same PWA shell and share one caching posture rather than inventing two.
+    See ``_ACCOUNT_PAGE_CACHE_NOTE``.
 
     GET: render the subscriptions dashboard (one card per subscribed
     region, with resort list and per-region remove button).
@@ -1543,6 +1555,56 @@ def settings_view(request: HttpRequest) -> HttpResponse:
             "account": _get_account(request),
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         },
+    )
+
+
+@require_GET
+def favourites_view(request: HttpRequest) -> HttpResponse:
+    """
+    Show the signed-in user's saved favourites as a page of their own.
+
+    Unauthenticated visitors are redirected to the sign-in page, as
+    ``hub_view`` and ``settings_view`` do — a page can render the way in,
+    where a fragment endpoint cannot, so this is a redirect and never a 403.
+
+    The favourites list was a lazy-loaded ``<section>`` at the bottom of the
+    hub from SNOW-415 until this ticket. Nothing renders here that
+    ``apps.favourites`` did not already render there: the template hosts
+    ``favourites:list`` by ``hx-get``, exactly as the hub did, and the view
+    queries nothing itself — that endpoint owns the batched
+    ``RegionDayRating`` lookup, the freshness headers and the offline roster
+    sidecar, and duplicating any of it here would be a second place to fix.
+
+    Deliberately NOT ``@never_cache``, and — unlike its siblings
+    ``apps.routes.views.my_routes`` and
+    ``apps.observations.views.my_observations`` — it must NOT set
+    ``Cache-Control: private, no-store`` either. Those two keep themselves
+    out of the PWA shell cache on purpose; this page is the surface the
+    offline favourites roster is read from, so the same header here would
+    silently break a shipped feature while every test still passed. See
+    ``_ACCOUNT_PAGE_CACHE_NOTE`` above for why the ``X-SW-Principal`` stamp
+    makes caching per-user HTML safe.
+
+    Context keys:
+        account — authenticated Account instance, or None for a staff user
+                  with no Account profile. Not read by the template today;
+                  supplied for parity with the hub and settings pages, whose
+                  shared partials expect it.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        Rendered ``accounts/favourites.html`` or a redirect to sign-in.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    return render(
+        request,
+        "accounts/favourites.html",
+        {"account": _get_account(request)},
     )
 
 
