@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — home is the map page, bulletin/resort/favourites/observations URLs, HTMX partial prefixes, retired AI-summary design
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-25
 ---
 
 # Snowdesk site structure
@@ -28,7 +28,7 @@ prefixes depend on this ordering — don't reorder
 
 | Route | View | Notes |
 |-------|------|-------|
-| `/` | `public.views.home` | **The interactive map.** Not a marketing landing — the map is the homepage (SNOW-314), with a dismissable `#home-intro` overlay on first visit. CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` opens the resort-coordinate editor when the `edit_map` waffle flag is active (SNOW-74/86). |
+| `/` | `public.views.home` | **The interactive map.** Not a marketing landing — the map is the homepage (SNOW-314), with a dismissable `#home-intro` overlay on first visit. CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` opens the resort-coordinate editor for a superuser (SNOW-74/86; SNOW-724 replaced its waffle flag with the equivalent Django check). |
 | `/map/` | redirect | Permanent 301 to `/`, query string forwarded, kept for old bookmarks (SNOW-344). |
 | `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
@@ -71,8 +71,8 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 - `/favourites/partials/…` — create, rename, delete, toggle, card, list
 - `/routes/partials/…` — create (multipart GPX upload), rename, delete, list.
   `list` takes `?variant=map` for the map sheet's lean row (SNOW-686); the
-  surface that reaches these is gated on the `routes` waffle flag
-  ([`docs/map-and-api.md`](map-and-api.md))
+  surface that reaches these is open to every visitor and its contents to
+  every signed-in one ([`docs/map-and-api.md`](map-and-api.md))
 - `/partials/_components/<slug>/` — component-library panels
 
 ## Non-HTML routes

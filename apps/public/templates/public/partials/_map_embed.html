@@ -86,16 +86,17 @@ Optional context:
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
     data-community-reports-url="{{ community_reports_geojson_url }}"
     data-community-reports-eligible="true"
-    {# SNOW-573: unlike community-reports, this one IS flag-gated — the URL #}
-    {# is still always rendered (the endpoint itself 404s while the flag   #}
-    {# is inactive), matching the favourites-url pattern of gating the     #}
-    {# *eligible* flag rather than omitting the attribute.                 #}
+    {# SNOW-573: the Weather overlay's data endpoint. Public and ungated   #}
+    {# since SNOW-724 retired the ``weather_layer`` flag, so — like        #}
+    {# community-reports above — there is no eligibility attribute to      #}
+    {# pair with it.                                                        #}
     data-forecast-weather-url="{{ forecast_weather_geojson_url }}"
-    data-weather-layer-eligible="{{ weather_layer_eligible|yesno:'true,false' }}"
     {# SNOW-691: the slope-angle raster's tile template. Emitted only for an  #}
-    {# eligible request — unlike the two URLs above there is no Snowdesk      #}
-    {# endpoint behind it to 404, so an ineligible page carrying the template #}
-    {# would be an invitation to install the layer anyway.                    #}
+    {# eligible request — i.e. only while settings.SLOPE_TILE_URL is set       #}
+    {# (SNOW-724 moved the gate off a waffle flag and onto the setting, which  #}
+    {# is the operator kill switch). Unlike the URLs above there is no         #}
+    {# Snowdesk endpoint behind it to 404, so an ineligible page carrying the  #}
+    {# template would be an invitation to install the layer anyway.            #}
     {% if slope_layer_eligible %}data-slope-tile-url="{{ slope_tile_url }}"{% endif %}
     data-slope-layer-eligible="{{ slope_layer_eligible|yesno:'true,false' }}"
     {# SNOW-687: saved-routes layer. The URL is omitted entirely for an     #}
@@ -103,15 +104,10 @@ Optional context:
     {# endpoint is per-user and 403s for anyone else, so there would be     #}
     {# nothing behind the attribute to fetch.                               #}
     {#                                                                      #}
-    {# TWO gates ANDed, unlike favourites, which has only the auth one:      #}
-    {# routes is also behind the ``routes`` waffle flag (routes_visible),    #}
-    {# and both the roundel and its whole surface are absent from the DOM    #}
-    {# without it. Without the flag in this expression a returning user      #}
-    {# who had the overlay switched ON before the flag was taken away        #}
-    {# would still get the lines drawn at boot, with no control anywhere on  #}
-    {# the page to switch them off again.                                    #}
-    {% if routes_visible and routes_eligible %}data-routes-url="{{ routes_geojson_url }}"{% endif %}
-    data-routes-eligible="{% if routes_visible and routes_eligible %}true{% else %}false{% endif %}"
+    {# ONE gate since SNOW-724 retired the ``routes`` rollout flag:          #}
+    {# authentication, exactly as favourites has.                            #}
+    {% if routes_eligible %}data-routes-url="{{ routes_geojson_url }}"{% endif %}
+    data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
 >
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
@@ -409,48 +405,44 @@ Optional context:
                 {# add one. Sits after the field-observation roundel and before the      #}
                 {# help "?" , which stays last (see its own note below).                 #}
                 {#                                                                       #}
-                {# Wrapped in `routes_visible` — the ``routes`` waffle flag — so the      #}
-                {# whole control is absent from the DOM for a user the feature is not    #}
-                {# open to, the way the Weather overlay's own toggle is gated on         #}
-                {# weather_layer_eligible. The surface partial that pairs with it        #}
-                {# (public/partials/_routes_surface.html, included from home.html) is    #}
-                {# gated on the same flag, so the two can never disagree.                #}
+                {# Ungated since SNOW-724 retired the ``routes`` rollout flag, as is     #}
+                {# the surface partial that pairs with it                                #}
+                {# (public/partials/_routes_surface.html, included from home.html), so   #}
+                {# the roundel can never render without the sheet it opens.              #}
                 {#                                                                       #}
-                {# Rendered regardless of AUTHENTICATION state within that gate, so a    #}
-                {# signed-out visitor sees the affordance and gets a sign-in CTA on tap  #}
-                {# (routes.js branches on data-routes-eligible, mirroring                #}
-                {# #favourite-add-btn's data-favourites-eligible anon branch).           #}
+                {# Rendered regardless of AUTHENTICATION state, so a signed-out visitor  #}
+                {# sees the affordance and gets a sign-in CTA on tap (routes.js branches #}
+                {# on data-routes-eligible, mirroring #favourite-add-btn's               #}
+                {# data-favourites-eligible anon branch).                                #}
                 {#                                                                       #}
                 {# SNOW-687: this roundel now carries `data-overlay-shown` like the       #}
                 {# other three — the routes overlay exists, and                          #}
                 {# map_roundel_overlay_state.js paints the ring here from                 #}
                 {# window.pwaRoutesOverlay.isVisible(). It said "no ring to paint yet"    #}
                 {# through SNOW-686, when there was no layer for a switch to drive.       #}
-                {% if routes_visible %}
-                    <div class="map-utility-pill map-utility-pill--route">
-                        <button
-                            id="route-add-btn"
-                            type="button"
-                            class="map-utility-button hover-affordance"
-                            data-route-create-url="{{ route_create_url }}"
-                            data-route-list-url="{{ route_list_url }}"
-                            data-route-rename-url-template="{{ route_rename_url_template }}"
-                            data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
-                            data-signin-url="{{ routes_signin_url }}"
-                            aria-label='{% trans "Your routes" %}'
-                            {# SNOW-687: see #favourite-add-btn above — same          #}
-                            {# attribute, same meaning, same painter. Server-rendered #}
-                            {# false because that is the truth with JS off.           #}
-                            data-overlay-shown="false"
-                        >
-                            {# The track glyph lives in includes/_icon_route.html — the   #}
-                            {# panel this roundel opens carries the same mark in its      #}
-                            {# header (its only identity mark), and one glyph rendered in  #}
-                            {# two places needs one source.                               #}
-                            {% include "includes/_icon_route.html" with size=18 only %}
-                        </button>
-                    </div>
-                {% endif %}
+                <div class="map-utility-pill map-utility-pill--route">
+                    <button
+                        id="route-add-btn"
+                        type="button"
+                        class="map-utility-button hover-affordance"
+                        data-route-create-url="{{ route_create_url }}"
+                        data-route-list-url="{{ route_list_url }}"
+                        data-route-rename-url-template="{{ route_rename_url_template }}"
+                        data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
+                        data-signin-url="{{ routes_signin_url }}"
+                        aria-label='{% trans "Your routes" %}'
+                        {# SNOW-687: see #favourite-add-btn above — same          #}
+                        {# attribute, same meaning, same painter. Server-rendered #}
+                        {# false because that is the truth with JS off.           #}
+                        data-overlay-shown="false"
+                    >
+                        {# The track glyph lives in includes/_icon_route.html — the   #}
+                        {# panel this roundel opens carries the same mark in its      #}
+                        {# header (its only identity mark), and one glyph rendered in  #}
+                        {# two places needs one source.                               #}
+                        {% include "includes/_icon_route.html" with size=18 only %}
+                    </button>
+                </div>
                 {# SNOW-457: help / coachmark tour roundel — the "how to use the map"    #}
                 {# affordance, moved to the BOTTOM of the stack so it sits level with    #}
                 {# the bottom-left (i) legend toggle on the shared bottom baseline.      #}
@@ -652,33 +644,28 @@ Optional context:
             {# SNOW-573: Weather overlay — a Meteocons condition symbol   #}
             {# plus the day's max temperature at each resort-anchored     #}
             {# (and, for a signed-in visitor, favourite-anchored)         #}
-            {# forecast point. Flag-gated on weather_layer; off by        #}
-            {# default. static/js/map.js disables this row (with a        #}
-            {# reason, via a second namespaced marker — see               #}
-            {# DISABLED_MARKER in map_layer_sync_status.js) for any       #}
-            {# scrubbed date outside the stored forecast window.          #}
-            {# SNOW-658: the heading and its separator sit INSIDE the      #}
-            {# flag check — this is the section's only row, so rendering   #}
-            {# them unconditionally would leave an empty "Conditions"      #}
-            {# heading for every visitor without the flag.                 #}
-            {% if weather_layer_eligible %}
-                <li role="separator" class="basemap-menu-separator"></li>
-                <li role="none" class="basemap-menu-section-label">
-                    {% trans "Conditions" %}
-                </li>
-                <li role="none">
-                    <button
-                        type="button"
-                        role="menuitemcheckbox"
-                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                        data-overlay-key="weather"
-                        aria-checked="false"
-                    >
-                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                        {% trans "Weather" %}
-                    </button>
-                </li>
-            {% endif %}
+            {# forecast point. Off by default, and rendered for every      #}
+            {# visitor since SNOW-724 retired the weather_layer flag.      #}
+            {# static/js/map.js disables this row (with a reason, via a    #}
+            {# second namespaced marker — see DISABLED_MARKER in           #}
+            {# map_layer_sync_status.js) for any scrubbed date outside     #}
+            {# the stored forecast window.                                 #}
+            <li role="separator" class="basemap-menu-separator"></li>
+            <li role="none" class="basemap-menu-section-label">
+                {% trans "Conditions" %}
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="weather"
+                    aria-checked="false"
+                >
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "Weather" %}
+                </button>
+            </li>
             {# SNOW-691: Terrain — the swisstopo slope-angle raster        #}
             {# (ch.swisstopo.hangneigung-ueber_30), banded so the 30-45°   #}
             {# range avalanches mostly release on reads at a glance. Its   #}
@@ -686,10 +673,11 @@ Optional context:
             {# a permanent property of the ground, not something that      #}
             {# changes with the day being scrubbed to.                     #}
             {#                                                              #}
-            {# Heading and separator sit INSIDE the flag check, for the     #}
-            {# reason spelled out on the Weather row above — this is the    #}
-            {# section's only row, so rendering them unconditionally would  #}
-            {# leave an empty "Terrain" heading (SNOW-658's lesson).        #}
+            {# Heading and separator sit INSIDE the eligibility check —    #}
+            {# this is the section's only row, so rendering them            #}
+            {# unconditionally would leave an empty "Terrain" heading       #}
+            {# (SNOW-658's lesson). Eligibility is settings.SLOPE_TILE_URL  #}
+            {# since SNOW-724, not a waffle flag.                           #}
             {#                                                              #}
             {# static/js/map.js disables this row, with a reason, once the  #}
             {# viewport centre leaves the raster's declared coverage        #}
@@ -961,9 +949,9 @@ Optional context:
                     </span>{% trans "Observations" %}
                 </div>
             </section>
-            {# SNOW-691: the slope-angle raster's key. Flag-gated with the   #}
-            {# layer itself — a key for something the visitor has no way to   #}
-            {# switch on is noise.                                            #}
+            {# SNOW-691: the slope-angle raster's key. Gated with the layer   #}
+            {# itself, on settings.SLOPE_TILE_URL — a key for something the    #}
+            {# visitor has no way to switch on is noise.                       #}
             {#                                                                #}
             {# The caveat is not decoration. A raster that paints nothing can #}
             {# mean two entirely different things — "under 30°" inside the    #}

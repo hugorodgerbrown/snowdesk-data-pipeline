@@ -16,7 +16,7 @@ Covers:
   - The locate-failed banner (#locate-failed-banner) and its #locate-retry CTA
     are present on / (SNOW-682).
   - GET /map/ returns 301 to / (query strings forwarded — SNOW-344).
-  - Edit-mode: /?edit=resorts + edit_map flag renders the edit panel (SNOW-344).
+  - Edit-mode: /?edit=resorts renders the edit panel for a superuser (SNOW-344).
   - Title and og:title name the Alps, not Switzerland alone (SNOW-535).
   - The meta description names all five territories and stays inside the
     ~155-character budget search results render (SNOW-535).
@@ -49,7 +49,6 @@ from django.http import HttpRequest
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from apps.public.views import (
     _community_reports_context,
@@ -64,6 +63,7 @@ from tests.factories import (
     MicroRegionFactory,
     RegionDayRatingFactory,
     SubRegionFactory,
+    UserFactory,
 )
 from tests.seeding import seed_test_dataset
 
@@ -707,33 +707,42 @@ def test_sample_bulletin_url_returns_200() -> None:
 
 @pytest.mark.django_db
 class TestHomeEditMode:
-    """SNOW-344: /?edit=resorts + edit_map flag gates the edit-resorts panel.
+    """SNOW-344: /?edit=resorts gates the edit-resorts panel on superuser.
 
     Mirrors the TestMapViewEditMode suite that previously lived against
     map_view (tests/public/test_edit_resorts_api.py). The same rules
-    apply now that home() absorbs the edit-resorts context block.
+    apply now that home() absorbs the edit-resorts context block; SNOW-724
+    swapped the ``edit_map`` waffle flag for ``request.user.is_superuser``
+    without changing the audience.
     """
 
-    @override_flag("edit_map", active=True)
-    def test_query_string_with_flag_renders_panel(self) -> None:
-        """/?edit=resorts + flag active shows the edit-resorts panel."""
+    def test_query_string_as_superuser_renders_panel(self) -> None:
+        """/?edit=resorts as a superuser shows the edit-resorts panel."""
         client = Client()
+        client.force_login(UserFactory.create(is_superuser=True))
         response = client.get(reverse("public:home") + "?edit=resorts")
         assert response.status_code == 200
         assert b"edit-resorts-panel" in response.content
 
-    @override_flag("edit_map", active=False)
-    def test_query_string_without_flag_silent_fallback(self) -> None:
-        """/?edit=resorts + flag inactive renders the normal map (no panel)."""
+    def test_query_string_as_ordinary_user_silent_fallback(self) -> None:
+        """/?edit=resorts for a non-superuser renders the normal map."""
+        client = Client()
+        client.force_login(UserFactory.create(is_staff=False))
+        response = client.get(reverse("public:home") + "?edit=resorts")
+        assert response.status_code == 200
+        assert b"edit-resorts-panel" not in response.content
+
+    def test_query_string_as_anonymous_silent_fallback(self) -> None:
+        """/?edit=resorts for an anonymous visitor renders the normal map."""
         client = Client()
         response = client.get(reverse("public:home") + "?edit=resorts")
         assert response.status_code == 200
         assert b"edit-resorts-panel" not in response.content
 
-    @override_flag("edit_map", active=True)
     def test_no_query_string_does_not_render_panel(self) -> None:
-        """Without ?edit=resorts the panel is absent even when the flag is on."""
+        """Without ?edit=resorts the panel is absent even for a superuser."""
         client = Client()
+        client.force_login(UserFactory.create(is_superuser=True))
         response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b"edit-resorts-panel" not in response.content
@@ -917,8 +926,9 @@ class TestWeatherContext:
     """Unit tests for _weather_context() (SNOW-573).
 
     Called directly (via RequestFactory) rather than through the full
-    home() round-trip — mirrors TestCommunityReportsContext above. Unlike
-    community reports, eligibility here IS a real per-request flag check.
+    home() round-trip — mirrors TestCommunityReportsContext above, which it
+    now matches in shape too: SNOW-724 retired the ``weather_layer`` flag,
+    so there is no eligibility key left to compute.
     """
 
     def _request(self) -> HttpRequest:
@@ -926,47 +936,30 @@ class TestWeatherContext:
         request.user = AnonymousUser()
         return request
 
-    @override_flag("weather_layer", active=True)
-    def test_eligible_when_flag_active(self) -> None:
-        """weather_layer_eligible is True when the flag is active."""
+    def test_carries_the_endpoint_url(self) -> None:
+        """The context is the overlay's data URL and nothing else."""
         ctx = _weather_context(self._request())
-        assert ctx["weather_layer_eligible"] is True
-        assert ctx["forecast_weather_geojson_url"] == reverse(
-            "api:forecast_weather_geojson"
-        )
-
-    @override_flag("weather_layer", active=False)
-    def test_ineligible_when_flag_inactive(self) -> None:
-        """weather_layer_eligible is False when the flag is inactive."""
-        ctx = _weather_context(self._request())
-        assert ctx["weather_layer_eligible"] is False
-        # The URL is still always present — the endpoint itself 404s while
-        # the flag is inactive, mirroring the favourites-url gating pattern.
-        assert ctx["forecast_weather_geojson_url"] == reverse(
-            "api:forecast_weather_geojson"
-        )
+        assert ctx == {
+            "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson")
+        }
 
 
 @pytest.mark.django_db
 class TestHomePageWeatherParity:
     """The Weather map overlay control renders on / per SNOW-573's rules."""
 
-    @override_flag("weather_layer", active=True)
-    def test_controls_shown_when_flag_active(self) -> None:
-        """Overlay toggle and #map URL render when the flag is active."""
+    def test_controls_shown_for_anonymous_visitor(self) -> None:
+        """Overlay toggle and #map URL render for everyone (SNOW-724)."""
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
         assert 'data-overlay-key="weather"' in content
-        assert 'data-weather-layer-eligible="true"' in content
         assert reverse("api:forecast_weather_geojson") in content
 
-    @override_flag("weather_layer", active=False)
-    def test_overlay_row_absent_when_flag_inactive(self) -> None:
-        """The menu row itself is absent (not just disabled) while the flag is off."""
+    def test_no_eligibility_attribute_is_emitted(self) -> None:
+        """The retired flag leaves no data-weather-layer-eligible behind."""
         client = Client(SERVER_NAME="localhost")
         content = client.get(reverse("public:home")).content.decode()
-        assert 'data-overlay-key="weather"' not in content
-        assert 'data-weather-layer-eligible="false"' in content
+        assert "data-weather-layer-eligible" not in content
 
 
 @pytest.mark.django_db

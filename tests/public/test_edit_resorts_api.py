@@ -4,35 +4,61 @@ tests/public/test_edit_resorts_api.py — SNOW-74 in-map resort editor.
 Covers the three endpoints introduced for the ``?edit=resorts`` mode:
 
 * ``api:resorts_geojson``           — always available; only geocoded rows.
-* ``api:edit_resorts_queue``        — flag-gated (``edit_map``);
+* ``api:edit_resorts_queue``        — superuser-only;
   queue + catalogue payload.
-* ``api:edit_resort_save``          — flag-gated (``edit_map``);
+* ``api:edit_resort_save``          — superuser-only;
   persists the placed lat/lon and the hand-curated detail fields.
-* ``api:edit_resort_create``        — flag-gated (``edit_map``);
+* ``api:edit_resort_create``        — superuser-only;
   creates a resort from a placed pin, deriving its parent region from
   that pin.
 
-The flag gate is asserted with ``@override_flag("edit_map", active=False)``
-for both edit-mode endpoints. The ``resorts_geojson`` endpoint is not
-gated. Positive-path tests force the flag on with
-``@override_flag("edit_map", active=True)`` at the class level so they
-don't rely on the seeding migration's ``superusers=True`` row (the
-default test client is anonymous).
+The three edit-mode endpoints were gated on the ``edit_map`` waffle flag
+until SNOW-724 replaced it with ``request.user.is_superuser`` — the same
+audience the flag shipped (``superusers=True``), expressed without a DB
+row. So each gate is asserted twice, on an anonymous visitor and on an
+authenticated non-superuser, and every positive path runs through
+``_superuser_client()``. The ``resorts_geojson`` endpoint is not gated.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Generator
+from typing import Any
 
 import pytest
 from django.test import Client, override_settings
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from apps.regions.forms import RESORT_DETAIL_FIELDS
 from apps.regions.models import Resort
-from tests.factories import MicroRegionFactory, ResortFactory, SubRegionFactory
+from tests.factories import (
+    MicroRegionFactory,
+    ResortFactory,
+    SubRegionFactory,
+    UserFactory,
+)
+
+
+def _superuser_client() -> Client:
+    """Return a test client signed in as a superuser.
+
+    The editor's whole audience since SNOW-724 — every positive-path test
+    below needs one, and the default ``Client()`` is anonymous.
+    """
+    client = Client()
+    client.force_login(UserFactory.create(is_superuser=True))
+    return client
+
+
+def _ordinary_client() -> Client:
+    """Return a test client signed in as an authenticated non-superuser.
+
+    The interesting negative case: being signed in is not enough.
+    """
+    client = Client()
+    client.force_login(UserFactory.create(is_staff=False))
+    return client
+
 
 # ---------------------------------------------------------------------------
 # resorts_geojson
@@ -104,24 +130,13 @@ class TestResortsGeojson:
 
 @pytest.mark.django_db
 class TestEditResortsQueue:
-    """Tests for ``GET /api/edit/resorts/queue/`` (flag-gated)."""
-
-    @pytest.fixture(autouse=True)
-    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
-        """Force ``edit_map=on`` for every test in this class.
-
-        Per-class ``@override_flag`` decoration would need a
-        ``unittest.TestCase`` subclass; with plain pytest classes we use
-        an autouse fixture that wraps each test in the context manager.
-        """
-        with override_flag("edit_map", active=True):
-            yield
+    """Tests for ``GET /api/edit/resorts/queue/`` (superuser-only)."""
 
     def test_response_shape(self) -> None:
         """SNOW-85: response carries ``all_resorts`` and ``sub_regions``."""
         ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
         ResortFactory.create(name="B")
-        client = Client()
+        client = _superuser_client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         assert resp.status_code == 200
         body = resp.json()
@@ -142,7 +157,7 @@ class TestEditResortsQueue:
         ResortFactory.create(name="aaa", region=ch4b)
         ResortFactory.create(name="mmm", region=ch4a)
         ResortFactory.create(name="bbb", region=ch4a)
-        client = Client()
+        client = _superuser_client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         body = resp.json()
         ordered = [(e["region_id"], e["name"]) for e in body["all_resorts"]]
@@ -174,7 +189,7 @@ class TestEditResortsQueue:
             name_en="",  # SLF doesn't publish an English name for this one.
             name_native="Unteres Wallis",
         )
-        client = Client()
+        client = _superuser_client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         body = resp.json()
         sub_regions = body["sub_regions"]
@@ -195,7 +210,7 @@ class TestEditResortsQueue:
             longitude=7.0,
             needs_review=True,
         )
-        client = Client()
+        client = _superuser_client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         body = resp.json()
         catalogue = {entry["id"]: entry for entry in body["all_resorts"]}
@@ -220,7 +235,7 @@ class TestEditResortsQueue:
             latitude=46.318,
             longitude=6.969,
         )
-        client = Client()
+        client = _superuser_client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         body = resp.json()
         entry = next(e for e in body["all_resorts"] if e["id"] == resort.pk)
@@ -252,7 +267,7 @@ class TestEditResortsQueue:
             typical_season_open="11-15",
             typical_season_close="04-30",
         )
-        client = Client()
+        client = _superuser_client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         entry = next(e for e in resp.json()["all_resorts"] if e["id"] == resort.pk)
         assert set(entry["details"]) == set(RESORT_DETAIL_FIELDS)
@@ -274,7 +289,7 @@ class TestEditResortsQueue:
     def test_detail_fields_are_null_when_unset(self) -> None:
         """Unset numeric detail fields serialise as null, not omitted."""
         resort = ResortFactory.create(name="Sparse")
-        client = Client()
+        client = _superuser_client()
         resp = client.get(reverse("api:edit_resorts_queue"))
         entry = next(e for e in resp.json()["all_resorts"] if e["id"] == resort.pk)
         assert entry["details"]["num_lifts"] is None
@@ -282,19 +297,27 @@ class TestEditResortsQueue:
 
 
 @pytest.mark.django_db
-class TestEditResortsQueueFlagGate:
-    """The queue endpoint must 404 when ``edit_map`` is off."""
+class TestEditResortsQueueAdminGate:
+    """The queue endpoint must 404 for anyone who is not a superuser."""
 
-    @override_flag("edit_map", active=False)
-    def test_returns_404_when_flag_inactive(self) -> None:
-        """Edit-mode endpoints 404 when the ``edit_map`` flag is inactive."""
-        client = Client()
-        resp = client.get(reverse("api:edit_resorts_queue"))
+    def test_anonymous_returns_404(self) -> None:
+        """An anonymous caller is refused, and told nothing about the URL."""
+        resp = Client().get(reverse("api:edit_resorts_queue"))
         assert resp.status_code == 404
+
+    def test_authenticated_non_superuser_returns_404(self) -> None:
+        """Signing in is not enough — SNOW-724 kept the flag's audience."""
+        resp = _ordinary_client().get(reverse("api:edit_resorts_queue"))
+        assert resp.status_code == 404
+
+    def test_superuser_returns_200(self) -> None:
+        """The other half of the gate: a superuser gets the payload."""
+        resp = _superuser_client().get(reverse("api:edit_resorts_queue"))
+        assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
-# edit_resort_save (flag-gated)
+# edit_resort_save (superuser-only)
 # ---------------------------------------------------------------------------
 
 
@@ -311,22 +334,12 @@ def _post_save(
 
 @pytest.mark.django_db
 class TestEditResortSave:
-    """Tests for ``POST /api/edit/resorts/<id>/save/`` (flag-gated)."""
-
-    @pytest.fixture(autouse=True)
-    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
-        """Force ``edit_map=on`` for every test in this class.
-
-        See :class:`TestEditResortsQueue` for why we use a fixture
-        rather than a class-level ``@override_flag``.
-        """
-        with override_flag("edit_map", active=True):
-            yield
+    """Tests for ``POST /api/edit/resorts/<id>/save/`` (superuser-only)."""
 
     def test_happy_path_writes_all_fields(self) -> None:
         """A valid POST sets coords + provenance + clears needs_review."""
         resort = ResortFactory.create(name="A", needs_review=True)
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, latitude=46.0961, longitude=7.2275)
         assert resp.status_code == 200, resp.content
 
@@ -341,21 +354,21 @@ class TestEditResortSave:
     def test_response_does_not_carry_next_in_queue(self) -> None:
         """SNOW-85 dropped auto-advance; ``next_in_queue`` is gone."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         assert "next_in_queue" not in resp.json()
 
     def test_unknown_resort_returns_404(self) -> None:
         """Posting against a non-existent resort id returns 404."""
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, 99999, latitude=46.0, longitude=7.0)
         assert resp.status_code == 404
 
     def test_invalid_json_returns_400(self) -> None:
         """A non-JSON body returns 400 invalid_json."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = client.post(
             reverse("api:edit_resort_save", args=[resort.pk]),
             data="not json",
@@ -367,7 +380,7 @@ class TestEditResortSave:
     def test_missing_lat_returns_400_invalid_coords(self) -> None:
         """Missing fields return 400 invalid_coords."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, longitude=7.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_coords"
@@ -375,7 +388,7 @@ class TestEditResortSave:
     def test_lat_out_of_swiss_bbox_returns_400_out_of_bounds(self) -> None:
         """Coordinates north of Switzerland are rejected."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, latitude=50.0, longitude=7.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "out_of_bounds"
@@ -383,7 +396,7 @@ class TestEditResortSave:
     def test_lon_out_of_swiss_bbox_returns_400_out_of_bounds(self) -> None:
         """Coordinates east of Switzerland are rejected."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, latitude=46.0, longitude=12.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "out_of_bounds"
@@ -391,7 +404,7 @@ class TestEditResortSave:
     def test_boundary_latitude_accepted(self) -> None:
         """The exact south boundary of the Swiss bbox is accepted."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         # _SWISS_BBOX = (5.9, 45.8, 10.5, 47.8).
         resp = _post_save(client, resort.pk, latitude=45.8, longitude=7.0)
         assert resp.status_code == 200
@@ -399,7 +412,7 @@ class TestEditResortSave:
     def test_save_clears_needs_review(self) -> None:
         """Saving a resort flagged for review clears the flag."""
         resort = ResortFactory.create(name="A", needs_review=True)
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         resort.refresh_from_db()
@@ -435,7 +448,7 @@ class TestEditResortSave:
             },
         )
         resort = ResortFactory.create(name="Villars-sur-Ollon", region=wrong_region)
-        client = Client()
+        client = _superuser_client()
         # Pin at lon=7.75, lat=46.25 — inside correct_region's polygon.
         resp = _post_save(client, resort.pk, latitude=46.25, longitude=7.75)
         assert resp.status_code == 200
@@ -463,7 +476,7 @@ class TestEditResortSave:
             },
         )
         resort = ResortFactory.create(name="Aigle", region=region)
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, latitude=46.318, longitude=6.969)
         assert resp.status_code == 200
         assert resp.json()["region_id"] == "CH-1111"
@@ -493,7 +506,7 @@ class TestEditResortSave:
         )
         original_region = MicroRegionFactory.create(region_id="CH-1100")
         resort = ResortFactory.create(name="Edge", region=original_region)
-        client = Client()
+        client = _superuser_client()
         # Pin in the middle of Switzerland, well outside far_region.
         resp = _post_save(client, resort.pk, latitude=46.5, longitude=7.5)
         assert resp.status_code == 200
@@ -507,16 +520,10 @@ class TestEditResortSave:
 class TestEditResortSaveDetails:
     """The hand-curated detail fields carried alongside the coordinates."""
 
-    @pytest.fixture(autouse=True)
-    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
-        """Force ``edit_map=on`` for every test in this class."""
-        with override_flag("edit_map", active=True):
-            yield
-
     def test_details_are_persisted_and_echoed(self) -> None:
         """A valid ``details`` object is written and returned in the response."""
         resort = ResortFactory.create(name="Verbier")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -560,7 +567,7 @@ class TestEditResortSaveDetails:
     def test_details_are_optional(self) -> None:
         """Omitting ``details`` entirely leaves every stored value alone."""
         resort = ResortFactory.create(name="A", num_lifts=7)
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         resort.refresh_from_db()
@@ -573,7 +580,7 @@ class TestEditResortSaveDetails:
             num_lifts=7,
             operator_name="Original Ops",
         )
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -593,7 +600,7 @@ class TestEditResortSaveDetails:
         emptied this box" arrives as ``""``.
         """
         resort = ResortFactory.create(name="A", num_lifts=7, operator_name="Ops")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -609,7 +616,7 @@ class TestEditResortSaveDetails:
     def test_string_numerics_are_coerced(self) -> None:
         """Numbers arriving as strings (what the inputs post) are coerced."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -643,7 +650,7 @@ class TestEditResortSaveDetails:
     ) -> None:
         """Each rejected field is named in the ``fields`` error map."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -659,7 +666,7 @@ class TestEditResortSaveDetails:
     def test_top_below_base_elevation_is_rejected(self) -> None:
         """A top elevation under the base elevation is a data-entry slip."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -673,7 +680,7 @@ class TestEditResortSaveDetails:
     def test_non_object_details_returns_400(self) -> None:
         """``details`` must be a JSON object."""
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -687,7 +694,7 @@ class TestEditResortSaveDetails:
     def test_rejected_details_leave_coordinates_unwritten(self) -> None:
         """A 400 on a detail field must not half-save the row."""
         resort = ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -706,7 +713,7 @@ class TestEditResortSaveDetails:
         Notably the geocode-provenance columns, which the endpoint owns.
         """
         resort = ResortFactory.create(name="A")
-        client = Client()
+        client = _superuser_client()
         resp = _post_save(
             client,
             resort.pk,
@@ -722,15 +729,20 @@ class TestEditResortSaveDetails:
 
 
 @pytest.mark.django_db
-class TestEditResortSaveFlagGate:
-    """The save endpoint must 404 when ``edit_map`` is off."""
+class TestEditResortSaveAdminGate:
+    """The save endpoint must 404 for anyone who is not a superuser."""
 
-    @override_flag("edit_map", active=False)
-    def test_returns_404_when_flag_inactive(self) -> None:
-        """Save endpoint refuses with 404 when ``edit_map`` is inactive."""
+    @pytest.mark.parametrize("client_factory", [Client, _ordinary_client])
+    def test_returns_404_and_writes_nothing(
+        self, client_factory: Any
+    ) -> None:  # mock-typing-impractical
+        """Anonymous and signed-in-but-ordinary are both refused.
+
+        The write assertion is the load-bearing half: a gate that 404s
+        after mutating the row would be no gate at all.
+        """
         resort = ResortFactory.create(name="A")
-        client = Client()
-        resp = client.post(
+        resp = client_factory().post(
             reverse("api:edit_resort_save", args=[resort.pk]),
             data=json.dumps({"latitude": 46.0, "longitude": 7.0}),
             content_type="application/json",
@@ -741,9 +753,19 @@ class TestEditResortSaveFlagGate:
         assert resort.latitude is None
         assert resort.longitude is None
 
+    def test_superuser_writes_the_row(self) -> None:
+        """The other half of the gate: a superuser's save lands."""
+        resort = ResortFactory.create(name="A")
+        resp = _post_save(
+            _superuser_client(), resort.pk, latitude=46.0961, longitude=7.2275
+        )
+        assert resp.status_code == 200
+        resort.refresh_from_db()
+        assert resort.latitude == 46.0961
+
 
 # ---------------------------------------------------------------------------
-# edit_resort_create (flag-gated)
+# edit_resort_create (superuser-only)
 # ---------------------------------------------------------------------------
 
 
@@ -776,18 +798,12 @@ def _region_with_square_boundary(region_id: str = "CH-4115") -> Any:
 
 @pytest.mark.django_db
 class TestEditResortCreate:
-    """Tests for ``POST /api/edit/resorts/create/`` (flag-gated)."""
-
-    @pytest.fixture(autouse=True)
-    def _enable_edit_map_flag(self) -> Generator[None, None, None]:
-        """Force ``edit_map=on`` for every test in this class."""
-        with override_flag("edit_map", active=True):
-            yield
+    """Tests for ``POST /api/edit/resorts/create/`` (superuser-only)."""
 
     def test_happy_path_creates_row_with_region_from_the_pin(self) -> None:
         """A valid POST inserts a resort bound to the region containing the pin."""
         region = _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client,
             name="Nouvelle Station",
@@ -812,7 +828,7 @@ class TestEditResortCreate:
     def test_response_carries_a_catalogue_entry(self) -> None:
         """The body holds every field the panel's catalogue rows need."""
         region = _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client,
             name="Nouvelle Station",
@@ -833,14 +849,14 @@ class TestEditResortCreate:
     def test_canton_is_upper_cased(self) -> None:
         """A lower-case canton is normalised so "vs" and "VS" are one value."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         _post_create(client, name="A", canton="vs", latitude=46.25, longitude=7.25)
         assert Resort.objects.get(name="A").canton == "VS"
 
     def test_details_are_persisted_in_the_same_insert(self) -> None:
         """The detail fields land on the created row without a second call."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client,
             name="Nouvelle Station",
@@ -864,7 +880,7 @@ class TestEditResortCreate:
     def test_invalid_detail_field_creates_nothing(self) -> None:
         """A rejected detail field aborts the whole create, leaving no row."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client,
             name="Nouvelle Station",
@@ -883,7 +899,7 @@ class TestEditResortCreate:
     def test_missing_name_returns_400(self) -> None:
         """A blank name is rejected — nothing else can supply it."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client, name="   ", canton="VS", latitude=46.25, longitude=7.25
         )
@@ -898,7 +914,7 @@ class TestEditResortCreate:
         """
         region = _region_with_square_boundary()
         ResortFactory.create(name="Sibling", region=region, canton="GR")
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
         assert resp.status_code == 201, resp.content
         assert Resort.objects.get(name="A").canton == "GR"
@@ -908,7 +924,7 @@ class TestEditResortCreate:
         """An explicit canton wins — border cases need the operator's answer."""
         region = _region_with_square_boundary()
         ResortFactory.create(name="Sibling", region=region, canton="GR")
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client, name="A", canton="BE/VS", latitude=46.25, longitude=7.25
         )
@@ -921,7 +937,7 @@ class TestEditResortCreate:
         ResortFactory.create(name="S1", region=region, canton="VS")
         ResortFactory.create(name="S2", region=region, canton="VS")
         ResortFactory.create(name="S3", region=region, canton="BE")
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
         assert resp.status_code == 201, resp.content
         assert Resort.objects.get(name="A").canton == "VS"
@@ -930,7 +946,7 @@ class TestEditResortCreate:
         """An empty canton on a sibling is not a value worth inheriting."""
         region = _region_with_square_boundary()
         ResortFactory.create(name="Blank", region=region, canton="")
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_identity"
@@ -939,7 +955,7 @@ class TestEditResortCreate:
     def test_omitted_canton_in_an_empty_region_returns_400(self) -> None:
         """With no sibling to read from, the endpoint has to ask."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(client, name="A", latitude=46.25, longitude=7.25)
         assert resp.status_code == 400
         body = resp.json()
@@ -950,7 +966,7 @@ class TestEditResortCreate:
 
     def test_missing_name_is_rejected_before_the_region_lookup(self) -> None:
         """Name is the one value nothing else can supply."""
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(client, canton="VS", latitude=46.25, longitude=7.25)
         assert resp.status_code == 400
         assert resp.json()["detail"] == "name is required"
@@ -958,7 +974,7 @@ class TestEditResortCreate:
     def test_over_long_name_returns_400(self) -> None:
         """A name past the column width is rejected, not truncated."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client,
             name="x" * 256,
@@ -972,7 +988,7 @@ class TestEditResortCreate:
     def test_out_of_bbox_returns_400(self) -> None:
         """Coordinates outside Switzerland are rejected before any lookup."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client, name="A", canton="VS", latitude=50.0, longitude=7.25
         )
@@ -981,7 +997,7 @@ class TestEditResortCreate:
 
     def test_invalid_json_returns_400(self) -> None:
         """A non-JSON body returns 400 invalid_json."""
-        resp = Client().post(
+        resp = _superuser_client().post(
             reverse("api:edit_resort_create"),
             data="not json",
             content_type="application/json",
@@ -992,7 +1008,7 @@ class TestEditResortCreate:
     def test_pin_outside_every_region_returns_400_no_region(self) -> None:
         """``Resort.region`` is not nullable, so a no-coverage pin is refused."""
         _region_with_square_boundary()
-        client = Client()
+        client = _superuser_client()
         # Inside the Swiss bbox but outside the one region's polygon.
         resp = _post_create(client, name="A", canton="VS", latitude=47.0, longitude=9.0)
         assert resp.status_code == 400
@@ -1003,7 +1019,7 @@ class TestEditResortCreate:
         """A second resort of the same name in one region is refused."""
         region = _region_with_square_boundary()
         ResortFactory.create(name="Verbier", region=region)
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client,
             # Case-insensitive — a double-click that re-types the name
@@ -1022,7 +1038,7 @@ class TestEditResortCreate:
         _region_with_square_boundary(region_id="CH-4115")
         other = MicroRegionFactory.create(region_id="CH-2222", boundary=None)
         ResortFactory.create(name="Fiesch", region=other)
-        client = Client()
+        client = _superuser_client()
         resp = _post_create(
             client,
             name="Fiesch",
@@ -1035,20 +1051,22 @@ class TestEditResortCreate:
 
     def test_get_is_rejected(self) -> None:
         """The endpoint is POST-only."""
-        resp = Client().get(reverse("api:edit_resort_create"))
+        resp = _superuser_client().get(reverse("api:edit_resort_create"))
         assert resp.status_code == 405
 
 
 @pytest.mark.django_db
-class TestEditResortCreateFlagGate:
-    """The create endpoint must 404 when ``edit_map`` is off."""
+class TestEditResortCreateAdminGate:
+    """The create endpoint must 404 for anyone who is not a superuser."""
 
-    @override_flag("edit_map", active=False)
-    def test_returns_404_when_flag_inactive(self) -> None:
-        """No row is created when ``edit_map`` is inactive."""
+    @pytest.mark.parametrize("client_factory", [Client, _ordinary_client])
+    def test_returns_404_and_creates_nothing(
+        self, client_factory: Any
+    ) -> None:  # mock-typing-impractical
+        """Anonymous and signed-in-but-ordinary are both refused."""
         _region_with_square_boundary()
         resp = _post_create(
-            Client(),
+            client_factory(),
             name="A",
             canton="VS",
             latitude=46.25,
@@ -1056,6 +1074,19 @@ class TestEditResortCreateFlagGate:
         )
         assert resp.status_code == 404
         assert not Resort.objects.filter(name="A").exists()
+
+    def test_superuser_creates_the_row(self) -> None:
+        """The other half of the gate: a superuser's create lands."""
+        _region_with_square_boundary()
+        resp = _post_create(
+            _superuser_client(),
+            name="A",
+            canton="VS",
+            latitude=46.25,
+            longitude=7.25,
+        )
+        assert resp.status_code == 201, resp.content
+        assert Resort.objects.filter(name="A").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -1319,33 +1350,31 @@ class TestRegionForPoint:
 
 @pytest.mark.django_db
 class TestMapViewEditMode:
-    """Boot the panel only when querystring and ``edit_map`` flag both agree.
+    """Boot the panel only when querystring and superuser bit both agree.
 
-    Both the ``?edit=resorts`` querystring **and** the ``edit_map``
-    waffle flag must be present for ``home()`` to render the
-    edit-resorts panel (SNOW-86 / SNOW-344: moved from map_view to home()).
+    Both the ``?edit=resorts`` querystring **and** ``request.user
+    .is_superuser`` must hold for ``home()`` to render the edit-resorts
+    panel (SNOW-86 / SNOW-344: moved from map_view to home(); SNOW-724
+    swapped the ``edit_map`` flag for the superuser check).
     """
 
-    @override_flag("edit_map", active=True)
-    def test_query_string_with_flag_renders_panel(self) -> None:
-        """``?edit=resorts`` + flag active shows the panel."""
-        client = Client()
-        resp = client.get(reverse("public:home") + "?edit=resorts")
+    def test_query_string_as_superuser_renders_panel(self) -> None:
+        """``?edit=resorts`` as a superuser shows the panel."""
+        resp = _superuser_client().get(reverse("public:home") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" in resp.content
 
-    @override_flag("edit_map", active=False)
-    def test_query_string_without_flag_silent_fallback(self) -> None:
-        """``?edit=resorts`` + flag inactive renders the normal map."""
-        client = Client()
-        resp = client.get(reverse("public:home") + "?edit=resorts")
+    @pytest.mark.parametrize("client_factory", [Client, _ordinary_client])
+    def test_query_string_without_superuser_silent_fallback(
+        self, client_factory: Any
+    ) -> None:  # mock-typing-impractical
+        """``?edit=resorts`` for everyone else renders the normal map."""
+        resp = client_factory().get(reverse("public:home") + "?edit=resorts")
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content
 
-    @override_flag("edit_map", active=True)
     def test_no_query_string_does_not_render_panel(self) -> None:
-        """Without the querystring, the panel is absent even when the flag is on."""
-        client = Client()
-        resp = client.get(reverse("public:home"))
+        """Without the querystring the panel is absent, even for a superuser."""
+        resp = _superuser_client().get(reverse("public:home"))
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content

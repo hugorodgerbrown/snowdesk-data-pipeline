@@ -46,8 +46,7 @@ urlpatterns = [
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
     # SNOW-573: map weather layer — resort-anchored ForecastCell weather,
-    # keyed by ISO date. The view inline-gates on the ``weather_layer``
-    # waffle flag and 404s when inactive.
+    # keyed by ISO date. Public since SNOW-724 retired its rollout flag.
     path(
         "forecast-weather.geojson",
         api.forecast_weather_geojson,
@@ -100,9 +99,9 @@ urlpatterns = [
         name="community_reports_geojson",
     ),
     # SNOW-74 — edit-resorts mode endpoints. Always registered; the
-    # views inline-gate on the ``edit_map`` waffle flag (SNOW-86) and
-    # 404 when it is inactive for the request user, so non-superusers
-    # see the same response shape they did when this was DEBUG-only.
+    # views inline-gate on ``request.user.is_superuser`` (SNOW-724) and
+    # 404 for everyone else, so non-superusers see the same response
+    # shape they did when this was DEBUG-only.
     path(
         "edit/resorts/queue/",
         api.edit_resorts_queue,

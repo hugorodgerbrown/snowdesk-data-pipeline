@@ -746,9 +746,9 @@ def home(request: HttpRequest) -> HttpResponse:
     here, so this view handles all map-page traffic.
 
     Edit mode: when ``?edit=resorts`` is in the query string **and** the
-    ``edit_map`` waffle flag is active for the request user, the page renders
-    the resort-coordinate-edit panel (SNOW-74 / SNOW-86). When the flag is
-    off the query string is silently ignored.
+    request user is a superuser, the page renders the
+    resort-coordinate-edit panel (SNOW-74 / SNOW-86; superuser check since
+    SNOW-724). For everyone else the query string is silently ignored.
 
     CH-4115 (Martigny / Verbier) is pre-selected so the readout chip and
     breadcrumb are correct on first paint (SNOW-342); the scrubber paints that
@@ -774,12 +774,10 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (edit_mode).
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
-      ``weather_layer_eligible`` — True when the ``weather_layer`` waffle
-                                flag is active for the request user (SNOW-573).
       ``forecast_weather_geojson_url`` — URL for the map Weather overlay's
                                 GeoJSON endpoint (SNOW-573).
-      ``slope_layer_eligible`` — True when the ``slope_layer`` waffle flag
-                                is active for the request user (SNOW-691).
+      ``slope_layer_eligible`` — True when ``settings.SLOPE_TILE_URL`` is
+                                configured (SNOW-691, SNOW-724).
       ``slope_tile_url``      — XYZ tile template for the slope-angle raster,
                                 or "" while ineligible (SNOW-691).
 
@@ -818,11 +816,9 @@ def home(request: HttpRequest) -> HttpResponse:
     )
 
     # SNOW-344 (merged from map_view): resort-edit mode when the querystring
-    # and the edit_map waffle flag both agree. Silently ignored when the flag
-    # is off so the URL is safe to bookmark.
-    edit_mode = request.GET.get("edit") == "resorts" and waffle.flag_is_active(
-        request, "edit_map"
-    )
+    # and the request user's superuser bit both agree. Silently ignored for
+    # everyone else so the URL is safe to bookmark.
+    edit_mode = request.GET.get("edit") == "resorts" and request.user.is_superuser
     edit_context: dict[str, Any] = {"edit_mode": edit_mode}
     if edit_mode:
         # The save URL contains an :resort_id placeholder — same trick as
@@ -1182,8 +1178,8 @@ def help_page(request: HttpRequest) -> HttpResponse:
     teaches the avalanche domain rather than the product. Named
     ``help_page`` rather than ``help`` to avoid shadowing the ``help``
     builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
-    the manage-page sync-log panel. ``weather_layer_visible`` (SNOW-573)
-    mirrors the same pattern for the map's Weather overlay.
+    the manage-page sync-log panel — the one surviving waffle flag; every
+    other topic section renders for everyone (SNOW-724).
 
     Args:
         request: The incoming HTTP request.
@@ -1194,12 +1190,6 @@ def help_page(request: HttpRequest) -> HttpResponse:
     """
     context = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
-        "weather_layer_visible": waffle.flag_is_active(request, "weather_layer"),
-        # SNOW-691: the Slope angle panel. Gated like the two above, and the
-        # map legend's "Slope angle" heading links straight to it — the
-        # layer's caveats are too long to live in the legend and too
-        # important to leave unsaid.
-        "slope_layer_visible": waffle.flag_is_active(request, "slope_layer"),
     }
     return render(request, "public/help.html", context)
 
@@ -1531,25 +1521,12 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 def _routes_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the map's saved-routes panel (SNOW-686).
 
-    TWO gates, because they answer different questions and the surface
-    branches on them at different points:
-
-    ``routes_visible`` is the ``routes`` waffle flag — seeded
-    superusers-only by ``apps.routes.migrations.0002_seed_routes_flag``.
-    While it is inactive the roundel and the whole surface are absent from
-    the DOM, the way ``weather_layer_eligible`` gates the Weather overlay.
-    That is what makes it safe to land this panel before the map layer that
-    completes it (SNOW-687): the feature is reachable by the people
-    building it and by nobody else, rather than shipping a routes list that
-    cannot draw a route to everyone in between.
-
-    ``routes_eligible`` is authentication, mirroring
-    ``favourites_eligible`` — routes.js branches on it to show the real
-    list and upload control versus an anonymous sign-in CTA. With the flag
-    seeded superusers-only that branch is not reachable in production
-    today; it is built and tested (tests/js/test_routes_panel_anonymous.js)
-    because opening the flag up to ``everyone`` is an admin toggle, not a
-    code change, and the branch has to be right the moment it is flipped.
+    ONE gate, since SNOW-724 retired the ``routes`` rollout flag that used
+    to sit in front of it: ``routes_eligible`` is authentication, mirroring
+    ``favourites_eligible``. routes.js branches on it to show the real list
+    and upload control versus an anonymous sign-in CTA
+    (tests/js/test_routes_panel_anonymous.js covers that branch), and the
+    panel itself is now in the DOM for every visitor.
 
     No ``__UUID__``-templated delete URL, unlike ``_favourites_context``. A
     route row's Remove is a plain HTMX form rendered server-side into the
@@ -1566,8 +1543,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
     homepage's query count is unmoved.
 
     Returns:
-        Dict with ``routes_visible``, ``routes_eligible``,
-        ``route_create_url``, ``route_list_url``,
+        Dict with ``routes_eligible``, ``route_create_url``,
+        ``route_list_url``,
         ``route_rename_url_template``, ``routes_geojson_url`` and
         ``routes_signin_url``.
 
@@ -1577,7 +1554,6 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
     # actually being renamed.
     dummy_uuid = uuid.UUID(int=0)
     return {
-        "routes_visible": waffle.flag_is_active(request, "routes"),
         "routes_eligible": request.user.is_authenticated,
         "route_create_url": reverse("routes:create"),
         # ``?variant=map`` asks for the sheet's lean row template — the
@@ -1615,50 +1591,46 @@ def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
 def _weather_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the map Weather overlay (SNOW-573).
 
-    Unlike favourites, eligibility here is the ``weather_layer`` waffle
-    flag, not authentication — the toggle, and the fetch it drives, must
-    not appear in the DOM at all while the flag is inactive for the
-    request user. Unlike community reports (no flag at all), this one
-    IS gated, so — unlike ``_community_reports_context`` —
-    ``weather_layer_eligible`` is a real per-request check, not a constant.
+    No eligibility split any more: SNOW-724 retired the ``weather_layer``
+    rollout flag, so the toggle and the fetch it drives are in the DOM for
+    every visitor, exactly like community reports. The ``request``
+    argument is kept for signature uniformity with the sibling
+    ``_*_context`` builders the map view composes.
 
     Args:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``weather_layer_eligible`` and
-        ``forecast_weather_geojson_url``.
+        Dict with ``forecast_weather_geojson_url``.
 
     """
-    return {
-        "weather_layer_eligible": waffle.flag_is_active(request, "weather_layer"),
-        "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson"),
-    }
+    return {"forecast_weather_geojson_url": reverse("api:forecast_weather_geojson")}
 
 
 def _slope_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the map slope-angle overlay (SNOW-691).
 
-    Gated exactly like the Weather overlay: eligibility is the
-    ``slope_layer`` waffle flag, not authentication, and the row must be
-    absent from the DOM entirely — not merely disabled — while the flag is
-    inactive.
-
-    Unlike Weather, there is no Snowdesk endpoint behind it. The tiles come
-    straight from the configured third-party WMTS origin, so the "URL" here
-    is a settings value rather than a ``reverse()``. It is emitted only for
-    an eligible request: an ineligible page has no layer to install, and a
-    tile template in its DOM would be an invitation to install one.
+    Eligibility is ``settings.SLOPE_TILE_URL`` being configured, not
+    authentication and — since SNOW-724 — no longer a waffle flag either.
+    Unlike Weather, there is no Snowdesk endpoint behind this layer: the
+    tiles come straight from a third-party WMTS origin whose licence
+    position is still open, so the setting doubles as the operator kill
+    switch the flag used to provide. Clearing ``SLOPE_TILE_URL`` in the
+    environment is a restart, not a deploy, and it takes the whole layer
+    out of the DOM — the row must be absent entirely, not merely disabled,
+    and a tile template in an ineligible page's DOM would be an invitation
+    to install a layer we just withdrew.
 
     Args:
-        request: The current HTTP request.
+        request: The current HTTP request. Unused — kept for signature
+            uniformity with the sibling ``_*_context`` builders.
 
     Returns:
         Dict with ``slope_layer_eligible`` and ``slope_tile_url`` (empty
         string while ineligible).
 
     """
-    eligible = waffle.flag_is_active(request, "slope_layer")
+    eligible = bool(settings.SLOPE_TILE_URL)
     return {
         "slope_layer_eligible": eligible,
         "slope_tile_url": settings.SLOPE_TILE_URL if eligible else "",

@@ -2,9 +2,9 @@
 apps/public/templates/public/help/_topic_slope.html — "Slope angle" panel body.
 
 Content partial for the help page (SNOW-691); included via the
-body_template parameter of includes/_collapsible_panel.html. Gated on the
-slope_layer waffle flag, mirroring the flag that gates the map overlay
-this topic documents.
+body_template parameter of includes/_collapsible_panel.html. Rendered for
+every visitor since SNOW-724 retired the slope_layer flag; the map overlay
+this topic documents is now gated only by settings.SLOPE_TILE_URL.
 
 This panel is where the layer's shortcomings live. The map legend carries
 the five class swatches and a link here, and nothing else: the caveats are

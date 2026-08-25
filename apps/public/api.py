@@ -35,10 +35,9 @@ Swiss region choropleth and back the per-region tooltip:
   ``FieldObservation`` pins from the last 48 hours (SNOW-419).
 * ``/api/offline-manifest/map/``           — precache manifest for the offline CTA.
 
-Flag-gated endpoints powering the in-map resort editor (SNOW-74,
-``?edit=resorts`` on /map/). Every one of these views checks the
-``edit_map`` waffle flag (SNOW-86) and 404s when it is inactive for the
-request user:
+Superuser-only endpoints powering the in-map resort editor (SNOW-74,
+``?edit=resorts`` on /map/). Every one of these views checks
+``request.user.is_superuser`` (SNOW-724) and 404s for everyone else:
 
 * ``GET  /api/edit/resorts/queue/``               — queue + catalogue payload.
 * ``POST /api/edit/resorts/<int:resort_id>/save/`` — persist the placed
@@ -61,7 +60,6 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
-import waffle
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError
@@ -468,17 +466,6 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
     )
 
 
-def _require_weather_layer_flag(request: HttpRequest) -> None:
-    """Raise Http404 unless the ``weather_layer`` waffle flag is active.
-
-    Mirrors ``_require_edit_map_flag`` — the inline waffle-gate pattern
-    used across this module (SNOW-573). Seeded via
-    ``apps/core/fixtures/waffle_flags.json`` / ``sync_waffle_flags``.
-    """
-    if not waffle.flag_is_active(request, "weather_layer"):
-        raise Http404("weather_layer flag is inactive for this request.")
-
-
 @cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
 @vary_on_headers("Accept-Encoding")
 def forecast_weather_geojson(request: HttpRequest) -> JsonResponse:
@@ -486,8 +473,9 @@ def forecast_weather_geojson(request: HttpRequest) -> JsonResponse:
     Return a FeatureCollection of resort-anchored forecast-point weather.
 
     Powers the map's Weather overlay (SNOW-573): a Meteocons condition
-    symbol plus the day's max temperature at each resort. Gated on the
-    ``weather_layer`` waffle flag — 404 while inactive.
+    symbol plus the day's max temperature at each resort. Public — the
+    overlay reached general availability in SNOW-724 and its rollout flag
+    was retired.
 
     **Privacy contract**: one feature per geocoded ``Resort`` with a linked
     ``forecast_point`` — never a ``ForecastCell`` reachable only from a
@@ -552,17 +540,14 @@ def forecast_weather_geojson(request: HttpRequest) -> JsonResponse:
 
     Errors:
         400 — malformed ``?d=`` date string.
-        404 — ``weather_layer`` flag inactive for this request.
 
     Args:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload, or 400/404.
+        A JsonResponse with a FeatureCollection payload, or 400.
 
     """
-    _require_weather_layer_flag(request)
-
     date_param = request.GET.get("d")
     parsed_date: date | None = None
     if date_param:
@@ -1448,22 +1433,23 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
 
 
 # ---------------------------------------------------------------------------
-# Edit-resorts mode (SNOW-74) — flag-gated on ``edit_map`` (SNOW-86)
+# Edit-resorts mode (SNOW-74) — superuser-only (SNOW-724)
 # ---------------------------------------------------------------------------
 
 
-def _require_edit_map_flag(request: HttpRequest) -> None:
-    """Raise Http404 unless the ``edit_map`` waffle flag is active.
+def _require_edit_map_admin(request: HttpRequest) -> None:
+    """Raise Http404 unless the request user is a superuser.
 
     Mirrors the view-level guard ``map_view`` applies before rendering
     the editor panel: an unauthorised caller hitting the API directly
     must see the same 404 the URL conf used to give them when the
-    feature was DEBUG-only. Flag is seeded with ``superusers=True`` by
-    migration ``apps/regions/migrations/0002_seed_edit_map_flag.py``;
-    extend / disable via ``/admin/waffle/flag/edit_map/``.
+    feature was DEBUG-only. Until SNOW-724 the audience was expressed as
+    an ``edit_map`` waffle flag seeded with ``superusers=True``; that was
+    a permanent audience restriction wearing a rollout gate's clothes, so
+    the check is now an ordinary Django one and the flag is gone.
     """
-    if not waffle.flag_is_active(request, "edit_map"):
-        raise Http404("edit_map flag is inactive for this request.")
+    if not request.user.is_superuser:
+        raise Http404("The resort editor is superuser-only.")
 
 
 def _validate_swiss_coords(lat: float, lon: float) -> str | None:
@@ -1696,10 +1682,10 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     rows. Renaming the URL would require a coordinated panel-template
     + JS update for no behavioural benefit.
 
-    Returns 404 when the ``edit_map`` waffle flag is inactive for the
-    request user (SNOW-86; seeded with ``superusers=True``).
+    Returns 404 unless the request user is a superuser (SNOW-724 —
+    previously the ``edit_map`` waffle flag, seeded ``superusers=True``).
     """
-    _require_edit_map_flag(request)
+    _require_edit_map_admin(request)
     all_resorts = [
         {
             "id": row["pk"],
@@ -1938,13 +1924,13 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
     catalogue without a follow-up GET.
 
     Errors:
-        404 — ``edit_map`` waffle flag inactive, or unknown ``resort_id``.
+        404 — request user is not a superuser, or unknown ``resort_id``.
         400 — invalid JSON; missing or non-float lat/lon; coordinates
               outside the Swiss bounding box; a detail field that fails
               model validation (``{"error": "invalid_details", "fields":
               {…}}``, keyed by field name).
     """
-    _require_edit_map_flag(request)
+    _require_edit_map_admin(request)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:
@@ -2142,7 +2128,7 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
     next ``import_resorts`` reconciliation does not delete it.
 
     Errors:
-        404 — ``edit_map`` waffle flag inactive.
+        404 — request user is not a superuser.
         400 — invalid JSON; missing/blank ``name``, or an omitted
               ``canton`` the derived region cannot supply
               (``invalid_identity``); missing or non-float lat/lon;
@@ -2154,7 +2140,7 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
               (``duplicate_name``), which is nearly always a double-click
               or a re-created row rather than a genuine second resort.
     """
-    _require_edit_map_flag(request)
+    _require_edit_map_admin(request)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:

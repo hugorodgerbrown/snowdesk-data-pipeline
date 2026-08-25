@@ -6,8 +6,10 @@ Covers:
     (component library, push demo, edit map, Django admin).
   - Non-staff users (is_staff=False) do not see the admin menu element.
   - Anonymous users (AnonymousUser) do not see the admin menu element.
-  - **Every entry in the account menu**, one assertion each, plus Routes
-    appearing and disappearing with the ``routes`` waffle flag.
+  - **Every entry in the account menu**, one assertion each. Routes used
+    to appear and disappear with the ``routes`` waffle flag; SNOW-724
+    retired it, so the entry is now asserted unconditionally like its
+    siblings.
 
 That last group is not decoration. ``docs/decisions/
 account-area-navigation-lives-in-the-nav-menu.md`` makes this menu the
@@ -20,10 +22,10 @@ what stops a sixth page shipping the same way.
 
 The template is rendered in isolation via render_to_string + RequestFactory
 so no database views or URL routing are needed. ``request=`` is load-bearing
-rather than incidental: it builds a RequestContext, which is what runs
-``apps.accounts.context_processors.routes_visible`` — the flag state reaches
-this template from a processor precisely because nav.html renders on pages
-that pass no context of their own, this one included.
+rather than incidental: it builds a RequestContext, which is what runs the
+context processors nav.html depends on (``nav_subscriptions``) — this
+partial renders on pages that pass no context of their own, this one
+included.
 """
 
 from __future__ import annotations
@@ -37,7 +39,6 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.test import RequestFactory
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from tests.factories import UserFactory
 
@@ -63,10 +64,12 @@ def regular_user(db: Any) -> User:
 def _render_nav_for(rf: RequestFactory, user: User | AnonymousUser) -> str:
     """Render nav.html for one viewer and return the HTML.
 
-    Attaches a session because waffle reads one when evaluating a flag with
-    a percentage rollout, and a bare ``RequestFactory`` request has none —
-    the nav's Routes entry is flag-gated, so every render here goes through
-    ``waffle.flag_is_active``.
+    Attaches a session because a bare ``RequestFactory`` request has none
+    and a real one always does. It was load-bearing while the nav's Routes
+    entry was flag-gated — waffle reads a session when evaluating a
+    percentage rollout — and SNOW-724 removed that gate; the attach stays
+    because rendering a nav against a request no browser could send is a
+    worse test, not because a specific line needs it today.
 
     Args:
         rf: The RequestFactory building the request.
@@ -219,40 +222,27 @@ class TestNavAccountMenuEntries:
         assert positions == sorted(positions)
         assert positions[-1] < html.index(f'action="{reverse("accounts:sign_out")}"')
 
-    @override_flag("routes", active=True)
-    def test_routes_entry_present_when_the_flag_is_on(
+    def test_routes_entry_is_offered_to_every_signed_in_user(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """With ``routes`` active the menu offers /account/routes/.
+        """The signed-in menu offers /account/routes/.
 
         This is the entry SNOW-713 could not add, which is why that page
-        shipped orphaned.
+        shipped orphaned. It was flag-gated when SNOW-668 added it, because
+        ``my_routes`` answered 404 behind an inactive ``routes`` flag;
+        SNOW-724 removed both the flag and that 404, so an ordinary account
+        gets the entry and the destination it points at.
         """
         html = _render_nav_for(rf, regular_user)
         assert f'href="{reverse("accounts:routes")}"' in html
         assert "Routes" in html
 
-    @override_flag("routes", active=False)
-    def test_routes_entry_absent_when_the_flag_is_off(
-        self, rf: RequestFactory, regular_user: User
-    ) -> None:
-        """With ``routes`` inactive the entry goes with it.
-
-        ``my_routes`` answers **404** behind an inactive flag, so an
-        unconditional entry would offer every user a menu item that breaks
-        when clicked — and the flag is seeded superusers-only, so that is
-        almost everyone.
-        """
-        html = _render_nav_for(rf, regular_user)
-        assert f'href="{reverse("accounts:routes")}"' not in html
-
-    @override_flag("routes", active=True)
     def test_anonymous_sees_no_account_entries(self, rf: RequestFactory) -> None:
         """The whole menu is behind the authenticated branch.
 
-        Asserted with the flag ON, so a Routes entry that had escaped the
-        ``request.user.is_authenticated`` guard would be caught rather than
-        hidden by the flag being off anyway.
+        Routes is named in the loop below alongside its siblings: with no
+        flag left to hide it, an entry that escaped the
+        ``request.user.is_authenticated`` guard shows up here.
         """
         html = _render_nav_for(rf, AnonymousUser())
 

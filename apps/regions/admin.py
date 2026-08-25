@@ -172,9 +172,9 @@ class ResortAdmin(admin.ModelAdmin):
                 ),
                 "description": (
                     "Edit coordinates here as a fallback. The preferred way to "
-                    "set lat/lon is the in-map editor at /?edit=resorts. "
-                    "Access is gated by the ``edit_map`` waffle flag — manage "
-                    "it at /admin/waffle/flag/ (seeded with superusers=True)."
+                    "set lat/lon is the in-map editor at /?edit=resorts, "
+                    "which is open to superusers only (SNOW-724 — previously "
+                    "the ``edit_map`` waffle flag, seeded superusers=True)."
                 ),
             },
         ),

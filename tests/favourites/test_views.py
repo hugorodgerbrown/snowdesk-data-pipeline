@@ -62,10 +62,9 @@ Covers:
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; each feature carries resort_id
                         (null for a plain pin, SNOW-499) and created_at as
-                        ISO-8601 (SNOW-658); with the
-                        weather_layer flag active, each feature also
-                        carries a days property (SNOW-573) — absent when
-                        the flag is inactive.
+                        ISO-8601 (SNOW-658); every feature also carries a
+                        days property (SNOW-573), unconditionally since
+                        SNOW-724 retired the weather_layer flag.
   freshness (SNOW-418) — favourite_card / favourite_list stamp
                         X-Data-Generated-At / -Max-Age / -Unsafe-After;
                         the card's cache_payload / roster_payload
@@ -94,7 +93,6 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone as django_timezone
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
@@ -1855,8 +1853,12 @@ class TestFavouritesGeojson:
         response = client.get(GEOJSON_URL)
         assert response.status_code == 403
 
-    def test_days_absent_when_weather_layer_flag_inactive(self, client: Client) -> None:
-        """With the flag off, no feature carries a days key (SNOW-573)."""
+    def test_days_always_present(self, client: Client) -> None:
+        """Every feature carries a days key, with no flag state involved.
+
+        Replaces the pair of tests that asserted the key's presence and
+        absence either side of the ``weather_layer`` flag SNOW-724 retired.
+        """
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
@@ -1865,13 +1867,12 @@ class TestFavouritesGeojson:
             valid_for_date=datetime.date(2026, 8, 7),
         )
 
-        with override_flag("weather_layer", active=False):
-            response = client.get(GEOJSON_URL)
+        response = client.get(GEOJSON_URL)
 
-        assert "days" not in response.json()["features"][0]["properties"]
+        assert "days" in response.json()["features"][0]["properties"]
 
-    def test_days_present_when_weather_layer_flag_active(self, client: Client) -> None:
-        """With the flag on, days mirrors build_point_weather_days's shape (SNOW-573)."""
+    def test_days_shape_matches_build_point_weather_days(self, client: Client) -> None:
+        """days mirrors build_point_weather_days's shape (SNOW-573)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
@@ -1886,10 +1887,7 @@ class TestFavouritesGeojson:
             snowfall_sum=0.0,
         )
 
-        with (
-            freeze_time("2026-08-07T12:00:00Z"),
-            override_flag("weather_layer", active=True),
-        ):
+        with freeze_time("2026-08-07T12:00:00Z"):
             response = client.get(GEOJSON_URL)
 
         days = response.json()["features"][0]["properties"]["days"]
@@ -1909,8 +1907,7 @@ class TestFavouritesGeojson:
         client.force_login(user)
         FavouriteFactory.create(user=user)
 
-        with override_flag("weather_layer", active=True):
-            response = client.get(GEOJSON_URL)
+        response = client.get(GEOJSON_URL)
 
         assert response.json()["features"][0]["properties"]["days"] == {}
 
@@ -1931,8 +1928,7 @@ class TestFavouritesGeojson:
             valid_for_date=datetime.date(2026, 8, 7),
         )
 
-        with override_flag("weather_layer", active=True):
-            response = client.get(GEOJSON_URL)
+        response = client.get(GEOJSON_URL)
 
         data = response.json()
         assert len(data["features"]) == 1

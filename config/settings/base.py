@@ -239,11 +239,6 @@ TEMPLATES = [
                 "django.template.context_processors.i18n",
                 # Injects nav_subscriptions for the subscriber avatar dropdown.
                 "apps.accounts.context_processors.nav_subscriptions",
-                # SNOW-668: injects routes_visible (the ``routes`` waffle flag)
-                # so the same dropdown can drop its Routes entry when the flag
-                # is off — accounts:routes answers 404 in that case, and
-                # nav.html renders on pages that pass no context of their own.
-                "apps.accounts.context_processors.routes_visible",
                 # SNOW-549: injects PWA_USER_ID (Account.uuid) so base.html can
                 # bake the signed-in user's public identifier into the
                 # pwa-user-id meta tag the mutation queue reads as its
@@ -418,9 +413,10 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/api/ratings/",
         "/api/resorts-by-region/",
         "/api/resorts.geojson",
-        # SNOW-573: map weather layer — flag-gated (weather_layer) but
-        # publicly cacheable once active, same rationale as the rest of
-        # this set.
+        # SNOW-573: map weather layer — public, resort-anchored data,
+        # same caching rationale as the rest of this set. (It was
+        # flag-gated until SNOW-724; the exemption never depended on
+        # that, only on the response being publicly cacheable.)
         "/api/forecast-weather.geojson",
         "/api/regions.geojson",
         "/api/major-regions.geojson",
@@ -891,8 +887,10 @@ WEBAUTHN_ORIGIN = config("WEBAUTHN_ORIGIN", default="http://localhost:8000")
 # Server-side feature flagging via the ``waffle`` app. Flags target users
 # (``superusers``, ``staff``, individual ``users``, ``groups``, percentages)
 # and live in the DB; toggle them at ``/admin/waffle/flag/``. New flags are
-# introduced via a data migration in the relevant app's ``migrations/`` (see
-# ``docs/feature-flags.md`` for the template).
+# introduced by adding an entry to ``apps/core/fixtures/waffle_flags.json``
+# and nothing else — ``sync_waffle_flags`` reconciles the DB to that
+# manifest on every deploy, so a migration-seeded row would be created and
+# then deleted in the same build (see ``docs/feature-flags.md``).
 #
 # ``WAFFLE_FLAG_DEFAULT = False`` — a flag with no DB row evaluates to off.
 # This is the only safe default: a typo in a ``flag_is_active(...)`` call
@@ -900,7 +898,7 @@ WEBAUTHN_ORIGIN = config("WEBAUTHN_ORIGIN", default="http://localhost:8000")
 #
 # ``WAFFLE_CREATE_MISSING_FLAGS = False`` — looking up an unknown flag must
 # not auto-create it. Flag rows are intentional configuration; we want them
-# created via the admin or a migration so reviewers see them in the diff.
+# declared in the manifest so reviewers see them in the diff.
 
 WAFFLE_FLAG_DEFAULT = False
 WAFFLE_CREATE_MISSING_FLAGS = False

@@ -3,10 +3,9 @@
 routes/my_routes.html — /account/routes/: the signed-in user's own saved GPX
 routes (SNOW-713).
 
-Rendered by apps.routes.views.my_routes for an authenticated user with the
-``routes`` waffle flag active (the view redirects anonymous visitors to
-/account/sign-in/ and answers 404 for a flagged-off user before this template
-is reached). A user with no uploads sees the page with the list partial's own
+Rendered by apps.routes.views.my_routes for any authenticated user (the view
+redirects anonymous visitors to /account/sign-in/ before this template is
+reached). A user with no uploads sees the page with the list partial's own
 empty clause under the heading.
 
 The routes twin of observations/my_observations.html, deliberately the same

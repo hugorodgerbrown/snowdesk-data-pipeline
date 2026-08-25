@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), weather overlay, basemaps
 status: current
-last-reviewed: 2026-08-19
+last-reviewed: 2026-08-25
 ---
 
 # Map page — functional specification
@@ -209,8 +209,8 @@ users. They are shown as reference, not as authoritative geography.
   resort names were matched but never shown, so a query for "Verbier"
   silently returned a region row instead.
 - **Who can edit it.** Placement/correction of resort coordinates is a
-  staff tool: the in-map resort editor at `/?edit=resorts`, gated on the
-  `edit_map` flag (currently superusers). Edits land in the local
+  staff tool: the in-map resort editor at `/?edit=resorts`, open to
+  superusers only. Edits land in the local
   database and are persisted back to the git fixture with a management
   command; there is no live crowd-sourced write path yet. The "may at
   some point be crowd-sourced" intent is why resorts sit in this section
@@ -278,11 +278,11 @@ favourite pins too.
   it only ever reaches the map for the signed-in visitor it belongs to,
   merged in client-side alongside the public resort data. Another user's
   favourite-anchored weather is never part of the public payload.
-- **Who can use it.** Everyone can see resort weather once the feature is
-  enabled site-wide; a signed-in visitor additionally sees weather on
-  their own favourite pins. **Off by default**, like community reports.
-- **Rollout.** Gated behind the `weather_layer` feature flag during
-  rollout (see [`feature-flags.md`](feature-flags.md)).
+- **Who can use it.** Everyone sees resort weather; a signed-in visitor
+  additionally sees weather on their own favourite pins. **Off by
+  default**, like community reports.
+- **Rollout.** Complete. The `weather_layer` flag that gated the rollout
+  was retired in SNOW-724.
 
 ### 3.4a Routes — private imported tracks (SNOW-687)
 
@@ -320,23 +320,25 @@ the reader nothing; a saved route is a line across a whole valley, and a
 first visit that painted every stored track at once would bury the
 bulletin data underneath the user's own history.
 
-Routes are gated by the `routes` waffle flag (seeded superusers-only)
-*and* by authentication, so the surface is absent from the DOM entirely
-for anyone the feature is not open to.
+Routes are gated by authentication alone — SNOW-724 retired the `routes`
+rollout flag. The roundel and its panel are in the DOM for every visitor;
+an anonymous visitor who opens the panel gets a sign-in CTA rather than a
+list.
 
 ### 3.5 UGC eligibility at a glance
 
 | Surface | Visibility gate | Create/write | Default overlay state | Data class |
 |---------|-----------------|--------------|-----------------------|------------|
 | Favourites | Signed in | Owner only, 10/min | On (eligible users) — switched from the favourites panel, not the layer menu | Private, per-user |
-| Resorts | Public | Staff via `edit_map` editor | Off | Shared reference |
+| Resorts | Public | Superusers, via the `/?edit=resorts` editor | Off | Shared reference |
 | Community reports | Public | via Report flow below | Off — switched from the field-observation panel, not the layer menu | Anonymised, public |
 | Weather | Public (resorts) + own favourites (signed in) | n/a — derived from the weather pipeline | Off | Public + per-user merge |
-| Routes | Signed in **and** `routes` flag | Owner only, 10/min upload | Off — switched from the routes panel | Private, per-user |
+| Routes | Signed in | Owner only, 10/min upload | Off — switched from the routes panel | Private, per-user |
 | Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
 
-`edit_map` remains a superuser-scoped feature flag during rollout;
-[`feature-flags.md`](feature-flags.md) is the operator reference.
+The resort editor is superuser-scoped by an ordinary
+`request.user.is_superuser` check, not a flag — SNOW-724 removed the
+`edit_map` flag that expressed the same audience.
 
 ---
 
@@ -361,9 +363,11 @@ exclusivity rule: the bulletin-fill strength control (§2) already exists
 for exactly this trade-off, and a reader who wants the terrain clean takes
 the fill to 0.
 
-**Who can use it.** Everyone. Unlike every other flagged surface here, the
-`slope_layer` flag is a kill switch rather than a rollout gate — the layer
-depends on a tile service Snowdesk does not operate. **Off by default**: it
+**Who can use it.** Everyone. The layer depends on a tile service Snowdesk
+does not operate, so it keeps an operator kill switch: clearing
+`SLOPE_TILE_URL` in the environment withdraws the row, the raster and the
+legend key on a restart (SNOW-724 moved that job from the `slope_layer`
+flag onto the setting that already chose the origin). **Off by default**: it
 paints the whole viewport rather than discrete features, and a visitor who
 opened the map to read danger ratings did not ask for a second full-screen
 colour scheme underneath them.
@@ -413,8 +417,8 @@ published data**. Its sections say what their rows are:
 | **Bulletins** | SLF (CH), MétéoFrance (FR), ALBINA (AT, IT) | One warning service's bulletins, over every country it publishes for |
 | **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy |
 | **Locations** | Resorts | Named places geocoded onto regions |
-| **Conditions** | Weather (flag-gated) | Forecast symbols at each point |
-| **Terrain** | Slope angle (flag-gated) | Steepness shading |
+| **Conditions** | Weather | Forecast symbols at each point |
+| **Terrain** | Slope angle (absent without `SLOPE_TILE_URL`) | Steepness shading |
 | **Base map** | one row per basemap | The geographic backdrop |
 
 **Favourites and community reports are not in it.** Both are
@@ -689,9 +693,9 @@ menu's **Options** section carries interaction toggles (e.g. auto-zoom on
 selection) and the "Cache this area" command. These change behaviour, not
 what is drawn.
 
-**Edit-resorts mode.** `/?edit=resorts`, gated on the `edit_map` flag, is
+**Edit-resorts mode.** `/?edit=resorts`, open to superusers only, is
 the staff tool for placing and correcting resort coordinates (§3.2). The
-URL is safe to bookmark: without the flag it silently renders the normal
+URL is safe to bookmark: for everyone else it silently renders the normal
 map.
 
 ---
@@ -706,8 +710,8 @@ map.
   (version/freshness headers, mutation queue, reset).
 - [`compressed-views-rating-rule.md`](compressed-views-rating-rule.md) —
   the peak-rating rule the choropleth and tooltip follow.
-- [`feature-flags.md`](feature-flags.md) — the flag gating the resort
-  editor (`edit_map`).
+- [`feature-flags.md`](feature-flags.md) — the one surviving flag
+  (`sync_log`), and how flags are added and removed.
 - [`glossary.md`](glossary.md) — domain term → code symbol map (EAWS
   tiers, MicroRegion, FieldObservation, Resort, RegionDayRating).
 </content>

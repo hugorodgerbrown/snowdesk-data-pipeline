@@ -240,26 +240,19 @@ Usage
                             {% trans "Favourites" %}
                         </a>
                         {% comment %}
-                            Routes is the one entry behind a flag. The gate is
-                            in apps.routes.views.my_routes, which raises 404
-                            when ``routes`` is inactive, so an unconditional
-                            entry here would offer every user a broken
-                            destination — the flag is seeded superusers-only.
-                            ``routes_visible`` comes from
-                            apps.accounts.context_processors.routes_visible
-                            rather than from a view, because this partial
-                            renders on every page including ones that pass no
-                            context at all.
+                            Unconditional since SNOW-724 retired the ``routes``
+                            waffle flag: accounts:routes is auth-only now, and
+                            this block only renders inside the signed-in menu,
+                            so the destination always works for whoever can
+                            see the entry.
                         {% endcomment %}
-                        {% if routes_visible %}
-                            <a
-                                role="menuitem"
-                                href="{% url 'accounts:routes' %}"
-                                class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
-                            >
-                                {% trans "Routes" %}
-                            </a>
-                        {% endif %}
+                        <a
+                            role="menuitem"
+                            href="{% url 'accounts:routes' %}"
+                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% trans "Routes" %}
+                        </a>
                         <a
                             role="menuitem"
                             href="{% url 'accounts:observations' %}"

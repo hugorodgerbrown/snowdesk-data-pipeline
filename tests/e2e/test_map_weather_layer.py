@@ -12,11 +12,6 @@ menu row inert (map_layer_sync_status.js's offline gating) and the toggle
 click below a no-op — mirrors test_map_layer_sync_status.py's
 ``_navigate_home_map_loaded`` helper.
 
-``weather_layer`` is flag-gated (``superusers=True`` in the manifest), so
-every test here forces it on with ``@override_flag`` rather than signing
-in as a superuser — the flag check is server-side per request and
-``override_flag`` patches that regardless of the requesting user.
-
 SNOW-649 brought this file under the e2e cap: the shared seeding moved to
 ``_seed_verbier_weather`` so each test fits the 40-line budget, and the
 ``Scenario:`` line below is what ``bin/e2e-lint`` checks. No assertion was
@@ -40,7 +35,6 @@ import pytest
 from django.core.cache import cache
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
-from waffle.testutils import override_flag
 
 from tests.factories import (
     ForecastCellFactory,
@@ -133,7 +127,6 @@ def _seed_verbier_weather(django_db_blocker: Any) -> None:
         )
 
 
-@override_flag("weather_layer", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_overlay_toggle_installs_source_and_registers_icons(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -172,7 +165,6 @@ def test_overlay_toggle_installs_source_and_registers_icons(
     assert page.evaluate(f"() => MAP.hasImage({icon_filename!r})")
 
 
-@override_flag("weather_layer", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_sync_dot_resolves_cached_after_toggle(
     live_server: LiveServer, page: Page, django_db_blocker: Any
@@ -194,7 +186,6 @@ def test_sync_dot_resolves_cached_after_toggle(
     assert dot.get_attribute("data-sync-state") == "cached"
 
 
-@override_flag("weather_layer", active=True)
 @pytest.mark.django_db(transaction=True)
 def test_row_disables_on_out_of_window_date(
     live_server: LiveServer, page: Page, django_db_blocker: Any

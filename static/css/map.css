@@ -169,7 +169,9 @@
    every child is exactly --map-control-lg tall with an 8px gap, so n
    children occupy n*lg + (n-1)*8. --map-controls-count is set from the
    live child count by mapControlsCollapseInit, which keeps this correct if
-   a control ever becomes conditional again. Measuring instead would mean
+   a control ever becomes conditional again — SNOW-724 made the routes
+   roundel unconditional, taking the count from six to seven. Measuring
+   instead would mean
    reading offsetHeight off an already-clipped box (it returns 0) or
    un-clipping to measure and forcing a reflow on every toggle.
 
@@ -202,8 +204,8 @@
 
 .map-controls-br[data-expanded="true"] #map-controls-collapsible {
     height: calc(
-        var(--map-controls-count, 6) * var(--map-control-lg) +
-            (var(--map-controls-count, 6) - 1) * 8px
+        var(--map-controls-count, 7) * var(--map-control-lg) +
+            (var(--map-controls-count, 7) - 1) * 8px
     );
     opacity: 1;
     margin-bottom: 0;

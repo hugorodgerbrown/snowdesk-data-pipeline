@@ -7,15 +7,15 @@ user's own saved GPX routes. It is a full page, not a fragment, so it shares
 none of the rules the HTMX endpoints in ``tests/routes/test_views.py`` are
 held to — and each difference is asserted here rather than assumed.
 
-The routes twin of ``tests/observations/test_my_observations.py``, with one
-gate that page does not carry: the ``routes`` waffle flag.
+The routes twin of ``tests/observations/test_my_observations.py``. It carried
+a second gate — the ``routes`` waffle flag — until SNOW-724 retired it, so
+authentication is now the whole story.
 
 Covers:
   routing       — ``accounts:routes`` resolves to ``/account/routes/``.
   gating        — anonymous → redirect to sign-in (never 403, never the
                   page); a plain non-HTMX GET is the normal case and must
-                  NOT be rejected; the ``routes`` flag inactive → 404, even
-                  for a user who owns routes.
+                  NOT be rejected; any authenticated user gets the page.
   owner scope   — the user's own rows render; another user's never do.
   caching       — ``Cache-Control: private, no-store``.
   empty state   — a user with no uploads gets the list partial's own empty
@@ -28,12 +28,9 @@ Covers:
 
 from __future__ import annotations
 
-from collections.abc import Generator
-
 import pytest
 from django.test import Client
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from tests.factories import RouteFactory, UserFactory
 
@@ -72,20 +69,6 @@ class TestMyRoutesRouting:
 class TestMyRoutesAuthGate:
     """Anonymous redirects; a plain GET is the normal case."""
 
-    @pytest.fixture(autouse=True)
-    def _routes_flag_on(self) -> Generator[None, None, None]:
-        """Force ``routes=on`` for every test in this class.
-
-        Per-class ``@override_flag`` decoration would need a
-        ``unittest.TestCase`` subclass; with plain pytest classes the project's
-        idiom is an autouse fixture wrapping each test in the context manager
-        (see ``tests/public/test_edit_resorts_api.py``). Forcing it on rather
-        than relying on the seeding migration's ``superusers=True`` row, since
-        these tests sign in as ordinary users.
-        """
-        with override_flag("routes", active=True):
-            yield
-
     def test_anonymous_redirects_to_sign_in(self, client: Client) -> None:
         """An anonymous visitor is offered the way in, not a 403.
 
@@ -94,17 +77,6 @@ class TestMyRoutesAuthGate:
         this one (``accounts:hub``, ``accounts:settings``) redirect.
         """
         response = client.get(PAGE_URL)
-        assert response.status_code == 302
-        assert response.headers["Location"] == reverse("accounts:sign_in")
-
-    def test_anonymous_redirect_precedes_the_flag_check(self, client: Client) -> None:
-        """Order matters: an anonymous visitor is redirected, flag or not.
-
-        Checking the flag first would answer 404 to a signed-out user whose
-        account, once they signed in, would be allowed the page.
-        """
-        with override_flag("routes", active=False):
-            response = client.get(PAGE_URL)
         assert response.status_code == 302
         assert response.headers["Location"] == reverse("accounts:sign_in")
 
@@ -120,40 +92,27 @@ class TestMyRoutesAuthGate:
 
 
 @pytest.mark.django_db
-class TestMyRoutesFlagGate:
-    """The ``routes`` waffle flag gates the page, 404 when inactive."""
+class TestMyRoutesIsOpenToEveryAccount:
+    """SNOW-724: authentication is the only gate the page carries.
 
-    @override_flag("routes", active=False)
-    def test_flag_off_is_404(self, client: Client) -> None:
-        """404, not 403 — the flag hides the feature's existence.
+    Replaces the ``routes``-flag suite that asserted a 404 for a signed-in
+    user without the flag. The flag is gone; being signed in is enough, and
+    an owner of routes gets them listed rather than hidden.
+    """
 
-        A 403 would admit there is something behind the URL. 404 is what a
-        user without the feature should see, and matches the map, where the
-        roundel is simply absent.
-        """
-        client.force_login(UserFactory.create())
-        assert client.get(PAGE_URL).status_code == 404
+    def test_any_authenticated_user_gets_the_page(self, client: Client) -> None:
+        """No flag, no superuser bit — an ordinary account renders it."""
+        client.force_login(UserFactory.create(is_staff=False))
+        assert client.get(PAGE_URL).status_code == 200
 
-    @override_flag("routes", active=False)
-    def test_flag_off_is_404_even_for_an_owner_of_routes(self, client: Client) -> None:
-        """Owning routes does not exempt a user from the gate.
-
-        The interesting case: a user who uploaded routes while the flag was
-        on, then had it turned off. The gate is about the feature, not about
-        whether the table has rows for them.
-        """
-        user = UserFactory.create()
+    def test_an_owner_of_routes_sees_them(self, client: Client) -> None:
+        """The case the old flag-off test hid: the rows are on the page."""
+        user = UserFactory.create(is_staff=False)
         RouteFactory.create(user=user, name="Haute Route")
         client.force_login(user)
         response = client.get(PAGE_URL)
-        assert response.status_code == 404
-        assert b"Haute Route" not in response.content
-
-    @override_flag("routes", active=True)
-    def test_flag_on_renders(self, client: Client) -> None:
-        """With the flag active the page renders normally."""
-        client.force_login(UserFactory.create())
-        assert client.get(PAGE_URL).status_code == 200
+        assert response.status_code == 200
+        assert b"Haute Route" in response.content
 
 
 # ---------------------------------------------------------------------------
@@ -164,20 +123,6 @@ class TestMyRoutesFlagGate:
 @pytest.mark.django_db
 class TestMyRoutesOwnerScope:
     """Own rows render; another user's never do."""
-
-    @pytest.fixture(autouse=True)
-    def _routes_flag_on(self) -> Generator[None, None, None]:
-        """Force ``routes=on`` for every test in this class.
-
-        Per-class ``@override_flag`` decoration would need a
-        ``unittest.TestCase`` subclass; with plain pytest classes the project's
-        idiom is an autouse fixture wrapping each test in the context manager
-        (see ``tests/public/test_edit_resorts_api.py``). Forcing it on rather
-        than relying on the seeding migration's ``superusers=True`` row, since
-        these tests sign in as ordinary users.
-        """
-        with override_flag("routes", active=True):
-            yield
 
     def test_own_routes_are_listed(self, client: Client) -> None:
         """The signed-in user sees their own route, with its figures."""
@@ -224,20 +169,6 @@ class TestMyRoutesOwnerScope:
 class TestMyRoutesCaching:
     """Per-user content must never land in a shared cache."""
 
-    @pytest.fixture(autouse=True)
-    def _routes_flag_on(self) -> Generator[None, None, None]:
-        """Force ``routes=on`` for every test in this class.
-
-        Per-class ``@override_flag`` decoration would need a
-        ``unittest.TestCase`` subclass; with plain pytest classes the project's
-        idiom is an autouse fixture wrapping each test in the context manager
-        (see ``tests/public/test_edit_resorts_api.py``). Forcing it on rather
-        than relying on the seeding migration's ``superusers=True`` row, since
-        these tests sign in as ordinary users.
-        """
-        with override_flag("routes", active=True):
-            yield
-
     def test_response_is_private_no_store(self, client: Client) -> None:
         """``private, no-store``, mirroring ``routes_geojson``.
 
@@ -257,20 +188,6 @@ class TestMyRoutesCaching:
 @pytest.mark.django_db
 class TestMyRoutesEmptyState:
     """A user with no uploads gets a sentence, not a bare heading."""
-
-    @pytest.fixture(autouse=True)
-    def _routes_flag_on(self) -> Generator[None, None, None]:
-        """Force ``routes=on`` for every test in this class.
-
-        Per-class ``@override_flag`` decoration would need a
-        ``unittest.TestCase`` subclass; with plain pytest classes the project's
-        idiom is an autouse fixture wrapping each test in the context manager
-        (see ``tests/public/test_edit_resorts_api.py``). Forcing it on rather
-        than relying on the seeding migration's ``superusers=True`` row, since
-        these tests sign in as ordinary users.
-        """
-        with override_flag("routes", active=True):
-            yield
 
     def test_empty_clause_renders(self, client: Client) -> None:
         """The list partial's own empty clause is present."""
@@ -311,20 +228,6 @@ class TestMyRoutesEmptyState:
 @pytest.mark.django_db
 class TestMyRoutesSharedPartials:
     """The page hosts the shared row rather than authoring a second one."""
-
-    @pytest.fixture(autouse=True)
-    def _routes_flag_on(self) -> Generator[None, None, None]:
-        """Force ``routes=on`` for every test in this class.
-
-        Per-class ``@override_flag`` decoration would need a
-        ``unittest.TestCase`` subclass; with plain pytest classes the project's
-        idiom is an autouse fixture wrapping each test in the context manager
-        (see ``tests/public/test_edit_resorts_api.py``). Forcing it on rather
-        than relying on the seeding migration's ``superusers=True`` row, since
-        these tests sign in as ordinary users.
-        """
-        with override_flag("routes", active=True):
-            yield
 
     def test_row_carries_both_shared_controls(self, client: Client) -> None:
         """One anatomy for every UGC row (SNOW-711): pencil AND trash.

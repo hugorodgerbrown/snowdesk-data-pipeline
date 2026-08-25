@@ -173,14 +173,11 @@ in addition to the shared map assets.
     {% include "public/partials/_report_surface.html" %}
     {# SNOW-414: favourite-pin sheet + JS — shared with the map surface. #}
     {% include "public/partials/_favourites_surface.html" %}
-    {# SNOW-686: saved-routes sheet + JS. Gated on the ``routes`` waffle    #}
-    {# flag, exactly as its roundel is in _map_embed.html — the flag is     #}
-    {# what lets this panel land before the map layer that completes it     #}
-    {# (SNOW-687). Both gates read the same context flag, so the roundel    #}
-    {# can never render without the sheet it opens, or vice versa.          #}
-    {% if routes_visible %}
-        {% include "public/partials/_routes_surface.html" %}
-    {% endif %}
+    {# SNOW-686: saved-routes sheet + JS — shared with the map surface.     #}
+    {# Ungated since SNOW-724 retired the ``routes`` rollout flag; the      #}
+    {# sheet renders for every visitor, and routes.js branches on           #}
+    {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
+    {% include "public/partials/_routes_surface.html" %}
     {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
     {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
     {# the map roundel (#map-custom-download-control) now, not the       #}
