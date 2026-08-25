@@ -1430,8 +1430,12 @@ _ACCOUNT_PAGE_CACHE_NOTE = """
 Deliberately NOT ``@never_cache``, unlike ``change_email_view`` (C1,
 ``docs/code-reviews/2026-08-03-js-review.md``). These pages render the
 signed-in user's own data, so they must never be served to anyone else — but
-the offline favourites roster is built on the hub being in the PWA shell
-cache, so ``no-store`` would break a shipped feature. The ``X-SW-Principal``
+the offline favourites roster is built on ``/account/favourites/``
+(``favourites_view``) being in the PWA shell cache, so ``no-store`` would
+break a shipped feature. SNOW-668 moved that dependency off the hub with the
+list itself; the hub and settings keep this posture because they render in
+the same shell under the same principal guard, not because either still
+feeds the roster. The ``X-SW-Principal``
 stamp is what makes that safe: ``_networkFirst`` in ``static/js/sw.js``
 records the account this HTML was rendered for and the offline read refuses
 an entry whose stamp is not the principal signed in now, so a sign-out or a

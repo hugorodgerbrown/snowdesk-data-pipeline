@@ -1309,11 +1309,17 @@ class TestHubViewAuthenticated:
         """The dashboard stays cacheable — C1, docs/code-reviews/2026-08-03-js-review.md.
 
         Pins a deliberate choice rather than an accident. This page renders
-        the signed-in user's email address and passkeys, so the obvious move
-        is ``@never_cache`` — but the offline favourites roster is built on
-        the manage page being in the PWA shell cache
-        (``tests/e2e/test_favourites_offline.py``), and ``no-store`` would
-        take that feature offline with it.
+        the signed-in user's own data, so the obvious move is
+        ``@never_cache`` — but the account area is cache-partitioned rather
+        than cache-avoided (``apps.accounts.views._ACCOUNT_PAGE_CACHE_NOTE``),
+        and this page follows that posture.
+
+        SNOW-668 moved the offline favourites roster off this page along with
+        the list itself: the dependency now belongs to ``favourites_view``,
+        pinned by
+        ``tests/accounts/test_favourites_page.py::TestFavouritesPageCaching``.
+        The hub keeps the posture because it renders in the same shell under
+        the same principal guard, not because it still feeds the roster.
 
         What keeps it safe is partitioning, not avoidance: ``_networkFirst``
         in ``static/js/sw.js`` stamps the cached entry with the account it
@@ -1322,8 +1328,9 @@ class TestHubViewAuthenticated:
         previous session's page. ``change_email_view`` keeps ``@never_cache``
         — nothing needs it offline.
 
-        If this assertion is ever flipped to ``no-store``, the two offline
-        favourites e2e cases go with it.
+        Flipping this assertion to ``no-store`` would take the hub out of
+        the shell cache; doing the same on ``favourites_view`` would take the
+        offline roster with it.
         """
         account = AccountFactory.create()
         client = _make_session_client(account)

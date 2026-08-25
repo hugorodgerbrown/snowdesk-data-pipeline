@@ -310,8 +310,7 @@ written to the shell cache, stamped with the account they were rendered
 for, and served offline to that account alone. `@never_cache` was the
 first shape of this fix and was backed out: the offline favourites roster
 is built on the page that hosts the roster being in the shell cache, so
-`no-store` took a shipped feature offline with it — two cases in
-`tests/e2e/test_favourites_offline.py`. The stamp closes the leak on its
+`no-store` took a shipped feature offline with it. The stamp closes the leak on its
 own, which is why it exists: it is what makes an authenticated page safe
 to hold in a cache shared with every other account. Do not add
 `@never_cache` back;

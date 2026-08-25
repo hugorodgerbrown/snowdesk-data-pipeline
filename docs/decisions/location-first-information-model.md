@@ -205,7 +205,8 @@ what our liability disclaimer rests on. Any range-aware version inherits it.
 
 **Tickets this re-frames rather than replaces.** SNOW-680 (bulletin page's
 lower half as the local-knowledge layer), SNOW-665 (unify Subscription and
-Favourite into places), SNOW-668 (`/account/places/`) and SNOW-681
+Favourite into places — rejected 2026-08-23), SNOW-668
+(`/account/favourites/`, which is what shipped instead) and SNOW-681
 (source-bulletin prominence) each point at part of this without naming it.
 SNOW-696 gives every region a `ForecastPoint`: still correct. A region has no
 natural named points the way a resort does, so the multi-point model does not
