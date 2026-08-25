@@ -2,7 +2,7 @@
 name: feature-flags
 description: django-waffle operator guide — Flag/Switch/Sample, flag inventory, waffle_flags.json manifest, sync_waffle_flags command
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-25
 ---
 
 # Feature flags (django-waffle)
@@ -38,8 +38,8 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 * `snake_case`. Lowercase, underscores between words. The waffle admin
   is searchable by name; readable names beat clever ones.
 * Broad over narrow. Prefer one flag that covers a feature surface
-  (`edit_map`) over many sibling flags (`edit_map_resorts`,
-  `edit_map_regions`) until you actually need different sub-scopes.
+  (`sync_log`) over many sibling flags (`sync_log_panel`,
+  `sync_log_help`) until you actually need different sub-scopes.
 * No `SNOW-XX` in the name. Reference the ticket in the flag's `note`
   field in the manifest (it is copied to the DB row and is visible in
   the admin); the flag name lives forever and tickets get squash-merged
@@ -51,27 +51,36 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
-| `edit_map` | `superusers=True` | The in-map resort editor at `/?edit=resorts` and its API endpoints (`/api/edit/resorts/queue/`, `/api/edit/resorts/<id>/save/`, `/api/edit/resorts/create/`). | SNOW-86 (test case for the mechanism); first consumer is SNOW-74. |
-| `routes` | `superusers=True` | The GPX routes panel and its upload/list/rename/delete endpoints under `/routes/`, and the map route overlay (`routes.geojson` + the line layers). | SNOW-686, SNOW-687. |
-| `slope_layer` | **`everyone=True`** | The map's "Terrain" section and its "Slope angle" row — the swisstopo slope-angle raster (`ch.swisstopo.hangneigung-ueber_30`), its coverage outline and its legend key. | SNOW-691. |
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
-| `weather_layer` | `superusers=True` | The map's "Weather" overlay (condition symbols + temperature at forecast points), `/api/forecast-weather.geojson`, the `days` property on `favourites.geojson`, and the matching `/help/` section. | SNOW-573. |
 
-`slope_layer` is the only flag here that is **not** a rollout gate.
-It ships `everyone=True`, so the overlay is on for every visitor from the
-first deploy that runs `sync_waffle_flags --commit`; the flag exists as a
-kill switch, because the layer depends on a third-party tile service we do
-not operate. Setting `Everyone: No` in the admin removes the row, the
-raster and the legend key without a deploy — which is the lever to reach
-for if swisstopo's service degrades, or if the licence question recorded in
-the flag's `note` resolves against us.
+**One flag, and it is the right shape for one.** `sync_log` is not a
+rollout gate waiting to be opened: it is a per-user diagnostic toggle. The
+panel prints a device's recent real server round-trips, which is a
+debugging read-out rather than a product surface, and the `Users` M2M is
+the point — inviting one reporter to turn it on while chasing a sync
+complaint, then turning it off again, is a thing an admin does repeatedly
+and a permission check cannot express. Every other gate this project has
+had was either a rollout gate that eventually opened to everyone, or a
+permanent audience restriction better written as an ordinary Django check.
 
 The saved-map-pin favourites feature (SNOW-413), the field-report button
 and submission endpoints (SNOW-324), the "Community reports" read overlay
 (SNOW-419), and the `/observations/` page (SNOW-476) were all pre-launch
 flags — removed once the features reached general availability (SNOW-520).
-They remain gated by ordinary auth/verification/ownership checks, just not
-by a waffle flag.
+SNOW-724 removed four more the same way: the map's Weather overlay
+(`weather_layer`, SNOW-573), the GPX routes panel and its map layer
+(`routes`, SNOW-686/687), the swisstopo slope-angle raster (`slope_layer`,
+SNOW-691) and the in-map resort editor (`edit_map`, SNOW-86). All of them
+remain gated by ordinary auth/ownership checks where they need to be — the
+resort editor is now `request.user.is_superuser`, which is exactly the
+audience its flag shipped with — just not by a waffle flag.
+
+The slope-angle raster keeps its kill switch; it just isn't a flag any
+more. Eligibility is `settings.SLOPE_TILE_URL`, so clearing that env var on
+Render removes the row, the raster and the legend key on a restart rather
+than a deploy. That is still the lever to reach for if swisstopo's service
+degrades or the licence question resolves against us — it is simply the
+same lever that already chose which tile origin to point at.
 
 The resort page's field-observations panel is point-local, scoped to the
 configurable `FIELD_OBSERVATION_RADIUS_KM` setting (default 10 km) around
@@ -89,7 +98,11 @@ every deploy and deletes any DB row the manifest does not name, so a
 migration-seeded flag is created and then destroyed in the same build, and
 the feature it gates goes dark with `WAFFLE_FLAG_DEFAULT = False`. SNOW-685
 did exactly this and the routes feature was invisible on staging until the
-manifest entry landed.
+manifest entry landed. Six seeding migrations predate the manifest
+(`regions/0002`, `favourites/0002`, `accounts/0008`, `observations/0002`,
+`0006` and `0008`); SNOW-724 emptied their bodies to no-ops and kept the
+nodes, so migration history still applies on deployed databases but there
+is no live example of the pattern left to copy.
 
 ---
 
@@ -178,8 +191,8 @@ The change takes effect on the next request — there's no cache to bust.
 
    `override_flag` works as both a method decorator and a class
    decorator; class-level decoration is cleanest when every test in a
-   class needs the same flag state. See
-   `tests/public/test_edit_resorts_api.py` for examples.
+   class needs the same flag state. See `tests/public/test_help.py` for
+   an example of both states asserted side by side.
 
 5. **Add a row** to the inventory table above.
 
@@ -196,10 +209,20 @@ The change takes effect on the next request — there's no cache to bust.
    closed (`WAFFLE_FLAG_DEFAULT = False`) once the row is gone, which
    silently disables the feature rather than raising an error, so don't
    rely on that as a substitute for removing the call site.
-3. Ship it. The next deploy's `sync_waffle_flags --commit` deletes the
+3. **Replace each flag-off assertion**, don't delete it. A flag comes out
+   because the answer is now fixed, so every test that pinned the off
+   state has a successor: 404-while-inactive becomes 200-for-anonymous, or
+   404-for-a-non-superuser. Deleting them loses the coverage the flag was
+   standing in for.
+4. Ship it. The next deploy's `sync_waffle_flags --commit` deletes the
    `Flag` row — the DB is reconciled to the manifest by create + delete,
    so an entry no longer in the manifest is removed automatically with
    no separate cleanup step.
+
+Worked example: SNOW-724, which removed four at once. Its one caveat is
+that a **feature's** removal is not a flag's removal — if the gate is
+permanent (an admin tool, say) write the Django check that expresses it
+rather than leaving a flag standing in for a permission.
 
 ---
 
@@ -209,9 +232,9 @@ The change takes effect on the next request — there's no cache to bust.
 which lets you force a flag's value for the current request via
 querystring:
 
-* `https://localhost:8000/?edit=resorts&dwf_edit_map=1` — flag
+* `https://localhost:8000/account/manage/?dwf_sync_log=1` — flag
   forced **on** for this request, regardless of the DB row.
-* `…&dwf_edit_map=0` — forced **off**.
+* `…&dwf_sync_log=0` — forced **off**.
 
 Production deliberately omits this — an externally toggleable override
 would defeat the point of the gate.

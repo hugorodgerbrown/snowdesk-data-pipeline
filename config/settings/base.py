@@ -891,8 +891,10 @@ WEBAUTHN_ORIGIN = config("WEBAUTHN_ORIGIN", default="http://localhost:8000")
 # Server-side feature flagging via the ``waffle`` app. Flags target users
 # (``superusers``, ``staff``, individual ``users``, ``groups``, percentages)
 # and live in the DB; toggle them at ``/admin/waffle/flag/``. New flags are
-# introduced via a data migration in the relevant app's ``migrations/`` (see
-# ``docs/feature-flags.md`` for the template).
+# introduced by adding an entry to ``apps/core/fixtures/waffle_flags.json``
+# and nothing else — ``sync_waffle_flags`` reconciles the DB to that
+# manifest on every deploy, so a migration-seeded row would be created and
+# then deleted in the same build (see ``docs/feature-flags.md``).
 #
 # ``WAFFLE_FLAG_DEFAULT = False`` — a flag with no DB row evaluates to off.
 # This is the only safe default: a typo in a ``flag_is_active(...)`` call
@@ -900,7 +902,7 @@ WEBAUTHN_ORIGIN = config("WEBAUTHN_ORIGIN", default="http://localhost:8000")
 #
 # ``WAFFLE_CREATE_MISSING_FLAGS = False`` — looking up an unknown flag must
 # not auto-create it. Flag rows are intentional configuration; we want them
-# created via the admin or a migration so reviewers see them in the diff.
+# declared in the manifest so reviewers see them in the diff.
 
 WAFFLE_FLAG_DEFAULT = False
 WAFFLE_CREATE_MISSING_FLAGS = False

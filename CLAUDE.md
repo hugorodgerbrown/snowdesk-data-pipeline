@@ -60,7 +60,7 @@ apps/            Parent package for the twelve Django apps (SNOW-557 — moved
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
-                 (FK to auth.User), surfaced in the flag-gated routes panel
+                 (FK to auth.User), surfaced in the map's routes panel
   analytics/     PostHog wiring and the /api/telemetry receiver (see
                  docs/telemetry-pipeline.md). NOTE: signals.py here means
                  *telemetry* signals, not django.db.models.signals — it does

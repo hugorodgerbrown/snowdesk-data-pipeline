@@ -220,12 +220,12 @@ pencil/trash row controls. Built to the same shape as the favourites panel
 and described in `static/js/routes.js`'s header; the differences worth
 knowing here:
 
-- **Flag-gated on `routes`** (`superusers=True`, seeded by
-  `apps/routes/migrations/0002_seed_routes_flag.py`). Both the roundel and
-  the surface partial read one context flag, `routes_visible`
-  (`_routes_context()`), so neither can render without the other. That gate
-  is what lets the panel land before the map layer that completes it —
-  SNOW-687 draws the line and adds the overlay switch.
+- **Open to every visitor since SNOW-724**, which retired the `routes`
+  rollout flag the panel landed behind. The one gate left is
+  `routes_eligible` (`_routes_context()` — authentication), which
+  `routes.js` reads off `data-routes-eligible` to choose between the real
+  list and an anonymous sign-in CTA; the roundel and the sheet themselves
+  are always in the DOM.
 - **No map layer, so no overlay switch and no roundel ring.** The panel
   includes `includes/_ugc_panel.html` *without* a `toggle_id`, which is why
   that parameter is optional: a switch wired to nothing is a worse lie than
@@ -253,17 +253,16 @@ knowing here:
 
 **Weather overlay (SNOW-573)**: a Meteocons condition symbol plus the
 day's max temperature at each resort-anchored (and, for a signed-in
-visitor, favourite-anchored) `ForecastCell`. Flag-gated on `weather_layer`
-(`superusers=True` — see `docs/feature-flags.md`); `#map` carries
-`data-weather-layer-eligible="true|false"` and always emits
-`data-forecast-weather-url` (the endpoint itself 404s while the flag is
-inactive, mirroring the always-emitted `data-community-reports-url`
-rather than the eligible-gated `data-favourites-url`). Default **off**,
-like community reports. The public payload (`/api/forecast-weather.geojson`,
+visitor, favourite-anchored) `ForecastCell`. Ungated since SNOW-724
+retired the `weather_layer` flag; `#map` emits `data-forecast-weather-url`
+with no eligibility attribute beside it, exactly like
+`data-community-reports-url` rather than the eligible-gated
+`data-favourites-url`. Default **off**, like community reports. The public payload (`/api/forecast-weather.geojson`,
 below) carries resort-anchored points only — a `Favourite`-only
 `ForecastCell` never appears there; a signed-in visitor's own pins are
 merged into the same `weather` MapLibre source client-side from
-`favourites.geojson`'s `days` property (also flag-gated), which
+`favourites.geojson`'s `days` property (unconditional since SNOW-724, as
+this endpoint is), which
 `apps.weather.services.weather_display.build_point_weather_days` builds
 identically for both endpoints so the two can't drift.
 
@@ -305,8 +304,11 @@ through a Snowdesk endpoint. The tiles are swisstopo's
 `ch.swisstopo.hangneigung-ueber_30` WMTS, read from `SLOPE_TILE_URL`
 (`config/settings/base.py`, env-overridable so SNOW-693 can move the origin
 without a code change) and rendered onto `#map` as `data-slope-tile-url`
-for an eligible request only. Flag-gated on `slope_layer`, which ships
-`everyone=True` — a kill switch, not a rollout gate.
+for an eligible request only — and "eligible" is simply
+`bool(settings.SLOPE_TILE_URL)`. SNOW-724 retired the `slope_layer` flag
+and moved that job onto the setting, which was already the operator's kill
+switch by another name: clearing the env var withdraws the row, the raster
+and the legend key on a restart rather than a deploy.
 
 It differs from every other opt-in overlay in one way worth knowing before
 you go looking for the missing code: **it is installed eagerly and hidden,
@@ -355,8 +357,10 @@ afterwards, so without the reset swisstopo's attribution — a licence
 obligation, not a nicety — never reaches the legend's "Map data" section.
 
 The legend's "Slope angle" heading is an anchor into
-`/help/#help-topic-slope` (`public/help/_topic_slope.html`, gated on the
-same flag via `slope_layer_visible` in `help_page`). The id sits on a
+`/help/#help-topic-slope` (`public/help/_topic_slope.html`, which renders
+for every visitor — the help topic is not gated with the layer, so a
+reader whose environment has no `SLOPE_TILE_URL` can still read what the
+layer would have said). The id sits on a
 wrapper `div` rather than on `_collapsible_panel.html`'s `<details>`, so
 that shared partial keeps one shape for every caller. The source's
 `attribution` names the DATASET rather than the publisher — two basemaps
@@ -494,7 +498,7 @@ appeared first.
 | `GET /api/region/<region_id>/summary/` | `api:region_summary` | `{html, level}` — `html` is the server-rendered MapLibre Popup snippet (danger-rating chip + geographic breadcrumb); `level` is the rating string the JS uses to stamp `data-level` on the popup container for the border colour. Honours `?d=YYYY-MM-DD` so the popup can show any scrubbed-to date; returns 400 on a malformed value. **Currently unused by the client** — the region popup lost its trigger (see the intro above); the endpoint is kept alongside `openRegionPopup` pending a decision on a replacement detail surface. |
 | `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"type":"FeatureCollection","features":[…]}` — a **single day's** dissolved bulletin boundaries. `?d=YYYY-MM-DD` is **required** (400 `date_required` if absent, 400 `malformed date` on a bad value). Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed on `(country, date)` (5 min). **`Cache-Control` is date-aware (SNOW-526):** `apps.bulletins.services.settled.earliest_mutable_date()` derives a settled/unsettled threshold from the fetcher registry (`apps.bulletins.services.slf_fetcher.get_sources()`), memoised at the call site (`apps.public.api._cached_earliest_mutable_date()`, 60s) to avoid a per-`BulletinSource` DB query on every request; a settled `?d=` gets `public, max-age=604800, immutable`, otherwise `public, max-age=300` (unchanged). The `immutable` token is also `sw.js`'s signal to persist the response for offline use — see `docs/decisions/date-aware-cache-policy.md`. **Why single-date:** the endpoint previously returned the whole season keyed by date in one payload; once the historical backfill landed, serialising every day's dissolved geometry at once pushed the web worker past its 512 MB limit (SNOW-323 follow-up). The JS overlay ("Bulletin groupings" — the boundary now draws alongside the choropleth, SNOW-506; SNOW-521 removed the standalone `data-overlay-key="l3"` layers-menu row, and SNOW-656 moved what governs it from the `l4` row to the bulletin-fill step, since the boundary is a bulletin concept and, like the choropleth, is date-bound — at step 0 it is hidden and a scrubbed date does not refetch it) fetches one day at a time via `fetchBulletinGroupingsForDate(dateKey)` (no `?country=` filter, so cross-border rows are present), memoising each date for the session. It draws the boundary only once the scrubber **settles** (`GROUPINGS_SETTLE_MS = 250`), blanking the layer during active drag/playback so it neither thrashes the network nor lags a frame behind the choropleth. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
 | `GET /api/community-reports.geojson` | `api:community_reports_geojson` | `{"type":"FeatureCollection","features":[…]}` — anonymised, clustered "Community reports" overlay (SNOW-419). Covers `FieldObservation` rows from the last 48 hours. Each feature's `coordinates` are `[lon, lat]` rounded to 3 dp (~80–110 m); `properties` carries `type` (`OBSERVATION_TYPE` value), `type_label` (display label), `observed_at` (ISO, the instant as recorded — it was floored to the nearest 15 min until that floor was found to protect nothing and to make the map disagree with the reporter's own panel), and `region_name` (or `null`). Never serialises `latitude`/`longitude` at full precision, `gps_*`, `accuracy_radius_km`, `user`, or the row's pk. `Cache-Control: private, no-store` — unlike the other geojson endpoints it is **not** publicly cacheable and **not** in `_POSTHOG_EXEMPT_PATHS` (SNOW-459); public caching is tracked separately (SNOW-469). It carries a 120s client-side freshness window via `X-Data-Max-Age`. The JS overlay (`data-overlay-key="community_reports"`, default **off**) clusters the source client-side (`cluster: true`) and fades pins by age via a client-computed `_ageOpacity` feature property (no MapLibre "now" expression exists). |
-| `GET /api/forecast-weather.geojson` | `api:forecast_weather_geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-573 map Weather overlay: one Point feature per geocoded `Resort` with a linked `ForecastCell` (never a `Favourite`-only point — see the privacy note above). Geometry is the *resort's* coordinates, not the quantised point's. `properties` carries `resort_id`, `name`, `region_id`, and `days` — a dict keyed by ISO date (`{"2026-08-07": {"icon": "light_snow-day.svg", "label": "Light snow", "tmax": 4.0, "tmin": -3.0, "snow": 2.0}}`), defaulting to the **whole stored forecast window** (mirrors `/api/ratings/`'s date-keyed shape); `?d=YYYY-MM-DD` narrows to one date, 400 `malformed date` on a bad value. Flag-gated on `weather_layer` — 404 while inactive. Server-side `cache.get_or_set` keyed `forecast-weather:v1:<d\|all>` (5 min). `generated_at` is the OLDEST `fetched_at` across the payload's `ForecastCellWeather` rows (a record mixing several points' data is only as fresh as its stalest one); `X-Data-Unsafe-After` is never set (non-safety data). Two queries regardless of resort count: `Resort.objects.resorts().geocoded()` with `select_related("forecast_point")`, then one bulk `ForecastCellWeather.objects.filter(forecast_cell_id__in=…)` grouped in Python. |
+| `GET /api/forecast-weather.geojson` | `api:forecast_weather_geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-573 map Weather overlay: one Point feature per geocoded `Resort` with a linked `ForecastCell` (never a `Favourite`-only point — see the privacy note above). Geometry is the *resort's* coordinates, not the quantised point's. `properties` carries `resort_id`, `name`, `region_id`, and `days` — a dict keyed by ISO date (`{"2026-08-07": {"icon": "light_snow-day.svg", "label": "Light snow", "tmax": 4.0, "tmin": -3.0, "snow": 2.0}}`), defaulting to the **whole stored forecast window** (mirrors `/api/ratings/`'s date-keyed shape); `?d=YYYY-MM-DD` narrows to one date, 400 `malformed date` on a bad value. Public — SNOW-724 retired the `weather_layer` flag that used to 404 an ineligible caller. Server-side `cache.get_or_set` keyed `forecast-weather:v1:<d\|all>` (5 min). `generated_at` is the OLDEST `fetched_at` across the payload's `ForecastCellWeather` rows (a record mixing several points' data is only as fresh as its stalest one); `X-Data-Unsafe-After` is never set (non-safety data). Two queries regardless of resort count: `Resort.objects.resorts().geocoded()` with `select_related("forecast_point")`, then one bulk `ForecastCellWeather.objects.filter(forecast_cell_id__in=…)` grouped in Python. |
 | `GET /routes/routes.geojson` | `routes:geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-687's routes line layer: one **LineString** feature per `Route` the **requesting user** owns. `coordinates` are `Route.points` verbatim — `[lon, lat, ele]` in GeoJSON axis order (RFC 7946), already simplified at ingest by SNOW-685, so there is no per-render transform and no axis swap can creep in between the stored and served shapes. `ele` is metres, or `null` for a point whose source `<ele>` was absent. `properties` carries `uuid`, `name`, `distance_m`, `ascent_m` and `bounds`. **`ascent_m` is served as stored, `null` included** — null means "the GPX carried no elevation data", NOT "flat", and the client omits the ascent line entirely rather than rendering a zero for an unknown (`Route`'s docstring is explicit that the substitution would be a safety-relevant lie). `bounds` is the flat `[min_lon, min_lat, max_lon, max_lat]` bbox, on the feature so a tap can fit the viewport from the payload the map already holds, offline included. **403** for anonymous callers; owner-scoped via `Route.objects.for_user()` in **one** query however many routes the user has. Not `@require_htmx` — a JS `fetch()` consumes it, not an HTMX swap. `Cache-Control: private, no-store`. Freshness headers follow `community-reports.geojson` rather than `favourites.geojson` (which carries none): `generated_at` is the newest route's `updated_at`, and **`unsafe_after` is omitted** — a user's own uploaded track is not safety-critical data, so the client's freshness state saturates at "stale" and never escalates to "unsafe". Note the path: mounted under `/routes/`, not `/api/`, alongside the panel's HTMX endpoints. |
 
 **Per-region offline-basemap sizing (SNOW-521)**: `properties.download` on
@@ -558,11 +562,12 @@ different colour on each of the five basemap styles. See
 The shared top-nav partial used on the map and other public pages is
 documented separately in [`nav_implementation_spec.md`](nav_implementation_spec.md).
 
-## Edit-resorts mode (SNOW-74) — gated on the `edit_map` waffle flag
+## Edit-resorts mode (SNOW-74) — superusers only
 
-`/?edit=resorts` enters resort-edit mode when the
-`edit_map` waffle flag is active for the request user (SNOW-86; see
-[`feature-flags.md`](feature-flags.md)). The page renders a right-hand panel with a
+`/?edit=resorts` enters resort-edit mode when the request user is a
+superuser (SNOW-86 gated this on an `edit_map` waffle flag seeded
+`superusers=True`; SNOW-724 replaced the flag with the equivalent Django
+check, same audience). The page renders a right-hand panel with a
 queue of resorts that need geocoding (`Resort.objects.needs_geocoding()`
 — missing coords or `needs_review=True`) plus a search box across all
 resorts.
@@ -650,14 +655,15 @@ CI, and add it to `apps/regions/data/resorts.tsv` so the next
 
 | URL | Name | Method | Notes |
 |-----|------|--------|-------|
-| `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | Flag-gated. Returns `{all_resorts, sub_regions}`, ordered `region_id ASC, name ASC` so the panel can group rows by L2 area (e.g. `CH-41`). Each entry carries a `details` object holding every `RESORT_DETAIL_FIELDS` value, so selecting a row needs no second fetch. |
-| `/api/edit/resorts/<int:resort_id>/save/` | `api:edit_resort_save` | POST | Flag-gated. JSON body `{latitude, longitude, details?}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. `details` is optional and may be partial — an omitted key keeps its stored value. An invalid field returns `400 {"error": "invalid_details", "fields": {…}}` and writes nothing at all, coordinates included. |
-| `/api/edit/resorts/create/` | `api:edit_resort_create` | POST | Flag-gated. JSON body `{name, canton?, latitude, longitude, details?}`; same coordinate and `details` rules as `save`. The parent region comes from the pin; an omitted `canton` is inherited from that region's existing resorts. Returns `201` with the same body shape `save` answers with (a catalogue entry plus geocode provenance). Errors: `400 invalid_identity` (blank/over-long name, or a canton the region cannot supply), `400 no_region`, `409 duplicate_name`. |
+| `/api/edit/resorts/queue/` | `api:edit_resorts_queue` | GET | Superuser-only. Returns `{all_resorts, sub_regions}`, ordered `region_id ASC, name ASC` so the panel can group rows by L2 area (e.g. `CH-41`). Each entry carries a `details` object holding every `RESORT_DETAIL_FIELDS` value, so selecting a row needs no second fetch. |
+| `/api/edit/resorts/<int:resort_id>/save/` | `api:edit_resort_save` | POST | Superuser-only. JSON body `{latitude, longitude, details?}`; coordinates outside `_SWISS_BBOX` are hard-rejected with 400. `details` is optional and may be partial — an omitted key keeps its stored value. An invalid field returns `400 {"error": "invalid_details", "fields": {…}}` and writes nothing at all, coordinates included. |
+| `/api/edit/resorts/create/` | `api:edit_resort_create` | POST | Superuser-only. JSON body `{name, canton?, latitude, longitude, details?}`; same coordinate and `details` rules as `save`. The parent region comes from the pin; an omitted `canton` is inherited from that region's existing resorts. Returns `201` with the same body shape `save` answers with (a catalogue entry plus geocode provenance). Errors: `400 invalid_identity` (blank/over-long name, or a canton the region cannot supply), `400 no_region`, `409 duplicate_name`. |
 
-All three endpoints 404 when the `edit_map` flag is inactive
-(`_require_edit_map_flag()` in `apps/public/api.py` raises `Http404`). The
-page itself silently falls back to the normal map when `?edit=resorts`
-is set without the flag (`apps/public/views.py`), so the URL is safe to
+All three endpoints 404 for a caller who is not a superuser
+(`_require_edit_map_admin()` in `apps/public/api.py` raises `Http404`) —
+404 rather than 403, so the URL admits nothing about what sits behind it.
+The page itself silently falls back to the normal map when `?edit=resorts`
+is set by anyone else (`apps/public/views.py`), so the URL is safe to
 bookmark.
 
 Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
