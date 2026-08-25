@@ -1,8 +1,8 @@
 ---
 name: accounts
-description: accounts app — Account model, registration + email verification, is_verified gate, signed-token salts, /account/ hub + settings routes
+description: accounts app — Account model, registration, email verification, is_verified gate, signed-token salts, the five /account/ pages
 status: current
-last-reviewed: 2026-08-21
+last-reviewed: 2026-08-25
 ---
 
 # Accounts
@@ -25,7 +25,10 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 
 | URL | Name | Method | Purpose |
 |-----|------|--------|---------|
-| `/account/` | `hub` | GET | Account hub — subscribed regions + favourites (SNOW-667) |
+| `/account/` | `hub` | GET | Subscriptions — one card per subscribed region (SNOW-667; favourites moved off it by SNOW-668) |
+| `/account/favourites/` | `favourites` | GET | Saved pins — hosts `favourites:list` by `hx-get` (SNOW-668) |
+| `/account/observations/` | `observations` | GET | The user's own field reports; view lives in `apps.observations` (SNOW-677) |
+| `/account/routes/` | `routes` | GET | The user's own GPX routes; view lives in `apps.routes`, 404 behind the `routes` flag (SNOW-713) |
 | `/account/settings/` | `settings` | GET | Email, passkeys, telemetry, sync log, reset local data, sign out, delete account (SNOW-667) |
 | `/account/subscribe/` | `subscribe` | POST | HTMX inline subscribe form (moved off `/account/` by SNOW-667) |
 | `/account/register/` | `register` | GET + POST | Standalone registration (email required, name optional); sends a verification link |
@@ -43,9 +46,11 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 | `/account/unsubscribe/<token>/` | `unsubscribe` | GET + POST | One-click region unsubscribe |
 | `/account/unsubscribe-done/` | `unsubscribe_done` | GET | Post-unsubscribe confirmation page |
 
-**Account area layout (SNOW-667)** — `/account/manage/` was a single 529-line template stacking nine unranked sections. It is now a hub at `/account/` (subscribed regions and the lazy-loaded favourites panel) plus `/account/settings/` (email, passkeys, sign out, reset local data, sync log, telemetry, account deletion), with `/account/manage/` kept as a permanent redirect so old bookmarks and in-flight email links still resolve. The sub-nav tying them together renders from `apps/accounts/subnav.py` rather than from markup, so adding a child route — SNOW-668's `/account/places/`, SNOW-677's `/account/observations/` — is one `_Entry` and no template edit.
+**Account area layout (SNOW-667 → SNOW-668)** — `/account/manage/` was a single 529-line template stacking nine unranked sections. It is now five pages, one per list: `/account/` (subscriptions), `/account/favourites/`, `/account/observations/`, `/account/routes/` and `/account/settings/`, with `/account/manage/` kept as a permanent redirect so old bookmarks and in-flight email links still resolve.
 
-Two things to know before touching the routing. `subscribe_partial` used to own the `""` route, which made a GET of `/account/` answer 405; it moved to `/account/subscribe/` keeping its URL name, so every `{% url 'accounts:subscribe' %}` is unaffected. And neither `hub_view` nor `settings_view` is `@never_cache`: the offline favourites roster reads the hub out of the PWA shell cache, and `static/js/sw.js` refuses to cache a `no-store` response, so safety comes from the `X-SW-Principal` stamp instead.
+**The nav avatar menu is the area's only navigation**, by decision — [`docs/decisions/account-area-navigation-lives-in-the-nav-menu.md`](decisions/account-area-navigation-lives-in-the-nav-menu.md). Two sub-navs were built and removed (SNOW-667's grouped strip, rendered from a since-deleted `apps/accounts/subnav.py`; SNOW-705's flat tab strip), so adding a page means adding one `<a>` to `templates/includes/nav.html` — **and an assertion to `tests/public/test_nav_partial.py`**. That is not a formality: `/account/observations/` and `/account/routes/` both shipped mounted, tested and reachable only by typing the URL, because their tests reverse the URL directly. SNOW-668 linked them and added the per-entry assertions. A flag-gated page needs its entry gated too — Routes reads `routes_visible` from `apps.accounts.context_processors`, because `nav.html` renders on pages that pass no context of their own.
+
+Two things to know before touching the routing. `subscribe_partial` used to own the `""` route, which made a GET of `/account/` answer 405; it moved to `/account/subscribe/` keeping its URL name, so every `{% url 'accounts:subscribe' %}` is unaffected. And none of `hub_view`, `settings_view` or `favourites_view` is `@never_cache`, nor may any of them set `Cache-Control: private, no-store`: the offline favourites roster reads `/account/favourites/` out of the PWA shell cache, and `static/js/sw.js` refuses to cache a `no-store` response, so safety comes from the `X-SW-Principal` stamp instead. Their two neighbours in the area — `my_routes` and `my_observations`, whose views live in other apps — DO send `no-store`, deliberately, so copying a header between account pages is the mistake to watch for.
 
 **Models** (SNOW-514 collapsed `Subscriber` into `Account` — there is now a single public-user identity):
 - `Account(user, is_verified, verified_at, display_name, acquisition_request, pending_email, pending_email_requested_at)` — the single public-user identity, OneToOne to `auth.User` (`related_name="account"`). Auto-created at every public entry point (subscribe, sign-in, register) via `Account.objects.get_or_create_for_email(email)` (username == email == lowercased). `is_verified` is the sole "email proven reachable" gate, set by **every** email-proving link (`verify_view`, `account_view`, `change_email_confirm_view`, and `reset_password_confirm_view`); it is deliberately distinct from `User.is_active` (the kill switch). `Account.mark_verified(now)` mutates in memory and returns `self` (idempotent on `verified_at`); the caller owns the `save()` + `login()`. `acquisition_request` (FK to `core.RequestLog`, `SET_NULL`) records the request that first created the account — first-observation wins, never overwritten. `pending_email` / `pending_email_requested_at` (SNOW-433) hold a new address awaiting verification without touching the live `User.email`.

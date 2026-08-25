@@ -56,8 +56,8 @@ is not getting one.
     {% comment %}
         Three modules, in document order, which is execution order for
         deferred scripts — so each one's window.pwa* global exists before the
-        next reads it. The same trio accounts/hub.html loads for its
-        favourites list, with this page's own half swapped in at the end.
+        next reads it. The same trio accounts/favourites.html loads for
+        its own list, with this page's own half swapped in at the end.
 
           htmx.min.js          parser-blocking, so it has run before any row
                                is swapped. It is what makes the trash work:

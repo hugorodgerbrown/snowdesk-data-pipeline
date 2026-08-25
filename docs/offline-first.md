@@ -305,25 +305,35 @@ loaded online. `/account/change-email/` is never available offline at
 all — it is `@never_cache`, it is a mutation form, and nothing needs it
 offline.
 
-**`/account/manage/` is cache-partitioned, not cache-avoided.** It IS
-written to the shell cache, stamped with the account it was rendered
-for, and served offline to that account alone. `@never_cache` on
-`manage_view` was the first shape of this fix and was backed out: the
-offline favourites roster is built on the manage page being in the shell
-cache, so `no-store` took a shipped feature offline with it — two cases
-in `tests/e2e/test_favourites_offline.py`. The stamp closes the leak on
-its own, which is why it exists: it is what makes an authenticated page
-safe to hold in a cache shared with every other account. Do not add
+**The account pages are cache-partitioned, not cache-avoided.** They ARE
+written to the shell cache, stamped with the account they were rendered
+for, and served offline to that account alone. `@never_cache` was the
+first shape of this fix and was backed out: the offline favourites roster
+is built on the page that hosts the roster being in the shell cache, so
+`no-store` took a shipped feature offline with it — two cases in
+`tests/e2e/test_favourites_offline.py`. The stamp closes the leak on its
+own, which is why it exists: it is what makes an authenticated page safe
+to hold in a cache shared with every other account. Do not add
 `@never_cache` back;
-`tests/accounts/test_views.py::test_response_is_not_no_store` and
-`manage_view`'s own docstring pin the choice, and
-[`offline-map.md`](offline-map.md#the-manage-page-is-partitioned-not-excluded)
+`tests/accounts/test_favourites_page.py::TestFavouritesPageCaching`,
+`tests/accounts/test_views.py::test_response_is_not_no_store` and the
+views' own docstrings pin the choice, and
+[`offline-map.md`](offline-map.md#the-account-pages-are-partitioned-not-excluded)
 carries the full argument.
 
-Partitioned is not the same as dependable, though. The manage page's
-entry is in the cache only after that account has loaded the page online
-in this browser, and it is refused to every other principal. So the two
-offline-facing surfaces the page carries land differently:
+**Which page holds the roster has moved.** It was `/account/manage/`
+(SNOW-667 split that into `/account/` + `/account/settings/`), then the
+favourites section of `/account/`, and since SNOW-668 it is
+`/account/favourites/` — `apps.accounts.views.favourites_view`. The two
+neighbouring account pages whose views live elsewhere, `my_routes` and
+`my_observations`, DO send `Cache-Control: private, no-store`
+deliberately; copying that header onto `favourites_view` is the silent
+way to break this, which is what `TestFavouritesPageCaching` guards.
+
+Partitioned is not the same as dependable, though. The page's entry is
+in the cache only after that account has loaded it online in this
+browser, and it is refused to every other principal. So the two
+offline-facing surfaces the account area carries land differently:
 
 - **§12.7's escape hatch** — the "Reset local data on this device"
   button (`[data-pwa-reset-trigger]`,
