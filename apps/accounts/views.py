@@ -1410,16 +1410,20 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# hub_view / settings_view — the account area (SNOW-667)
+# hub_view / settings_view / favourites_view — the account area (SNOW-667)
 # ---------------------------------------------------------------------------
 #
-# These two replace the former ``manage_view``, a single page that had
+# These replace the former ``manage_view``, a single page that had
 # accumulated nine unranked sections. The split is by what the user is doing:
-# the hub holds their own data, settings holds everything they can change
-# about the account itself. ``/account/manage/`` is now a permanent redirect
-# to the hub (see urls.py).
+# the hub holds their subscriptions, favourites holds their saved pins, and
+# settings holds everything they can change about the account itself.
+# ``/account/manage/`` is now a permanent redirect to the hub (see urls.py).
 #
-# Neither view is ``@never_cache``, and that is deliberate — see
+# SNOW-668 added the third: favourites had been a lazy-loaded section at the
+# foot of the hub since SNOW-415, which left the hub a page with no honest
+# name for itself. It is the Subscriptions page now.
+#
+# None of the three is ``@never_cache``, and that is deliberate — see
 # ``_ACCOUNT_PAGE_CACHE_NOTE`` below.
 
 _ACCOUNT_PAGE_CACHE_NOTE = """
@@ -1543,6 +1547,56 @@ def settings_view(request: HttpRequest) -> HttpResponse:
             "account": _get_account(request),
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         },
+    )
+
+
+@require_GET
+def favourites_view(request: HttpRequest) -> HttpResponse:
+    """
+    Show the signed-in user's saved favourites as a page of their own.
+
+    Unauthenticated visitors are redirected to the sign-in page, as
+    ``hub_view`` and ``settings_view`` do — a page can render the way in,
+    where a fragment endpoint cannot, so this is a redirect and never a 403.
+
+    The favourites list was a lazy-loaded ``<section>`` at the bottom of the
+    hub from SNOW-415 until this ticket. Nothing renders here that
+    ``apps.favourites`` did not already render there: the template hosts
+    ``favourites:list`` by ``hx-get``, exactly as the hub did, and the view
+    queries nothing itself — that endpoint owns the batched
+    ``RegionDayRating`` lookup, the freshness headers and the offline roster
+    sidecar, and duplicating any of it here would be a second place to fix.
+
+    Deliberately NOT ``@never_cache``, and — unlike its siblings
+    ``apps.routes.views.my_routes`` and
+    ``apps.observations.views.my_observations`` — it must NOT set
+    ``Cache-Control: private, no-store`` either. Those two keep themselves
+    out of the PWA shell cache on purpose; this page is the surface the
+    offline favourites roster is read from, so the same header here would
+    silently break a shipped feature while every test still passed. See
+    ``_ACCOUNT_PAGE_CACHE_NOTE`` above for why the ``X-SW-Principal`` stamp
+    makes caching per-user HTML safe.
+
+    Context keys:
+        account — authenticated Account instance, or None for a staff user
+                  with no Account profile. Not read by the template today;
+                  supplied for parity with the hub and settings pages, whose
+                  shared partials expect it.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        Rendered ``accounts/favourites.html`` or a redirect to sign-in.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    return render(
+        request,
+        "accounts/favourites.html",
+        {"account": _get_account(request)},
     )
 
 
