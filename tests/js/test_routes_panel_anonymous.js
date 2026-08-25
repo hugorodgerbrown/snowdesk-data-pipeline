@@ -8,19 +8,17 @@
  * per-module-instance-state split as test_favourites_panel_anonymous.js and
  * the test_report_gate_*.js pair.
  *
- * The roundel is rendered for signed-out visitors too (within the ``routes``
- * waffle flag's gate), so the affordance is discoverable rather than
- * appearing on sign-in — the shape #favourite-add-btn and #report-btn already
- * had. What the tap must NOT do is offer an upload that cannot work.
+ * The roundel is rendered for signed-out visitors too, so the affordance is
+ * discoverable rather than appearing on sign-in — the shape
+ * #favourite-add-btn and #report-btn already had. What the tap must NOT do
+ * is offer an upload that cannot work.
  *
- * WHY THIS BRANCH IS TESTED THOUGH IT IS UNREACHABLE TODAY. The ``routes``
- * flag is seeded superusers-only (apps/routes/migrations/0002_seed_routes_flag),
- * so in production every visitor who can see this roundel is signed in.
- * Opening the flag up to ``everyone`` is an admin toggle, not a code change
- * — the branch has to already be right at the moment somebody flips it, and
- * a branch nothing exercises is a branch nobody has checked. See
- * apps.public.views._routes_context for the two gates and why they are
- * separate.
+ * This branch was written before it was reachable: the ``routes`` waffle
+ * flag was seeded superusers-only, so every visitor who could see the
+ * roundel was signed in. SNOW-724 retired the flag, and the branch this
+ * file covers became the one an anonymous visitor actually gets — which is
+ * the argument for having tested it all along. See
+ * apps.public.views._routes_context for the gate that remains.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';

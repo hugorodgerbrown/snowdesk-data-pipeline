@@ -335,9 +335,8 @@ class TestForecastWeatherGeojsonQueryCount:
         assert response_ten.status_code == 200
 
         # Two app-level queries (resorts + bulk weather fetch) plus a small,
-        # fixed number of framework queries (waffle flag lookup, session) —
-        # the important assertion is that the count does not grow with the
-        # number of resorts.
+        # fixed number of framework queries — the important assertion is
+        # that the count does not grow with the number of resorts.
         assert len(ctx_ten.captured_queries) == len(ctx_one.captured_queries)
 
 
