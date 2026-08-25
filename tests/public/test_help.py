@@ -9,9 +9,9 @@ Covers:
   * The map panel's favourites-overlay, community-reports, and
     Report-button sentences are always present.
   * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
-    absent by default, present under ``@override_flag``.
-  * The Map-weather panel (SNOW-573) is gated on the ``weather_layer``
-    waffle flag the same way.
+    absent by default, present under ``@override_flag``. It is the only
+    gated panel left; SNOW-724 opened the Map-weather (SNOW-573) and
+    Slope-angle (SNOW-691) topics to everyone.
   * The bulletin-guide cross-link is present in the page content.
   * The footer and top nav (both rendered on the homepage) independently
     link to /help/.
@@ -82,7 +82,12 @@ class TestHelpPage:
 
 @pytest.mark.django_db
 class TestHelpPageFlagGating:
-    """Flag-gated topics render only for users who can see the feature."""
+    """The one gated topic renders only for users who can see the feature.
+
+    SNOW-724 retired the ``weather_layer`` and ``slope_layer`` flags, so
+    those two topics are asserted present for an anonymous visitor rather
+    than under an override.
+    """
 
     def test_sync_log_panel_absent_by_default(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
@@ -93,25 +98,14 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-sync-log"' in response.content
 
-    def test_weather_layer_panel_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-weather-layer"' not in response.content
-
-    @override_flag("weather_layer", active=True)
-    def test_weather_layer_panel_present_when_flag_active(self, client: Client) -> None:
+    def test_weather_layer_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-weather-layer"' in response.content
 
-    def test_slope_panel_absent_by_default(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-slope"' not in response.content
-
-    @override_flag("slope_layer", active=True)
-    def test_slope_panel_present_when_flag_active(self, client: Client) -> None:
+    def test_slope_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-slope"' in response.content
 
-    @override_flag("slope_layer", active=True)
     def test_slope_panel_is_an_anchor_target(self, client: Client) -> None:
         """SNOW-691: the map legend links here, so the id has to exist.
 
@@ -124,7 +118,6 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'id="help-topic-slope"' in response.content
 
-    @override_flag("slope_layer", active=True)
     def test_slope_panel_states_the_layer_is_not_a_verdict(
         self, client: Client
     ) -> None:

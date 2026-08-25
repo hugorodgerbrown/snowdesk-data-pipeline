@@ -8,7 +8,8 @@ Covers (SNOW-573):
 * Response shape: ``[lon, lat]`` ordering, ``resort_id``/``name``/
   ``region_id``/``days`` properties.
 * ``?d=`` narrowing and its malformed-input 400.
-* The ``weather_layer`` flag gate (404 while inactive).
+* Public reachability — an anonymous visitor gets 200 (SNOW-724
+  retired the ``weather_layer`` flag that used to 404 them).
 * ``Cache-Control`` and the freshness headers (oldest-``fetched_at``-wins).
 * Query count — two queries regardless of resort count (no N+1).
 * Short-window tolerance (fewer than ``POINT_FORECAST_DAYS`` stored rows)
@@ -27,7 +28,6 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from apps.core.freshness import GENERATED_AT_HEADER, MAX_AGE_HEADER, UNSAFE_AFTER_HEADER
 from tests.factories import (
@@ -39,18 +39,15 @@ from tests.factories import (
 
 
 @pytest.fixture(autouse=True)
-def _enable_weather_layer_flag():  # type: ignore[no-untyped-def]
-    """Force ``weather_layer=on`` for every test in this module.
+def _clear_response_cache():  # type: ignore[no-untyped-def]
+    """Clear the server-side response cache before each test.
 
-    The flag gate itself gets its own dedicated test below with the flag
-    forced off; every other test needs the endpoint reachable. Also clears
-    the server-side response cache before each test — the view's
-    ``cache.get_or_set`` key is stable (``forecast-weather:v1:<d|all>``),
-    so a stale entry from a previous test would otherwise leak in.
+    The view's ``cache.get_or_set`` key is stable
+    (``forecast-weather:v1:<d|all>``), so a stale entry from a previous
+    test would otherwise leak in.
     """
     cache.clear()
-    with override_flag("weather_layer", active=True):
-        yield
+    yield
 
 
 @pytest.mark.django_db
@@ -250,14 +247,14 @@ class TestForecastWeatherGeojsonDateParam:
 
 
 @pytest.mark.django_db
-class TestForecastWeatherGeojsonFlagGate:
-    """The weather_layer waffle flag gate."""
+class TestForecastWeatherGeojsonIsPublic:
+    """The endpoint is reachable without authentication (SNOW-724)."""
 
-    def test_flag_inactive_returns_404(self) -> None:
-        """With the flag forced off, the endpoint 404s."""
-        with override_flag("weather_layer", active=False):
-            response = Client().get(reverse("api:forecast_weather_geojson"))
-        assert response.status_code == 404
+    def test_anonymous_request_returns_200(self) -> None:
+        """An anonymous visitor gets the payload, not the old flag 404."""
+        response = Client().get(reverse("api:forecast_weather_geojson"))
+        assert response.status_code == 200
+        assert response.json()["type"] == "FeatureCollection"
 
 
 @pytest.mark.django_db

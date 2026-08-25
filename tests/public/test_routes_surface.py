@@ -1,22 +1,19 @@
 """
 tests/public/test_routes_surface.py — the map's routes surface (SNOW-686).
 
-The routes panel is the only UGC surface behind a waffle flag, which makes
-two things worth asserting that no other surface needs:
+The routes panel sat behind the ``routes`` waffle flag until SNOW-724
+retired it. Two things stayed worth asserting after the gate went:
 
-  1. The flag really gates it. ``routes_visible``
-     (``apps.public.views._routes_context``) is read in two places — the
-     roundel in ``public/partials/_map_embed.html`` and the surface include
-     in ``public/home.html`` — so a partial gate would leave either a
-     roundel that opens nothing or a sheet nothing opens. Both are checked
-     in both directions.
+  1. The roundel in ``public/partials/_map_embed.html`` and the surface
+     include in ``public/home.html`` arrive together — a half-removed gate
+     would leave either a roundel that opens nothing or a sheet nothing
+     opens — and ``routes_eligible`` (authentication) still splits the
+     signed-in list from the anonymous sign-in CTA.
 
   2. ``routes.js`` stays OUTSIDE the map bundle's contiguous run.
      ``tests/public/test_map_script_order.py`` exercises the homepage as an
-     anonymous visitor, for whom the flag is inactive and this script is
-     absent — so its ``test_bundle_scripts_are_contiguous`` cannot see this
-     tag at all. This module renders the page with the flag ON and asserts
-     the same property, which is the only place that combination is covered.
+     anonymous visitor; this module renders it signed in, which is the state
+     where the panel is at its fullest.
 
 Everything the panel does once open is asserted elsewhere: the endpoint in
 tests/routes/test_views.py, the client behaviour in
@@ -34,7 +31,6 @@ import re
 import pytest
 from django.test import Client
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from tests.factories import UserFactory
 from tests.public.test_map_script_order import _map_bundle
@@ -62,29 +58,25 @@ def _home(client: Client) -> str:
 
 
 @pytest.mark.django_db
-class TestRoutesSurfaceIsFlagGated:
-    """The ``routes`` flag governs the roundel and the sheet together."""
+class TestRoutesSurfaceRenders:
+    """The roundel and the sheet ship together, for every visitor."""
 
-    @override_flag("routes", active=False)
-    def test_nothing_renders_while_the_flag_is_off(self, client: Client) -> None:
-        """No roundel, no sheet, no script — the feature is simply absent."""
-        client.force_login(UserFactory.create())
+    def test_everything_renders_for_an_anonymous_visitor(
+        self, client: Client
+    ) -> None:
+        """SNOW-724: the roundel, the sheet and the script are all present.
 
+        The inverse of the assertion this test replaced, which pinned the
+        flag-off state. An anonymous visitor now gets the whole surface;
+        what they do NOT get is eligibility, covered below.
+        """
         body = _home(client)
 
-        assert 'id="route-add-btn"' not in body
-        assert 'id="route-sheet"' not in body
-        assert "js/routes.js" not in body
+        assert 'id="route-add-btn"' in body
+        assert 'id="route-sheet"' in body
+        assert "js/routes.js" in body
 
-    @override_flag("routes", active=False)
-    def test_the_flag_is_off_for_an_anonymous_visitor(self, client: Client) -> None:
-        """The default state for the world, and what other suites render."""
-        body = _home(client)
-
-        assert 'id="route-add-btn"' not in body
-
-    @override_flag("routes", active=True)
-    def test_the_roundel_renders_with_the_flag_on(self, client: Client) -> None:
+    def test_the_roundel_carries_its_attributes(self, client: Client) -> None:
         """The roundel carries every attribute routes.js reads off it.
 
         These five are the module's whole input — it reads nothing else from
@@ -102,8 +94,7 @@ class TestRoutesSurfaceIsFlagGated:
         assert "data-route-rename-url-template=" in body
         assert "data-signin-url=" in body
 
-    @override_flag("routes", active=True)
-    def test_the_surface_renders_with_the_flag_on(self, client: Client) -> None:
+    def test_the_surface_renders_for_a_signed_in_user(self, client: Client) -> None:
         """The sheet, the panel template, the file picker and the strings."""
         client.force_login(UserFactory.create())
 
@@ -116,9 +107,8 @@ class TestRoutesSurfaceIsFlagGated:
         assert 'id="routes-strings-template"' in body
         assert "js/routes.js" in body
 
-    @override_flag("routes", active=True)
     def test_an_anonymous_visitor_is_not_eligible(self, client: Client) -> None:
-        """Two gates, not one: visible does not imply eligible.
+        """Rendered does not imply eligible.
 
         The roundel still renders — the affordance is discoverable rather
         than appearing on sign-in — but routes.js reads ``false`` here and
@@ -129,7 +119,6 @@ class TestRoutesSurfaceIsFlagGated:
         assert 'id="route-add-btn"' in body
         assert 'data-routes-eligible="false"' in body
 
-    @override_flag("routes", active=True)
     def test_the_panel_carries_the_overlay_switch(self, client: Client) -> None:
         """The "Display on the map" switch, now there is a layer to drive.
 
@@ -157,22 +146,17 @@ class TestRoutesSurfaceIsFlagGated:
 class TestRoutesScriptStaysOutsideTheMapBundle:
     """``routes.js`` is a surface module, not a bundle member."""
 
-    @override_flag("routes", active=True)
     def test_it_is_not_interleaved_into_the_bundles_run(self, client: Client) -> None:
         """The bundle's contiguous run must not contain routes.js.
 
-        This is the case ``test_map_script_order.py`` structurally cannot
-        reach: it renders the page anonymously, where this flag is off and
-        the tag is absent, so its own contiguity check never sees it. A
-        ``routes.js`` tag that drifted into the ``extra_js`` block — where
-        the bundle lives — would break the bundle's run for every superuser
-        and for nobody else, which is the worst possible audience for that
-        bug.
+        A ``routes.js`` tag that drifted into the ``extra_js`` block — where
+        the bundle lives — would break the bundle's run. Asserted signed in
+        because that is the state carrying the whole surface.
         """
         client.force_login(UserFactory.create())
         rendered = _SCRIPT_SRC_RE.findall(_home(client))
 
-        assert "routes.js" in rendered, "the flag is on; the tag should be here"
+        assert "routes.js" in rendered, "the tag should be on every page"
 
         bundle = set(_map_bundle())
         positions = [i for i, name in enumerate(rendered) if name in bundle]
@@ -186,7 +170,6 @@ class TestRoutesScriptStaysOutsideTheMapBundle:
             "tests/public/test_map_script_order.py for why the run matters."
         )
 
-    @override_flag("routes", active=True)
     def test_it_loads_after_the_modules_it_depends_on(self, client: Client) -> None:
         """map_sheet.js and inline_rename.js must run before routes.js.
 

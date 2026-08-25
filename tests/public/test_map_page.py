@@ -22,7 +22,6 @@ from django.conf import settings
 from django.test import Client, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from tests.factories import (
     AccountFactory,
@@ -586,9 +585,9 @@ def test_map_layer_menu_section_order() -> None:
     SNOW-658 renamed the first two sections to say what their rows actually
     are — "Bulletins" (one row per PROVIDER) and "Boundaries" (one per EAWS
     level) — and split the trailing rows out of the tier list into their own
-    sections: "Locations" for resorts, "Conditions" for weather.  The weather
-    row is flag-gated and its heading is gated with it, so "Conditions" is
-    deliberately absent here.
+    sections: "Locations" for resorts, "Conditions" for weather.  SNOW-724
+    retired the weather_layer flag, so "Conditions" now renders for every
+    visitor and takes its place in this order.
     """
     client = Client()
     response = client.get(reverse("public:home"))
@@ -598,12 +597,19 @@ def test_map_layer_menu_section_order() -> None:
     start = content.index("basemap-menu-section-label")
     positions = [
         content.index(label, start)
-        for label in ("Bulletins", "Boundaries", "Locations", "Base map")
+        for label in (
+            "Bulletins",
+            "Boundaries",
+            "Locations",
+            "Conditions",
+            "Terrain",
+            "Base map",
+        )
     ]
 
     assert positions == sorted(positions), (
         "Map layer menu sections are not in the expected order "
-        "(Bulletins < Boundaries < Locations < Base map)"
+        "(Bulletins < Boundaries < Locations < Conditions < Terrain < Base map)"
     )
     assert "Options" not in content
 
@@ -986,8 +992,7 @@ def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> No
 
 
 @pytest.mark.django_db
-@override_flag("slope_layer", active=True)
-def test_terrain_row_renders_when_flag_active() -> None:
+def test_terrain_row_renders_when_tile_url_configured() -> None:
     """SNOW-691: the Terrain section and its Slope angle row render.
 
     The row carries the same ``.sync-dot`` its siblings do, and the tile
@@ -1008,20 +1013,22 @@ def test_terrain_row_renders_when_flag_active() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("slope_layer", active=False)
-def test_terrain_row_absent_without_flag() -> None:
-    """SNOW-691: nothing of the overlay reaches the DOM without the flag.
+@override_settings(SLOPE_TILE_URL="")
+def test_terrain_row_absent_without_tile_url() -> None:
+    """SNOW-724: clearing SLOPE_TILE_URL takes the whole overlay out.
 
-    The flag ships ``everyone: true`` in the manifest, so this is the
-    kill-switch state (an operator setting ``everyone=False`` in the admin)
-    rather than a rollout gate — but it has to stay clean either way. In
+    This is the operator kill switch that ``slope_layer``'s
+    ``everyone=False`` used to be — the setting is env-overridable, so
+    withdrawing a third-party raster whose licence position is still open
+    is a restart rather than a deploy. It has to leave the DOM clean. In
     particular the tile template must not be emitted: there is no Snowdesk
     endpoint behind it to 403, so a template rendered for an ineligible
     page would be an invitation to install the layer anyway.
 
     The heading is asserted absent alongside the row because it sits inside
-    the same flag check — SNOW-658's lesson that a section whose only row is
-    gated must gate its heading too, or the menu grows an empty "Terrain".
+    the same eligibility check — SNOW-658's lesson that a section whose only
+    row is gated must gate its heading too, or the menu grows an empty
+    "Terrain".
     """
     client = Client()
     content = client.get(reverse("public:home")).content.decode()
@@ -1033,7 +1040,6 @@ def test_terrain_row_absent_without_flag() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("slope_layer", active=True)
 def test_terrain_section_follows_locations_in_the_layer_menu() -> None:
     """SNOW-691: Terrain sits after Locations and before Base map.
 
@@ -1042,10 +1048,10 @@ def test_terrain_section_follows_locations_in_the_layer_menu() -> None:
     than a row under Conditions — and it belongs with the other
     view-controls, above the basemap list that closes the menu.
 
-    The unflagged section-order assertion above deliberately does not name
-    Terrain: with no flag row in the test database the section is absent
-    there, which is the state an anonymous visitor sees until
-    ``sync_waffle_flags --commit`` has run.
+    Overlaps ``test_map_layer_menu_section_order`` above, which since
+    SNOW-724 can name Terrain too — kept because this one exists to pin
+    Terrain's position specifically, and would be the test to update if the
+    section ever moved.
     """
     client = Client()
     content = client.get(reverse("public:home")).content.decode()
@@ -1062,7 +1068,6 @@ def test_terrain_section_follows_locations_in_the_layer_menu() -> None:
 
 
 @pytest.mark.django_db
-@override_flag("slope_layer", active=True)
 def test_slope_legend_section_renders_with_its_caveat() -> None:
     """SNOW-691: the legend carries the five classes and a route to the caveats.
 

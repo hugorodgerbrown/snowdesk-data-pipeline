@@ -52,7 +52,6 @@ from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
-from waffle.testutils import override_flag
 
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.slf_fetcher import BulletinSource
@@ -383,11 +382,12 @@ def test_forecast_weather_geojson_no_cookie_vary_with_analytics_enabled() -> Non
     """SNOW-299/SNOW-573 regression: forecast-weather.geojson stays Cookie-free.
 
     Extends the ``_POSTHOG_EXEMPT_PATHS`` key-on coverage to the SNOW-573
-    map weather layer endpoint. Flag-gated on ``weather_layer``, so this
-    needs its own test rather than joining the plain parametrize list above.
+    map weather layer endpoint. Kept as its own test rather than joining the
+    plain parametrize list above: it was written when the endpoint was
+    flag-gated, and it is the only member of that list carrying an
+    ``@override_settings``-driven analytics key.
     """
-    with override_flag("weather_layer", active=True):
-        response = Client().get(reverse("api:forecast_weather_geojson"))
+    response = Client().get(reverse("api:forecast_weather_geojson"))
     assert response.status_code == 200
     vary = response.get("Vary", "")
     assert "Accept-Encoding" in vary, (
