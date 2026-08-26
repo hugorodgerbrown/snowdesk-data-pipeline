@@ -1672,7 +1672,11 @@ class TestDayWindowsPanel:
     def test_all_day_only_renders_single_row(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A bulletin with only an all_day rating renders one row, chip = 'All day'."""
+        """A bulletin with only an all_day rating renders one row, and no chip.
+
+        all_day is the default window: with one row there is nothing for a
+        label to distinguish it from (SNOW-727).
+        """
         day = date(2026, 3, 19)
         raw = _raw_data_with_ratings([_rating("moderate", "all_day")])
         _make_am_bulletin(region, day, raw_data=raw)
@@ -1682,12 +1686,16 @@ class TestDayWindowsPanel:
         content = response.content.decode()
         assert content.count('data-testid="day-window-row"') == 1
         assert 'data-window="all_day"' in content
-        assert ">All day<" in content
+        assert 'data-testid="day-window-pill"' not in content
 
     def test_two_row_pills_read_all_day_and_later(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day + later cross-category → two rows with chips 'All day' / 'Later'."""
+        """all_day + later → two rows, and only the 'later' row takes a chip.
+
+        The all_day row is the baseline the later row departs from, so
+        labelling it adds nothing (SNOW-727).
+        """
         day = date(2026, 3, 22)
         raw = _raw_data_with_ratings(
             [
@@ -1707,8 +1715,9 @@ class TestDayWindowsPanel:
         panel_start = content.index('data-testid="day-windows-panel"')
         panel_end = content.index('data-testid="avalanche-problems-heading"')
         panel_html = content[panel_start:panel_end]
-        assert ">All day<" in panel_html
+        assert panel_html.count('data-testid="day-window-pill"') == 1
         assert ">Later<" in panel_html
+        assert ">All day<" not in panel_html
         assert ">Earlier<" not in panel_html
 
     def test_tile_carries_lv_class_and_level_number(
@@ -1755,7 +1764,8 @@ class TestDayWindowsPanel:
         assert content.count('data-testid="day-window-row"') == 1
         assert "dw-tile lv-considerable" in content
         assert ">3<" in content
-        assert ">All day<" in content
+        # all_day carries no pill — it is the default window (SNOW-727).
+        assert 'data-testid="day-window-pill"' not in content
 
     def test_sublevel_modifier_minus_on_badge(
         self, client: Client, region: MicroRegion
@@ -4411,12 +4421,12 @@ class TestTitleBarCarriesLevel:
 
 @pytest.mark.django_db
 class TestTimePillIsGatedOnASplitDay:
-    """SNOW-727: the per-card time pill renders only when the day splits."""
+    """SNOW-727: all_day is the default window and is never labelled."""
 
-    def test_all_day_bulletin_has_no_card_time_pill(
+    def test_all_day_bulletin_labels_no_window_anywhere(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """Every trait all_day → no time pill on any card."""
+        """all_day is the default window and goes unlabelled on every surface."""
         day = date(2026, 3, 19)
         raw = _raw_data_with_problems(
             [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
@@ -4424,20 +4434,23 @@ class TestTimePillIsGatedOnASplitDay:
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-19")).content.decode()
         assert 'data-testid="time-period-pill"' not in content
-        # The Day Risk Profile row still names the window — it is that row's job.
-        assert 'data-testid="day-window-pill"' in content
+        # Nor does the Day Risk Profile row label it — there is one window,
+        # and naming it says nothing (SNOW-727).
+        assert 'data-testid="day-window-pill"' not in content
+        assert "ALL DAY" not in content.upper().replace("ALL DAYS", "")
 
 
 @pytest.mark.django_db
 class TestTypePillsVsTimePills:
-    """SNOW-727: the dry/wet pill is gone, and the time pill is conditional.
+    """SNOW-727: the problem card's chip rail is empty.
 
     The category pill was the fourth telling of the category on one card —
     the title bar, the hazard pictogram and the problem label all carry it
     already, and across every trait in production the title has never been
-    absent. The time pill survives, but only on a bulletin that actually
-    splits the day; on an all-day bulletin it repeated the Day Risk Profile
-    row above it and separated nothing.
+    absent. The time pill went the same way: on all 734 split-day traits in
+    production the title bar already names the window in the provider's own
+    words ("…, whole day", "…, as the day progresses", "…, earlier"), and on
+    an all-day bulletin there is no window to name at all.
     """
 
     def test_dry_card_has_no_category_pill(
@@ -4466,10 +4479,15 @@ class TestTypePillsVsTimePills:
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert 'data-testid="category-type-pill"' not in content
 
-    def test_time_period_label_carries_time_period_pill(
+    def test_later_window_is_named_by_the_title_bar_not_a_pill(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A card with a non-empty time_period_label renders a time-period-pill testid."""
+        """A 'later' card names its window in the title bar, and takes no pill.
+
+        The provider's own wording carries it — SLF says "as the day
+        progresses", ALBINA's fallback says ", later" — on all 734 split-day
+        traits in production (SNOW-727).
+        """
         day = date(2026, 3, 15)
         # A "later" time-period wet trait carries a time_period_label.
         raw_data = {
@@ -4502,12 +4520,16 @@ class TestTypePillsVsTimePills:
         }
         _make_am_bulletin(region, day, raw_data=raw_data)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert 'data-testid="time-period-pill"' in content
+        assert 'data-testid="time-period-pill"' not in content
+        # The window survives in the title bar's wording and on the
+        # Day Risk Profile row, where "later" is the news.
+        assert "later" in content.casefold()
+        assert 'data-testid="day-window-pill"' in content
 
-    def test_split_day_keeps_the_time_pill_and_drops_the_category_pill(
+    def test_split_day_drops_both_card_pills(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """On a split day the time pill survives; the category pill does not."""
+        """Even on a split day the card carries neither pill."""
         day = date(2026, 3, 15)
         # Variable-day bulletin: dry all-day + wet later.
         raw_data = {
@@ -4550,11 +4572,14 @@ class TestTypePillsVsTimePills:
         }
         _make_am_bulletin(region, day, raw_data=raw_data)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        # The day splits, so the time pill carries information here.
-        assert 'data-testid="time-period-pill"' in content
-        # The category axis is left to the title bar and the pictogram.
+        # Neither axis needs a chip: the title bar names the window in the
+        # provider's words, and the Day Risk Profile row carries "Later".
+        assert 'data-testid="time-period-pill"' not in content
         assert 'data-testid="category-type-pill"' not in content
         assert 'data-testid="category-pill"' not in content
+        # "Later" is the news on a split day and does get a pill, on the
+        # Day Risk Profile row.
+        assert 'data-testid="day-window-pill"' in content
 
 
 # ---------------------------------------------------------------------------

@@ -255,12 +255,12 @@
         // with the list label.
         const label = subRegionLabels[l2] || l2;
         const header = document.createElement('li');
-        header.className = 'mt-3 flex items-baseline justify-between border-t border-border px-2 pt-1 text-chip font-semibold uppercase tracking-wider text-text-3 first:mt-0 first:border-t-0 first:pt-0';
+        header.className = 'mt-3 flex items-baseline justify-between border-t border-border px-2 pt-1 text-pill font-semibold uppercase tracking-wider text-text-3 first:mt-0 first:border-t-0 first:pt-0';
         const labelSpan = document.createElement('span');
         labelSpan.textContent = label;
         header.appendChild(labelSpan);
         const codeSpan = document.createElement('span');
-        codeSpan.className = 'font-mono text-chip text-text-3';
+        codeSpan.className = 'font-mono text-pill text-text-3';
         codeSpan.textContent = l2;
         header.appendChild(codeSpan);
         queueListEl.appendChild(header);
@@ -289,7 +289,7 @@
 
       const badge = statusBadge(entry);
       const right = document.createElement('span');
-      right.className = `shrink-0 rounded-full px-1.5 py-0.5 text-chip font-medium ${badge.cls}`;
+      right.className = `shrink-0 rounded-full px-1.5 py-0.5 text-pill font-medium ${badge.cls}`;
       right.textContent = badge.label;
       li.appendChild(right);
 

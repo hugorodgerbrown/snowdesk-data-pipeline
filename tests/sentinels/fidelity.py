@@ -392,6 +392,38 @@ def subdivision_suffix() -> Probe:
     return probe
 
 
+def time_period_label() -> Probe:
+    """Probe: a non-default time window reaches the Day Risk Profile row.
+
+    ``all_day`` is the page's default window and is deliberately unlabelled
+    (SNOW-727): naming it told the reader nothing on a single-window day,
+    and on a split day it is merely the baseline the "later" row departs
+    from. So ``all_day`` passes without a needle, the same way ``neutral``
+    does in :func:`subdivision_suffix`.
+
+    ``earlier`` and ``later`` are the news, and each renders as its own
+    pill on the Day Risk Profile row. Note the pill is what this matches,
+    not the problem card: SLF words the window in the card's title bar in
+    its own register ("as the day progresses"), which no enum-derived label
+    would ever match.
+    """
+
+    def probe(values: list[Any], page: RenderedPage) -> bool:
+        for value in _scalars(values):
+            token = str(value)
+            if token == "all_day":
+                continue
+            if token not in {"earlier", "later"}:
+                # A window the table has not seen — fail rather than pass
+                # silently, so a new enum member surfaces here.
+                return False
+            if token not in page.text:
+                return False
+        return True
+
+    return probe
+
+
 def timestamp() -> Probe:
     """Probe: an ISO timestamp reaches the metadata strip as ``j M H:i``.
 
@@ -556,7 +588,9 @@ RENDERED: dict[str, Rendered] = {
         snake_label(), "EAWS stability chip on the problem card"
     ),
     "avalancheProblems[].validTimePeriod": Rendered(
-        snake_label(), "Time-period pill on the problem card"
+        time_period_label(),
+        "Day Risk Profile row. The card's own time pill went in SNOW-727 — "
+        "the title bar states the window in the provider's words.",
     ),
     "customData.CH.aggregation[].category": Rendered(
         literal(),
@@ -569,7 +603,7 @@ RENDERED: dict[str, Rendered] = {
     ),
     "customData.CH.aggregation[].title": Rendered(literal(), "Trait block heading"),
     "customData.CH.aggregation[].validTimePeriod": Rendered(
-        snake_label(), "Day Risk Profile row and trait time pill"
+        time_period_label(), "Day Risk Profile row"
     ),
     "customData.LWD_Tyrol.dangerPatterns[]": Rendered(
         danger_pattern(), "Danger-pattern tags below the problem cards"
@@ -589,7 +623,9 @@ RENDERED: dict[str, Rendered] = {
     "dangerRatings[].mainValue": Rendered(
         literal(), "Day Risk Profile row and hero rating"
     ),
-    "dangerRatings[].validTimePeriod": Rendered(snake_label(), "Day Risk Profile row"),
+    "dangerRatings[].validTimePeriod": Rendered(
+        time_period_label(), "Day Risk Profile row"
+    ),
     "nextUpdate": Rendered(timestamp(), "Metadata strip, Next update cell"),
     "publicationTime": Rendered(timestamp(), "Metadata strip, Issued cell"),
     "snowpackStructure.comment": Rendered(prose(), "Snowpack collapsible panel"),

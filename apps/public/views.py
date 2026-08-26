@@ -5983,31 +5983,6 @@ def problem_cards_for_bulletin(bulletin: Bulletin) -> list[dict[str, Any]]:
     )
 
 
-def _stamp_time_pill_visibility(
-    cards: list[dict[str, Any]], is_time_variable: bool
-) -> None:
-    """
-    Mark each problem card with whether its time pill should render.
-
-    The per-card time pill earns its place only on a bulletin that actually
-    splits the day (SNOW-727). On the 96% of bulletins that are ``all_day``
-    throughout it would read "ALL DAY" on every card and again on the Day
-    Risk Profile row above them, separating nothing from nothing.
-
-    Stamped onto the card rather than read from the panel inside the
-    partial, so ``_rating_block.html`` keeps its "expects ``card``" contract
-    and stays renderable from the component library's fixtures.
-
-    Args:
-        cards: Problem-card dicts, mutated in place.
-        is_time_variable: True when any trait is scoped to ``earlier`` or
-            ``later``.
-
-    """
-    for card in cards:
-        card["show_time_pill"] = is_time_variable
-
-
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     """
     Build the template context for a single compact bulletin panel.
@@ -6113,8 +6088,6 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # the caption surfaces that signal beside the headline band, which
     # only carries the level tints.
     is_time_variable = any(t.get("time_period") in {"earlier", "later"} for t in traits)
-
-    _stamp_time_pill_visibility(problem_cards, is_time_variable)
 
     panel: dict[str, Any] = {
         "bulletin": bulletin,

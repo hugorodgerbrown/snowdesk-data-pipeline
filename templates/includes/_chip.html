@@ -28,12 +28,12 @@ category, so the pill was a fourth telling of it.
 {% endcomment %}
 {% if variant == "time" %}
     <span
-        class="font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
+        class="font-mono text-pill uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
         {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
     >{{ text }}</span>
 {% else %}
     <span
-        class="font-mono text-chip uppercase bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
+        class="font-mono text-pill uppercase bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
         {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
     >{{ text }}</span>
 {% endif %}

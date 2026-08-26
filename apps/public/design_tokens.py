@@ -219,7 +219,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="typescale",
         tokens=(
             Token("--text-meta", "Meta label", "11px", None),
-            Token("--text-chip", "Chip caption", "9.5px", None),
+            Token("--text-pill", "Pill-chip caption", "9.5px", None),
             Token("--text-caption", "Caption", "11px", None),
             Token("--text-summary", "Summary title", "13px", None),
             Token("--text-label", "Problem / wordmark label", "15px", None),
