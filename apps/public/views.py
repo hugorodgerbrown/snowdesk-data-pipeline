@@ -5457,6 +5457,32 @@ def _build_single_trait_card(
         plevel = _DANGER_RATING_INT.get(drv, 0)
         if plevel > max_danger_level:
             max_danger_level = plevel
+    # SNOW-673. Guidance is enriched onto each *problem*; the card is composed
+    # from the trait, so it has to be carried up or it never reaches a
+    # template — which is exactly why it went unrendered for so long.
+    #
+    # A list rather than a single string because a trait can hold more than
+    # one problem type, and the card's label merges them ("Wind slab + New
+    # snow"). Every other spatial field here takes `first` and ignores the
+    # rest; doing that with guidance would attribute one problem's note to a
+    # card naming two. Deduplicated by problem type, in trait order.
+    seen_guidance: set[str] = set()
+    field_guidance: list[dict[str, str]] = []
+    for p in problems:
+        note = p.get("field_guidance")
+        ptype = p.get("problem_type") or ""
+        if not note or ptype in seen_guidance:
+            continue
+        seen_guidance.add(ptype)
+        field_guidance.append(
+            {
+                "label": str(
+                    _PROBLEM_LABELS.get(ptype, ptype.replace("_", " ").capitalize())
+                ),
+                "text": note,
+            }
+        )
+
     frequency_raw: str | None = first.get("frequency") or None
     stability_raw: str | None = first.get("snowpack_stability") or None
     frequency_label: Promise | None = _FREQUENCY_LABELS.get(frequency_raw or "")
@@ -5499,6 +5525,7 @@ def _build_single_trait_card(
         "stability_label": stability_label,
         "danger_patterns": normalised_patterns,
         "prose_mentions_spatial": first.get("prose_mentions_spatial", False),
+        "field_guidance": field_guidance,
     }
 
 

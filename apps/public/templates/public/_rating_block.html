@@ -50,6 +50,10 @@ Renders:
      sourced from customData.LWD_Tyrol.dangerPatterns (ALBINA-only).
      Absent for SLF and MeteoFrance cards.
   5. Prose — the problem's comment field rendered in full, no truncation.
+  6. Field notes — Snowdesk's own note for this problem type, below a
+     rule and credited to the SLF interpretation guide (SNOW-673).
+     A collapsible panel, closed by default. Absent when the problem type
+     has no entry in field_guidance.yaml.
 {% endcomment %}
 {% load i18n static card_tags hazard_icons snowdesk_html snowdesk_time %}
 
@@ -224,6 +228,31 @@ Renders:
         <div class="px-4 pt-3 pb-4">
             <div class="slf-prose text-sm leading-prose text-text-2">
                 {{ card.comment_html|snowdesk_html }}
+            </div>
+        </div>
+    {% endif %}
+
+    {# ── Field guidance (SNOW-673) ───────────────────────────────────────── #}
+    {# Snowdesk's own layer, and the one place on the card where the text is #}
+    {# not the provider's. The rule is doing the work: everything above it   #}
+    {# is what the provider published, everything below is interpretation    #}
+    {# paraphrased from SLF's guide. Guarded on the value — a problem type   #}
+    {# with no entry in apps/public/field_guidance.yaml renders nothing, not #}
+    {# a rule with empty space under it.                                     #}
+    {#                                                                       #}
+    {# The credit names SLF on ALBINA and Météo-France bulletins too. That   #}
+    {# is accurate: the notes are paraphrased from SLF's guide and the EAWS  #}
+    {# problem types are the shared standard. SNOW-679 covers per-provider   #}
+    {# guides.                                                               #}
+    {% if card.field_guidance %}
+        <div class="px-4 pb-4" data-testid="field-guidance">
+            {# The rule stays on this wrapper rather than moving inside the  #}
+            {# panel: it marks the provenance boundary (provider above,      #}
+            {# Snowdesk's interpretation below) and must be visible while    #}
+            {# the panel is closed, which is its default state.              #}
+            <div class="border-t border-border pt-3">
+                {% trans "Field notes" as guidance_eyebrow %}
+                {% include "includes/_collapsible_panel.html" with title=guidance_eyebrow data_testid="field-guidance-panel" bare=True body_template="public/_field_guidance_body.html" %}
             </div>
         </div>
     {% endif %}
