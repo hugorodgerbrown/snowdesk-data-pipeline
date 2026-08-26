@@ -14,6 +14,8 @@ This half is everything the user can change about the account itself:
     "add passkey" button.
   - Sign out (SNOW-616) — also in the nav disclosure; kept here because it
     is the control someone goes looking for on a borrowed device.
+  - Theme — the three-way light/dark/system preference. Browser-local,
+    stored in localStorage, applied by includes/theme_head.html.
   - Reset local data (SNOW-378) — the PWA escape hatch.
   - Sync log (SNOW-482) — flag-gated, painted client-side.
   - Anonymous usage data (SNOW-387) — the telemetry opt-in switch.
@@ -247,6 +249,31 @@ the label now names that. Behaviour is unchanged.
                     </div>
 
                     {% comment %}
+                        Theme — a browser-local preference, which is why it
+                        sits in this group rather than under Account: it lives
+                        in localStorage next to everything else here, and it
+                        does not follow the user to another machine.
+
+                        Three options, not a light/dark switch. The key
+                        includes/theme_head.html reads has three states, and
+                        writing only two of them would strand "follow the OS"
+                        the moment anyone touched the control — see
+                        includes/_theme_preference.html.
+                    {% endcomment %}
+                    <div class="flex flex-col gap-2 mb-8">
+                        <h3 class="text-sm font-semibold text-text-1">
+                            {% trans "Theme" %}
+                        </h3>
+                        {% include "includes/_theme_preference.html" %}
+                        <p class="text-xs text-text-3">
+                            {% blocktrans trimmed %}
+                                Applies to this browser only. "System" follows your device's light or dark appearance
+                                setting.
+                            {% endblocktrans %}
+                        </p>
+                    </div>
+
+                    {% comment %}
                         SNOW-378: Reset local data escape hatch.
                         Discoverable, not hidden. Wipes cached bulletins,
                         the SW, cache storage, IndexedDB, and web storage;
@@ -389,6 +416,11 @@ the label now names that. Behaviour is unchanged.
                 {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}
                 <script src="{% static 'js/sync_log.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
             {% endif %}
+            {# Write side of the theme preference control above. Reads and #}
+            {# writes the same localStorage key includes/theme_head.html    #}
+            {# resolves in <head>; loaded here rather than in base.html      #}
+            {# because this is the only page that renders the control.       #}
+            <script src="{% static 'js/theme_preference.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
             <script src="{% static 'js/passkey.js' %}" nonce="{{ request.csp_nonce }}"></script>
             <script nonce="{{ request.csp_nonce }}">
                 (function () {
