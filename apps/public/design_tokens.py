@@ -69,6 +69,7 @@ from apps.public._component_fixtures import (
     SUBSCRIBE_OUTCOMES_VARIANTS,
     SWITCH_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
+    THEME_PREFERENCE_VARIANTS,
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
@@ -1244,6 +1245,24 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_switch.html",
         variants=SWITCH_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="theme-preference",
+        label="Theme preference",
+        description=(
+            "The settings page's light/dark/system radio group — the write "
+            "side of the `theme` localStorage key that "
+            "includes/theme_head.html reads. Three options rather than a "
+            "switch because that key has three states, and writing only two "
+            "would make 'follow the OS' unreachable once touched. 'System' "
+            "is spelled by removing the key. Renders here in its "
+            "no-JavaScript state: the server always sends 'System' checked "
+            "because it cannot see localStorage."
+        ),
+        kind="components",
+        partial="includes/_theme_preference.html",
+        variants=THEME_PREFERENCE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

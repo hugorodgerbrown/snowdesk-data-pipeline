@@ -1446,6 +1446,24 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Theme preference -------------------------------------------------------------
+# The settings page's light/dark/system radio group. It takes no parameters, so
+# there is exactly one variant — the library entry exists to make the control
+# discoverable ("reuse first"), not to show off states.
+#
+# The rendered variant always shows "System" selected, because that is what the
+# server sends: the real preference is in localStorage and
+# static/js/theme_preference.js checks the matching radio on load. The library
+# renders the partial without that script, so what appears here is the
+# no-JavaScript state, which is the honest thing to show.
+THEME_PREFERENCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default",
+        "context": {},
+    },
+)
+
+
 # Map overlay toggle (SNOW-658) ------------------------------------------------
 # The "Show X on the map" footer panel shared by the three map sheets
 # (downloads, favourites, field observations). Pure markup — the owning JS

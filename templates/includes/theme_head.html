@@ -6,12 +6,25 @@ applies the .dark class to <html> based on the user's saved preference
 (localStorage) or OS setting (prefers-color-scheme), preventing a
 flash of the wrong theme on page load.
 
-There is no theme toggle. This reads a `theme` key that nothing in the
-codebase writes, so in practice it follows the OS setting — the key is
-kept because a browser that has one stored from an earlier build should
-still be honoured, and because it is the natural place for a toggle to
-write if one is ever added. SNOW-615 removed the `window.__setTheme`
-setter that shipped for that toggle and had no caller.
+The `theme` key is written on the settings page, by
+includes/_theme_preference.html and static/js/theme_preference.js. It was
+not always: the setter shipped here as `window.__setTheme` for a toggle
+button that was never built, and SNOW-615 removed it as dead code —
+leaving this read with no matching write, so a value stored from a console
+call could never be changed or cleared by anything on the site.
+
+All three states below are reachable from that control. `dark` and `light`
+are pinned; "System" REMOVES the key, which is why the fall-through here is
+the system branch rather than a fourth case to add. A stored value that is
+neither `dark` nor `light` also falls through, so junk in the key is
+harmless rather than sticky.
+
+The `dark` class this puts on <html> is the resolved answer, and
+theme_preference.js re-applies it directly rather than reloading the page.
+The boolean below is mirrored there — it cannot be shared, because this
+script has to be inline and parser-blocking to beat the stylesheet, so it
+can neither import nor be imported. Two copies, one rule: keep them in
+step (the reasoning is written out in theme_preference.js's header).
 
 The localStorage read is wrapped: Safari in private browsing, and any
 browser with site data blocked, throw on access rather than returning

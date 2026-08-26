@@ -1,0 +1,83 @@
+{% comment %}
+templates/includes/_theme_preference.html — Theme preference control.
+
+The write side of the `theme` localStorage key that
+`includes/theme_head.html` reads. That key has been readable but not
+writable for most of this project's life: the setter shipped as
+`window.__setTheme` for a toggle button that was never built, and SNOW-615
+removed it as dead code. A value stored from a console call could then
+never be changed or cleared by anything on the site, pinning that browser
+to one theme permanently. This control is the missing write.
+
+Three options, because the key has three states
+-----------------------------------------------
+theme_head.html resolves `dark`, `light`, and key-absent → follow the OS.
+A two-way light/dark toggle would write only the first two, which strands
+"follow the OS" the moment anyone touches it — the same defect in milder
+form, since the key would never be absent again. Every state the resolver
+understands is therefore reachable here, and "System" is spelled by
+REMOVING the key rather than storing a third literal, so this control and
+that resolver cannot disagree about what "system" means.
+
+Real radios in a real fieldset, not a cycling button. A three-state
+control has to show which of the three is active, which one icon cannot
+do; a radio group shows it, and gets keyboard support, focus management
+and the group label from the browser. Each option's label is a `{% trans %}`
+string in this template, so `makemessages` sees all three — a label swapped
+by JavaScript would ship as English to every locale (the i18n-lint guard).
+
+"System" is server-rendered as the checked option because it is the true
+default for a browser with no stored preference; static/js/theme_preference.js
+corrects it on load for a browser that has one. The server cannot render the
+real answer — the preference lives in localStorage, which it never sees.
+Without JavaScript the control is inert, and that is the right failure: the
+theme it would be editing is itself applied by script.
+
+Sits in the settings page's "This device" group. The theme is a property of
+this browser, not of the account — it is stored in localStorage alongside
+"Reset local data on this device", not in a column on the user row, and
+signing in on a second machine does not carry it across.
+
+Parameters: none. Rendered once, in accounts/settings.html.
+{% endcomment %}
+{% load i18n %}
+<fieldset data-theme-preference>
+    <legend class="sr-only">{% trans "Theme" %}</legend>
+    <div class="inline-flex rounded-pill border border-border bg-card p-0.5">
+        {% comment %}
+            The `peer` variant needs the styled <span> to be a LATER sibling
+            of the input it reflects, which is why the sr-only input comes
+            first inside each label rather than wrapping the text.
+        {% endcomment %}
+        <label class="cursor-pointer">
+            <input
+                type="radio"
+                name="theme-preference"
+                value="system"
+                class="peer sr-only"
+                checked
+            >
+            <span
+                class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+            >
+                {% trans "System" %}
+            </span>
+        </label>
+        <label class="cursor-pointer">
+            <input type="radio" name="theme-preference" value="light" class="peer sr-only">
+            <span
+                class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+            >
+                {% trans "Light" %}
+            </span>
+        </label>
+        <label class="cursor-pointer">
+            <input type="radio" name="theme-preference" value="dark" class="peer sr-only">
+            <span
+                class="inline-flex items-center justify-center min-h-11 px-4 rounded-pill text-sm text-text-2 transition-colors peer-hover:text-text-1 peer-checked:bg-accent peer-checked:text-accent-text peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+            >
+                {% trans "Dark" %}
+            </span>
+        </label>
+    </div>
+</fieldset>
