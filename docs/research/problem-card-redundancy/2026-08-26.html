@@ -724,6 +724,20 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
   gap: 8px;
 }
 .ladder__h b { font-weight: 500; color: var(--sd-text-1); }
+.ladder__col--chosen { outline: 2px solid var(--keep); outline-offset: -2px; }
+.ladder__col--chosen .ladder__h { color: var(--keep); }
+.ladder__col--chosen .ladder__h b { color: var(--keep); }
+.chosen-flag {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--keep);
+  border: 1px solid var(--keep);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: auto;
+}
 .ladder__verdict {
   margin-top: 2px;
   font-size: 13px;
@@ -815,7 +829,7 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
   border-radius: 2px;
 }
 .legend__swatch--cut  { background: var(--cut-soft); box-shadow: 0 0 0 1px var(--cut); }
-.legend__swatch--keep { background: transparent; box-shadow: 0 0 0 2px var(--eaws-considerable), 0 0 0 3px var(--eaws-considerable-edge); }
+.legend__swatch--keep { background: var(--eaws-considerable); }
 
 .dupe { box-shadow: 0 0 0 1px var(--cut); background: var(--cut-soft) !important; }
 
@@ -1067,14 +1081,16 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
   <section class="section">
     <div class="section__head">
       <h2>The level colour, spent properly</h2>
-      <span class="mono">Four treatments</span>
+      <span class="mono">Four considered &middot; D chosen</span>
     </div>
     <p class="lede">
       Four options, all five levels each &mdash; because the scale is not uniform, and a treatment
       that reads well at Considerable can vanish at Low or fail contrast at High. <b>A</b> is what
       ships today. <b>B</b> moves the colour to the card&rsquo;s left edge. <b>C</b> and <b>D</b>
-      are the same two-tone card with the roles swapped: title tint over hazard solid, or title
-      solid over hazard tint.
+      are the same two-tone card with the roles swapped.
+      <strong>D is the decision</strong> &mdash; the saturated tone caps the card and the
+      pale tone carries the hazard bar, so the card reads level, then problem, then scope, with
+      the colour falling away as the eye moves down. Everything below is drawn in D.
     </p>
 
     <div class="ladder">
@@ -1119,13 +1135,13 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
           <div class="sd-card" data-lvl="very_high"><div class="sd-title row--tint">Dry avalanches</div><div class="sd-band row--solid"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
         </div>
         <p class="ladder__verdict ladder__verdict--good">
-          <b>Saturation on the row that already means level.</b> The title bar keeps its own job
-          &mdash; naming the trait &mdash; in the pale tone, and the hazard bar carries the weight.
-          The mark sits inside the colour, so pictogram and fill agree.
+          <b>Runner-up.</b> Keeps the axes cleanly separated &mdash; the pale title names the trait,
+          the saturated bar carries the level, and the mark sits inside the colour. Rejected because
+          the weight lands mid-card, so a stack of cards has no consistent top edge to scan down.
         </p>
       </div>
-      <div class="ladder__col">
-        <div class="ladder__h"><b>D</b> Title solid, hazard tint</div>
+      <div class="ladder__col ladder__col--chosen">
+        <div class="ladder__h"><b>D</b> Title solid, hazard tint <span class="chosen-flag">Chosen</span></div>
         <div class="sd mini sd-stack">
           <div class="sd-card" data-lvl="low"><div class="sd-title row--solid">Dry avalanches</div><div class="sd-band row--tint"><span class="sd-picto" data-picto="dry" data-level="low"></span><span class="sd-label">Low</span></div></div>
           <div class="sd-card" data-lvl="moderate"><div class="sd-title row--solid">Dry avalanches</div><div class="sd-band row--tint"><span class="sd-picto" data-picto="dry" data-level="moderate"></span><span class="sd-label">Moderate</span></div></div>
@@ -1134,9 +1150,10 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
           <div class="sd-card" data-lvl="very_high"><div class="sd-title row--solid">Dry avalanches</div><div class="sd-band row--tint"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
         </div>
         <p class="ladder__verdict ladder__verdict--good">
-          <b>A cap, and a gradient down the card.</b> Reads level, then problem, then scope, with
-          the saturation falling away as you go. The cost is that the title bar states the
-          <em>category</em>, so the strongest colour lands on the row about the other axis.
+          <b>Chosen.</b> Reads level, then problem, then scope, with the saturation falling away as
+          you go &mdash; which is what makes a page of stacked cards scannable. The accepted cost is
+          that the title bar states the <em>category</em>, so the strongest colour lands on the row
+          about the other axis; the hazard mark, which encodes both, keeps them tied together.
         </p>
       </div>
     </div>
@@ -1199,31 +1216,34 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
     </div>
   </section>
 
-  <!-- C vs D at full size -->
+  <!-- Today against D, at full size -->
   <section class="section">
     <div class="section__head">
-      <h2>C against D, at full size</h2>
-      <span class="mono">Same card, same level</span>
+      <h2>Today against D, at full size</h2>
+      <span class="mono">The whole change, one card</span>
     </div>
     <p class="lede">
-      The ladder compares treatments at thumbnail scale. This is the decision at reading scale: the
-      same SLF card from 18 May 2026 at Considerable. Both are the same two-tone card with the
-      roles swapped &mdash; one row saturated, one pale, built from pairings the palette already
-      ships. Both drop the category pill and the all-day pill; both keep the title bar; both retire
-      the level stripe.
+      The SLF card from 18 May 2026 at Considerable, with everything this ticket does applied at
+      once: the category pill and the all-day pill gone from the chip rail, the level stripe
+      retired, and the level moved onto the title bar with the hazard bar dropping to the pale tone.
+      The title bar keeps its wording and its position.
     </p>
     <div class="plate">
       <div class="plate__head">
-        <span class="plate__sig">C <em>vs</em> D</span>
-        <span class="plate__note">The choice is which row takes the saturated tone &mdash; the one that already implies the level, or the one above it.</span>
+        <span class="plate__sig">A <em>&rarr;</em> D</span>
+        <span class="plate__note">Four statements of &ldquo;dry&rdquo; become one; two statements of &ldquo;all day&rdquo; become none; and the level goes from four pixels to the card&rsquo;s own cap.</span>
       </div>
       <div class="plate__body">
-        <div class="pane pane--after">
-          <div class="pane__tag">C &mdash; title tint, hazard solid</div>
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
           <div class="sd">
-            <div class="sd-card" data-lvl="considerable">
-              <div class="sd-title row--tint">Dry avalanches</div>
-              <div class="sd-band row--solid"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">New snow + Wind slab</span></div>
+            <div class="sd-card">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band sd-band--striped" data-level="considerable">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">New snow + Wind slab</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                <span class="sd-chip sd-chip--ghost dupe">All day</span>
+              </div>
               <div class="sd-row">
                 <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
                 <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
@@ -1231,14 +1251,19 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
               <div class="sd-prose">As a consequence of new snow and a strong wind from westerly directions, avalanche prone wind slabs will form. <em>&hellip;</em></div>
             </div>
           </div>
-          <div class="pane__foot"><span><b>Colour on the row that already means level.</b> The title bar keeps its own job &mdash; naming the trait &mdash; and the two rows stay about different things.</span><span><b>The mark sits in the colour</b>, so pictogram and fill agree at a glance.</span></div>
+          <div class="pane__foot">
+            <span><b>Category stated 4&times;</b> &mdash; title, pictogram, label, pill.</span>
+            <span><b>Level stated in 4px</b> &mdash; the stripe, below the row that names the trait.</span>
+          </div>
         </div>
         <div class="pane pane--after">
-          <div class="pane__tag">D &mdash; title solid, hazard tint</div>
+          <div class="pane__tag">D</div>
           <div class="sd">
             <div class="sd-card" data-lvl="considerable">
               <div class="sd-title row--solid">Dry avalanches</div>
-              <div class="sd-band row--tint"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">New snow + Wind slab</span></div>
+              <div class="sd-band row--tint">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">New snow + Wind slab</span>
+              </div>
               <div class="sd-row">
                 <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
                 <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
@@ -1246,7 +1271,10 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
               <div class="sd-prose">As a consequence of new snow and a strong wind from westerly directions, avalanche prone wind slabs will form. <em>&hellip;</em></div>
             </div>
           </div>
-          <div class="pane__foot"><span><b>A cap on the card.</b> Reads level, then problem, then scope &mdash; and the body goes quiet, which helps most on a page stacking several cards.</span><span><b>Category and level share a surface</b>, and the 12px copy forfeits the large-text allowance.</span></div>
+          <div class="pane__foot">
+            <span><b>Category stated once</b>, in the provider&rsquo;s own words, on the row that always carried them.</span>
+            <span><b>Level readable before any word is</b> &mdash; and the chip rail is empty.</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1262,12 +1290,11 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
       Each plate reproduces the real card against Snowdesk's own tokens, including the 4px stripe
       the first draft of this page left out. Prose is abbreviated; the pictogram is drawn rather
       than lifted from <span class="ref">static/icons/eaws/</span>, but the dry/wet glyph difference
-      it carries is the real one. The proposed cards below keep today&rsquo;s level stripe: the
-      chips are the settled part of this ticket, and which row carries the level is the open one.
+      it carries is the real one. Proposed cards are drawn in D.
     </p>
     <div class="legend">
       <span><i class="legend__swatch legend__swatch--cut"></i>Redundant &mdash; removed</span>
-      <span><i class="legend__swatch legend__swatch--dot"></i>Dotted &mdash; wording that stays, on a row that stays</span>
+      <span><i class="legend__swatch legend__swatch--keep"></i>Level colour, on the title bar</span>
     </div>
 
     <!-- 1 — dry / all_day -->
@@ -1304,9 +1331,9 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
         <div class="pane pane--after">
           <div class="pane__tag">Proposed</div>
           <div class="sd">
-            <div class="sd-card">
-              <div class="sd-title">Dry avalanches</div>
-              <div class="sd-band sd-band--striped" data-level="considerable">
+            <div class="sd-card" data-lvl="considerable">
+              <div class="sd-title row--solid">Dry avalanches</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
                 <span class="sd-label">New snow + Wind slab</span>
               </div>
@@ -1358,9 +1385,9 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
         <div class="pane pane--after">
           <div class="pane__tag">Proposed</div>
           <div class="sd">
-            <div class="sd-card">
-              <div class="sd-title">Wet-snow and gliding avalanches</div>
-              <div class="sd-band sd-band--striped" data-level="moderate">
+            <div class="sd-card" data-lvl="moderate">
+              <div class="sd-title row--solid">Wet-snow and gliding avalanches</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
                 <span class="sd-label">Wet snow + Gliding snow</span>
               </div>
@@ -1411,9 +1438,9 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
         <div class="pane pane--after">
           <div class="pane__tag">Proposed</div>
           <div class="sd">
-            <div class="sd-card">
-              <div class="sd-title">Wet-snow avalanches, as the day progresses</div>
-              <div class="sd-band sd-band--striped" data-level="moderate">
+            <div class="sd-card" data-lvl="moderate">
+              <div class="sd-title row--solid">Wet-snow avalanches, as the day progresses</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
                 <span class="sd-label">Wet snow</span>
                 <span class="sd-chip sd-chip--ghost">Later</span>
@@ -1467,9 +1494,9 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
           <div class="pane__tag">Proposed</div>
           <div class="sd">
             <p class="sd-heading">Above 2400 m</p>
-            <div class="sd-card">
-              <div class="sd-title">Dry avalanches, earlier</div>
-              <div class="sd-band sd-band--striped" data-level="low">
+            <div class="sd-card" data-lvl="low">
+              <div class="sd-title row--solid">Dry avalanches, earlier</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="dry" data-level="low"></span>
                 <span class="sd-label">Persistent weak layers</span>
                 <span class="sd-chip sd-chip--ghost">Earlier</span>
@@ -1521,9 +1548,9 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
         <div class="pane pane--after">
           <div class="pane__tag">Proposed</div>
           <div class="sd">
-            <div class="sd-card">
-              <div class="sd-title">Dry avalanches, later</div>
-              <div class="sd-band sd-band--striped" data-level="moderate">
+            <div class="sd-card" data-lvl="moderate">
+              <div class="sd-title row--solid">Dry avalanches, later</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
                 <span class="sd-label">Wind slab</span>
                 <span class="sd-chip sd-chip--ghost">Later</span>
@@ -1577,9 +1604,9 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
           <div class="pane__tag">Proposed</div>
           <div class="sd">
             <p class="sd-heading">Below 3000 m</p>
-            <div class="sd-card">
-              <div class="sd-title">Wet avalanches, earlier</div>
-              <div class="sd-band sd-band--striped" data-level="low">
+            <div class="sd-card" data-lvl="low">
+              <div class="sd-title row--solid">Wet avalanches, earlier</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="wet" data-level="low"></span>
                 <span class="sd-label">Wet snow</span>
                 <span class="sd-chip sd-chip--ghost">Earlier</span>
@@ -1659,9 +1686,9 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
               </div>
             </div>
             <div class="sd-eyebrow">Avalanche problems</div>
-            <div class="sd-card">
-              <div class="sd-title">Dry avalanches</div>
-              <div class="sd-band sd-band--striped" data-level="considerable">
+            <div class="sd-card" data-lvl="considerable">
+              <div class="sd-title row--solid">Dry avalanches</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
                 <span class="sd-label">New snow + Wind slab</span>
               </div>
@@ -1712,16 +1739,16 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
         <div class="pane pane--after">
           <div class="pane__tag">Proposed</div>
           <div class="sd sd-stack">
-            <div class="sd-card">
-              <div class="sd-title">Dry avalanches</div>
-              <div class="sd-band sd-band--striped" data-level="moderate">
+            <div class="sd-card" data-lvl="moderate">
+              <div class="sd-title row--solid">Dry avalanches</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
                 <span class="sd-label">No distinct problem</span>
               </div>
             </div>
-            <div class="sd-card">
-              <div class="sd-title">Wet-snow avalanches</div>
-              <div class="sd-band sd-band--striped" data-level="low">
+            <div class="sd-card" data-lvl="low">
+              <div class="sd-title row--solid">Wet-snow avalanches</div>
+              <div class="sd-band row--tint">
                 <span class="sd-picto" data-picto="wet" data-level="low"></span>
                 <span class="sd-label">Wet snow</span>
               </div>
@@ -1795,17 +1822,17 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
               </div>
             </div>
             <div class="sd sd-stack">
-              <div class="sd-card">
-                <div class="sd-title">Dry avalanches, whole day</div>
-                <div class="sd-band sd-band--striped" data-level="considerable">
+              <div class="sd-card" data-lvl="considerable">
+                <div class="sd-title row--solid">Dry avalanches, whole day</div>
+                <div class="sd-band row--tint">
                   <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
                   <span class="sd-label">Persistent weak layers</span>
                   <span class="sd-chip sd-chip--ghost">All day</span>
                 </div>
               </div>
-              <div class="sd-card">
-                <div class="sd-title">Wet-snow avalanches, as the day progresses</div>
-                <div class="sd-band sd-band--striped" data-level="moderate">
+              <div class="sd-card" data-lvl="moderate">
+                <div class="sd-title row--solid">Wet-snow avalanches, as the day progresses</div>
+                <div class="sd-band row--tint">
                   <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
                   <span class="sd-label">Wet snow</span>
                   <span class="sd-chip sd-chip--ghost">Later</span>
@@ -1863,17 +1890,17 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
             <p class="sd-heading">Above 2500 m</p>
             <p class="sd-subheading">Wet line at 2500 m earlier, 3000 m later</p>
             <div class="sd sd-stack">
-              <div class="sd-card">
-                <div class="sd-title">Dry avalanches, earlier</div>
-                <div class="sd-band sd-band--striped" data-level="moderate">
+              <div class="sd-card" data-lvl="moderate">
+                <div class="sd-title row--solid">Dry avalanches, earlier</div>
+                <div class="sd-band row--tint">
                   <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
                   <span class="sd-label">Persistent weak layers</span>
                   <span class="sd-chip sd-chip--ghost">Earlier</span>
                 </div>
               </div>
-              <div class="sd-card">
-                <div class="sd-title">Dry avalanches, later</div>
-                <div class="sd-band sd-band--striped" data-level="high">
+              <div class="sd-card" data-lvl="high">
+                <div class="sd-title row--solid">Dry avalanches, later</div>
+                <div class="sd-band row--tint">
                   <span class="sd-picto" data-picto="dry" data-level="high"></span>
                   <span class="sd-label">Persistent weak layers</span>
                   <span class="sd-chip sd-chip--ghost">Later</span>
@@ -1938,15 +1965,30 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
       </div>
       <div class="change">
         <span class="change__verb change__verb--add">Move</span>
-        <span class="change__t">The saturated level colour, off the stripe</span>
+        <span class="change__t">The saturated level colour, from the stripe to the title bar</span>
         <p class="change__d">
-          Replace the five <code>border-top: 4px</code> rules at
-          <span class="ref">main.css:623&ndash;627</span> with the chosen treatment, driven by the
-          same <code>data-level</code> attribute. <strong>Open decision &mdash; A, B, C or D
-          above.</strong> C and D both need five new tokens
-          (<code>--color-eaws-*-edge</code>) for the inverted levels: the existing
-          <code>-text</code> value at 1&ndash;4, and at <code>very_high</code>, whose text is white,
-          its tint <code>#1a0000</code>.
+          Delete the five <code>border-top: 4px</code> rules at
+          <span class="ref">main.css:623&ndash;627</span> and fill the title bar instead, keyed on a
+          <code>data-level</code> attribute the row does not yet carry &mdash;
+          <span class="ref">_rating_block.html</span> will need to stamp it. Levels 1&ndash;3 take
+          <code>--color-eaws-{level}</code> with <code>-fg</code> copy. Levels 4 and 5 borrow the
+          other dark value each already owns: High takes <code>-text</code>
+          <span class="ref">#6b0000</span> as its surface with white copy, and Very high keeps the
+          solid with its own tint <span class="ref">#1a0000</span> as copy. No new token.
+          The hazard bar is unchanged &mdash; it already renders tint plus <code>-text</code>.
+        </p>
+      </div>
+      <div class="change">
+        <span class="change__verb change__verb--keep">Check</span>
+        <span class="change__t">The title bar is now load-bearing, so its guard matters</span>
+        <p class="change__d">
+          <span class="ref">_rating_block.html</span> wraps the row in
+          <code>{% if card.panel_title %}</code>, and its own docstring still says
+          <code>panel_title</code> is &ldquo;empty for ALBINA and MeteoFrance&rdquo;. That was true
+          of the old aggregation-driven path; it is not true of the render-model traits the page
+          serves today, where all 9,614 carry a title. Under D a missing title bar would take the
+          level colour with it, so either drop the conditional or give it an explicit fallback
+          &mdash; and fix the docstring either way.
         </p>
       </div>
       <div class="change">
