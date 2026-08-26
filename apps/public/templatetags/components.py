@@ -17,6 +17,19 @@ Registers three template abstractions that replace copy-pasted markup:
   ``_card.html`` showcase partial and the ``card`` block tag so both always
   produce identical output.
 
+* ``page_shell_classes`` — simple tag returning the class string for the
+  ``<main>`` wrapper every ordinary content page uses (SNOW-672).  Nine
+  pages had written it out by hand and five of them had lost the
+  ``w-full``.  A tag rather than a block tag because two of the nine carry
+  their own ``data-*`` attributes: the element stays in the template, and
+  only the part that drifted moves here.
+
+* ``input_classes`` — simple tag returning the class string for a text
+  input (SNOW-672), in two sizes.  ``standard`` is the account-form
+  control; ``compact`` is the dense staff-panel one.  Two sizes are a real
+  design distinction; two *focus* treatments were not, so both now take
+  the ring.
+
 * ``icon_button_classes`` — simple tag returning the class string for a
   44×44 icon-only control (SNOW-658).  Hugo's map-panel design gives every
   icon control in a panel — the header close, a row's Rename, a row's
@@ -118,6 +131,48 @@ def _button_chrome_classes(
         parts.append("w-full")
     if is_anchor:
         parts.append("inline-block")
+    return " ".join(parts)
+
+
+# The ``<main>`` wrapper shared by every ordinary content page — the legal
+# pages, the guide, help, observations, the resort page and a favourite's
+# detail page. ``w-full`` is included: it is a no-op on a block-level
+# ``<main>`` in normal flow, but four of the nine pages had it and five did
+# not, and a shell that is textually identical everywhere is the point.
+PAGE_SHELL_CLASSES = "font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1"
+
+# Text inputs. The parts every input shares, then the two genuine sizes.
+_INPUT_BASE = (
+    "w-full border bg-card text-text-1 placeholder:text-text-3 "
+    "focus:outline-none focus:ring-2 focus:ring-text-1/30"
+)
+_INPUT_SIZE_CLASSES: dict[str, str] = {
+    # Account forms: a comfortable standalone control on a card.
+    "standard": "px-4 py-2.5 rounded-tag border-text-3/30",
+    # Dense staff panels and debug pages, where inputs sit in a tight grid.
+    "compact": "px-2 py-1 rounded-sm border-border text-sm",
+}
+
+
+def _input_classes(size: str, extra: str) -> str:
+    """Return the class string for one text input.
+
+    Args:
+        size: ``"standard"`` or ``"compact"``. An unknown value falls back
+            to ``"standard"``, matching ``_button_chrome_classes``.
+        extra: Any additional utility classes to append verbatim — margin
+            and other layout belongs to the call site, not to the control.
+
+    Returns:
+        A space-joined class string.
+
+    """
+    parts: list[str] = [
+        _INPUT_BASE,
+        _INPUT_SIZE_CLASSES.get(size, _INPUT_SIZE_CLASSES["standard"]),
+    ]
+    if extra:
+        parts.append(extra)
     return " ".join(parts)
 
 
@@ -232,6 +287,36 @@ def card_classes(
 
     """
     return _card_chrome_classes(padding, bool(center), extra)
+
+
+@register.simple_tag
+def page_shell_classes(extra: str = "") -> str:
+    """Return the class string for an ordinary content page's ``<main>``.
+
+    Args:
+        extra: Any extra Tailwind utilities to append verbatim.
+
+    Returns:
+        Space-joined Tailwind class string.
+
+    """
+    return f"{PAGE_SHELL_CLASSES} {extra}".strip()
+
+
+@register.simple_tag
+def input_classes(size: str = "standard", extra: str = "") -> str:
+    """Return the class string for a text input.
+
+    Args:
+        size: ``"standard"`` (account forms) or ``"compact"`` (dense staff
+            panels and debug pages).
+        extra: Any extra Tailwind utilities to append verbatim.
+
+    Returns:
+        Space-joined Tailwind class string.
+
+    """
+    return _input_classes(str(size), str(extra))
 
 
 # ---------------------------------------------------------------------------

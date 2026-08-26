@@ -21,6 +21,12 @@
  *     all, so this is a no-op; `map_help.js`'s `render()` calls it on every
  *     step change.
  *
+ * SNOW-672: `signin_cta.js` is imported here rather than stubbed. It is a
+ * real module, and on the page it is always loaded ahead of the three
+ * surfaces that call it (see the script tags in `public/home.html`), so a
+ * test file importing `favourites.js` / `routes.js` / `report.js` should see
+ * `window.snowdeskSigninCta` for the same reason the browser does.
+ *
  * Deliberately NOT stubbed globally here: `fetch` and `sendBeacon`. Unlike
  * the two DOM APIs above, tests that exercise `telemetry.js` /
  * `mutation_queue.js` need to assert ON the calls those modules make, so
@@ -30,6 +36,8 @@
  */
 
 import 'fake-indexeddb/auto';
+
+import '../../static/js/signin_cta.js';
 
 if (typeof window.matchMedia !== 'function') {
   window.matchMedia = (query) => ({

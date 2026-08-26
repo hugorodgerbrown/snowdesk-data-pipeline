@@ -1,0 +1,38 @@
+{% comment %}
+  Form field primitive (SNOW-672).
+
+  One labelled control with its error list — the shape every account form
+  repeats: a spacing wrapper, the label, the widget Django renders, and the
+  errors beneath it. Ten call sites across six templates had written it out
+  by hand, identically, which is ten places for the label weight or the
+  error colour to drift and nothing to notice when one of them does.
+
+  The widget itself is not rendered here — Django renders it from the form,
+  with the classes from ``{% input_classes %}`` (see
+  apps/public/templatetags/components.py) applied in the form's widget
+  attrs. This partial owns the chrome around it.
+
+  Context:
+    field       — a bound form field (required). Supplies the widget, its
+                  label id and its errors.
+    label       — label copy (required). Pass a translated string via
+                  ``{% trans "…" as field_label %}``.
+    optional    — when truthy, appends a quiet "(optional)" to the label.
+    class_extra — optional extra Tailwind classes on the wrapper; spacing
+                  goes here (default "mb-4").
+{% endcomment %}
+{% load i18n %}
+<div class='{{ class_extra|default:"mb-4" }}'>
+    <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-text-1 mb-1.5">
+        {{ label }}
+        {% if optional %}<span class="text-text-3 font-normal">{% trans "(optional)" %}</span>{% endif %}
+    </label>
+    {{ field }}
+    {% if field.errors %}
+        <ul class="mt-1.5 space-y-0.5">
+            {% for error in field.errors %}
+                <li class="text-xs text-form-error">{{ error }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</div>

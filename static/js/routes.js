@@ -161,20 +161,11 @@
    * @returns {HTMLDivElement}
    */
   function buildSigninCta() {
-    const wrap = document.createElement('div');
-    const p = document.createElement('p');
-    p.className = 'text-sm text-text-2 mb-3';
-    p.textContent = STRINGS['signin-prompt'];
-    wrap.appendChild(p);
-    if (SIGNIN_URL) {
-      const a = document.createElement('a');
-      a.setAttribute('href', SIGNIN_URL);
-      a.className =
-        'block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4';
-      a.textContent = STRINGS['signin-cta'];
-      wrap.appendChild(a);
-    }
-    return wrap;
+    return window.snowdeskSigninCta.build(
+      SIGNIN_URL,
+      STRINGS['signin-prompt'],
+      STRINGS['signin-cta']
+    );
   }
 
   // ---------------------------------------------------------------------------

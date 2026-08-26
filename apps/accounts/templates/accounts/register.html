@@ -23,47 +23,17 @@ email-verification link (SNOW-430). Existing users are pointed at sign-in.
     <div class="px-4 py-10">
         <div class="max-w-narrow mx-auto">
             {% card padding="p-8" %}
-            <h1 class="text-2xl font-semibold text-text-1 mb-2">
-                {% trans "Create your account" %}
-            </h1>
+            {% trans "Create your account" as page_heading %}
+            {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" %}
             <p class="text-text-2 text-sm mb-6 leading-relaxed">
                 {% trans "Enter your email address and we'll send you a link to verify it." %}
             </p>
             <form method="post" novalidate>
                 {% csrf_token %}
-                <div class="mb-4">
-                    <label
-                        for="{{ form.email.id_for_label }}"
-                        class="block text-sm font-medium text-text-1 mb-1.5"
-                    >
-                        {% trans "Email address" %}
-                    </label>
-                    {{ form.email }}
-                    {% if form.email.errors %}
-                        <ul class="mt-1.5 space-y-0.5">
-                            {% for error in form.email.errors %}
-                                <li class="text-xs text-form-error">{{ error }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endif %}
-                </div>
-                <div class="mb-4">
-                    <label
-                        for="{{ form.name.id_for_label }}"
-                        class="block text-sm font-medium text-text-1 mb-1.5"
-                    >
-                        {% trans "Name" %}
-                        <span class="text-text-3 font-normal">{% trans "(optional)" %}</span>
-                    </label>
-                    {{ form.name }}
-                    {% if form.name.errors %}
-                        <ul class="mt-1.5 space-y-0.5">
-                            {% for error in form.name.errors %}
-                                <li class="text-xs text-form-error">{{ error }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endif %}
-                </div>
+                {% trans "Email address" as field_label %}
+                {% include "includes/_form_field.html" with field=form.email label=field_label %}
+                {% trans "Name" as field_label %}
+                {% include "includes/_form_field.html" with field=form.name label=field_label optional=True %}
                 {% trans "Create account" as label %}
                 {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
             </form>

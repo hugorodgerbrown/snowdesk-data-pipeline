@@ -430,11 +430,15 @@
       return '<p class="text-sm text-text-2">' + esc(STRINGS['verify-email']) + '</p>';
     }
     if (SIGNIN_URL) {
+      // Same treatment as the favourites and routes gates, from the same
+      // place (SNOW-672) — this one is a markup string because the caller
+      // assigns it with innerHTML, so it takes the classes rather than the
+      // built nodes.
       return (
-        '<p class="text-sm text-text-2 mb-3">' +
+        '<p class="' + window.snowdeskSigninCta.PROMPT_CLASS + '">' +
         esc(STRINGS['signin-prompt']) +
         '</p>' +
-        '<a href="' + SIGNIN_URL + '" class="block w-full rounded-pill bg-status-info-bg text-status-info-text text-sm font-medium text-center py-2 px-4">' +
+        '<a href="' + SIGNIN_URL + '" class="' + window.snowdeskSigninCta.LINK_CLASS + '">' +
         esc(STRINGS['signin-cta']) +
         '</a>'
       );

@@ -89,9 +89,8 @@ is not getting one.
             {% endcomment %}
             {% include "accounts/partials/_htmx_error_banner.html" %}
 
-            <h1 class="text-2xl font-semibold text-text-1 mb-1">
-                {% trans "Routes" %}
-            </h1>
+            {% trans "Routes" as page_heading %}
+            {% include "includes/_page_title.html" with text=page_heading class_extra="mb-1" %}
 
             {% comment %}
                 The context strip, saying where this data lives — the same

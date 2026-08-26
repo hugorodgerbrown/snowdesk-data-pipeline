@@ -32,7 +32,7 @@ Context expected (built by ``apps.favourites.views._favourite_card_context``):
   freshness_state          — "fresh" | "stale" | "unsafe".
   freshness_generated_at   — datetime.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {# SNOW-553: sharing=False. This page belongs to one signed-in user, and #}
 {# the name they gave the pin is their own text about their own place — #}
@@ -53,14 +53,14 @@ Context expected (built by ``apps.favourites.views._favourite_card_context``):
 
 {% block content %}
     <main
-        class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1"
+        class="{% page_shell_classes %}"
         data-testid="favourite-detail"
     >
         {% if favourite.region %}
             <div class="mb-4">
                 <a
                     href="{{ bulletin_url }}"
-                    class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                    class="text-sm text-text-2 text-link"
                     data-testid="favourite-detail-back-link"
                 >
                     {% trans "← Region bulletin" %}

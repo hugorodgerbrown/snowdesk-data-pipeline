@@ -98,6 +98,15 @@
   // why it is rendered as a whole URL instead of being reversed here.
   const SLOPE_TILE_URL = mapEl.dataset.slopeTileUrl || null;
   const SLOPE_ELIGIBLE = mapEl.dataset.slopeLayerEligible === 'true';
+
+  // SNOW-672: marker tints, in one place. MapLibre paint properties cannot
+  // reference a CSS custom property, so these two literals are the JS side
+  // of --color-marker-favourite / --color-marker-observation in
+  // src/css/main.css. Change one, change the other — the map legend in
+  // _map_embed.html reads the tokens, so a drift shows up as a legend that
+  // disagrees with the map.
+  const MARKER_FAVOURITE_COLOUR = '#1a73e8';
+  const MARKER_OBSERVATION_COLOUR = '#e8711a';
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -1640,10 +1649,7 @@
         'icon-allow-overlap': true,
       },
       paint: {
-        // Snowdesk link/brand blue — MapLibre paint props can't reference the
-        // CSS ``@theme`` tokens, so the star icon and its label carry the hex
-        // literal directly (kept in sync with --color-link by hand).
-        'icon-color': '#1a73e8',
+        'icon-color': MARKER_FAVOURITE_COLOUR,
         'icon-halo-color': 'rgba(255,255,255,0.95)',
         'icon-halo-width': 1.6,
         // SNOW-479: an offline-created pin not yet synced carries
@@ -1672,7 +1678,7 @@
         'text-padding': 4,
       },
       paint: {
-        'text-color': '#1a73e8',
+        'text-color': MARKER_FAVOURITE_COLOUR,
         'text-halo-color': 'rgba(255,255,255,0.95)',
         'text-halo-width': 1.4,
       },
@@ -2033,7 +2039,7 @@
         // Amber — distinct from the favourites blue and the resorts
         // near-black so the three pin layers read as different kinds of
         // marker at a glance.
-        'circle-color': '#e8711a',
+        'circle-color': MARKER_OBSERVATION_COLOUR,
         'circle-radius': [
           'step', ['get', 'point_count'],
           14, 5, 18, 20, 24,
@@ -2082,7 +2088,7 @@
       paint: {
         // Amber — same as the cluster circles, so a lone flag reads as
         // the same "kind" of marker as a broken-apart cluster.
-        'icon-color': '#e8711a',
+        'icon-color': MARKER_OBSERVATION_COLOUR,
         // SNOW-419: age fade — baked into each feature by
         // withCommunityReportsAgeOpacity before install/setData.
         'icon-opacity': ['get', '_ageOpacity'],

@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
     public/partials/edit_resorts_panel.html — edit-resorts mode side panel.
 
@@ -124,7 +124,7 @@
                         maxlength="255"
                         autocomplete="off"
                         aria-required="true"
-                        class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                        class="{% input_classes size='compact' extra='mt-0.5' %}"
                     >
                 </label>
                 <label class="block text-xs text-text-3">
@@ -175,7 +175,7 @@
                         <select
                             data-resort-field="tier"
                             data-default="STANDARD"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                             <option value="CORE">{% trans "Core — large pin" %}</option>
                             <option value="STANDARD">{% trans "Standard" %}</option>
@@ -189,7 +189,7 @@
                             data-resort-field="name_alt"
                             maxlength="255"
                             autocomplete="off"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="col-span-2 block text-xs text-text-3">
@@ -199,7 +199,7 @@
                             data-resort-field="operator_name"
                             maxlength="255"
                             autocomplete="off"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="col-span-2 block text-xs text-text-3">
@@ -210,7 +210,7 @@
                             placeholder="https://"
                             autocomplete="off"
                             spellcheck="false"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="col-span-2 block text-xs text-text-3">
@@ -221,7 +221,7 @@
                             maxlength="255"
                             placeholder="{% trans 'Terrain, access or reputation — one sentence.' %}"
                             autocomplete="off"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         ></textarea>
                     </label>
                     <label class="block text-xs text-text-3">
@@ -231,7 +231,7 @@
                             data-resort-field="num_lifts"
                             min="0"
                             step="1"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="block text-xs text-text-3">
@@ -241,7 +241,7 @@
                             data-resort-field="num_runs"
                             min="0"
                             step="1"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="col-span-2 block text-xs text-text-3">
@@ -251,7 +251,7 @@
                             data-resort-field="total_piste_km"
                             min="0"
                             step="0.1"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="block text-xs text-text-3">
@@ -261,7 +261,7 @@
                             data-resort-field="base_elevation_m"
                             min="0"
                             step="1"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="block text-xs text-text-3">
@@ -271,7 +271,7 @@
                             data-resort-field="top_elevation_m"
                             min="0"
                             step="1"
-                            class="mt-0.5 w-full rounded-sm border border-border px-2 py-1 text-sm text-text-1 focus:border-text-2 focus:outline-none"
+                            class="{% input_classes size='compact' extra='mt-0.5' %}"
                         >
                     </label>
                     <label class="block text-xs text-text-3">

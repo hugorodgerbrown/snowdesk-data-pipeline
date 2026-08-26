@@ -94,9 +94,8 @@ cache note in apps/accounts/views.py before adding any cache-avoidance here.
             {% endcomment %}
             {% include "accounts/partials/_htmx_error_banner.html" %}
 
-            <h1 class="text-2xl font-semibold text-text-1 mb-6">
-                {% trans "Favourites" %}
-            </h1>
+            {% trans "Favourites" as page_heading %}
+            {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" %}
 
             {% comment %}
                 SNOW-415, moved here by SNOW-668: lazy-loads favourites:list

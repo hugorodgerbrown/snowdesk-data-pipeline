@@ -142,9 +142,8 @@ here.
                     observations/my_observations.html, which is now the shape
                     every list page in the account area takes.
                 {% endcomment %}
-                <h1 class="text-2xl font-semibold text-text-1 mb-6">
-                    {% trans "Subscriptions" %}
-                </h1>
+                {% trans "Subscriptions" as page_heading %}
+                {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" %}
 
                 {# One card per subscribed region #}
                 {% for subscription in subscriptions %}
@@ -238,7 +237,7 @@ here.
                         <div class="mt-4">
                             <a
                                 href="{{ subscription.region.get_absolute_url }}"
-                                class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                                class="text-sm text-text-2 text-link"
                             >
                                 {% blocktrans with d=today|date:"j N Y" trimmed %}Open bulletin for {{ d }}
                                     →{% endblocktrans %}
@@ -263,7 +262,7 @@ here.
                 <div class="mt-3">
                     <a
                         href="{% url 'public:home' %}"
-                        class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                        class="text-sm text-text-2 text-link"
                     >
                         {% trans "Choose more regions on the map →" %}
                     </a>

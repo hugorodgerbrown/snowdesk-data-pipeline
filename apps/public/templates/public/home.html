@@ -165,6 +165,10 @@ in addition to the shared map assets.
     {# Loaded here rather than from _report_surface.html so it binds once   #}
     {# and is available to any other surface that grows a relative age.     #}
     <script defer src="{% static 'js/relative_time.js' %}"></script>
+    {# SNOW-672: the sign-in gate the three surfaces below all show. Loaded #}
+    {# here, ahead of them, for the same reason as relative_time.js — one   #}
+    {# owner for the treatment rather than a copy in each module.           #}
+    <script defer src="{% static 'js/signin_cta.js' %}"></script>
     {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
     {# and hidden, so the markup, tokens and ARIA roles have a single      #}
     {# owner and the "×" is handled by overlays.js like every other toast. #}

@@ -80,7 +80,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    ``location_forecasts`` is empty, so the
                                    two are mutually exclusive.
 {% endcomment %}
-{% load i18n static snowdesk_time %}
+{% load i18n static components snowdesk_time %}
 
 {# SNOW-650: this page emits hx-post in two places — the favourite toggle    #}
 {# (favourites/partials/_resort_favourite_button.html) and the weather       #}
@@ -106,14 +106,12 @@ Context expected (built by ``apps.public.views.resort_detail``):
 
 {% block content %}
     <main
-        class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1"
+        class="{% page_shell_classes %}"
         data-testid="resort-detail"
         data-resort-id="{{ resort.pk }}"
     >
         <div class="mb-6">
-            <h1 class="text-2xl font-semibold tracking-tight" data-testid="resort-heading">
-                {{ resort.name }}
-            </h1>
+            {% include "includes/_page_title.html" with text=resort.name class_extra="mb-0" data_testid="resort-heading" %}
             {% if resort.name_alt %}
                 <p class="text-sm text-text-3">{{ resort.name_alt }}</p>
             {% endif %}

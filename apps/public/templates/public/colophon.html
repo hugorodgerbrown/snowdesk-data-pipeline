@@ -18,7 +18,7 @@ Reviewing this page: the browser-facing third parties are enumerated by
 ``BASEMAP_STYLES``; the hosted services that see request data are listed in
 ``public/privacy.html`` §5. Both are the cross-check for anything missing here.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block page_meta %}
     {% trans "Colophon" as page_name %}
@@ -27,13 +27,12 @@ Reviewing this page: the browser-facing third parties are enumerated by
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight mb-6" data-testid="colophon-heading">
-            {% trans "Colophon" %}
-        </h1>
+    <main class="{% page_shell_classes 'legal-prose' %}">
+        {% trans "Colophon" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="colophon-heading" %}
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-frameworks">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-frameworks">
+            <h2>
                 {% trans "Frameworks" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -68,8 +67,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-libraries">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-libraries">
+            <h2>
                 {% trans "Libraries" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -122,8 +121,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-data">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-data">
+            <h2>
                 {% trans "Data" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -202,8 +201,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-basemap">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-basemap">
+            <h2>
                 {% trans "Basemap" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -269,8 +268,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-icons">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-icons">
+            <h2>
                 {% trans "Icons" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -302,8 +301,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-fonts">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-fonts">
+            <h2>
                 {% trans "Fonts" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -330,8 +329,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-email">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-email">
+            <h2>
                 {% trans "Email" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -342,8 +341,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-analytics">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-analytics">
+            <h2>
                 {% trans "Analytics" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
@@ -359,8 +358,8 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="colophon-hosting">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="colophon-hosting">
+            <h2>
                 {% trans "Hosting" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">

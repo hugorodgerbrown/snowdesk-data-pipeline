@@ -1,0 +1,26 @@
+{% comment %}
+  Page title primitive (SNOW-672).
+
+  The <h1> at the top of an ordinary content page. Thirteen call sites had
+  written it out by hand in three variants: the public pages carried
+  ``tracking-tight``, the account pages carried an explicit ``text-text-1``
+  instead (redundant — ``base.html``'s <body> already sets it), and neither
+  set agreed with the other. This partial is the one that wins.
+
+  Bottom spacing stays a caller decision because it is a real one: ``mb-2``
+  when a subtitle line follows, ``mb-6`` when the body starts straight
+  after. Those subtitles are themselves three different treatments across
+  four pages — worth consolidating, but not by this partial, which owns the
+  heading only.
+
+  Context:
+    text        — heading copy (required).
+    tag         — HTML element, default "h1".
+    class_extra — optional extra Tailwind classes; spacing goes here
+                  (default "mb-6").
+    data_testid — optional data-testid attribute value.
+{% endcomment %}
+<{{ tag|default:"h1" }}
+    class='text-2xl font-semibold tracking-tight {{ class_extra|default:"mb-6" }}'
+    {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
+>{{ text }}</{{ tag|default:"h1" }}>

@@ -6,7 +6,7 @@ Covers data collection, legal bases, retention periods, third-party
 providers, and user rights under UK GDPR. Content is authored directly
 in this template; no runtime context is required.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block page_meta %}
     {% trans "Privacy Policy" as page_name %}
@@ -15,10 +15,9 @@ in this template; no runtime context is required.
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight mb-2" data-testid="privacy-heading">
-            {% trans "Privacy Policy" %}
-        </h1>
+    <main class="{% page_shell_classes 'legal-prose' %}">
+        {% trans "Privacy Policy" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="privacy-heading" %}
         <p class="text-xs text-text-3 mb-6">
             {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 1 November 2026 &middot; Version 1.0" %}
         </p>
@@ -32,8 +31,8 @@ in this template; no runtime context is required.
             {% endblocktrans %}
         </div>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-who-we-are">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "1. Who we are" %}</h2>
+        <section data-testid="privacy-who-we-are">
+            <h2>{% trans "1. Who we are" %}</h2>
             <p class="mb-3">
                 {% blocktrans trimmed %}
                     Snowdesk is operated by Henri Tamboral, an individual based in London, UK. Snowdesk is a free
@@ -50,10 +49,10 @@ in this template; no runtime context is required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-what-we-collect">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "2. What data we collect" %}</h2>
+        <section data-testid="privacy-what-we-collect">
+            <h2>{% trans "2. What data we collect" %}</h2>
 
-            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2a. Subscriptions" %}</h3>
+            <h3>{% trans "2a. Subscriptions" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     If you subscribe to bulletin email notifications, we collect your email address. That is the only
@@ -62,7 +61,7 @@ in this template; no runtime context is required.
                 {% endblocktrans %}
             </p>
 
-            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2b. Location" %}</h3>
+            <h3>{% trans "2b. Location" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     The interactive map can use your browser's optional geolocation to centre the map on your current
@@ -71,7 +70,7 @@ in this template; no runtime context is required.
                 {% endblocktrans %}
             </p>
 
-            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2c. Field observation reports" %}</h3>
+            <h3>{% trans "2c. Field observation reports" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     When you submit a field observation report from the map page, we ask your browser for a GPS fix.
@@ -84,7 +83,7 @@ in this template; no runtime context is required.
                 {% endblocktrans %}
             </p>
 
-            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2d. Session data" %}</h3>
+            <h3>{% trans "2d. Session data" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     We use a session cookie that is strictly necessary for the site to function. It contains no personal
@@ -93,7 +92,7 @@ in this template; no runtime context is required.
                 {% endblocktrans %}
             </p>
 
-            <h3 class="font-semibold text-text-1 mt-4 mb-1">{% trans "2e. Server logs" %}</h3>
+            <h3>{% trans "2e. Server logs" %}</h3>
             <p>
                 {% blocktrans trimmed %}
                     Our server automatically records standard technical information when you visit: your IP address, the
@@ -103,8 +102,8 @@ in this template; no runtime context is required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-why-we-use">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "3. Why we use your data" %}</h2>
+        <section data-testid="privacy-why-we-use">
+            <h2>{% trans "3. Why we use your data" %}</h2>
             <p class="mb-2">{% trans "We process your data under the following legal bases (UK GDPR):" %}</p>
             <ul class="list-disc pl-5 space-y-1">
                 <li>
@@ -122,8 +121,8 @@ in this template; no runtime context is required.
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-retention">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "4. How long we keep your data" %}</h2>
+        <section data-testid="privacy-retention">
+            <h2>{% trans "4. How long we keep your data" %}</h2>
             <ul class="list-disc pl-5 space-y-1">
                 <li>
                     {% blocktrans trimmed %}
@@ -136,8 +135,8 @@ in this template; no runtime context is required.
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-sharing">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "5. Who we share your data with" %}</h2>
+        <section data-testid="privacy-sharing">
+            <h2>{% trans "5. Who we share your data with" %}</h2>
             <p class="mb-3 font-semibold text-text-1">
                 {% trans "We do not sell, rent, or trade your personal data with anyone." %}
             </p>
@@ -208,8 +207,8 @@ in this template; no runtime context is required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-rights">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "6. Your rights" %}</h2>
+        <section data-testid="privacy-rights">
+            <h2>{% trans "6. Your rights" %}</h2>
             <p class="mb-2">{% trans "Under UK GDPR, you have the right to:" %}</p>
             <ul class="list-disc pl-5 space-y-1 mb-3">
                 <li>{% trans "Access the personal data we hold about you" %}</li>
@@ -233,8 +232,8 @@ in this template; no runtime context is required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-children">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "7. Children" %}</h2>
+        <section data-testid="privacy-children">
+            <h2>{% trans "7. Children" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     Snowdesk is a publicly accessible information service. We do not knowingly collect personal data
@@ -245,8 +244,8 @@ in this template; no runtime context is required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-cookies">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "8. Cookies" %}</h2>
+        <section data-testid="privacy-cookies">
+            <h2>{% trans "8. Cookies" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     Snowdesk uses one strictly necessary session cookie. It is set automatically when you visit the
@@ -258,8 +257,8 @@ in this template; no runtime context is required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="privacy-changes">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "9. Changes to this policy" %}</h2>
+        <section data-testid="privacy-changes">
+            <h2>{% trans "9. Changes to this policy" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     If we make material changes to this policy, we will update the effective date at the top and notify

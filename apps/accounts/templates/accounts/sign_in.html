@@ -31,9 +31,8 @@ the manage page can be authenticated-only.
     <div class="px-4 py-10">
         <div class="max-w-narrow mx-auto">
             {% card padding="p-8" %}
-            <h1 class="text-2xl font-semibold text-text-1 mb-2">
-                {% trans "Sign in" %}
-            </h1>
+            {% trans "Sign in" as page_heading %}
+            {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" %}
             <p class="text-text-2 text-sm mb-6 leading-relaxed">
                 {% trans "Enter your email address and we'll send you a sign-in link." %}
             </p>
@@ -47,22 +46,8 @@ the manage page can be authenticated-only.
             {% endif %}
             <form method="post" novalidate>
                 {% csrf_token %}
-                <div class="mb-4">
-                    <label
-                        for="{{ form.email.id_for_label }}"
-                        class="block text-sm font-medium text-text-1 mb-1.5"
-                    >
-                        {% trans "Email address" %}
-                    </label>
-                    {{ form.email }}
-                    {% if form.email.errors %}
-                        <ul class="mt-1.5 space-y-0.5">
-                            {% for error in form.email.errors %}
-                                <li class="text-xs text-form-error">{{ error }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endif %}
-                </div>
+                {% trans "Email address" as field_label %}
+                {% include "includes/_form_field.html" with field=form.email label=field_label %}
                 {% comment %}
                     Password sign-in field — revealed via the toggle below
                     (SNOW-431), mirroring the passkey reveal pattern. The
@@ -88,12 +73,12 @@ the manage page can be authenticated-only.
                         id="id_password"
                         autocomplete="current-password"
                         placeholder="{% trans 'Your password' %}"
-                        class="w-full px-4 py-2.5 rounded-tag border border-text-3/30 bg-card text-text-1 placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-text-1/30"
+                        class="{% input_classes %}"
                     >
                     <p class="mt-2 text-right">
                         <a
                             href="{% url 'accounts:reset_password' %}"
-                            class="text-xs text-text-2 hover:text-text-1 underline underline-offset-2"
+                            class="text-xs text-text-2 text-link"
                         >
                             {% trans "Forgot your password?" %}
                         </a>
@@ -104,7 +89,7 @@ the manage page can be authenticated-only.
                 <button
                     type="button"
                     id="toggle-password-signin"
-                    class="hidden mt-3 w-full text-center text-sm text-text-2 hover:text-text-1 underline underline-offset-2"
+                    class="hidden mt-3 w-full text-center text-sm text-text-2 text-link"
                 >
                     {% trans "Sign in with a password instead" %}
                 </button>
