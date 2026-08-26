@@ -82,9 +82,21 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 `/api/telemetry` ([`docs/telemetry-pipeline.md`](telemetry-pipeline.md)),
 `/favourites/favourites.geojson`, plus the PWA and crawler surface served from
 `config/urls.py`: `/sw.js`, `/sw-kill.js`, `/manifest.webmanifest`,
-`/robots.txt`, `/sitemap.xml` (`BulletinSitemap`), `/llms.txt`,
+`/robots.txt`, `/sitemap.xml`, `/llms.txt`,
 `/llms-full.txt`, `/favicon.ico`, and the `/livez` + `/healthz` probes
 ([`docs/deployment.md`](deployment.md)).
+
+`/sitemap.xml` has three sections, defined in
+[`apps/public/sitemaps.py`](../apps/public/sitemaps.py) and registered together
+as `SITEMAPS`: `bulletins` (regions with a bulletin valid today), `resorts`
+(every resort detail page), and `static` (the homepage, both guides, the four
+legal pages). SNOW-676 added the last two — until then the sitemap was the
+bulletin section alone, which left the resort pages invisible to search and
+made the whole file *empty* out of season, when no bulletin is valid today.
+Deliberately absent, with the reasoning in the module: `/observations/` (shows
+an anonymous visitor a sign-in CTA, not the stream), `/examples/…` (serves a
+random bulletin per request), redirects, staff-only routes, and anything
+`Disallow`ed in robots.txt.
 
 ## Page metadata
 
