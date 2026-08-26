@@ -9,46 +9,24 @@ Context:
   text        — chip copy (required).
   variant     — visual variant (optional, default blank = neutral filled):
                   ""           neutral filled: opaque ``bg-tag`` background with
-                               ``text-text-3`` copy.  Original style.
-                  "type-dry"   ghost pill for dry-avalanche category tags (SNOW-286):
-                               transparent fill, 1 px ``border-border-strong``,
-                               ``text-text-2``, includes a small snowflake icon.
-                  "type-wet"   ghost pill for wet-avalanche category tags (SNOW-286):
-                               transparent fill, 1 px ``border-border-strong``,
-                               ``text-text-2``, includes a small water-drop icon.
+                               ``text-text-3`` copy.  Original style.  This is
+                               the variant to use inside a ``.danger-band`` —
+                               the opaque background is what keeps the copy
+                               legible on the EAWS tint in dark mode.
                   "time"       outlined ghost pill for time-period labels
                                (All day / Morning / Afternoon / Earlier / Later);
                                transparent fill, 1 px border, ``text-text-2``.
+                               For use on ``bg-card`` only (the Day Risk Profile
+                               rows) — a transparent chip on an EAWS tint runs
+                               1.9–2.3:1 in dark mode, because the scale carries
+                               no dark override while ``--color-text-2`` does.
   data_testid — optional data-testid attribute value.
+
+The dry/wet ``type-dry`` / ``type-wet`` variants were removed in SNOW-727:
+the problem card's title bar and hazard pictogram already stated the
+category, so the pill was a fourth telling of it.
 {% endcomment %}
-{% if variant == "type-dry" %}
-    <span
-        class="inline-flex items-center gap-1 font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
-        {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
-    >
-        {# ds-lint-allow: inline SVG uses fill="currentColor" — no hex value #}
-        <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor" aria-hidden="true">
-            <path
-                d="M4.5 0 L4.5 9 M0 4.5 L9 4.5 M1.2 1.2 L7.8 7.8 M7.8 1.2 L1.2 7.8"
-                stroke="currentColor"
-                stroke-width="1.2"
-                stroke-linecap="round"
-            />
-        </svg>
-        {{ text }}
-    </span>
-{% elif variant == "type-wet" %}
-    <span
-        class="inline-flex items-center gap-1 font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
-        {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
-    >
-        {# ds-lint-allow: inline SVG uses fill="currentColor" — no hex value #}
-        <svg width="8" height="9" viewBox="0 0 8 9" fill="currentColor" aria-hidden="true">
-            <path d="M4 0.5 C4 0.5 0.5 4.5 0.5 6.2 A3.5 3.5 0 0 0 7.5 6.2 C7.5 4.5 4 0.5 4 0.5 Z" />
-        </svg>
-        {{ text }}
-    </span>
-{% elif variant == "time" %}
+{% if variant == "time" %}
     <span
         class="font-mono text-chip uppercase bg-transparent text-text-2 border border-border-strong px-2.5 py-[5px] rounded-pill shrink-0"
         {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
