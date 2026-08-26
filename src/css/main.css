@@ -204,6 +204,21 @@
   --color-basemap-ign-plan:            #9333ea;  /* purple-600 */
   --color-basemap-basemap-at:          #0d9488;  /* teal-600   */
 
+  /* Map markers (SNOW-672) — the two point markers the map draws over the
+     choropleth: the favourite star and the community-report flag. They had
+     no token for the project's whole life, which meant the same two hexes
+     were typed into map.js's paint properties and again into the legend
+     SVGs in _map_embed.html, where they needed a ds-lint-allow apiece whose
+     stated reason was that no token existed.
+
+     Same by-hand-kept-in-sync idiom as the route line below: MapLibre
+     cannot read a CSS custom property, so map.js keeps the literals in
+     module constants pointing back here, while the legend — ordinary
+     template markup — uses the fill-marker-* utilities Tailwind generates
+     from these names, and carries no allow comment. */
+  --color-marker-favourite:   #1a73e8;   /* Snowdesk blue — favourite star   */
+  --color-marker-observation: #e8711a;   /* amber — community-report flag    */
+
   /* Saved-route line (SNOW-687) — the MapLibre line layer that draws a
      user's imported GPX track, plus the darker casing painted underneath
      it so the line stays readable over a pale satellite basemap and over
@@ -211,9 +226,9 @@
 
      The hue is chosen by elimination, not taste. The EAWS 1–5 ramp above
      (#ccff66 / #ffff00 / #ff9900 / #ff0000) is mandated by the standard
-     and is not ours to reuse for anything else; the favourite star is
-     Snowdesk blue (#1a73e8) and the community-report flag is amber
-     (#e8711a). Magenta is the one hue family none of those occupy.
+     and is not ours to reuse for anything else; the two map markers above
+     take the blue and the amber. Magenta is the one hue family none of
+     those occupy.
 
      MapLibre paint properties cannot reference a CSS custom property at
      all, so static/js/map.js's installRoutesLayer carries these two hex
