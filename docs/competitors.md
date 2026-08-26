@@ -110,10 +110,11 @@ other app in this list is measured against, including ours.
   ALBINA (AT/IT) next would close the gap our whole positioning rests on.
   Our answer to WhiteRisk is not "more features" but **cross-provider
   normalisation and zero friction**.
-- **Note:** WhiteRisk is also our explicit design model — see "Why we're
-  replicating WhiteRisk" in [`design-system.md`](design-system.md).
-  Treating it as both benchmark and competitor is deliberate: we replicate
-  its page structure, then subtract.
+- **Note:** WhiteRisk is also our structural reference — see "Why the page
+  renders the bulletin whole" in [`design-system.md`](design-system.md).
+  Treating it as both benchmark and competitor is deliberate: we follow the
+  same canonical SLF/EAWS layout, because neither of us invented it, and we
+  render the provider's bulletin in full rather than a subset of it.
 
 ## SnowSafe
 
@@ -153,8 +154,9 @@ other app in this list is measured against, including ours.
 - **Business model:** free app; "Professional Weather Forecast" at
   $3.99/month or $29.99/year. The bulletin itself is never paywalled.
 - **Read:** the product to watch. Its design principle — *as simple and
-  reliable to operate as a transceiver* — is the same instinct behind our
-  replicate-then-subtract plan.
+  reliable to operate as a transceiver* — is the same instinct behind our own
+  restraint, though we reach it differently: simplicity of *operation*, over a
+  bulletin we still render in full.
 
 ## Whympr
 

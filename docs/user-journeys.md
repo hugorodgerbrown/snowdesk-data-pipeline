@@ -117,6 +117,10 @@ ten seconds.
   the three forms onto one indexed URL.
 - The page is usable on mobile, on a cold cache, and without any
   account.
+- The bulletin renders in full: every field the provider published
+  reaches a surface, and the source link is there to check it against.
+  Adding to the page is fine; leaving provider content out is not
+  ([`decisions/bulletin-fidelity-over-simplification.md`](decisions/bulletin-fidelity-over-simplification.md)).
 
 **Adding functionality here:**
 - Any new CTA on the bulletin page must not push the danger level,
@@ -271,7 +275,10 @@ is for.
 
 **Key invariants:**
 - Historical bulletins render exactly as they were stored — never
-  back-fill them with present-day weather or render-model changes.
+  back-fill them with present-day weather or render-model changes. The
+  same fidelity rule as J1 applies to them
+  ([`decisions/bulletin-fidelity-over-simplification.md`](decisions/bulletin-fidelity-over-simplification.md)):
+  a stored bulletin is shown whole, not summarised for age.
 - The weather header on historical pages projects the time-of-day
   (not the absolute instant) onto the page date — so a historical
   page rendered in the evening shows what the evening looked like

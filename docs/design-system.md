@@ -1,21 +1,40 @@
 ---
 name: design-system
-description: Bulletin page design handover — editorial principles, WhiteRisk replicate-then-subtract plan, design tokens, field guidance
+description: Bulletin page design handover — fidelity-first editorial principles, design tokens, the component layer, field guidance drafts
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-26
 ---
 
-# SnowDesk — Design Handover
 
-This document captures the state of the SnowDesk bulletin page design as of April 2026, including the editorial principles, the current implementation, the prioritised task list, the field guidance content drafts, and the open design questions.
+# Snowdesk — Design Handover
 
-It exists so that a new design-focused conversation can pick up where the previous strategy conversation left off without losing the specific decisions and reasoning. For background on SnowDesk's mission, target audience, competitive positioning, and product shape, see `README.md`. This document is the design-specific complement to that.
+This document is the design-specific reference for the bulletin page: the
+editorial principles that govern it, the design tokens and component layer it
+is built from, the field-guidance content drafts, and the open design
+questions. For background on Snowdesk's mission, audience, competitive
+positioning, and product shape, see `README.md`.
 
-**Major change as of April 2026:** the design approach has shifted from "iterate the existing card incrementally" to "replicate the WhiteRisk page structure exactly, then subtract." The reasoning is in the section "Why we're replicating WhiteRisk" below. The previous incremental task list has been retired in favour of a two-phase plan (replicate, then subtract).
+**The governing principle is fidelity.** Snowdesk renders the provider's
+bulletin *whole* — every field the provider published, verifiable against the
+source link — and adds what the provider cannot: weather at a finer grain than
+the warning region, and field observations from the people who were there. We
+add to the bulletin. We do not edit it, summarise it, or leave parts of it out.
+
+This replaces the earlier replicate-then-subtract method, under which the
+design's next step was a pass to remove "anything that doesn't earn its place".
+That premise inverted: completeness *is* the product, and the subtraction pass
+was retired rather than completed —
+[`decisions/bulletin-fidelity-over-simplification.md`](decisions/bulletin-fidelity-over-simplification.md)
+records why. The principle is enforced mechanically, not by convention:
+`tests/sentinels/fidelity.py` holds one row per CAAML path across the nine
+sentinels, each either rendered or excluded with a written reason, and
+`bin/fidelity-lint` fails the build when a field reaches no rendered surface
+([`tests/sentinels/README.md`](../tests/sentinels/README.md)).
 
 ---
 
 ## Design tokens
+
 
 The canonical source of truth for all tokens is [`src/css/main.css`](../src/css/main.css), which declares them in a Tailwind v4 `@theme` block. Tokens below are mirrored here for Claude Design import; when the CSS and this document disagree, the CSS wins.
 
@@ -23,7 +42,7 @@ The canonical source of truth for all tokens is [`src/css/main.css`](../src/css/
 
 - **Sans (body, UI):** `DM Sans`, system-ui fallback. Weights 400 / 500 / 600.
 - **Mono (metadata, codes):** `DM Mono`, ui-monospace fallback. Weights 400 / 500.
-- **Serif (reserved):** not yet chosen. Phase 3 restyling may introduce a serif for page titles, section headers, and rating names. Until then, sans is the only family in use.
+- **Serif (reserved):** not yet chosen. A future restyling pass may introduce a serif for page titles, section headers, and rating names. Until then, sans is the only family in use.
 - **Scale:** matches Tailwind defaults; prefer utility classes (`text-sm`, `text-base`, `text-lg`, `text-xl`) in templates rather than hard-coded sizes.
 
 ### Colour — surfaces and text (light mode)
@@ -115,12 +134,12 @@ Content column inside `<nav>` and primary body copy: **640px max-width**, centre
 
 ## Design direction (for Claude Design)
 
-A condensed brief of the editorial character. Expanded reasoning is in "What SnowDesk's design has to do" and "Editorial principles for the page" below.
+A condensed brief of the editorial character. Expanded reasoning is in "What Snowdesk's design has to do" and "Editorial principles for the page" below.
 
 - **Character:** calm, confident, quietly expert. Closer to a well-edited publication than a software dashboard. Treat the reader as a thoughtful adult making real decisions.
 - **Voice:** direct, unpatronising, no extreme-sports energy, no emojis, no cheerful disclaimers hiding uncertainty. Content should survive being pasted into a WhatsApp group without feeling out of place.
-- **Mission lens:** SnowDesk is an **on-ramp** to the official SLF bulletin. Success = graduation. The visual language must respect the reader's time and expertise.
-- **Hierarchy:** SLF source content is primary; SnowDesk-added content (day-character labels, field guidance) is visually distinguishable and deferential.
+- **Mission lens:** Snowdesk shows the provider's bulletin **in full**, and adds the context the provider cannot. Completeness is the product; the visual language must carry a long, uneven document without making it feel heavy.
+- **Hierarchy:** provider content is primary; Snowdesk-added content (day-character labels, weather, field observations, field guidance) is visually distinguishable and deferential.
 - **Restraint as a rule:** new features arrive in the same restrained idiom — small, quiet, deferential to the existing hierarchy. Do not add visual weight or accent colours to make additions feel "important".
 - **Asymmetry is honest:** uneven CAAML data should produce visibly uneven blocks. Do not fabricate structure for symmetry.
 - **Never recommend behaviour:** characterise, explain, do not tell users to go or stay.
@@ -130,35 +149,36 @@ The editorial test for any addition: look at the page and ask whether it still f
 
 ---
 
-## What SnowDesk's design has to do
+## What Snowdesk's design has to do
 
 Before diving into specifics, the design exists to support a particular product framing that should shape every visual decision:
 
-SnowDesk is an **on-ramp to the official SLF avalanche bulletin**. It exists to help recreational backcountry skiers begin reading bulletins with confidence. Its success is measured not by retention but by graduation — a user who progresses from SnowDesk to reading the full SLF bulletin directly is the goal, not a loss.
+Snowdesk shows the **real bulletin**, not a simplified reading of one. A user can follow the source link and check: nothing the provider published is missing, softened, or paraphrased away. That claim is the product's foundation — it is what makes Snowdesk safe to rely on for a decision, and it is what a competitor shipping a prettier summary cannot copy without doing the same work. On top of it, Snowdesk adds what the provider does not offer: weather at a finer grain than the warning region, community field observations, and cross-provider coverage in one place.
 
-This framing has a load-bearing implication for design: the product treats users as thoughtful adults making real decisions, not as students of avalanche science (which is how WhiteRisk treats them) and not as casual consumers who need to be alarmed (which is how most safety apps treat them). The visual language needs to express respect for the reader's intelligence and time. Calm, confident, quietly expert. Closer to a well-edited publication than a software dashboard.
+This framing has a load-bearing implication for design: the page has to carry a long, structurally uneven document without becoming exhausting. The work is hierarchy, pacing and restraint — deciding what is loud, what is quiet, and what is behind a disclosure — never deciding what to drop. Where a section is genuinely secondary, the answer is a collapsible panel, not a deletion.
+
+It also means the product treats users as thoughtful adults making real decisions, not as students of avalanche science and not as casual consumers who need to be alarmed. The visual language needs to express respect for the reader's intelligence and time. Calm, confident, quietly expert. Closer to a well-edited publication than a software dashboard.
 
 The cleanest test as features get added: look at the page and ask whether it still feels like editorial content or whether it's drifted toward dashboard. If the latter, the addition needs to be reworked, not because it's wrong as a feature but because the visual character of the page *is* part of the product, not separate from it.
 
-## Why we're replicating WhiteRisk
+## Why the page renders the bulletin whole
 
-The previous approach — iterate the bulletin card design by adding small refinements — was producing a page that was neither WhiteRisk's clarity nor SnowDesk's identity. Inch-toward-WR creates a permanent halfway state where every addition has to be argued for in isolation against an unfinished baseline.
+The page follows the structure the provider authors the bulletin in — the same information architecture WhiteRisk renders, because neither of us invented it. That is the canonical SLF/EAWS layout, and following it is fidelity rather than imitation: a reader who goes on to open the source bulletin directly meets a document they already know how to read.
 
-Replicating WR's structure exactly, then subtracting, has three advantages:
+Two consequences follow, and they are the ones that matter in review:
 
-1. **The canonical SLF/EAWS information architecture is already encoded in WR's layout.** WR didn't invent it — they're rendering the structure SLF authors the bulletin in. Replicating WR means replicating the structure a graduating user will eventually encounter on the SLF site. That serves the on-ramp mission directly.
+1. **A field the provider published gets a surface.** If a CAAML path has no home on the page, that is a bug, not an editorial choice — and `bin/fidelity-lint` will say so. The legitimate way to decide a field is not worth showing is to write the exclusion reason into `tests/sentinels/fidelity.py`, where a reviewer can audit it with `bin/fidelity-lint --show-exclusions`.
 
-2. **Subtraction is where SnowDesk's editorial character actually gets expressed.** What we choose to *remove* from the WR layout (the Explanation modal button, the close button, possibly the day-summary band on simple days) communicates SnowDesk's positioning more clearly than any incremental addition could.
+2. **Length is managed, not avoided.** A bulletin on a complex day is long because the day is complex. Collapsible panels, quiet metadata strips and clear section boundaries are how the page absorbs that. `templates/includes/_collapsible_panel.html` is the workhorse.
 
-3. **It collapses most of the previous task list automatically.** Tasks like "remove truncation," "promote elevation to body weight," "soften the timing badge" — these all fall out of replication, because WR already gets them right. The previous 17-task list is retired.
+What Snowdesk does *not* replicate is the parts of WhiteRisk that belong to WhiteRisk's own app, rather than to the bulletin: the Close button (an artefact of their modal-over-map architecture) and the Explanation modal (educational scaffolding for their course business). Dropping those was never in tension with fidelity — they are not the provider's content.
 
-The replica pass uses **WR's typographic choices verbatim** (system sans throughout, no serif accents). SnowDesk's serif-headline styling is a restyling decision that comes after the structural replica is complete and we can see what it would replace.
+## Canonical layout
 
-## Canonical layout (replicated from SLF/WhiteRisk)
 
 The single-day page is the canonical product surface. It renders one bulletin for one micro-region for one validity period. The structure, top to bottom:
 
-**1. Page chrome.** Region name, date and validity window, prev/next day navigation. WhiteRisk has a "Close" button here because their bulletin opens as a modal over a map; SnowDesk's bulletin is the page itself, so Close is one of the first things to subtract.
+**1. Page chrome.** Region name, date and validity window, prev/next day navigation. WhiteRisk has a "Close" button here because their bulletin opens as a modal over a map; Snowdesk's bulletin is the page itself, so there is no Close button.
 
 **2. Bulletin headline band.** A coloured strip showing the bulletin's danger rating(s). On a simple day this shows one rating (e.g. `3- Considerable`). On a variable day this shows two ratings with a transition arrow (e.g. `2+ Moderate → 3 Considerable`) and a one-line note that hazard changes through the day. **Always present** — not a variable-day affordance.
 
@@ -179,36 +199,19 @@ The single-day page is the canonical product surface. It renders one bulletin fo
 
    These fields ship from SLF as **HTML strings** with `<h1>`, `<h2>`, `<p>`, `<ul>`, `<li>` tags. The structured Fresh snow / Temperature / Wind subheadings WhiteRisk shows are literal `<h2>` tags in the source HTML. No parsing required — sanitise (allow only the tags listed; bleach is the right tool) and render.
 
-**6. Footer.** SLF attribution, region grouping context. The grouping context follows the rule from the previous task list: focal region first, grouped regions framed as additional context (e.g. `Val dal Spöl, with Münstertal · unteres Puschlav · Corvatsch`).
-
-## What the replica is NOT
-
-To keep the replica pass focused, these things are explicitly out of scope and will be decided in the subtraction pass:
-
-- Day-character labels (the SnowDesk-derived interpretation layer)
-- Field guidance (the SnowDesk-derived plain-language additions beneath SLF prose)
-- The change strip / diff indicator
-- The serif-headline restyling
-- Any decision to remove or restructure WR sections
-- The list view (see below)
-
-## The list view
-
-The previous testing surface at `/<region-id>/random/` displayed ten consecutive historical bulletins as a vertical scrolling list. This view is **deprecated as the canonical product surface** but **kept as a power-user history view** at a different route (suggested: `/<region-id>/history/`).
-
-The list view's strengths (longitudinal pattern visible at a glance, useful once the diff strip exists, matches how experienced tourers think about conditions) genuinely serve a power-user use case, just not the primary one. Keeping it as a separate route means the canonical single-day page can be designed without compromise, while the longitudinal view continues to exist for users who want it. The list view does not need to be a design priority — it can continue to use the existing card design, or eventually inherit a compact variant of the rating-block layout, but neither is urgent.
+**6. Footer.** Provider attribution. The page-specific footer was removed in SNOW-80: the global `_site_footer.html` carries the attribution requirement, and adjacent regions are reachable from the masthead deep-link (SNOW-81).
 
 ## Editorial principles for the page
 
-These are the principles that should govern any addition or change to the page design. They're derived from longer conversations about SnowDesk's positioning and should be treated as constraints, not suggestions.
+These are the principles that should govern any addition or change to the page design. They're derived from longer conversations about Snowdesk's positioning and should be treated as constraints, not suggestions.
 
-**Never recommend behaviour.** SnowDesk characterises the day and explains the bulletin. It does not tell users to go or to stay. The line between "information" and "judgement" exists for good reasons in Swiss avalanche culture, and crossing it has real consequences. Even features that introduce SnowDesk's own interpretation (the day-character labels) are deliberately descriptive rather than prescriptive.
+**Never recommend behaviour.** Snowdesk characterises the day and explains the bulletin. It does not tell users to go or to stay. The line between "information" and "judgement" exists for good reasons in Swiss avalanche culture, and crossing it has real consequences. Even features that introduce Snowdesk's own interpretation (the day-character labels) are deliberately descriptive rather than prescriptive.
 
-**SLF is the authoritative source, and the page should make this visible.** The bulletin prose comes from SLF; SnowDesk renders it faithfully. Anywhere SnowDesk adds its own content alongside the SLF source — plain-language sentences, day-character labels, field guidance — the visual treatment must distinguish the SnowDesk layer from the SLF layer so users can tell which content comes from where.
+**The provider is the authoritative source, and the page should make this visible.** The bulletin prose comes from SLF, ALBINA or Météo-France; Snowdesk renders it faithfully. Anywhere Snowdesk adds its own content alongside the source — plain-language sentences, day-character labels, weather, field observations, field guidance — the visual treatment must distinguish the Snowdesk layer from the provider layer so users can tell which content comes from where.
 
-**Replicate first, subtract second, add third.** The replica is the baseline against which all additions and removals are measured. Don't add SnowDesk-derived content (day-character labels, field guidance) until the replica is complete and the subtraction pass has happened. The subtraction pass is where editorial judgement gets exercised — what stays, what goes, what gets quieter.
+**Render everything; add alongside, never instead.** Snowdesk-derived content sits next to the provider's, and never displaces it. When a surface feels crowded, the move is to change the hierarchy — quieten, group, collapse — not to remove what the provider published. "This section is long" is not a reason to drop it; it is a reason to give it a disclosure.
 
-**Asymmetry is honest.** The CAAML data is uneven: dry-side problems carry structured aspect/elevation fields; wet-side problems often don't. Rating blocks for the two sides will visibly differ. Don't fabricate or NLP-extract structured data from prose to make blocks look uniform. The visible difference is a faithful reflection of how SLF authors the bulletin.
+**Asymmetry is honest.** The CAAML data is uneven: dry-side problems carry structured aspect/elevation fields; wet-side problems often don't. Rating blocks for the two sides will visibly differ. Don't fabricate or NLP-extract structured data from prose to make blocks look uniform. The visible difference is a faithful reflection of how the provider authors the bulletin.
 
 **The templating table is the highest-leverage editorial work in the project.** A bad sentence in a problem block fails the user directly. Hand-write every template. Review with an experienced tourer or guide. Test against real bulletins across a variety of conditions. Faithfulness beats cleverness; clarity beats polish.
 
@@ -218,67 +221,69 @@ These are the principles that should govern any addition or change to the page d
 
 **Restraint is part of the brand.** When adding new content (field guidance, day-character labels, change indicators), the temptation is to add visual weight or accent colours to make additions feel "important." Resist. New features should be added in the same restrained idiom — small, quiet, deferential to the existing hierarchy.
 
-## Phase 1: Replication tasks
+## The component layer
 
-These tasks build the WR-canonical layout against the existing data pipeline. The goal is a single-day page that, screenshotted next to WR for the same bulletin, is structurally indistinguishable.
+Tokens are only half the system. The other half is the set of partials and
+template tags that own a *shape*, so the same card, button or page title is not
+re-typed as a utility string in the next template. The rules and the guards
+that enforce them live in `CLAUDE.md` ("Design system"); this section records
+what the layer is for and where its edges are.
 
-1. **Create the new route and view.** A Django view that takes a region ID and a date, fetches the bulletin for that region/validity period, and renders the new template. URL pattern something like `/<region-id>/<date>/`. Default landing route (`/<region-id>/`) redirects to today.
+**Reuse first, extract second, inline never.** The registry in
+[`apps/public/design_tokens.py`](../apps/public/design_tokens.py) is the
+canonical inventory, rendered for browsing at the staff-only `/_components/`.
+A new partial is not finished until it has a registry entry and a variant
+fixture in [`apps/public/_component_fixtures.py`](../apps/public/_component_fixtures.py).
 
-2. **Build the rating-block partial.** A template fragment that renders one `dangerRating` as a self-contained block: header strip (rating name, scope description), aspect/elevation row, problem rows. The same partial works for simple-day (one block) and variable-day (two stacked blocks). Pull aspect/elevation from the structured CAAML fields where present; render nothing where absent.
+**Ordinary pages are in the system too.** This was the layer's blind spot for
+most of the project's life: the bulletin and map surfaces were thoroughly
+componentised while the legal pages, the help and observation pages and the
+accounts forms stayed as inline utility strings, and drifted into near-miss
+variants of each other — nine page shells differing by one class, three page
+titles differing by two. SNOW-672 brought them in. A page is a page; if it
+renders a title, a shell or a form field, it uses the component.
 
-3. **Build the bulletin headline band.** Always present. Renders one rating on simple days, two ratings with a transition arrow on variable days. The transition logic comes from `customData.CH.aggregation` — that field already encodes SLF's editorial dry/wet clustering and should drive this rather than re-derivation from `dangerRatings` alone.
+**Three kinds of component, and when to reach for each:**
 
-4. **Render snowpack and weather HTML safely.** Add a Django template filter (e.g. `snowdesk_html`) that runs the SLF HTML strings through bleach with a strict allowlist: `h1, h2, p, ul, li, strong, em`. Strip everything else. Apply CSS to style the resulting headings consistently with the rest of the page. Test against the four fields (`snowpackStructure.comment`, `weatherReview.comment`, `weatherForecast.comment`, `tendency[].comment`).
+| Kind | Use when | Example |
+|---|---|---|
+| Include partial | The shape has content slots and variants | `_button.html`, `_page_title.html`, `_form_field.html` |
+| Block tag | The shape *wraps* arbitrary page content | `{% card %}`, `{% page_shell %}` in [`apps/public/templatetags/components.py`](../apps/public/templatetags/components.py) |
+| CSS component class | The shape styles *descendants* it does not author — prose from a provider or a translator | `.slf-prose`, `.legal-prose`, `.text-link` in [`src/css/main.css`](../src/css/main.css) |
 
-5. **Build the metadata strip and footer.** Three-field metadata (issue, valid, next update). Footer with SLF attribution and the focal-region-first grouping context.
+The third is the narrow one, and worth stating plainly because it is the
+exception to "no custom CSS": when the markup inside a block is not written in
+the template — provider HTML, a long legal document — a wrapper class with
+descendant rules is the only treatment that reaches it. Everything else is a
+partial.
 
-6. **Replicate WR's typographic choices verbatim.** System sans throughout. No serif. Match WR's font sizes and weights as closely as possible. The point of the replica is structural fidelity; restyling comes later.
+**Class strings built in JavaScript are template class strings.** A string
+assembled in `static/js/` reaches the page exactly as one written in a
+template does, which is why `bin/ds-lint` scans both. When two modules need the
+same string, it belongs in one shared helper, not copied into each.
 
-7. **Move the existing list view to `/<region-id>/history/`.** Keep the existing card design for now. Add a small navigation affordance from the single-day page to the history view ("View history" link in the footer or near the prev/next controls).
+## What the replica delivered
 
-8. **Screenshot test.** Pick three bulletins with known character — a simple-day, a variable-day with dry/wet split, a Level 4+ day if one exists in the archive. Screenshot SnowDesk and WR side by side for each. The structural layout should match. Differences should be limited to colour, spacing, and the items deliberately dropped (Close button, Explanation button).
+The replication pass is complete and shipped. It built the canonical layout above against the existing data pipeline: the single-day route and view, the rating-block partial, the always-present headline band driven by `customData.CH.aggregation`, safe rendering of provider prose HTML through the `snowdesk_html` filter, and the metadata strip.
 
-That's the entire replica pass. Eight tasks, mostly templating and HTML sanitisation. No new editorial content, no new visual identity decisions.
+Two of its eight original tasks did not survive contact:
 
-## Phase 2: Subtraction pass
+- **The list view move was dropped.** It proposed relocating a ten-bulletin scrolling list to `/<region-id>/history/`. That route was never built and the list view no longer exists in that form — `/random/` is now a permanent redirect to `/examples/random/`, which renders a single bulletin inline. There is no phantom work here to pick up.
+- **The side-by-side screenshot test against WhiteRisk was superseded** by `tests/sentinels/test_fidelity.py`, which asks a stricter question: not "does this look like WhiteRisk" but "did every field the provider published arrive on the page".
 
-Once the replica is in place, walk through it and make subtraction decisions explicitly. Each item below is a question, not a foregone conclusion. The answers come from looking at the live replica, not from deciding in the abstract.
+## Additions on top of the provider's bulletin
 
-The principle for subtraction: **remove anything that doesn't earn its place against the on-ramp mission.** WR is built for educating beginners about avalanche science (their core business is selling courses). SnowDesk is built for helping competent intermediates read the bulletin faster. Anything in WR that serves the former but not the latter is a candidate for removal.
+These add Snowdesk's own layer alongside the provider content. They are no longer gated behind a phase plan — each is independently shippable, and the fidelity principle already settles the question the old plan was waiting to answer.
 
-Confirmed subtractions (decide first, no live-page review needed):
-
-- **The Explanation button on each rating block.** It opens a modal explaining what "Considerable" means in general. Educational scaffolding — out of scope for SnowDesk's competent-intermediate audience. The SLF interpretation guide is the right home for this content; link it once from the page footer.
-- **The Close button at the page top.** Artefact of WR's modal-over-map architecture. SnowDesk's bulletin is the page itself.
-
-Subtraction questions to decide after looking at the replica:
-
-- **Does the bulletin headline band still earn its place when there's only one rating?** The band exists to flag transitions. On a simple day it just repeats the rating-block header below. Possible answers: always show (consistency), hide on simple days (subtraction), keep but reduce visual weight on simple days (compromise).
-- **Does the snowpack/weather section help the on-ramp goal, or does it pad the page?** This is a substantial chunk of content. Some of it (snowpack history, weather review) is genuinely useful context for an experienced tourer. Some of it (multi-day outlook) competes with dedicated weather services. Possible answers: render in full (replica fidelity), render only Snowpack and Weather review (drop forecast and outlook as duplicative of MeteoSwiss), collapse behind a "Show snowpack and weather" toggle.
-- **Should the rating-block header be that loud?** WR's filled orange/yellow strips are the loudest visual element on the page. SnowDesk's editorial character would suggest a thinner left-border treatment in the same colour, with the rating name in body-weight type. Worth trying both side by side.
-- **Is the aspect rosette readable at this size, or does it need a larger treatment?** Worth checking on a real phone.
-- **What happens to the `comment` field at the bulletin level (the overall hazard description)?** WR doesn't seem to surface this prominently — the rating-block prose is the primary text. Worth checking whether this field exists in the CAAML data and where (if anywhere) it should appear.
-
-## Phase 3: SnowDesk additions on top of the replica
-
-Only after Phase 1 and Phase 2 are complete. These add SnowDesk's editorial layer on top of the cleaned-up replica.
-
-- **Field guidance beneath each problem's SLF prose.** Test with the persistent weak layer problem first. Drafted content is in the "Field guidance drafts" section below. Visual treatment: separated from SLF prose by a horizontal rule, attributed to the SLF interpretation guide rather than to SnowDesk directly (we're paraphrasing SLF, not authoring novel guidance).
-- **Day-character label.** Sits between the bulletin headline band and the first rating block. Visual treatment must distinguish SnowDesk interpretation from SLF source. The label needs a one-line explainer underneath that teaches the concept. See the day-character model section below.
-- **Bulletin diffing logic and change strip.** Backend-first: produce a structured diff between consecutive bulletins for the same region using CAAML fields (not prose). Then add a quiet visual strip at the top of the page when material changes have occurred. *Absent* on cards where nothing material has changed — the absence is part of the design.
-- **Serif-headline restyling pass.** Once additions are in place, decide whether to introduce the SnowDesk serif-headline treatment for `h1`/`h2` elements (page titles, section headers, rating names). Replicate-then-restyle is safer than restyling speculatively.
-
-## When to ship to first users
-
-After Phase 1 and Phase 2 are complete. The point of the replicate-then-subtract approach is that the result of those two phases is already a coherent, shippable product — it's WR's structure with WR's worst beginner-scaffolding removed and SnowDesk's micro-region focus baked in. That's enough to put in front of ten users and have real conversations.
-
-Phase 3 is where you most need user feedback before committing. The day-character labels and field guidance are the most editorially load-bearing additions in the project, and they benefit from being shaped by what early users actually find missing in the replica + subtraction baseline.
-
-The temptation will be to keep building before showing it to anyone. Resist that. The next ten users can give you feedback worth more than another month of solo iteration.
+- **Day-character label.** *Shipped.* Sits between the bulletin headline band and the first rating block, with a one-line explainer that teaches the concept. Derived by `compute_day_character` in [`apps/bulletins/services/render_model.py`](../apps/bulletins/services/render_model.py) from the cascade below, and rendered via `templates/includes/day_character_callout.html`.
+- **Field guidance beneath each problem's provider prose.** *Open — SNOW-673.* Drafted content is in the "Field guidance drafts" section below. Visual treatment: separated from the provider prose by a horizontal rule, attributed to the SLF interpretation guide rather than to Snowdesk directly (we're paraphrasing SLF, not authoring novel guidance).
+- **Bulletin diffing logic and change strip.** *Open.* Backend-first: produce a structured diff between consecutive bulletins for the same region using CAAML fields (not prose). Then add a quiet visual strip at the top of the page when material changes have occurred. *Absent* when nothing material has changed — the absence is part of the design.
+- **Serif-headline restyling pass.** *Open.* Whether to introduce a serif treatment for `h1`/`h2` elements (page titles, section headers, rating names). Restyling after the structure settled is safer than restyling speculatively.
 
 ## Field guidance drafts
 
-These are paraphrased from the SLF Avalanche Bulletin Interpretation Guide (November 2025 edition), specifically the "Identification of the problem in the field" and "Travel advice" sections for each avalanche problem type. They are written in the SnowDesk voice — calm, direct, faithful to the SLF source but rewritten for accessibility. **All drafts need review by an experienced tourer or guide before shipping**, and the SLF source should be checked against to ensure no nuance has been lost in compression.
+
+These are paraphrased from the SLF Avalanche Bulletin Interpretation Guide (November 2025 edition), specifically the "Identification of the problem in the field" and "Travel advice" sections for each avalanche problem type. They are written in the Snowdesk voice — calm, direct, faithful to the SLF source but rewritten for accessibility. **All drafts need review by an experienced tourer or guide before shipping**, and the SLF source should be checked against to ensure no nuance has been lost in compression.
 
 Each one is one paragraph, designed to fit beneath the SLF prose in a problem block, separated by a horizontal rule and attributed to the SLF interpretation guide.
 
@@ -306,9 +311,10 @@ Almost impossible to predict precisely, even when the warning signs are visible.
 
 This isn't a specific avalanche problem. SLF uses this label when no single problem dominates the assessment, often on lower-danger days. It doesn't mean conditions are safe: any avalanche type is still possible, and normal caution applies. On stable days this is usually a signal to enjoy the mountains with general awareness; on less-stable days where the assessment is still inconclusive, it's a signal to be cautious specifically *because* there's no clear pattern to follow.
 
-## The day-character model (Phase 3)
+## The day-character model
 
-This is the bigger editorial commitment that comes after the replica + subtraction baseline is in place. It's documented in the README but worth restating here because the design implications are specific.
+
+The interpretation layer Snowdesk adds on top of the provider's bulletin. It's documented in the README but worth restating here because the design implications are specific.
 
 Every bulletin gets one of five labels, derived from a deterministic rule cascade over the structured CAAML fields:
 
@@ -318,7 +324,7 @@ Every bulletin gets one of five labels, derived from a deterministic rule cascad
 - **Widespread danger.** Dangerous conditions cover most of the typical touring envelope.
 - **Dangerous conditions.** Level 4 or 5 territory.
 
-Each label needs a one-paragraph plain-language explainer that teaches the concept. The labels become a shared vocabulary between SnowDesk and its readers over time, supporting the on-ramp goal.
+Each label needs a one-paragraph plain-language explainer that teaches the concept. The labels become a shared vocabulary between Snowdesk and its readers over time.
 
 The cascade rules (provisional, need calibration before the label is rendered):
 
@@ -333,35 +339,45 @@ The cascade rules (provisional, need calibration before the label is rendered):
 
 A spring-pattern rule (e.g. "Race the sun day" for the morning-low/afternoon-considerable wet hazard pattern) is proposed but not yet in the cascade. Worth adding once the variable-day rendering is working in the replica.
 
-Visual treatment when added: distinct zone between the bulletin headline band and the first rating block. Must be clearly attributed to SnowDesk's interpretation rather than to SLF — perhaps a thin coloured left border, a different background tint, or a small distinctive icon. The label needs its own one-line explainer underneath that teaches the concept.
+Visual treatment when added: distinct zone between the bulletin headline band and the first rating block. Must be clearly attributed to Snowdesk's interpretation rather than to SLF — perhaps a thin coloured left border, a different background tint, or a small distinctive icon. The label needs its own one-line explainer underneath that teaches the concept.
 
 ## Open design questions
 
-A few things that haven't been resolved and are worth working through after Phase 1 is complete:
+Two of these arrived from the retired subtraction pass. They survive because they were always *styling* questions wearing a subtraction question's clothes — how loud a thing should be, not whether it should exist.
 
-**The no-distinct-problem stable day case.** On days with `no_distinct_avalanche_problem` and Level 1 rating, the rating block has very little to render — just the danger headline and possibly a single brief note. What does this block look like? It needs to feel intentionally quiet rather than empty, and it needs to honour the SLF caution that "no distinct problem" doesn't mean "safe."
+**Should the rating-block header be that loud?** The filled orange/yellow strips are the loudest visual element on the page. Snowdesk's editorial character would suggest a thinner left-border treatment in the same colour, with the rating name in body-weight type. Worth trying both side by side.
 
-**The very-dangerous-day case (Level 4 or 5).** At the other end, the page needs to handle days where multiple problems are active, the rating is High, and the bulletin prose is longer and more urgent. Does the calm editorial treatment hold up when the content is genuinely alarming? The brand character requires that it does — SnowDesk shouldn't suddenly become a flashing-red dashboard on dangerous days — but it needs visual treatment that acknowledges the seriousness without abandoning the editorial tone.
+**Is the aspect rosette readable at this size, or does it need a larger treatment?** Worth checking on a real phone.
 
-**The SnowDesk visual identity beyond the page.** The bulletin page is the building block, but the surrounding website (homepage, about page, sample email page, account management) hasn't been designed yet. The page sets a visual direction; the rest of the site needs to extend it consistently. Worth thinking about as a system rather than letting each surface evolve in isolation.
+The other three subtraction questions are **closed** by the fidelity principle, and are recorded here so they are not reopened as if undecided:
 
-**Email rendering vs web rendering.** The 5pm and 7am subscription emails need their own visual treatment that captures the same character within email's much tighter constraints (limited CSS support, no custom fonts, dark mode quirks, forwarding fragility). Email is the primary product surface — this is its own design conversation and hasn't been started yet.
+- *Does the headline band earn its place on a simple day?* It stays. Consistency of structure across days is worth more than the line it saves, and a reader comparing two days should not meet two different page shapes.
+- *Does the snowpack and weather section pad the page?* It renders in full. All four prose fields are `Rendered` in the fidelity ledger, inside collapsible panels — the length is managed by disclosure, not by omission.
+- *What happens to the bulletin-level comment?* It is rendered. `avalancheActivity.comment` has a surface today; the question was only ever whether to find it one.
 
 ## Archived: the side-by-side variable-day split
+
 
 An earlier design iteration rendered variable days as two side-by-side period columns (dry on the left, wet on the right, with a `→` between them). This approach is **deprecated** in favour of the WR-canonical vertical-stacked rating blocks for two reasons:
 
 1. It doesn't scale past two periods. Real bulletins occasionally have three (e.g. dry / wet morning / wet afternoon).
-2. It doesn't match the SLF mental model the user is graduating toward. Stacked rating blocks do.
+2. It doesn't match the mental model of the source bulletin. Stacked rating blocks do.
 
 Only the *rationale* is preserved here, so the approach isn't re-proposed without the two objections above being answered. The implementation is gone: the `bulletin_cards.html` template and its `.split-wrapper` / `.period-col` classes no longer exist anywhere in the tree. A future surface that genuinely wants a horizontal side-by-side layout (e.g. a comparison view between two adjacent regions) starts from the design-system partials, not from a revival of that markup.
 
+## Archived: the replicate-then-subtract phase plan
+
+From April 2026 until SNOW-672, this document described a three-phase method: replicate WhiteRisk's page structure exactly, subtract what didn't earn its place, then add Snowdesk's own layer. Phase 1 shipped. Phase 2 was retired rather than completed, and Phase 3's gate went with it.
+
+Only the *rationale* is preserved, in [`decisions/bulletin-fidelity-over-simplification.md`](decisions/bulletin-fidelity-over-simplification.md), so the method isn't re-proposed without the objection being answered: a pass whose stated principle is "remove anything that doesn't earn its place" cannot coexist with a product claim of completeness, or with a lint guard that fails the build when a provider field reaches no surface.
+
 ## Archived: the previous 17-task list
+
 
 The previous task list (April 2026, pre-replication-decision) is retired. Most of its items either fall out of replication automatically (truncation removal, elevation promotion, problem icon improvements, timing badge softening) or move to Phase 3 (field guidance, day-character label, diff strip, SLF logo). A few small items survive into Phase 1 (alt text fix, region context line restructure, removing the dev-only "Open in admin" link). They're folded into the replication tasks above where relevant.
 
 ## How to use this document
 
-This is intended as the input to a new design-focused chat. When starting that chat, reference this document directly: "I'm continuing the SnowDesk design work. See `docs/design-system.md` for current state, the replicate-then-subtract plan, field guidance drafts, and open questions."
+This is the input to a design-focused conversation about the bulletin page. Reference it directly: "See `docs/design-system.md` for the fidelity-first principles, the tokens and component layer, the field guidance drafts, and the open questions."
 
-The strategy conversation that produced the original framing remains in its own chat and shouldn't need to be re-derived. If a strategic question comes up in the design work that's already been resolved in the strategy chat, refer back to it rather than re-litigating it here.
+Two companions carry the parts that aren't here. The staff-only component library at `/_components/` is the canonical rendered inventory — read it before adding any visual surface. [`decisions/`](decisions/) holds the *why* behind choices this document treats as settled; if a strategic question surfaces that a decision doc already answers, refer to it rather than re-litigating it here.
