@@ -574,36 +574,39 @@ table.matrix tfoot td {
   box-shadow: 0 0 0 1px var(--lvl-edge);
 }
 
-/* D — header row filled with the solid, exactly as the day-risk tile is.
-   Copy takes the level's -fg token, the same pairing .dw-tile uses.      */
-.sd-band--solid[data-level="low"]          { background: var(--eaws-low);          color: var(--eaws-dark-fg); }
-.sd-band--solid[data-level="moderate"]     { background: var(--eaws-moderate);     color: var(--eaws-dark-fg); }
-.sd-band--solid[data-level="considerable"] { background: var(--eaws-considerable); color: var(--eaws-dark-fg); }
-.sd-band--solid[data-level="high"]         { background: var(--eaws-high);         color: var(--eaws-light-fg); }
-.sd-band--solid[data-level="very_high"]    { background: var(--eaws-very-high);    color: var(--eaws-light-fg); }
-.sd-band--solid .sd-chip--ghost { color: inherit; border-color: currentColor; opacity: 0.75; }
+/* D — the TITLE row filled with the solid, the way .dw-tile is filled.
+   Copy takes the level's -fg token, the same pairing the tile uses.
+   The title row is 12px/600, so WCAG normal-text 4.5:1 applies with no
+   large-text relief available.                                         */
+.sd-title--solid[data-level="low"]          { background: var(--eaws-low);          color: var(--eaws-dark-fg); }
+.sd-title--solid[data-level="moderate"]     { background: var(--eaws-moderate);     color: var(--eaws-dark-fg); }
+.sd-title--solid[data-level="considerable"] { background: var(--eaws-considerable); color: var(--eaws-dark-fg); }
+.sd-title--solid[data-level="high"]         { background: var(--eaws-high);         color: var(--eaws-light-fg); }
+.sd-title--solid[data-level="very_high"]    { background: var(--eaws-very-high);    color: var(--eaws-light-fg); }
 
-/* D-prime — the same, but inverting at the two red levels, which is what
-   the tint set already does at very_high. */
-.sd-band--solid-inv[data-level="low"]          { background: var(--eaws-low);           color: var(--eaws-dark-fg); }
-.sd-band--solid-inv[data-level="moderate"]     { background: var(--eaws-moderate);      color: var(--eaws-dark-fg); }
-.sd-band--solid-inv[data-level="considerable"] { background: var(--eaws-considerable);  color: var(--eaws-dark-fg); }
-.sd-band--solid-inv[data-level="high"]         { background: #6b0000;                   color: var(--eaws-light-fg); }
-.sd-band--solid-inv[data-level="very_high"]    { background: var(--eaws-very-high-tint); color: var(--eaws-light-fg); }
-.sd-band--solid-inv .sd-chip--ghost { color: inherit; border-color: currentColor; opacity: 0.75; }
+/* D-prime — the same, inverting at the two red levels, which is what the
+   tint set already does at very_high. */
+.sd-title--solid-inv[data-level="low"]          { background: var(--eaws-low);            color: var(--eaws-dark-fg); }
+.sd-title--solid-inv[data-level="moderate"]     { background: var(--eaws-moderate);       color: var(--eaws-dark-fg); }
+.sd-title--solid-inv[data-level="considerable"] { background: var(--eaws-considerable);   color: var(--eaws-dark-fg); }
+.sd-title--solid-inv[data-level="high"]         { background: var(--eaws-high-edge);      color: var(--eaws-light-fg); }
+.sd-title--solid-inv[data-level="very_high"]    { background: var(--eaws-very-high-tint); color: var(--eaws-light-fg); }
 
-/* Red flash on the two failing swatches in the D column */
+/* With the title carrying the level, the band below it stops competing. */
+.sd-band--neutral { background: var(--sd-card); color: var(--sd-text-1); }
+
+/* Failing-ratio flash on the two red swatches in the D column */
 .mini .sd-card[data-flag="fail"] { position: relative; }
 .mini .sd-card[data-flag="fail"]::after {
   content: "4.00:1";
   position: absolute;
-  right: 8px;
-  bottom: 6px;
+  right: 7px;
+  top: 5px;
   font-family: "IBM Plex Mono", monospace;
   font-size: 9px;
   letter-spacing: 0.04em;
   color: var(--eaws-light-fg);
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -888,7 +891,7 @@ table.matrix tfoot td {
     </div>
     <p class="lede">
       Four ways to spend the saturated colour instead of a stripe under the title &mdash; three on
-      the card border, one filling the header row the way the day-risk tile is filled. All five
+      the card border, one filling the title row the way the day-risk tile is filled. All five
       levels appear in each, because the scale is not uniform: two levels are too pale for a bare
       border, and two are too red for a filled row.
     </p>
@@ -942,19 +945,19 @@ table.matrix tfoot td {
       </div>
 
       <div class="ladder__col">
-        <div class="ladder__h"><b>D</b> Solid header row</div>
+        <div class="ladder__h"><b>D</b> Title row filled</div>
         <div class="sd mini sd-stack">
-          <div class="sd-card"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="low"><span class="sd-picto" data-picto="dry" data-level="low"></span><span class="sd-label">Low</span></div></div>
-          <div class="sd-card"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="moderate"><span class="sd-picto" data-picto="dry" data-level="moderate"></span><span class="sd-label">Moderate</span></div></div>
-          <div class="sd-card"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="considerable"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">Considerable</span></div></div>
-          <div class="sd-card" data-flag="fail"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">High</span></div></div>
-          <div class="sd-card" data-flag="fail"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="very_high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
+          <div class="sd-card"><div class="sd-title sd-title--solid" data-level="low">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-picto" data-picto="dry" data-level="low"></span><span class="sd-label">Low</span></div></div>
+          <div class="sd-card"><div class="sd-title sd-title--solid" data-level="moderate">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-picto" data-picto="dry" data-level="moderate"></span><span class="sd-label">Moderate</span></div></div>
+          <div class="sd-card"><div class="sd-title sd-title--solid" data-level="considerable">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">Considerable</span></div></div>
+          <div class="sd-card" data-flag="fail"><div class="sd-title sd-title--solid" data-level="high">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">High</span></div></div>
+          <div class="sd-card" data-flag="fail"><div class="sd-title sd-title--solid" data-level="very_high">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
         </div>
         <p class="ladder__verdict ladder__verdict--bad">
-          <b>Strongest at 1&ndash;3, fails AA at 4 and 5.</b> Levels 1&ndash;3 land between 8.21:1
-          and 16.37:1. But EAWS red with white is <b>4.00:1</b>, under the 4.5:1 floor for the 15px
-          label &mdash; and no companion text colour fixes it: the dark
-          <code>#6b0000</code> is worse at 3.23:1.
+          <b>Strongest at 1&ndash;3, fails AA at 4 and 5.</b> The card gets a proper coloured cap
+          and the band below it goes quiet. Levels 1&ndash;3 land between 8.21:1 and 16.37:1, but
+          EAWS red with white is <b>4.00:1</b> &mdash; and the title row is 12px, so the
+          large-text allowance never applies.
         </p>
       </div>
     </div>
@@ -962,32 +965,42 @@ table.matrix tfoot td {
     <div class="warnbox">
       <h3>D is the loudest and the most faithful to the day-risk row &mdash; and red breaks it</h3>
       <p>
-        Filling the header with the solid is the same move the day-risk tile already makes, so the
-        two surfaces would finally agree. It works at three of the five levels. At High and
-        Very high the mandated <code>#ff0000</code> has no companion that clears AA for the problem
-        label: white is 4.00:1, the level's own dark text 3.23:1. Enlarging the label to reach the
-        large-text threshold means 18.66px bold &mdash; a different type scale for two levels only.
+        Filling the title row is the same move the day-risk tile already makes, so the two surfaces
+        would finally agree, and the card gains a proper header rather than a decorated seam. It
+        works at three of the five levels. At High and Very high the mandated <code>#ff0000</code>
+        has no companion that clears AA: white is 4.00:1, the level's own dark text 3.23:1. And the
+        title row is <strong>12px semibold</strong> &mdash; WCAG's large-text allowance starts at
+        18.66px bold, so there is no relief to reach for. This is a harder fail than the same red
+        on the 15px problem label.
       </p>
       <p>
         <strong>The smallest correction is to invert where the scale already inverts.</strong> The
         tint set does exactly this at <code>very_high</code>, dropping to <code>#1a0000</code> with
         white copy. Carry that one step earlier &mdash; solid at 1&ndash;3, dark at 4&ndash;5
         &mdash; and every level clears AA while the row still reads as the day-risk tile's sibling.
-        Shown as <b>D&prime;</b> below.
+        Shown as <b>D&prime;</b>:
       </p>
       <div class="ladder" style="grid-template-columns: repeat(5, 1fr);">
-        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="low"><span class="sd-label">Low</span></div></div></div></div>
-        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="moderate"><span class="sd-label">Moderate</span></div></div></div></div>
-        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="considerable"><span class="sd-label">Considerable</span></div></div></div></div>
-        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="high"><span class="sd-label">High</span></div></div></div></div>
-        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="very_high"><span class="sd-label">Very high</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-title sd-title--solid-inv" data-level="low">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-label">Low</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-title sd-title--solid-inv" data-level="moderate">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-label">Moderate</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-title sd-title--solid-inv" data-level="considerable">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-label">Considerable</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-title sd-title--solid-inv" data-level="high">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-label">High</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-title sd-title--solid-inv" data-level="very_high">Dry avalanches</div><div class="sd-band sd-band--neutral"><span class="sd-label">Very high</span></div></div></div></div>
       </div>
+      <p>
+        <strong>One thing D couples that the others don't.</strong> The title row states the
+        <em>category</em> &mdash; <em>Dry avalanches</em> &mdash; and filling it paints the
+        <em>level</em> onto that same surface. Two independent axes, one block of colour. The
+        day-risk row has the same shape (level colour, time label) and reads fine, so this is a
+        caution rather than an objection; it is the reason the pictogram, which encodes both axes
+        together, has to stay.
+      </p>
       <p>
         <strong>The same 4.00:1 is already shipping.</strong> <code>.dw-tile</code> pairs
         <code>--color-eaws-high</code> with white for its level digit
-        (<span class="ref">main.css:1224</span>). At 14px bold that digit is not WCAG large text,
-        which needs 18.66px bold &mdash; so the day-risk row fails AA at levels 4 and 5 today,
-        independently of anything proposed here.
+        (<span class="ref">main.css:1224</span>). At 14px bold that digit is not WCAG large text
+        either &mdash; so the day-risk row fails AA at levels 4 and 5 today, independently of
+        anything proposed here.
       </p>
     </div>
 
@@ -1047,11 +1060,11 @@ table.matrix tfoot td {
           </div>
         </div>
         <div class="pane pane--after">
-          <div class="pane__tag">D&prime; &mdash; solid header row</div>
+          <div class="pane__tag">D&prime; &mdash; title row filled</div>
           <div class="sd">
             <div class="sd-card">
-              <div class="sd-title">Dry avalanches</div>
-              <div class="sd-band sd-band--solid-inv" data-level="considerable">
+              <div class="sd-title sd-title--solid-inv" data-level="considerable">Dry avalanches</div>
+              <div class="sd-band sd-band--neutral">
                 <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
                 <span class="sd-label">New snow + Wind slab</span>
               </div>
@@ -1063,8 +1076,8 @@ table.matrix tfoot td {
             </div>
           </div>
           <div class="pane__foot">
-            <span><b>The tint is spent</b> &mdash; the row is the colour now, so the pale tint has no job left and the band's own text tokens go with it.</span>
-            <span><b>Matches the day-risk tile</b> &mdash; one saturated block per level, on both surfaces.</span>
+            <span><b>The tint is spent</b> &mdash; the title is the colour now, so the pale band tint has no job left and the band's own text tokens go with it.</span>
+            <span><b>Matches the day-risk tile</b> &mdash; one saturated block per level, on both surfaces, and the card reads top-down: level, then problem, then scope.</span>
           </div>
         </div>
       </div>
