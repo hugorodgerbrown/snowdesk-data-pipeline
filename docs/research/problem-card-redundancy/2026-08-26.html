@@ -1,0 +1,1975 @@
+<title>Four Ways to Say Dry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap">
+
+<style>
+/* ══ Tokens ══════════════════════════════════════════════════════════
+   Two independent sets. The `--` set is this document's own chrome —
+   cool greys, so it never blurs into the specimens. The `--sd-` set is
+   Snowdesk's, copied from src/css/main.css so every specimen below is
+   the product's real palette and not an approximation of it.          */
+
+:root {
+  /* Document chrome — light */
+  --ground:      #e6e8ec;
+  --panel:       #f8f9fb;
+  --panel-2:     #eef0f4;
+  --ink:         #14171c;
+  --ink-2:       #4a525d;
+  --ink-3:       #6d7681;
+  --rule:        rgba(20, 23, 28, 0.12);
+  --rule-strong: rgba(20, 23, 28, 0.24);
+  --accent:      #17627d;
+  --cut:         #a63a1c;
+  --cut-soft:    rgba(166, 58, 28, 0.10);
+  --keep:        #2c6a4c;
+  --keep-soft:   rgba(44, 106, 76, 0.10);
+
+  /* Snowdesk surfaces — light (main.css :118–136) */
+  --sd-bg:            #f2f0ec;
+  --sd-card:          #ffffff;
+  --sd-tag:           #f5f3ef;
+  --sd-text-1:        #1a1916;
+  --sd-text-2:        #6b6860;
+  --sd-text-3:        #6e6b65;
+  --sd-border:        rgba(0, 0, 0, 0.09);
+  --sd-border-strong: rgba(0, 0, 0, 0.16);
+
+  /* EAWS scale — mandated by the standard, identical in both themes
+     (main.css :293–353). Solids for the stripe/tile, tints for the band,
+     -text for copy on the tint. `-edge` is proposed by this document:
+     the -text value at every level except very_high, where the text is
+     white and the tint itself is the only dark value available.        */
+  --eaws-low:               #ccff66;
+  --eaws-moderate:          #ffff00;
+  --eaws-considerable:      #ff9900;
+  --eaws-high:              #ff0000;
+  --eaws-very-high:         #ff0000;
+  --eaws-low-tint:          #e8ffb8;
+  --eaws-moderate-tint:     #fff7b8;
+  --eaws-considerable-tint: #ffe5c2;
+  --eaws-high-tint:         #ffd9d9;
+  --eaws-very-high-tint:    #1a0000;
+  --eaws-low-text:          #3a5a00;
+  --eaws-moderate-text:     #4d4500;
+  --eaws-considerable-text: #5c3000;
+  --eaws-high-text:         #6b0000;
+  --eaws-very-high-text:    #ffffff;
+  --eaws-low-edge:          #3a5a00;
+  --eaws-moderate-edge:     #4d4500;
+  --eaws-considerable-edge: #5c3000;
+  --eaws-high-edge:         #6b0000;
+  --eaws-very-high-edge:    #1a0000;
+  --eaws-dark-fg:           #1a1916;
+  --eaws-light-fg:          #ffffff;
+
+  --radius-card: 12px;
+  --radius-sm:   6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0e1116;
+    --panel:       #171b21;
+    --panel-2:     #1e232b;
+    --ink:         #e8ebef;
+    --ink-2:       #a6afba;
+    --ink-3:       #7f8894;
+    --rule:        rgba(255, 255, 255, 0.12);
+    --rule-strong: rgba(255, 255, 255, 0.26);
+    --accent:      #63b4d0;
+    --cut:         #e2866a;
+    --cut-soft:    rgba(226, 134, 106, 0.13);
+    --keep:        #74c69d;
+    --keep-soft:   rgba(116, 198, 157, 0.13);
+
+    --sd-bg:            #1c1b19;
+    --sd-card:          #2a2825;
+    --sd-tag:           #302e2a;
+    --sd-text-1:        #edece8;
+    --sd-text-2:        #a8a49c;
+    --sd-text-3:        #9a968e;
+    --sd-border:        rgba(255, 255, 255, 0.09);
+    --sd-border-strong: rgba(255, 255, 255, 0.16);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0e1116;
+  --panel:       #171b21;
+  --panel-2:     #1e232b;
+  --ink:         #e8ebef;
+  --ink-2:       #a6afba;
+  --ink-3:       #7f8894;
+  --rule:        rgba(255, 255, 255, 0.12);
+  --rule-strong: rgba(255, 255, 255, 0.26);
+  --accent:      #63b4d0;
+  --cut:         #e2866a;
+  --cut-soft:    rgba(226, 134, 106, 0.13);
+  --keep:        #74c69d;
+  --keep-soft:   rgba(116, 198, 157, 0.13);
+
+  --sd-bg:            #1c1b19;
+  --sd-card:          #2a2825;
+  --sd-tag:           #302e2a;
+  --sd-text-1:        #edece8;
+  --sd-text-2:        #a8a49c;
+  --sd-text-3:        #9a968e;
+  --sd-border:        rgba(255, 255, 255, 0.09);
+  --sd-border-strong: rgba(255, 255, 255, 0.16);
+}
+
+/* ══ Base ═══════════════════════════════════════════════════════════ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink-2);
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sheet {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 56px 28px 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+}
+
+h1, h2, h3, .archivo {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  font-variant-ligatures: none;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+
+/* ══ Masthead ═══════════════════════════════════════════════════════ */
+
+.masthead { display: flex; flex-direction: column; gap: 26px; }
+
+.masthead__kicker {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 30px;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: clamp(40px, 6.2vw, 74px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+}
+
+.masthead__thesis {
+  max-width: 62ch;
+  font-size: 20px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  margin: 0;
+}
+.masthead__thesis strong { color: var(--ink); font-weight: 600; }
+
+.tally {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.tally__cell { background: var(--panel); padding: 16px 18px; }
+.tally__n {
+  font-family: Archivo, sans-serif;
+  font-weight: 700;
+  font-size: 27px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  display: block;
+  line-height: 1.1;
+}
+.tally__k {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 5px;
+  display: block;
+}
+
+/* ══ Section furniture ══════════════════════════════════════════════ */
+
+.section { display: flex; flex-direction: column; gap: 26px; }
+
+.section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  border-top: 2px solid var(--ink);
+  padding-top: 12px;
+}
+.section__head h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  flex: 1;
+}
+.section__head .mono {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.lede { max-width: 68ch; margin: 0; }
+
+/* ══ Tables ═════════════════════════════════════════════════════════ */
+
+.scroller { overflow-x: auto; min-width: 0; }
+
+table.matrix {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 620px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  background: var(--panel);
+}
+table.matrix th, table.matrix td {
+  padding: 11px 14px;
+  text-align: right;
+  border-bottom: 1px solid var(--rule);
+}
+table.matrix th:first-child, table.matrix td:first-child {
+  text-align: left;
+  white-space: nowrap;
+}
+table.matrix thead th {
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-strong);
+}
+table.matrix tbody td { color: var(--ink-2); }
+table.matrix tbody td.zero { color: var(--ink-3); opacity: 0.5; }
+table.matrix tbody td.total { color: var(--ink); font-weight: 500; }
+table.matrix tbody td.fail { color: var(--cut); font-weight: 500; }
+table.matrix tbody td.pass { color: var(--keep); font-weight: 500; }
+table.matrix tbody tr:hover td { background: var(--panel-2); }
+table.matrix tfoot td {
+  font-weight: 500;
+  color: var(--ink);
+  border-bottom: 0;
+  border-top: 1px solid var(--rule-strong);
+}
+.warnbox .scroller table.matrix { min-width: 340px; background: transparent; }
+.cat-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+.cat-dot--dry { background: #d98a2b; }
+.cat-dot--wet { background: #4a90b8; }
+
+/* ══ Ledger ═════════════════════════════════════════════════════════ */
+
+.ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+.ledger__item {
+  background: var(--panel);
+  padding: 22px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ledger__n {
+  font-family: Archivo, sans-serif;
+  font-weight: 700;
+  font-size: 40px;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--cut);
+  font-variant-numeric: tabular-nums;
+}
+.ledger__n--keep { color: var(--keep); }
+.ledger__t {
+  font-family: Archivo, sans-serif;
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+.ledger__d { font-size: 15px; line-height: 1.5; color: var(--ink-2); margin: 0; }
+.ledger__d code, .ref {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--ink);
+}
+.ledger__d code { white-space: nowrap; }
+
+/* ══ Plate — the specimen mount ═════════════════════════════════════ */
+
+.plate { border: 1px solid var(--rule); background: var(--panel); }
+
+.plate__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 18px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.plate__sig {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.plate__sig em { font-style: normal; color: var(--ink-3); }
+.plate__note {
+  font-size: 15px;
+  color: var(--ink-2);
+  flex: 1 1 260px;
+  line-height: 1.45;
+}
+.plate__counts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.srcpill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.srcpill--none { opacity: 0.42; text-decoration: line-through; }
+
+.plate__body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--rule);
+}
+@media (max-width: 860px) { .plate__body { grid-template-columns: 1fr; } }
+
+.pane { background: var(--sd-bg); padding: 18px 18px 20px; }
+.pane__tag {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pane__tag::before { content: ""; width: 18px; height: 2px; background: currentColor; }
+.pane--before .pane__tag { color: var(--cut); }
+.pane--after  .pane__tag { color: var(--keep); }
+
+.pane__foot {
+  margin-top: 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--sd-text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pane__foot b {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+.pane--before .pane__foot b { color: var(--cut); }
+.pane--after  .pane__foot b { color: var(--keep); }
+
+/* ══ Snowdesk card reproduction ═════════════════════════════════════
+   Mirrors _rating_block.html + day_windows.html against the real
+   tokens above, including the 4px saturated top stripe on the danger
+   band (main.css :623) that the first draft of this page omitted.    */
+
+.sd {
+  font-family: "DM Sans", system-ui, sans-serif;
+  color: var(--sd-text-1);
+  display: flex;
+  flex-direction: column;
+}
+.sd-stack { display: flex; flex-direction: column; gap: 14px; }
+
+.sd-eyebrow {
+  font-family: "DM Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--sd-text-3);
+  margin-bottom: 10px;
+}
+
+/* Elevation-band heading — ALBINA only, unchanged by this proposal */
+.sd-heading {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sd-text-1);
+  padding: 0 4px;
+  margin: 0 0 5px;
+}
+.sd-subheading { font-size: 12px; color: var(--sd-text-2); padding: 0 4px; margin: 0 0 8px; }
+
+.sd-card {
+  background: var(--sd-card);
+  border: 1px solid var(--sd-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+/* Panel title row — stays exactly where it is */
+.sd-title {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--sd-border);
+  background: var(--sd-card);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sd-text-2);
+  letter-spacing: 0.025em;
+}
+
+.sd-band {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--sd-border);
+}
+.sd-band[data-level="low"]          { background: var(--eaws-low-tint);          color: var(--eaws-low-text); }
+.sd-band[data-level="moderate"]     { background: var(--eaws-moderate-tint);     color: var(--eaws-moderate-text); }
+.sd-band[data-level="considerable"] { background: var(--eaws-considerable-tint); color: var(--eaws-considerable-text); }
+.sd-band[data-level="high"]         { background: var(--eaws-high-tint);         color: var(--eaws-high-text); }
+.sd-band[data-level="very_high"]    { background: var(--eaws-very-high-tint);    color: var(--eaws-very-high-text); }
+
+/* The saturated top stripe as it ships today (main.css :623–627) */
+.sd-band--striped[data-level="low"]          { border-top: 4px solid var(--eaws-low); }
+.sd-band--striped[data-level="moderate"]     { border-top: 4px solid var(--eaws-moderate); }
+.sd-band--striped[data-level="considerable"] { border-top: 4px solid var(--eaws-considerable); }
+.sd-band--striped[data-level="high"]         { border-top: 4px solid var(--eaws-high); }
+.sd-band--striped[data-level="very_high"]    { border-top: 4px solid var(--eaws-very-high); }
+
+.sd-label { font-size: 15px; font-weight: 600; line-height: 1.2; flex: 1; min-width: 0; }
+.sd-picto { width: 36px; height: 36px; flex-shrink: 0; }
+
+.sd-chip {
+  font-family: "DM Mono", monospace;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.sd-chip--ghost { background: transparent; color: var(--sd-text-2); border: 1px solid var(--sd-border-strong); }
+.sd-chip--solid { background: var(--sd-tag); color: var(--sd-text-2); border: 1px solid var(--sd-border); }
+
+.sd-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--sd-border);
+  background: var(--sd-card);
+}
+.sd-meta { font-size: 12px; color: var(--sd-text-2); display: inline-flex; align-items: center; gap: 6px; }
+
+.sd-prose { padding: 12px 16px 16px; font-size: 14px; line-height: 1.6; color: var(--sd-text-2); }
+.sd-prose em { font-style: italic; color: var(--sd-text-3); }
+
+/* Day risk profile */
+.sd-dw {
+  background: var(--sd-card);
+  border: 1px solid var(--sd-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.sd-dw-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-top: 1px solid var(--sd-border);
+}
+.sd-dw-row:first-child { border-top: 0; }
+.sd-dw-tile {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; flex-shrink: 0;
+}
+.lv-low          { background: var(--eaws-low);          color: var(--eaws-dark-fg); }
+.lv-moderate     { background: var(--eaws-moderate);     color: var(--eaws-dark-fg); }
+.lv-considerable { background: var(--eaws-considerable); color: var(--eaws-dark-fg); }
+.lv-high         { background: var(--eaws-high);         color: var(--eaws-light-fg); }
+.sd-dw-body { flex: 1; min-width: 0; }
+.sd-dw-level { font-size: 13px; font-weight: 600; color: var(--sd-text-1); }
+.sd-dw-caption { font-size: 13px; color: var(--sd-text-3); margin-top: 2px; }
+
+/* ══ Border treatments ══════════════════════════════════════════════
+   Three ways of spending the saturated EAWS colour on the card edge.
+   `--lvl` carries the solid, `--lvl-edge` the dark keyline.          */
+
+.sd-card[data-lvl="low"]          { --lvl: var(--eaws-low);          --lvl-edge: var(--eaws-low-edge); }
+.sd-card[data-lvl="moderate"]     { --lvl: var(--eaws-moderate);     --lvl-edge: var(--eaws-moderate-edge); }
+.sd-card[data-lvl="considerable"] { --lvl: var(--eaws-considerable); --lvl-edge: var(--eaws-considerable-edge); }
+.sd-card[data-lvl="high"]         { --lvl: var(--eaws-high);         --lvl-edge: var(--eaws-high-edge); }
+.sd-card[data-lvl="very_high"]    { --lvl: var(--eaws-very-high);    --lvl-edge: var(--eaws-very-high-edge); }
+
+/* A — plain ring */
+.sd-card--ring { border: 3px solid var(--lvl); }
+/* B — left rail */
+.sd-card--rail { border-left: 5px solid var(--lvl); }
+/* C — ring plus keyline */
+.sd-card--keyed {
+  border: 3px solid var(--lvl);
+  box-shadow: 0 0 0 1px var(--lvl-edge);
+}
+
+/* D — header row filled with the solid, exactly as the day-risk tile is.
+   Copy takes the level's -fg token, the same pairing .dw-tile uses.      */
+.sd-band--solid[data-level="low"]          { background: var(--eaws-low);          color: var(--eaws-dark-fg); }
+.sd-band--solid[data-level="moderate"]     { background: var(--eaws-moderate);     color: var(--eaws-dark-fg); }
+.sd-band--solid[data-level="considerable"] { background: var(--eaws-considerable); color: var(--eaws-dark-fg); }
+.sd-band--solid[data-level="high"]         { background: var(--eaws-high);         color: var(--eaws-light-fg); }
+.sd-band--solid[data-level="very_high"]    { background: var(--eaws-very-high);    color: var(--eaws-light-fg); }
+.sd-band--solid .sd-chip--ghost { color: inherit; border-color: currentColor; opacity: 0.75; }
+
+/* D-prime — the same, but inverting at the two red levels, which is what
+   the tint set already does at very_high. */
+.sd-band--solid-inv[data-level="low"]          { background: var(--eaws-low);           color: var(--eaws-dark-fg); }
+.sd-band--solid-inv[data-level="moderate"]     { background: var(--eaws-moderate);      color: var(--eaws-dark-fg); }
+.sd-band--solid-inv[data-level="considerable"] { background: var(--eaws-considerable);  color: var(--eaws-dark-fg); }
+.sd-band--solid-inv[data-level="high"]         { background: #6b0000;                   color: var(--eaws-light-fg); }
+.sd-band--solid-inv[data-level="very_high"]    { background: var(--eaws-very-high-tint); color: var(--eaws-light-fg); }
+.sd-band--solid-inv .sd-chip--ghost { color: inherit; border-color: currentColor; opacity: 0.75; }
+
+/* Red flash on the two failing swatches in the D column */
+.mini .sd-card[data-flag="fail"] { position: relative; }
+.mini .sd-card[data-flag="fail"]::after {
+  content: "4.00:1";
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--eaws-light-fg);
+  background: rgba(0, 0, 0, 0.55);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ══ Ladder — five levels x three treatments ════════════════════════ */
+
+.ladder {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+@media (max-width: 1040px) { .ladder { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px)  { .ladder { grid-template-columns: 1fr; } }
+
+.ladder__col { background: var(--sd-bg); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.ladder__h {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sd-text-3);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ladder__h b { font-weight: 500; color: var(--sd-text-1); }
+.ladder__verdict {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--sd-text-2);
+}
+.ladder__verdict b {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+.ladder__verdict--bad b  { color: var(--cut); }
+.ladder__verdict--good b { color: var(--keep); }
+
+.mini .sd-band { padding: 8px 12px; gap: 9px; border-bottom: 0; }
+.mini .sd-picto { width: 26px; height: 26px; }
+.mini .sd-label { font-size: 13px; }
+.mini .sd-title { padding: 5px 12px; font-size: 11px; }
+
+/* ══ Change list ════════════════════════════════════════════════════ */
+
+.changes { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+.change {
+  background: var(--panel);
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 4px 20px;
+  align-items: start;
+}
+@media (max-width: 640px) { .change { grid-template-columns: 1fr; } }
+.change__verb {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  padding-top: 4px;
+}
+.change__verb--cut  { color: var(--cut); }
+.change__verb--keep { color: var(--keep); }
+.change__verb--add  { color: var(--accent); }
+.change__t {
+  font-family: Archivo, sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.change__d { grid-column: 2; font-size: 15.5px; color: var(--ink-2); margin: 0; }
+@media (max-width: 640px) { .change__d { grid-column: 1; } }
+.change__d code {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.warnbox {
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.warnbox h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+.warnbox p { margin: 0; font-size: 15.5px; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+  align-items: center;
+}
+.legend__swatch {
+  display: inline-block;
+  width: 13px; height: 13px;
+  vertical-align: -2px;
+  margin-right: 7px;
+  border-radius: 2px;
+}
+.legend__swatch--cut  { background: var(--cut-soft); box-shadow: 0 0 0 1px var(--cut); }
+.legend__swatch--keep { background: transparent; box-shadow: 0 0 0 2px var(--eaws-considerable), 0 0 0 3px var(--eaws-considerable-edge); }
+
+.dupe { box-shadow: 0 0 0 1px var(--cut); background: var(--cut-soft) !important; }
+
+.footnote {
+  font-size: 14px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--rule);
+  padding-top: 18px;
+  max-width: 72ch;
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="masthead__kicker">
+      <span>Bulletin page</span>
+      <span>Problem-card redundancy</span>
+      <span>Production sweep, 26 Aug 2026</span>
+    </div>
+    <h1>Four Ways<br>to Say Dry</h1>
+    <p class="masthead__thesis">
+      Every problem card states its category four times &mdash; in the panel title, the EAWS
+      pictogram, the problem label, and a <strong>DRY</strong> / <strong>WET</strong> pill. Across
+      9,614 traits in production the pill has never once been the only one speaking. The title
+      stays; the pill goes. The <strong>ALL DAY</strong> pill goes with it on the 96% of pages
+      where the day never splits &mdash; and the card edge takes on the saturated EAWS colour
+      that today gets four pixels above the band.
+    </p>
+    <div class="tally">
+      <div class="tally__cell"><span class="tally__n">7,855</span><span class="tally__k">Bulletins</span></div>
+      <div class="tally__cell"><span class="tally__n">9,614</span><span class="tally__k">Problem traits</span></div>
+      <div class="tally__cell"><span class="tally__n">6</span><span class="tally__k">Combinations, all real</span></div>
+      <div class="tally__cell"><span class="tally__n">22</span><span class="tally__k">Distinct page shapes</span></div>
+    </div>
+  </header>
+
+  <!-- Matrix -->
+  <section class="section">
+    <div class="section__head">
+      <h2>Every combination that exists</h2>
+      <span class="mono">Traits &middot; by provider</span>
+    </div>
+    <p class="lede">
+      Category crossed with <span class="ref">validTimePeriod</span> gives six possibilities. All
+      six occur, but no provider produces all six alone: SLF publishes three &mdash; it never splits
+      a dry problem and never uses <span class="ref">earlier</span> &mdash; M&eacute;t&eacute;o-France
+      publishes two, and only ALBINA exercises the full grid.
+    </p>
+    <div class="scroller">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th scope="col">Category / period</th>
+            <th scope="col">SLF</th>
+            <th scope="col">ALBINA</th>
+            <th scope="col">M&eacute;t&eacute;o-France</th>
+            <th scope="col">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="cat-dot cat-dot--dry"></span>dry / all_day</td><td>2,113</td><td>942</td><td>3,960</td><td class="total">7,015</td></tr>
+          <tr><td><span class="cat-dot cat-dot--dry"></span>dry / earlier</td><td class="zero">&mdash;</td><td>100</td><td class="zero">&mdash;</td><td class="total">100</td></tr>
+          <tr><td><span class="cat-dot cat-dot--dry"></span>dry / later</td><td class="zero">&mdash;</td><td>107</td><td class="zero">&mdash;</td><td class="total">107</td></tr>
+          <tr><td><span class="cat-dot cat-dot--wet"></span>wet / all_day</td><td>494</td><td>182</td><td>1,374</td><td class="total">2,050</td></tr>
+          <tr><td><span class="cat-dot cat-dot--wet"></span>wet / earlier</td><td class="zero">&mdash;</td><td>40</td><td class="zero">&mdash;</td><td class="total">40</td></tr>
+          <tr><td><span class="cat-dot cat-dot--wet"></span>wet / later</td><td>185</td><td>117</td><td class="zero">&mdash;</td><td class="total">302</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>All traits</td><td>2,792</td><td>1,488</td><td>5,334</td><td>9,614</td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- Ledger -->
+  <section class="section">
+    <div class="section__head">
+      <h2>What the sweep measured</h2>
+      <span class="mono">Four figures</span>
+    </div>
+    <div class="ledger">
+      <div class="ledger__item">
+        <span class="ledger__n">100%</span>
+        <span class="ledger__t">Every card already names its category in the title</span>
+        <p class="ledger__d">
+          9,614 of 9,614 traits carry a title, and all 17 distinct title strings name the category.
+          The fallback at <code>render_model.py:1604</code> fills whatever the provider leaves blank.
+          The title is staying &mdash; which is precisely what makes the pill removable.
+        </p>
+      </div>
+      <div class="ledger__item">
+        <span class="ledger__n">96.0%</span>
+        <span class="ledger__t">Pages where the day never splits</span>
+        <p class="ledger__d">
+          7,543 of 7,855 bulletins are <code>all_day</code> throughout &mdash; 100% of
+          M&eacute;t&eacute;o-France, 91.7% of SLF, 87.1% of ALBINA. On every one of them the time
+          pill repeats one fact on every surface that can hold it.
+        </p>
+      </div>
+      <div class="ledger__item">
+        <span class="ledger__n">79.6%</span>
+        <span class="ledger__t">Pages carrying exactly one card</span>
+        <p class="ledger__d">
+          6,255 of 7,855. With one card on the page there is nothing to tell apart, so both pills
+          spend their space labelling a set of one.
+        </p>
+      </div>
+      <div class="ledger__item">
+        <span class="ledger__n ledger__n--keep">4px</span>
+        <span class="ledger__t">All the saturated EAWS colour the card gets today</span>
+        <p class="ledger__d">
+          A stripe on the band's top edge (<code>main.css:623</code>), sitting below the title row
+          so it reads as the band's decoration rather than the card's identity. The level is the
+          most scannable thing on the page and it is spending four pixels.
+        </p>
+      </div>
+    </div>
+
+    <div class="warnbox">
+      <h3>And in dark mode, the two pills are barely legible</h3>
+      <p>
+        The EAWS scale is mandated by the standard, so <code>.dark</code> in
+        <span class="ref">main.css</span> overrides none of it &mdash; the danger band keeps its
+        light tint on a dark card, deliberately. But SNOW-286 changed the category and time chips
+        from filled pills to transparent ghosts, and a ghost inherits <code>--color-text-2</code>,
+        which dark mode brightens to <code>#a8a49c</code>. Light-grey text, pale tint, no effective
+        border: translucent white at 16% over <code>#ffe5c2</code> is not a border.
+      </p>
+      <div class="scroller">
+        <table class="matrix">
+          <thead>
+            <tr><th scope="col">Ghost chip inside the band</th><th scope="col">Light</th><th scope="col">Dark</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Low</td><td>5.15:1</td><td class="fail">2.30:1</td></tr>
+            <tr><td>Moderate</td><td>5.10:1</td><td class="fail">2.28:1</td></tr>
+            <tr><td>Considerable</td><td>4.57:1</td><td class="fail">2.04:1</td></tr>
+            <tr><td>High</td><td class="fail">4.29:1</td><td class="fail">1.91:1</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td>Level-number chip, for comparison</td><td>4.79:1</td><td>5.46:1</td></tr>
+          </tfoot>
+        </table>
+      </div>
+      <p>
+        The SNOW-253 audit note still standing in <span class="ref">main.css</span> records chips
+        inside the band as safe, on the grounds that they &ldquo;carry their own opaque
+        <code>bg-tag</code> background&rdquo;. That held when it was written. It holds today only for
+        the level-number chip &mdash; which is the one chip this proposal keeps.
+      </p>
+    </div>
+  </section>
+
+  <!-- Border treatments -->
+  <section class="section">
+    <div class="section__head">
+      <h2>The level colour, spent properly</h2>
+      <span class="mono">Four treatments</span>
+    </div>
+    <p class="lede">
+      Four ways to spend the saturated colour instead of a stripe under the title &mdash; three on
+      the card border, one filling the header row the way the day-risk tile is filled. All five
+      levels appear in each, because the scale is not uniform: two levels are too pale for a bare
+      border, and two are too red for a filled row.
+    </p>
+
+    <div class="ladder">
+      <div class="ladder__col">
+        <div class="ladder__h"><b>A</b> Ring &mdash; 3px solid</div>
+        <div class="sd mini sd-stack">
+          <div class="sd-card sd-card--ring" data-lvl="low"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="low"><span class="sd-picto" data-picto="dry" data-level="low"></span><span class="sd-label">Low</span></div></div>
+          <div class="sd-card sd-card--ring" data-lvl="moderate"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="moderate"><span class="sd-picto" data-picto="dry" data-level="moderate"></span><span class="sd-label">Moderate</span></div></div>
+          <div class="sd-card sd-card--ring" data-lvl="considerable"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="considerable"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">Considerable</span></div></div>
+          <div class="sd-card sd-card--ring" data-lvl="high"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">High</span></div></div>
+          <div class="sd-card sd-card--ring" data-lvl="very_high"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="very_high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
+        </div>
+        <p class="ladder__verdict ladder__verdict--bad">
+          <b>Fails at 1 and 2 in light mode.</b> Yellow on white is 1.07:1 and yellow-green 1.16:1
+          &mdash; the ring is not visible. In dark mode the same two are the strongest of the five.
+        </p>
+      </div>
+
+      <div class="ladder__col">
+        <div class="ladder__h"><b>B</b> Rail &mdash; 5px left edge</div>
+        <div class="sd mini sd-stack">
+          <div class="sd-card sd-card--rail" data-lvl="low"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="low"><span class="sd-picto" data-picto="dry" data-level="low"></span><span class="sd-label">Low</span></div></div>
+          <div class="sd-card sd-card--rail" data-lvl="moderate"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="moderate"><span class="sd-picto" data-picto="dry" data-level="moderate"></span><span class="sd-label">Moderate</span></div></div>
+          <div class="sd-card sd-card--rail" data-lvl="considerable"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="considerable"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">Considerable</span></div></div>
+          <div class="sd-card sd-card--rail" data-lvl="high"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">High</span></div></div>
+          <div class="sd-card sd-card--rail" data-lvl="very_high"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="very_high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
+        </div>
+        <p class="ladder__verdict ladder__verdict--bad">
+          <b>Same contrast, more of it.</b> A 5px bar survives where a 3px line vanishes, but the
+          accent-rail-on-rounded-card shape is the house style of every generic dashboard, and it
+          reads as severity ranking rather than a mandated scale.
+        </p>
+      </div>
+
+      <div class="ladder__col">
+        <div class="ladder__h"><b>C</b> Ring + keyline &mdash; 3px + 1px</div>
+        <div class="sd mini sd-stack">
+          <div class="sd-card sd-card--keyed" data-lvl="low"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="low"><span class="sd-picto" data-picto="dry" data-level="low"></span><span class="sd-label">Low</span></div></div>
+          <div class="sd-card sd-card--keyed" data-lvl="moderate"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="moderate"><span class="sd-picto" data-picto="dry" data-level="moderate"></span><span class="sd-label">Moderate</span></div></div>
+          <div class="sd-card sd-card--keyed" data-lvl="considerable"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="considerable"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">Considerable</span></div></div>
+          <div class="sd-card sd-card--keyed" data-lvl="high"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">High</span></div></div>
+          <div class="sd-card sd-card--keyed" data-lvl="very_high"><div class="sd-title">Dry avalanches</div><div class="sd-band" data-level="very_high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
+        </div>
+        <p class="ladder__verdict ladder__verdict--good">
+          <b>Holds at every level, both themes.</b> The 1px keyline is the level's existing
+          <code>-text</code> token &mdash; already contrast-audited, already in the palette. It
+          defines the edge without touching the mandated hue.
+        </p>
+      </div>
+
+      <div class="ladder__col">
+        <div class="ladder__h"><b>D</b> Solid header row</div>
+        <div class="sd mini sd-stack">
+          <div class="sd-card"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="low"><span class="sd-picto" data-picto="dry" data-level="low"></span><span class="sd-label">Low</span></div></div>
+          <div class="sd-card"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="moderate"><span class="sd-picto" data-picto="dry" data-level="moderate"></span><span class="sd-label">Moderate</span></div></div>
+          <div class="sd-card"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="considerable"><span class="sd-picto" data-picto="dry" data-level="considerable"></span><span class="sd-label">Considerable</span></div></div>
+          <div class="sd-card" data-flag="fail"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">High</span></div></div>
+          <div class="sd-card" data-flag="fail"><div class="sd-title">Dry avalanches</div><div class="sd-band sd-band--solid" data-level="very_high"><span class="sd-picto" data-picto="dry" data-level="high"></span><span class="sd-label">Very high</span></div></div>
+        </div>
+        <p class="ladder__verdict ladder__verdict--bad">
+          <b>Strongest at 1&ndash;3, fails AA at 4 and 5.</b> Levels 1&ndash;3 land between 8.21:1
+          and 16.37:1. But EAWS red with white is <b>4.00:1</b>, under the 4.5:1 floor for the 15px
+          label &mdash; and no companion text colour fixes it: the dark
+          <code>#6b0000</code> is worse at 3.23:1.
+        </p>
+      </div>
+    </div>
+
+    <div class="warnbox">
+      <h3>D is the loudest and the most faithful to the day-risk row &mdash; and red breaks it</h3>
+      <p>
+        Filling the header with the solid is the same move the day-risk tile already makes, so the
+        two surfaces would finally agree. It works at three of the five levels. At High and
+        Very high the mandated <code>#ff0000</code> has no companion that clears AA for the problem
+        label: white is 4.00:1, the level's own dark text 3.23:1. Enlarging the label to reach the
+        large-text threshold means 18.66px bold &mdash; a different type scale for two levels only.
+      </p>
+      <p>
+        <strong>The smallest correction is to invert where the scale already inverts.</strong> The
+        tint set does exactly this at <code>very_high</code>, dropping to <code>#1a0000</code> with
+        white copy. Carry that one step earlier &mdash; solid at 1&ndash;3, dark at 4&ndash;5
+        &mdash; and every level clears AA while the row still reads as the day-risk tile's sibling.
+        Shown as <b>D&prime;</b> below.
+      </p>
+      <div class="ladder" style="grid-template-columns: repeat(5, 1fr);">
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="low"><span class="sd-label">Low</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="moderate"><span class="sd-label">Moderate</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="considerable"><span class="sd-label">Considerable</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="high"><span class="sd-label">High</span></div></div></div></div>
+        <div class="ladder__col"><div class="sd mini"><div class="sd-card"><div class="sd-band sd-band--solid-inv" data-level="very_high"><span class="sd-label">Very high</span></div></div></div></div>
+      </div>
+      <p>
+        <strong>The same 4.00:1 is already shipping.</strong> <code>.dw-tile</code> pairs
+        <code>--color-eaws-high</code> with white for its level digit
+        (<span class="ref">main.css:1224</span>). At 14px bold that digit is not WCAG large text,
+        which needs 18.66px bold &mdash; so the day-risk row fails AA at levels 4 and 5 today,
+        independently of anything proposed here.
+      </p>
+    </div>
+
+    <div class="warnbox">
+      <h3>Two things the border cannot do, whichever treatment wins</h3>
+      <p>
+        <strong>It cannot separate High from Very high.</strong> The EAWS spec assigns both
+        <code>#ff0000</code>, which is why the band inverts <code>very_high</code> to a near-black
+        tint with white copy. The border must stay a second signal, never the only one &mdash; the
+        tint and the level-number chip carry the distinction.
+      </p>
+      <p>
+        <strong>It replaces the stripe, it does not join it.</strong> Keeping both puts the same
+        colour on two edges four pixels apart. The stripe's stated job in
+        <span class="ref">main.css</span> is &ldquo;an unmistakable level identifier even at a
+        glance&rdquo;; the border does that job better, from the card's own outline, and above the
+        title rather than below it.
+      </p>
+    </div>
+  </section>
+
+  <!-- C vs D at full size -->
+  <section class="section">
+    <div class="section__head">
+      <h2>C against D&prime;, at full size</h2>
+      <span class="mono">Same card, same level</span>
+    </div>
+    <p class="lede">
+      The ladder compares edges at thumbnail scale. This is the decision at reading scale: the same
+      SLF card from 18 May 2026, once with the level on the border and once with it filling the
+      header row. Both drop the category pill and the all-day pill; both keep the title.
+    </p>
+    <div class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">C <em>vs</em> D&prime;</span>
+        <span class="plate__note">Considerable. The level that shows both treatments at their most typical &mdash; neither too pale for a border nor too red for a fill.</span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--after">
+          <div class="pane__tag">C &mdash; ring + keyline</div>
+          <div class="sd">
+            <div class="sd-card sd-card--keyed" data-lvl="considerable">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band" data-level="considerable">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                <span class="sd-label">New snow + Wind slab</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
+              </div>
+              <div class="sd-prose">As a consequence of new snow and a strong wind from westerly directions, avalanche prone wind slabs will form. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>The tint stays</b> &mdash; the band keeps carrying the level as a wash behind the label, and the edge sharpens it.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">D&prime; &mdash; solid header row</div>
+          <div class="sd">
+            <div class="sd-card">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band sd-band--solid-inv" data-level="considerable">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                <span class="sd-label">New snow + Wind slab</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
+              </div>
+              <div class="sd-prose">As a consequence of new snow and a strong wind from westerly directions, avalanche prone wind slabs will form. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>The tint is spent</b> &mdash; the row is the colour now, so the pale tint has no job left and the band's own text tokens go with it.</span>
+            <span><b>Matches the day-risk tile</b> &mdash; one saturated block per level, on both surfaces.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Specimens -->
+  <section class="section">
+    <div class="section__head">
+      <h2>Six specimens, one per combination</h2>
+      <span class="mono">Today vs proposed</span>
+    </div>
+    <p class="lede">
+      Each plate reproduces the real card against Snowdesk's own tokens, including the 4px stripe
+      the first draft of this page left out. Prose is abbreviated; the pictogram is drawn rather
+      than lifted from <span class="ref">static/icons/eaws/</span>, but the dry/wet glyph difference
+      it carries is the real one. Proposed cards use treatment C.
+    </p>
+    <div class="legend">
+      <span><i class="legend__swatch legend__swatch--cut"></i>Redundant &mdash; removed</span>
+      <span><i class="legend__swatch legend__swatch--keep"></i>Level colour, moved to the card edge</span>
+    </div>
+
+    <!-- 1 — dry / all_day -->
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">dry <em>/</em> all_day</span>
+        <span class="plate__note">The default page. Anchored on the SLF card from 18 May 2026 &mdash; two problem types folded into one trait.</span>
+        <span class="plate__counts"><span class="srcpill">SLF 2,113</span><span class="srcpill">ALBINA 942</span><span class="srcpill">MF 3,960</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <div class="sd-card">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band sd-band--striped" data-level="considerable">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                <span class="sd-label">New snow + Wind slab</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                <span class="sd-chip sd-chip--ghost dupe">All day</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
+              </div>
+              <div class="sd-prose">As a consequence of new snow and a strong wind from westerly directions, avalanche prone wind slabs will form. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Category stated 4&times;</b> &mdash; title, pictogram, label, pill.</span>
+            <span><b>Time stated 2&times;</b> &mdash; this pill and the day-risk row above it.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <div class="sd-card sd-card--keyed" data-lvl="considerable">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band" data-level="considerable">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                <span class="sd-label">New snow + Wind slab</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
+              </div>
+              <div class="sd-prose">As a consequence of new snow and a strong wind from westerly directions, avalanche prone wind slabs will form. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Title unchanged</b> &mdash; same row, same wording, same place.</span>
+            <span><b>Header row holds nothing but the problem</b> &mdash; pictogram, name, and the level in the edge.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- 2 — wet / all_day -->
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">wet <em>/</em> all_day</span>
+        <span class="plate__note">SLF, 10 May 2026. The tautology at its purest: a card labelled <em>Wet snow</em>, pilled <em>WET</em>.</span>
+        <span class="plate__counts"><span class="srcpill">SLF 494</span><span class="srcpill">ALBINA 182</span><span class="srcpill">MF 1,374</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <div class="sd-card">
+              <div class="sd-title">Wet-snow and gliding avalanches</div>
+              <div class="sd-band sd-band--striped" data-level="moderate">
+                <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
+                <span class="sd-label">Wet snow + Gliding snow</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="drop"></span>Wet</span>
+                <span class="sd-chip sd-chip--ghost dupe">All day</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="all"></span>All aspects</span>
+                <span class="sd-meta"><span data-elev="below"></span>below 2400m</span>
+              </div>
+              <div class="sd-prose">Moist and wet avalanches are to be expected, in particular on steep sunny slopes. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Both label words</b> &mdash; <em>Wet snow</em>, <em>Gliding snow</em> &mdash; are wet-only problem types. The pill restates a certainty.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <div class="sd-card sd-card--keyed" data-lvl="moderate">
+              <div class="sd-title">Wet-snow and gliding avalanches</div>
+              <div class="sd-band" data-level="moderate">
+                <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
+                <span class="sd-label">Wet snow + Gliding snow</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="all"></span>All aspects</span>
+                <span class="sd-meta"><span data-elev="below"></span>below 2400m</span>
+              </div>
+              <div class="sd-prose">Moist and wet avalanches are to be expected, in particular on steep sunny slopes. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Yellow needs the keyline.</b> This is the level where treatment A disappears against the card.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- 3 — wet / later -->
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">wet <em>/</em> later</span>
+        <span class="plate__note">The one combination where a time pill earns its place. SLF, 10 May 2026.</span>
+        <span class="plate__counts"><span class="srcpill">SLF 185</span><span class="srcpill">ALBINA 117</span><span class="srcpill srcpill--none">MF 0</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <div class="sd-card">
+              <div class="sd-title">Wet-snow avalanches, as the day progresses</div>
+              <div class="sd-band sd-band--striped" data-level="moderate">
+                <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
+                <span class="sd-label">Wet snow</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="drop"></span>Wet</span>
+                <span class="sd-chip sd-chip--ghost">Later</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="all"></span>All aspects</span>
+                <span class="sd-meta"><span data-elev="below"></span>below 2600m</span>
+              </div>
+              <div class="sd-prose">With the daytime warming and solar radiation the likelihood of moist and wet avalanches will increase. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Time stated 3&times;</b> &mdash; <em>as the day progresses</em>, the LATER pill, and the day-risk row.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <div class="sd-card sd-card--keyed" data-lvl="moderate">
+              <div class="sd-title">Wet-snow avalanches, as the day progresses</div>
+              <div class="sd-band" data-level="moderate">
+                <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
+                <span class="sd-label">Wet snow</span>
+                <span class="sd-chip sd-chip--ghost">Later</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="all"></span>All aspects</span>
+                <span class="sd-meta"><span data-elev="below"></span>below 2600m</span>
+              </div>
+              <div class="sd-prose">With the daytime warming and solar radiation the likelihood of moist and wet avalanches will increase. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Time pill kept</b> &mdash; on a split page it contrasts with the all-day card above, so it carries information for the first time.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- 4 — dry / earlier -->
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">dry <em>/</em> earlier</span>
+        <span class="plate__note">ALBINA only, and always banded. From 9 Apr 2026 &mdash; persistent weak layers above 2400 m, morning only.</span>
+        <span class="plate__counts"><span class="srcpill srcpill--none">SLF 0</span><span class="srcpill">ALBINA 100</span><span class="srcpill srcpill--none">MF 0</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <p class="sd-heading">Above 2400 m</p>
+            <div class="sd-card">
+              <div class="sd-title">Dry avalanches, earlier</div>
+              <div class="sd-band sd-band--striped" data-level="low">
+                <span class="sd-picto" data-picto="dry" data-level="low"></span>
+                <span class="sd-label">Persistent weak layers</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                <span class="sd-chip sd-chip--ghost">Earlier</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,NW"></span>N, NE, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 2400m</span>
+              </div>
+              <div class="sd-prose">The weak layers in the middle of the snowpack can be triggered in isolated cases. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Level 1 stripe on a pale tint</b> &mdash; 1.08:1. The stripe is the least visible thing on the card at exactly the level where the tint is palest.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <p class="sd-heading">Above 2400 m</p>
+            <div class="sd-card sd-card--keyed" data-lvl="low">
+              <div class="sd-title">Dry avalanches, earlier</div>
+              <div class="sd-band" data-level="low">
+                <span class="sd-picto" data-picto="dry" data-level="low"></span>
+                <span class="sd-label">Persistent weak layers</span>
+                <span class="sd-chip sd-chip--ghost">Earlier</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,NW"></span>N, NE, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 2400m</span>
+              </div>
+              <div class="sd-prose">The weak layers in the middle of the snowpack can be triggered in isolated cases. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Band heading untouched</b> &mdash; the elevation band stays the outer grouping for ALBINA.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- 5 — dry / later -->
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">dry <em>/</em> later</span>
+        <span class="plate__note">The rarest dry case. ALBINA, 24 Dec 2025 &mdash; wind slab building above treeline through the afternoon.</span>
+        <span class="plate__counts"><span class="srcpill srcpill--none">SLF 0</span><span class="srcpill">ALBINA 107</span><span class="srcpill srcpill--none">MF 0</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <div class="sd-card">
+              <div class="sd-title">Dry avalanches, later</div>
+              <div class="sd-band sd-band--striped" data-level="moderate">
+                <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
+                <span class="sd-label">Wind slab</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                <span class="sd-chip sd-chip--ghost">Later</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE"></span>N, NE, E, SE</span>
+                <span class="sd-meta"><span data-elev="above"></span>above treeline</span>
+              </div>
+              <div class="sd-prose">Fresh wind slabs will form in the afternoon, in particular adjacent to ridgelines. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>The pill and the title disagree in register</b>, not in content &mdash; one says DRY, the other <em>Dry avalanches, later</em>.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <div class="sd-card sd-card--keyed" data-lvl="moderate">
+              <div class="sd-title">Dry avalanches, later</div>
+              <div class="sd-band" data-level="moderate">
+                <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
+                <span class="sd-label">Wind slab</span>
+                <span class="sd-chip sd-chip--ghost">Later</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE"></span>N, NE, E, SE</span>
+                <span class="sd-meta"><span data-elev="above"></span>above treeline</span>
+              </div>
+              <div class="sd-prose">Fresh wind slabs will form in the afternoon, in particular adjacent to ridgelines. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>One statement of category</b>, in the register the provider wrote it in.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- 6 — wet / earlier -->
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">wet <em>/</em> earlier</span>
+        <span class="plate__note">The rarest of the six &mdash; 40 traits, all ALBINA, all below the wet line. From 25 Apr 2026.</span>
+        <span class="plate__counts"><span class="srcpill srcpill--none">SLF 0</span><span class="srcpill">ALBINA 40</span><span class="srcpill srcpill--none">MF 0</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <p class="sd-heading">Below 3000 m</p>
+            <div class="sd-card">
+              <div class="sd-title">Wet avalanches, earlier</div>
+              <div class="sd-band sd-band--striped" data-level="low">
+                <span class="sd-picto" data-picto="wet" data-level="low"></span>
+                <span class="sd-label">Wet snow</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="drop"></span>Wet</span>
+                <span class="sd-chip sd-chip--ghost">Earlier</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="all"></span>All aspects</span>
+                <span class="sd-meta"><span data-elev="below"></span>below 3000m</span>
+              </div>
+              <div class="sd-prose">The snowpack did not refreeze overnight; wet avalanches remain possible in the early hours. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Nothing is disambiguated</b> &mdash; the band already holds one card, and only one.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <p class="sd-heading">Below 3000 m</p>
+            <div class="sd-card sd-card--keyed" data-lvl="low">
+              <div class="sd-title">Wet avalanches, earlier</div>
+              <div class="sd-band" data-level="low">
+                <span class="sd-picto" data-picto="wet" data-level="low"></span>
+                <span class="sd-label">Wet snow</span>
+                <span class="sd-chip sd-chip--ghost">Earlier</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="all"></span>All aspects</span>
+                <span class="sd-meta"><span data-elev="below"></span>below 3000m</span>
+              </div>
+              <div class="sd-prose">The snowpack did not refreeze overnight; wet avalanches remain possible in the early hours. <em>&hellip;</em></div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Band heading, title, card</b> &mdash; three lines, three different things.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- Whole pages -->
+  <section class="section">
+    <div class="section__head">
+      <h2>Four whole pages</h2>
+      <span class="mono">22 shapes, 4 structures</span>
+    </div>
+    <p class="lede">
+      The six combinations compose into 22 observed page shapes, but only four structures. Four
+      shapes &mdash; all of them <span class="ref">all_day</span> &mdash; account for 7,410
+      bulletins, 94.3% of the archive. The border earns most of its keep here, where several cards
+      have to be told apart at a scroll.
+    </p>
+
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">A <em>&mdash;</em> single card</span>
+        <span class="plate__note">The commonest page by a distance. All three providers produce it.</span>
+        <span class="plate__counts"><span class="srcpill">6,255 bulletins &middot; 79.6%</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <div class="sd-eyebrow">Day risk profile</div>
+            <div class="sd-dw">
+              <div class="sd-dw-row">
+                <span class="sd-dw-tile lv-considerable">3</span>
+                <span class="sd-dw-body"><span class="sd-dw-level">Considerable</span></span>
+                <span class="sd-chip sd-chip--ghost dupe">All day</span>
+              </div>
+            </div>
+            <div class="sd-eyebrow">Avalanche problems</div>
+            <div class="sd-card">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band sd-band--striped" data-level="considerable">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                <span class="sd-label">New snow + Wind slab</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                <span class="sd-chip sd-chip--ghost dupe">All day</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot"><span><b>ALL DAY twice</b> on a page with one window, and one card.</span></div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <div class="sd-eyebrow">Day risk profile</div>
+            <div class="sd-dw">
+              <div class="sd-dw-row">
+                <span class="sd-dw-tile lv-considerable">3</span>
+                <span class="sd-dw-body"><span class="sd-dw-level">Considerable</span></span>
+                <span class="sd-chip sd-chip--ghost">All day</span>
+              </div>
+            </div>
+            <div class="sd-eyebrow">Avalanche problems</div>
+            <div class="sd-card sd-card--keyed" data-lvl="considerable">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band" data-level="considerable">
+                <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                <span class="sd-label">New snow + Wind slab</span>
+              </div>
+              <div class="sd-row">
+                <span class="sd-meta"><span data-rose="N,NE,E,SE,W,NW"></span>N, NE, E, SE, W, NW</span>
+                <span class="sd-meta"><span data-elev="above"></span>above 1800m</span>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>The day-risk pill stays</b> &mdash; that row exists to name the window, and the fidelity probe reads <span class="ref">all day</span> from it.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">B <em>&mdash;</em> dry then wet, both all day</span>
+        <span class="plate__note">Counting the reverse order too. SLF, 18 May 2026, plus its ALBINA and MF equivalents.</span>
+        <span class="plate__counts"><span class="srcpill">1,178 bulletins &middot; 15.0%</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd sd-stack">
+            <div class="sd-card">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band sd-band--striped" data-level="moderate">
+                <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
+                <span class="sd-label">No distinct problem</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                <span class="sd-chip sd-chip--ghost dupe">All day</span>
+              </div>
+            </div>
+            <div class="sd-card">
+              <div class="sd-title">Wet-snow avalanches</div>
+              <div class="sd-band sd-band--striped" data-level="low">
+                <span class="sd-picto" data-picto="wet" data-level="low"></span>
+                <span class="sd-label">Wet snow</span>
+                <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="drop"></span>Wet</span>
+                <span class="sd-chip sd-chip--ghost dupe">All day</span>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot"><span><b>Four pills, two cards</b>, and the two levels &mdash; 2 and 1 &mdash; are told apart by two pale tints and two thin stripes.</span></div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd sd-stack">
+            <div class="sd-card sd-card--keyed" data-lvl="moderate">
+              <div class="sd-title">Dry avalanches</div>
+              <div class="sd-band" data-level="moderate">
+                <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
+                <span class="sd-label">No distinct problem</span>
+              </div>
+            </div>
+            <div class="sd-card sd-card--keyed" data-lvl="low">
+              <div class="sd-title">Wet-snow avalanches</div>
+              <div class="sd-band" data-level="low">
+                <span class="sd-picto" data-picto="wet" data-level="low"></span>
+                <span class="sd-label">Wet snow</span>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot"><span><b>The edge does the ranking</b> the pills never could &mdash; two cards, two levels, legible before a word is read.</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">C <em>&mdash;</em> the split day</span>
+        <span class="plate__note">SLF's only split shape: dry all day, wet arriving later. From 10 May 2026.</span>
+        <span class="plate__counts"><span class="srcpill">185 bulletins &middot; SLF only</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <div class="sd-eyebrow">Day risk profile</div>
+            <div class="sd-dw">
+              <div class="sd-dw-row">
+                <span class="sd-dw-tile lv-considerable">3</span>
+                <span class="sd-dw-body"><span class="sd-dw-level">Considerable</span></span>
+                <span class="sd-chip sd-chip--ghost">All day</span>
+              </div>
+              <div class="sd-dw-row">
+                <span class="sd-dw-tile lv-moderate">2</span>
+                <span class="sd-dw-body"><span class="sd-dw-level">Moderate</span><span class="sd-dw-caption">Wet-snow problem develops</span></span>
+                <span class="sd-chip sd-chip--ghost">Later</span>
+              </div>
+            </div>
+            <div class="sd sd-stack">
+              <div class="sd-card">
+                <div class="sd-title">Dry avalanches, whole day</div>
+                <div class="sd-band sd-band--striped" data-level="considerable">
+                  <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                  <span class="sd-label">Persistent weak layers</span>
+                  <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                  <span class="sd-chip sd-chip--ghost">All day</span>
+                </div>
+              </div>
+              <div class="sd-card">
+                <div class="sd-title">Wet-snow avalanches, as the day progresses</div>
+                <div class="sd-band sd-band--striped" data-level="moderate">
+                  <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
+                  <span class="sd-label">Wet snow</span>
+                  <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="drop"></span>Wet</span>
+                  <span class="sd-chip sd-chip--ghost">Later</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot"><span><b>Only here</b> do the time pills separate two real things &mdash; so only here should they exist.</span></div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <div class="sd-eyebrow">Day risk profile</div>
+            <div class="sd-dw">
+              <div class="sd-dw-row">
+                <span class="sd-dw-tile lv-considerable">3</span>
+                <span class="sd-dw-body"><span class="sd-dw-level">Considerable</span></span>
+                <span class="sd-chip sd-chip--ghost">All day</span>
+              </div>
+              <div class="sd-dw-row">
+                <span class="sd-dw-tile lv-moderate">2</span>
+                <span class="sd-dw-body"><span class="sd-dw-level">Moderate</span><span class="sd-dw-caption">Wet-snow problem develops</span></span>
+                <span class="sd-chip sd-chip--ghost">Later</span>
+              </div>
+            </div>
+            <div class="sd sd-stack">
+              <div class="sd-card sd-card--keyed" data-lvl="considerable">
+                <div class="sd-title">Dry avalanches, whole day</div>
+                <div class="sd-band" data-level="considerable">
+                  <span class="sd-picto" data-picto="dry" data-level="considerable"></span>
+                  <span class="sd-label">Persistent weak layers</span>
+                  <span class="sd-chip sd-chip--ghost">All day</span>
+                </div>
+              </div>
+              <div class="sd-card sd-card--keyed" data-lvl="moderate">
+                <div class="sd-title">Wet-snow avalanches, as the day progresses</div>
+                <div class="sd-band" data-level="moderate">
+                  <span class="sd-picto" data-picto="wet" data-level="moderate"></span>
+                  <span class="sd-label">Wet snow</span>
+                  <span class="sd-chip sd-chip--ghost">Later</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Both time pills kept</b> &mdash; <span class="ref">is_time_variable</span> is true, so ALL DAY earns its place by contrasting with LATER.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate__head">
+        <span class="plate__sig">D <em>&mdash;</em> banded and split</span>
+        <span class="plate__note">ALBINA's 2&times;2: wet line migrating from 2500 m to 3000 m through the day. 25 Apr 2026.</span>
+        <span class="plate__counts"><span class="srcpill">127 bulletins &middot; ALBINA only</span></span>
+      </div>
+      <div class="plate__body">
+        <div class="pane pane--before">
+          <div class="pane__tag">Today</div>
+          <div class="sd">
+            <p class="sd-heading">Above 2500 m</p>
+            <p class="sd-subheading">Wet line at 2500 m earlier, 3000 m later</p>
+            <div class="sd sd-stack">
+              <div class="sd-card">
+                <div class="sd-title">Dry avalanches, earlier</div>
+                <div class="sd-band sd-band--striped" data-level="moderate">
+                  <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
+                  <span class="sd-label">Persistent weak layers</span>
+                  <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                  <span class="sd-chip sd-chip--ghost">Earlier</span>
+                </div>
+              </div>
+              <div class="sd-card">
+                <div class="sd-title">Dry avalanches, later</div>
+                <div class="sd-band sd-band--striped" data-level="high">
+                  <span class="sd-picto" data-picto="dry" data-level="high"></span>
+                  <span class="sd-label">Persistent weak layers</span>
+                  <span class="sd-chip sd-chip--ghost dupe"><span data-glyph="snow"></span>Dry</span>
+                  <span class="sd-chip sd-chip--ghost">Later</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>Two DRY pills, adjacent</b>, on the one page shape where a category pill could disambiguate. It doesn't &mdash; they agree. The escalation from 2 to 4 is the news, and it is the quietest thing here.</span>
+          </div>
+        </div>
+        <div class="pane pane--after">
+          <div class="pane__tag">Proposed</div>
+          <div class="sd">
+            <p class="sd-heading">Above 2500 m</p>
+            <p class="sd-subheading">Wet line at 2500 m earlier, 3000 m later</p>
+            <div class="sd sd-stack">
+              <div class="sd-card sd-card--keyed" data-lvl="moderate">
+                <div class="sd-title">Dry avalanches, earlier</div>
+                <div class="sd-band" data-level="moderate">
+                  <span class="sd-picto" data-picto="dry" data-level="moderate"></span>
+                  <span class="sd-label">Persistent weak layers</span>
+                  <span class="sd-chip sd-chip--ghost">Earlier</span>
+                </div>
+              </div>
+              <div class="sd-card sd-card--keyed" data-lvl="high">
+                <div class="sd-title">Dry avalanches, later</div>
+                <div class="sd-band" data-level="high">
+                  <span class="sd-picto" data-picto="dry" data-level="high"></span>
+                  <span class="sd-label">Persistent weak layers</span>
+                  <span class="sd-chip sd-chip--ghost">Later</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pane__foot">
+            <span><b>The escalation is now the loudest thing on the page</b> &mdash; yellow edge to red edge, with the time pills as the only remaining chips.</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- Change list -->
+  <section class="section">
+    <div class="section__head">
+      <h2>The change</h2>
+      <span class="mono">One kept, four cut, one moved</span>
+    </div>
+    <div class="changes">
+      <div class="change">
+        <span class="change__verb change__verb--keep">Keep</span>
+        <span class="change__t">The panel title, exactly where it is</span>
+        <p class="change__d">
+          <code>card.panel_title</code> stays its own row inside
+          <span class="ref">_rating_block.html</span>, unchanged. It is what makes the category pill
+          removable, and it is the surface the fidelity probe reads the category from.
+        </p>
+      </div>
+      <div class="change">
+        <span class="change__verb change__verb--cut">Cut</span>
+        <span class="change__t">The DRY / WET pill</span>
+        <p class="change__d">
+          Remove the <code>card.category</code> branch from
+          <span class="ref">_rating_block.html</span> and the <code>type-dry</code> /
+          <code>type-wet</code> variants from <span class="ref">_chip.html</span>. Category survives
+          in the title, the pictogram and the label.
+        </p>
+      </div>
+      <div class="change">
+        <span class="change__verb change__verb--cut">Cut</span>
+        <span class="change__t">The per-card time pill, unless the day splits</span>
+        <p class="change__d">
+          Gate it on <code>is_time_variable</code>, which already exists at
+          <span class="ref">views.py:6048</span> and is already in the panel context. It disappears
+          from 7,543 pages and stays on all 312 that split. The day-risk-profile pill stays
+          unconditional.
+        </p>
+      </div>
+      <div class="change">
+        <span class="change__verb change__verb--cut">Cut</span>
+        <span class="change__t">The level-number chip</span>
+        <p class="change__d">
+          The bare digit restates the tint, the pictogram and the new edge. Its suffix does not:
+          <code>3&minus;</code> is SLF's subdivision, and it has no other home on the page. Give it
+          one in the day-risk row as words &mdash; <em>Considerable, lower end</em> &mdash; which
+          reads better than a glyph most users will not decode. This is the one edit here that
+          moves data rather than removing decoration; see the guard note below.
+        </p>
+      </div>
+      <div class="change">
+        <span class="change__verb change__verb--add">Move</span>
+        <span class="change__t">The saturated level colour, from stripe to card edge</span>
+        <p class="change__d">
+          Replace the five <code>border-top: 4px</code> rules at
+          <span class="ref">main.css:623&ndash;627</span> with a <code>3px</code> border plus a
+          <code>1px</code> keyline on <code>.rating-block</code>, driven by the same
+          <code>data-level</code> attribute. The keyline needs five new tokens
+          (<code>--color-eaws-*-edge</code>): the existing <code>-text</code> value at every level,
+          except <code>very_high</code>, whose text is white &mdash; use its tint
+          <code>#1a0000</code> there.
+        </p>
+      </div>
+      <div class="change">
+        <span class="change__verb change__verb--cut">Sweep</span>
+        <span class="change__t">Four tokens that were already dead</span>
+        <p class="change__d">
+          <code>--color-type-dry-bg</code> and its three siblings
+          (<span class="ref">main.css:158</span>, <span class="ref">:565</span>) are defined,
+          documented in the component library at <span class="ref">design_tokens.py:300</span>, and
+          consumed by nothing. SNOW-286 changed the pill to a transparent ghost and left the fill
+          colours behind.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Guards -->
+  <section class="section">
+    <div class="section__head">
+      <h2>What the guards will say</h2>
+      <span class="mono">fidelity-lint &middot; ds-lint</span>
+    </div>
+    <div class="warnbox">
+      <h3>Keeping the title makes the fidelity story trivial</h3>
+      <p>
+        <code>customData.CH.aggregation[].category</code>
+        (<span class="ref">fidelity.py:552</span>) is declared rendered with the note
+        <em>&ldquo;Dry/wet category pill on the trait block&rdquo;</em>. Its
+        <code>literal()</code> probe needs the word <em>dry</em> or <em>wet</em> in the page text
+        &mdash; which the title supplies on all 9,614 traits. Only the note's wording changes.
+      </p>
+      <p>
+        <code>avalancheProblems[].validTimePeriod</code>
+        (<span class="ref">fidelity.py:549</span>) uses <code>snake_label()</code>, so
+        <em>all day</em> must appear in the rendered text. That is why the day-risk-profile pill
+        stays unconditional &mdash; drop it too and every all-day sentinel fails.
+      </p>
+      <p>
+        <span class="ref">ds-lint</span> is unaffected: the border comes from
+        <code>data-level</code> attribute selectors in <span class="ref">main.css</span>, the same
+        mechanism the stripe uses today, so no raw palette utility or arbitrary radius reaches a
+        template.
+      </p>
+    </div>
+
+    <div class="warnbox">
+      <h3>Cutting the level-number chip is the one change that breaks a guard</h3>
+      <p>
+        Two rows depend on it &mdash;
+        <code>avalancheProblems[].customData.CH.subdivision</code>
+        (<span class="ref">fidelity.py:530</span>) and
+        <code>dangerRatings[].customData.CH.subdivision</code>
+        (<span class="ref">fidelity.py:566</span>). The second reads
+        <em>&ldquo;Level-number chip in the Day Risk Profile&rdquo;</em>, but its
+        <code>subdivision_suffix()</code> probe is a regex anchored on
+        <code>data-testid="level-number-chip"</code> &mdash; a testid only
+        <span class="ref">_rating_block.html</span> emits. The day-windows tile renders the same
+        string with no testid and <code>aria-hidden="true"</code>. So both rows are in fact
+        satisfied by the card chip alone, and removing it fails
+        <span class="ref">tox -e test</span> twice over.
+      </p>
+      <p>
+        The fix is not to move the testid onto an <code>aria-hidden</code> tile. Render the
+        subdivision as words in the day-risk row and rewrite the probe to match those words &mdash;
+        it is the surface the second declaration already claims, and a written
+        <em>lower end</em> is legible where <code>3&minus;</code> is not. Budget the ticket for a
+        probe change, not just a template one.
+      </p>
+    </div>
+    <p class="footnote">
+      Figures from the production database, 26 Aug 2026 &mdash; 7,855 bulletins carrying at least
+      one trait, 9,614 traits, read from <span class="ref">render_model&rarr;traits</span> rather
+      than the raw provider payloads. The distinction matters: the raw SLF feed leaves 60% of
+      aggregation titles empty, and <span class="ref">render_model.py:1604</span> fills every one of
+      them before the page ever sees it. Contrast figures are sRGB WCAG 2.1 ratios computed against
+      the shipped token values.
+    </p>
+  </section>
+</div>
+
+<script>
+/* Draws the three repeated glyphs. Each is a pure function of its data
+   attribute, so the markup above stays readable and no path data is
+   hand-copied between specimens. */
+(function () {
+  "use strict";
+
+  var LEVEL_FILL = {
+    low: "#ccff66",
+    moderate: "#ffff00",
+    considerable: "#ff9900",
+    high: "#ff0000"
+  };
+
+  var COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+  function svg(w, h, inner, extra) {
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h +
+      '" fill="none" aria-hidden="true" style="display:block;flex-shrink:0;' +
+      (extra || "") + '">' + inner + "</svg>";
+  }
+
+  /* ── EAWS danger pictogram ──────────────────────────────────────
+     Indicative, not the shipped artwork. The load-bearing detail is
+     that dry and wet carry different glyphs at the same level, which
+     is true of the real icon set too.                              */
+  function pictogram(kind, level) {
+    var fill = LEVEL_FILL[level] || LEVEL_FILL.moderate;
+    var ink = "#1a1916";
+    var parts =
+      '<path d="M18 1.6 L34.4 18 L18 34.4 L1.6 18 Z" fill="' + fill +
+        '" stroke="' + ink + '" stroke-width="2.2" stroke-linejoin="round"/>' +
+      '<path d="M7.5 24.5 L15.5 15 L20 20 L26 13.5 L28.5 24.5 Z" fill="' + ink + '" opacity="0.9"/>';
+
+    if (kind === "wet") {
+      parts += '<path d="M18 6.2 C18 6.2 13.6 11.4 13.6 14.1 A4.4 4.4 0 0 0 22.4 14.1 ' +
+        'C22.4 11.4 18 6.2 18 6.2 Z" fill="' + ink + '"/>';
+    } else {
+      parts += '<g stroke="' + ink + '" stroke-width="1.9" stroke-linecap="round">' +
+        '<path d="M18 6.5 L18 15.5"/><path d="M13.9 8.9 L22.1 13.1"/>' +
+        '<path d="M22.1 8.9 L13.9 13.1"/></g>';
+    }
+    return svg(36, 36, parts);
+  }
+
+  /* ── Aspect rose ──────────────────────────────────────────────── */
+  function rose(spec) {
+    var lit = spec === "all" ? COMPASS.slice() : spec.split(",");
+    var cx = 16, cy = 16, r = 15, half = 22.5;
+    var paths = "";
+
+    for (var i = 0; i < 8; i++) {
+      var a0 = (i * 45 - half) * Math.PI / 180;
+      var a1 = (i * 45 + half) * Math.PI / 180;
+      var x0 = (cx + r * Math.sin(a0)).toFixed(2);
+      var y0 = (cy - r * Math.cos(a0)).toFixed(2);
+      var x1 = (cx + r * Math.sin(a1)).toFixed(2);
+      var y1 = (cy - r * Math.cos(a1)).toFixed(2);
+      var on = lit.indexOf(COMPASS[i]) !== -1;
+      paths += '<path d="M16,16 L' + x0 + ',' + y0 + ' A15,15 0 0 1 ' + x1 + ',' + y1 + ' Z" ' +
+        'fill="' + (on ? "#b5761f" : "transparent") + '" ' +
+        'stroke="currentColor" stroke-width="0.7" opacity="' + (on ? "1" : "0.42") + '"/>';
+    }
+    return svg(22, 22, '<g transform="scale(0.6875)">' + paths + "</g>", "color:currentColor;");
+  }
+
+  /* ── Elevation glyph ──────────────────────────────────────────── */
+  function elevation(side) {
+    var mountain = "M2 17 L8 6.5 L12 11.5 L15 7.5 L20 17 Z";
+    var shade = side === "above"
+      ? '<path d="' + mountain + '" fill="currentColor" opacity="0.85" clip-path="inset(0 0 46% 0)"/>'
+      : '<path d="' + mountain + '" fill="currentColor" opacity="0.85" clip-path="inset(54% 0 0 0)"/>';
+    return svg(22, 20,
+      '<path d="' + mountain + '" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>' +
+      shade +
+      '<path d="M0.5 9.2 L21.5 9.2" stroke="currentColor" stroke-width="1" ' +
+      'stroke-dasharray="2.5 2" opacity="0.55"/>',
+      "color:currentColor;");
+  }
+
+  /* ── Inline chip glyphs ───────────────────────────────────────── */
+  function chipGlyph(kind) {
+    if (kind === "drop") {
+      return svg(8, 9, '<path d="M4 0.5 C4 0.5 0.5 4.5 0.5 6.2 A3.5 3.5 0 0 0 7.5 6.2 ' +
+        'C7.5 4.5 4 0.5 4 0.5 Z" fill="currentColor"/>', "display:inline-block;");
+    }
+    return svg(9, 9,
+      '<g stroke="currentColor" stroke-width="1.2" stroke-linecap="round">' +
+      '<path d="M4.5 0 L4.5 9"/><path d="M0 4.5 L9 4.5"/>' +
+      '<path d="M1.2 1.2 L7.8 7.8"/><path d="M7.8 1.2 L1.2 7.8"/></g>',
+      "display:inline-block;");
+  }
+
+  function paint() {
+    var i, el, nodes;
+
+    nodes = document.querySelectorAll("[data-picto]");
+    for (i = 0; i < nodes.length; i++) {
+      el = nodes[i];
+      el.innerHTML = pictogram(el.getAttribute("data-picto"), el.getAttribute("data-level"));
+    }
+
+    nodes = document.querySelectorAll("[data-rose]");
+    for (i = 0; i < nodes.length; i++) {
+      el = nodes[i];
+      el.innerHTML = rose(el.getAttribute("data-rose"));
+    }
+
+    nodes = document.querySelectorAll("[data-elev]");
+    for (i = 0; i < nodes.length; i++) {
+      el = nodes[i];
+      el.innerHTML = elevation(el.getAttribute("data-elev"));
+    }
+
+    nodes = document.querySelectorAll("[data-glyph]");
+    for (i = 0; i < nodes.length; i++) {
+      el = nodes[i];
+      el.innerHTML = chipGlyph(el.getAttribute("data-glyph"));
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", paint);
+  } else {
+    paint();
+  }
+})();
+</script>

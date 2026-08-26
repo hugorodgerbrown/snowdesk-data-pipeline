@@ -35,7 +35,13 @@ repos:
         entry: .venv/bin/djangofmt
         language: system
         types_or: [html]
-        exclude: _bulletin_panel\.html$
+        # Scope matches tox.ini's [testenv:djangofmt] — the CI backstop only
+        # formats the template directories, so without the docs/ exclude the
+        # hook rewrites files nothing checks. The dated HTML artefacts under
+        # docs/ (page-audits, research) are standalone documents, not Django
+        # templates: they carry no template tags, and djangofmt reflows their
+        # hand-aligned token tables and comment banners into noise.
+        exclude: ^docs/|_bulletin_panel\.html$
 
       - id: mypy
         name: mypy
