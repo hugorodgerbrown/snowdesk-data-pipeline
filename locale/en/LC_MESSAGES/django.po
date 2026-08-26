@@ -1041,6 +1041,15 @@ msgstr ""
 msgid "All aspects · all elevations"
 msgstr ""
 
+msgid "Field notes"
+msgstr ""
+
+msgid "Source:"
+msgstr ""
+
+msgid "SLF Avalanche Bulletin Interpretation Guide"
+msgstr ""
+
 #, python-format
 msgid "Avalanche data is not published by %(p)s for this area"
 msgstr ""

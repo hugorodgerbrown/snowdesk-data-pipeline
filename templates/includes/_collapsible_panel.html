@@ -24,17 +24,35 @@ Parameters (passed via ``{% include … with … %}``):
                            Used by the component library to demonstrate
                            the opened visual state; real bulletin panels
                            omit this parameter (default closed).
+  bare         (bool)    — When truthy, drops the card chrome (background,
+                           border, radius, bottom margin) and titles the
+                           panel with an eyebrow instead of a summary
+                           heading.  For a panel nested *inside* another
+                           card, where the full chrome would read as a card
+                           within a card and the caller has already drawn
+                           its own separating rule — the field-notes block
+                           on each problem card (SNOW-673).  The chevron and
+                           marker-reset behaviour is shared with the chromed
+                           form, which is the point of the parameter: one
+                           collapsible implementation, two skins.
 {% endcomment %}
 <details
-    class="snowdesk-panel bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0"
+    class="snowdesk-panel{% if not bare %} bg-card border border-border rounded-card overflow-hidden mb-2 last:mb-0{% endif %}"
     data-testid="{{ data_testid }}"
     {% if is_open %}open{% endif %}
 >
-    <summary class="snowdesk-panel-summary flex items-center justify-between gap-2 px-4 py-3">
-        <span class="text-summary font-semibold text-text-1">{{ title }}</span>
+    <summary class="snowdesk-panel-summary flex items-center justify-between gap-2{% if not bare %} px-4 py-3{% endif %}">
+        {% if bare %}
+            {# ``only`` matters here: without it the eyebrow inherits this #}
+            {# partial's own data_testid and stamps a duplicate onto the   #}
+            {# heading.                                                    #}
+            {% include "includes/_eyebrow.html" with text=title tag="span" only %}
+        {% else %}
+            <span class="text-summary font-semibold text-text-1">{{ title }}</span>
+        {% endif %}
         <span class="snowdesk-panel-chevron text-text-3 text-sm" aria-hidden="true">&#x25BE;</span>
     </summary>
-    <div class="px-4 pb-4 pt-3 border-t border-border">
+    <div class="{% if bare %}pt-2{% else %}px-4 pb-4 pt-3 border-t border-border{% endif %}">
         {% if body_template %}
             {% include body_template %}
         {% else %}

@@ -292,40 +292,23 @@ Two of its eight original tasks did not survive contact:
 These add Snowdesk's own layer alongside the provider content. They are no longer gated behind a phase plan — each is independently shippable, and the fidelity principle already settles the question the old plan was waiting to answer.
 
 - **Day-character label.** *Shipped.* Sits between the bulletin headline band and the first rating block, with a one-line explainer that teaches the concept. Derived by `compute_day_character` in [`apps/bulletins/services/render_model.py`](../apps/bulletins/services/render_model.py) from the cascade below, and rendered via `templates/includes/day_character_callout.html`.
-- **Field guidance beneath each problem's provider prose.** *Open — SNOW-673.* Drafted content is in the "Field guidance drafts" section below. Visual treatment: separated from the provider prose by a horizontal rule, attributed to the SLF interpretation guide rather than to Snowdesk directly (we're paraphrasing SLF, not authoring novel guidance).
+- **Field guidance beneath each problem's provider prose.** *Shipped — SNOW-673.* Rendered at the foot of every problem card in `public/_rating_block.html`, below a rule, in a collapsible "Field notes" panel that is **closed by default**, and credited to the SLF interpretation guide rather than to Snowdesk — we're paraphrasing SLF, not authoring novel guidance. The credit reads "Source: SLF Avalanche Bulletin Interpretation Guide" and links the guide's [landing page](https://www.slf.ch/en/avalanche-bulletin-and-snow-situation/about-the-avalanche-bulletin/interpretation-guide/), not the PDF — SLF treats only the current online version as binding, so a PDF URL would pin an edition and go stale. The rule sits outside the panel so the provenance boundary is drawn whether the panel is open or shut. The panel is `includes/_collapsible_panel.html` in its `bare` form — no card chrome, since it is nested inside a card that already has some. Collapsing is a deliberate trade: a busy level-3 day grew ~31% longer with every note expanded, and the notes are reference material a reader consults rather than reads through. Absent entirely when the problem type has no entry. See "Field guidance" below.
 - **Bulletin diffing logic and change strip.** *Open.* Backend-first: produce a structured diff between consecutive bulletins for the same region using CAAML fields (not prose). Then add a quiet visual strip at the top of the page when material changes have occurred. *Absent* when nothing material has changed — the absence is part of the design.
 - **Serif-headline restyling pass.** *Open.* Whether to introduce a serif treatment for `h1`/`h2` elements (page titles, section headers, rating names). Restyling after the structure settled is safer than restyling speculatively.
 
-## Field guidance drafts
+## Field guidance
 
+The shipped text lives in [`apps/public/field_guidance.yaml`](../apps/public/field_guidance.yaml) — one entry per EAWS problem type, loaded by `apps/public/guidance.py` and attached to every problem card by `_build_problem_card`. It is **not** restated here: this document used to carry its own drafts alongside the YAML, and two copies of a safety text with no owner is precisely the drift the component work of SNOW-672 spent a PR removing. Read the YAML.
 
-These are paraphrased from the SLF Avalanche Bulletin Interpretation Guide (November 2025 edition), specifically the "Identification of the problem in the field" and "Travel advice" sections for each avalanche problem type. They are written in the Snowdesk voice — calm, direct, faithful to the SLF source but rewritten for accessibility. **All drafts need review by an experienced tourer or guide before shipping**, and the SLF source should be checked against to ensure no nuance has been lost in compression.
+What the entries are, and the constraints on editing them:
 
-Each one is one paragraph, designed to fit beneath the SLF prose in a problem block, separated by a horizontal rule and attributed to the SLF interpretation guide.
+Each is one paragraph, paraphrased from the SLF Avalanche Bulletin Interpretation Guide (November 2025 edition) — specifically its "Identification of the problem in the field" and "Travel advice" sections — and written in the Snowdesk voice: calm, direct, faithful to the source but rewritten for accessibility. They are sized to sit beneath the provider's prose in a problem card.
 
-### new_snow
-
-This kind of day is usually easy to spot. The snow is fresh, it's everywhere, and the problem isn't subtle. The harder question is how serious it is. Look at recent avalanche activity in similar terrain, and pay attention to how much new snow has fallen in the last three days. Critical loading depends on temperature, wind, and what was on the surface before the storm. SLF advises waiting until the snowpack has had time to bond before committing to steep terrain in fresh snow.
-
-### wind_slab
-
-With training and good visibility, wind slab can be read in the field. Look for fresh snow deposits on lee slopes, in gullies and bowls, and behind ridgelines and abrupt changes in terrain — these are where the wind has loaded the snow into slabs that are particularly easy to trigger. Recent avalanches, shooting cracks under your weight, and whumpfing sounds are clear confirmations of the problem. Without training, the safest move is to avoid wind-loaded terrain entirely. Note that wind signs alone don't always mean an avalanche problem exists, and the age of drifted snow is hard to judge.
-
-### persistent_weak_layers
-
-This is the problem field observation can't reliably solve. Persistent weak layers are very challenging to recognise. Whumpfing sounds and shooting cracks are typical when present, but they aren't always there — you can have a serious weak layer with no warning signs at the surface. Knowledge of how the snowpack has evolved over the season is essential, which is why reading the bulletin regularly through the winter matters more for this problem than any other. SLF's travel advice is unusually direct: travel conservatively, avoid terrain where the consequences of being caught are large (large steep slopes, terrain with overhead hazard, transitions from thin to deep snowpack), and treat the history of weather and snow as more important than what you can see today. The release of avalanches in persistent weak layers is a significant cause of recreational avalanche fatalities.
-
-### wet_snow
-
-Usually the easiest problem to read in the field. Rolling snowballs, deep penetration when you step or ski, and small natural slides are clear signals that the snowpack is losing strength. The key decision is timing. After a clear, cold night the surface usually freezes into a strong supporting crust, and conditions are favourable in the early morning. After a warm, overcast night, the problem is often present from the start of the day. Plan early returns and watch the runout zones below you.
-
-### gliding_snow
-
-Almost impossible to predict precisely, even when the warning signs are visible. Glide cracks — gaps that open in the snowpack down to the ground — are often precursors to release, but they don't tell you when. A glide avalanche can release minutes after the cracks appear, or weeks later, or not at all. Some release without any visible warning. The only useful response is to avoid lingering anywhere near glide cracks: above them, alongside them, or below in the runout.
-
-### no_distinct_avalanche_problem
-
-This isn't a specific avalanche problem. SLF uses this label when no single problem dominates the assessment, often on lower-danger days. It doesn't mean conditions are safe: any avalanche type is still possible, and normal caution applies. On stable days this is usually a signal to enjoy the mountains with general awareness; on less-stable days where the assessment is still inconclusive, it's a signal to be cautious specifically *because* there's no clear pattern to follow.
+- **They paraphrase; they do not author.** The credit line on the page says so. A note that adds advice SLF does not give is a defect, however sensible the advice.
+- **They never recommend behaviour.** Same rule as the rest of the page: characterise and explain, don't tell the reader to go or stay.
+- **Markup is limited to what `snowdesk_html` allows** (`strong`, `em`, and the structural tags) — everything else is escaped, so a `<b>` reaches the reader as literal characters. That was a real bug in `wet_snow` until SNOW-673.
+- **A type with no entry renders nothing.** Adding a problem type does not oblige you to write a note for it; leaving it out is a supported state, not a gap.
+- **All entries want review by an experienced tourer or guide**, and checking against the SLF source to be sure no nuance was lost in compression.
 
 ## The day-character model
 

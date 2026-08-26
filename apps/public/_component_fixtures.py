@@ -24,6 +24,7 @@ from typing import Any
 
 from django import forms
 
+from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
 from apps.weather.services.weather_display import (
     _ICON_BUCKET_LABEL,
@@ -1997,6 +1998,7 @@ def _make_rating_card(
     stability_label: str | None = None,
     danger_patterns: list[dict[str, str]] | None = None,
     prose_mentions_spatial: bool = False,
+    field_guidance: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Build one rating-block card dict in the shape ``_rating_block.html`` expects."""
     return {
@@ -2020,8 +2022,18 @@ def _make_rating_card(
         "stability_label": stability_label,
         "danger_patterns": danger_patterns or [],
         "prose_mentions_spatial": prose_mentions_spatial,
+        # SNOW-673. Empty on most variants on purpose: the library should
+        # show the with-guidance and without-guidance cards side by side,
+        # because "renders nothing when the problem type has no entry" is
+        # half of the behaviour.
+        "field_guidance": field_guidance or [],
     }
 
+
+# Read the shipped notes rather than restating them, so the library cannot
+# show copy the page does not (SNOW-673). ``cornices`` deliberately has no
+# entry — that variant is the "renders nothing" half of the behaviour.
+_FIELD_GUIDANCE = load_field_guidance()
 
 RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
     {
@@ -2087,6 +2099,12 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
                 label="Persistent weak layers",
                 time_period_label="",
                 core_zone_text="N to E aspects, above 2600m",
+                field_guidance=[
+                    {
+                        "label": "Persistent weak layers",
+                        "text": _FIELD_GUIDANCE["persistent_weak_layers"],
+                    }
+                ],
             ),
         },
     },
@@ -2131,6 +2149,9 @@ RATING_BLOCK_VARIANTS: tuple[dict[str, Any], ...] = (
                 label="Wet snow",
                 time_period_label="Later",
                 core_zone_text="E to W aspects, below 2200m",
+                field_guidance=[
+                    {"label": "Wet snow", "text": _FIELD_GUIDANCE["wet_snow"]}
+                ],
             ),
         },
     },

@@ -1,0 +1,35 @@
+{% load i18n snowdesk_html %}
+{% comment %}
+apps/public/templates/public/_field_guidance_body.html — Body of the
+"Field notes" panel on a problem card (SNOW-673).
+
+Rendered through ``includes/_collapsible_panel.html``'s ``body_template``
+hook, so it relies on that include's context inheritance for ``card``.
+
+One note per distinct problem type on the card. The per-note label only
+appears when there is more than one — on a single-problem card it would
+just repeat the card's own heading. A trait can carry more than one
+problem type and the card's label merges them ("Wind slab + New snow"),
+so taking only the first note would attribute one problem's advice to a
+card naming two.
+{% endcomment %}
+{% for note in card.field_guidance %}
+    <div {% if not forloop.first %}class="mt-3"{% endif %}>
+        {% if card.field_guidance|length > 1 %}
+            <p class="text-sm font-medium text-text-1 mb-0.5">{{ note.label }}</p>
+        {% endif %}
+        <p class="text-sm leading-prose text-text-2">{{ note.text|snowdesk_html }}</p>
+    </div>
+{% endfor %}
+{# The credit links the guide's landing page rather than the PDF: SLF says #}
+{# only the current online version is binding, and the landing page always #}
+{# points at it, whereas a PDF URL pins an edition that will go stale.     #}
+<p class="text-xs text-text-3 mt-2">
+    {% trans "Source:" %}
+    <a
+        class="underline hover:text-text-2"
+        href="https://www.slf.ch/en/avalanche-bulletin-and-snow-situation/about-the-avalanche-bulletin/interpretation-guide/"
+        target="_blank"
+        rel="noopener"
+    >{% trans "SLF Avalanche Bulletin Interpretation Guide" %}</a>
+</p>
