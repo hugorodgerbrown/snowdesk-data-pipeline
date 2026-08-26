@@ -41,7 +41,7 @@ from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
 from apps.core.views import healthz, livez
-from apps.public.sitemaps import BulletinSitemap
+from apps.public.sitemaps import SITEMAPS
 from apps.public.views import (
     serve_favicon,
     serve_llms_full_txt,
@@ -112,7 +112,7 @@ urlpatterns.append(
     path(
         "sitemap.xml",
         sitemap,
-        {"sitemaps": {"bulletins": BulletinSitemap}},
+        {"sitemaps": SITEMAPS},
         name="sitemap",
     )
 )

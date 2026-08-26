@@ -23,11 +23,13 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.regions.models import MicroRegion
+from apps.public.sitemaps import StaticViewSitemap
+from apps.regions.models import MicroRegion, Resort
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
+    ResortFactory,
 )
 
 _ZURICH_TZ = ZoneInfo("Europe/Zurich")
@@ -177,7 +179,13 @@ class TestSitemapContents:
             assert not date_segment.search(loc), (
                 f"sitemap URL still carries a date segment: {loc!r}"
             )
-            assert loc.endswith("/ch-4115/valais/")
+        # The bulletin section carries the evergreen form. Asserted of that
+        # entry rather than of every <loc>: since SNOW-676 the sitemap also
+        # holds the resort and static sections, whose URLs are neither
+        # dated nor region-shaped.
+        assert any(loc.endswith("/ch-4115/valais/") for loc in locs), (
+            "expected the region's evergreen form-2 URL in the sitemap"
+        )
 
 
 @pytest.mark.django_db
@@ -221,3 +229,109 @@ def test_sitemap_path_is_not_posthog_exempt(client: Client) -> None:
         "sitemap Vary: Cookie originates outside PostHog; if this changes, "
         "revisit SNOW-340"
     )
+
+
+# ---------------------------------------------------------------------------
+# SNOW-676 — the resort and static sections
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestResortSitemap:
+    """The resort section lists every resort's detail page."""
+
+    def test_every_resort_appears_exactly_once(self, client: Client) -> None:
+        """Each resort is listed at its canonical URL, with no duplicates."""
+        resorts = [ResortFactory.create() for _ in range(3)]
+
+        body = client.get(reverse("sitemap")).content.decode()
+
+        for resort in resorts:
+            url = resort.get_absolute_url()
+            assert body.count(f"{url}</loc>") == 1, f"{url} should appear exactly once"
+
+    def test_touring_terrain_is_listed_too(self, client: Client) -> None:
+        """Lift-less touring terrain has a real page, so it belongs here.
+
+        ``resort_detail`` does not filter by kind. Omitting touring terrain
+        would hide precisely the pages least likely to be found any other
+        way.
+        """
+        touring = ResortFactory.create(kind=Resort.Kind.TOURING_TERRAIN)
+
+        body = client.get(reverse("sitemap")).content.decode()
+
+        assert touring.get_absolute_url() in body
+
+    def test_listed_resort_urls_resolve(self, client: Client) -> None:
+        """A sitemap entry that 404s is worse than an absent one."""
+        resort = ResortFactory.create()
+
+        response = client.get(resort.get_absolute_url())
+
+        assert response.status_code == 200
+
+
+@pytest.mark.django_db
+class TestStaticViewSitemap:
+    """The static section lists the pages that aren't generated from data."""
+
+    def test_every_static_route_is_listed(self, client: Client) -> None:
+        """Each route in the registry appears in the sitemap."""
+        body = client.get(reverse("sitemap")).content.decode()
+
+        for route in StaticViewSitemap.ROUTES:
+            assert f"{reverse(route)}</loc>" in body, (
+                f"{route} missing from the sitemap"
+            )
+
+    def test_every_static_route_returns_200(self, client: Client) -> None:
+        """The listed pages actually render.
+
+        This is the test that catches a route being renamed or gated out
+        from under the list — a sitemap full of 404s is a worse signal to a
+        crawler than a short one.
+        """
+        for route in StaticViewSitemap.ROUTES:
+            response = client.get(reverse(route))
+            assert response.status_code == 200, (
+                f"{route} returned {response.status_code}"
+            )
+
+    @pytest.mark.parametrize(
+        "excluded",
+        ["/account/", "/favourites/", "/observations/", "/examples/", "/map/"],
+    )
+    def test_private_and_unstable_urls_are_absent(
+        self, client: Client, excluded: str
+    ) -> None:
+        """Nothing per-user, sign-in gated, random or redirecting is listed.
+
+        ``/account/`` and ``/favourites/`` are Disallowed in robots.txt, so
+        listing them would contradict it. ``/observations/`` shows an
+        anonymous visitor a sign-in CTA rather than the stream.
+        ``/examples/`` serves a *random* bulletin per request, which would
+        collide with the real bulletin pages it samples. ``/map/`` is a
+        permanent redirect.
+        """
+        body = client.get(reverse("sitemap")).content.decode()
+
+        assert excluded not in body
+
+
+@pytest.mark.django_db
+def test_sitemap_is_not_empty_out_of_season(client: Client) -> None:
+    """With no bulletin for today, the sitemap still advertises the site.
+
+    This is the point of SNOW-676. The Alps publish no bulletins from
+    roughly May to November, and until this change the whole sitemap was
+    empty for those months — the exact window in which slow-moving
+    reference pages have time to be indexed.
+    """
+    ResortFactory.create()
+
+    body = client.get(reverse("sitemap")).content.decode()
+
+    assert "<url>" in body
+    assert reverse("public:home") in body
+    assert reverse("public:how_to_read_bulletin") in body
