@@ -6,8 +6,55 @@ rules:
       Call factories with the explicit classmethod — SomeFactory.create(...)
       (or .build() / .create_batch()) — never the bare SomeFactory(...) form.
       See CLAUDE.md "Testing".
+    paths:
+      include:
+        - tests/
     patterns:
       - pattern: $FACTORY(...)
       - metavariable-regex:
           metavariable: $FACTORY
           regex: ^(?!SubFactory$|RequestFactory$|AsyncRequestFactory$)[A-Za-z_][A-Za-z0-9_]*Factory$
+
+  # Local replacement for the registry rule
+  # python.django.security.django-no-csrf-token, which is excluded in
+  # tox.ini's sast env. The upstream rule is correct in intent but unusable
+  # as written: it is a `generic` rule whose negation
+  # `pattern-not-inside: <form...>...{% csrf_token %}...</form>` relies on
+  # ellipsis, and generic-mode ellipsis spans at most
+  # `generic_ellipsis_max_span` lines (default 10). Any form with a body
+  # longer than that fails the negation and is reported as missing a token
+  # it visibly has — the token can be on the very next line and it still
+  # fires. Raising the span is the whole fix; the patterns below are
+  # otherwise upstream's, unchanged.
+  - id: django-form-missing-csrf-token
+    languages: [generic]
+    severity: ERROR
+    message: >
+      This form POSTs (or PUT/PATCH/DELETEs) without {% csrf_token %}.
+      Django rejects such a request with 403 and, if CsrfViewMiddleware is
+      ever relaxed, the form becomes a CSRF target. Add {% csrf_token %}
+      inside the <form> element. CWE-352.
+    metadata:
+      cwe: "CWE-352: Cross-Site Request Forgery (CSRF)"
+      category: security
+      references:
+        - https://docs.djangoproject.com/en/6.0/howto/csrf/
+    options:
+      # Upstream's effective limit is the default 10, which is shorter than
+      # every real form in this project. 500 comfortably exceeds the longest
+      # template form and still bounds the match.
+      generic_ellipsis_max_span: 500
+    paths:
+      include:
+        - "*.html"
+    patterns:
+      - pattern: <form...>...</form>
+      - pattern-either:
+          - pattern: <form ... method="$METHOD" ...>...</form>
+          - pattern: <form ... method='$METHOD' ...>...</form>
+          - pattern: <form ... method=$METHOD ...>...</form>
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: (?i)(post|put|delete|patch)
+      - pattern-not-inside: <form...>...{% csrf_token %}...</form>
+      - pattern-not-inside: <form...>...{{ $VAR.csrf_token }}...</form>

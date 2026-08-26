@@ -1,0 +1,110 @@
+{# ------------------------------------------------------------------ #}
+{# rules.html — Self-test annotations for the template semgrep rules.    #}
+{#                                                                       #}
+{# Consumed by `semgrep --test` (see tox.ini's sast env) to verify that   #}
+{# `django-form-missing-csrf-token` fires exactly where expected.         #}
+{#                                                                       #}
+{# The long cases are the point of this file. The upstream registry rule  #}
+{# this one replaces passes the short cases and fails the long ones: its  #}
+{# generic-mode ellipsis spans only 10 lines, so a form longer than that  #}
+{# was reported as missing a token sitting on the very next line. Keep    #}
+{# the filler bodies well over 10 lines or the regression they guard      #}
+{# against stops being reproducible.                                      #}
+{# ------------------------------------------------------------------ #}
+
+{# --- Token present, short body — rule MUST NOT fire. --- #}
+<!-- ok: django-form-missing-csrf-token -->
+<form method="post">
+    {% csrf_token %}
+    <button type="submit">Go</button>
+</form>
+
+{# --- Token present, body longer than the default ellipsis span.
+       This is the false positive the local rule exists to fix. --- #}
+<!-- ok: django-form-missing-csrf-token -->
+<form method="post" action="{% url 'accounts:set_password' %}" novalidate>
+    {% csrf_token %}
+    <p class="filler">line 1</p>
+    <p class="filler">line 2</p>
+    <p class="filler">line 3</p>
+    <p class="filler">line 4</p>
+    <p class="filler">line 5</p>
+    <p class="filler">line 6</p>
+    <p class="filler">line 7</p>
+    <p class="filler">line 8</p>
+    <p class="filler">line 9</p>
+    <p class="filler">line 10</p>
+    <p class="filler">line 11</p>
+    <p class="filler">line 12</p>
+    <p class="filler">line 13</p>
+    <p class="filler">line 14</p>
+    <button type="submit">Go</button>
+</form>
+
+{# --- Token present via the request context variable. --- #}
+<!-- ok: django-form-missing-csrf-token -->
+<form method="post">
+    {{ request.csrf_token }}
+    <p class="filler">line 1</p>
+    <p class="filler">line 2</p>
+    <p class="filler">line 3</p>
+    <p class="filler">line 4</p>
+    <p class="filler">line 5</p>
+    <p class="filler">line 6</p>
+    <p class="filler">line 7</p>
+    <p class="filler">line 8</p>
+    <p class="filler">line 9</p>
+    <p class="filler">line 10</p>
+    <p class="filler">line 11</p>
+    <p class="filler">line 12</p>
+    <p class="filler">line 13</p>
+    <p class="filler">line 14</p>
+    <button type="submit">Go</button>
+</form>
+
+{# --- GET form needs no token — rule MUST NOT fire. --- #}
+<!-- ok: django-form-missing-csrf-token -->
+<form method="get" action="/search/">
+    <p class="filler">line 1</p>
+    <p class="filler">line 2</p>
+    <p class="filler">line 3</p>
+    <p class="filler">line 4</p>
+    <p class="filler">line 5</p>
+    <p class="filler">line 6</p>
+    <p class="filler">line 7</p>
+    <p class="filler">line 8</p>
+    <p class="filler">line 9</p>
+    <p class="filler">line 10</p>
+    <p class="filler">line 11</p>
+    <p class="filler">line 12</p>
+    <p class="filler">line 13</p>
+    <p class="filler">line 14</p>
+    <input type="search" name="q">
+</form>
+
+{# --- Token missing, short body — rule SHOULD fire. --- #}
+<!-- ruleid: django-form-missing-csrf-token -->
+<form method="post">
+    <button type="submit">Go</button>
+</form>
+
+{# --- Token missing, long body — rule SHOULD still fire. A fix that
+       merely silenced the long-form case would pass without this. --- #}
+<!-- ruleid: django-form-missing-csrf-token -->
+<form method="post" novalidate>
+    <p class="filler">line 1</p>
+    <p class="filler">line 2</p>
+    <p class="filler">line 3</p>
+    <p class="filler">line 4</p>
+    <p class="filler">line 5</p>
+    <p class="filler">line 6</p>
+    <p class="filler">line 7</p>
+    <p class="filler">line 8</p>
+    <p class="filler">line 9</p>
+    <p class="filler">line 10</p>
+    <p class="filler">line 11</p>
+    <p class="filler">line 12</p>
+    <p class="filler">line 13</p>
+    <p class="filler">line 14</p>
+    <button type="submit">Go</button>
+</form>
