@@ -4328,43 +4328,143 @@ class TestBuildPeriodTransitionChip:
 
 
 # ---------------------------------------------------------------------------
-# Test: type tags (dry/wet) carry distinct data-testid from time tags (SNOW-247)
+# Test: the title bar carries the EAWS level colour (SNOW-727)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestTypePillsVsTimePills:
-    """SNOW-247: dry/wet type tags carry ``data-testid="category-type-pill"``
-    while time-period tags carry ``data-testid="time-period-pill"``.
+class TestTitleBarCarriesLevel:
+    """SNOW-727: the title bar is the card's level identifier.
 
-    The two semantic axes (what category? / which time window?) must be
-    visually and structurally distinct so UI tooling (Playwright, screen
-    readers) can tell them apart without relying on content matching.
+    It replaced a 4px saturated stripe on the hazard band's top edge, so the
+    row now needs a ``data-level`` attribute for the CSS to key off. The row
+    is also unconditional: every render-model trait carries a title, and a
+    missing row would take the level colour with it.
     """
 
-    def test_dry_card_carries_category_type_pill(
+    def test_title_bar_carries_the_cards_danger_level(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A dry-category card renders a category-type-pill data-testid."""
+        """The title bar stamps data-level with the card's level key."""
+        day = date(2026, 3, 15)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="considerable")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert 'data-testid="panel-title"' in content
+        assert 'class="panel-title' in content
+        assert 'data-level="considerable"' in content
+
+    def test_title_bar_level_tracks_the_rating(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A different danger rating stamps a different level key."""
+        day = date(2026, 3, 16)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="low")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-16")).content.decode()
+        panel_title_row = content.split('data-testid="panel-title"')[0].rsplit(
+            "<div", 1
+        )[1]
+        assert 'data-level="low"' in panel_title_row
+
+    def test_title_bar_renders_even_without_a_provider_title(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """No panel_title still renders the row, falling back to the category.
+
+        The row carries the level colour now, so it cannot be conditional on
+        wording the provider may not supply.
+        """
+        day = date(2026, 3, 17)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
+        )
+        # Strip the aggregation titles the helper would otherwise supply.
+        for entry in raw["properties"]["customData"]["CH"]["aggregation"]:
+            entry.pop("title", None)
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-17")).content.decode()
+        assert 'data-testid="panel-title"' in content
+        assert "avalanches" in content.casefold()
+
+    def test_level_stripe_is_gone(self, client: Client, region: MicroRegion) -> None:
+        """The hazard band no longer carries the saturated top stripe."""
+        day = date(2026, 3, 18)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-18")).content.decode()
+        # The band survives — only its stripe moved to the title bar.
+        assert "danger-band" in content
+        assert 'data-testid="level-number-chip"' not in content
+
+
+# ---------------------------------------------------------------------------
+# Test: the chip rail after SNOW-727 — category pill gone, time pill gated
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestTimePillIsGatedOnASplitDay:
+    """SNOW-727: the per-card time pill renders only when the day splits."""
+
+    def test_all_day_bulletin_has_no_card_time_pill(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Every trait all_day → no time pill on any card."""
+        day = date(2026, 3, 19)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-19")).content.decode()
+        assert 'data-testid="time-period-pill"' not in content
+        # The Day Risk Profile row still names the window — it is that row's job.
+        assert 'data-testid="day-window-pill"' in content
+
+
+@pytest.mark.django_db
+class TestTypePillsVsTimePills:
+    """SNOW-727: the dry/wet pill is gone, and the time pill is conditional.
+
+    The category pill was the fourth telling of the category on one card —
+    the title bar, the hazard pictogram and the problem label all carry it
+    already, and across every trait in production the title has never been
+    absent. The time pill survives, but only on a bulletin that actually
+    splits the day; on an all-day bulletin it repeated the Day Risk Profile
+    row above it and separated nothing.
+    """
+
+    def test_dry_card_has_no_category_pill(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A dry-category card renders no category pill (SNOW-727)."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
             [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert 'data-testid="category-type-pill"' in content
+        assert 'data-testid="category-type-pill"' not in content
+        # The title bar still names the category, and now carries the level.
+        assert 'data-testid="panel-title"' in content
 
-    def test_wet_card_carries_category_type_pill(
+    def test_wet_card_has_no_category_pill(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """A wet-category card renders a category-type-pill data-testid."""
+        """A wet-category card renders no category pill either (SNOW-727)."""
         day = date(2026, 3, 15)
         raw = _raw_data_with_problems(
             [_raw_problem(problem_type="wet_snow", danger_rating_value="moderate")]
         )
         _make_am_bulletin(region, day, raw_data=raw)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        assert 'data-testid="category-type-pill"' in content
+        assert 'data-testid="category-type-pill"' not in content
 
     def test_time_period_label_carries_time_period_pill(
         self, client: Client, region: MicroRegion
@@ -4404,10 +4504,10 @@ class TestTypePillsVsTimePills:
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert 'data-testid="time-period-pill"' in content
 
-    def test_category_type_pill_and_time_period_pill_are_distinct(
+    def test_split_day_keeps_the_time_pill_and_drops_the_category_pill(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """Type-tag and time-tag testids never clash on the same bulletin page."""
+        """On a split day the time pill survives; the category pill does not."""
         day = date(2026, 3, 15)
         # Variable-day bulletin: dry all-day + wet later.
         raw_data = {
@@ -4450,10 +4550,10 @@ class TestTypePillsVsTimePills:
         }
         _make_am_bulletin(region, day, raw_data=raw_data)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
-        # Both axes render independently.
-        assert 'data-testid="category-type-pill"' in content
+        # The day splits, so the time pill carries information here.
         assert 'data-testid="time-period-pill"' in content
-        # The old undifferentiated "category-pill" testid must not appear.
+        # The category axis is left to the title bar and the pictogram.
+        assert 'data-testid="category-type-pill"' not in content
         assert 'data-testid="category-pill"' not in content
 
 
@@ -4891,9 +4991,17 @@ class TestAlbinaBandHeadings:
             "Suppressed 'low' rating leaked into the day-windows panel"
         )
 
-        # The masthead headline must still be Considerable (level 3) — suppression
-        # must not alter the headline danger computed outside this function.
-        assert ">Considerable<" in content
+        # The surviving rows must still read Considerable (level 3) — suppression
+        # must not alter the danger computed outside this function.
+        #
+        # Asserted against the extracted panel, not a ">Considerable<" adjacency
+        # on the whole page. That adjacency held only while the label happened
+        # to sit tight against its tags; djangofmt reflows the row the moment
+        # anything else joins it, which is what SNOW-727 discovered. The comment
+        # here also used to say "masthead" — .dw-level is the only place the
+        # page renders a danger label at all.
+        assert "Considerable" in panel_html
+        assert "lv-considerable" in panel_html
 
 
 # ---------------------------------------------------------------------------
@@ -5467,15 +5575,18 @@ class TestSnow291FlatButSplit:
         # Two panel-title rows.
         assert content.count('data-testid="panel-title"') == 2
 
-    def test_flat_split_carries_subdivision_suffix_in_card(
+    def test_flat_split_carries_subdivision_words_in_day_risk_row(
         self, client: Client, region: MicroRegion
     ) -> None:
         """
-        Subdivision suffix from danger.ratings is threaded into each panel card
-        and rendered as a visible level-number chip in the rating block.
+        Subdivision from danger.ratings reaches the Day Risk Profile row in
+        words (SNOW-727).
 
-        Canonical case: all_day rating has subdivision="-" → level_number="2-"
-        → the chip ``data-testid="level-number-chip"`` contains "2-" in the HTML.
+        Canonical case: the all_day rating has subdivision="-" → the row reads
+        "lower end of the band" beside the level word. It used to render only
+        as a "2-" glyph on the card's level-number chip, which is gone, and on
+        the day-window tile, which is aria-hidden — so no screen reader ever
+        reached it.
         """
         day = date(2026, 5, 10)
         rm = _flat_split_render_model(
@@ -5496,10 +5607,11 @@ class TestSnow291FlatButSplit:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # The dry card's level_number chip must carry the subdivision suffix "2-".
-        assert "2-" in content
-        # At least one level-number chip must appear (for the all_day card).
-        assert 'data-testid="level-number-chip"' in content
+        # The subdivision is stated in words on the Day Risk Profile row.
+        assert 'data-testid="day-window-subdivision"' in content
+        assert "lower end of the band" in content
+        # The card's level-number chip is gone (SNOW-727).
+        assert 'data-testid="level-number-chip"' not in content
 
 
 # ---------------------------------------------------------------------------

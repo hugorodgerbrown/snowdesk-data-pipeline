@@ -286,43 +286,6 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
-        slug="type-tags",
-        label="Type tags",
-        description=(
-            "Semantic colour tokens for the dry / wet avalanche-category axis "
-            "(SNOW-247). Distinct from the EAWS scale — these are editorial "
-            "labels for problem category, not hazard level."
-        ),
-        kind="swatches",
-        swatch_columns=2,
-        tokens=(
-            Token(
-                "--color-type-dry-bg",
-                "Dry bg",
-                "oklch(75% 0.13 75)",
-                "oklch(65% 0.14 75)",
-            ),
-            Token(
-                "--color-type-dry-fg",
-                "Dry fg",
-                "oklch(28% 0.06 75)",
-                "oklch(95% 0.02 75)",
-            ),
-            Token(
-                "--color-type-wet-bg",
-                "Wet bg",
-                "oklch(70% 0.10 230)",
-                "oklch(60% 0.12 230)",
-            ),
-            Token(
-                "--color-type-wet-fg",
-                "Wet fg",
-                "oklch(20% 0.04 230)",
-                "oklch(95% 0.02 230)",
-            ),
-        ),
-    ),
-    FoundationCategory(
         slug="eaws",
         label="EAWS scale",
         description="Five-level danger scale (theme-invariant by EAWS spec).",
@@ -1203,10 +1166,14 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="chip",
         label="Chip",
         description=(
-            "Mono uppercase pill chip used inside the rating-block "
-            "danger-band header for category, avalanche-type and time-"
-            "period labels. Two tints — strong (default) and subtle — "
-            "both designed to sit on saturated EAWS colour backgrounds."
+            "Mono uppercase pill chip. Two variants: the default filled "
+            "pill, which carries an opaque bg-tag and is the one to use "
+            "inside a hazard bar (the EAWS tint takes no dark-mode "
+            "override, so a transparent chip there drops to ~2:1); and "
+            "the 'time' ghost pill, for the Day Risk Profile rows, which "
+            "sit on bg-card. The dry/wet type variants were removed in "
+            "SNOW-727 — the problem card's title bar already names the "
+            "category."
         ),
         kind="components",
         partial="includes/_chip.html",

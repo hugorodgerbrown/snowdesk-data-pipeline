@@ -360,26 +360,32 @@ def danger_pattern() -> Probe:
 
 
 def subdivision_suffix() -> Probe:
-    """Probe: an SLF subdivision reaches the danger badge as ``2+`` / ``2-``.
+    """Probe: an SLF subdivision reaches the Day Risk Profile row in words.
 
     SLF grades a rating within its level: ``plus`` sits at the top of the
-    band, ``minus`` at the bottom, ``neutral`` in the middle. The page
-    renders the first two as a suffix on the level number and the third as
-    nothing at all, which is why ``neutral`` passes without a needle.
+    band, ``minus`` at the bottom, ``neutral`` in the middle. The first two
+    render as "upper end of the band" / "lower end of the band" beside the
+    level word; the third renders as nothing at all, which is why
+    ``neutral`` passes without a needle.
+
+    Before SNOW-727 this matched a suffix glyph on the problem card's
+    level-number chip. That chip is gone — the card said the level three
+    other ways — and the day-window tile, which renders the same glyph, is
+    ``aria-hidden``. Matching the words instead means the probe now tracks a
+    surface a screen reader can actually reach.
     """
-    glyphs = {"plus": r"\+", "minus": "-"}
+    words = {"plus": "upper end of the band", "minus": "lower end of the band"}
 
     def probe(values: list[Any], page: RenderedPage) -> bool:
         for value in _scalars(values):
-            glyph = glyphs.get(str(value))
-            if glyph is None:
+            phrase = words.get(str(value))
+            if phrase is None:
                 # "neutral" — and any future value the table has not seen,
                 # which should fail rather than pass silently.
                 if str(value) != "neutral":
                     return False
                 continue
-            pattern = rf'data-testid="level-number-chip"[^>]*>\s*\d+\s*{glyph}'
-            if not re.search(pattern, page.html):
+            if phrase not in page.text:
                 return False
         return True
 
@@ -528,7 +534,10 @@ RENDERED: dict[str, Rendered] = {
         chip("avalanche-type-chip"), "Avalanche-type chip on the problem card"
     ),
     "avalancheProblems[].customData.CH.subdivision": Rendered(
-        subdivision_suffix(), "Level-number chip on the problem card (2+ / 2-)"
+        subdivision_suffix(),
+        "Day Risk Profile row, in words (SNOW-727). The card's own chip is "
+        "gone; the displayed value was always the period's rating anyway, "
+        "resolved by _subdivision_for_period.",
     ),
     "avalancheProblems[].dangerRatingValue": Rendered(
         literal(), "Problem card danger level"
@@ -550,7 +559,10 @@ RENDERED: dict[str, Rendered] = {
         snake_label(), "Time-period pill on the problem card"
     ),
     "customData.CH.aggregation[].category": Rendered(
-        literal(), "Dry/wet category pill on the trait block"
+        literal(),
+        "Problem card title bar — the provider's own wording names the "
+        "category ('Dry avalanches', 'Wet-snow avalanches'). The separate "
+        "dry/wet pill was removed in SNOW-727 as a fourth telling of it.",
     ),
     "customData.CH.aggregation[].problemTypes[]": Rendered(
         snake_label(), "Problem cards grouped under the trait block"
@@ -564,7 +576,9 @@ RENDERED: dict[str, Rendered] = {
     ),
     "customData.MF.j2Outlook.comment": Rendered(prose(), "Outlook collapsible panel"),
     "dangerRatings[].customData.CH.subdivision": Rendered(
-        subdivision_suffix(), "Level-number chip in the Day Risk Profile (2+ / 2-)"
+        subdivision_suffix(),
+        "Day Risk Profile row, beside the level word: 'upper end of the "
+        "band' / 'lower end of the band'",
     ),
     "dangerRatings[].elevation.lowerBound": Rendered(
         literal(), "Elevation-band heading above the trait block"
@@ -605,9 +619,10 @@ EXCLUDED: dict[str, Excluded] = {
     "avalancheProblems[].customData.CH.coreZoneText": Excluded(
         "SLF's core-zone sentence restates, in prose, the subdivision and "
         "the problem's own aspect and elevation geography. All three are "
-        "rendered structurally — the 2+/2- chip and the aspect/elevation "
-        "row — so the sentence would say the same thing a second time, in "
-        "the provider's phrasing rather than the page's.",
+        "rendered structurally — the Day Risk Profile row's subdivision "
+        "words and the card's aspect/elevation row — so the sentence would "
+        "say the same thing a second time, in the provider's phrasing "
+        "rather than the page's.",
         duplicate_of="avalancheProblems[].customData.CH.subdivision",
     ),
     "bulletinID": Excluded(

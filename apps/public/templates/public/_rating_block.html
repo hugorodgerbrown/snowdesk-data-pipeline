@@ -7,14 +7,23 @@ Expects the following variables in scope:
             or _problem_cards_from_render_model_traits for ALBINA bulletins).
             Keys: problem_type, category, danger_level, label, time_period_label,
                   aspects, elevation, core_zone_text, comment_html,
-                  panel_title (optional — editorial heading for SLF split-day
-                               panels, e.g. "Dry avalanches, whole day"; empty
-                               for ALBINA and MeteoFrance cards),
+                  panel_title (the provider's own words for the trait, e.g.
+                               "Dry avalanches, whole day" / "Gliding
+                               avalanches". The render model fills a fallback
+                               for every trait (render_model.py's
+                               _TITLE_FALLBACK), so in practice this is always
+                               populated — all 9,614 traits in production carry
+                               one. The template still guards it because the
+                               title bar now carries the level colour, and a
+                               blank row would lose it),
+                  show_time_pill (bool — True only when the bulletin splits the
+                                  day, i.e. some trait is earlier/later. Set in
+                                  views.py from is_time_variable so the partial
+                                  needs nothing from the panel context),
                   subdivision (optional — per-period suffix display char,
-                               e.g. "-", "=", "+"; empty when not available),
-                  level_number (optional — danger integer + subdivision suffix,
-                                e.g. "2-", "2", "2+"; empty string for ALBINA
-                                and MeteoFrance cards that carry no subdivision),
+                               e.g. "-", "=", "+"; empty when not available.
+                               No longer rendered here — SNOW-727 moved it to
+                               the Day Risk Profile row as words),
                   avalanche_type (optional — "slab", "loose", or None),
                   avalanche_size (optional int 1-5; ALBINA-only),
                   avalanche_size_label (optional translated Promise; ALBINA-only —
@@ -27,15 +36,18 @@ Expects the following variables in scope:
                                    ALBINA-only; empty list for SLF/MeteoFrance)
 
 Renders:
-  0. Editorial panel title — only when card.panel_title is non-empty. Renders
-     as a compact heading above the danger band for SLF split-day panels
-     (e.g. "Dry avalanches, whole day" / "Wet-snow avalanches, as the day
-     progresses"). ALBINA and MeteoFrance cards have no panel_title, so this
-     row is absent for them.
-  1. Card header — danger-band colour strip carrying the EAWS hazard
-     pictogram (encodes kind + level) alongside the problem name, an
-     optional level-number chip (``card.level_number``, e.g. "2-"), and
-     an optional time chip.
+  0. Title bar — always. Carries the provider's words for the trait and, via
+     data-level, the saturated EAWS colour for the danger level (SNOW-727).
+     Levels 1–3 take --color-eaws-{level} with -fg copy; 4 and 5 borrow the
+     other dark value each level already owns, because the EAWS red the two
+     of them share takes no companion copy colour that clears WCAG AA. Rules
+     and the measured ratios live in src/css/main.css, beside the
+     .danger-band blocks.
+  1. Hazard bar — the pale half of the pair: EAWS tint behind the hazard
+     pictogram (encodes kind + level) and the problem name. Carries the
+     avalanche-type chip, and a time chip only on a bulletin that splits the
+     day. The dry/wet category pill and the level-number chip were removed in
+     SNOW-727 — the title bar and the pictogram already carried both.
   2. Aspect / elevation row — three-way conditional on card.prose_mentions_spatial:
      (a) structured data present (card.aspects or card.elevation) → the aspect
          rose and elevation chip render verbatim (data-testid="aspect-elevation-row").
@@ -82,19 +94,27 @@ Renders:
     class="rating-block bg-card border border-border rounded-card overflow-hidden mb-4 last:mb-0"
     data-testid="rating-block"
 >
-    {# ── Editorial panel title (SLF split-day panels only) ───────────────── #}
-    {# Shown only when card.panel_title is non-empty. For ALBINA and          #}
-    {# MeteoFrance cards panel_title is always empty so this row is absent.   #}
-    {% if card.panel_title %}
-        <div
-            class="px-4 py-2 border-b border-border bg-card text-xs font-semibold text-text-2 tracking-wide"
-            data-testid="panel-title"
-        >
+    {# ── Title bar — the card's level identifier (SNOW-727) ──────────────── #}
+    {# Carries the provider's own words for the trait AND, via data-level,   #}
+    {# the saturated EAWS colour for the danger level.  Unconditional: the   #}
+    {# render model fills a title for every trait, and a missing row would   #}
+    {# now take the level colour with it.  Falls back to the category word.  #}
+    <div
+        class="panel-title px-4 py-2 border-b border-border text-xs font-semibold tracking-wide"
+        data-level="{{ card.danger_level|danger_level_key }}"
+        data-testid="panel-title"
+    >
+        {% if card.panel_title %}
             {{ card.panel_title }}
-        </div>
-    {% endif %}
-    {# ── Card header: danger-band carries kind + level colour; pictogram   #}
-    {# encodes the same visually so no textual label is needed.             #}
+        {% else %}
+            {% blocktrans with category=card.category|capfirst trimmed %}
+                {{ category }} avalanches
+            {% endblocktrans %}
+        {% endif %}
+    </div>
+    {# ── Hazard bar: pale EAWS tint behind the mark and the problem name.  #}
+    {# The saturated colour lives on the title bar above; this row is the   #}
+    {# quiet half of the pair, so the card reads level → problem → scope.   #}
     <div class="danger-band px-4 py-3 border-b border-border" data-level="{{ card.danger_level|danger_level_key }}">
         <div class="flex items-center gap-3">
             {% with cat_icon=card|category_danger_icon %}
@@ -108,15 +128,6 @@ Renders:
                 {% endif %}
             {% endwith %}
             <span class="text-label font-semibold leading-tight flex-1 min-w-0">{{ card.label }}</span>
-            {% if card.category == "dry" %}
-                {% trans "Dry" as category_chip_text %}
-                {% include "includes/_chip.html" with text=category_chip_text variant="type-dry" data_testid="category-type-pill" %}
-            {% elif card.category == "wet" %}
-                {% trans "Wet" as category_chip_text %}
-                {% include "includes/_chip.html" with text=category_chip_text variant="type-wet" data_testid="category-type-pill" %}
-            {% elif card.category %}
-                {% include "includes/_chip.html" with text=card.category data_testid="category-type-pill" %}
-            {% endif %}
             {% if card.avalanche_type %}
                 {% if card.avalanche_type == "slab" %}
                     {% trans "Slab" as avalanche_chip_text %}
@@ -125,14 +136,12 @@ Renders:
                 {% endif %}
                 {% include "includes/_chip.html" with text=avalanche_chip_text data_testid="avalanche-type-chip" %}
             {% endif %}
-            {% if card.level_number %}
-                <span
-                    class="font-mono text-chip bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
-                    data-testid="level-number-chip"
-                >{{ card.level_number }}</span>
-            {% endif %}
-            {% if card.time_period_label %}
-                {% include "includes/_chip.html" with text=card.time_period_label variant="time" data_testid="time-period-pill" %}
+            {# Time pill only when the day actually splits — on the 96% of    #}
+            {# bulletins that are all_day throughout it would repeat the Day  #}
+            {# Risk Profile row and separate nothing.  Filled, not ghost: a   #}
+            {# transparent chip inside the tint drops to 1.9:1 in dark mode.  #}
+            {% if card.show_time_pill and card.time_period_label %}
+                {% include "includes/_chip.html" with text=card.time_period_label data_testid="time-period-pill" %}
             {% endif %}
         </div>
     </div>

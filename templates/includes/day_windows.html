@@ -37,7 +37,19 @@ Required context:
                     </span>
                 {% endif %}
                 <div class="dw-body">
-                    <div class="dw-level">{{ w.level_label }}</div>
+                    {# The level word stays tight against its tags — tests match on #}
+                    {# the ">Considerable<" adjacency, and this div is the only      #}
+                    {# place on the page that renders a danger label.                #}
+                    {# SLF's within-level grading follows it in words (SNOW-727):    #}
+                    {# the tile shows it as a suffix glyph but is aria-hidden, so    #}
+                    {# this is the only form a screen reader reaches.                #}
+                    <div class="dw-level">
+                        {{ w.level_label }}{% if w.subdivision_label %}<span
+                                class="font-normal text-text-3"
+                                data-testid="day-window-subdivision"
+                            >
+                                &middot; {{ w.subdivision_label }}</span>{% endif %}
+                    </div>
                     {% if w.caption %}<div class="dw-caption">{{ w.caption }}</div>{% endif %}
                 </div>
                 {% include "includes/_chip.html" with text=w.pill_label variant="time" data_testid="day-window-pill" %}

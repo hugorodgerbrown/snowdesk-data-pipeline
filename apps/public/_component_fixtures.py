@@ -849,22 +849,6 @@ CHIP_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "variant=type-dry — filled amber pill for dry-avalanche problems",
-        "context": {
-            "text": "Dry",
-            "variant": "type-dry",
-            "data_testid": "category-type-pill",
-        },
-    },
-    {
-        "caption": "variant=type-wet — filled cyan pill for wet-avalanche problems",
-        "context": {
-            "text": "Wet",
-            "variant": "type-wet",
-            "data_testid": "category-type-pill",
-        },
-    },
-    {
         "caption": "variant=time — outlined ghost pill for time-period labels",
         "context": {
             "text": "All day",

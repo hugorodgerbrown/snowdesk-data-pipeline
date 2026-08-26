@@ -2627,6 +2627,19 @@ _DAY_WINDOW_PILL_LABELS: dict[str, Promise] = {
     "later": _("Later"),
 }
 
+# SLF grades a rating within its level: "plus" sits at the top of the band,
+# "minus" at the bottom, "neutral" in the middle. Until SNOW-727 this reached
+# the reader only as a suffix glyph on two surfaces — the problem card's
+# level-number chip, and the day-window tile, which is aria-hidden. Removing
+# the chip left the tile, so the subdivision is now said in words on the Day
+# Risk Profile row: legible, translatable, and reachable by a screen reader
+# for the first time. "neutral" stays silent, as it always has — the middle of
+# the band is the unremarkable case.
+_SUBDIVISION_LABELS: dict[str, Promise] = {
+    "-": _("lower end of the band"),
+    "+": _("upper end of the band"),
+}
+
 
 def _parse_danger_rating(rating: dict[str, Any]) -> tuple[str, str, str]:
     """Return ``(period, main_value, subdivision)`` for a CAAML dangerRating dict.
@@ -2842,6 +2855,7 @@ def _day_window_row_from_rm(rm_rating: dict[str, Any]) -> dict[str, Any]:
         "level_css": level.replace("_", "-"),
         "level_label": _DANGER_PANEL_META[level]["label"],
         "level_number": f"{number}{suffix}",
+        "subdivision_label": _SUBDIVISION_LABELS.get(suffix, ""),
         "caption": "",
         "pill_label": _DAY_WINDOW_PILL_LABELS.get(period, period),
     }
@@ -2958,6 +2972,7 @@ def _day_windows_from_raw_ratings(bulletin: Bulletin) -> list[dict[str, Any]]:
             "level_css": level.replace("_", "-"),
             "level_label": _DANGER_PANEL_META[level]["label"],
             "level_number": f"{number}{suffix}",
+            "subdivision_label": _SUBDIVISION_LABELS.get(suffix, ""),
             "caption": "",
             "pill_label": _DAY_WINDOW_PILL_LABELS.get(period, period),
         }
@@ -5968,6 +5983,31 @@ def problem_cards_for_bulletin(bulletin: Bulletin) -> list[dict[str, Any]]:
     )
 
 
+def _stamp_time_pill_visibility(
+    cards: list[dict[str, Any]], is_time_variable: bool
+) -> None:
+    """
+    Mark each problem card with whether its time pill should render.
+
+    The per-card time pill earns its place only on a bulletin that actually
+    splits the day (SNOW-727). On the 96% of bulletins that are ``all_day``
+    throughout it would read "ALL DAY" on every card and again on the Day
+    Risk Profile row above them, separating nothing from nothing.
+
+    Stamped onto the card rather than read from the panel inside the
+    partial, so ``_rating_block.html`` keeps its "expects ``card``" contract
+    and stays renderable from the component library's fixtures.
+
+    Args:
+        cards: Problem-card dicts, mutated in place.
+        is_time_variable: True when any trait is scoped to ``earlier`` or
+            ``later``.
+
+    """
+    for card in cards:
+        card["show_time_pill"] = is_time_variable
+
+
 def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     """
     Build the template context for a single compact bulletin panel.
@@ -6073,6 +6113,8 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # the caption surfaces that signal beside the headline band, which
     # only carries the level tints.
     is_time_variable = any(t.get("time_period") in {"earlier", "later"} for t in traits)
+
+    _stamp_time_pill_visibility(problem_cards, is_time_variable)
 
     panel: dict[str, Any] = {
         "bulletin": bulletin,
