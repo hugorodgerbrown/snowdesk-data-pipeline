@@ -52,7 +52,13 @@ Required context:
                     </div>
                     {% if w.caption %}<div class="dw-caption">{{ w.caption }}</div>{% endif %}
                 </div>
-                {% include "includes/_chip.html" with text=w.pill_label variant="time" data_testid="day-window-pill" %}
+                {# all_day is the default window and goes unlabelled (SNOW-727): #}
+                {# on a one-row panel it names the only thing there, and on a    #}
+                {# split day it is the baseline the "later" row departs from.    #}
+                {# Only earlier / later are news, so only they get a pill.       #}
+                {% if w.type != "all_day" %}
+                    {% include "includes/_chip.html" with text=w.pill_label variant="time" data_testid="day-window-pill" %}
+                {% endif %}
             </div>
         {% endfor %}
     </section>

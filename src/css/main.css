@@ -106,7 +106,14 @@
                                so the WCAG AA 4.5:1 requirement applies at the text-3
                                colour rather than having to chase near-black values for
                                a 9px label that no standard classifies as large text)  */
-  --text-chip:     9.5px;   /* aspect / elevation / hazard chip caption */
+  /* Pill-chip caption size. NOT --text-chip: Tailwind v4 resolves `text-*`
+     against --color-* before --text-*, so while --color-chip exists (it does,
+     for the bg-chip / hover:bg-chip-strong surfaces below) a `text-chip`
+     class silently compiles to `color: var(--color-chip)` — a 6%-alpha white
+     — and never to a font size at all. Every chip on the site rendered at
+     inherited size instead of 9.5px until SNOW-727 measured one.
+     Do not add a --color-pill token without renaming this again. */
+  --text-pill:     9.5px;   /* aspect / elevation / hazard chip caption */
   --text-caption:  11px;    /* mono caption (callout diagnostics, nav
                                trigger, swatch / icon token labels)    */
   --text-summary:  13px;    /* collapsible-panel summary title         */

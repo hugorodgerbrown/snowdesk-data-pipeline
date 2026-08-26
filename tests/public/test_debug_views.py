@@ -274,8 +274,11 @@ class TestComponentLibraryPanel:
         assert "lv-low" in body
         assert "lv-very-high" in body
         assert 'data-window="later"' in body
-        assert ">All day<" in body
+        # Only non-default windows take a pill (SNOW-727): "later" is the news,
+        # "all day" is the baseline and goes unlabelled on every variant here —
+        # including the five-row level grid, which is all_day throughout.
         assert ">Later<" in body
+        assert ">All day<" not in body
         # Banded variants render the mountain elevation glyph.
         assert 'data-testid="day-window-elevation-icon"' in body
 

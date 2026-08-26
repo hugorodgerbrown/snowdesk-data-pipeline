@@ -16,10 +16,6 @@ Expects the following variables in scope:
                                one. The template still guards it because the
                                title bar now carries the level colour, and a
                                blank row would lose it),
-                  show_time_pill (bool — True only when the bulletin splits the
-                                  day, i.e. some trait is earlier/later. Set in
-                                  views.py from is_time_variable so the partial
-                                  needs nothing from the panel context),
                   subdivision (optional — per-period suffix display char,
                                e.g. "-", "=", "+"; empty when not available.
                                No longer rendered here — SNOW-727 moved it to
@@ -45,9 +41,10 @@ Renders:
      .danger-band blocks.
   1. Hazard bar — the pale half of the pair: EAWS tint behind the hazard
      pictogram (encodes kind + level) and the problem name. Carries the
-     avalanche-type chip, and a time chip only on a bulletin that splits the
-     day. The dry/wet category pill and the level-number chip were removed in
-     SNOW-727 — the title bar and the pictogram already carried both.
+     avalanche-type chip and nothing else. The dry/wet category pill, the
+     level-number chip and the time pill were all removed in SNOW-727 — the
+     title bar, the pictogram and the Day Risk Profile row carried each of
+     them already.
   2. Aspect / elevation row — three-way conditional on card.prose_mentions_spatial:
      (a) structured data present (card.aspects or card.elevation) → the aspect
          rose and elevation chip render verbatim (data-testid="aspect-elevation-row").
@@ -136,13 +133,12 @@ Renders:
                 {% endif %}
                 {% include "includes/_chip.html" with text=avalanche_chip_text data_testid="avalanche-type-chip" %}
             {% endif %}
-            {# Time pill only when the day actually splits — on the 96% of    #}
-            {# bulletins that are all_day throughout it would repeat the Day  #}
-            {# Risk Profile row and separate nothing.  Filled, not ghost: a   #}
-            {# transparent chip inside the tint drops to 1.9:1 in dark mode.  #}
-            {% if card.show_time_pill and card.time_period_label %}
-                {% include "includes/_chip.html" with text=card.time_period_label data_testid="time-period-pill" %}
-            {% endif %}
+            {# No time pill.  On a split day the title bar above already says #}
+            {# the window in the provider's own words — "…, whole day",       #}
+            {# "…, as the day progresses", "…, earlier" — on every one of the #}
+            {# 734 split-day traits in production.  On an all-day bulletin    #}
+            {# there is no window to name: all_day is the default and goes    #}
+            {# unlabelled.  Either way the pill said nothing new.             #}
         </div>
     </div>
 
@@ -224,7 +220,7 @@ Renders:
         >
             {% for pattern in card.danger_patterns %}
                 <span
-                    class="font-mono text-chip uppercase bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
+                    class="font-mono text-pill uppercase bg-tag text-text-3 border border-border px-2.5 py-[5px] rounded-pill shrink-0"
                     title="{{ pattern.title }}"
                     data-testid="danger-pattern-tag"
                 >{{ pattern.label }}</span>
