@@ -66,9 +66,8 @@ the label now names that. Behaviour is unchanged.
                     own page reached from there. See templates/includes/nav.html
                     and docs/decisions/account-area-navigation-lives-in-the-nav-menu.md.
                 {% endcomment %}
-                <h1 class="text-2xl font-semibold text-text-1 mb-8">
-                    {% trans "Settings" %}
-                </h1>
+                {% trans "Settings" as page_heading %}
+                {% include "includes/_page_title.html" with text=page_heading class_extra="mb-8" %}
 
                 {% comment %}
                     SNOW-705: the seven blocks below are grouped into four
@@ -233,7 +232,7 @@ the label now names that. Behaviour is unchanged.
                             <button
                                 type="submit"
                                 data-testid="manage-sign-out"
-                                class="text-sm text-text-2 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                                class="text-sm text-text-2 text-link self-start"
                             >
                                 {% trans "Sign out" %}
                             </button>
@@ -259,7 +258,7 @@ the label now names that. Behaviour is unchanged.
                         <button
                             type="button"
                             data-pwa-reset-trigger
-                            class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors self-start"
+                            class="text-xs text-text-3 text-link self-start"
                         >
                             {% trans "Reset local data on this device" %}
                         </button>
@@ -370,7 +369,7 @@ the label now names that. Behaviour is unchanged.
                         hx-post="{% url 'accounts:delete_account' %}"
                         hx-confirm='{% trans "Permanently delete your account and everything saved to it?" %}'
                         data-testid="delete-account"
-                        class="text-xs text-text-3 hover:text-text-1 underline underline-offset-2 transition-colors"
+                        class="text-xs text-text-3 text-link"
                     >
                         {% trans "Delete your account" %}
                     </button>

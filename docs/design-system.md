@@ -248,14 +248,30 @@ renders a title, a shell or a form field, it uses the component.
 | Kind | Use when | Example |
 |---|---|---|
 | Include partial | The shape has content slots and variants | `_button.html`, `_page_title.html`, `_form_field.html` |
-| Block tag | The shape *wraps* arbitrary page content | `{% card %}`, `{% page_shell %}` in [`apps/public/templatetags/components.py`](../apps/public/templatetags/components.py) |
-| CSS component class | The shape styles *descendants* it does not author — prose from a provider or a translator | `.slf-prose`, `.legal-prose`, `.text-link` in [`src/css/main.css`](../src/css/main.css) |
+| Block tag | The shape *wraps* arbitrary page content and owns the wrapper element | `{% card %}` in [`apps/public/templatetags/components.py`](../apps/public/templatetags/components.py) |
+| Class-string tag | The element stays in the template — it carries its own attributes — and only the classes are shared | `{% page_shell_classes %}`, `{% input_classes %}`, `button_classes` |
+| CSS component class | The shape styles *descendants* it does not author | `.slf-prose`, `.legal-prose`, `.text-link` in [`src/css/main.css`](../src/css/main.css) |
 
-The third is the narrow one, and worth stating plainly because it is the
-exception to "no custom CSS": when the markup inside a block is not written in
-the template — provider HTML, a long legal document — a wrapper class with
-descendant rules is the only treatment that reaches it. Everything else is a
-partial.
+Two of these are worth stating plainly.
+
+A **class-string tag** rather than a block tag whenever call sites need their
+own attributes on the element. The page shell is the case that settled it: two
+of its nine pages carry `data-testid` and `data-resort-id`, so a
+`{% page_shell %}` block tag would have needed an attribute escape hatch on
+day one. Sharing the class string alone shares exactly the part that drifted.
+
+A **CSS component class** is the exception to "no custom CSS", and it is
+narrow: when the markup inside a block is not written in the template —
+provider HTML, a long legal document — a wrapper class with descendant rules
+is the only treatment that reaches it.
+
+**Where the line is.** Not every repeated string is a component. Twenty-two
+places draw a `border-t border-border` rule with some top spacing, in twelve
+distinct class strings — a menu separator, a card footer, a settings group, a
+panel foot. That is not drift, it is four different spacings doing four
+different jobs, and the shared part is already two token-based utilities that
+no abstraction would shorten. The test is whether the sites are trying to be
+the same thing. Nine page shells were; twenty-two rules are not.
 
 **Class strings built in JavaScript are template class strings.** A string
 assembled in `static/js/` reaches the page exactly as one written in a

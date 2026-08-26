@@ -17,7 +17,7 @@ Context expected (built by apps.public.views.observations_list):
   signin_url            — str: accounts:sign_in URL.
   window_hours          — int: the lookback window (48).
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block page_meta %}
     {% trans "Observations" as page_name %}
@@ -26,10 +26,9 @@ Context expected (built by apps.public.views.observations_list):
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight mb-2" data-testid="observations-heading">
-            {% trans "Recent observations" %}
-        </h1>
+    <main class="{% page_shell_classes %}">
+        {% trans "Recent observations" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="observations-heading" %}
         <p class="text-sm leading-prose text-text-2 mb-6">
             {% blocktrans trimmed %}
                 Field reports submitted by Snowdesk users in the last 48 hours.

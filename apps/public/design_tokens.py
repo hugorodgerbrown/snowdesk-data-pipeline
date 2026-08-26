@@ -42,6 +42,7 @@ from apps.public._component_fixtures import (
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
     FORECAST_PANEL_VARIANTS,
+    FORM_FIELD_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
@@ -50,6 +51,7 @@ from apps.public._component_fixtures import (
     OVERLAY_BANNER_VARIANTS,
     OVERLAY_MODAL_VARIANTS,
     OVERLAY_SHEET_VARIANTS,
+    PAGE_TITLE_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
@@ -1090,6 +1092,34 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_collapsible_panel.html",
         variants=COLLAPSIBLE_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="form-field",
+        label="Form field",
+        description=(
+            "One labelled control with its error list — the shape every "
+            "account form repeats. Ten call sites across six templates had "
+            "written it by hand before SNOW-672. The widget comes from the "
+            "form; this owns the chrome around it."
+        ),
+        kind="components",
+        partial="includes/_form_field.html",
+        variants=FORM_FIELD_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="page-title",
+        label="Page title",
+        description=(
+            "The <h1> at the top of an ordinary content page. Thirteen call "
+            "sites had written it by hand in three variants (SNOW-672); this "
+            "is the one that wins. Bottom spacing stays a caller decision — "
+            "mb-2 when a subtitle follows, mb-6 when the body starts after."
+        ),
+        kind="components",
+        partial="includes/_page_title.html",
+        variants=PAGE_TITLE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

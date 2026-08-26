@@ -37,7 +37,11 @@ Blocks exposed to child templates:
     <div class="flex min-h-[80vh] items-center justify-center px-4 py-12">
         <div class="w-full max-w-md">
             {% card padding="p-8" center=True %}
-            <h1 class="text-2xl font-semibold text-text-1 mb-3">
+            {# The one page heading that cannot use includes/_page_title.html: #}
+            {# the copy arrives through {% block status_heading %}, and an       #}
+            {# include cannot take a block. Class string kept identical to the   #}
+            {# partial's by hand — change one, change the other (SNOW-672).      #}
+            <h1 class="text-2xl font-semibold tracking-tight mb-3">
                 {% block status_heading %}{% endblock %}
             </h1>
             <p class="text-text-2 text-sm leading-relaxed">

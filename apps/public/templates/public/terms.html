@@ -26,7 +26,7 @@ Sections, top to bottom:
 
 The legal copy is authored by Hugo and edited directly into this template.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block page_meta %}
     {% trans "Terms" as page_name %}
@@ -35,13 +35,12 @@ The legal copy is authored by Hugo and edited directly into this template.
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight mb-6" data-testid="terms-heading">
-            {% trans "Terms of use" %}
-        </h1>
+    <main class="{% page_shell_classes 'legal-prose' %}">
+        {% trans "Terms of use" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="terms-heading" %}
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="terms-data-sources">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="terms-data-sources">
+            <h2>
                 {% trans "Data sources and licences" %}
             </h2>
             <p class="mb-3">
@@ -98,8 +97,8 @@ The legal copy is authored by Hugo and edited directly into this template.
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="terms-not-authoritative">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="terms-not-authoritative">
+            <h2>
                 {% trans "A complete rendering, not the authority" %}
             </h2>
             <p>
@@ -114,8 +113,8 @@ The legal copy is authored by Hugo and edited directly into this template.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="terms-on-site-assessment">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="terms-on-site-assessment">
+            <h2>
                 {% trans "Always check the official bulletin and make your own on-site assessment" %}
             </h2>
             <p>
@@ -131,8 +130,8 @@ The legal copy is authored by Hugo and edited directly into this template.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="terms-liability">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="terms-liability">
+            <h2>
                 {% trans "Limitation of liability" %}
             </h2>
             <p>
@@ -145,8 +144,8 @@ The legal copy is authored by Hugo and edited directly into this template.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="terms-provider-disclaimers">
-            <h2 class="text-base font-semibold text-text-1 mb-2">
+        <section data-testid="terms-provider-disclaimers">
+            <h2>
                 {% trans "Provider disclaimers" %}
             </h2>
             <p class="mb-3">

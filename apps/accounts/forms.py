@@ -17,12 +17,14 @@ Provides forms used in the subscription flow:
 from django import forms
 from django.contrib.auth.forms import SetPasswordForm
 
-# Shared Tailwind classes for the text inputs used across the account forms.
-_INPUT_CLASSES = (
-    "w-full px-4 py-2.5 rounded-tag border border-text-3/30 "
-    "bg-card text-text-1 placeholder:text-text-3 "
-    "focus:outline-none focus:ring-2 focus:ring-text-1/30"
-)
+from apps.public.templatetags.components import input_classes
+
+# Tailwind classes for the text inputs used across the account forms.
+# SNOW-672: the string used to be defined here, which meant the staff panels
+# and the debug pages carried their own near-copies with no way to tell they
+# had drifted. It lives with the rest of the design system's class logic now,
+# and the templates reach the same string through {% input_classes %}.
+_INPUT_CLASSES = input_classes(size="standard")
 
 
 class SubscribeForm(forms.Form):

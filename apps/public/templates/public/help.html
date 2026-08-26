@@ -15,7 +15,7 @@ boolean computed by apps.public.views.help_page — a user never sees
 documentation for a feature they cannot use. It is the only gated panel;
 SNOW-724 opened the map-weather and slope-angle topics to everyone.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block page_meta %}
     {% trans "Help" as page_name %}
@@ -24,10 +24,9 @@ SNOW-724 opened the map-weather and slope-angle topics to everyone.
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="font-sans w-full max-w-wide mx-auto px-4 py-8 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight mb-6" data-testid="help-heading">
-            {% trans "Help & how it works" %}
-        </h1>
+    <main class="{% page_shell_classes %}">
+        {% trans "Help & how it works" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="help-heading" %}
         <p class="text-sm leading-prose text-text-2 mb-6">
             {% trans "A plain-language guide to what Snowdesk does and how to use each part of it." %}
         </p>

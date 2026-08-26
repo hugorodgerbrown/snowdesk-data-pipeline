@@ -1,5 +1,5 @@
 {% extends "public/base.html" %}
-{% load static %}
+{% load static components %}
 
 {# SNOW-553: sharing=False. Staff-only debug page, mounted only when     #}
 {# DEBUG is on. It has no public URL to share.                          #}
@@ -46,7 +46,7 @@
                         id="push-title"
                         type="text"
                         value="Snowdesk"
-                        class="block w-full mt-1 px-2 py-1 bg-bg border border-border rounded-sm text-text-1"
+                        class="{% input_classes size='compact' extra='block mt-1' %}"
                     >
                 </label>
                 <label class="text-sm text-text-2">Body
@@ -54,7 +54,7 @@
                         id="push-body"
                         type="text"
                         value="New bulletin available for your region."
-                        class="block w-full mt-1 px-2 py-1 bg-bg border border-border rounded-sm text-text-1"
+                        class="{% input_classes size='compact' extra='block mt-1' %}"
                     >
                 </label>
                 <label class="text-sm text-text-2">Open URL
@@ -62,7 +62,7 @@
                         id="push-url"
                         type="text"
                         value="/"
-                        class="block w-full mt-1 px-2 py-1 bg-bg border border-border rounded-sm text-text-1"
+                        class="{% input_classes size='compact' extra='block mt-1' %}"
                     >
                 </label>
             </div>

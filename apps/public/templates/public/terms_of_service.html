@@ -7,7 +7,7 @@ use, intellectual property, subscriptions, and limitation of liability.
 Distinct from /terms/, which covers the SLF data-licence acknowledgement.
 Content is authored directly in this template; no runtime context required.
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block page_meta %}
     {% trans "Terms of Service" as page_name %}
@@ -16,10 +16,9 @@ Content is authored directly in this template; no runtime context required.
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight mb-2" data-testid="tos-heading">
-            {% trans "Terms of Service" %}
-        </h1>
+    <main class="{% page_shell_classes 'legal-prose' %}">
+        {% trans "Terms of Service" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="tos-heading" %}
         <p class="text-xs text-text-3 mb-6">
             {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 1 November 2026 &middot; Version 1.0" %}
         </p>
@@ -33,8 +32,8 @@ Content is authored directly in this template; no runtime context required.
             {% endblocktrans %}
         </div>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-about">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "1. About Snowdesk" %}</h2>
+        <section data-testid="tos-about">
+            <h2>{% trans "1. About Snowdesk" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     Snowdesk is operated by Henri Tamboral ("I", "me", "my"), an individual based in London, UK.
@@ -46,8 +45,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-acceptance">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "2. Acceptance of terms" %}</h2>
+        <section data-testid="tos-acceptance">
+            <h2>{% trans "2. Acceptance of terms" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     By accessing Snowdesk at snowdesk.info, you agree to these Terms of Service. If you do not agree,
@@ -56,8 +55,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-service">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "3. The service" %}</h2>
+        <section data-testid="tos-service">
+            <h2>{% trans "3. The service" %}</h2>
             <p class="mb-2">{% trans "Snowdesk provides:" %}</p>
             <ul class="list-disc pl-5 space-y-1 mb-3">
                 <li>
@@ -76,8 +75,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-safety">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "4. Safety — please read this" %}</h2>
+        <section data-testid="tos-safety">
+            <h2>{% trans "4. Safety — please read this" %}</h2>
             <div class="mb-3 p-3 border border-border rounded text-text-2">
                 ⚠️
                 {% blocktrans trimmed %}
@@ -115,8 +114,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-ip">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "5. Intellectual property" %}</h2>
+        <section data-testid="tos-ip">
+            <h2>{% trans "5. Intellectual property" %}</h2>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     Snowdesk's original content — including the interface, design, and copy — is owned by Henri
@@ -154,8 +153,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-subscriptions">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "6. Email subscriptions" %}</h2>
+        <section data-testid="tos-subscriptions">
+            <h2>{% trans "6. Email subscriptions" %}</h2>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     You can subscribe to receive email notifications when new avalanche bulletins are published for one
@@ -171,8 +170,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-acceptable-use">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "7. Acceptable use" %}</h2>
+        <section data-testid="tos-acceptable-use">
+            <h2>{% trans "7. Acceptable use" %}</h2>
             <p class="mb-2">{% trans "You agree not to:" %}</p>
             <ul class="list-disc pl-5 space-y-1">
                 <li>
@@ -186,8 +185,8 @@ Content is authored directly in this template; no runtime context required.
             </ul>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-liability">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "8. Limitation of liability" %}</h2>
+        <section data-testid="tos-liability">
+            <h2>{% trans "8. Limitation of liability" %}</h2>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     To the maximum extent permitted by law, Snowdesk and its operator shall not be liable for any
@@ -204,8 +203,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-governing-law">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "9. Governing law" %}</h2>
+        <section data-testid="tos-governing-law">
+            <h2>{% trans "9. Governing law" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     These terms are governed by the laws of England and Wales. Any disputes shall be subject to the
@@ -214,8 +213,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-changes">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "10. Changes to these terms" %}</h2>
+        <section data-testid="tos-changes">
+            <h2>{% trans "10. Changes to these terms" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     We may update these terms from time to time. We will update the effective date at the top. Continued
@@ -224,8 +223,8 @@ Content is authored directly in this template; no runtime context required.
             </p>
         </section>
 
-        <section class="mb-6 text-sm leading-relaxed text-text-2" data-testid="tos-contact">
-            <h2 class="text-base font-semibold text-text-1 mb-2">{% trans "11. Contact" %}</h2>
+        <section data-testid="tos-contact">
+            <h2>{% trans "11. Contact" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     Questions about these terms? Email:

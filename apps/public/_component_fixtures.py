@@ -22,6 +22,9 @@ import datetime
 from types import SimpleNamespace
 from typing import Any
 
+from django import forms
+
+from apps.public.templatetags.components import input_classes
 from apps.weather.services.weather_display import (
     _ICON_BUCKET_LABEL,
     _WMO_CODE_TO_BUCKET,
@@ -1052,6 +1055,57 @@ COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
     _build_collapsible_panel_variants()
 )
 
+
+# ── Form field (SNOW-672) ───────────────────────────────────────────────────
+# A real Django form rather than a SimpleNamespace, because the partial
+# renders the widget: ``{{ field }}`` has to produce an <input>, not a repr.
+# The errored variant is bound to invalid data so the error list is the one
+# Django actually produces.
+
+
+class _DemoFieldForm(forms.Form):
+    """Throwaway form supplying one rendered field to the component library."""
+
+    email = forms.EmailField(
+        label="Email address",
+        widget=forms.EmailInput(
+            attrs={"class": input_classes(), "placeholder": "your@email.com"}
+        ),
+    )
+
+
+_DEMO_FIELD = _DemoFieldForm()["email"]
+_DEMO_FIELD_WITH_ERROR = _DemoFieldForm(data={"email": "not-an-email"})["email"]
+
+FORM_FIELD_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Required field",
+        "context": {"field": _DEMO_FIELD, "label": "Email address"},
+    },
+    {
+        "caption": "Optional field",
+        "context": {"field": _DEMO_FIELD, "label": "Name", "optional": True},
+    },
+    {
+        "caption": "With a validation error",
+        "context": {"field": _DEMO_FIELD_WITH_ERROR, "label": "Email address"},
+    },
+)
+
+PAGE_TITLE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Default — body starts straight after",
+        "context": {"text": "Colophon", "data_testid": "colophon-heading"},
+    },
+    {
+        "caption": "Tighter — a subtitle line follows",
+        "context": {"text": "Privacy Policy", "class_extra": "mb-2"},
+    },
+    {
+        "caption": "No spacing — the wrapper owns it",
+        "context": {"text": "Verbier", "class_extra": "mb-0"},
+    },
+)
 
 EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Bulletin section heading", "context": {"text": "Day Risk Profile"}},

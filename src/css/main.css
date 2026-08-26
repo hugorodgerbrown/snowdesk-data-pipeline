@@ -1273,6 +1273,58 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    preflight reset.
    ————————————————————————————————————————— */
 
+/* —— Inline text link (SNOW-672) ——————
+   The quiet underlined link that appears beside body copy — "Manage
+   subscriptions", "Forgot your password?", a favourite's region. Eleven
+   call sites, seven distinct class strings, differing only in whether
+   someone had remembered `transition-colors` that day.
+
+   Only the invariant part lives here: the underline, its offset, and the
+   hover. Size and resting colour stay utilities at the call site, because
+   those genuinely differ — text-sm beside body copy, text-xs in a footer,
+   text-text-3 where the link is incidental. */
+.text-link {
+  text-decoration-line: underline;
+  text-underline-offset: 2px;
+  transition: color 150ms ease;
+}
+.text-link:hover {
+  color: var(--color-text-1);
+}
+
+
+/* —— Legal / reference prose (SNOW-672) ——————
+   The long static pages — terms, terms of service, privacy, colophon — are
+   34 <section> blocks and 34 headings that were, without exception, the
+   same two class strings typed out again. A CSS component rather than a
+   partial because the markup inside each section is the page's own: a
+   partial would have to take the whole body as a parameter, which is not a
+   component, it is a template with extra steps.
+
+   The values are the utilities they replace, exactly: mb-6 / text-sm /
+   leading-relaxed / text-text-2 on the section, text-base / font-semibold /
+   text-text-1 / mb-2 on the h2, and mt-4 mb-1 on the h3. Scoped to > section
+   so the page heading and any intro paragraph above them are untouched. */
+.legal-prose > section {
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+  line-height: 1.625;
+  color: var(--color-text-2);
+}
+.legal-prose > section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-1);
+  margin-bottom: 0.5rem;
+}
+.legal-prose > section h3 {
+  font-weight: 600;
+  color: var(--color-text-1);
+  margin-top: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+
 .slf-prose h1,
 .slf-prose h2 {
   font-size: 13px;

@@ -70,9 +70,8 @@ add a sub-nav: the account area is not getting one.
 {% block content %}
     <div class="px-4 py-10">
         <div class="max-w-narrow mx-auto">
-            <h1 class="text-2xl font-semibold text-text-1 mb-1">
-                {% trans "Observations" %}
-            </h1>
+            {% trans "Observations" as page_heading %}
+            {% include "includes/_page_title.html" with text=page_heading class_extra="mb-1" %}
 
             {% comment %}
                 The context strip, saying where this data goes — the same

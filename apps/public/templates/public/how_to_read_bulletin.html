@@ -14,7 +14,7 @@ apps/public/views.py.
 Each sub-section follows the pattern:
   h3 heading → short description → live example component → detailed breakdown
 {% endcomment %}
-{% load i18n %}
+{% load i18n components %}
 
 {% block page_meta %}
     {% trans "How to read a bulletin" as page_name %}
@@ -23,10 +23,9 @@ Each sub-section follows the pattern:
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="font-sans max-w-wide mx-auto px-4 py-8 flex-1">
-        <h1 class="text-2xl font-semibold tracking-tight mb-2" data-testid="guide-heading">
-            {% trans "How to read the avalanche bulletin" %}
-        </h1>
+    <main class="{% page_shell_classes %}">
+        {% trans "How to read the avalanche bulletin" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="guide-heading" %}
         <p class="text-sm text-text-3 mb-10">
             {% blocktrans trimmed %}
                 Published daily by the WSL Institute for Snow and Avalanche Research (SLF), the bulletin covers the
