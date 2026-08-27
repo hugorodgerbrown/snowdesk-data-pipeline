@@ -201,11 +201,12 @@ extend-exclude = ["docs/research", "*.md"]
 # surfaces on the same file set (SNOW-512). Add any new bin/ Python script here;
 # the other bin/ entries are shell scripts and must stay out.
 #
-# The list held two of the then-seven scripts until SNOW-740, which is how
-# bin/migrations-lint reached main carrying a C901 and an E501: pre-commit is
-# bypassable, and CI — the backstop that catches a skipped hook — was not
-# looking at the file. tests/bin/test_migrations_lint.py now discovers every
-# Python script in bin/ by shebang and fails if one is missing here.
+# The list held only two of the bin/ Python scripts until SNOW-740, which is
+# how bin/migrations-lint reached main carrying a C901 and an E501:
+# pre-commit is bypassable, and CI — the backstop that catches a skipped
+# hook — was not looking at the file. tests/bin/test_migrations_lint.py now
+# discovers every Python script in bin/ by shebang and fails if one is
+# missing here.
 extend-include = [
     "bin/docs-lint",
     "bin/ds-lint",
@@ -214,6 +215,7 @@ extend-include = [
     "bin/i18n-lint",
     "bin/js-globals-lint",
     "bin/migrations-lint",
+    "bin/render-day-summary-matrix",
 ]
 
 [tool.ruff.lint]

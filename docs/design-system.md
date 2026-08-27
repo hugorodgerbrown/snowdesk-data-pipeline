@@ -291,7 +291,7 @@ Two of its eight original tasks did not survive contact:
 
 These add Snowdesk's own layer alongside the provider content. They are no longer gated behind a phase plan — each is independently shippable, and the fidelity principle already settles the question the old plan was waiting to answer.
 
-- **Day-character label.** *Shipped.* Sits between the bulletin headline band and the first rating block, with a one-line explainer that teaches the concept. Derived by `compute_day_character` in [`apps/bulletins/services/render_model.py`](../apps/bulletins/services/render_model.py) from the cascade below, and rendered via `templates/includes/day_character_callout.html`.
+- **Day-character label and day summary.** *Shipped.* Sits between the bulletin headline band and the first rating block. The label comes from the cascade below; the one-line summary beside it is selected per bulletin from an 80-cell matrix keyed on how the day moves, what level it reaches, and whether its problems leave surface evidence — [`docs/day-summary.md`](day-summary.md). Derived by `compute_day_character` in [`apps/bulletins/services/render_model.py`](../apps/bulletins/services/render_model.py) and rendered via `templates/includes/day_character_callout.html`.
 - **Field guidance beneath each problem's provider prose.** *Shipped — SNOW-673.* Rendered at the foot of every problem card in `public/_rating_block.html`, below a rule, in a collapsible "Field notes" panel that is **closed by default**, and credited to the SLF interpretation guide rather than to Snowdesk — we're paraphrasing SLF, not authoring novel guidance. The credit reads "Source: SLF Avalanche Bulletin Interpretation Guide" and links the guide's [landing page](https://www.slf.ch/en/avalanche-bulletin-and-snow-situation/about-the-avalanche-bulletin/interpretation-guide/), not the PDF — SLF treats only the current online version as binding, so a PDF URL would pin an edition and go stale. The rule sits outside the panel so the provenance boundary is drawn whether the panel is open or shut. The panel is `includes/_collapsible_panel.html` in its `bare` form — no card chrome, since it is nested inside a card that already has some. Collapsing is a deliberate trade: a busy level-3 day grew ~31% longer with every note expanded, and the notes are reference material a reader consults rather than reads through. Absent entirely when the problem type has no entry. See "Field guidance" below.
 - **Bulletin diffing logic and change strip.** *Open.* Backend-first: produce a structured diff between consecutive bulletins for the same region using CAAML fields (not prose). Then add a quiet visual strip at the top of the page when material changes have occurred. *Absent* when nothing material has changed — the absence is part of the design.
 - **Serif-headline restyling pass.** *Open.* Whether to introduce a serif treatment for `h1`/`h2` elements (page titles, section headers, rating names). Restyling after the structure settled is safer than restyling speculatively.
@@ -323,7 +323,7 @@ Every bulletin gets one of five labels, derived from a deterministic rule cascad
 - **Widespread danger.** Dangerous conditions cover most of the typical touring envelope.
 - **Dangerous conditions.** Level 4 or 5 territory.
 
-Each label needs a one-paragraph plain-language explainer that teaches the concept. The labels become a shared vocabulary between Snowdesk and its readers over time.
+Each label carries a one-line summary beside it. That summary is **not** a fixed gloss on the label — a fixed gloss was what shipped first, and it put "Persistent or gliding-snow problems can mask the real risk" on every hard-to-read page whatever the bulletin actually said. It is now selected per bulletin from the matrix in [`docs/day-summary.md`](day-summary.md), so it names the day's own problems and says whether the danger moves. The labels become a shared vocabulary between Snowdesk and its readers over time; the summary is what makes each one specific.
 
 The cascade rules (provisional, need calibration before the label is rendered):
 
@@ -336,7 +336,7 @@ The cascade rules (provisional, need calibration before the label is rendered):
 | 4 | Danger rating 2 or 3, no earlier match | Manageable day |
 | 5 | Danger rating 1, OR rating 2 with no distinct problem | Stable day |
 
-A spring-pattern rule (e.g. "Race the sun day" for the morning-low/afternoon-considerable wet hazard pattern) is proposed but not yet in the cascade. Worth adding once the variable-day rendering is working in the replica.
+A spring-pattern rule (e.g. "Race the sun day" for the morning-low/afternoon-considerable wet hazard pattern) was proposed as a sixth **label**. The day-summary matrix now covers the pattern in copy without adding a label: a rising day is stated as deterioration with both levels named, and wet snow is the arriving problem on 254 of the archive's 312 split days. Whether the pattern also deserves its own label is open, but it is no longer unsaid.
 
 Visual treatment when added: distinct zone between the bulletin headline band and the first rating block. Must be clearly attributed to Snowdesk's interpretation rather than to SLF — perhaps a thin coloured left border, a different background tint, or a small distinctive icon. The label needs its own one-line explainer underneath that teaches the concept.
 

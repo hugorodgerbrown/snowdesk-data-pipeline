@@ -40,7 +40,6 @@ from django.core.management.base import BaseCommand
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import (
-    _DAY_CHARACTER,
     DayCharacter,
     compute_day_character,
 )
@@ -282,15 +281,12 @@ def _day_character_key(dc: DayCharacter) -> str:
     """
     Return the canonical key for a ``DayCharacter`` instance.
 
-    ``compute_day_character`` returns one of the values in
-    ``_DAY_CHARACTER`` directly, so identity comparison is safe and
-    avoids depending on the localised ``label`` proxy that varies with
-    the active gettext locale.
+    ``compute_day_character`` stamps the cascade key on every instance it
+    builds, so this reads it straight off the dataclass rather than
+    depending on the localised ``label`` proxy, which varies with the
+    active gettext locale.
     """
-    for key, value in _DAY_CHARACTER.items():
-        if value is dc:
-            return key
-    return "unknown"
+    return dc.key
 
 
 def _bool_csv(value: bool) -> str:
