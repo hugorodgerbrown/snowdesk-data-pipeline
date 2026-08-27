@@ -143,10 +143,14 @@ projects:
           #
           # locations_location is the one MIXED table: it holds a resort's
           # village/mid/peak alongside a row per saved favourite and per field
-          # report. The plan restricts it to rows a ResortLocation references,
-          # so a user's saved position is never even read. The table plan and
-          # the reason for each exclusion live in
-          # apps/core/services/production_sync.py.
+          # report. The copy restricts it to rows a ResortLocation references,
+          # so a user's saved position is never even read. The table lists and
+          # the reason for each exclusion live in the script's own header.
+          #
+          # SNOW-736 replaced the original row-by-row ORM copy with pg_dump /
+          # psql. The ORM version pushed ~230 INSERT ... ON CONFLICT statements
+          # for a single table and put the staging database into crash
+          # recovery; COPY moves the same rows in one statement per table.
           #
           # PRODUCTION_DATABASE_URL is dashboard-set (`sync: false`) and must
           # hold a READ-ONLY production role. The command never issues a write
@@ -166,8 +170,7 @@ projects:
             branch: main
             schedule: "20 7 * * *"
             buildCommand: ./bin/build_headless.sh
-            startCommand: >-
-              uv run --no-sync python manage.py sync_from_production --commit
+            startCommand: ./bin/sync-staging-data --commit
             envVars:
               - key: DJANGO_SETTINGS_MODULE
                 value: config.settings.staging

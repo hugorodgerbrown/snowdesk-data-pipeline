@@ -98,7 +98,7 @@ def postgres_dsn(value: object) -> str | None:
     configured", which is the default everywhere but the staging cron job.
 
     A bare host here would surface as an opaque driver error part-way
-    through an unattended ``sync_from_production`` run (SNOW-729), which is
+    through an unattended `bin/sync-staging-data` run (SNOW-729), which is
     the same failure mode ``absolute_url`` exists to prevent for the
     provider APIs. ``absolute_url`` itself cannot be reused: it requires an
     http(s) scheme.
@@ -217,13 +217,12 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     ),
     SettingSpec("SITE_ENVIRONMENT", note="staging | production — labels the deploy"),
     # Read on every tier but only wired to a connection by staging.py, which
-    # is what keeps `sync_from_production` unable to run from production's own
-    # settings module (SNOW-729).
+    # is where bin/sync-staging-data reads it from (SNOW-729/736).
     SettingSpec(
         "PRODUCTION_DATABASE_URL",
         validator=postgres_dsn,
         secret=True,
-        note="read-only production DSN for sync_from_production (staging only)",
+        note="read-only production DSN for bin/sync-staging-data (staging only)",
     ),
     SettingSpec("RELEASE_VERSION", note="CalVer tag of the running release"),
     # SITE_BASE_URL keeps its own dedicated check (check_site_base_url,
