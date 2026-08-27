@@ -1,0 +1,693 @@
+#!/usr/bin/env python3
+# bin/render-day-summary-matrix — render the day-summary copy grid as a page.
+#
+# The day summary beside the day-character label is chosen per bulletin
+# from an 80-cell hand-authored matrix in
+# apps/bulletins/services/day_summary.py. Eighty sentences spread across a
+# module are hard to review as *copy*: the thing a reader needs is every
+# sentence side by side, grouped by how the day moves, with some sense of
+# which ones a season actually produces.
+#
+# This renders exactly that, and it computes every figure on the page from
+# the matrix and the committed season mirrors rather than carrying them as
+# prose. A cell edited in day_summary.py and not re-rendered here shows up
+# as a stale page, not as a page that quietly disagrees with the site.
+#
+# The output is a self-contained HTML fragment — no <!doctype>, <html>,
+# <head> or <body> of its own — the same convention as docs/page-audits/
+# and docs/research/problem-card-redundancy/, so it publishes as an
+# Artifact and still renders opened straight from disk.
+#
+# Reads only. Prints to stdout unless --output names a file.
+#
+#     uv run python bin/render-day-summary-matrix \
+#         --output docs/research/day-summary-matrix/$(date +%F).html
+#
+# ruff: noqa: T201, E501
+# T201 — CLI script; print() is the intended output channel.
+# E501 — most of this file is an embedded HTML document. Rewrapping its
+#        markup and CSS to 88 columns to satisfy a Python line-length rule
+#        would damage the output for no reader's benefit, which is the same
+#        reasoning behind pyproject's `extend-exclude = ["docs/research"]`.
+#        The Python itself stays inside the limit.
+
+"""Day-summary matrix renderer — see the header block above for full behaviour."""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import datetime as dt
+import html
+import json
+import logging
+import os
+import pathlib
+import sys
+from typing import Any
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
+
+import django  # noqa: E402 — must follow the settings-module assignment above
+
+django.setup()
+
+logging.disable(logging.WARNING)
+
+from apps.bulletins.services import day_summary  # noqa: E402 — needs django.setup()
+from apps.bulletins.services.render_model import (  # noqa: E402 — same
+    RenderModelBuildError,
+    build_render_model,
+    compute_period_transition,
+    problem_types_for,
+)
+
+MIRRORS = pathlib.Path("apps/bulletins/local_mirrors")
+
+MOVEMENTS: tuple[str, ...] = ("static", "rising", "shifting", "easing")
+LEVELS: tuple[int, ...] = (1, 2, 3, 4, 5)
+READABILITIES: tuple[str, ...] = ("quiet", "readable", "hidden", "mixed")
+
+LEVEL_NAMES: dict[int, str] = {
+    1: "Low",
+    2: "Moderate",
+    3: "Considerable",
+    4: "High",
+    5: "Very high",
+}
+MOVEMENT_GLOSS: dict[str, str] = {
+    "static": "The level holds all day, and nothing under it moves.",
+    "rising": "The level climbs into the afternoon.",
+    "shifting": "The level holds; a different problem takes the later window.",
+    "easing": "The level falls — and the problem swaps rather than clears.",
+}
+# Illustrative inputs for a cell the archive has never produced, so an
+# unseen cell still renders its sentence rather than a placeholder.
+SPECIMENS: dict[str, list[str]] = {
+    "quiet": [],
+    "readable": ["wind_slab"],
+    "hidden": ["persistent_weak_layers"],
+    "mixed": ["wind_slab", "persistent_weak_layers"],
+}
+
+
+def _classify(render_model: dict[str, Any]) -> tuple[str, int, str, int, list[str]]:
+    """
+    Return one bulletin's grid coordinates and the inputs behind them.
+
+    Args:
+        render_model: A render model dict from ``build_render_model``.
+
+    Returns:
+        ``(movement, level, readability, source_level, problem_types)``.
+
+    """
+    traits: list[dict[str, Any]] = render_model.get("traits") or []
+    transition = compute_period_transition(render_model)
+    earlier = set(problem_types_for(traits, {"all_day", "earlier"}))
+    later = set(problem_types_for(traits, {"later"}))
+    movement = day_summary.classify_movement(
+        transition.direction if transition is not None and transition.has_split else "",
+        earlier,
+        later,
+    )
+    peak = int((render_model.get("danger") or {}).get("number") or 1)
+    if movement == "static" or transition is None:
+        level = source = peak
+    else:
+        level = int(transition.destination_number)
+        source = int(transition.source_number or transition.destination_number)
+    types = problem_types_for(traits, {"all_day", "earlier", "later"})
+    return movement, level, day_summary.classify_readability(set(types)), source, types
+
+
+def _window_signature(
+    render_model: dict[str, Any], periods: set[str]
+) -> set[tuple[Any, ...]]:
+    """
+    Return a per-problem signature for one window: type, aspects, elevation.
+
+    Used to tell a flat split whose problems genuinely move from one whose
+    two windows are identical.
+
+    Args:
+        render_model: A render model dict.
+        periods: ``validTimePeriod`` values to include.
+
+    Returns:
+        A set of ``(problem_type, aspects, lower, upper)`` tuples.
+
+    """
+    signature: set[tuple[Any, ...]] = set()
+    for trait in render_model.get("traits") or []:
+        if trait.get("time_period") not in periods:
+            continue
+        for problem in trait.get("problems") or []:
+            elevation = problem.get("elevation") or {}
+            signature.add(
+                (
+                    problem.get("problem_type"),
+                    tuple(sorted(problem.get("aspects") or [])),
+                    elevation.get("lower"),
+                    elevation.get("upper"),
+                )
+            )
+    return signature
+
+
+def _flat_split_kind(
+    render_model: dict[str, Any], earlier: set[str], later: set[str]
+) -> str:
+    """
+    Say what actually differs across a split whose danger level does not move.
+
+    Args:
+        render_model: A render model dict.
+        earlier: Problem types named for the earlier window.
+        later: Problem types named for the later window.
+
+    Returns:
+        ``"new problem type"``, ``"same types, new ground"``, or
+        ``"identical windows"``.
+
+    """
+    if later - earlier:
+        return "new problem type"
+    early = _window_signature(render_model, {"all_day", "earlier"})
+    if early != _window_signature(render_model, {"later"}):
+        return "same types, new ground"
+    return "identical windows"
+
+
+def census() -> dict[str, Any]:
+    """
+    Walk the committed season mirrors and count what the matrix has to cover.
+
+    Returns:
+        A dict of per-cell counts, representative inputs, movement totals,
+        and the three narrative figures the page reports.
+
+    """
+    counts: collections.Counter[tuple[str, int, str]] = collections.Counter()
+    specimens: dict[tuple[str, int, str], collections.Counter[Any]] = (
+        collections.defaultdict(collections.Counter)
+    )
+    movements: collections.Counter[str] = collections.Counter()
+    flat_splits: collections.Counter[str] = collections.Counter()
+    splits = wet_arrivals = total = 0
+
+    for path in sorted(MIRRORS.glob("*.ndjson")):
+        for line in path.open():
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            properties = (
+                record.get("properties") if record.get("type") == "Feature" else record
+            )
+            try:
+                render_model = build_render_model(properties or record)
+            except RenderModelBuildError:
+                continue
+            total += 1
+
+            movement, level, readability, source, types = _classify(render_model)
+            counts[(movement, level, readability)] += 1
+            specimens[(movement, level, readability)][(tuple(types), source)] += 1
+            movements[movement] += 1
+
+            transition = compute_period_transition(render_model)
+            if transition is None or not transition.has_split:
+                continue
+            splits += 1
+            traits = render_model.get("traits") or []
+            earlier = set(problem_types_for(traits, {"all_day", "earlier"}))
+            later = set(problem_types_for(traits, {"later"}))
+            if "wet_snow" in (later - earlier):
+                wet_arrivals += 1
+            if transition.direction == "none":
+                flat_splits[_flat_split_kind(render_model, earlier, later)] += 1
+
+    return {
+        "counts": counts,
+        "specimens": specimens,
+        "movements": movements,
+        "flat_splits": flat_splits,
+        "splits": splits,
+        "wet_arrivals": wet_arrivals,
+        "total": total,
+    }
+
+
+def _rows(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Build one row per matrix cell, with its copy and its archive frequency.
+
+    Args:
+        data: The dict returned by :func:`census`.
+
+    Returns:
+        A list of row dicts in movement / level / readability order.
+
+    """
+    rows: list[dict[str, Any]] = []
+    for movement in MOVEMENTS:
+        for level in LEVELS:
+            for readability in READABILITIES:
+                key = (movement, level, readability)
+                seen = data["specimens"][key]
+                if seen:
+                    (types, source), _ = seen.most_common(1)[0]
+                    problems, from_archive = list(types), True
+                else:
+                    problems, from_archive, source = (
+                        SPECIMENS[readability],
+                        False,
+                        level,
+                    )
+                row: dict[str, Any] = {
+                    "movement": movement,
+                    "level": level,
+                    "readability": readability,
+                    "count": data["counts"][key],
+                    "problems": problems,
+                    "from_archive": from_archive,
+                    "text": day_summary.summary_for(
+                        movement, level, problems, from_level=source
+                    ),
+                }
+                if movement in {"rising", "easing"}:
+                    # Both openings: the digit moving, and the subdivision-only
+                    # move where it does not.
+                    crossing = (
+                        max(1, level - 1) if movement == "rising" else min(5, level + 1)
+                    )
+                    row["text"] = day_summary.summary_for(
+                        movement, level, problems, from_level=crossing
+                    )
+                    row["same_band"] = day_summary.summary_for(
+                        movement, level, problems, from_level=level
+                    )
+                rows.append(row)
+    return rows
+
+
+HEAD = """<title>Day Summary Matrix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground: #f4f6f8;
+  --card: #ffffff;
+  --ink-1: #16202b;
+  --ink-2: #47586a;
+  --ink-3: #7a8a99;
+  --rule: #dde3e9;
+  --rule-soft: #e9edf1;
+  --accent: #1f4e79;
+  --accent-soft: #e7eef5;
+  --l1: #8fbf3f; --l2: #e8d000; --l3: #ef8a00; --l4: #d92b1c; --l5: #1a1916;
+  --shadow: 0 1px 2px rgba(22,32,43,.05), 0 6px 18px -12px rgba(22,32,43,.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0f1620;
+    --card: #17212d;
+    --ink-1: #e7edf3;
+    --ink-2: #a2b2c1;
+    --ink-3: #6d7f90;
+    --rule: #26333f;
+    --rule-soft: #1f2b36;
+    --accent: #7db4e6;
+    --accent-soft: #1b2c3d;
+    --l1: #a5d152; --l2: #e8d84a; --l3: #f59b2c; --l4: #ef5344; --l5: #cbd4dc;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f1620;
+  --card: #17212d;
+  --ink-1: #e7edf3;
+  --ink-2: #a2b2c1;
+  --ink-3: #6d7f90;
+  --rule: #26333f;
+  --rule-soft: #1f2b36;
+  --accent: #7db4e6;
+  --accent-soft: #1b2c3d;
+  --l1: #a5d152; --l2: #e8d84a; --l3: #f59b2c; --l4: #ef5344; --l5: #cbd4dc;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px -14px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  color: var(--ink-1);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  margin: 0;
+  padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1rem, 4vw, 2.5rem) 5rem;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 78rem; margin: 0 auto; display: flex; flex-direction: column; gap: 3rem; }
+
+/* ── masthead ─────────────────────────────────────────── */
+.masthead { display: flex; flex-direction: column; gap: 1.25rem; }
+.eyebrow {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0;
+}
+h1 {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3rem); font-weight: 600; line-height: 1.08;
+  letter-spacing: -.015em; margin: 0; text-wrap: balance;
+}
+.standfirst {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1.15rem; color: var(--ink-2); max-width: 44rem; margin: 0;
+}
+
+/* ── summary strip ────────────────────────────────────── */
+.summary {
+  display: grid; gap: 1px; background: var(--rule);
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  border: 1px solid var(--rule); border-radius: 10px; overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.summary div { background: var(--card); padding: 1rem 1.15rem; }
+.summary dt {
+  font-family: "IBM Plex Mono", monospace; font-size: .68rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+}
+.summary dd {
+  margin: .25rem 0 0; font-size: 1.6rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.summary dd small { font-size: .8rem; font-weight: 400; color: var(--ink-3); }
+
+/* ── findings ─────────────────────────────────────────── */
+.findings { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+.finding {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 1.1rem 1.25rem; box-shadow: var(--shadow);
+}
+.finding h3 {
+  margin: 0 0 .4rem; font-size: .95rem; font-weight: 600;
+  font-family: "Source Serif 4", Georgia, serif;
+}
+.finding p { margin: 0; font-size: .875rem; color: var(--ink-2); }
+
+/* ── movement sections ────────────────────────────────── */
+.movement { display: flex; flex-direction: column; gap: 1.25rem; }
+.mv-head {
+  display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-end;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--ink-1); padding-bottom: .75rem;
+}
+.mv-head h2 {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1.75rem; font-weight: 600; margin: 0; letter-spacing: -.01em;
+}
+.gloss { margin: .2rem 0 0; color: var(--ink-2); font-size: .9rem; }
+.mv-stats { display: flex; gap: 1.75rem; margin: 0; }
+.mv-stats dt {
+  font-family: "IBM Plex Mono", monospace; font-size: .64rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+}
+.mv-stats dd {
+  margin: .1rem 0 0; font-size: 1.05rem; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mv-stats .of { color: var(--ink-3); font-weight: 400; }
+
+.grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); }
+.cell {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+  padding: .85rem .95rem; display: flex; flex-direction: column; gap: .5rem;
+}
+.cell.unseen { background: transparent; border-style: dashed; opacity: .62; }
+.meta { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.lvl {
+  display: inline-flex; align-items: center; gap: .38rem;
+  font-family: "IBM Plex Mono", monospace; font-size: .7rem; font-weight: 500;
+  letter-spacing: .04em; color: var(--ink-2);
+}
+.lvl i { width: .55rem; height: .55rem; border-radius: 2px; display: block; }
+.l1 i { background: var(--l1); } .l2 i { background: var(--l2); }
+.l3 i { background: var(--l3); } .l4 i { background: var(--l4); }
+.l5 i { background: var(--l5); }
+.rd {
+  font-size: .66rem; letter-spacing: .07em; text-transform: uppercase;
+  font-weight: 600; padding: .12rem .42rem; border-radius: 3px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.n {
+  margin-left: auto; font-family: "IBM Plex Mono", monospace;
+  font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--ink-1);
+  font-weight: 500;
+}
+.n.zero { color: var(--ink-3); font-weight: 400; font-style: italic; }
+.copy {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1rem; line-height: 1.45; margin: 0; color: var(--ink-1);
+}
+.copy.alt { padding-top: .5rem; border-top: 1px dashed var(--rule); color: var(--ink-2); }
+.altmark {
+  display: block; font-family: "IBM Plex Mono", monospace; font-size: .62rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+  margin-bottom: .2rem;
+}
+.src {
+  margin: 0; font-family: "IBM Plex Mono", monospace; font-size: .68rem;
+  color: var(--ink-3); letter-spacing: .01em;
+}
+
+/* ── rules ────────────────────────────────────────────── */
+.rules { background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 1.5rem 1.75rem; box-shadow: var(--shadow); }
+.rules h2 { font-family: "Source Serif 4", Georgia, serif; font-size: 1.3rem;
+  margin: 0 0 .85rem; font-weight: 600; }
+.rules ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .5rem; }
+.rules li { font-size: .9rem; color: var(--ink-2); }
+.rules strong { color: var(--ink-1); font-weight: 600; }
+code { font-family: "IBM Plex Mono", monospace; font-size: .85em;
+  background: var(--accent-soft); color: var(--accent); padding: .05em .3em; border-radius: 3px; }
+footer { color: var(--ink-3); font-size: .8rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+</style>
+"""
+
+
+def _cell(row: dict[str, Any]) -> str:
+    """
+    Render one matrix cell.
+
+    Args:
+        row: A row dict from :func:`_rows`.
+
+    Returns:
+        An HTML ``<article>`` fragment.
+
+    """
+    seen = row["count"] > 0
+    problems = (
+        ", ".join(
+            str(day_summary.PROBLEM_PHRASES[p])
+            for p in row["problems"]
+            if p in day_summary.PROBLEM_PHRASES
+        )
+        or "—"
+    )
+    frequency = (
+        f'<span class="n">{row["count"]:,}</span>'
+        if seen
+        else '<span class="n zero">not seen</span>'
+    )
+    alternate = ""
+    if row.get("same_band"):
+        alternate = (
+            '<p class="copy alt"><span class="altmark">same band</span>'
+            f"{html.escape(row['same_band'])}</p>"
+        )
+    return f"""<article class="cell{"" if seen else " unseen"}">
+ <div class="meta">
+  <span class="lvl l{row["level"]}"><i></i>{row["level"]} {LEVEL_NAMES[row["level"]]}</span>
+  <span class="rd">{row["readability"].title()}</span>
+  {frequency}
+ </div>
+ <p class="copy">{html.escape(row["text"])}</p>
+ {alternate}
+ <p class="src">{html.escape(problems)}{"" if row["from_archive"] else " · illustrative"}</p>
+</article>"""
+
+
+def _section(movement: str, rows: list[dict[str, Any]], data: dict[str, Any]) -> str:
+    """
+    Render one movement's heading, statistics and cell grid.
+
+    Args:
+        movement: The movement key.
+        rows: Every row for that movement.
+        data: The dict returned by :func:`census`.
+
+    Returns:
+        An HTML ``<section>`` fragment.
+
+    """
+    total = data["movements"][movement]
+    share = 100 * total / data["total"] if data["total"] else 0
+    in_use = sum(1 for r in rows if r["count"])
+    cells = "".join(_cell(r) for r in rows)
+    return f"""<section class="movement" id="{movement}">
+ <header class="mv-head">
+  <div>
+   <h2>{movement.title()}</h2>
+   <p class="gloss">{html.escape(MOVEMENT_GLOSS[movement])}</p>
+  </div>
+  <dl class="mv-stats">
+   <div><dt>Bulletins</dt><dd>{total:,}</dd></div>
+   <div><dt>Share</dt><dd>{share:.1f}%</dd></div>
+   <div><dt>Cells in use</dt><dd>{in_use}<span class="of">/20</span></dd></div>
+  </dl>
+ </header>
+ <div class="grid">{cells}</div>
+</section>"""
+
+
+def render(data: dict[str, Any], stamp: dt.date) -> str:
+    """
+    Render the whole page.
+
+    Every figure is computed from *data* rather than carried as prose, so a
+    re-render after a copy edit cannot leave a stale number behind.
+
+    Args:
+        data: The dict returned by :func:`census`.
+        stamp: The date the census was taken.
+
+    Returns:
+        The complete self-contained HTML fragment.
+
+    """
+    rows = _rows(data)
+    seen = sum(1 for r in rows if r["count"])
+    static_share = 100 * data["movements"]["static"] / data["total"]
+    flat = data["flat_splits"]
+    unchanged = flat["same types, new ground"] + flat["identical windows"]
+    sections = "".join(
+        _section(m, [r for r in rows if r["movement"] == m], data) for m in MOVEMENTS
+    )
+    return f"""{HEAD}
+
+<div class="wrap">
+ <header class="masthead">
+  <p class="eyebrow">Snowdesk · bulletin copy review · {stamp:%-d %B %Y}</p>
+  <h1>The day summary, one sentence at a time</h1>
+  <p class="standfirst">{len(rows)} hand-authored sentences replacing five fixed ones. Each is
+   chosen by how the day&rsquo;s danger moves, the level it reaches, and whether its problems
+   leave anything on the surface to read. Counts are the {data["total"]:,} committed season
+   mirrors.</p>
+ </header>
+
+ <dl class="summary">
+  <div><dt>Cells authored</dt><dd>{len(rows)}</dd></div>
+  <div><dt>Seen in archive</dt><dd>{seen}<small> / {len(rows)}</small></dd></div>
+  <div><dt>Days that never change</dt><dd>{static_share:.1f}<small>%</small></dd></div>
+  <div><dt>Split days improving</dt><dd>0</dd></div>
+ </dl>
+
+ <div class="findings">
+  <div class="finding">
+   <h3>A split day is the sun getting to work</h3>
+   <p>Wet snow is the arriving problem on {data["wet_arrivals"]} of the {data["splits"]} days
+      that split. Nothing else comes close.</p>
+  </div>
+  <div class="finding">
+   <h3>Nothing ever improves</h3>
+   <p>All {data["movements"]["easing"]} falling days replace a dry problem with wet snow. The
+      number drops while the hazard swaps, so no sentence offers the afternoon as the safer
+      half.</p>
+  </div>
+  <div class="finding">
+   <h3>{unchanged} flat splits are not splits</h3>
+   <p>Of the {sum(flat.values())} days whose level holds across a split,
+      {flat["same types, new ground"]} keep the same problems on new ground and
+      {flat["identical windows"]} carry two identical windows. Those read as static rather
+      than promising a change.</p>
+  </div>
+ </div>
+
+ {sections}
+
+ <div class="rules">
+  <h2>Rules for editing a cell</h2>
+  <ul>
+   <li><strong>One sentence, ending in a full stop.</strong> Tests assert both.</li>
+   <li><strong>Never govern a verb from <code>%(problems)s</code>.</strong> It holds one name or
+       four, so &ldquo;wind slab <em>is</em> named&rdquo; breaks on the second. Use a noun
+       phrase: &ldquo;with %(problems)s at the surface&rdquo;.</li>
+   <li><strong>A cell may use <code>%(problems)s</code> and <code>%(transition)s</code>, nothing
+       else.</strong> The level words belong to the transition clause.</li>
+   <li><strong>Quiet cells must not name problems; every other cell must.</strong> Both
+       directions are tested.</li>
+   <li><strong>No two cells share a sentence</strong> — a duplicate means one combination was
+       written twice and another missed.</li>
+   <li><strong>Don&rsquo;t claim an arrival.</strong> &ldquo;with wind slab arriving&rdquo; is
+       false when wind slab ran all morning. Say what is in play; let the movement carry the
+       direction.</li>
+  </ul>
+ </div>
+
+ <footer>
+  Sentences from <code>apps/bulletins/services/day_summary.py</code>; contract in
+  <code>docs/day-summary.md</code>. Counts replay <code>build_render_model</code> and
+  <code>compute_period_transition</code> over <code>apps/bulletins/local_mirrors/*.ndjson</code>.
+  Regenerate with <code>bin/render-day-summary-matrix</code> after any copy edit. Cells marked
+  <em>not seen</em> are authored but have never fired; their example problems are illustrative.
+  Rising and easing cells render two openings — the second fires when the day moves on
+  subdivision alone and the digit does not change. Level colours follow the EAWS danger scale.
+ </footer>
+</div>
+"""
+
+
+def main() -> int:
+    """
+    Parse arguments, run the census, and emit the page.
+
+    Returns:
+        Process exit code.
+
+    """
+    parser = argparse.ArgumentParser(description="Render the day-summary copy grid.")
+    parser.add_argument(
+        "--output",
+        type=pathlib.Path,
+        help="write the page here instead of stdout",
+    )
+    parser.add_argument(
+        "--date",
+        type=dt.date.fromisoformat,
+        default=dt.date.today(),
+        help="census date stamped on the page (default: today)",
+    )
+    args = parser.parse_args()
+
+    if not MIRRORS.exists():
+        print(f"{MIRRORS} not found — run from the repo root.", file=sys.stderr)
+        return 1
+
+    # Strip trailing whitespace per line: a suppressed optional block leaves
+    # an indent-only line, which the pre-commit hook would rewrite on every
+    # commit — the file would churn against its own generator forever.
+    page = "\n".join(line.rstrip() for line in render(census(), args.date).split("\n"))
+    if args.output is None:
+        print(page)
+    else:
+        args.output.write_text(page)
+        print(f"Wrote {args.output} ({len(page):,} bytes)", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -157,7 +157,16 @@ fired is exactly the one nobody will notice rendering badly.
   and let `movement` carry the direction.
 
 Bump `DAY_SUMMARY_VERSION` when a cell's copy or the classification
-changes.
+changes, and **re-render the review page** so it does not go stale:
+
+```bash
+uv run python bin/render-day-summary-matrix --output docs/research/day-summary-matrix/$(date +%F).html
+```
+
+That page sets all 80 sentences side by side with their archive frequency —
+the only way to see whether a cell reads as English next to its neighbours.
+Every figure on it is computed, so it cannot silently disagree with the
+matrix. See [`docs/research/day-summary-matrix/`](research/day-summary-matrix/).
 
 ## Related
 
