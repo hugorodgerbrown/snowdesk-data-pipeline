@@ -107,6 +107,36 @@ def _dependencies(path: Path) -> list[tuple[str, str]]:
     return []
 
 
+def _duplicate_numbers(app: str, files: list[Path]) -> list[Violation]:
+    """Report every migration number carried by more than one file."""
+    by_number: dict[str, list[str]] = defaultdict(list)
+    for path in files:
+        match = NUMBER_RE.match(path.stem)
+        if match:
+            by_number[match.group(1)].append(path.stem)
+
+    return [
+        Violation(
+            app,
+            f"duplicate migration number {number}: {', '.join(sorted(names))} "
+            f"— two branches numbered off the same parent; renumber the "
+            f"later one and re-point its `dependencies`",
+        )
+        for number, names in sorted(by_number.items())
+        if len(names) > 1
+    ]
+
+
+def _leaf_migrations(app: str, files: list[Path]) -> list[str]:
+    """Return the app's leaf migrations — those nothing else depends on."""
+    depended_on: set[str] = set()
+    for path in files:
+        for dep_app, dep_name in _dependencies(path):
+            if dep_app == app:
+                depended_on.add(dep_name)
+    return sorted({path.stem for path in files} - depended_on)
+
+
 def _check_app(app_dir: Path) -> tuple[list[Violation], str | None]:
     """Check one app; return its violations and its sole leaf (if exactly one)."""
     app = app_dir.name
@@ -114,31 +144,8 @@ def _check_app(app_dir: Path) -> tuple[list[Violation], str | None]:
     if not files:
         return [], None
 
-    violations: list[Violation] = []
-
-    by_number: dict[str, list[str]] = defaultdict(list)
-    for path in files:
-        match = NUMBER_RE.match(path.stem)
-        if match:
-            by_number[match.group(1)].append(path.stem)
-    for number, names in sorted(by_number.items()):
-        if len(names) > 1:
-            violations.append(
-                Violation(
-                    app,
-                    f"duplicate migration number {number}: {', '.join(sorted(names))} "
-                    f"— two branches numbered off the same parent; renumber the "
-                    f"later one and re-point its `dependencies`",
-                )
-            )
-
-    names = {path.stem for path in files}
-    depended_on: set[str] = set()
-    for path in files:
-        for dep_app, dep_name in _dependencies(path):
-            if dep_app == app:
-                depended_on.add(dep_name)
-    leaves = sorted(names - depended_on)
+    violations = _duplicate_numbers(app, files)
+    leaves = _leaf_migrations(app, files)
 
     if len(leaves) > 1:
         violations.append(
@@ -180,7 +187,10 @@ def main() -> int:
 
     for v in violations:
         print(f"apps/{v.app}/migrations: {v.message}")
-    print(f"\nScanned {len(leaves)} app(s) with migrations | {len(violations)} violation(s)")
+    print(
+        f"\nScanned {len(leaves)} app(s) with migrations "
+        f"| {len(violations)} violation(s)"
+    )
     return 1 if violations else 0
 
 
