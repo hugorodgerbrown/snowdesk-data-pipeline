@@ -154,8 +154,16 @@ worth a ticket, not worth blocking the sync on.
 **The last line is not optional.** `GRANT SELECT ON ALL TABLES` applies only
 to the tables that exist at the moment it runs. Without the default-privileges
 grant, the first migration that adds a table leaves that table unreadable to
-`staging_sync`, and `pg_dump` fails the run with a permission error naming
-it.
+`staging_sync` and the run fails with a permission error naming it.
+
+**No sequence grant is needed.** An earlier version of this script used
+`pg_dump --data-only`, which also reads each table's owned sequence to emit a
+`setval` and therefore needs `SELECT` on sequences too — it fails with
+`failed to get data for sequence "…_id_seq"; user may lack SELECT privilege
+on the sequence`. The script now reads through `\copy (SELECT …)`, which needs
+nothing beyond the table privilege above, so the role stays as narrow as it
+looks. It also no longer matters whether the client's `pg_dump` is at least as
+new as the server.
 
 If the production plan offers a read replica, point the role at the replica
 instead of the primary so a full load never competes with live traffic.
@@ -215,12 +223,8 @@ It verifies the region primary keys match, prints a production-vs-staging
 row count per table, and stops. Confirm the production counts look like a
 live database and that `regions_microregion verified identical` appears.
 
-Check the client tools are present and new enough while you are there —
-`pg_dump` refuses to read a server newer than itself:
-
-```bash
-pg_dump --version && psql -At -c 'SHOW server_version;' "$DATABASE_URL"
-```
+Only `psql` is needed — there is no `pg_dump` step, so the client/server
+version relationship does not matter.
 
 ### 4. Load
 
@@ -289,6 +293,7 @@ Confirm afterwards, and not only that it exited 0:
 | `favourites` / `observations` / shares | empty |
 | `auth_user` | untouched |
 | Second consecutive run | exit 0, counts unchanged |
+| Run as a role with **only** table `SELECT` | succeeds — no sequence privilege |
 
 The region-attribution check is the one to keep. Every other failure mode is
 loud; mis-attributed regions are silent, and the counts all still match.
@@ -337,17 +342,6 @@ The only ways past that are truncating `regions_microregion` too, or
 and most of the database behind it. `DELETE` checks real rows instead, so
 releasing that one nullable column and deleting children before parents is
 enough, and a missed table still fails loudly rather than silently.
-
-### `pg_dump: server version mismatch`
-
-`pg_dump` refuses to read a server newer than itself. Check both:
-
-```bash
-pg_dump --version && psql -At -c 'SHOW server_version;' "$PRODUCTION_DATABASE_URL"
-```
-
-The client comes from the Render image, so the fix is an image or plan
-change rather than anything in this repo.
 
 ### `DATABASE_URL and PRODUCTION_DATABASE_URL point at the same database`
 

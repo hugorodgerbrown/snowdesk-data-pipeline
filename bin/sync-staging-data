@@ -191,18 +191,28 @@ for (( i = ${#LOAD_ORDER[@]} - 1; i >= 0; i-- )); do
 done
 
 # --- Load --------------------------------------------------------------------
+# \copy, not pg_dump. pg_dump --data-only also reads each table's owned
+# sequence to emit a setval, so it needs SELECT on sequences as well as on
+# tables and dies with
+#
+#   failed to get data for sequence "…_id_seq"; user may lack SELECT
+#   privilege on the sequence
+#
+# against a role granted only SELECT on tables. \copy needs nothing beyond
+# the table privilege the read-only role already has, drops the dependency on
+# the client's version being >= the server's, and this script sets the
+# sequences itself below — so pg_dump's setval was redundant anyway.
 for table in "${LOAD_ORDER[@]}"; do
     echo "Loading ${table}..."
     if [[ "$table" == "locations_location" ]]; then
-        psql "$PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 \
-            -c "\copy ($LOCATION_FILTER) TO STDOUT" |
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q \
-                -c "\copy locations_location FROM STDIN"
+        source_query="$LOCATION_FILTER"
     else
-        pg_dump "$PRODUCTION_DATABASE_URL" \
-            --data-only --no-owner --no-privileges --table="${table}" |
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q
+        source_query="SELECT * FROM ${table}"
     fi
+    psql "$PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -q \
+        -c "\copy (${source_query}) TO STDOUT" |
+        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q \
+            -c "\copy ${table} FROM STDIN"
 done
 
 # --- Reset sequences ---------------------------------------------------------
