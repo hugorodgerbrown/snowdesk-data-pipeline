@@ -46,10 +46,32 @@ ALLOWED_HOSTS = config("ALLOWED_HOSTS").split(",")
 
 import dj_database_url  # noqa: E402 — optional dep, add to requirements if needed
 
+# CONN_HEALTH_CHECKS (SNOW-733) is load-bearing alongside CONN_MAX_AGE, not
+# decoration. Persistent connections are reused for up to ten minutes without
+# Django checking they are still open, so when Postgres closes one out of band
+# — a restart, a failover, an idle timeout, a pooler recycling it — the next
+# query dies on the dead socket *mid-flight* rather than at connect time:
+#
+#     OperationalError: consuming input failed: SSL error: unexpected eof
+#
+# Django then discards the broken connection, so the request after it
+# succeeds and the whole thing reads as an unexplained one-off. Production
+# /healthz returned 503 exactly this way on 2026-08-27. The health check ping
+# turns that into a transparent reconnect, at the cost of one cheap round trip
+# on a request that reuses a pooled connection.
+#
+# This covers staging too. staging.py does `from .production import *` and
+# never overrides DATABASES["default"], so it inherits this connection
+# config verbatim — its own conn_max_age=0 applies to the separate read-only
+# `production` alias it registers for sync_from_production, not to `default`.
+# Easy to misread, and the reason the guard in
+# tests/config/test_database_settings.py asserts the pairing across every
+# deployed overlay rather than trusting per-module inspection.
 DATABASES = {
     "default": dj_database_url.config(
         default=config("DATABASE_URL"),
         conn_max_age=600,
+        conn_health_checks=True,
         ssl_require=True,
     )
 }
