@@ -49,6 +49,7 @@ from apps.core.services.production_sync import (
     fetch_all,
     shared_fields,
     sync_table,
+    with_reconnect,
 )
 from apps.locations.models import Location, ResortLocation
 from tests.factories import (
@@ -350,6 +351,7 @@ def test_fetch_all_reconnects_after_a_dropped_connection(
 
     monkeypatch.setattr(connections["default"], "cursor", flaky_cursor)
     monkeypatch.setattr(connections["default"], "close", lambda: closed.append(True))
+    monkeypatch.setattr(production_sync.time, "sleep", lambda _: None)
 
     rows = fetch_all("default", "SELECT 1")
 
@@ -359,7 +361,33 @@ def test_fetch_all_reconnects_after_a_dropped_connection(
 
 
 @pytest.mark.django_db
-def test_fetch_all_gives_up_after_the_attempt_limit(
+def test_retries_wait_between_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each retry backs off, and by the configured amounts.
+
+    The first version of this retried three times inside 0.7s against a
+    server reporting "the database system is in recovery mode" — Postgres
+    replaying WAL, which takes tens of seconds. Three instant retries were
+    three guaranteed failures, so the waits are the fix, not the retry count.
+    """
+    slept: list[float] = []
+    monkeypatch.setattr(production_sync.time, "sleep", slept.append)
+    monkeypatch.setattr(connections["default"], "close", lambda: None)
+
+    calls: list[int] = []
+
+    def fails_twice() -> str:
+        calls.append(1)
+        if len(calls) < 3:
+            raise OperationalError("the database system is in recovery mode")
+        return "done"
+
+    assert with_reconnect("default", "write", fails_twice) == "done"
+    assert slept == list(production_sync.RETRY_BACKOFF_SECONDS[:2])
+    assert all(wait > 0 for wait in slept), "retried with no wait at all"
+
+
+@pytest.mark.django_db
+def test_gives_up_after_the_attempt_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A genuinely unreachable database fails loudly instead of looping.
@@ -375,8 +403,9 @@ def test_fetch_all_gives_up_after_the_attempt_limit(
 
     monkeypatch.setattr(connections["default"], "cursor", always_dead)
     monkeypatch.setattr(connections["default"], "close", lambda: None)
+    monkeypatch.setattr(production_sync.time, "sleep", lambda _: None)
 
-    with pytest.raises(ProductionSyncError, match="Lost the 'default' connection"):
+    with pytest.raises(ProductionSyncError, match="Lost the 'default' read"):
         fetch_all("default", "SELECT 1")
 
     assert len(attempts) == CONNECTION_ATTEMPTS

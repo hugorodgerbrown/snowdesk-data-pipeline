@@ -58,15 +58,18 @@ around :func:`sync_table`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from django.apps import apps
 from django.db import OperationalError, connections, models
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 # The alias ``config/settings/staging.py`` registers for the production
 # database. That overlay defines it and nothing else does, so the sync
@@ -85,14 +88,22 @@ WRITE_BATCH_SIZE = 500
 # Sentinel start for keyset pagination — above any BigAutoField value.
 _MAX_BIGINT = 2**63 - 1
 
-# How many times to re-run a query whose connection died under it.
+# Waits between reconnection attempts, in seconds — one per retry.
 #
-# A managed Postgres closes connections that sit idle, and this job gives it
-# every reason to: the run is minutes long, and each side is idle while the
-# other works. Losing a connection mid-copy is therefore an ordinary
-# operating condition here, not an exceptional one, and the sync has to ride
-# it out rather than abort a 60,000-row table (SNOW-734).
-CONNECTION_ATTEMPTS = 3
+# Deliberately long. The first version of this retried three times inside
+# 0.7 seconds against a server reporting "the database system is in recovery
+# mode", which is Postgres replaying WAL after an unclean shutdown and takes
+# tens of seconds. Three instant retries were three guaranteed failures
+# (SNOW-734).
+#
+# Losing a connection mid-copy is an ordinary operating condition for this
+# job — the run is minutes long and each side sits idle while the other
+# works — so the sync rides it out rather than abandoning a 60,000-row
+# table. What it must not do is hammer a database that is trying to recover.
+RETRY_BACKOFF_SECONDS: tuple[float, ...] = (5.0, 20.0, 60.0)
+
+# One initial try plus one per backoff interval.
+CONNECTION_ATTEMPTS = len(RETRY_BACKOFF_SECONDS) + 1
 
 
 class ProductionSyncError(Exception):
@@ -466,6 +477,58 @@ def _dsn_identity(alias: str) -> tuple[str, str, str]:
 # ---------------------------------------------------------------------------
 
 
+def with_reconnect(alias: str, what: str, operation: Callable[[], _T]) -> _T:
+    """Run ``operation``, reconnecting and retrying if the connection dies.
+
+    Backs off between attempts per :data:`RETRY_BACKOFF_SECONDS`. The waits
+    are the point: a database in recovery is unreachable for tens of
+    seconds, so retrying immediately just spends the attempts.
+
+    Callers must be idempotent, because a retry re-runs the whole
+    operation. Both callers here are: reads are self-contained selects under
+    keyset pagination, and writes are natural-key upserts.
+
+    Args:
+        alias: The database alias to close before retrying.
+        what: Short label for the log line ("read" / "write").
+        operation: The work to run. Called again on each retry.
+
+    Returns:
+        Whatever ``operation`` returns.
+
+    Raises:
+        ProductionSyncError: once the attempts are exhausted.
+
+    """
+    last: OperationalError | None = None
+    for attempt in range(1, CONNECTION_ATTEMPTS + 1):
+        try:
+            return operation()
+        except OperationalError as exc:
+            last = exc
+            if attempt == CONNECTION_ATTEMPTS:
+                break
+            wait = RETRY_BACKOFF_SECONDS[attempt - 1]
+            logger.warning(
+                "production_sync: %r %s connection lost on attempt %d/%d (%s); "
+                "reconnecting in %.0fs",
+                alias,
+                what,
+                attempt,
+                CONNECTION_ATTEMPTS,
+                exc,
+                wait,
+            )
+            # Discards the dead socket; the next use dials a fresh one.
+            connections[alias].close()
+            time.sleep(wait)
+
+    raise ProductionSyncError(
+        f"Lost the {alias!r} {what} connection {CONNECTION_ATTEMPTS} times "
+        f"in a row: {last}"
+    )
+
+
 def fetch_all(
     alias: str, sql: str, params: list[Any] | None = None
 ) -> list[tuple[Any, ...]]:
@@ -493,29 +556,14 @@ def fetch_all(
             within :data:`CONNECTION_ATTEMPTS` tries.
 
     """
-    last: OperationalError | None = None
-    for attempt in range(1, CONNECTION_ATTEMPTS + 1):
-        try:
-            with connections[alias].cursor() as cursor:
-                cursor.execute(sql, params or [])
-                rows: list[tuple[Any, ...]] = cursor.fetchall()
-                return rows
-        except OperationalError as exc:
-            last = exc
-            logger.warning(
-                "production_sync: %r connection lost on attempt %d/%d (%s); "
-                "reconnecting",
-                alias,
-                attempt,
-                CONNECTION_ATTEMPTS,
-                exc,
-            )
-            # Discards the dead socket; the next cursor() dials a fresh one.
-            connections[alias].close()
 
-    raise ProductionSyncError(
-        f"Lost the {alias!r} connection {CONNECTION_ATTEMPTS} times in a row: {last}"
-    )
+    def run() -> list[tuple[Any, ...]]:
+        with connections[alias].cursor() as cursor:
+            cursor.execute(sql, params or [])
+            rows: list[tuple[Any, ...]] = cursor.fetchall()
+            return rows
+
+    return with_reconnect(alias, "read", run)
 
 
 def production_columns(table: str) -> set[str]:
@@ -708,6 +756,16 @@ def sync_table(
     commit: bool,
 ) -> TableResult:
     """Copy one table from production into the local database.
+
+    **Each batch commits on its own; there is no transaction around the
+    table.** There used to be, so that a failed table rolled back cleanly.
+    That put 59,085 rows into a single transaction on the first real run and
+    the staging server came back reporting ``FATAL: the database system is
+    in recovery mode`` (SNOW-734) — a transaction that large is a resource
+    problem on a small instance, and rolling back was never worth it anyway:
+    every table upserts on its natural key, so partial progress is
+    re-applied harmlessly by the next run rather than being something to
+    undo.
 
     Args:
         spec: The table's copy rules.
@@ -924,14 +982,19 @@ def _write(
     if not commit:
         return len(objects)
 
-    # ``_default_manager`` rather than ``objects``: the model is resolved from
-    # the plan at runtime, so it is only known as ``type[Model]``, which
-    # declares no manager attribute.
-    model._default_manager.bulk_create(
-        objects,
-        update_conflicts=True,
-        unique_fields=list(spec.natural_key),
-        update_fields=update_fields,
-        batch_size=WRITE_BATCH_SIZE,
-    )
-    return len(objects)
+    def run() -> int:
+        # ``_default_manager`` rather than ``objects``: the model is resolved
+        # from the plan at runtime, so it is only known as ``type[Model]``,
+        # which declares no manager attribute.
+        model._default_manager.bulk_create(
+            objects,
+            update_conflicts=True,
+            unique_fields=list(spec.natural_key),
+            update_fields=update_fields,
+            batch_size=WRITE_BATCH_SIZE,
+        )
+        return len(objects)
+
+    # Each batch is its own committed unit — see sync_table's docstring for
+    # why there is no transaction around the table.
+    return with_reconnect("default", "write", run)
