@@ -1,50 +1,40 @@
 """
 tests/weather/management/commands/test_fetch_weather.py — Tests for fetch_weather.
 
+``fetch_weather`` fetches today from the Open-Meteo forecast endpoint and
+nothing else. It takes no date arguments, and it never reaches the archive
+endpoint — the tests that used to cover window derivation, per-date routing,
+``--start``/``--end``/``--date``, ``--local-mirror``, ``--delay`` and
+``--stash`` moved with those flags to ``test_backfill_weather.py``.
+
 Covers:
-  - Default window derivation (snapshots present → latest snapshot; no
-    snapshots but bulletins present → earliest bulletin valid_from; empty
-    DB → SEASON_START_DATE).
-  - --local-mirror resolves the mirror base URL; raises CommandError when
-    the setting is missing.
-  - --start/--end explicit range.
-  - --date single day.
-  - --date combined with --start or --end → CommandError.
-  - --end < --start → CommandError.
-  - Per-date routing: a window spanning past dates + today calls BOTH
-    backfill_all_regions (archive) and fetch_all_regions (forecast).
-  - failed > 0 → CommandError + non-zero exit.
+  - Today is the only date fetched, and it is read from ``timezone.localdate``.
+  - The command exposes no date arguments at all.
   - --commit vs read-only.
-  - Banner content (READ-ONLY, LOCAL-MIRROR, DELAY, STASH flags).
-  - --stash: writes records to the archive.
-  - Active-ForecastCell pass (SNOW-416): invoked by default when the window
-    reaches today; --skip-points disables it; --local-mirror skips it
-    cleanly (points don't participate in the mirror); point failures
-    propagate into the same failed > 0 → CommandError gate.
+  - failed > 0 → CommandError + non-zero exit, aggregated across both passes.
+  - Banner content (READ-ONLY, SKIP-POINTS, ADD-HISTORY flags).
+  - Output counts.
+  - Active-ForecastCell pass (SNOW-416): invoked by default; --skip-points
+    disables it; --add-history reaches it; point failures propagate into the
+    same failed > 0 → CommandError gate.
 """
 
-from datetime import UTC, date, datetime
-from pathlib import Path
+from datetime import date
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.conf import settings
-from django.core.management import call_command
-from django.core.management.base import CommandError
-from django.test import override_settings
+from django.core.management import CommandError, call_command
 
-from apps.weather.services.openmeteo_archive import read_archive
-from tests.factories import BulletinFactory, MicroRegionFactory, WeatherSnapshotFactory
+from tests.factories import MicroRegionFactory
 
 PATCH_FETCH_ALL = "apps.weather.management.commands.fetch_weather.fetch_all_regions"
-PATCH_BACKFILL_ALL = (
-    "apps.weather.management.commands.fetch_weather.backfill_all_regions"
-)
 PATCH_FETCH_ALL_POINTS = (
     "apps.weather.management.commands.fetch_weather.fetch_all_points"
 )
 PATCH_TODAY = "apps.weather.management.commands.fetch_weather.timezone.localdate"
+
+TODAY = date(2026, 5, 1)
 
 
 def _make_counts(
@@ -63,848 +53,217 @@ def _make_counts(
 
 
 # ---------------------------------------------------------------------------
-# Default window derivation
+# Today is the only date
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestDefaultWindowDerivation:
-    """Tests for the three-branch default start-date logic."""
+class TestTodayOnly:
+    """The command fetches today, from the forecast endpoint, and nothing else."""
 
+    @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_default_start_from_latest_snapshot_when_present(
+    def test_fetches_today_for_regions_and_points(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """When snapshots exist, default start = latest snapshot valid_for_date."""
-        region = MicroRegionFactory.create()
-        WeatherSnapshotFactory.create(region=region, valid_for_date=date(2026, 4, 10))
-        WeatherSnapshotFactory.create(region=region, valid_for_date=date(2026, 4, 20))
-        mock_backfill.return_value = _make_counts()
+        """Both passes are handed today's date."""
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts()
+        mock_points.return_value = _make_counts()
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+        with patch(PATCH_TODAY, return_value=TODAY):
             call_command("fetch_weather")
 
-        # archive sub-range: 2026-04-20 → 2026-04-30 (yesterday)
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][0] == date(2026, 4, 20)
+        assert mock_fetch.call_args[0][0] == TODAY
+        assert mock_points.call_args[0][0] == TODAY
 
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_default_start_from_earliest_bulletin_when_no_snapshots(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """When no snapshots exist but bulletins do, default start = earliest bulletin valid_from."""
-        BulletinFactory.create(
-            valid_from=datetime(2026, 1, 5, 12, 0, tzinfo=UTC),
-            valid_to=datetime(2026, 1, 6, 12, 0, tzinfo=UTC),
-            issued_at=datetime(2026, 1, 5, 12, 0, tzinfo=UTC),
-        )
-        BulletinFactory.create(
-            valid_from=datetime(2026, 1, 20, 12, 0, tzinfo=UTC),
-            valid_to=datetime(2026, 1, 21, 12, 0, tzinfo=UTC),
-            issued_at=datetime(2026, 1, 20, 12, 0, tzinfo=UTC),
-        )
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
+    def test_command_exposes_no_date_arguments(self) -> None:
+        """--date/--start/--end are gone; passing one is an error.
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather")
+        Date-based endpoint selection is what let the archive rewrite a day
+        the forecast pass had already stored. The flags went with it.
+        """
+        for flag in ("--date", "--start", "--end"):
+            with pytest.raises(CommandError):
+                call_command("fetch_weather", flag, "2026-05-01")
 
-        # archive sub-range starts at the earliest bulletin date
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][0] == date(2026, 1, 5)
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_default_start_from_season_start_date_when_db_empty(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """When the DB is empty, default start = settings.SEASON_START_DATE."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-
-        season_start = settings.SEASON_START_DATE
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather")
-
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][0] == season_start
+    def test_command_exposes_no_archive_flags(self) -> None:
+        """--local-mirror/--stash/--delay belong to backfill_weather now."""
+        for flag in ("--local-mirror", "--stash"):
+            with pytest.raises(CommandError):
+                call_command("fetch_weather", flag)
+        with pytest.raises(CommandError):
+            call_command("fetch_weather", "--delay", "1")
 
 
 # ---------------------------------------------------------------------------
-# Per-date routing
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestPerDateRouting:
-    """Tests for the archive/forecast split at today's boundary."""
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_window_spanning_past_and_today_calls_both_services(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """A window that includes past dates AND today calls both service functions."""
-        mock_backfill.return_value = _make_counts(created=5)
-        mock_fetch.return_value = _make_counts(created=1)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 28),
-                end=date(2026, 5, 1),
-            )
-
-        mock_backfill.assert_called_once()
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][0] == date(2026, 4, 28)
-        assert backfill_call[0][1] == date(2026, 4, 30)  # yesterday
-
-        mock_fetch.assert_called_once()
-        fetch_call = mock_fetch.call_args
-        assert fetch_call[0][0] == date(2026, 5, 1)  # today
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_past_only_window_calls_only_backfill(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """A window entirely in the past calls only backfill_all_regions."""
-        mock_backfill.return_value = _make_counts(created=3)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-            )
-
-        mock_backfill.assert_called_once()
-        mock_fetch.assert_not_called()
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_today_only_calls_only_forecast(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """A window of just today calls only fetch_all_regions."""
-        mock_fetch.return_value = _make_counts(created=1)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", date=date(2026, 5, 1))
-
-        mock_fetch.assert_called_once()
-        assert mock_fetch.call_args[0][0] == date(2026, 5, 1)
-        mock_backfill.assert_not_called()
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_single_past_date_calls_only_backfill(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--date with a past date calls only backfill_all_regions."""
-        mock_backfill.return_value = _make_counts(updated=1)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", date=date(2026, 4, 15))
-
-        mock_backfill.assert_called_once()
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][0] == date(2026, 4, 15)
-        assert backfill_call[0][1] == date(2026, 4, 15)
-        mock_fetch.assert_not_called()
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_counts_are_aggregated_across_both_services(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Counts from archive and forecast fetches are summed for the final report."""
-        mock_backfill.return_value = _make_counts(created=3, updated=1)
-        mock_fetch.return_value = _make_counts(created=1, skipped=2)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 29),
-                end=date(2026, 5, 1),
-                commit=True,
-            )
-
-        out = capsys.readouterr().out
-        assert "4 created" in out
-        assert "1 updated" in out
-        assert "2 skipped" in out
-
-
-# ---------------------------------------------------------------------------
-# Argument validation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestArgumentValidation:
-    """Tests for flag mutual-exclusion and range validation."""
-
-    def test_date_with_start_raises_command_error(self) -> None:
-        """--date combined with --start raises CommandError."""
-        with pytest.raises(CommandError, match="cannot be combined"):
-            call_command(
-                "fetch_weather",
-                date=date(2026, 4, 1),
-                start=date(2026, 4, 1),
-            )
-
-    def test_date_with_end_raises_command_error(self) -> None:
-        """--date combined with --end raises CommandError."""
-        with pytest.raises(CommandError, match="cannot be combined"):
-            call_command(
-                "fetch_weather",
-                date=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-            )
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_end_before_start_raises_command_error(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--end before --start raises CommandError."""
-        with pytest.raises(CommandError, match="--end must be on or after --start"):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 5, 2),
-                end=date(2026, 5, 1),
-            )
-        mock_backfill.assert_not_called()
-        mock_fetch.assert_not_called()
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_same_start_and_end_is_allowed(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--start == --end (single-day range) is valid."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 15),
-                end=date(2026, 4, 15),
-            )
-
-        mock_backfill.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# --local-mirror flag
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestLocalMirrorFlag:
-    """Tests for --local-mirror source resolution."""
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_local_mirror_passes_configured_url(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--local-mirror passes WEATHER_API_LOCAL_MIRROR_BASE_URL as base_url."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-        mirror_url = "http://localhost:8000/dev/openmeteo-mirror/v1"
-
-        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=mirror_url):
-            with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-                call_command("fetch_weather", local_mirror=True)
-
-        assert mock_fetch.call_args[1]["base_url"] == mirror_url
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_local_mirror_raises_when_setting_missing(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--local-mirror raises CommandError when the setting is not configured."""
-        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=None):
-            with pytest.raises(CommandError, match="WEATHER_API_LOCAL_MIRROR_BASE_URL"):
-                call_command("fetch_weather", local_mirror=True)
-
-        mock_fetch.assert_not_called()
-        mock_backfill.assert_not_called()
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_local_mirror_shown_in_banner(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Banner includes LOCAL-MIRROR when --local-mirror is passed."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-        mirror_url = "http://localhost:8000/dev/openmeteo-mirror/v1"
-
-        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=mirror_url):
-            with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-                call_command("fetch_weather", local_mirror=True)
-
-        out = capsys.readouterr().out
-        assert "LOCAL-MIRROR" in out
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_no_local_mirror_passes_none_base_url(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """Without --local-mirror, base_url=None is forwarded (live API)."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather")
-
-        assert mock_fetch.call_args[1]["base_url"] is None
-
-
-# ---------------------------------------------------------------------------
-# --start / --end range
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestStartEndRange:
-    """Tests for explicit --start/--end range forwarding."""
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_explicit_start_and_end_forwarded(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--start and --end are forwarded as date objects to the archive service."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-            )
-
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][0] == date(2026, 4, 1)
-        assert backfill_call[0][1] == date(2026, 4, 30)
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_start_only_end_defaults_to_today(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--start without --end defaults end to today."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", start=date(2026, 4, 1))
-
-        # archive end = yesterday (2026-04-30)
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][1] == date(2026, 4, 30)
-        # forecast for today
-        mock_fetch.assert_called_once_with(
-            date(2026, 5, 1),
-            commit=False,
-            base_url=None,
-            on_fetched=None,
-        )
-
-
-# ---------------------------------------------------------------------------
-# --date single day
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestDateSingleDay:
-    """Tests for the --date flag (single-day shorthand)."""
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_date_flag_sets_window_to_single_day(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--date YYYY-MM-DD sets both start and end to that date."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", date=date(2026, 4, 15))
-
-        backfill_call = mock_backfill.call_args
-        assert backfill_call[0][0] == date(2026, 4, 15)
-        assert backfill_call[0][1] == date(2026, 4, 15)
-
-
-# ---------------------------------------------------------------------------
-# commit flag
+# --commit
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestCommitFlag:
-    """Tests for the --commit flag."""
+    """Tests for --commit forwarding."""
 
+    @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
     def test_read_only_by_default(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """Without --commit, commit=False is forwarded to service functions."""
-        mock_backfill.return_value = _make_counts()
+        """Without --commit, commit=False is forwarded to both passes."""
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts()
+        mock_points.return_value = _make_counts()
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
+        with patch(PATCH_TODAY, return_value=TODAY):
             call_command("fetch_weather")
 
         assert mock_fetch.call_args[1]["commit"] is False
+        assert mock_points.call_args[1]["commit"] is False
 
+    @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
     def test_commit_flag_forwards_true(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """--commit causes commit=True to be forwarded."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts(created=2)
+        """--commit forwards commit=True to both passes."""
+        MicroRegionFactory.create()
+        mock_fetch.return_value = _make_counts()
+        mock_points.return_value = _make_counts()
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True)
+        with patch(PATCH_TODAY, return_value=TODAY):
+            call_command("fetch_weather", "--commit")
 
         assert mock_fetch.call_args[1]["commit"] is True
+        assert mock_points.call_args[1]["commit"] is True
 
 
 # ---------------------------------------------------------------------------
-# failure handling
+# Failure handling
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestFailureHandling:
-    """Tests for failed > 0 → CommandError."""
+    """A non-zero failed count must raise so cron/CI can detect it."""
 
+    @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
     def test_raises_command_error_on_failures(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """CommandError is raised when total failed > 0."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts(failed=2, created=1)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            with pytest.raises(CommandError, match="2 region/point failure"):
-                call_command("fetch_weather", commit=True)
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_failures_aggregated_across_both_services(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """Failures from archive + forecast are summed; CommandError fires on total."""
-        mock_backfill.return_value = _make_counts(failed=1)
+        """failed > 0 raises CommandError."""
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts(failed=2)
+        mock_points.return_value = _make_counts()
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            with pytest.raises(CommandError, match="3 region/point failure"):
-                call_command(
-                    "fetch_weather",
-                    start=date(2026, 4, 29),
-                    end=date(2026, 5, 1),
-                    commit=True,
-                )
+        with (
+            patch(PATCH_TODAY, return_value=TODAY),
+            pytest.raises(CommandError, match="2 region/point failure"),
+        ):
+            call_command("fetch_weather", "--commit")
 
+    @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
+    def test_failures_aggregated_across_both_passes(
+        self,
+        mock_fetch: MagicMock,
+        mock_points: MagicMock,
+    ) -> None:
+        """Region and point failures sum into one total."""
+        MicroRegionFactory.create()
+        mock_fetch.return_value = _make_counts(failed=1)
+        mock_points.return_value = _make_counts(failed=3)
+
+        with (
+            patch(PATCH_TODAY, return_value=TODAY),
+            pytest.raises(CommandError, match="4 region/point failure"),
+        ):
+            call_command("fetch_weather", "--commit")
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
     def test_no_error_when_no_failures(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """No CommandError when total failed == 0."""
-        mock_backfill.return_value = _make_counts()
+        """failed == 0 completes cleanly."""
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts(created=3)
+        mock_points.return_value = _make_counts(created=7)
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True)  # should not raise
+        with patch(PATCH_TODAY, return_value=TODAY):
+            call_command("fetch_weather", "--commit")
 
 
 # ---------------------------------------------------------------------------
-# Banner content
+# Banner and output
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestBannerContent:
-    """Tests for the start-of-run banner."""
+class TestBannerAndOutput:
+    """Tests for the start-of-run banner and the post-run summary."""
 
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_banner_shows_read_only_when_not_committed(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Banner shows [READ-ONLY] when --commit is not passed."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
+    @staticmethod
+    def _run(*args: str, **counts: Any) -> str:
+        """Run the command with both passes stubbed and return stdout."""
+        from io import StringIO
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather")
+        out = StringIO()
+        with (
+            patch(PATCH_FETCH_ALL, return_value=_make_counts(**counts)),
+            patch(PATCH_FETCH_ALL_POINTS, return_value=_make_counts()),
+            patch(PATCH_TODAY, return_value=TODAY),
+        ):
+            call_command("fetch_weather", *args, stdout=out)
+        return out.getvalue()
 
-        out = capsys.readouterr().out
-        assert "READ-ONLY" in out
+    def test_banner_shows_read_only_when_not_committed(self) -> None:
+        """The READ-ONLY flag appears without --commit."""
+        MicroRegionFactory.create()
+        assert "READ-ONLY" in self._run()
 
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_banner_omits_read_only_when_committed(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Banner does not show [READ-ONLY] when --commit is passed."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts(created=1)
+    def test_banner_omits_read_only_when_committed(self) -> None:
+        """The READ-ONLY flag is absent with --commit."""
+        MicroRegionFactory.create()
+        assert "READ-ONLY" not in self._run("--commit")
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True)
-
-        out = capsys.readouterr().out
-        assert "READ-ONLY" not in out
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_banner_includes_region_count(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Banner includes the total number of regions."""
+    def test_banner_includes_region_and_point_counts(self) -> None:
+        """The banner names how many regions and points are in scope."""
         MicroRegionFactory.create()
         MicroRegionFactory.create()
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
+        output = self._run()
+        assert "2 region(s)" in output
+        assert "active point(s)" in output
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather")
+    def test_banner_names_today_not_a_window(self) -> None:
+        """The banner carries today's date alone — there is no window to show."""
+        MicroRegionFactory.create()
+        banner = self._run().splitlines()[0]
+        assert str(TODAY) in banner
+        assert " to " not in banner
 
-        out = capsys.readouterr().out
-        assert "2 region" in out
+    def test_success_output_shows_counts(self) -> None:
+        """The summary reports created/updated/skipped/failed."""
+        MicroRegionFactory.create()
+        output = self._run("--commit", created=5, updated=2)
+        assert "5 created" in output
+        assert "2 updated" in output
 
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_banner_shows_delay_flag(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Banner includes DELAY when --delay is passed."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-                delay=2.0,
-            )
-
-        out = capsys.readouterr().out
-        assert "DELAY=2s" in out
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_banner_shows_stash_flag(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-        tmp_path: Path,
-    ) -> None:
-        """Banner includes STASH when --stash is passed."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-        archive_path = tmp_path / "om_archive.ndjson"
-
-        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
-            with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-                call_command("fetch_weather", stash=True)
-
-        out = capsys.readouterr().out
-        assert "STASH" in out
-
-
-# ---------------------------------------------------------------------------
-# --delay flag
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestDelayFlag:
-    """Tests for --delay forwarding to backfill_all_regions."""
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_default_delay_is_one_second(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """Without an explicit --delay, 1.0 is forwarded to backfill_all_regions."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-            )
-
-        assert mock_backfill.call_args[1]["delay"] == 1.0
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_explicit_delay_forwarded(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--delay is forwarded verbatim to backfill_all_regions."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-                delay=2.5,
-            )
-
-        assert mock_backfill.call_args[1]["delay"] == 2.5
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_zero_delay_forwarded(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-    ) -> None:
-        """--delay 0 disables pacing and forwards 0.0 to backfill_all_regions."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-                delay=0,
-            )
-
-        assert mock_backfill.call_args[1]["delay"] == 0.0
-
-
-# ---------------------------------------------------------------------------
-# --stash flag
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestStashFlag:
-    """Tests for --stash archive capture."""
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_stash_writes_records_to_archive(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """--stash causes on_fetched records to be merged into the archive."""
-        region = MicroRegionFactory.create()
-        archive_path = tmp_path / "om_archive.ndjson"
-
-        def fake_fetch_all(
-            target_date: date,
-            *,
-            commit: bool,
-            base_url: Any,
-            on_fetched: Any,
-        ) -> dict[str, int]:
-            if on_fetched is not None:
-                on_fetched(
-                    {
-                        "region_id": region.region_id,
-                        "date": "2026-05-01",
-                        "weather_code": 3,
-                        "sunrise": "2026-05-01T05:32+02:00",
-                        "sunset": "2026-05-01T20:14+02:00",
-                        "captured_at": "2026-05-09T12:00:00Z",
-                    }
-                )
-            return _make_counts()
-
-        mock_fetch.side_effect = fake_fetch_all
-        mock_backfill.return_value = _make_counts()
-
-        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
-            with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-                call_command("fetch_weather", stash=True)
-
-        records = list(read_archive(archive_path))
-        assert len(records) == 1
-        assert records[0]["region_id"] == region.region_id
-        assert records[0]["date"] == "2026-05-01"
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_stash_without_commit_leaves_db_unchanged(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """--stash without --commit writes the archive but not the database."""
-        archive_path = tmp_path / "om_archive.ndjson"
-
-        def fake_fetch_all(
-            target_date: date,
-            *,
-            commit: bool,
-            base_url: Any,
-            on_fetched: Any,
-        ) -> dict[str, int]:
-            if on_fetched is not None:
-                on_fetched(
-                    {
-                        "region_id": "CH-TEST",
-                        "date": "2026-05-01",
-                        "weather_code": 1,
-                        "sunrise": "2026-05-01T05:32+02:00",
-                        "sunset": "2026-05-01T20:14+02:00",
-                        "captured_at": "2026-05-09T12:00:00Z",
-                    }
-                )
-            return _make_counts()
-
-        mock_fetch.side_effect = fake_fetch_all
-        mock_backfill.return_value = _make_counts()
-
-        with override_settings(OPENMETEO_ARCHIVE_PATH=archive_path):
-            with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-                call_command("fetch_weather", stash=True, commit=False)
-
-        records = list(read_archive(archive_path))
-        assert len(records) == 1
-        assert mock_fetch.call_args[1]["commit"] is False
-
-
-# ---------------------------------------------------------------------------
-# Output
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestOutput:
-    """Tests for the post-run output summary."""
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_success_output_shows_counts(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """When commit=True, stdout shows created/updated/skipped/failed counts."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts(created=4, updated=1, skipped=2)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True)
-
-        out = capsys.readouterr().out
-        assert "4 created" in out
-        assert "1 updated" in out
-        assert "2 skipped" in out
-
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_read_only_output_prompts_commit(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """When commit=False, stdout tells the user to pass --commit."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather")
-
-        out = capsys.readouterr().out
-        assert "--commit" in out
+    def test_read_only_output_prompts_commit(self) -> None:
+        """A read-only run tells the caller how to persist."""
+        MicroRegionFactory.create()
+        assert "--commit" in self._run()
 
 
 # ---------------------------------------------------------------------------
@@ -914,167 +273,113 @@ class TestOutput:
 
 @pytest.mark.django_db
 class TestActiveForecastCellPass:
-    """Tests for the active-ForecastCell forecast pass and --skip-points."""
+    """The point pass runs by default and can be skipped."""
 
     @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_point_pass_invoked_by_default_when_window_reaches_today(
+    def test_point_pass_invoked_by_default(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """A window reaching today invokes fetch_all_points for today's date."""
-        mock_backfill.return_value = _make_counts()
+        """With no flags the point pass runs for today."""
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts()
-        mock_fetch_points.return_value = _make_counts()
+        mock_points.return_value = _make_counts()
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True)
+        with patch(PATCH_TODAY, return_value=TODAY):
+            call_command("fetch_weather")
 
-        mock_fetch_points.assert_called_once()
-        assert mock_fetch_points.call_args[0][0] == date(2026, 5, 1)
-        assert mock_fetch_points.call_args[1]["commit"] is True
-        # History retention is opt-in (SNOW-629) — a bare run does not ask
-        # for it.
-        assert mock_fetch_points.call_args[1]["add_history"] is False
+        mock_points.assert_called_once()
+        assert mock_points.call_args[0][0] == TODAY
 
     @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_add_history_flag_reaches_the_point_pass(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
-    ) -> None:
-        """--add-history is threaded through to fetch_all_points (SNOW-629)."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-        mock_fetch_points.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True, add_history=True)
-
-        assert mock_fetch_points.call_args[1]["add_history"] is True
-
-    @patch(PATCH_FETCH_ALL_POINTS)
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_point_pass_skipped_when_window_does_not_reach_today(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
-    ) -> None:
-        """A window entirely in the past does not invoke fetch_all_points."""
-        mock_backfill.return_value = _make_counts()
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command(
-                "fetch_weather",
-                start=date(2026, 4, 1),
-                end=date(2026, 4, 30),
-                commit=True,
-            )
-
-        mock_fetch_points.assert_not_called()
-
-    @patch(PATCH_FETCH_ALL_POINTS)
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
     def test_skip_points_disables_point_pass(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """--skip-points prevents fetch_all_points from being called."""
-        mock_backfill.return_value = _make_counts()
+        """--skip-points runs the region pass alone."""
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts()
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True, skip_points=True)
+        with patch(PATCH_TODAY, return_value=TODAY):
+            call_command("fetch_weather", "--skip-points")
 
-        mock_fetch_points.assert_not_called()
+        mock_points.assert_not_called()
+        mock_fetch.assert_called_once()
 
     @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_local_mirror_skips_point_pass(
+    def test_add_history_flag_reaches_the_point_pass(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
+        mock_points: MagicMock,
     ) -> None:
-        """--local-mirror skips the point pass — points don't participate in the mirror."""
-        mock_backfill.return_value = _make_counts()
+        """--add-history is forwarded to fetch_all_points."""
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts()
-        mirror_url = "http://localhost:8000/dev/openmeteo-mirror/v1"
+        mock_points.return_value = _make_counts()
 
-        with override_settings(WEATHER_API_LOCAL_MIRROR_BASE_URL=mirror_url):
-            with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-                call_command("fetch_weather", commit=True, local_mirror=True)
+        with patch(PATCH_TODAY, return_value=TODAY):
+            call_command("fetch_weather", "--commit", "--add-history")
 
-        mock_fetch_points.assert_not_called()
-
-    @patch(PATCH_FETCH_ALL_POINTS)
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_point_failures_propagate_to_command_error(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
-    ) -> None:
-        """Point-pass failures are merged into the failed>0 → CommandError gate."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts()
-        mock_fetch_points.return_value = _make_counts(failed=1)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            with pytest.raises(CommandError, match="1 region/point failure"):
-                call_command("fetch_weather", commit=True)
+        assert mock_points.call_args[1]["add_history"] is True
 
     @patch(PATCH_FETCH_ALL_POINTS)
     @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
-    def test_point_counts_merged_into_report(
-        self,
-        mock_backfill: MagicMock,
-        mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Point pass created/updated counts are folded into the final report."""
-        mock_backfill.return_value = _make_counts()
-        mock_fetch.return_value = _make_counts(created=1)
-        mock_fetch_points.return_value = _make_counts(created=2, updated=1)
-
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True)
-
-        out = capsys.readouterr().out
-        assert "3 created" in out
-        assert "1 updated" in out
-
-    @patch(PATCH_FETCH_ALL_POINTS)
-    @patch(PATCH_FETCH_ALL)
-    @patch(PATCH_BACKFILL_ALL)
     def test_skip_points_shown_in_banner(
         self,
-        mock_backfill: MagicMock,
         mock_fetch: MagicMock,
-        mock_fetch_points: MagicMock,
-        capsys: pytest.CaptureFixture[str],
+        mock_points: MagicMock,
     ) -> None:
-        """Banner includes SKIP-POINTS when --skip-points is passed."""
-        mock_backfill.return_value = _make_counts()
+        """The SKIP-POINTS flag appears in the banner."""
+        from io import StringIO
+
+        MicroRegionFactory.create()
         mock_fetch.return_value = _make_counts()
+        out = StringIO()
 
-        with patch(PATCH_TODAY, return_value=date(2026, 5, 1)):
-            call_command("fetch_weather", commit=True, skip_points=True)
+        with patch(PATCH_TODAY, return_value=TODAY):
+            call_command("fetch_weather", "--skip-points", stdout=out)
 
-        out = capsys.readouterr().out
-        assert "SKIP-POINTS" in out
+        assert "SKIP-POINTS" in out.getvalue()
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    def test_point_counts_merged_into_report(
+        self,
+        mock_fetch: MagicMock,
+        mock_points: MagicMock,
+    ) -> None:
+        """Region and point counts are summed in the summary line."""
+        from io import StringIO
+
+        MicroRegionFactory.create()
+        mock_fetch.return_value = _make_counts(created=2)
+        mock_points.return_value = _make_counts(created=5)
+        out = StringIO()
+
+        with patch(PATCH_TODAY, return_value=TODAY):
+            call_command("fetch_weather", "--commit", stdout=out)
+
+        assert "7 created" in out.getvalue()
+
+    @patch(PATCH_FETCH_ALL_POINTS)
+    @patch(PATCH_FETCH_ALL)
+    def test_point_failures_propagate_to_command_error(
+        self,
+        mock_fetch: MagicMock,
+        mock_points: MagicMock,
+    ) -> None:
+        """A point-only failure still raises."""
+        MicroRegionFactory.create()
+        mock_fetch.return_value = _make_counts()
+        mock_points.return_value = _make_counts(failed=1)
+
+        with (
+            patch(PATCH_TODAY, return_value=TODAY),
+            pytest.raises(CommandError, match="1 region/point failure"),
+        ):
+            call_command("fetch_weather", "--commit")

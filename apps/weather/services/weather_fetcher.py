@@ -29,20 +29,28 @@ dispatcher used by the bulletin page render:
   on_fetched)
       Fetches historical weather for a date range from the Open-Meteo archive
       endpoint, requesting the same ``REGION_DAILY_VARIABLES`` set as the
-      forecast path. Returns a list of ``(WeatherSnapshot, created)`` tuples
-      when ``commit=True``, or an empty list when ``commit=False``.
+      forecast path. Writes are **create-only**: a day already stored was
+      written by the forecast pass when it was current, and the archive
+      never overwrites it. Returns a list of ``(WeatherSnapshot, created)``
+      tuples when ``commit=True``, or an empty list when ``commit=False``.
       ``base_url`` overrides the configured archive host; ``on_fetched`` is
       called once per fetched record.
+
+      Reached from the ``backfill_weather`` management command and nowhere
+      else — the archive URL has exactly one caller by design.
 
   backfill_all_regions(start_date, end_date, *, commit, delay, base_url, on_fetched)
       Calls fetch_archive_for_region for every MicroRegion that has a centre
       coordinate; returns summary counters {created, updated, failed, skipped}.
+      ``updated`` is always 0 on this path — the archive fills gaps only, so a
+      day already stored increments ``skipped`` instead.
 
   fetch_weather_async(region, target_date)
       Schedules an idempotent inline fetch on a background daemon thread so
-      ``bulletin_detail`` can return immediately on prefetched past-date page
-      renders. Routes to the archive or forecast fetcher based on whether
-      ``target_date`` is in the past. Uses a daemon-thread dispatch pattern:
+      ``bulletin_detail`` can return immediately on prefetched page renders.
+      Forecast endpoint only — a past date returns without fetching, because
+      the archive URL belongs to ``backfill_weather``. Uses a daemon-thread
+      dispatch pattern:
       settings toggle ``WEATHER_FETCH_ASYNC`` flips the work synchronous for
       tests, exceptions are swallowed at WARNING, and the per-thread DB
       connection is closed in ``finally`` (skipped on the main thread to keep
@@ -1231,12 +1239,16 @@ def fetch_archive_for_region(
             defaults = _build_snapshot_defaults(
                 code, sunrise_str, sunset_str, daily, idx
             )
-            snapshot, created = WeatherSnapshot.objects.update_or_create(
+            # get_or_create, NOT update_or_create: the archive endpoint
+            # backfills days that are missing. A day already stored was
+            # written by the forecast pass on the day it was current, and
+            # that record stands — the archive must never overwrite it.
+            snapshot, created = WeatherSnapshot.objects.get_or_create(
                 region=region,
                 valid_for_date=day,
                 defaults=defaults,
             )
-            action = "Created" if created else "Updated"
+            action = "Created" if created else "Left existing"
             logger.debug(
                 "%s WeatherSnapshot: region=%s date=%s code=%d",
                 action,
@@ -1247,6 +1259,45 @@ def fetch_archive_for_region(
             snapshots.append((snapshot, created))
 
     return snapshots
+
+
+def _missing_days_by_region(start_date: date, end_date: date) -> dict[int, list[date]]:
+    """
+    Map each region's primary key to the days it has no snapshot for.
+
+    Read in one query up front so a region that needs nothing costs no API
+    call at all — the common case on a re-run, and the reason a bare
+    ``backfill_weather`` is cheap rather than a full-season replay.
+
+    Regions with no missing days are absent from the result rather than
+    present with an empty list, so a caller can treat a lookup miss and a
+    complete region identically.
+
+    Args:
+        start_date: First day of the window (inclusive).
+        end_date: Last day of the window (inclusive).
+
+    Returns:
+        ``{region_pk: [missing dates, ascending]}``, omitting complete regions.
+
+    """
+    window_days = [
+        start_date + timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
+    ]
+    stored: set[tuple[int, date]] = set(
+        WeatherSnapshot.objects.filter(
+            valid_for_date__gte=start_date,
+            valid_for_date__lte=end_date,
+        ).values_list("region_id", "valid_for_date")
+    )
+
+    missing_by_region: dict[int, list[date]] = {}
+    for region_pk in MicroRegion.objects.values_list("pk", flat=True):
+        missing = [day for day in window_days if (region_pk, day) not in stored]
+        if missing:
+            missing_by_region[region_pk] = missing
+    return missing_by_region
 
 
 def backfill_all_regions(
@@ -1261,9 +1312,19 @@ def backfill_all_regions(
     """
     Backfill historical weather snapshots for every MicroRegion with a centre.
 
-    Iterates all MicroRegion rows. Regions without a ``centre`` value are logged
-    and counted as ``skipped``. Per-region archive failures are caught,
-    logged, and counted as ``failed`` — they do not abort the batch.
+    Iterates all MicroRegion rows. Fills **gaps only**: a region whose every
+    day in the window is already stored is skipped without an API call, and
+    within a region only the span containing missing days is requested. The
+    write itself is create-only, so a stored day inside that span is left as
+    the forecast pass wrote it.
+
+    Regions without a ``centre`` value are logged and counted as ``skipped``.
+    Per-region archive failures are caught, logged, and counted as ``failed``
+    — they do not abort the batch.
+
+    ``skipped`` counts any unit that produced no write: a region with no
+    centre, a region already fully covered, or an individual day already
+    stored. ``updated`` is always 0 on this path.
 
     Args:
         start_date: First date in the backfill range (inclusive).
@@ -1306,17 +1367,24 @@ def backfill_all_regions(
         delay,
     )
 
+    missing_by_region = _missing_days_by_region(start_date, end_date)
+
     for idx, region in enumerate(regions):
-        if not region.centre:
-            logger.debug("Skipping region=%s — no centre coordinate", region.region_id)
+        missing = missing_by_region.get(region.pk, [])
+        if not region.centre or not missing:
+            reason = "no centre coordinate" if not region.centre else "no missing days"
+            logger.debug("Skipping region=%s — %s", region.region_id, reason)
             counts["skipped"] += 1
             continue
 
+        # Narrow the request to the span that actually has holes. Days inside
+        # that span which are already stored still come back in the response
+        # but are left alone by the create-only write.
         try:
             results = fetch_archive_for_region(
                 region,
-                start_date,
-                end_date,
+                min(missing),
+                max(missing),
                 commit=commit,
                 base_url=base_url,
                 on_fetched=on_fetched,
@@ -1327,14 +1395,17 @@ def backfill_all_regions(
                     if created:
                         counts["created"] += 1
                     else:
-                        counts["updated"] += 1
+                        # Already stored — left untouched. ``updated`` stays
+                        # 0 for this path by design; see the create-only
+                        # write in fetch_archive_for_region.
+                        counts["skipped"] += 1
 
         except Exception:  # noqa: BLE001 — broad catch intentional: per-region failure must not abort the batch
             logger.exception(
                 "Failed to backfill weather for region=%s start=%s end=%s",
                 region.region_id,
-                start_date,
-                end_date,
+                min(missing),
+                max(missing),
             )
             counts["failed"] += 1
 
@@ -1391,11 +1462,13 @@ def fetch_weather_async(region: MicroRegion, target_date: date) -> None:
                 .exists()
             ):
                 return
-            today = django_timezone.localdate()
-            if target_date < today:
-                fetch_archive_for_region(region, target_date, target_date, commit=True)
-            else:
-                fetch_weather_for_region(region, target_date, commit=True)
+            # Forecast endpoint only. The archive URL belongs to the
+            # backfill_weather command and nowhere else, so a past day with
+            # no stored row is left for that command rather than fetched
+            # here on a page render.
+            if target_date < django_timezone.localdate():
+                return
+            fetch_weather_for_region(region, target_date, commit=True)
         except Exception:  # noqa: BLE001 — broad catch intentional: async failure must not surface to caller
             logger.exception(
                 "fetch_weather_async failed: region=%s date=%s",

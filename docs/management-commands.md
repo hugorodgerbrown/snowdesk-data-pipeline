@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, import_resorts, import_locations, prune_forecast_points, sync_waffle_flags, fixture builders
+description: Commands — fetch_bulletins, fetch_weather, backfill_weather, import_resorts, import_locations, prune_forecast_points, fixture builders
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -115,7 +115,7 @@ visible in the worker logs.
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
-| Weather backstop | `fetch_weather --commit` | `0 0-18/6 * * *` (00:00, 06:00, 12:00, 18:00 UTC) | Pre-warms `WeatherSnapshot` rows for every region. The live path is the HTMX-triggered `public:weather_snippet` view (see [`async-operations.md`](async-operations.md)); this job is a backstop so the first page-view of the day doesn't pay the Open-Meteo round-trip. |
+| Weather backstop | `fetch_weather --commit` | `0 0-18/6 * * *` (00:00, 06:00, 12:00, 18:00 UTC) | Writes today's `WeatherSnapshot` rows for every region, plus the 7-day point forecasts. Forecast endpoint only — gaps from a missed run are filled by `backfill_weather`, never by this job. The live path is the HTMX-triggered `public:weather_snippet` view (see [`async-operations.md`](async-operations.md)); this job is a backstop so the first page-view of the day doesn't pay the Open-Meteo round-trip. |
 
 Run order is handled automatically: APScheduler fires both jobs
 independently on their own triggers. The weather job fires less frequently
@@ -749,7 +749,7 @@ incident that invalidates derived state:
 
   Flags: `--commit`.
 
-- `fetch_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
+- `backfill_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
   to fill a historical gap (e.g. after adding a new region, or
   recovering from an outage longer than a day).
 - `fetch_bulletins --source <src> --start-date <YYYY-MM-DD> --commit` —
@@ -1173,26 +1173,22 @@ and redeploy the worker.
 
 ---
 
-## `fetch_weather` — unified batch weather command (cron, backfill, bootstrap)
+## `fetch_weather` — today's forecast (cron)
 
-Canonical batch command for fetching Open-Meteo weather data. Covers
-today's forecast fetch, historical backfills, and the local-mirror
-bootstrap path. The HTMX `public:weather_snippet` lazy-load view
-remains the per-request live path for individual bulletin pages.
+Fetches **today** from the Open-Meteo **forecast** endpoint. It takes no date
+arguments, and nothing in it selects an upstream URL from a date. The HTMX
+`public:weather_snippet` lazy-load view remains the per-request live path for
+individual bulletin pages.
 
-**Default window** (no `--date`/`--start`/`--end`): start is derived
-from the first non-null of (1) the latest `WeatherSnapshot.valid_for_date`
-already in the DB, (2) the earliest `Bulletin.valid_from` date, (3)
-`settings.SEASON_START_DATE`. End defaults to today (local timezone).
+**Historical days belong to `backfill_weather`** — the codebase's only caller
+of the Open-Meteo archive endpoint. The two were one command until the split:
+because that command chose its endpoint from the date, the day it had just
+written fell inside the next run's archive sub-range and was rewritten with
+the ERA5 reanalysis value. A day is written once, on the day it is current,
+and that record then stands.
 
-**Per-date routing** — the command splits the window at the day boundary
-automatically: dates strictly before today use the Open-Meteo archive
-endpoint; today uses the forecast endpoint. A single invocation therefore
-covers the entire default window correctly regardless of what is already
-in the DB.
-
-**Active-ForecastCell pass (SNOW-416, widened SNOW-417)** — when the
-resolved window reaches today, the command also fetches a **7-day** window
+**Active-ForecastCell pass (SNOW-416, widened SNOW-417)** — the command also
+fetches a **7-day** window
 (`POINT_FORECAST_DAYS`) of daily forecast data — plus a **2-day**
 (`POINT_HOURLY_DAYS`) near-term hourly series of ski-relevant variables
 (temperature, snowfall, precipitation, wind speed/gusts, freezing level) —
@@ -1260,33 +1256,11 @@ making a bare invocation a useful connectivity probe.
 > and redeploy the worker.
 
 ```bash
-# Read-only probe over the default window — no DB writes.
+# Read-only probe — calls the API, writes nothing.
 uv run python manage.py fetch_weather
 
-# Persist over the default window.
+# Persist today's region snapshots and point forecasts.
 uv run python manage.py fetch_weather --commit
-
-# Persist weather for a specific date.
-uv run python manage.py fetch_weather --date 2026-05-01 --commit
-
-# Persist weather for an explicit range (splits at today automatically).
-uv run python manage.py fetch_weather \
-    --start 2025-12-01 --end 2026-04-30 --commit
-
-# Bootstrap against the on-disk archive instead of the live Open-Meteo API.
-# Requires the dev server to be running and
-# settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
-uv run python manage.py fetch_weather --local-mirror --commit
-
-# Capture the default window to apps/weather/local_mirrors/openmeteo_archive.ndjson.
-uv run python manage.py fetch_weather --stash
-
-# Full-fidelity: persist and stash.
-uv run python manage.py fetch_weather --commit --stash
-
-# Tighten pacing for a long historical backfill.
-uv run python manage.py fetch_weather \
-    --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
 
 # Region weather only — skip the active-ForecastCell pass.
 uv run python manage.py fetch_weather --commit --skip-points
@@ -1295,23 +1269,15 @@ uv run python manage.py fetch_weather --commit --skip-points
 uv run python manage.py fetch_weather --commit --add-history
 
 # Flags:
-#   --date         YYYY-MM-DD  single date; mutually exclusive with --start/--end
-#   --start        YYYY-MM-DD  start of window (inclusive); defaults to DB-derived
-#   --end          YYYY-MM-DD  end of window (inclusive); defaults to today
-#   --commit                   persist WeatherSnapshot/ForecastCellWeather rows;
-#                              omit for a read-only run
-#   --local-mirror             replay from apps/weather/local_mirrors/openmeteo_archive.ndjson
-#                              via the dev-only view (development.py only); the
-#                              active-ForecastCell pass is skipped under this flag
-#   --delay        SECONDS     seconds between per-region archive calls (default 1.0;
-#                              pass 0 to disable; no effect on the forecast endpoint)
-#   --stash                    append fetched weather records to the on-disk archive
-#                              (region weather only — points never participate)
-#   --skip-points              skip the active-ForecastCell forecast pass; fetch
-#                              region weather only
-#   --add-history              also retain a ForecastCellWeatherHistory row per
-#                              stored day (SNOW-575); off by default, and passed
-#                              by the scheduler when FETCH_WEATHER_ADD_HISTORY is set
+#   --commit         persist WeatherSnapshot/ForecastCellWeather rows;
+#                    omit for a read-only run
+#   --skip-points    skip the active-ForecastCell forecast pass; region only
+#   --add-history    also retain a ForecastCellWeatherHistory row per stored
+#                    day (SNOW-575); off by default, and passed by the
+#                    scheduler when FETCH_WEATHER_ADD_HISTORY is set
+#
+# There is deliberately no --date/--start/--end/--delay/--local-mirror/--stash:
+# those flags moved to backfill_weather along with the archive endpoint.
 ```
 
 ## Development & one-shot setup commands
@@ -1360,6 +1326,79 @@ every other command here).
   ```
 
   Flags: `--commit` (write the secret file; omit for a read-only run).
+
+---
+
+## `backfill_weather` — fill WeatherSnapshot gaps from the archive
+
+**The only caller of the Open-Meteo archive endpoint in the codebase.** No
+view, no background thread and no other command reaches
+`OPEN_METEO_ARCHIVE_BASE_URL`.
+
+A day is normally written once, by `fetch_weather`, on the day it is current.
+This command exists for the days that never happened: a scheduler outage, a
+region added mid-season, a fresh environment with an empty table.
+
+**Create-only.** A day already stored is left exactly as the forecast pass
+wrote it. Re-running is safe, and the archive can never overwrite a record
+with its ERA5 reanalysis value.
+
+**Gap detection runs before any HTTP call.** A region with no missing days in
+the window costs nothing; a region with holes is requested only across the
+span containing them. A bare re-run on a populated season makes **zero** API
+calls — on a 149-region local DB it returns in under a second.
+
+**Default window** (no `--date`/`--start`/`--end`): start is the earliest
+`Bulletin.valid_from` date in the DB, or `settings.SEASON_START_DATE` when
+there are no bulletins; end is **yesterday**. Today is never included — today
+belongs to `fetch_weather`, and the archive has no entry for an unfinished
+day. Passing `--end` today or later is a `CommandError`.
+
+Points (`ForecastCell` / `ForecastCellWeather`) have no archive path and are
+untouched here: Open-Meteo cannot say what the forecast for a point would have
+been in the past (SNOW-416, SNOW-417).
+
+Not scheduled — it runs by hand, or from `bin/bootstrap-dev-db`.
+
+```bash
+# Read-only — reports the gaps it would fill, writes nothing.
+uv run python manage.py backfill_weather
+
+# Fill every gap from the start of the bulletin archive to yesterday.
+uv run python manage.py backfill_weather --commit
+
+# A single missed day.
+uv run python manage.py backfill_weather --date 2026-08-26 --commit
+
+# An explicit range.
+uv run python manage.py backfill_weather --start 2026-01-01 --end 2026-04-30 --commit
+
+# Bootstrap against the on-disk archive instead of the live Open-Meteo API.
+# Requires the dev server to be running and
+# settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
+uv run python manage.py backfill_weather --local-mirror --commit
+
+# Capture the window to apps/weather/local_mirrors/openmeteo_archive.ndjson.
+uv run python manage.py backfill_weather --stash
+
+# Tighten pacing for a long historical backfill.
+uv run python manage.py backfill_weather \
+    --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
+
+# Flags:
+#   --date         YYYY-MM-DD  single date; mutually exclusive with --start/--end
+#   --start        YYYY-MM-DD  start of window (inclusive); defaults to the
+#                              earliest bulletin date or SEASON_START_DATE
+#   --end          YYYY-MM-DD  end of window (inclusive); defaults to yesterday.
+#                              Must be before today.
+#   --commit                   persist the missing WeatherSnapshot rows;
+#                              omit for a read-only run
+#   --local-mirror             replay from apps/weather/local_mirrors/openmeteo_archive.ndjson
+#                              via the dev-only view (development.py only)
+#   --delay        SECONDS     seconds between per-region archive calls
+#                              (default 1.0; pass 0 to disable)
+#   --stash                    append fetched weather records to the on-disk archive
+```
 
 ---
 

@@ -107,17 +107,18 @@ step 6 is optional there — it only front-runs the wait.
 run by hand. Without it the panels stay empty even though every location and
 cell exists.
 
-⚠️ **Always pin `--date` on staging.** With no `--date`, `fetch_weather`
-derives its start from the latest stored `WeatherSnapshot` and runs to today
-— and because staging only ever fetches when someone runs it by hand, that
-gap is however long it has been since the last run. Each day in the window
-costs one paced archive call per micro-region, so a two-week gap is
-~7,000 calls at 1s each: over two hours. Pinning `--date` to today fetches
-one day of region archive plus the whole active-cell forecast pass, which is
-all a freshly-backfilled environment needs.
+`fetch_weather` takes no date arguments: it fetches today's forecast for
+every region plus the whole active-cell forecast pass, which is all a
+freshly-backfilled environment needs. (This step used to require pinning
+`--date` on staging, because the command derived a window from the latest
+stored snapshot and walked it through the archive endpoint — on a
+hand-run environment that could be a two-week gap, ~7,000 paced calls,
+over two hours. That routing is gone.)
 
-The point pass only runs when the window reaches today, so a window that
-ends in the past populates no forecast cells at all.
+Filling historical days is now a separate, explicit command —
+`backfill_weather` — which fetches only the days actually missing and makes
+no API call for a region that is already complete. It is never needed just
+to light up the panels: they read forward from today.
 
 ## Verification
 
