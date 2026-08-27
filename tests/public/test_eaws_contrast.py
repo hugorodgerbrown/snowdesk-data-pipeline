@@ -1,5 +1,5 @@
 """
-tests/public/test_eaws_contrast.py — WCAG AA guard for the EAWS colour pairs.
+tests/public/test_eaws_contrast.py — contrast guard for the EAWS colour pairs.
 
 The EAWS danger scale is a fixed standard: five backgrounds this project
 cannot adjust, three of which are bright and two of which are the same red.
@@ -7,14 +7,19 @@ The copy that sits on them is ours to choose, and choosing it wrongly is
 invisible in review — a tile reads as "obviously fine" long after it has
 stopped clearing 4.5:1.
 
-That is how it happened. ``--color-eaws-high-fg`` and its very-high twin
-were #ffffff from the palette's first commit: 4.00:1 on the #ff0000 both
-levels share, and 1.07:1 where a split calendar cell painted the same white
-across a yellow half. Neither is large text under WCAG (the tiles are
-14–15px at 600–700, the calendar cells smaller), so the large-text
-allowance never applied. Nothing caught it because the ratios lived only in
-a hand-maintained comment beside the tokens; SNOW-739 corrected the values
-and added this, so the comment and the palette cannot drift apart again.
+Levels 4 and 5 carry white, which is 4.00:1 on #ff0000 and so does not
+clear AA. That is deliberate: it is SLF's own pairing on its danger-level
+legend, and this app renders SLF's bulletins (Hugo, SNOW-739). #ff0000
+admits no compliant light ink at all — white is the lightest colour there
+is and it reaches 4.00 — so the real choice was white against near-black,
+and near-black on EAWS red reads worse than the number it would satisfy.
+``KNOWN_EXCEPTIONS`` pins both pairs, so the exception stays deliberate,
+stays two, and cannot quietly grow a third.
+
+Everything else must pass, including the case that has no SLF precedent: a
+split calendar cell paints ONE ink across a two-colour gradient, so its ink
+has to clear every fill, not just its own. Before SNOW-739 those cells took
+a level's own -fg and put white over a yellow half at 1.07:1.
 
 Read against FOUNDATION_CATEGORIES rather than main.css: the existing
 ``check_design_tokens_match_css`` system check already fails when the two
@@ -28,29 +33,41 @@ import pytest
 from apps.public.design_tokens import FOUNDATION_CATEGORIES, Token
 
 # WCAG 2.1 AA for normal-size text. Every surface consuming these tokens is
-# normal-size — see the module docstring — so the large-text 3:1 allowance
-# is deliberately not offered here.
+# normal-size (tiles are 14–15px at 600–700, calendar cells smaller), so the
+# large-text 3:1 allowance is deliberately not offered here.
 AA_NORMAL_TEXT = 4.5
 
-# (foreground token, background token) — the copy each EAWS level puts on
-# its own saturated fill. The five pairs consumed by .danger-tile, .dw-tile
-# and .calendar-cell.
-EAWS_FG_ON_SOLID: tuple[tuple[str, str], ...] = (
-    ("--color-eaws-low-fg", "--color-eaws-low"),
-    ("--color-eaws-moderate-fg", "--color-eaws-moderate"),
-    ("--color-eaws-considerable-fg", "--color-eaws-considerable"),
-    ("--color-eaws-high-fg", "--color-eaws-high"),
-    ("--color-eaws-very-high-fg", "--color-eaws-very-high"),
+EAWS_FILLS: tuple[str, ...] = (
+    "--color-eaws-low",
+    "--color-eaws-moderate",
+    "--color-eaws-considerable",
+    "--color-eaws-high",
+    "--color-eaws-very-high",
 )
 
-# (foreground token, background token) — the copy each level puts on its own
-# pale tint, used by .danger-band and .period-transition-chip.
-EAWS_TEXT_ON_TINT: tuple[tuple[str, str], ...] = (
-    ("--color-eaws-low-text", "--color-eaws-low-tint"),
-    ("--color-eaws-moderate-text", "--color-eaws-moderate-tint"),
-    ("--color-eaws-considerable-text", "--color-eaws-considerable-tint"),
-    ("--color-eaws-high-text", "--color-eaws-high-tint"),
-    ("--color-eaws-very-high-text", "--color-eaws-very-high-tint"),
+# The ink each level puts on its own saturated fill — .danger-tile, .dw-tile,
+# .panel-title and the solid calendar cells.
+EAWS_FG_ON_OWN_FILL: tuple[tuple[str, str], ...] = tuple(
+    (f"{fill}-fg", fill) for fill in EAWS_FILLS
+)
+
+# Pairs that knowingly fall short, and why. Matching the issuing service was
+# judged to matter more than the ratio on exactly these two.
+KNOWN_EXCEPTIONS: dict[tuple[str, str], str] = {
+    ("--color-eaws-high-fg", "--color-eaws-high"): (
+        "SLF renders level 4 as white on EAWS red; #ff0000 admits no "
+        "compliant light ink"
+    ),
+    ("--color-eaws-very-high-fg", "--color-eaws-very-high"): (
+        "SLF renders level 5 as white on EAWS red; #ff0000 admits no "
+        "compliant light ink"
+    ),
+}
+
+# The ink each level puts on its own pale tint — .danger-band and
+# .period-transition-chip. No exceptions here: the tints are ours to pick.
+EAWS_TEXT_ON_TINT: tuple[tuple[str, str], ...] = tuple(
+    (f"{fill}-text", f"{fill}-tint") for fill in EAWS_FILLS
 )
 
 
@@ -107,20 +124,43 @@ def _contrast_ratio(foreground: str, background: str) -> float:
 
 
 def test_relative_luminance_matches_known_values() -> None:
-    """Black and white anchor the scale; mid grey lands where WCAG says."""
+    """Black and white anchor the scale; the extremes land where WCAG says."""
     assert _relative_luminance("#000000") == pytest.approx(0.0)
     assert _relative_luminance("#ffffff") == pytest.approx(1.0)
     assert _contrast_ratio("#000000", "#ffffff") == pytest.approx(21.0)
 
 
-@pytest.mark.parametrize(("fg_token", "bg_token"), EAWS_FG_ON_SOLID)
-def test_eaws_foreground_clears_aa_on_its_solid(fg_token: str, bg_token: str) -> None:
-    """Each level's -fg copy clears 4.5:1 on that level's saturated fill."""
+@pytest.mark.parametrize(("fg_token", "bg_token"), EAWS_FG_ON_OWN_FILL)
+def test_eaws_foreground_clears_aa_on_its_own_fill(
+    fg_token: str, bg_token: str
+) -> None:
+    """Each level's ink clears 4.5:1 on its own fill, bar the SLF exceptions."""
     values = _token_values()
     ratio = _contrast_ratio(values[fg_token], values[bg_token])
+    if (fg_token, bg_token) in KNOWN_EXCEPTIONS:
+        pytest.skip(f"deliberate: {KNOWN_EXCEPTIONS[fg_token, bg_token]}")
     assert ratio >= AA_NORMAL_TEXT, (
         f"{fg_token} ({values[fg_token]}) on {bg_token} ({values[bg_token]}) "
         f"is {ratio:.2f}:1, below WCAG AA {AA_NORMAL_TEXT}:1"
+    )
+
+
+def test_the_slf_parity_exceptions_are_still_exactly_the_known_two() -> None:
+    """Every shortfall on a fill is one of the two SLF-parity pairs.
+
+    The skip above would hide a NEW failure introduced on a different level,
+    so the set of shortfalls is asserted whole. Adding a third means either
+    fixing it or recording it in KNOWN_EXCEPTIONS with its reason.
+    """
+    values = _token_values()
+    failing = {
+        (fg, bg)
+        for fg, bg in EAWS_FG_ON_OWN_FILL
+        if _contrast_ratio(values[fg], values[bg]) < AA_NORMAL_TEXT
+    }
+    assert failing == set(KNOWN_EXCEPTIONS), (
+        f"AA shortfalls on EAWS fills are {sorted(failing)}, expected exactly "
+        f"the recorded exceptions {sorted(KNOWN_EXCEPTIONS)}"
     )
 
 
@@ -135,26 +175,17 @@ def test_eaws_text_clears_aa_on_its_tint(fg_token: str, bg_token: str) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("fg_token", "bg_token"),
-    [
-        # A split calendar cell paints ONE level's -fg across both halves of
-        # a two-colour gradient, so every -fg has to clear every other
-        # level's fill as well as its own. This is the pairing that was
-        # worst before SNOW-739: white on the pale-green low half, 1.16:1.
-        (fg, bg)
-        for fg, _ in EAWS_FG_ON_SOLID
-        for _, bg in EAWS_FG_ON_SOLID
-    ],
-)
-def test_every_eaws_foreground_clears_aa_on_every_fill(
-    fg_token: str, bg_token: str
-) -> None:
-    """Any -fg must survive any fill — split cells mix two levels under one copy."""
+@pytest.mark.parametrize("bg_token", EAWS_FILLS)
+def test_mixed_level_ink_clears_aa_on_every_fill(bg_token: str) -> None:
+    """The split-cell ink clears every fill — it is painted across two.
+
+    A split calendar cell has no dominant half to tune for, and no SLF
+    equivalent to match, so this one gets no exception.
+    """
     values = _token_values()
-    ratio = _contrast_ratio(values[fg_token], values[bg_token])
+    ratio = _contrast_ratio(values["--color-eaws-mixed-fg"], values[bg_token])
     assert ratio >= AA_NORMAL_TEXT, (
-        f"{fg_token} ({values[fg_token]}) on {bg_token} ({values[bg_token]}) "
-        f"is {ratio:.2f}:1, below WCAG AA {AA_NORMAL_TEXT}:1 — a split "
-        f"calendar cell can pair these"
+        f"--color-eaws-mixed-fg ({values['--color-eaws-mixed-fg']}) on "
+        f"{bg_token} ({values[bg_token]}) is {ratio:.2f}:1, below WCAG AA "
+        f"{AA_NORMAL_TEXT}:1 — a split cell can pair these"
     )
