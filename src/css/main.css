@@ -342,12 +342,46 @@
      backgrounds.  These are deliberately declared alongside the rest of
      the EAWS scale (not the neutral text ramp) so they stay theme-
      invariant — saturated EAWS colours don't change in dark mode, so
-     their text mustn't either. */
-  --color-eaws-low-fg:          #1a1916;
-  --color-eaws-moderate-fg:     #1a1916;
-  --color-eaws-considerable-fg: #1a1916;
-  --color-eaws-high-fg:         #ffffff;
-  --color-eaws-very-high-fg:    #ffffff;
+     their text mustn't either.
+
+     One ink across all five, because a split calendar cell paints ONE
+     level's -fg across a two-colour gradient: every value here has to
+     clear every fill, not just its own. Five names are kept so the rules
+     stay per-level and a future fill change has somewhere to land.
+
+     WCAG AA audit (SNOW-739) — #1a0000 on each EAWS fill:
+       low          #ccff66 → 17.30:1  PASS
+       moderate     #ffff00 → 18.73:1  PASS
+       considerable #ff9900 →  9.40:1  PASS
+       high         #ff0000 →  5.03:1  PASS
+       very-high    #ff0000 →  5.03:1  PASS
+     Enforced by tests/public/test_eaws_contrast.py, which checks every
+     ink against every fill rather than the diagonal — the comment these
+     numbers used to live in alone could not fail a build.
+
+     High and Very high were #ffffff before SNOW-739: 4.00:1 on the
+     #ff0000 they share, and 1.16:1 / 1.07:1 where a split cell carried
+     that white across a pale-green or yellow half. The neutral ink
+     #1a1916 the other three used misses too, at 4.40:1 on red — reachable
+     because a time-split cell takes the PM level's ink, so an
+     am=high/pm=low cell puts it on the red half. None of these surfaces
+     is large text (tiles are 14–15px at 600–700, calendar cells smaller),
+     so the 3:1 allowance never applied to any of them.
+
+     Warm near-black rather than the neutral: it is darker in the channels
+     red is bright in, which is exactly where the margin was missing. It
+     keeps the EAWS hue underneath, which the standard mandates and a
+     swapped background would have given up.
+
+     4 and 5 share a value because they share a fill by specification; the
+     surfaces that must tell them apart do it with the level number. Where
+     a surface carries no number — the problem card's title bar — it takes
+     a different treatment entirely; see .panel-title below. */
+  --color-eaws-low-fg:          #1a0000;
+  --color-eaws-moderate-fg:     #1a0000;
+  --color-eaws-considerable-fg: #1a0000;
+  --color-eaws-high-fg:         #1a0000;
+  --color-eaws-very-high-fg:    #1a0000;
 
   /* —— Weather header (SNOW-98) ————————————————
      Background tokens for the bulletin page's
@@ -614,20 +648,22 @@
    Levels 1–3 are the palette's designed pairing for a saturated surface —
    the solid with its -fg copy, exactly as .dw-tile and .danger-tile use it.
 
-   Levels 4 and 5 cannot be: EAWS assigns both #ff0000, and no companion
-   clears WCAG AA on it (white 4.00:1, the level's own -text #6b0000
-   3.23:1). The row is 12px/600, so the large-text allowance never applies
-   either. Each therefore borrows the other dark value it already owns —
-   High takes -text as its surface, Very high keeps the solid and takes its
-   own -tint as copy. No new token, and it gives 4 and 5 distinguishable
-   cards, which one shared hue otherwise cannot.
+   Levels 4 and 5 cannot be: EAWS assigns both #ff0000, and the row is
+   12px/600, so the large-text allowance never applies. Each therefore
+   borrows the other value it already owns and takes that level's -tint as
+   copy — High swaps to -text as its surface, Very high keeps the solid.
+   No new token, and it gives 4 and 5 distinguishable cards, which one
+   shared hue otherwise cannot. (SNOW-739 moved High's copy from -fg to
+   -tint when -fg was corrected to near-black for the tiles; on this row's
+   dark surface the two swap roles, so the ratio moves 12.92 → 9.96 and
+   the rule keeps the same shape as Very high's.)
 
-   Measured: 15.12 / 16.37 / 8.21 / 12.92 / 5.03 — all clear 4.5:1.
+   Measured: 17.30 / 18.73 / 9.40 / 9.96 / 5.03 — all clear 4.5:1.
    ————————————————————————————————————————— */
 .panel-title[data-level="low"]          { background: var(--color-eaws-low);          color: var(--color-eaws-low-fg); }
 .panel-title[data-level="moderate"]     { background: var(--color-eaws-moderate);     color: var(--color-eaws-moderate-fg); }
 .panel-title[data-level="considerable"] { background: var(--color-eaws-considerable); color: var(--color-eaws-considerable-fg); }
-.panel-title[data-level="high"]         { background: var(--color-eaws-high-text);    color: var(--color-eaws-high-fg); }
+.panel-title[data-level="high"]         { background: var(--color-eaws-high-text);    color: var(--color-eaws-high-tint); }
 .panel-title[data-level="very_high"]    { background: var(--color-eaws-very-high);    color: var(--color-eaws-very-high-tint); }
 
 
