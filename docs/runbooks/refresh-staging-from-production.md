@@ -1,6 +1,6 @@
 ---
 name: refresh-staging-from-production
-description: sync_from_production, snowdesk-staging-data-sync cron, PRODUCTION_DATABASE_URL read-only role — production bulletins/weather into staging
+description: bin/sync-staging-data, snowdesk-staging-data-sync cron, PRODUCTION_DATABASE_URL read-only role — production bulletins/weather into staging
 status: current
 last-reviewed: 2026-08-27
 ---
@@ -9,25 +9,38 @@ last-reviewed: 2026-08-27
 
 Staging runs one web dyno with no scheduler and no task worker
 ([`render.yaml`](../../render.yaml)), so its database never ingests a
-bulletin or a weather forecast of its own. `manage.py sync_from_production`
+bulletin or a weather forecast of its own. [`bin/sync-staging-data`](../../bin/sync-staging-data)
 copies the provider-derived tables out of production instead, and the
 `snowdesk-staging-data-sync` Render cron job runs it nightly at 07:20 UTC.
+
+It is a `pg_dump`/`psql` replace, not an incremental merge: every run clears
+the target tables and reloads them, preserving production's primary keys.
+SNOW-736 replaced a row-by-row ORM copy that pushed ~230
+`INSERT … ON CONFLICT` statements for a single table and put the staging
+database into crash recovery.
 
 ## What is copied, and what is not
 
 | Copied | Not copied |
 | ------ | ---------- |
-| `bulletins.Bulletin` | `auth_user`, `accounts.Account`, `accounts.Subscription` |
-| `bulletins.RegionBulletin` | `accounts.PasskeyCredential`, `accounts.PushSubscription` |
-| `bulletins.RegionDayRating` | `favourites.Favourite`, `observations.FieldObservation` |
-| `bulletins.BulletinGrouping` | `routes.Route`, `core.RequestLog` |
-| `weather.ForecastCell` | `bulletins.BulletinShare` / `BulletinShareClick` |
-| `weather.ForecastCellWeather` | `bulletins.PipelineRun` |
-| `weather.ForecastCellWeatherHistory` | EAWS regions (fixture-loaded by `build.sh` on both sides) |
+| `bulletins.PipelineRun` | `auth_user`, `accounts.Account`, `accounts.Subscription` |
+| `bulletins.Bulletin` | `accounts.PasskeyCredential`, `accounts.PushSubscription` |
+| `bulletins.RegionBulletin` | `favourites.Favourite`, `observations.FieldObservation` |
+| `bulletins.RegionDayRating` | `routes.Route`, `core.RequestLog` |
+| `bulletins.BulletinGrouping` | `bulletins.BulletinShare` / `BulletinShareClick` |
+| `weather.ForecastCell` | EAWS regions (fixture-loaded by `build.sh` on both sides) |
+| `weather.ForecastCellWeather` | |
+| `weather.ForecastCellWeatherHistory` | |
 | `weather.WeatherSnapshot` | |
 | `regions.Resort` | |
 | `locations.Location` *(curated rows only — see below)* | |
 | `locations.ResortLocation` | |
+
+Four of the "not copied" tables — `favourites.Favourite`,
+`observations.FieldObservation`, `bulletins.BulletinShare` and
+`BulletinShareClick` — are **truncated on staging and left empty**, because
+they reference the copied tables. Staging's user accounts, passkeys and
+routes survive untouched.
 
 **No user data crosses the boundary.** That is what makes the job safe to
 run unattended with no anonymisation step, and it matters more here than in
@@ -35,11 +48,14 @@ most environments: staging runs `config.settings.staging`, whose
 `ImmediateBackend` sends email inline on the request. A copied subscriber
 list would be a copied mailing list on a box that can actually mail it.
 
-`PipelineRun` is excluded because it is telemetry about *production's*
-ingest runs, has no natural key to upsert on, and
-`Bulletin.pipeline_run` is `null=True, on_delete=SET_NULL` — so the copied
-bulletins simply carry a null reference. `BulletinShareClick` is excluded
-because it foreign-keys `RequestLog`, which carries IP and geo.
+`bulletins.PipelineRun` **is** copied, unlike under the old ORM version:
+`Bulletin.pipeline_run_id` points at it, and preserving primary keys means
+its lack of a natural key — the only reason it was excluded before — stops
+mattering. It is ingest telemetry, not user data.
+
+`BulletinShare` and `BulletinShareClick` are excluded: a click row
+foreign-keys `RequestLog`, which carries IP and geo. They are truncated on
+staging (they reference the copied bulletins) and not refilled.
 
 ### `locations.Location` is the one mixed table
 
@@ -49,18 +65,16 @@ per saved map pin and per field report, straight from user input. The table
 therefore holds curated and personal rows side by side, and copying it whole
 would put somebody's saved positions on staging.
 
-The plan restricts it to rows that a `ResortLocation` references. That is a
+The copy restricts it to rows that a `ResortLocation` references — a
 **structural** test of "is this curated", not a heuristic on whether the row
-happens to have a name, and it runs as a subquery inside production — so an
-unreferenced Location is never fetched at all, rather than fetched and then
-discarded. `test_a_ugc_location_is_never_read` asserts exactly that, and
-`test_mixed_tables_are_restricted` fails if a future plan entry names a
-mixed table without a restriction.
+happens to have a name. It is a `\copy` of a filtered `SELECT` rather than a
+`pg_dump --table`, so an unreferenced Location is never read out of
+production at all, rather than read and then discarded.
 
-Region-centroid Locations are *not* copied: `MicroRegion` is not in the plan,
-so copying them would relink nothing. If staging's region centroids are null,
-run `manage.py link_region_centroid_locations --commit` there — it is
-idempotent.
+Region-centroid Locations are *not* copied: `regions_microregion` is not in
+the set. Its `centroid_location_id` is released before the truncate and
+rebuilt afterwards by `link_region_centroid_locations --commit`, which the
+script runs for you.
 
 ### Why copying resorts does not contradict the resorts-are-editable ADR
 
@@ -75,18 +89,20 @@ production map editor on 2026-07-28, reaches staging by nothing else.
 Staging's own resort edits are overwritten by design — staging is disposable,
 and the point is for it to look like production.
 
-The authoritative table plan is `SYNC_PLAN` in
-[`apps/core/services/production_sync.py`](../../apps/core/services/production_sync.py);
-`tests/core/services/test_production_sync.py::test_plan_copies_no_user_data`
-fails if a future table in the plan reaches a user by foreign key.
+The authoritative lists are `LOAD_ORDER` and `CLEAR_ONLY` in
+[`bin/sync-staging-data`](../../bin/sync-staging-data).
+[`tests/bin/test_sync_staging_data.py`](../../tests/bin/test_sync_staging_data.py)
+recomputes the foreign-key closure from Django's model metadata and fails if
+those lists drift — which they will, silently, the first time a new model
+points at a copied table. It also asserts no user-owned table is ever
+loaded.
 
 ## One-time setup
 
 ### 1. Create a read-only role on the production database
 
-Nothing in the sync issues a write against production, and
-`ProductionReadOnlyRouter` blocks migrations on the alias — but the role is
-the guarantee. The code is only the intent.
+The script only ever reads from production — `pg_dump` and a `\copy … TO
+STDOUT` — but the role is the guarantee. The code is only the intent.
 
 In the Render dashboard → **snowdesk-db → Connect → PSQL Command**, then:
 
@@ -138,14 +154,11 @@ worth a ticket, not worth blocking the sync on.
 **The last line is not optional.** `GRANT SELECT ON ALL TABLES` applies only
 to the tables that exist at the moment it runs. Without the default-privileges
 grant, the first migration that adds a table leaves that table unreadable to
-`staging_sync` — and because `information_schema.columns` only shows columns
-the connected role has a privilege on, the sync reports it as
-`Table 'x' does not exist in the production database` rather than as a
-permissions error.
+`staging_sync`, and `pg_dump` fails the run with a permission error naming
+it.
 
 If the production plan offers a read replica, point the role at the replica
-instead of the primary so a full `--all` load never competes with live
-traffic.
+instead of the primary so a full load never competes with live traffic.
 
 ### Password characters
 
@@ -192,31 +205,40 @@ cron job six hours later.
 
 ### 3. Verify from the staging shell
 
-Read-only first — this touches nothing:
+Read-only first — this writes nothing:
 
 ```bash
-python manage.py sync_from_production --all
+./bin/sync-staging-data
 ```
 
-Expect a per-table `read=… written=… skipped=…` line and a
-`[READ-ONLY] dry-run` summary. Skip counts in a dry run are meaningless
-(no parent rows were written, so children cannot resolve new parents) and
-the summary says so.
+It verifies the region primary keys match, prints a production-vs-staging
+row count per table, and stops. Confirm the production counts look like a
+live database and that `regions_microregion verified identical` appears.
 
-### 4. First full load
+Check the client tools are present and new enough while you are there —
+`pg_dump` refuses to read a server newer than itself:
 
 ```bash
-python manage.py sync_from_production --all --commit
+pg_dump --version && psql -At -c 'SHOW server_version;' "$DATABASE_URL"
 ```
 
-**`--all` is required for the first load.** The default is a seven-day
-`updated_at` window, which on an empty staging database copies recent
-bulletins whose parents were never synced — every child row is then skipped
-and the command exits non-zero.
+### 4. Load
 
-At production volume (~8,000 bulletins) this reads the full `raw_data` and
-`hourly_series` JSON columns. Reads are keyset-paginated 500 rows at a
-time, so memory stays flat, but the run is not instant.
+```bash
+./bin/sync-staging-data --commit
+```
+
+Minutes, not tens of minutes: each table moves in a single `COPY`.
+
+**It clears before it loads, and the blast radius is wider than the table
+list.** Staging's own favourites, field observations and bulletin shares
+reference the copied tables, so they are truncated too and are *not*
+refilled. Staging's user accounts, passkeys and routes are untouched. The
+script's `CLEAR_ONLY` array is the exhaustive list.
+
+Region centroids are released before the truncate
+(`regions_microregion.centroid_location_id`) and rebuilt at the end by
+`link_region_centroid_locations --commit`, which the script runs for you.
 
 ## The nightly job
 
@@ -227,59 +249,70 @@ at 07:20 UTC — after production's 06:00 `fetch_weather` pass and the hourly
 already current.
 
 ```
-uv run --no-sync python manage.py sync_from_production --commit
+./bin/sync-staging-data --commit
 ```
 
-The seven-day default window absorbs a few consecutive failed runs without
-anyone noticing. Every table upserts on its natural key, so re-copying a row
-is a no-op; running the job twice is harmless.
+Every run is a full replace, so there is no incremental window to fall
+behind and no partial state to reconcile: a failed run costs one day's
+freshness and the next run is a clean slate. Running it twice in a row is
+harmless.
 
 ## Troubleshooting
 
-### `skipped N with an unresolvable foreign key`
+### `regions_microregion primary keys differ between the two databases`
 
-A child row's parent is not on staging. Almost always means the window
-missed the parent — re-run with `--all --commit` to close the gap.
+The script stops before touching anything. `COPY` preserves production's
+`region_id` foreign keys verbatim, so mismatched region ids would attach
+every bulletin to the *wrong region* — silently, with no error and no failed
+row. That is why it is checked on every run rather than assumed.
 
-If it persists after an `--all` run, the missing parent is a `MicroRegion`:
-production has a region id the staging fixtures do not. Check which:
+The region fixtures are loaded by natural key with no explicit `pk`, so ids
+come from insertion order and are equal only because `build.sh` loads the
+same fixtures in the same order on both sides. If they have diverged, the
+fix is to reconcile the fixtures and reload, not to bypass the check.
+
+### `cannot truncate a table referenced in a foreign key constraint`
+
+A model gained a foreign key into the copied set and its table is not in the
+script's `CLEAR_ONLY` list. Postgres names the offender because the script
+truncates **without** `CASCADE` — deliberately, since
+`regions_microregion.centroid_location_id` references `locations_location`
+and a `CASCADE` would reach the region table and most of the database
+through it.
+
+Add the named table to `CLEAR_ONLY`, or — if it must survive and its column
+is nullable — null it first the way `centroid_location_id` is handled.
+`tests/bin/test_sync_staging_data.py` recomputes this closure from the model
+graph and should have failed in CI first; if it did not, the test needs
+fixing too.
+
+### `pg_dump: server version mismatch`
+
+`pg_dump` refuses to read a server newer than itself. Check both:
 
 ```bash
-python manage.py sync_from_production --all --only bulletins.RegionBulletin -v 2
+pg_dump --version && psql -At -c 'SHOW server_version;' "$PRODUCTION_DATABASE_URL"
 ```
 
-The fix is a fixture update on `main`, not a change here — the region
-fixtures are meant to be identical on both sides.
-
-### `Table 'x' does not exist in the production database`
-
-Either the table genuinely predates production's current migration state
-(possible: staging deploys from `main`, production from `release`, so
-staging can be several migrations ahead), or `staging_sync` lacks `SELECT`
-on it — see the default-privileges note in step 1. `information_schema`
-cannot tell the two apart, so check the grant first.
-
-A column that exists only on staging is *not* an error: reads use the
-intersection of both schemas and the missing values fall back to their
-Django field defaults.
+The client comes from the Render image, so the fix is an image or plan
+change rather than anything in this repo.
 
 ### `DATABASE_URL and PRODUCTION_DATABASE_URL point at the same database`
 
 Exactly what it says, and the reason staging and production must never
-share a database ([`docs/deployment.md`](../deployment.md)). Fix the env
-group; do not work around it.
+share a database ([`docs/deployment.md`](../deployment.md)). The script
+truncates its target, so it refuses rather than risk it. Fix the env group;
+do not work around it.
 
-### Timestamps look wrong
+### Staging's favourites and observations have gone
 
-`created_at` and `updated_at` on a synced row are the time it reached
-staging, not the time production created it — both are
-`auto_now_add`/`auto_now` on `BaseModel` and `bulk_create` stamps them.
-Every timestamp that carries domain meaning (`issued_at`, `valid_from`,
-`target_date`, `fetched_at`, `valid_for_date`) copies verbatim.
+Expected. They reference the copied tables, so they are truncated with them
+and not refilled — see step 4. Staging user accounts, passkeys and routes
+survive.
 
 ## Reverting
 
 There is no undo, and none is needed: nothing here writes to production, and
-staging's data is disposable by definition. To start staging over, drop and
-rebuild it with [`reset-live-db.md`](reset-live-db.md) pointed at the
-staging database, then run the first full load again.
+staging's data is disposable by definition. Re-running the script is itself
+the recovery path — every run is a full replace, so a half-finished run is
+repaired by the next one rather than needing to be unwound.

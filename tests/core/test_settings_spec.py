@@ -126,7 +126,7 @@ class TestPostgresDsn:
         """A host:port/db with no scheme is the mistake worth catching.
 
         It would otherwise surface as an opaque driver error part-way
-        through an unattended ``sync_from_production`` run.
+        through an unattended `bin/sync-staging-data` run.
         """
         problem = postgres_dsn("prod.example:5432/snowdesk")
 

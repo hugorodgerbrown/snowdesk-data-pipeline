@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# bin/sync-staging-data — refresh staging's provider data from production.
+#
+# Replaces the row-by-row ORM copy SNOW-729 shipped (SNOW-736). That version
+# pushed ~230 `INSERT … ON CONFLICT` statements through Django for
+# bulletins_regionbulletin alone, building 59,085 model instances in Python
+# on a starter dyno, and put the staging database into crash recovery.
+# `COPY` moves the same rows in one statement per table, an order of
+# magnitude faster and at a fraction of the server load.
+#
+# No user data is copied. `pg_dump --table=` names every table explicitly,
+# so nothing personal enters the dump stream — the guarantee comes from not
+# selecting those rows rather than from filtering them afterwards.
+# locations_location is the one table holding curated and user rows side by
+# side, and it is streamed through a filtered \copy instead.
+#
+# Three facts make this safe, each verified rather than assumed:
+#
+#   * regions_microregion primary keys are identical in both databases, so
+#     COPY preserves production's foreign keys verbatim and every reference
+#     still points at the right region. Re-checked on every run below,
+#     because a mismatch would mis-attribute every bulletin *silently*.
+#   * TRUNCATE is issued WITHOUT CASCADE. The list is the exact closure of
+#     tables referencing the copied set, computed from the model graph, so
+#     if it is ever incomplete Postgres names the missing table and refuses
+#     rather than quietly emptying it. This matters more than it looks:
+#     regions_microregion.centroid_location_id references locations_location,
+#     so a CASCADE here would reach the region table and, through it, most
+#     of the database. That column is nullable, so it is nulled first and
+#     rebuilt afterwards by link_region_centroid_locations.
+#   * Every table loaded here is populated on staging only by this script,
+#     so clearing before loading is a refresh, not a loss.
+#
+# What it does clear, and does not restore: staging's own favourites, field
+# observations and bulletin shares. They reference the copied tables, so
+# they have to go. Staging's user accounts, passkeys and routes are NOT
+# touched. See the runbook.
+#
+# Read-only by default; pass --commit to write.
+# Runbook: docs/runbooks/refresh-staging-from-production.md
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+COMMIT=0
+for arg in "$@"; do
+    case "$arg" in
+        --commit) COMMIT=1 ;;
+        -h | --help)
+            sed -n '2,42p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            exit 2
+            ;;
+    esac
+done
+
+: "${DATABASE_URL:?DATABASE_URL is not set}"
+: "${PRODUCTION_DATABASE_URL:?PRODUCTION_DATABASE_URL is not set — see the runbook}"
+
+# Load order, not alphabetical: a table's foreign-key parents come first.
+# Django's foreign keys are DEFERRABLE INITIALLY DEFERRED, but each COPY runs
+# in its own transaction here, so the checks fire per table and order counts.
+#
+# bulletins_pipelinerun leads because bulletins_bulletin.pipeline_run_id
+# points at it. The ORM version nulled that column instead, because
+# PipelineRun has no natural key to upsert on — a constraint that simply
+# does not exist once COPY is preserving primary keys.
+LOAD_ORDER=(
+    bulletins_pipelinerun
+    bulletins_forecastpoint
+    bulletins_bulletin
+    locations_location
+    regions_resort
+    locations_resortlocation
+    bulletins_regionbulletin
+    bulletins_regiondayrating
+    bulletins_bulletingrouping
+    bulletins_weathersnapshot
+    bulletins_forecastpointweather
+    bulletins_forecastpointweatherhistory
+)
+
+# The four tables below are cleared but never reloaded: they are staging's
+# own rows referencing the copied set. Without them TRUNCATE would refuse.
+CLEAR_ONLY=(
+    bulletins_bulletinshareclick
+    bulletins_bulletinshare
+    favourites_favourite
+    observations_fieldobservation
+)
+
+# Only rows a ResortLocation references are curated. apps/favourites/services.py
+# and apps/observations/views.py mint the rest from user input, and those are
+# never selected — so a saved position is not read out of production at all.
+LOCATION_FILTER="SELECT * FROM locations_location \
+WHERE id IN (SELECT location_id FROM locations_resortlocation)"
+
+psql_prod() { psql "$PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -At "$@"; }
+psql_local() { psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -At "$@"; }
+
+# --- Refuse to run against the wrong database -------------------------------
+# Compares host, port and database name; never touches the password.
+python3 - <<'PY'
+import os
+import sys
+from urllib.parse import urlsplit
+
+local = urlsplit(os.environ["DATABASE_URL"])
+prod = urlsplit(os.environ["PRODUCTION_DATABASE_URL"])
+if (local.hostname, local.port, local.path) == (prod.hostname, prod.port, prod.path):
+    sys.exit(
+        "REFUSING: DATABASE_URL and PRODUCTION_DATABASE_URL are the same "
+        "database. This script truncates its target."
+    )
+PY
+
+# --- Verify the assumption the whole approach rests on ----------------------
+REGION_HASH_SQL="SELECT md5(string_agg(id || ':' || region_id, ',' ORDER BY id)) \
+FROM regions_microregion;"
+
+if [[ "$(psql_prod -c "$REGION_HASH_SQL")" != "$(psql_local -c "$REGION_HASH_SQL")" ]]; then
+    cat >&2 <<'MSG'
+REFUSING: regions_microregion primary keys differ between the two databases.
+
+COPY preserves production's region_id foreign keys verbatim, so mismatched
+region ids would attach every bulletin to the wrong region — silently, with
+no error and no failed row. Reconcile the region fixtures on both sides
+first. See docs/runbooks/refresh-staging-from-production.md.
+MSG
+    exit 1
+fi
+
+echo "regions_microregion verified identical on both databases."
+echo
+printf '%-42s %12s %12s\n' "TABLE" "PRODUCTION" "STAGING"
+for table in "${LOAD_ORDER[@]}"; do
+    if [[ "$table" == "locations_location" ]]; then
+        prod_count=$(psql_prod -c "SELECT count(*) FROM ($LOCATION_FILTER) f;")
+    else
+        prod_count=$(psql_prod -c "SELECT count(*) FROM $table;")
+    fi
+    printf '%-42s %12s %12s\n' \
+        "$table" "$prod_count" "$(psql_local -c "SELECT count(*) FROM $table;")"
+done
+echo
+echo "Will also be cleared and left empty: ${CLEAR_ONLY[*]}"
+echo
+
+if [[ "$COMMIT" -eq 0 ]]; then
+    echo "[READ-ONLY] dry run — nothing written. Pass --commit to load."
+    exit 0
+fi
+
+# --- Clear -------------------------------------------------------------------
+# centroid_location_id is the one reference into the set from a table that
+# must survive. Nulling it lets TRUNCATE run without CASCADE;
+# link_region_centroid_locations rebuilds it at the end.
+echo "Releasing region centroid references…"
+psql_local -c "UPDATE regions_microregion SET centroid_location_id = NULL;" > /dev/null
+
+echo "Clearing $(( ${#LOAD_ORDER[@]} + ${#CLEAR_ONLY[@]} )) table(s)…"
+old_ifs=$IFS
+IFS=,
+truncate_list="${LOAD_ORDER[*]},${CLEAR_ONLY[*]}"
+IFS=$old_ifs
+# No CASCADE, deliberately: a missing table is an error naming itself, not a
+# silent truncation of something this script was never meant to touch.
+psql_local -c "TRUNCATE $truncate_list RESTART IDENTITY;"
+
+# --- Load --------------------------------------------------------------------
+for table in "${LOAD_ORDER[@]}"; do
+    echo "Loading $table…"
+    if [[ "$table" == "locations_location" ]]; then
+        psql "$PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "\copy ($LOCATION_FILTER) TO STDOUT" |
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+                -c "\copy locations_location FROM STDIN"
+    else
+        pg_dump "$PRODUCTION_DATABASE_URL" \
+            --data-only --no-owner --no-privileges --table="$table" |
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1
+    fi
+done
+
+# --- Reset sequences ---------------------------------------------------------
+# The rows carried production's primary keys, so RESTART IDENTITY left every
+# sequence at 1. The next INSERT would collide until they catch up.
+echo "Resetting sequences…"
+for table in "${LOAD_ORDER[@]}"; do
+    psql_local -c "SELECT setval(
+        pg_get_serial_sequence('$table', 'id'),
+        COALESCE((SELECT max(id) FROM $table), 1)
+    );" > /dev/null
+done
+
+# --- Rebuild what the clear released ----------------------------------------
+echo "Relinking region centroids…"
+python manage.py link_region_centroid_locations --commit
+
+echo
+echo "Done. Staging holds production's bulletins, weather and resorts."

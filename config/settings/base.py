@@ -968,14 +968,15 @@ SITE_NAME = "Snowdesk"
 # ``<head>`` (``apps/public/templates/public/base.html``).
 SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
 
-# SNOW-729: read-only production DSN, used only by
-# `manage.py sync_from_production` to refresh staging's bulletin and weather
-# tables. Declared here (rather than only in staging.py) so it resolves under
-# every settings module and appears — redacted — in `manage.py dump_settings`.
+# SNOW-729: read-only production DSN, used only by `bin/sync-staging-data`
+# to refresh staging's bulletins, weather and resorts.
 #
-# Reading it is inert on its own: only config/settings/staging.py turns it
-# into a `production` DATABASES alias, so production and development have
-# nothing to connect to even if the variable is set in their environment.
+# Nothing in Django connects to it — the script drives pg_dump/psql and reads
+# the variable from the environment itself (SNOW-736 removed the second
+# DATABASES alias that used to exist for an ORM-based copy). It is declared
+# here so it still resolves under every settings module, is shape-checked at
+# deploy time by the SETTINGS_SPEC validator, and appears — redacted — in
+# `manage.py dump_settings`.
 PRODUCTION_DATABASE_URL = config("PRODUCTION_DATABASE_URL", default="")
 
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).

@@ -644,7 +644,7 @@ Read these when working in the relevant area:
 | Mutation queue (window.pwaMutationQueue, Idempotency-Key, backoff, Background Sync, sync badge, failure toast) | [`docs/mutation-queue.md`](docs/mutation-queue.md) |
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
 | Backfill an environment onto the Location model (the five --commit commands, Open-Meteo cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
-| Refresh staging's bulletins and weather from production (sync_from_production, the nightly cron, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
+| Refresh staging's bulletins and weather from production (bin/sync-staging-data, the nightly cron, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk-data.info; origin is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |

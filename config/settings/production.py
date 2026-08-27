@@ -61,12 +61,12 @@ import dj_database_url  # noqa: E402 — optional dep, add to requirements if ne
 # on a request that reuses a pooled connection.
 #
 # This covers staging too. staging.py does `from .production import *` and
-# never overrides DATABASES["default"], so it inherits this connection
-# config verbatim — its own conn_max_age=0 applies to the separate read-only
-# `production` alias it registers for sync_from_production, not to `default`.
-# Easy to misread, and the reason the guard in
-# tests/config/test_database_settings.py asserts the pairing across every
-# deployed overlay rather than trusting per-module inspection.
+# never overrides DATABASES["default"], so it inherits this connection config
+# verbatim. That was easy to misread while staging.py still registered a
+# second database alias with its own conn_max_age=0 (SNOW-736 removed it),
+# and is the reason the guard in tests/config/test_database_settings.py
+# asserts the pairing across every deployed overlay rather than trusting a
+# per-module read.
 DATABASES = {
     "default": dj_database_url.config(
         default=config("DATABASE_URL"),
