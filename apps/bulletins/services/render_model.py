@@ -143,6 +143,7 @@ from django.utils.translation import gettext_lazy as _
 
 import apps.bulletins.services.prose.en  # noqa: F401 — registers "en" parser side-effect
 from apps.bulletins.models import Bulletin
+from apps.bulletins.services import day_summary
 from apps.bulletins.services.prose import parse_for as _prose_parse_for
 
 if TYPE_CHECKING:
@@ -2000,43 +2001,35 @@ def build_render_model(properties: dict[str, Any]) -> dict[str, Any]:
 @dataclasses.dataclass(frozen=True)
 class DayCharacter:
     """
-    Pair of label + one-line explainer for the day-character eyebrow.
+    Key, label and one-line explainer for the day-character callout.
 
     The label is one of the five canonical strings from the day-character
-    cascade; the explainer is a fixed one-liner that frames the label for
-    a non-expert reader. Both fields hold ``gettext_lazy`` proxies so the
-    active locale resolves them at render time.
+    cascade and answers "what kind of day is this". The explainer answers
+    "why, and what does it mean" — it comes from the hand-authored matrix
+    in :mod:`apps.bulletins.services.day_summary`, so it names the
+    bulletin's own problems and says whether the day's danger moves. Both
+    text fields may hold ``gettext_lazy`` proxies so the active locale
+    resolves them at render time.
+
+    ``key`` is the stable, locale-independent cascade key
+    (``"stable"``, ``"manageable"``, ``"hard_to_read"``, ``"widespread"``,
+    ``"dangerous"``) — the field consumers should branch and export on,
+    never the localised ``label``.
     """
 
+    key: str
     label: StrOrPromise
     explainer: StrOrPromise
 
 
-_DAY_CHARACTER: dict[str, DayCharacter] = {
-    "stable": DayCharacter(
-        label=_("Stable day"),
-        explainer=_("Low danger and benign problems — manage as usual."),
-    ),
-    "manageable": DayCharacter(
-        label=_("Manageable day"),
-        explainer=_("Moderate to considerable danger — read the terrain carefully."),
-    ),
-    "hard_to_read": DayCharacter(
-        label=_("Hard-to-read day"),
-        explainer=_("Persistent or gliding-snow problems can mask the real risk."),
-    ),
-    "widespread": DayCharacter(
-        label=_("Widespread danger"),
-        explainer=_(
-            "Considerable danger across many aspects, elevations, or problems."
-        ),
-    ),
-    "dangerous": DayCharacter(
-        label=_("Dangerous conditions"),
-        explainer=_(
-            "High to very high danger — backcountry travel is not recommended."
-        ),
-    ),
+# Canonical label per cascade key. The explainer is no longer stored here:
+# it varies per bulletin and is built by ``day_summary.summary_for``.
+_DAY_CHARACTER_LABELS: dict[str, StrOrPromise] = {
+    "stable": _("Stable day"),
+    "manageable": _("Manageable day"),
+    "hard_to_read": _("Hard-to-read day"),
+    "widespread": _("Widespread danger"),
+    "dangerous": _("Dangerous conditions"),
 }
 
 
@@ -2104,15 +2097,108 @@ def _is_stable(danger: int, problems: list[dict[str, Any]]) -> bool:
     )
 
 
+def _classify_day(danger: int, subdivision: str, problems: list[dict[str, Any]]) -> str:
+    """
+    Return the cascade key for a day, using the five-rule cascade.
+
+    Rules are evaluated top-to-bottom; the first match wins. See
+    docs/day_character_rules_spec.md for the original specification.
+
+    Args:
+        danger: Peak numeric danger level (1–5).
+        subdivision: Peak rating's subdivision display char, or ``""``.
+        problems: Flattened list of render model problem dicts. Never
+            empty — the caller short-circuits a bulletin with no traits.
+
+    Returns:
+        One of ``"stable"``, ``"manageable"``, ``"hard_to_read"``,
+        ``"widespread"``, ``"dangerous"``.
+
+    """
+    # Rule 1 — Dangerous conditions: danger >= 4
+    if danger >= 4:
+        return "dangerous"
+
+    # Rule 2 — Hard-to-read day: danger >= 2 and any hard-to-read problem
+    if danger >= 2 and any(
+        p.get("problem_type") in _HARD_TO_READ_PROBLEMS for p in problems
+    ):
+        return "hard_to_read"
+
+    # Rule 3 — Widespread danger: danger == 3 and broad exposure
+    if danger == 3 and _is_widespread(problems):
+        return "widespread"
+
+    # Rule 3b — Widespread danger: danger == 3 and upper subdivision (3+)
+    if danger == 3 and subdivision == "+":
+        return "widespread"
+
+    # Rule 5 — Stable day
+    if _is_stable(danger, problems):
+        return "stable"
+
+    # Rule 4 — Manageable day: danger 2 or 3 with no earlier match
+    if danger in {2, 3}:
+        return "manageable"
+
+    # Safe default
+    return "stable"
+
+
+def problem_types_for(traits: list[dict[str, Any]], periods: set[str]) -> list[str]:
+    """
+    Return the problem types named in *traits* for the given time periods.
+
+    Preserves editorial aggregation order and de-duplicates, so the result
+    can be handed straight to
+    :func:`~apps.bulletins.services.day_summary.join_problems`.
+
+    Args:
+        traits: The render model's ``traits`` list.
+        periods: ``validTimePeriod`` values to include, e.g.
+            ``{"all_day", "earlier"}``.
+
+    Returns:
+        Problem type strings in first-seen order.
+
+    """
+    ordered: list[str] = []
+    for trait in traits:
+        if trait.get("time_period") not in periods:
+            continue
+        for problem in trait.get("problems") or []:
+            problem_type = problem.get("problem_type")
+            if problem_type and problem_type not in ordered:
+                ordered.append(problem_type)
+    return ordered
+
+
 def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
     """
-    Classify a render model into one of five day-character entries.
+    Classify a render model into a day character with a bulletin-specific summary.
 
-    Rules are evaluated top-to-bottom; the first match wins. Uses the
-    five-rule cascade from docs/day_character_rules_spec.md.
+    The **label** comes from the five-rule cascade in :func:`_classify_day`
+    (see docs/day_character_rules_spec.md). The **explainer** comes from
+    the hand-authored matrix in
+    :mod:`apps.bulletins.services.day_summary`, keyed on how the day's
+    danger moves and whether its named problems can be read in the field.
 
-    When ``traits`` is empty (no avalanche problems reported), returns
-    the ``"Stable day"`` entry immediately.
+    Deriving the explainer needs three things off the render model:
+
+    - the **movement** — whether the danger level holds all day, rises,
+      falls, or holds while the problem underneath it changes. Taken from
+      :func:`compute_period_transition` plus a comparison of the two
+      windows' problem types, so a split that changes nothing for the
+      reader is reported as a static day.
+    - the **level** — the destination level on a changing day (what the
+      day ends at), the peak level on a static one.
+    - the **problems** — every problem type the day names, in editorial
+      order. Both windows count on a changing day: the movement says what
+      the afternoon does, the problem list says what is in play while it
+      happens.
+
+    When ``traits`` is empty (no avalanche problems reported), returns the
+    ``"stable"`` entry with the quiet-day copy for its danger level.
 
     This function is pure — no side effects, no database access.
 
@@ -2121,55 +2207,54 @@ def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
             :func:`build_render_model`.
 
     Returns:
-        A :class:`DayCharacter` carrying both the canonical label
-        (``"Stable day"``, ``"Manageable day"``, ``"Hard-to-read day"``,
-        ``"Widespread danger"``, or ``"Dangerous conditions"``) and a
-        one-line explainer for the eyebrow on the bulletin page.
+        A :class:`DayCharacter` carrying the cascade key, the canonical
+        label, and the one-line explainer for the callout on the bulletin
+        page.
 
     """
     danger_info = render_model.get("danger") or {}
     danger = int(danger_info.get("number") or 1)
     subdivision: str = danger_info.get("subdivision") or ""
-
-    # Flatten all problems across all traits for rule evaluation.
     traits: list[dict[str, Any]] = render_model.get("traits") or []
-
-    # Empty traits → quiet day, no problems to trigger any rule.
-    if not traits:
-        return _DAY_CHARACTER["stable"]
 
     problems: list[dict[str, Any]] = [
         p for trait in traits for p in (trait.get("problems") or [])
     ]
 
-    # Rule 1 — Dangerous conditions: danger >= 4
-    if danger >= 4:
-        return _DAY_CHARACTER["dangerous"]
+    # Empty traits → quiet day, no problems to trigger any cascade rule.
+    key = "stable" if not traits else _classify_day(danger, subdivision, problems)
 
-    # Rule 2 — Hard-to-read day: danger >= 2 and any hard-to-read problem
-    if danger >= 2 and any(
-        p.get("problem_type") in _HARD_TO_READ_PROBLEMS for p in problems
-    ):
-        return _DAY_CHARACTER["hard_to_read"]
+    # Movement and the window the explainer describes.
+    transition = compute_period_transition(render_model)
+    earlier_types = problem_types_for(traits, {"all_day", "earlier"})
+    later_types = problem_types_for(traits, {"later"})
+    movement = day_summary.classify_movement(
+        transition.direction if transition is not None and transition.has_split else "",
+        set(earlier_types),
+        set(later_types),
+    )
 
-    # Rule 3 — Widespread danger: danger == 3 and broad exposure
-    if danger == 3 and _is_widespread(problems):
-        return _DAY_CHARACTER["widespread"]
+    if movement == "static" or transition is None:
+        level = danger
+        from_level = danger
+        window_types = problem_types_for(traits, {"all_day", "earlier", "later"})
+    else:
+        # A changing day is described by where it ends up, from where it
+        # started — both read off the transition rather than the peak, which
+        # is only the higher of the two windows.
+        level = int(transition.destination_number)
+        from_level = int(transition.source_number or transition.destination_number)
+        # Both windows, not just the later one: a problem that runs all
+        # morning still sets the day's character, and dropping it here
+        # would let the explainer contradict the label the cascade built
+        # from every problem on the page.
+        window_types = problem_types_for(traits, {"all_day", "earlier", "later"})
 
-    # Rule 3b — Widespread danger: danger == 3 and upper subdivision (3+)
-    if danger == 3 and subdivision == "+":
-        return _DAY_CHARACTER["widespread"]
-
-    # Rule 5 — Stable day
-    if _is_stable(danger, problems):
-        return _DAY_CHARACTER["stable"]
-
-    # Rule 4 — Manageable day: danger 2 or 3 with no earlier match
-    if danger in {2, 3}:
-        return _DAY_CHARACTER["manageable"]
-
-    # Safe default
-    return _DAY_CHARACTER["stable"]
+    return DayCharacter(
+        key=key,
+        label=_DAY_CHARACTER_LABELS[key],
+        explainer=day_summary.summary_for(movement, level, window_types, from_level),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2205,6 +2290,10 @@ class PeriodTransition:
         has_split: ``True`` when any temporal split exists (direction may be
             ``"none"`` for flat-but-split). Used by templates to decide whether
             to show the Day Risk Profile transition row at all.
+        source_number: Display number string (``"1"``–``"5"``) for the
+            *source* period — the level the day starts at. Equal to
+            ``destination_number`` when ``direction="none"``. Defaults to
+            ``""`` so existing keyword construction keeps working.
 
     """
 
@@ -2215,6 +2304,7 @@ class PeriodTransition:
     partition_type: str
     partition_label: str
     has_split: bool
+    source_number: str = ""
 
 
 def _elevation_label_from_rm(rm_elev: dict[str, Any] | None) -> str:
@@ -2453,6 +2543,7 @@ def compute_period_transition(render_model: dict[str, Any]) -> PeriodTransition 
         direction = "none"
 
     dst_number = _DANGER_NUMBER.get(dst_key, "1")
+    src_number = _DANGER_NUMBER.get(src_key, "1")
 
     return PeriodTransition(
         direction=direction,
@@ -2462,4 +2553,5 @@ def compute_period_transition(render_model: dict[str, Any]) -> PeriodTransition 
         partition_type=partition_type,
         partition_label=partition_label,
         has_split=True,
+        source_number=src_number,
     )

@@ -314,3 +314,191 @@ class TestExplainerPerLabel:
     def test_stable_explainer_is_populated(self) -> None:
         """Stable branch returns a non-empty explainer."""
         assert compute_day_character(_render_model("1")).explainer
+
+
+# ---------------------------------------------------------------------------
+# The bulletin-specific explainer (day_summary matrix)
+# ---------------------------------------------------------------------------
+
+
+def _split_render_model(
+    early_key: str,
+    later_key: str,
+    early_problems: list[str],
+    later_problems: list[str],
+) -> dict:
+    """
+    Build a render model whose danger ratings and traits carry two periods.
+
+    Mirrors the shape ``compute_period_transition`` reads: an ``all_day``
+    rating plus a ``later`` one makes a temporal split.
+    """
+    numbers = {"low": "1", "moderate": "2", "considerable": "3", "high": "4"}
+    return {
+        "danger": {
+            "key": max(
+                (early_key, later_key),
+                key=lambda k: int(numbers[k]),
+            ),
+            "number": max(numbers[early_key], numbers[later_key]),
+            "subdivision": None,
+            "ratings": [
+                {"key": early_key, "period": "all_day", "subdivision": ""},
+                {"key": later_key, "period": "later", "subdivision": ""},
+            ],
+        },
+        "traits": [
+            {
+                "category": "dry",
+                "time_period": "all_day",
+                "problems": [_problem(p) for p in early_problems],
+            },
+            {
+                "category": "wet",
+                "time_period": "later",
+                "problems": [_problem(p) for p in later_problems],
+            },
+        ],
+    }
+
+
+class TestDayCharacterKey:
+    """Every instance carries the locale-independent cascade key."""
+
+    def test_key_is_stamped(self) -> None:
+        """The key is the field consumers branch and export on."""
+        assert compute_day_character(_render_model("1")).key == "stable"
+
+    def test_key_matches_the_cascade_branch(self) -> None:
+        """A hard-to-read bulletin is keyed as such, whatever the locale."""
+        rm = _render_model("2", problems=[_problem("persistent_weak_layers")])
+        assert compute_day_character(rm).key == "hard_to_read"
+
+    def test_key_does_not_vary_with_the_explainer(self) -> None:
+        """Two bulletins on the same branch share a key, not an explainer."""
+        slab = compute_day_character(
+            _render_model("2", problems=[_problem("wind_slab")])
+        )
+        snow = compute_day_character(
+            _render_model("2", problems=[_problem("new_snow")])
+        )
+        assert slab.key == snow.key == "manageable"
+        assert str(slab.explainer) != str(snow.explainer)
+
+
+class TestStaticDayExplainer:
+    """An unsplit day names its problems and says whether they can be read."""
+
+    def test_names_the_problem(self) -> None:
+        """The explainer carries the bulletin's own problem, not a generic line."""
+        rm = _render_model("3", problems=[_problem("wind_slab")])
+        assert "wind slab" in str(compute_day_character(rm).explainer)
+
+    def test_surface_problem_reads_as_readable(self) -> None:
+        """A wind-slab day is framed as evidence you can go and look at."""
+        rm = _render_model("2", problems=[_problem("wind_slab")])
+        assert "surface" in str(compute_day_character(rm).explainer)
+
+    def test_buried_problem_reads_as_hidden(self) -> None:
+        """A persistent-weak-layer day is framed as one field craft cannot read."""
+        rm = _render_model("3", problems=[_problem("persistent_weak_layers")])
+        assert "buried" in str(compute_day_character(rm).explainer)
+
+    def test_no_traits_still_produces_a_levelled_sentence(self) -> None:
+        """A bulletin with no problems gets quiet copy for its own level."""
+        rm = {"danger": {"key": "low", "number": "1"}, "traits": []}
+        explainer = str(compute_day_character(rm).explainer)
+        assert explainer.startswith("Low")
+        assert "no distinct problem" in explainer
+
+    def test_static_day_never_mentions_the_afternoon(self) -> None:
+        """With one window there is nothing to say about how the day moves."""
+        rm = _render_model("2", problems=[_problem("wind_slab")])
+        assert "afternoon" not in str(compute_day_character(rm).explainer)
+
+
+class TestChangingDayExplainer:
+    """A split day says which way it goes, and over which problems."""
+
+    def test_rising_day_reads_as_deteriorating(self) -> None:
+        """A rising level is stated as deterioration, with both levels named."""
+        rm = _split_render_model(
+            "moderate", "considerable", ["wind_slab"], ["wet_snow"]
+        )
+        explainer = str(compute_day_character(rm).explainer)
+        assert explainer.startswith("Deteriorating")
+        assert "moderate this morning" in explainer
+        assert "considerable by afternoon" in explainer
+
+    def test_easing_day_never_reads_as_an_all_clear(self) -> None:
+        """Every falling day in the archive swaps a dry problem for wet snow.
+
+        The number drops while the hazard changes, so the copy must not
+        offer the afternoon as the safer half.
+        """
+        rm = _split_render_model(
+            "considerable", "moderate", ["persistent_weak_layers"], ["wet_snow"]
+        )
+        explainer = str(compute_day_character(rm).explainer)
+        assert explainer.startswith("Easing")
+        assert "improv" not in explainer.lower()
+        assert "swaps rather than clears" in explainer
+
+    def test_flat_split_with_a_new_problem_reads_as_shifting(self) -> None:
+        """The level holds; the sentence points at what moves underneath it."""
+        rm = _split_render_model("moderate", "moderate", ["wind_slab"], ["wet_snow"])
+        explainer = str(compute_day_character(rm).explainer)
+        assert "all day" in explainer
+
+    def test_flat_split_with_identical_windows_reads_as_static(self) -> None:
+        """Six archive bulletins split with two identical windows.
+
+        Nothing changes across them, so the copy must not promise a change
+        the reader cannot act on.
+        """
+        rm = _split_render_model("moderate", "moderate", ["wind_slab"], ["wind_slab"])
+        explainer = str(compute_day_character(rm).explainer)
+        assert "all day" not in explainer
+        assert explainer.startswith("Moderate,")
+
+    def test_changing_day_names_problems_from_both_windows(self) -> None:
+        """A morning problem still sets the day's character.
+
+        Dropping it would let the explainer contradict the label, which
+        the cascade builds from every problem on the page.
+        """
+        rm = _split_render_model(
+            "moderate", "considerable", ["persistent_weak_layers"], ["wet_snow"]
+        )
+        result = compute_day_character(rm)
+        assert result.label == "Hard-to-read day"
+        assert "persistent weak layers" in str(result.explainer)
+        assert "wet snow" in str(result.explainer)
+
+
+class TestPeriodTransitionSourceNumber:
+    """compute_period_transition reports where the day starts, not just where it ends."""
+
+    def test_rise_carries_the_lower_source_level(self) -> None:
+        """A rise from 2 to 3 reports source 2, destination 3."""
+        from apps.bulletins.services.render_model import compute_period_transition
+
+        rm = _split_render_model(
+            "moderate", "considerable", ["wind_slab"], ["wet_snow"]
+        )
+        transition = compute_period_transition(rm)
+        assert transition is not None
+        assert transition.source_number == "2"
+        assert transition.destination_number == "3"
+
+    def test_fall_carries_the_higher_source_level(self) -> None:
+        """A fall from 3 to 2 reports source 3, destination 2."""
+        from apps.bulletins.services.render_model import compute_period_transition
+
+        rm = _split_render_model(
+            "considerable", "moderate", ["wind_slab"], ["wet_snow"]
+        )
+        transition = compute_period_transition(rm)
+        assert transition is not None
+        assert transition.source_number == "3"
+        assert transition.destination_number == "2"

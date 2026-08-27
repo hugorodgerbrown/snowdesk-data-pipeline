@@ -408,13 +408,18 @@ reachable via the SNOW-81 deep-link in the masthead.
                        later) summarising the day's hazard windows. The
                        rating blocks below carry the full per-trait detail.
 
-                       Flat-but-split: when period_transition.direction is
-                       "none" (danger level unchanged but problem type
-                       changes), a sub-caption appears below the heading.
+                       Flat-but-split: the sub-caption appears only when
+                       day_movement is "shifting" — the level holds AND a
+                       different problem takes the later window. A split
+                       whose two windows name the same problems classifies
+                       as "static" and gets no caption: 23 of the archive's
+                       101 flat splits change nothing the reader can act
+                       on, and 6 of those are two identical rows. See
+                       docs/day-summary.md.
                     {% endcomment %}
                     {% translate "Day Risk Profile" as day_risk_label %}
                     {% include "includes/_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-1" %}
-                    {% if period_transition and period_transition.has_split and period_transition.direction == "none" %}
+                    {% if day_movement == "shifting" %}
                         <p
                             class="text-xs text-text-3 mb-3"
                             data-testid="day-risk-profile-flat-split-caption"

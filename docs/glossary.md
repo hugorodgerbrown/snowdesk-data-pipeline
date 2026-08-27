@@ -56,6 +56,9 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | RegionDayRating | Denormalised per-(region, date) min/max rating from the authoritative bulletin; feeds the calendar and CSV export | `apps/bulletins/models.py`; built by `apps/bulletins/services/day_rating.py` |
 | Peak rating | The single rating shown when a compressed view (choropleth, tooltip, calendar tile) must collapse a split day — see [compressed-views-rating-rule.md](compressed-views-rating-rule.md) | `apps/public/headlines.py` |
 | Day character | Five-way classification of a bulletin day (stable / manageable / hard_to_read / widespread / dangerous) | `compute_day_character()` in `apps/bulletins/services/render_model.py`; spec in [day_character_rules_spec.md](day_character_rules_spec.md) |
+| Day summary | The one-line explainer beside the day-character label, selected per bulletin from an 80-cell copy matrix | `summary_for()` in `apps/bulletins/services/day_summary.py`; see [day-summary.md](day-summary.md) |
+| Movement | How a day's danger level moves across its windows — static / rising / easing / shifting | `classify_movement()` in `apps/bulletins/services/day_summary.py` |
+| Readability | Whether a day's problems leave surface evidence — readable / hidden / mixed / quiet | `classify_readability()` in `apps/bulletins/services/day_summary.py` |
 | Avalanche problem | EAWS problem token (new_snow, wind_slab, …) with rating, aspects, elevation | `AvalancheProblem` dataclass in `apps/bulletins/schema.py` |
 | Elevation band | Per-rating altitude banding (ALBINA / Météo-France only — SLF has none) | `RegionDayRating.bands` JSON |
 | Unscheduled bulletin | Out-of-cycle update flagged by the provider | `Bulletin.unscheduled` |

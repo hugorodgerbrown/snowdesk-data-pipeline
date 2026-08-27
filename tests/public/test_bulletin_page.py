@@ -4102,6 +4102,7 @@ def _render_model_with_split_ratings(
     dest_key: str,
     dest_period: str,
     source_source: str = "slf",
+    traits: list | None = None,
 ) -> dict:
     """Build a v5 render_model with two projected ratings (one split day)."""
     return {
@@ -4131,7 +4132,7 @@ def _render_model_with_split_ratings(
             ],
         },
         "danger_patterns": [],
-        "traits": [],
+        "traits": traits if traits is not None else [],
         "metadata": {
             "publication_time": "2026-03-15T06:00:00+00:00",
             "valid_from": "2026-03-15T06:00:00+00:00",
@@ -4169,11 +4170,16 @@ class TestPeriodTransitionBulletinPage:
         dest_key: str,
         dest_period: str,
         day: date = date(2026, 3, 15),
+        traits: list | None = None,
     ) -> Bulletin:
         """Create a bulletin with a temporal split in the projected ratings."""
         rm = _render_model_with_split_ratings(
-            source_key, source_period, dest_key, dest_period
+            source_key, source_period, dest_key, dest_period, traits=traits
         )
+        # A stale version makes the view rebuild from raw_data, which would
+        # discard injected traits — stamp current so they reach the page.
+        version = 5 if traits is None else RENDER_MODEL_VERSION
+        rm["version"] = version
         raw = _raw_data_with_ratings(
             [
                 {"mainValue": source_key, "validTimePeriod": source_period},
@@ -4182,13 +4188,47 @@ class TestPeriodTransitionBulletinPage:
         )
         raw["properties"]["customData"] = {"CH": {}}
         return _make_am_bulletin(
-            region, day, render_model=rm, render_model_version=5, raw_data=raw
+            region, day, render_model=rm, render_model_version=version, raw_data=raw
         )
 
     def test_flat_but_split_no_chip(self, client: Client, region: MicroRegion) -> None:
-        """all_day considerable → later considerable: no chip, but flat-split caption present."""
+        """all_day considerable → later considerable: no chip.
+
+        No caption either: the level holds and neither window names a
+        different problem, so there is nothing for the caption to report.
+        23 of the archive's 101 flat splits are like this — see
+        docs/day-summary.md.
+        """
         self._make_split_bulletin(
             region, "considerable", "all_day", "considerable", "later"
+        )
+        response = client.get(self._url())
+        content = response.content.decode()
+        assert 'data-testid="period-transition-chip"' not in content
+        assert 'data-testid="day-risk-profile-flat-split-caption"' not in content
+
+    def test_flat_split_caption_present_when_the_problem_changes(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The level holds and a different problem takes the later window."""
+        self._make_split_bulletin(
+            region,
+            "considerable",
+            "all_day",
+            "considerable",
+            "later",
+            traits=[
+                {
+                    "category": "dry",
+                    "time_period": "all_day",
+                    "problems": [{"problem_type": "wind_slab", "aspects": []}],
+                },
+                {
+                    "category": "wet",
+                    "time_period": "later",
+                    "problems": [{"problem_type": "wet_snow", "aspects": []}],
+                },
+            ],
         )
         response = client.get(self._url())
         content = response.content.decode()

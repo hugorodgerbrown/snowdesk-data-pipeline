@@ -606,6 +606,7 @@ Read these when working in the relevant area:
 | Accounts (signed tokens, rate limits, email) | [`docs/accounts.md`](docs/accounts.md) |
 | Login/logout manual test checklist | [`docs/auth-testing-checklist.md`](docs/auth-testing-checklist.md) |
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
+| Day summary copy matrix (movement × level × readability, editing rules) | [`docs/day-summary.md`](docs/day-summary.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
 | Why the Open-Meteo domain is its own app (db_table pinning, ContentType move) | [`docs/decisions/weather-is-its-own-app.md`](docs/decisions/weather-is-its-own-app.md) |
