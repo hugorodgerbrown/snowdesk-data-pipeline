@@ -520,6 +520,62 @@ the default manifest path (`apps/core/fixtures/waffle_flags.json`). Respects
 `name`/`note`, a duplicate `name`, or an unrecognised key all raise a
 `CommandError` (non-zero exit).
 
+### `sync_from_production` — refresh staging's data from production
+
+Copies the provider-derived tables out of the **production** database into
+the local one (SNOW-729). Staging has no scheduler and no task worker, so it
+never ingests a bulletin or a weather forecast of its own; this is how it
+gets data. Runs unattended as the `snowdesk-staging-data-sync` Render cron
+job at 07:20 UTC.
+
+Copies `Bulletin`, `RegionBulletin`, `RegionDayRating`, `BulletinGrouping`,
+`ForecastCell`, `ForecastCellWeather`, `ForecastCellWeatherHistory`,
+`WeatherSnapshot`, and the curated resort estate — `Resort`,
+`ResortLocation`, and the `Location` rows a `ResortLocation` references.
+
+Copies **no user data** — no `auth_user`, `Account`, passkeys, push
+subscriptions, favourites, observations, routes, request logs or bulletin
+shares. That is what makes it safe to run unattended with no anonymisation
+step, and it matters because staging sends email inline (`ImmediateBackend`).
+`PipelineRun` is also excluded: it is telemetry about production's own ingest
+runs, and `Bulletin.pipeline_run` is nullable.
+
+`locations.Location` is the one **mixed** table — a resort's village/mid/peak
+sits alongside a row per saved favourite and per field report — so the plan
+restricts it to rows a `ResortLocation` points at. The filter is a subquery
+inside production, so a user's saved position is never read at all.
+
+Every table upserts on its own natural key and foreign keys are translated
+through id maps, so primary keys need not (and do not) match across the two
+databases. `Resort`, `Location` and `ResortLocation` declare no domain-unique
+field, so they key on `BaseModel.uuid`, which nothing ever reassigns.
+Re-running is a no-op.
+
+```bash
+# Read-only: report what would be copied, write nothing.
+uv run python manage.py sync_from_production
+
+# First load into an empty staging database — --all is required.
+uv run python manage.py sync_from_production --all --commit
+
+# What the cron job runs: the last seven days of changes.
+uv run python manage.py sync_from_production --commit
+
+# Narrow to one table while triaging.
+uv run python manage.py sync_from_production --all --only bulletins.Bulletin -v 2
+```
+
+Read-only by default; `--commit` persists. `--since-days N` sets the
+`updated_at` window (default 7), `--all` removes it, `--only APP.MODEL`
+(repeatable) limits the run. Respects `--verbosity`.
+
+Requires `PRODUCTION_DATABASE_URL` pointing at a **read-only** production
+role; `config/settings/staging.py` is the only settings module that turns it
+into a connection, so the command cannot run from production's own settings.
+Exits non-zero when any row is skipped for an unresolvable foreign key — a
+partial copy is a failure, not a warning. Full setup and triage:
+[`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
+
 ### One-off operational commands
 
 These are not scheduled. Reach for them after a code change or data

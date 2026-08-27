@@ -30,6 +30,7 @@ from apps.core.settings_spec import (
     non_empty,
     positive_int,
     positive_number,
+    postgres_dsn,
     spec_by_name,
 )
 
@@ -104,6 +105,52 @@ class TestLocalMirrorUrl:
     def test_still_rejects_a_bare_host(self) -> None:
         """Non-file values fall through to the http(s) rules."""
         assert local_mirror_url("localhost:8000/dev") is not None
+
+
+class TestPostgresDsn:
+    """Tests for the PRODUCTION_DATABASE_URL validator (SNOW-729)."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "postgresql://staging_sync:pw@prod.example:5432/snowdesk",
+            "postgres://staging_sync@prod.example/snowdesk",
+            "",
+        ],
+    )
+    def test_accepts_valid_values(self, value: str) -> None:
+        """Both Postgres schemes pass; empty means "sync not configured"."""
+        assert postgres_dsn(value) is None
+
+    def test_rejects_a_bare_host(self) -> None:
+        """A host:port/db with no scheme is the mistake worth catching.
+
+        It would otherwise surface as an opaque driver error part-way
+        through an unattended ``sync_from_production`` run.
+        """
+        problem = postgres_dsn("prod.example:5432/snowdesk")
+
+        assert problem is not None
+        assert "expected postgres://" in problem
+
+    def test_rejects_an_http_url(self) -> None:
+        """An http(s) URL is a different setting pasted into this one."""
+        assert postgres_dsn("https://prod.example/snowdesk") is not None
+
+    def test_rejects_a_dsn_with_no_database(self) -> None:
+        """A DSN naming only a host connects to the wrong database or none."""
+        problem = postgres_dsn("postgresql://prod.example")
+
+        assert problem is not None
+        assert "names no database" in problem
+
+    def test_rejects_a_dsn_with_no_host(self) -> None:
+        """A hostless DSN would silently fall back to a local socket."""
+        assert postgres_dsn("postgresql:///snowdesk") is not None
+
+    def test_rejects_a_non_string(self) -> None:
+        """Type problems are reported, not raised."""
+        assert postgres_dsn(5432) is not None
 
 
 class TestNumericValidators:
