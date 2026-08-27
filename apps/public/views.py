@@ -4712,6 +4712,16 @@ _PROBLEM_LABELS: dict[str, Any] = {
 # the canonical schema definition.
 _TIME_PERIOD_LABELS: dict[str, str | Promise] = dict(ValidTimePeriod.choices)
 
+# Lower-case forms of the same three windows, for the problem card's title
+# bar where the window follows the provider's wording after a middot
+# ("Dry avalanches &middot; all day").  Sentence-cased labels read as a
+# second heading there; these read as the aside they are.
+_TIME_PERIOD_TITLE_SUFFIXES: dict[str, Promise] = {
+    "all_day": _("all day"),
+    "earlier": _("earlier"),
+    "later": _("later"),
+}
+
 # Human labels for ALBINA's EAWS matrix axes. ALBINA publishes the matrix
 # *inputs* (size × frequency × snowpack stability) on every problem; SLF
 # publishes the output (per-problem danger rating + comment) instead and
@@ -5231,12 +5241,17 @@ def _problem_cards_from_aggregation(
         # SNOW-291: add panel_title, time_period, subdivision, and level_number
         # to match the shape emitted by _problem_cards_from_render_model_traits.
         agg_time_period: str = agg_entry.get("validTimePeriod") or "all_day"
-        card["panel_title"] = agg_entry.get("title") or ""
+        agg_panel_title: str = agg_entry.get("title") or ""
+        card["panel_title"] = agg_panel_title
         card["time_period"] = agg_time_period
+        card["title_time_suffix"] = _title_time_suffix(agg_panel_title, agg_time_period)
         agg_subdivision: str = _subdivision_for_period(
-            agg_time_period, resolved_ratings
+            agg_time_period,
+            resolved_ratings,
+            _DANGER_ORDER[max(int(card["danger_level"]), 1) - 1],
         )
         card["subdivision"] = agg_subdivision
+        card["subdivision_label"] = _SUBDIVISION_LABELS.get(agg_subdivision, "")
         card["level_number"] = (
             f"{card['danger_level']}{agg_subdivision}" if agg_subdivision else ""
         )
@@ -5322,9 +5337,13 @@ def _resolve_problem_cards(
     )
 
 
-def _subdivision_for_period(period: str, danger_ratings: list[dict[str, Any]]) -> str:
+def _subdivision_for_period(
+    period: str,
+    danger_ratings: list[dict[str, Any]],
+    level_key: str = "",
+) -> str:
     """
-    Return the subdivision suffix for the given time period from danger.ratings.
+    Return the subdivision suffix for a time period and danger level.
 
     Scans the projected ``danger.ratings`` list for an entry whose ``period``
     matches the requested period token. Returns the first match's
@@ -5335,17 +5354,30 @@ def _subdivision_for_period(period: str, danger_ratings: list[dict[str, Any]]) -
     ``time_period`` / ``period`` token (``"all_day"``, ``"earlier"``,
     ``"later"``), so a direct equality match is sufficient.
 
+    ``level_key`` narrows the match to ratings at that danger level, and the
+    caller must pass it whenever the suffix will be shown against a level
+    number (SNOW-739). A period commonly carries several ratings — one per
+    elevation band — and a card sitting below the day's peak must not borrow
+    the peak's suffix: a level-1 wet card under a "2+" day would otherwise
+    read "1+", asserting a within-band grading SLF never published for it.
+    Omit it only where the suffix is not attributed to a level.
+
     Args:
         period: The trait's ``time_period`` token.
         danger_ratings: Projected ``danger.ratings`` list from the render model.
+        level_key: Danger key the suffix must belong to (``"moderate"``,
+            ``"very_high"``, …). Empty matches on period alone.
 
     Returns:
         Subdivision suffix string, or empty string when none is found.
 
     """
     for r in danger_ratings:
-        if r.get("period") == period:
-            return r.get("subdivision") or ""
+        if r.get("period") != period:
+            continue
+        if level_key and (r.get("key") or "") != level_key:
+            continue
+        return r.get("subdivision") or ""
     return ""
 
 
@@ -5442,6 +5474,35 @@ def _build_band_time_subheader(
     }
 
 
+def _title_time_suffix(panel_title: str, time_period: str) -> str | Promise:
+    """
+    Return the window suffix for a card's title bar, or "" when redundant.
+
+    The title bar reads "<provider title> &middot; <window>" — SLF's own
+    wording for the trait, then the window it covers (SNOW-739). SLF names
+    the window itself on some traits and not others ("Dry avalanches" beside
+    "Dry avalanches, whole day"; "Wet-snow avalanches, as the day
+    progresses"), always as a clause after a comma. A title carrying that
+    clause already answers the question, so the suffix is suppressed rather
+    than saying the window twice in two different vocabularies.
+
+    The provider's title is never edited: it renders verbatim either way,
+    which is what ``customData.CH.aggregation[].title`` is declared as in
+    tests/sentinels/fidelity.py.
+
+    Args:
+        panel_title: The trait's title, in the provider's words (may be "").
+        time_period: The trait's ``time_period`` token.
+
+    Returns:
+        A lower-case window label, or "" when the title already names it.
+
+    """
+    if "," in panel_title:
+        return ""
+    return _TIME_PERIOD_TITLE_SUFFIXES.get(time_period, "")
+
+
 def _build_single_trait_card(
     trait: dict[str, Any],
     normalised_patterns: list[dict[str, str]],
@@ -5528,7 +5589,12 @@ def _build_single_trait_card(
     # SNOW-291: editorial panel title from the trait and per-period subdivision
     # suffix from the projected danger.ratings list.
     panel_title: str = trait.get("title") or ""
-    subdivision: str = _subdivision_for_period(time_period, resolved_ratings)
+    danger_key: str = _DANGER_ORDER[max(max_danger_level, 1) - 1]
+    # The suffix is looked up at the card's own level, not the day's peak —
+    # see _subdivision_for_period. The card renders it beside that level.
+    subdivision: str = _subdivision_for_period(
+        time_period, resolved_ratings, danger_key
+    )
     # level_number combines the danger integer with the subdivision suffix
     # (e.g. "2-", "2=", "2+") — only set when the card carries a subdivision
     # (SLF). Empty for ALBINA and MeteoFrance cards so the chip is suppressed.
@@ -5536,14 +5602,14 @@ def _build_single_trait_card(
     return {
         "category": category,
         "danger_level": max_danger_level,
-        "danger_level_key": _DANGER_ORDER[max(max_danger_level, 1) - 1].replace(
-            "_", "-"
-        ),
+        "danger_level_key": danger_key.replace("_", "-"),
         "label": label,
         "time_period_label": time_period_label,
         "time_period": time_period,
         "panel_title": panel_title,
+        "title_time_suffix": _title_time_suffix(panel_title, time_period),
         "subdivision": subdivision,
+        "subdivision_label": _SUBDIVISION_LABELS.get(subdivision, ""),
         "level_number": level_number,
         "aspects": _sort_aspects_clockwise(first.get("aspects") or []),
         "elevation": first.get("elevation"),
