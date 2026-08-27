@@ -439,8 +439,74 @@
   // hand-tuned center/zoom pair — `bounds` adapts to viewport aspect
   // ratio automatically, which matters now that SNOW-35 made the map
   // full-bleed (previously the frame was a fixed 390px phone mock).
+  //
+  // SNOW-737: the frame and the three camera limits are named here rather
+  // than written inline in the constructor, because the stored-viewport
+  // validation below needs the same numbers. Two copies of `maxZoom` would
+  // be a restore that accepts a camera the map then clamps — the silent
+  // failure map_viewport_core.js exists to avoid.
+  const DEFAULT_BOUNDS = [[5.9, 45.8], [10.5, 47.9]];
+  const MIN_ZOOM = 4;
+  // SNOW-442: raised from 12. The swisstopo base vector source
+  // (ch.swisstopo.base.vt) publishes a TileJSON `maxzoom` of 14 and its
+  // style authors layers up to zoom 20; MapLibre overzooms vector tiles
+  // cleanly above 14, so 18 was chosen to allow close-in reading without
+  // exposing genuinely blank overzoomed tiles at the extreme end.
+  const MAX_ZOOM = 18;
+  // (Bounds taken from console.log when ?debug=true)
+  // West / south / north match the original Western-European frame
+  // (Atlantic buffer / French Alps min lat / Stuttgart-ish top). East
+  // extended from 17° to 23° to cover the full Austrian / Slovenian /
+  // northern-Balkan arc visible in the avalanche-region polygons.
+  const MAX_BOUNDS = [[0.9482, 41.9952], [19.6674, 49.9983]];
+
+  // Canonical SLF region-ID shape (e.g. "CH-4115", "AT-02-14",
+  // "IT-32-BZ-15-02"). Anything else is rejected before it reaches any href
+  // to prevent a malformed GeoJSON payload turning into an open-redirect /
+  // javascript: URL on the client.
+  //
+  // SNOW-737 hoisted this out of the ``load`` handler to here: the deep-link
+  // check below runs before the map is constructed and needs the same
+  // definition of "a valid region id" the hash resolution, the GeoJSON-id
+  // check and the CTA href validation already share. A fourth call site with
+  // its own looser idea of the shape is exactly what that sharing exists to
+  // prevent.
+  const REGION_ID_RE = /^[A-Za-z]{2}(-[A-Za-z0-9]+)+$/;
+
+  // SNOW-737: restore the camera the visitor last left, unless the URL
+  // already names somewhere specific.
+  //
+  // Both deep links are excluded, for DIFFERENT reasons. `?favourite=`
+  // flies to its pin inside the `load` handler (see openFavouriteDeepLink),
+  // so a restore would only make the visitor watch a pointless jump from
+  // their old viewport to the target. A `#REGION-ID` hash does NOT move the
+  // camera at all — the initial-load handler calls selectFeature, which
+  // frames the region only when AUTOZOOM is on, and that defaults to off —
+  // so restoring would open a popup for a region nowhere near the stored
+  // view. Falling back to the default frame leaves a shared link behaving
+  // exactly as it did before this change.
+  //
+  // Matched against REGION_ID_RE rather than tested for a non-empty hash: a
+  // stray '#' left in the URL by some other surface is not a deep link, and
+  // treating it as one would silently cost the visitor their restore.
+  const hasDeepLink = (
+    REGION_ID_RE.test(location.hash.slice(1))
+    || new URLSearchParams(location.search).has('favourite')
+  );
+  const storedViewport = hasDeepLink ? null : self.pwaViewportCore.restore(
+    readStorage(VIEWPORT_STORAGE_KEY),
+    { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, maxBounds: MAX_BOUNDS },
+  );
+  // `bounds` and `center`/`zoom` are alternatives, not a pair, so exactly one
+  // of the two shapes is spread into the constructor below.
+  const initialCamera = storedViewport || {
+    bounds: DEFAULT_BOUNDS,
+    fitBoundsOptions: { padding: 20 },
+  };
+
   const map = new maplibregl.Map({
     container: 'map',
+    ...initialCamera,
     // ESRI basemaps (see resolveBasemapStyle) can't be handed to the
     // constructor synchronously — boot them with an empty style and swap
     // the fetched+rewritten style in once it resolves (below). Native
@@ -448,21 +514,9 @@
     style: ESRI_BASEMAP_KEYS.has(initialBasemapKey)
       ? { version: 8, sources: {}, layers: [] }
       : initialBasemapUrl,
-    bounds: [[5.9, 45.8], [10.5, 47.9]],
-    fitBoundsOptions: { padding: 20 },
-    minZoom: 4,
-    // SNOW-442: raised from 12. The swisstopo base vector source
-    // (ch.swisstopo.base.vt) publishes a TileJSON `maxzoom` of 14 and its
-    // style authors layers up to zoom 20; MapLibre overzooms vector tiles
-    // cleanly above 14, so 18 was chosen to allow close-in reading without
-    // exposing genuinely blank overzoomed tiles at the extreme end.
-    maxZoom: 18,
-    // (Bounds taken from console.log when ?debug=true)
-    // West / south / north match the original Western-European frame
-    // (Atlantic buffer / French Alps min lat / Stuttgart-ish top). East
-    // extended from 17° to 23° to cover the full Austrian / Slovenian /
-    // northern-Balkan arc visible in the avalanche-region polygons.
-    maxBounds: [[0.9482, 41.9952], [19.6674, 49.9983]],
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+    maxBounds: MAX_BOUNDS,
     // SNOW-230: attribution moved to top-right so the scrubber can sit
     // flush at the bottom edge. Disable the default bottom-right slot and
     // add it explicitly at the desired corner after the Map is constructed.
@@ -677,6 +731,37 @@
   };
   map.on('zoomend', () => logViewport('zoomend'));
   map.on('moveend', () => logViewport('moveend'));
+
+  // ---- Remember where the visitor left the camera (SNOW-737) ----
+  //
+  // Bound HERE, immediately after the constructor, rather than inside the
+  // ``load`` handler. ``load`` does not fire when the basemap style fails to
+  // load, which is a real state this map reaches — it is the whole reason
+  // SNOW-483's inline fallback style exists — and a viewport that quietly
+  // stops being remembered whenever the visitor is offline is worse than one
+  // that is never remembered at all, because it looks like it works.
+  //
+  // Binding this early is safe: the constructor's ``bounds`` framing sets the
+  // camera WITHOUT emitting ``moveend`` (verified against MapLibre 4.7.1 —
+  // zero events, synchronously or on any later tick). So the default frame is
+  // never mistaken for a move, and a deep-link boot, where the restore is
+  // deliberately skipped, cannot overwrite the stored viewport with
+  // Switzerland.
+  //
+  // Every real ``moveend`` is persisted, including the ones the custom-area
+  // framing overlay and the place picker drive. Those are places the visitor
+  // deliberately navigated to, and a suppression list keyed on transient UI
+  // modes would be an abstraction with one caller.
+  map.on('moveend', () => {
+    const centre = map.getCenter();
+    writeStorage(VIEWPORT_STORAGE_KEY, self.pwaViewportCore.serialise({
+      lng: centre.lng,
+      lat: centre.lat,
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+    }));
+  });
 
   // In-memory lookup from numeric feature id -> region properties.
   // Numeric because setFeatureState requires a numeric (or numeric-coerceable) id.
@@ -4425,12 +4510,6 @@
     let popupHistoryOpen = false;
     let popupHashWasPushed = false;
     let popstateInProgress = false;
-
-    // Canonical SLF region-ID shape (e.g. "CH-4115", "AT-02-14",
-    // "IT-32-BZ-15-02"). Anything else is rejected before it reaches any href
-    // to prevent a malformed GeoJSON payload turning into an open-redirect /
-    // javascript: URL on the client.
-    const REGION_ID_RE = /^[A-Za-z]{2}(-[A-Za-z0-9]+)+$/;
 
     // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
     // MapLibre's fitBounds takes [[west, south], [east, north]].

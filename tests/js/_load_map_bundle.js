@@ -75,7 +75,15 @@ const STATIC_JS = path.resolve(
  * quoting it: a second occurrence of the literal it splits on lands the
  * parse in the wrong half of the file and yields nothing.)
  */
-const PARSE_TIME_CORES = ['layer_visibility_core.js', 'hatch_core.js'];
+const PARSE_TIME_CORES = [
+  'layer_visibility_core.js',
+  'hatch_core.js',
+  // SNOW-737: `map.js`'s boot IIFE resolves the stored camera through
+  // `pwaViewportCore.restore` while building the MapLibre constructor
+  // options, so a bundle booted without it throws before any test has run —
+  // the same reason `layer_visibility_core.js` is here.
+  'map_viewport_core.js',
+];
 
 /** home.html's script order for the map bundle. */
 export const MAP_BUNDLE = [
