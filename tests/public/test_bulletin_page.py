@@ -4415,6 +4415,157 @@ class TestTitleBarCarriesLevel:
 
 
 # ---------------------------------------------------------------------------
+# Test: the problem card states its own danger level
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestProblemCardLevelTile:
+    """SNOW-739: every card carries a tile with the level of that problem.
+
+    A trait routinely sits below the day's peak — a level-1 wet problem
+    under a "2+" day is the ordinary shape of a December bulletin. Until the
+    tile arrived the only figure on the page was the peak, on the Day Risk
+    Profile row, so the lower level was stated nowhere and the card read as
+    though it shared the higher one.
+    """
+
+    def _tiles(self, content: str) -> list[str]:
+        """Return each level tile's markup, in page order."""
+        return re.findall(
+            r'<span[^>]*data-testid="problem-danger-tile"[^>]*>[^<]*</span>',
+            content,
+        )
+
+    def test_card_carries_a_tile_for_its_own_level(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A single moderate card shows a moderate tile reading 2."""
+        day = date(2026, 4, 1)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-01")).content.decode()
+        assert 'data-testid="problem-danger-tile"' in content
+        assert 'data-level="moderate"' in content
+        assert ">2</span>" in content
+
+    def test_lower_card_shows_its_own_level_not_the_days_peak(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A low wet card under a considerable day reads 1, not 3."""
+        day = date(2026, 4, 2)
+        raw = _raw_data_with_problems(
+            [
+                _raw_problem(
+                    problem_type="wind_slab", danger_rating_value="considerable"
+                ),
+                _raw_problem(problem_type="wet_snow", danger_rating_value="low"),
+            ],
+            ratings=[_rating("considerable", "all_day")],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-02")).content.decode()
+        tiles = self._tiles(content)
+        assert len(tiles) == 2
+        assert ">3</span>" in tiles[0]
+        assert ">1</span>" in tiles[1]
+        assert 'data-level="low"' in tiles[1]
+
+    def test_suffix_is_not_borrowed_from_a_higher_rating(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The subdivision belongs to its own level, so the low card takes none.
+
+        The day's rating is "3+". Reading the suffix by period alone would
+        stamp the level-1 wet card "1+", asserting a within-band grading SLF
+        never published for it.
+        """
+        day = date(2026, 4, 3)
+        raw = _raw_data_with_problems(
+            [
+                _raw_problem(
+                    problem_type="wind_slab", danger_rating_value="considerable"
+                ),
+                _raw_problem(problem_type="wet_snow", danger_rating_value="low"),
+            ],
+            ratings=[_rating("considerable", "all_day", subdivision="plus")],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-03")).content.decode()
+        tiles = self._tiles(content)
+        assert ">3+</span>" in tiles[0]
+        assert ">1</span>" in tiles[1]
+
+    def test_tile_names_its_level_for_a_screen_reader(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The tile's aria-label says the level in words, subdivision included."""
+        day = date(2026, 4, 4)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")],
+            ratings=[_rating("moderate", "all_day", subdivision="plus")],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-04")).content.decode()
+        tile = self._tiles(content)[0]
+        assert "Danger level Moderate, upper end of the band" in tile
+
+
+# ---------------------------------------------------------------------------
+# Test: the title bar names the window the card covers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestTitleBarWindowSuffix:
+    """SNOW-739: the window follows the title after a middot — once only."""
+
+    def test_suffix_added_when_the_title_is_silent(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A title that names no window gains "· all day"."""
+        day = date(2026, 4, 5)
+        raw = _raw_data_with_aggregation(
+            [
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                    "title": "Dry avalanches",
+                }
+            ],
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-05")).content.decode()
+        assert 'data-testid="panel-title-window"' in content
+        assert "all day" in content
+
+    def test_suffix_suppressed_when_the_provider_names_the_window(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """SLF's own ", whole day" stands alone — the row never says it twice."""
+        day = date(2026, 4, 6)
+        raw = _raw_data_with_aggregation(
+            [
+                {
+                    "category": "dry",
+                    "validTimePeriod": "all_day",
+                    "problemTypes": ["wind_slab"],
+                    "title": "Dry avalanches, whole day",
+                }
+            ],
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")],
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-04-06")).content.decode()
+        assert "Dry avalanches, whole day" in content
+        assert 'data-testid="panel-title-window"' not in content
+
+
+# ---------------------------------------------------------------------------
 # Test: the chip rail after SNOW-727 — category pill gone, time pill gated
 # ---------------------------------------------------------------------------
 
@@ -4423,10 +4574,10 @@ class TestTitleBarCarriesLevel:
 class TestTimePillIsGatedOnASplitDay:
     """SNOW-727: all_day is the default window and is never labelled."""
 
-    def test_all_day_bulletin_labels_no_window_anywhere(
+    def test_all_day_bulletin_takes_no_window_pill(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """all_day is the default window and goes unlabelled on every surface."""
+        """all_day is the default window and never earns a pill."""
         day = date(2026, 3, 19)
         raw = _raw_data_with_problems(
             [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
@@ -4437,7 +4588,26 @@ class TestTimePillIsGatedOnASplitDay:
         # Nor does the Day Risk Profile row label it — there is one window,
         # and naming it says nothing (SNOW-727).
         assert 'data-testid="day-window-pill"' not in content
-        assert "ALL DAY" not in content.upper().replace("ALL DAYS", "")
+
+    def test_card_title_still_names_the_window(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """The card's title bar does name it, after a middot.
+
+        SNOW-727 read the window off every surface at once. On the card that
+        went too far: the title bar is where the card states what it covers,
+        and a reader comparing two cards on a split day needs it there. The
+        pill stays gone (SNOW-739) — this is wording inside a row that
+        already exists, not a fifth chip.
+        """
+        day = date(2026, 3, 19)
+        raw = _raw_data_with_problems(
+            [_raw_problem(problem_type="wind_slab", danger_rating_value="moderate")]
+        )
+        _make_am_bulletin(region, day, raw_data=raw)
+        content = client.get(_url("ch-4115", "valais", "2026-03-19")).content.decode()
+        assert 'data-testid="panel-title-window"' in content
+        assert "all day" in content
 
 
 @pytest.mark.django_db

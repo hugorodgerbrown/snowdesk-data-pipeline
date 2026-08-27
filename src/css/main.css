@@ -837,6 +837,14 @@
 .danger-tile[data-level="high"]         { background: var(--color-eaws-high);         color: var(--color-eaws-high-fg); }
 .danger-tile[data-level="very_high"]    { background: var(--color-eaws-very-high);    color: var(--color-eaws-very-high-fg); }
 
+/* Outlined variant (SNOW-739) — for a tile on a tinted surface rather than on
+   the card white.  The problem card's level tile sits inside the pale EAWS
+   band for its own level, so at low and moderate the fill and the band are
+   near neighbours and the tile loses its edge; the hairline gives it one.
+   Same border token as the card it sits in, so it reads as part of the
+   same component rather than a second style of chip. */
+.danger-tile--outlined { border: 1px solid var(--color-border); }
+
 /* —— Problem tag used as <summary> —————————
    Removes the native disclosure triangle when
    a .problem-tag is also a <summary>.

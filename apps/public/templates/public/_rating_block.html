@@ -16,10 +16,17 @@ Expects the following variables in scope:
                                one. The template still guards it because the
                                title bar now carries the level colour, and a
                                blank row would lose it),
-                  subdivision (optional — per-period suffix display char,
-                               e.g. "-", "=", "+"; empty when not available.
-                               No longer rendered here — SNOW-727 moved it to
-                               the Day Risk Profile row as words),
+                  title_time_suffix (optional — the window this trait covers,
+                               lower-cased ("all day" / "earlier" / "later"),
+                               empty when the provider's title already names
+                               it. Built by _title_time_suffix),
+                  subdivision (optional — suffix display char for THIS card's
+                               level, e.g. "-", "=", "+"; empty when not
+                               available. Rendered in the level tile beside
+                               the number (SNOW-739); the Day Risk Profile
+                               row says the day's own in words),
+                  subdivision_label (optional — the same suffix in words,
+                               "upper end of the band"; aria-label only),
                   avalanche_type (optional — "slab", "loose", or None),
                   avalanche_size (optional int 1-5; ALBINA-only),
                   avalanche_size_label (optional translated Promise; ALBINA-only —
@@ -32,7 +39,8 @@ Expects the following variables in scope:
                                    ALBINA-only; empty list for SLF/MeteoFrance)
 
 Renders:
-  0. Title bar — always. Carries the provider's words for the trait and, via
+  0. Title bar — always. Carries the provider's words for the trait, the
+     window it covers after a middot in normal weight (SNOW-739), and, via
      data-level, the saturated EAWS colour for the danger level (SNOW-727).
      Levels 1–3 take --color-eaws-{level} with -fg copy; 4 and 5 borrow the
      other dark value each level already owns, because the EAWS red the two
@@ -41,10 +49,13 @@ Renders:
      .danger-band blocks.
   1. Hazard bar — the pale half of the pair: EAWS tint behind the hazard
      pictogram (encodes kind + level) and the problem name. Carries the
-     avalanche-type chip and nothing else. The dry/wet category pill, the
-     level-number chip and the time pill were all removed in SNOW-727 — the
-     title bar, the pictogram and the Day Risk Profile row carried each of
-     them already.
+     avalanche-type chip and, at the right edge, the level tile: this
+     trait's own danger level plus its subdivision suffix (SNOW-739). A
+     trait routinely sits below the day's peak — a level-1 wet problem
+     under a "2+" day — and until the tile arrived the page showed only
+     the peak, so the lower figure was never stated anywhere. The dry/wet
+     category pill and the time pill were removed in SNOW-727 — the title
+     bar, the pictogram and the Day Risk Profile row carried each already.
   2. Aspect / elevation row — three-way conditional on card.prose_mentions_spatial:
      (a) structured data present (card.aspects or card.elevation) → the aspect
          rose and elevation chip render verbatim (data-testid="aspect-elevation-row").
@@ -108,6 +119,13 @@ Renders:
                 {{ category }} avalanches
             {% endblocktrans %}
         {% endif %}
+        {# The window this trait covers, in normal weight after a middot.    #}
+        {# Suppressed by _title_time_suffix when SLF's own title already     #}
+        {# names it (", whole day" / ", as the day progresses") so the row   #}
+        {# never says the window twice.                                      #}
+        {% if card.title_time_suffix %}
+            <span class="font-normal" data-testid="panel-title-window">&middot; {{ card.title_time_suffix }}</span>
+        {% endif %}
     </div>
     {# ── Hazard bar: pale EAWS tint behind the mark and the problem name.  #}
     {# The saturated colour lives on the title bar above; this row is the   #}
@@ -133,6 +151,27 @@ Renders:
                 {% endif %}
                 {% include "includes/_chip.html" with text=avalanche_chip_text data_testid="avalanche-type-chip" %}
             {% endif %}
+            {# ── Level tile — this problem's own danger level (SNOW-739) ──── #}
+            {# A trait routinely sits below the day's peak: a level-1 wet    #}
+            {# card under a "2+" day carried no number at all until now, so  #}
+            {# the only figure on the page was the higher one.  The tile is  #}
+            {# outlined because the low and moderate EAWS fills are pale     #}
+            {# enough to lose their edge against the band tint behind them.  #}
+            {% if card.subdivision_label %}
+                {% blocktrans with level=card.danger_level|danger_level_label sub=card.subdivision_label asvar level_tile_aria trimmed %}
+                    Danger level {{ level }}, {{ sub }}
+                {% endblocktrans %}
+            {% else %}
+                {% blocktrans with level=card.danger_level|danger_level_label asvar level_tile_aria trimmed %}
+                    Danger level {{ level }}
+                {% endblocktrans %}
+            {% endif %}
+            <span
+                class="danger-tile danger-tile--outlined text-label"
+                data-level="{{ card.danger_level|danger_level_key }}"
+                data-testid="problem-danger-tile"
+                aria-label="{{ level_tile_aria }}"
+            >{{ card.danger_level }}{{ card.subdivision }}</span>
             {# No time pill.  On a split day the title bar above already says #}
             {# the window in the provider's own words — "…, whole day",       #}
             {# "…, as the day progresses", "…, earlier" — on every one of the #}

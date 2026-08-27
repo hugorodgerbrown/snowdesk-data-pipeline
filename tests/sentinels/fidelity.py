@@ -567,9 +567,10 @@ RENDERED: dict[str, Rendered] = {
     ),
     "avalancheProblems[].customData.CH.subdivision": Rendered(
         subdivision_suffix(),
-        "Day Risk Profile row, in words (SNOW-727). The card's own chip is "
-        "gone; the displayed value was always the period's rating anyway, "
-        "resolved by _subdivision_for_period.",
+        "Day Risk Profile row, in words (SNOW-727), and the problem card's "
+        "level tile as a suffix (SNOW-739). Neither reads this field: both take the "
+        "period's rating at their own level, resolved by "
+        "_subdivision_for_period.",
     ),
     "avalancheProblems[].dangerRatingValue": Rendered(
         literal(), "Problem card danger level"
@@ -589,8 +590,10 @@ RENDERED: dict[str, Rendered] = {
     ),
     "avalancheProblems[].validTimePeriod": Rendered(
         time_period_label(),
-        "Day Risk Profile row. The card's own time pill went in SNOW-727 — "
-        "the title bar states the window in the provider's words.",
+        "Day Risk Profile row, and the card's title bar after a middot. The "
+        "card's own time pill went in SNOW-727; the SNOW-739 suffix is "
+        "suppressed "
+        "when the provider's title already names the window.",
     ),
     "customData.CH.aggregation[].category": Rendered(
         literal(),
