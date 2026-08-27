@@ -851,6 +851,7 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
       <span>Bulletin page</span>
       <span>Problem-card redundancy</span>
       <span>Production sweep, 26 Aug 2026</span>
+      <span>+ direction addendum, 27 Aug</span>
     </div>
     <h1>Four Ways<br>to Say Dry</h1>
     <p class="masthead__thesis">
@@ -866,6 +867,7 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
       <div class="tally__cell"><span class="tally__n">9,614</span><span class="tally__k">Problem traits</span></div>
       <div class="tally__cell"><span class="tally__n">6</span><span class="tally__k">Combinations, all real</span></div>
       <div class="tally__cell"><span class="tally__n">22</span><span class="tally__k">Distinct page shapes</span></div>
+      <div class="tally__cell"><span class="tally__n">312</span><span class="tally__k">Split days, decomposed below</span></div>
     </div>
   </header>
 
@@ -1947,7 +1949,7 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
         <span class="change__t">The per-card time pill, unless the day splits</span>
         <p class="change__d">
           Gate it on <code>is_time_variable</code>, which already exists at
-          <span class="ref">views.py:6048</span> and is already in the panel context. It disappears
+          <span class="ref">views.py:6090</span> and is already in the panel context. It disappears
           from 7,543 pages and stays on all 312 that split. The day-risk-profile pill stays
           unconditional.
         </p>
@@ -2065,6 +2067,183 @@ table.parts th:not(:first-child), table.parts td:not(:first-child) { text-align:
       aggregation titles empty, and <span class="ref">render_model.py:1604</span> fills every one of
       them before the page ever sees it. Contrast figures are sRGB WCAG 2.1 ratios computed against
       the shipped token values.
+    </p>
+  </section>
+
+  <!-- Addendum: direction of the 312 -->
+  <section class="section">
+    <div class="section__head">
+      <h2>Which way the 312 go</h2>
+      <span class="mono">Addendum &middot; 27 Aug 2026</span>
+    </div>
+    <p class="lede">
+      The sweep above counted the days that split and stopped there, because the question was
+      whether a time pill distinguishes anything. It does not answer the next one: when the day
+      does split, which way does it go? This addendum decomposes the same 312 bulletins by
+      direction, to ground the Day Risk Profile's second row rather than the card's chip rail.
+    </p>
+    <p class="lede">
+      It reaches those 312 from the other side of the page. The sweep read trait periods, the
+      surface <span class="ref">is_time_variable</span> reads
+      (<span class="ref">views.py:6090</span>); this reads
+      <span class="ref">dangerRatings[].validTimePeriod</span>, the surface
+      <span class="ref">compute_period_transition</span> reads
+      (<span class="ref">render_model.py:2388</span>). Across the whole archive the two never
+      disagree &mdash; 312 bulletins split on both, 7,768 split on neither, and no bulletin splits
+      on one alone. The profile row and the card pills appear and vanish together.
+    </p>
+
+    <div class="ledger">
+      <div class="ledger__item">
+        <span class="ledger__n">60.6%</span>
+        <span class="ledger__t">Split days that deteriorate</span>
+        <p class="ledger__d">
+          189 of 312 &mdash; 2.3% of the archive. Deterioration outnumbers improvement 8.6:1, so
+          the second row is, in practice, a row about the day getting worse.
+        </p>
+      </div>
+      <div class="ledger__item">
+        <span class="ledger__n">32.4%</span>
+        <span class="ledger__t">Split days where the level does not move</span>
+        <p class="ledger__d">
+          101 of 312 carry a split with the same level on both sides &mdash;
+          <code>direction="none"</code>, the flat-but-split case. The two rows read identically and
+          the whole of the news is in the problem changing underneath them.
+        </p>
+      </div>
+      <div class="ledger__item">
+        <span class="ledger__n">7.1%</span>
+        <span class="ledger__t">Split days that improve</span>
+        <p class="ledger__d">
+          22 of 312, 0.3% of the archive, and only 10 of them move a whole level. Any treatment
+          built specifically for an improving day is being designed for ten pages a season.
+        </p>
+      </div>
+      <div class="ledger__item">
+        <span class="ledger__n ledger__n--keep">0</span>
+        <span class="ledger__t">Falling days outside SLF</span>
+        <p class="ledger__d">
+          ALBINA splits 127 times and never once goes down. M&eacute;t&eacute;o-France carries no
+          <code>validTimePeriod</code> on its ratings at all, so its 4,671 bulletins cannot split.
+          Every improving day in the archive is Swiss.
+        </p>
+      </div>
+    </div>
+
+    <div class="scroller">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th scope="col">Direction &middot; by provider</th>
+            <th scope="col">SLF</th>
+            <th scope="col">ALBINA</th>
+            <th scope="col">M&eacute;t&eacute;o-France</th>
+            <th scope="col">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>No split &mdash; one window</td><td>2,031</td><td>1,066</td><td>4,670</td><td class="total">7,767</td></tr>
+          <tr><td>Deteriorates &mdash; <code>rise</code></td><td>139</td><td>50</td><td class="zero">&mdash;</td><td class="total">189</td></tr>
+          <tr><td>Stabilises &mdash; <code>none</code></td><td>24</td><td>77</td><td class="zero">&mdash;</td><td class="total">101</td></tr>
+          <tr><td>Improves &mdash; <code>fall</code></td><td>22</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="total">22</td></tr>
+          <tr><td>No usable ratings</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td>1</td><td class="total">1</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>All bulletins</td><td>2,216</td><td>1,193</td><td>4,671</td><td>8,080</td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <p class="lede">
+      Direction is ranked on <span class="ref">(level, subdivision)</span>, so SLF's
+      <code>3&minus;</code> ranks below <code>3</code> and a day can move without its digit
+      changing. Splitting the 312 that way shows how much of the movement is actually visible in
+      the number the row displays.
+    </p>
+
+    <div class="scroller">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th scope="col">What moves on a split day</th>
+            <th scope="col">Bulletins</th>
+            <th scope="col">Of the 312</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Rises a whole level</td><td>156</td><td>50.0%</td></tr>
+          <tr><td>Same level, split anyway</td><td>101</td><td>32.4%</td></tr>
+          <tr><td>Rises by subdivision only</td><td>33</td><td>10.6%</td></tr>
+          <tr><td>Falls by subdivision only</td><td>12</td><td>3.8%</td></tr>
+          <tr><td>Falls a whole level</td><td>10</td><td>3.2%</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Split days</td><td>312</td><td>100%</td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <p class="lede">
+      Every transition the archive contains, peak of each window against peak of the next. The
+      scale is nominally five levels wide; the second row uses three of them.
+    </p>
+
+    <div class="scroller">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th scope="col">Earlier &rarr; later</th>
+            <th scope="col">to 1</th>
+            <th scope="col">to 2</th>
+            <th scope="col">to 3</th>
+            <th scope="col">to 4</th>
+            <th scope="col">to 5</th>
+            <th scope="col">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>from 1 &mdash; Low</td><td>13</td><td>78</td><td>14</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="total">105</td></tr>
+          <tr><td>from 2 &mdash; Moderate</td><td class="zero">&mdash;</td><td>102</td><td>62</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="total">164</td></tr>
+          <tr><td>from 3 &mdash; Considerable</td><td class="zero">&mdash;</td><td>10</td><td>31</td><td>2</td><td class="zero">&mdash;</td><td class="total">43</td></tr>
+          <tr><td>from 4 &mdash; High</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="total zero">&mdash;</td></tr>
+          <tr><td>from 5 &mdash; Very high</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="zero">&mdash;</td><td class="total zero">&mdash;</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>All split days</td><td>13</td><td>190</td><td>107</td><td>2</td><td>&mdash;</td><td>312</td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="warnbox">
+      <h3>A third of the second rows say nothing the first row did not</h3>
+      <p>
+        <code>direction="none"</code> is 101 bulletins &mdash; nearly five times commoner than a
+        whole-level improvement, and the case with no number to show. Both rows carry the same
+        digit, the same word and the same colour, and the reason the row exists at all is a
+        problem that changes underneath it. Rendered as two identical rows it reads as a
+        duplication bug rather than a finding, which is the failure mode the specimen in shape
+        <strong>C</strong> above hides by happening to be a rising day.
+      </p>
+      <p>
+        The component's copy is worth sizing to the same distribution. Rising is 61% of the
+        second rows and falling is 7%; a symmetric up/down treatment spends equal design on a
+        case the archive produces ten times a season. The row that needs the words is the one
+        where the level does not move at all.
+      </p>
+    </div>
+
+    <p class="footnote">
+      Addendum figures, 27 Aug 2026 &mdash; computed from the committed season mirrors under
+      <span class="ref">apps/bulletins/local_mirrors/*.ndjson</span> (8,080 bulletins), replaying
+      the ranking and partition logic of
+      <span class="ref">compute_period_transition</span> over
+      <span class="ref">dangerRatings[]</span>. The mirrors are a safe source for this question
+      where they were not for the sweep above: <span class="ref">danger.ratings</span> passes
+      <code>validTimePeriod</code> straight through
+      (<span class="ref">render_model.py:447</span>) with no equivalent of the aggregation-title
+      fallback. The two corpora differ in size &mdash; 8,080 mirror records against 7,855
+      production bulletins carrying a trait &mdash; but return the same 312 split days, which is
+      the set this addendum divides.
     </p>
   </section>
 </div>
