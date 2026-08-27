@@ -968,6 +968,16 @@ SITE_NAME = "Snowdesk"
 # ``<head>`` (``apps/public/templates/public/base.html``).
 SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
 
+# SNOW-729: read-only production DSN, used only by
+# `manage.py sync_from_production` to refresh staging's bulletin and weather
+# tables. Declared here (rather than only in staging.py) so it resolves under
+# every settings module and appears — redacted — in `manage.py dump_settings`.
+#
+# Reading it is inert on its own: only config/settings/staging.py turns it
+# into a `production` DATABASES alias, so production and development have
+# nothing to connect to even if the variable is set in their environment.
+PRODUCTION_DATABASE_URL = config("PRODUCTION_DATABASE_URL", default="")
+
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
 # Set to 1 (the default "example.com" site created by the sites migration).
 # Overridden at deploy time to match the production domain via

@@ -97,10 +97,11 @@ projects:
               - fromGroup: Production
 
       - name: Staging
-        # Single web dyno, auto-deploys from `main`. No scheduler and no
-        # background-tasks worker — staging does not ingest bulletins on its
-        # own; seed its database with a manual `fetch_bulletins` run when test
-        # data is needed. Because there is no db_worker, staging runs the
+        # Single web dyno, auto-deploys from `main`, plus one nightly cron
+        # job. No scheduler and no background-tasks worker — staging does not
+        # ingest bulletins on its own, so the cron job below copies the
+        # provider-derived tables out of production instead (SNOW-729).
+        # Because there is no db_worker, staging runs the
         # `config.settings.staging` module, which overrides the task backend
         # to ImmediateBackend so subscription email is sent inline on the
         # request instead of being queued to a worker that never runs. Wired
@@ -125,4 +126,44 @@ projects:
               # not dependent on a manual dashboard edit to the env group.
               - key: DJANGO_SETTINGS_MODULE
                 value: config.settings.staging
+              - fromGroup: Staging
+
+          # Nightly refresh of staging's bulletin and weather tables from the
+          # production database (SNOW-729). Staging has no scheduler, so
+          # without this its data is whatever the last manual `fetch_bulletins`
+          # left behind — usually empty or months stale.
+          #
+          # Copies NO user data: no auth_user, no Account, no passkeys, no push
+          # subscriptions, no routes, no observations, no request logs. That is
+          # what makes it safe to run unattended with no anonymisation step,
+          # and it matters because staging sends email inline (ImmediateBackend
+          # above) — a copied subscriber list would be a copied mailing list.
+          # The table plan and the reason for each exclusion live in
+          # apps/core/services/production_sync.py.
+          #
+          # PRODUCTION_DATABASE_URL is dashboard-set (`sync: false`) and must
+          # hold a READ-ONLY production role. The command never issues a write
+          # against it and a router blocks migrations on it, but the role is
+          # the actual guarantee — see
+          # docs/runbooks/refresh-staging-from-production.md for creating it.
+          #
+          # 07:20 UTC: after production's 06:00 fetch_weather pass and the
+          # hourly fetch_bulletins run that picks up the morning issue
+          # (schedule.py), so staging opens the working day already current.
+          - type: cronjob
+            name: snowdesk-staging-data-sync
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            branch: main
+            schedule: "20 7 * * *"
+            buildCommand: ./bin/build_headless.sh
+            startCommand: >-
+              uv run --no-sync python manage.py sync_from_production --commit
+            envVars:
+              - key: DJANGO_SETTINGS_MODULE
+                value: config.settings.staging
+              - key: PRODUCTION_DATABASE_URL
+                sync: false
               - fromGroup: Staging

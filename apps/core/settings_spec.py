@@ -90,6 +90,36 @@ def absolute_url(value: object) -> str | None:
     return None
 
 
+def postgres_dsn(value: object) -> str | None:
+    """Return an error unless ``value`` is a Postgres connection URL, or empty.
+
+    Shape only, per this module's scope — it never asks whether the DSN
+    points at the *right* database. Empty means "no production sync
+    configured", which is the default everywhere but the staging cron job.
+
+    A bare host here would surface as an opaque driver error part-way
+    through an unattended ``sync_from_production`` run (SNOW-729), which is
+    the same failure mode ``absolute_url`` exists to prevent for the
+    provider APIs. ``absolute_url`` itself cannot be reused: it requires an
+    http(s) scheme.
+    """
+    if not value:
+        return None
+    if not isinstance(value, str):
+        return f"expected a string, got {type(value).__name__}"
+    parts = urlsplit(value)
+    if parts.scheme not in {"postgres", "postgresql"}:
+        return (
+            f"{value!r} has scheme {parts.scheme!r}; expected postgres:// or "
+            "postgresql://"
+        )
+    if not parts.hostname:
+        return f"{value!r} has no host"
+    if not parts.path.lstrip("/"):
+        return f"{value!r} names no database"
+    return None
+
+
 def local_mirror_url(value: object) -> str | None:
     """Return an error unless ``value`` is a usable dev-mirror URI, or empty.
 
@@ -186,6 +216,15 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="Django signing key",
     ),
     SettingSpec("SITE_ENVIRONMENT", note="staging | production — labels the deploy"),
+    # Read on every tier but only wired to a connection by staging.py, which
+    # is what keeps `sync_from_production` unable to run from production's own
+    # settings module (SNOW-729).
+    SettingSpec(
+        "PRODUCTION_DATABASE_URL",
+        validator=postgres_dsn,
+        secret=True,
+        note="read-only production DSN for sync_from_production (staging only)",
+    ),
     SettingSpec("RELEASE_VERSION", note="CalVer tag of the running release"),
     # SITE_BASE_URL keeps its own dedicated check (check_site_base_url,
     # SNOW-554) for the localhost-in-production rule, which no generic
