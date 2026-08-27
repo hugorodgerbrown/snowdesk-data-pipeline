@@ -25,6 +25,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+from django.apps import apps
 from django.db import connections, models
 from django.utils import timezone
 
@@ -32,6 +33,7 @@ from apps.bulletins.models import Bulletin, RegionBulletin
 from apps.core.services import production_sync
 from apps.core.services.production_sync import (
     ID_MAP_SPECS,
+    MIXED_TABLES,
     SYNC_PLAN,
     IdMap,
     ProductionSyncError,
@@ -45,15 +47,19 @@ from apps.core.services.production_sync import (
     shared_fields,
     sync_table,
 )
+from apps.locations.models import Location, ResortLocation
 from tests.factories import (
     BulletinFactory,
     BulletinGroupingFactory,
     ForecastCellFactory,
     ForecastCellWeatherFactory,
     ForecastCellWeatherHistoryFactory,
+    LocationFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
+    ResortFactory,
+    ResortLocationFactory,
     WeatherSnapshotFactory,
 )
 
@@ -129,6 +135,34 @@ def test_providers_come_before_their_consumers() -> None:
                 assert provider < index
         if spec.provides is not None:
             provided_at[spec.provides] = index
+
+
+@pytest.mark.parametrize("spec", SYNC_PLAN, ids=lambda s: s.model_label)
+def test_mixed_tables_are_restricted(spec: TableSpec) -> None:
+    """A partly-in-scope table is never copied whole.
+
+    ``locations.Location`` holds a resort's village/mid-station/peak
+    alongside a row per saved favourite and per field report, both minted
+    from user input (``apps/favourites/services.py``,
+    ``apps/observations/views.py``). Copying it unrestricted would put
+    somebody's positions on staging — the one thing this sync must not do.
+    """
+    if spec.model_label in MIXED_TABLES:
+        assert spec.referenced_by is not None, (
+            f"{spec.model_label} is a mixed table and must set referenced_by"
+        )
+
+
+@pytest.mark.parametrize("spec", SYNC_PLAN, ids=lambda s: s.model_label)
+def test_restrictions_resolve_to_a_real_table_and_column(spec: TableSpec) -> None:
+    """``referenced_by`` names a real model and a real foreign key."""
+    if spec.referenced_by is None:
+        return
+    table, column = spec.restriction or (None, None)
+    assert table and column
+    referencing = apps.get_model(spec.referenced_by[0])
+    assert table == referencing._meta.db_table
+    assert column in {str(f.column) for f in referencing._meta.concrete_fields}
 
 
 def test_plan_copies_no_user_data() -> None:
@@ -337,6 +371,19 @@ def seeded_bulletins(db: None) -> None:
         region=regions[1],
     )
 
+    # The curated resort estate: a resort with a village and a peak, so the
+    # resort and location id maps both translate a real link.
+    resort = ResortFactory.create(region=regions[0], forecast_point=cells[0])
+    for role, name in (
+        (ResortLocation.ROLE.BASE, "Verbier village"),
+        (ResortLocation.ROLE.TOP, "Mont Fort"),
+    ):
+        ResortLocationFactory.create(
+            resort=resort,
+            location=LocationFactory.create(name=name, forecast_cell=cells[0]),
+            role=role,
+        )
+
 
 @pytest.fixture
 def self_copy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -404,6 +451,31 @@ def test_self_copy_preserves_foreign_keys(
     for link in RegionBulletin.objects.select_related("bulletin", "region")[:20]:
         assert link.bulletin.bulletin_id
         assert link.region.region_id
+
+
+@pytest.mark.django_db
+def test_a_ugc_location_is_never_read(self_copy: None, seeded_bulletins: None) -> None:
+    """A Location no ResortLocation points at stays out of the copy entirely.
+
+    This is the plan's one mixed table, and the assertion is deliberately
+    about ``read``, not ``written``: the restriction is a subquery inside
+    production, so a user's saved position is never fetched at all rather
+    than fetched and then discarded.
+    """
+    # What apps/observations/views.py mints for a field report: lat/lon, no name.
+    orphan = LocationFactory.create(name="", latitude=46.9, longitude=7.9)
+    assert not orphan.resort_locations.exists()
+
+    curated = Location.objects.filter(resort_locations__isnull=False).distinct()
+    results = _run_plan(commit=True)
+
+    locations = next(r for r in results if r.label == "locations.Location")
+    assert locations.read == curated.count()
+    assert locations.read < Location.objects.count()
+
+    # Still present, still untouched — the sync neither copied nor deleted it.
+    orphan.refresh_from_db()
+    assert orphan.name == ""
 
 
 @pytest.mark.django_db

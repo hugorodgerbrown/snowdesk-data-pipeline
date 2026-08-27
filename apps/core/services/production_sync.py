@@ -201,6 +201,11 @@ class TableSpec:
         provides: Name of the id map this table populates once copied, if
             any. Built after the table is written, so child tables see rows
             this run inserted.
+        referenced_by: ``(model_label, field_name)`` naming a foreign key
+            that must point at a row for it to be copied — the row filter
+            for a table whose contents are only *partly* in scope. The
+            subquery runs against production, so it sees the full picture
+            regardless of what this database holds.
 
     """
 
@@ -210,11 +215,27 @@ class TableSpec:
     required: tuple[str, ...] = ()
     null_out: tuple[str, ...] = ()
     provides: str | None = None
+    referenced_by: tuple[str, str] | None = None
 
     @property
     def model(self) -> type[models.Model]:
         """Return the model class this spec copies."""
         return apps.get_model(self.model_label)
+
+    @property
+    def restriction(self) -> tuple[str, str] | None:
+        """Resolve :attr:`referenced_by` to a ``(table, column)`` pair.
+
+        Returns:
+            The referencing table and its foreign-key column, or ``None``
+            when the whole table is in scope.
+
+        """
+        if self.referenced_by is None:
+            return None
+        label, field_name = self.referenced_by
+        model = apps.get_model(label)
+        return model._meta.db_table, _column_of(model, field_name)
 
 
 # Copy order matters: a table's parents appear before it, so the id map a
@@ -278,7 +299,53 @@ SYNC_PLAN: tuple[TableSpec, ...] = (
         remap={"forecast_cell_id": "forecast_cell"},
         required=("forecast_cell_id",),
     ),
+    # --- Curated resort estate -------------------------------------------
+    # Resorts are editable data owned by each environment's database, not a
+    # fixture reloaded on deploy (docs/decisions/resorts-are-editable-data.md).
+    # That ADR forbids re-loading resorts.json over production's edits; this
+    # runs the other way, carrying production's curated set *to* staging,
+    # which is the only route those edits have ever had — St. Moritz's
+    # coordinate, for one, was placed by hand in the production map editor
+    # and reaches staging by nothing else.
+    #
+    # Keyed on ``uuid``: Resort, Location and ResortLocation declare no
+    # domain-unique field, and ``BaseModel.uuid`` is exactly the stable,
+    # non-enumerable identity to fall back on. Nothing in the codebase ever
+    # reassigns it, so a row copied today updates the same row tomorrow.
+    TableSpec(
+        model_label="regions.Resort",
+        natural_key=("uuid",),
+        remap={"region_id": "region", "forecast_point_id": "forecast_cell"},
+        required=("region_id",),
+        provides="resort",
+    ),
+    # locations_location is a MIXED table and the one genuine hazard in this
+    # plan. A Location is a resort's village/mid-station/peak — curated — but
+    # apps/favourites/services.py and apps/observations/views.py also mint one
+    # per saved pin and per field report, from user input. Those are somebody's
+    # positions, and copying them would break the property the whole sync rests
+    # on. ``referenced_by`` restricts the read to rows a ResortLocation points
+    # at, which is a structural test of "is this curated", not a heuristic on
+    # a text field.
+    TableSpec(
+        model_label="locations.Location",
+        natural_key=("uuid",),
+        remap={"forecast_cell_id": "forecast_cell"},
+        provides="location",
+        referenced_by=("locations.ResortLocation", "location"),
+    ),
+    TableSpec(
+        model_label="locations.ResortLocation",
+        natural_key=("uuid",),
+        remap={"resort_id": "resort", "location_id": "location"},
+        required=("resort_id", "location_id"),
+    ),
 )
+
+# Tables whose contents are only partly in scope: every plan entry naming one
+# MUST carry a ``referenced_by`` restriction, or the copy sweeps up user data.
+# Enforced by tests/core/services/test_production_sync.py.
+MIXED_TABLES: frozenset[str] = frozenset({"locations.Location"})
 
 # Id maps the plan remaps through. ``bulletin`` and ``forecast_cell`` are
 # rebuilt after their own tables are copied (``TableSpec.provides``);
@@ -297,6 +364,8 @@ ID_MAP_SPECS: tuple[IdMap, ...] = (
         model_label="weather.ForecastCell",
         natural_key=("lat_cell", "lon_cell", "elevation_band"),
     ),
+    IdMap(name="resort", model_label="regions.Resort", natural_key=("uuid",)),
+    IdMap(name="location", model_label="locations.Location", natural_key=("uuid",)),
 )
 
 
@@ -451,6 +520,7 @@ def read_rows(
     table: str,
     columns: list[str],
     since: datetime | None,
+    restrict: tuple[str, str] | None = None,
     batch_size: int = READ_BATCH_SIZE,
 ) -> Iterator[list[tuple[Any, ...]]]:
     """Stream production rows newest-id-first, one batch at a time.
@@ -466,6 +536,9 @@ def read_rows(
         columns: Column names to select. ``id`` is prepended automatically.
         since: Only read rows whose ``updated_at`` is at or after this
             instant. ``None`` reads the whole table.
+        restrict: ``(table, column)`` limiting the read to rows whose ``id``
+            appears in that column — the filter for a partly-in-scope table.
+            Evaluated inside production, so no id list crosses the wire.
         batch_size: Rows per round trip.
 
     Yields:
@@ -474,7 +547,16 @@ def read_rows(
 
     """
     selected = ", ".join(f'"{name}"' for name in ["id", *columns])
-    predicate = "id < %s" if since is None else "id < %s AND updated_at >= %s"
+    clauses = ["id < %s"]
+    if since is not None:
+        clauses.append("updated_at >= %s")
+    if restrict is not None:
+        via_table, via_column = restrict
+        # S608: both identifiers are resolved from model metadata by
+        # ``TableSpec.restriction``, never from input.
+        subquery = f'SELECT "{via_column}" FROM "{via_table}"'  # noqa: S608
+        clauses.append(f"id IN ({subquery})")
+    predicate = " AND ".join(clauses)
     # S608: every identifier interpolated here comes from model metadata
     # (``_meta.db_table`` / ``Field.column``) and ``batch_size`` is coerced to
     # int — no user input reaches the string. Values stay parameterised.
@@ -656,7 +738,12 @@ def _translate_rows(
 
     """
     model = spec.model
-    for batch in read_rows(table=model._meta.db_table, columns=columns, since=since):
+    for batch in read_rows(
+        table=model._meta.db_table,
+        columns=columns,
+        since=since,
+        restrict=spec.restriction,
+    ):
         for row in batch:
             result.read += 1
             values = {

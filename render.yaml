@@ -133,12 +133,19 @@ projects:
           # without this its data is whatever the last manual `fetch_bulletins`
           # left behind — usually empty or months stale.
           #
-          # Copies NO user data: no auth_user, no Account, no passkeys, no push
-          # subscriptions, no routes, no observations, no request logs. That is
-          # what makes it safe to run unattended with no anonymisation step,
-          # and it matters because staging sends email inline (ImmediateBackend
-          # above) — a copied subscriber list would be a copied mailing list.
-          # The table plan and the reason for each exclusion live in
+          # Copies bulletins, weather, and the curated resort estate (Resort +
+          # its village/mid/peak Locations). Copies NO user data: no auth_user,
+          # no Account, no passkeys, no push subscriptions, no routes, no
+          # observations, no favourites, no request logs. That is what makes it
+          # safe to run unattended with no anonymisation step, and it matters
+          # because staging sends email inline (ImmediateBackend above) — a
+          # copied subscriber list would be a copied mailing list.
+          #
+          # locations_location is the one MIXED table: it holds a resort's
+          # village/mid/peak alongside a row per saved favourite and per field
+          # report. The plan restricts it to rows a ResortLocation references,
+          # so a user's saved position is never even read. The table plan and
+          # the reason for each exclusion live in
           # apps/core/services/production_sync.py.
           #
           # PRODUCTION_DATABASE_URL is dashboard-set (`sync: false`) and must

@@ -23,8 +23,11 @@ copies the provider-derived tables out of production instead, and the
 | `bulletins.BulletinGrouping` | `routes.Route`, `core.RequestLog` |
 | `weather.ForecastCell` | `bulletins.BulletinShare` / `BulletinShareClick` |
 | `weather.ForecastCellWeather` | `bulletins.PipelineRun` |
-| `weather.ForecastCellWeatherHistory` | regions/resorts (fixture-loaded by `build.sh` on both sides) |
+| `weather.ForecastCellWeatherHistory` | EAWS regions (fixture-loaded by `build.sh` on both sides) |
 | `weather.WeatherSnapshot` | |
+| `regions.Resort` | |
+| `locations.Location` *(curated rows only — see below)* | |
+| `locations.ResortLocation` | |
 
 **No user data crosses the boundary.** That is what makes the job safe to
 run unattended with no anonymisation step, and it matters more here than in
@@ -37,6 +40,40 @@ ingest runs, has no natural key to upsert on, and
 `Bulletin.pipeline_run` is `null=True, on_delete=SET_NULL` — so the copied
 bulletins simply carry a null reference. `BulletinShareClick` is excluded
 because it foreign-keys `RequestLog`, which carries IP and geo.
+
+### `locations.Location` is the one mixed table
+
+A `Location` is a resort's village, mid-station or peak — curated — but
+`apps/favourites/services.py` and `apps/observations/views.py` also mint one
+per saved map pin and per field report, straight from user input. The table
+therefore holds curated and personal rows side by side, and copying it whole
+would put somebody's saved positions on staging.
+
+The plan restricts it to rows that a `ResortLocation` references. That is a
+**structural** test of "is this curated", not a heuristic on whether the row
+happens to have a name, and it runs as a subquery inside production — so an
+unreferenced Location is never fetched at all, rather than fetched and then
+discarded. `test_a_ugc_location_is_never_read` asserts exactly that, and
+`test_mixed_tables_are_restricted` fails if a future plan entry names a
+mixed table without a restriction.
+
+Region-centroid Locations are *not* copied: `MicroRegion` is not in the plan,
+so copying them would relink nothing. If staging's region centroids are null,
+run `manage.py link_region_centroid_locations --commit` there — it is
+idempotent.
+
+### Why copying resorts does not contradict the resorts-are-editable ADR
+
+[`resorts-are-editable-data`](../decisions/resorts-are-editable-data.md) keeps
+`resorts.json` out of the deploy-time `loaddata` list, because reloading the
+fixture made it authoritative *over* production and silently reverted edits
+made in the admin and map editor. This sync runs the other way: production is
+the authoritative curated set, and copying it to staging is the only route
+those edits have ever had. St. Moritz's coordinate, placed by hand in the
+production map editor on 2026-07-28, reaches staging by nothing else.
+
+Staging's own resort edits are overwritten by design — staging is disposable,
+and the point is for it to look like production.
 
 The authoritative table plan is `SYNC_PLAN` in
 [`apps/core/services/production_sync.py`](../../apps/core/services/production_sync.py);

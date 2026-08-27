@@ -529,17 +529,27 @@ gets data. Runs unattended as the `snowdesk-staging-data-sync` Render cron
 job at 07:20 UTC.
 
 Copies `Bulletin`, `RegionBulletin`, `RegionDayRating`, `BulletinGrouping`,
-`ForecastCell`, `ForecastCellWeather`, `ForecastCellWeatherHistory` and
-`WeatherSnapshot`. Copies **no user data** — no `auth_user`, `Account`,
-passkeys, push subscriptions, favourites, observations, routes, request logs
-or bulletin shares. That is what makes it safe to run unattended with no
-anonymisation step, and it matters because staging sends email inline
-(`ImmediateBackend`). `PipelineRun` is also excluded: it is telemetry about
-production's own ingest runs, and `Bulletin.pipeline_run` is nullable.
+`ForecastCell`, `ForecastCellWeather`, `ForecastCellWeatherHistory`,
+`WeatherSnapshot`, and the curated resort estate — `Resort`,
+`ResortLocation`, and the `Location` rows a `ResortLocation` references.
+
+Copies **no user data** — no `auth_user`, `Account`, passkeys, push
+subscriptions, favourites, observations, routes, request logs or bulletin
+shares. That is what makes it safe to run unattended with no anonymisation
+step, and it matters because staging sends email inline (`ImmediateBackend`).
+`PipelineRun` is also excluded: it is telemetry about production's own ingest
+runs, and `Bulletin.pipeline_run` is nullable.
+
+`locations.Location` is the one **mixed** table — a resort's village/mid/peak
+sits alongside a row per saved favourite and per field report — so the plan
+restricts it to rows a `ResortLocation` points at. The filter is a subquery
+inside production, so a user's saved position is never read at all.
 
 Every table upserts on its own natural key and foreign keys are translated
 through id maps, so primary keys need not (and do not) match across the two
-databases. Re-running is a no-op.
+databases. `Resort`, `Location` and `ResortLocation` declare no domain-unique
+field, so they key on `BaseModel.uuid`, which nothing ever reassigns.
+Re-running is a no-op.
 
 ```bash
 # Read-only: report what would be copied, write nothing.

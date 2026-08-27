@@ -73,8 +73,8 @@ has its own `DATABASE_URL`, `SECRET_KEY`, `ALLOWED_HOSTS`, and email target
 Staging has **no scheduler and no task worker**, so its database does not
 ingest bulletins on its own. The `snowdesk-staging-data-sync` cron job
 (SNOW-729) copies the provider-derived tables out of production nightly at
-07:20 UTC instead — bulletins, region ratings and weather, and no user data
-whatsoever. Setup, the first full load, and skipped-row triage:
+07:20 UTC instead — bulletins, region ratings, weather and the curated resort
+estate, and no user data whatsoever. Setup, the first full load, and skipped-row triage:
 [`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
 A manual `fetch_bulletins` run against staging still works, but is no longer
 the way staging gets its data. Because there is no `db_worker` to consume the
