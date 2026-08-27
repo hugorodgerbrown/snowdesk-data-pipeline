@@ -64,7 +64,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from django.apps import apps
-from django.db import connections, models
+from django.db import OperationalError, connections, models
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,15 @@ WRITE_BATCH_SIZE = 500
 
 # Sentinel start for keyset pagination — above any BigAutoField value.
 _MAX_BIGINT = 2**63 - 1
+
+# How many times to re-run a query whose connection died under it.
+#
+# A managed Postgres closes connections that sit idle, and this job gives it
+# every reason to: the run is minutes long, and each side is idle while the
+# other works. Losing a connection mid-copy is therefore an ordinary
+# operating condition here, not an exceptional one, and the sync has to ride
+# it out rather than abort a 60,000-row table (SNOW-734).
+CONNECTION_ATTEMPTS = 3
 
 
 class ProductionSyncError(Exception):
@@ -457,6 +466,58 @@ def _dsn_identity(alias: str) -> tuple[str, str, str]:
 # ---------------------------------------------------------------------------
 
 
+def fetch_all(
+    alias: str, sql: str, params: list[Any] | None = None
+) -> list[tuple[Any, ...]]:
+    """Run a read query, reconnecting if the connection died under it.
+
+    Every read in this module goes through here, and each one opens its own
+    short-lived cursor. That is deliberate: holding a cursor open across the
+    writes between batches is what left the production connection idle long
+    enough to be reaped in the first place.
+
+    Reconnecting is safe because every caller is a self-contained ``SELECT``
+    outside any transaction — keyset pagination means a re-run of the same
+    query returns the same rows, so a retry cannot skip or duplicate work.
+
+    Args:
+        alias: The database alias to read from.
+        sql: The query, with ``%s`` placeholders.
+        params: Query parameters, if any.
+
+    Returns:
+        Every row the query returned.
+
+    Raises:
+        ProductionSyncError: if the connection could not be re-established
+            within :data:`CONNECTION_ATTEMPTS` tries.
+
+    """
+    last: OperationalError | None = None
+    for attempt in range(1, CONNECTION_ATTEMPTS + 1):
+        try:
+            with connections[alias].cursor() as cursor:
+                cursor.execute(sql, params or [])
+                rows: list[tuple[Any, ...]] = cursor.fetchall()
+                return rows
+        except OperationalError as exc:
+            last = exc
+            logger.warning(
+                "production_sync: %r connection lost on attempt %d/%d (%s); "
+                "reconnecting",
+                alias,
+                attempt,
+                CONNECTION_ATTEMPTS,
+                exc,
+            )
+            # Discards the dead socket; the next cursor() dials a fresh one.
+            connections[alias].close()
+
+    raise ProductionSyncError(
+        f"Lost the {alias!r} connection {CONNECTION_ATTEMPTS} times in a row: {last}"
+    )
+
+
 def production_columns(table: str) -> set[str]:
     """Return the column names production actually has for ``table``.
 
@@ -474,13 +535,13 @@ def production_columns(table: str) -> set[str]:
         ProductionSyncError: if the table does not exist in production.
 
     """
-    with connections[PRODUCTION_ALIAS].cursor() as cursor:
-        cursor.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name = %s",
-            [table],
-        )
-        columns = {row[0] for row in cursor.fetchall()}
+    rows = fetch_all(
+        PRODUCTION_ALIAS,
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = %s",
+        [table],
+    )
+    columns = {row[0] for row in rows}
 
     if not columns:
         raise ProductionSyncError(
@@ -565,18 +626,24 @@ def read_rows(
         f"ORDER BY id DESC LIMIT {int(batch_size)}"
     )
 
+    # One cursor per batch, deliberately. This used to hold a single cursor
+    # open for the whole table, and because this is a generator the `yield`
+    # suspended *inside* it — so the production connection sat idle through
+    # every staging write in between. Over a 60,000-row table that is minutes
+    # of idle time, and a managed Postgres reaps an idle connection: the next
+    # execute() then died with "SSL error: unexpected eof while reading"
+    # (SNOW-734). Keyset pagination makes each batch an independent query, so
+    # per-batch cursors cost nothing and there is no long-lived state to lose.
     cursor_id = _MAX_BIGINT
-    with connections[PRODUCTION_ALIAS].cursor() as cursor:
-        while True:
-            params: list[Any] = [cursor_id]
-            if since is not None:
-                params.append(since)
-            cursor.execute(sql, params)
-            rows = cursor.fetchall()
-            if not rows:
-                return
-            yield rows
-            cursor_id = rows[-1][0]
+    while True:
+        params: list[Any] = [cursor_id]
+        if since is not None:
+            params.append(since)
+        rows = fetch_all(PRODUCTION_ALIAS, sql, params)
+        if not rows:
+            return
+        yield rows
+        cursor_id = rows[-1][0]
 
 
 # ---------------------------------------------------------------------------
@@ -608,20 +675,16 @@ def build_id_map(spec: IdMap) -> IdMap:
     sql = f'SELECT {selected} FROM "{model._meta.db_table}"'  # noqa: S608
 
     local: dict[tuple[Any, ...], int] = {}
-    with connections["default"].cursor() as cursor:
-        cursor.execute(sql)
-        for row in cursor.fetchall():
-            local[tuple(row[1:])] = row[0]
+    for row in fetch_all("default", sql):
+        local[tuple(row[1:])] = row[0]
 
     mapping: dict[int, int] = {}
     production_rows = 0
-    with connections[PRODUCTION_ALIAS].cursor() as cursor:
-        cursor.execute(sql)
-        for row in cursor.fetchall():
-            production_rows += 1
-            local_pk = local.get(tuple(row[1:]))
-            if local_pk is not None:
-                mapping[row[0]] = local_pk
+    for row in fetch_all(PRODUCTION_ALIAS, sql):
+        production_rows += 1
+        local_pk = local.get(tuple(row[1:]))
+        if local_pk is not None:
+            mapping[row[0]] = local_pk
 
     logger.info(
         "production_sync: id map %r resolved %d of %d production row(s)",
