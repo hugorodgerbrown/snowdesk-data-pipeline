@@ -569,7 +569,7 @@ class TestFetchArchiveForRegion:
                     commit=True,
                 )
 
-    def test_upserts_existing_snapshots(self) -> None:
+    def test_leaves_existing_snapshots_untouched(self) -> None:
         """Existing snapshots are updated rather than duplicated."""
         region = MicroRegionFactory.create()
         target = datetime.date(2026, 4, 28)
@@ -593,7 +593,8 @@ class TestFetchArchiveForRegion:
         assert len(result) == 1
         snapshot, created = result[0]
         assert created is False
-        assert snapshot.weather_code == 5
+        # Create-only: the stored 99 stands and the archive's 5 is discarded.
+        assert snapshot.weather_code == 99
         assert WeatherSnapshot.objects.filter(region=region).count() == 1
 
     def test_correct_date_range_params_passed_to_api(self) -> None:
@@ -853,7 +854,7 @@ class TestFetchArchiveForRegionValidation:
             sunrises=self._sun(3),
             sunsets=self._sun(3),
         )
-        real_uoc = WeatherSnapshot.objects.update_or_create
+        real_goc = WeatherSnapshot.objects.get_or_create
         call_count = {"n": 0}
 
         def _fail_on_second(*args: Any, **kwargs: Any) -> Any:
@@ -861,7 +862,7 @@ class TestFetchArchiveForRegionValidation:
             call_count["n"] += 1
             if call_count["n"] == 2:
                 raise IntegrityError("simulated snapshot write failure")
-            return real_uoc(*args, **kwargs)
+            return real_goc(*args, **kwargs)
 
         with (
             patch(
@@ -869,7 +870,7 @@ class TestFetchArchiveForRegionValidation:
                 _mock_get(api_data),
             ),
             patch.object(
-                WeatherSnapshot.objects, "update_or_create", side_effect=_fail_on_second
+                WeatherSnapshot.objects, "get_or_create", side_effect=_fail_on_second
             ),
             pytest.raises(IntegrityError),
         ):
@@ -971,8 +972,12 @@ class TestBackfillAllRegions:
         assert counts["updated"] == 0
         assert WeatherSnapshot.objects.count() == 0
 
-    def test_existing_snapshots_counted_as_updated(self) -> None:
-        """Snapshots that already exist are counted as updated, not created."""
+    def test_existing_snapshots_counted_as_skipped(self) -> None:
+        """A day already stored is skipped — never created, never updated.
+
+        The archive fills gaps. A stored day was written by the forecast
+        pass when it was current, and that record stands.
+        """
         region = MicroRegionFactory.create()
         target = datetime.date(2026, 4, 28)
         WeatherSnapshotFactory.create(region=region, valid_for_date=target)
@@ -990,8 +995,9 @@ class TestBackfillAllRegions:
         ):
             counts = backfill_all_regions(start, end, commit=True)
 
-        assert counts["updated"] == 1
         assert counts["created"] == 0
+        assert counts["updated"] == 0
+        assert counts["skipped"] == 1
 
     def test_delay_sleeps_between_regions(self) -> None:
         """``delay > 0`` sleeps between regions but never after the last one."""
@@ -1424,14 +1430,12 @@ class TestFetchWeatherAsync:
     def test_sync_mode_persists_snapshot(self) -> None:
         """When WEATHER_FETCH_ASYNC is False, the call runs inline and writes a snapshot."""
         region = MicroRegionFactory.create()
-        target = datetime.date.today() - datetime.timedelta(
-            days=2
-        )  # past → archive path
-        api_data = _make_archive_response(
-            dates=[target.isoformat()],
-            weather_codes=[3],
-            sunrises=[f"{target.isoformat()}T07:00+02:00"],
-            sunsets=[f"{target.isoformat()}T17:00+02:00"],
+        target = datetime.date.today()  # today → forecast path
+        api_data = _make_forecast_response(
+            weather_code=3,
+            sunrise=f"{target.isoformat()}T07:00+02:00",
+            sunset=f"{target.isoformat()}T17:00+02:00",
+            target_date=target.isoformat(),
         )
         with patch(
             "apps.weather.services.weather_fetcher.requests.get",
@@ -1440,6 +1444,25 @@ class TestFetchWeatherAsync:
             fetch_weather_async(region, target)
 
         assert WeatherSnapshot.objects.filter(
+            region=region, valid_for_date=target
+        ).exists()
+
+    def test_past_date_is_a_no_op(self) -> None:
+        """A past date fetches nothing — the archive URL is backfill_weather's alone.
+
+        The page render used to reach the archive endpoint for any past day
+        with no stored row. That branch is gone: the request path only ever
+        touches the forecast endpoint, and a missing historical day is left
+        for ``backfill_weather`` to fill.
+        """
+        region = MicroRegionFactory.create()
+        target = datetime.date.today() - datetime.timedelta(days=2)
+
+        with patch("apps.weather.services.weather_fetcher.requests.get") as mock_get:
+            fetch_weather_async(region, target)
+
+        mock_get.assert_not_called()
+        assert not WeatherSnapshot.objects.filter(
             region=region, valid_for_date=target
         ).exists()
 

@@ -46,7 +46,9 @@ apps/            Parent package for the twelve Django apps (SNOW-557 — moved
                  WeatherSnapshot / ForecastPoint / ForecastPointWeather /
                  ForecastPointWeatherHistory, the fetch, quantisation,
                  elevation and display services under services/, and the
-                 fetch_weather + prune_forecast_points commands. The models
+                 fetch_weather (today, forecast endpoint) + backfill_weather
+                 (past gaps, the sole caller of the archive endpoint) +
+                 prune_forecast_points commands. The models
                  still read the bulletins_* tables (Meta.db_table is pinned);
                  renaming them is a separate ticket
   accounts/      Signed-token subscription flow (see docs/accounts.md);

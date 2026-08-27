@@ -234,58 +234,19 @@ class TestFetchWeatherSnippetForecastPath:
 
 
 @pytest.mark.django_db
-class TestFetchWeatherSnippetArchivePath:
-    """Archive path: target_date < today, uses fetch_archive_for_region."""
+class TestFetchWeatherSnippetPastDate:
+    """Past dates fetch nothing — the archive URL belongs to backfill_weather."""
 
-    def test_archive_path_returns_populated_header(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Archive path returns the weather header with icon and condition label."""
+    def test_past_date_without_snapshot_returns_fallback(self) -> None:
+        """A past date with no stored snapshot renders the no-weather state.
+
+        It used to reach the Open-Meteo archive endpoint from this view. The
+        archive has exactly one caller now — the ``backfill_weather``
+        command — so the panel renders empty and the day is filled by a
+        backfill run instead.
+        """
         region = MicroRegionFactory.create()
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
-        # Use .build() so no DB row exists — the API path is exercised.
-        # Deliberate exception to the .create() rule; see forecast sibling tests.
-        snapshot = WeatherSnapshotFactory.build(
-            region=region,
-            valid_for_date=past_date,
-            weather_code=3,  # overcast
-            sunrise=datetime(
-                past_date.year, past_date.month, past_date.day, 7, 0, tzinfo=UTC
-            ),
-            sunset=datetime(
-                past_date.year, past_date.month, past_date.day, 17, 0, tzinfo=UTC
-            ),
-        )
-
-        monkeypatch.setattr(
-            "apps.public.views.fetch_archive_for_region",
-            lambda *args, **kwargs: [(snapshot, True)],
-        )
-
-        client = Client()
-        url = _weather_url(region.region_id.lower(), past_date.isoformat())
-        response = client.post(url, HTTP_HX_REQUEST="true")
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Populated header has hero icon.
-        assert 'data-testid="bulletin-header-hero-icon"' in content
-        # Overcast → condition label "Overcast".
-        assert "Overcast" in content
-        # No retry trigger.
-        assert "hx-post" not in content
-
-    def test_archive_path_empty_results_returns_fallback(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Empty archive result returns the no-weather fallback fragment."""
-        region = MicroRegionFactory.create()
-        past_date = timezone.localdate().replace(year=2026, month=1, day=10)
-
-        monkeypatch.setattr(
-            "apps.public.views.fetch_archive_for_region",
-            lambda *args, **kwargs: [],
-        )
 
         client = Client()
         url = _weather_url(region.region_id.lower(), past_date.isoformat())
@@ -295,6 +256,26 @@ class TestFetchWeatherSnippetArchivePath:
         content = response.content.decode()
         assert 'data-weather-bucket="none"' in content
         assert "hx-post" not in content
+
+    def test_past_date_calls_no_fetcher_at_all(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No upstream call is made for a past date, by either endpoint."""
+        region = MicroRegionFactory.create()
+        past_date = timezone.localdate().replace(year=2026, month=1, day=10)
+
+        def _must_not_be_called(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("no weather fetch may run for a past date")
+
+        monkeypatch.setattr(
+            "apps.public.views.fetch_weather_for_region", _must_not_be_called
+        )
+
+        client = Client()
+        url = _weather_url(region.region_id.lower(), past_date.isoformat())
+        response = client.post(url, HTTP_HX_REQUEST="true")
+
+        assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -337,10 +318,10 @@ class TestFetchWeatherSnippetExistingSnapshot:
         assert 'data-testid="bulletin-header-hero-icon"' in content
         assert 'data-weather-bucket="none"' not in content
 
-    def test_existing_snapshot_skips_archive_fetch(
+    def test_existing_snapshot_for_past_date_skips_fetch(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When a snapshot exists for (region, past_date) the archive API is not called."""
+        """A stored snapshot for a past date is rendered without any fetch."""
         region = MicroRegionFactory.create()
         past_date = timezone.localdate().replace(year=2026, month=1, day=10)
         WeatherSnapshotFactory.create(
@@ -359,7 +340,7 @@ class TestFetchWeatherSnippetExistingSnapshot:
             raise AssertionError("API must not be called")
 
         monkeypatch.setattr(
-            "apps.public.views.fetch_archive_for_region", _must_not_be_called
+            "apps.public.views.fetch_weather_for_region", _must_not_be_called
         )
 
         client = Client()
@@ -465,29 +446,6 @@ class TestFetchWeatherSnippetFailure:
         content = response.content.decode()
         assert 'data-weather-bucket="none"' in content
         # No HTMX retry trigger — must not loop.
-        assert "hx-post" not in content
-
-    def test_archive_fetch_exception_returns_200_fallback(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Archive fetcher raising an exception returns 200 with no-weather fallback."""
-        region = MicroRegionFactory.create()
-        past_date = timezone.localdate().replace(year=2026, month=1, day=10)
-
-        monkeypatch.setattr(
-            "apps.public.views.fetch_archive_for_region",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                requests.HTTPError("503 Service Unavailable")
-            ),
-        )
-
-        client = Client()
-        url = _weather_url(region.region_id.lower(), past_date.isoformat())
-        response = client.post(url, HTTP_HX_REQUEST="true")
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-weather-bucket="none"' in content
         assert "hx-post" not in content
 
 
@@ -668,10 +626,15 @@ class TestBulletinDetailWeatherTrigger:
         assert "max-age=" in cache_control
         assert "no-store" not in cache_control
 
-    def test_past_date_no_snapshot_schedules_async_fetch(
+    def test_past_date_no_snapshot_does_not_schedule_async_fetch(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Visiting a past-date URL with no snapshot calls fetch_weather_async."""
+        """A past-date page never warms weather — that is backfill_weather's job.
+
+        The warm-up existed to pull a prefetched past day off the Open-Meteo
+        archive endpoint. That endpoint has one caller now, so a past day with
+        no stored row renders its no-weather state and waits for a backfill.
+        """
         calls: list[tuple] = []
 
         def _spy(region: MicroRegion, target_date: Any) -> None:
@@ -705,12 +668,17 @@ class TestBulletinDetailWeatherTrigger:
         response = client.get(url, follow=True)
 
         assert response.status_code == 200
-        assert calls == [("CH-9001", past)]
+        assert calls == []
 
-    def test_today_no_snapshot_does_not_schedule_async_fetch(
+    def test_today_no_snapshot_schedules_async_fetch(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Today's page keeps the HTMX path; the async warmup only covers past dates."""
+        """Today's page warms its own forecast on render.
+
+        Today is the one date the forecast endpoint serves, so it is the one
+        date the background warm-up applies to. The HTMX trigger stays in the
+        template as the safety net for a click that beats the worker.
+        """
         calls: list = []
         monkeypatch.setattr(
             "apps.public.views.fetch_weather_async",
@@ -727,4 +695,4 @@ class TestBulletinDetailWeatherTrigger:
         response = client.get(self._bulletin_url(region, today), follow=True)
 
         assert response.status_code == 200
-        assert calls == []
+        assert calls == [(region, today)]

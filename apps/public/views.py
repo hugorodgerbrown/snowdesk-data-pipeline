@@ -125,7 +125,6 @@ from apps.weather.services.weather_display import (
 )
 from apps.weather.services.weather_fetcher import (
     POINT_FORECAST_DAYS,
-    fetch_archive_for_region,
     fetch_weather_async,
     fetch_weather_for_region,
 )
@@ -3693,13 +3692,18 @@ def _bulletin_detail_response(
         _region_forecast_panel(region, target_date) if target_date >= today else None
     )
 
-    # When the page would otherwise emit the HTMX trigger for a past date,
-    # warm the snapshot on a background thread so the user's actual click —
-    # which comes seconds after the browser prefetch — lands on a server
-    # render that bakes weather inline (no HTMX swap, no flash). The HTMX
-    # trigger stays in the no-weather template as a safety net for the rare
+    # When the page would otherwise emit the HTMX trigger, warm the snapshot
+    # on a background thread so the user's actual click — which comes seconds
+    # after the browser prefetch — lands on a server render that bakes weather
+    # inline (no HTMX swap, no flash). The HTMX trigger stays in the
+    # no-weather template as a safety net for the rare
     # click-before-worker-finishes case. SNOW-164.
-    if weather_snapshot is None and target_date < today:
+    #
+    # Today and forward only. This warmed *past* dates off the archive
+    # endpoint until that URL was confined to ``backfill_weather``; a past day
+    # with no stored row now renders its no-weather state and waits for a
+    # backfill run, rather than fetching history on a page view.
+    if weather_snapshot is None and target_date >= today:
         fetch_weather_async(region, target_date)
 
     # Collect every issue that touches the target day and pick the one
@@ -4527,12 +4531,11 @@ def fetch_weather_snippet(
         weather_display = build_weather_display(snapshot, timezone.now())
     else:
         try:
-            if target_date < today:
-                results = fetch_archive_for_region(
-                    region, target_date, target_date, commit=True
-                )
-                snapshot = results[0][0] if results else None
-            else:
+            # Forecast endpoint only. A past day with no stored snapshot is
+            # left to the ``backfill_weather`` command — the archive URL has
+            # one caller, and it is not a request-path view. The panel
+            # renders its no-weather state instead.
+            if target_date >= today:
                 result = fetch_weather_for_region(region, target_date, commit=True)
                 snapshot = result[0] if result is not None else None
             if snapshot is not None:
