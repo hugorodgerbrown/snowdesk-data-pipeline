@@ -90,13 +90,50 @@ the guarantee. The code is only the intent.
 
 In the Render dashboard → **snowdesk-db → Connect → PSQL Command**, then:
 
+Generate the password from letters and digits only — it has to survive being
+pasted into a URL (see "Password characters" below):
+
+```bash
+python3 -c "import secrets,string; print(''.join(secrets.choice(string.ascii_letters+string.digits) for _ in range(40)))"
+```
+
 ```sql
+-- Ask for a SCRAM-SHA-256 password hash before creating the role. Without
+-- this, CREATE ROLE warns "MD5 password support is deprecated and will be
+-- removed in a future release of PostgreSQL" — see the note below.
+SET password_encryption = 'scram-sha-256';
+
 CREATE ROLE staging_sync WITH LOGIN PASSWORD '<generate one>';
 GRANT CONNECT ON DATABASE snowdesk TO staging_sync;
 GRANT USAGE ON SCHEMA public TO staging_sync;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO staging_sync;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO staging_sync;
 ```
+
+**On the MD5 deprecation warning.** Current PostgreSQL defaults
+`password_encryption` to `scram-sha-256`, so seeing that warning means this
+server is set to `md5` (or predates the default change in PG 14). The warning
+is not an error: the role is created and MD5 authentication still works —
+it is deprecated, not removed — so the sync connects either way. But the
+hash is weak and the method is on its way out, so prefer SCRAM.
+
+`password_encryption` only affects passwords set *after* it changes, so
+setting it does nothing to a role that already exists. If the role was
+already created and warned, re-issue its password in the same session:
+
+```sql
+SET password_encryption = 'scram-sha-256';
+ALTER ROLE staging_sync WITH PASSWORD '<the same value, or a new one>';
+```
+
+If a new value is used, update `PRODUCTION_DATABASE_URL` to match. If the
+`SET` is refused, the upstream procedure is a `postgresql.conf` change, which
+Render does not expose — leave the role on MD5 and raise it separately.
+
+The rest of the roles on this database, the application role included, are
+almost certainly on MD5 for the same reason. That is a pre-existing posture
+question for the whole instance rather than anything this runbook introduces;
+worth a ticket, not worth blocking the sync on.
 
 **The last line is not optional.** `GRANT SELECT ON ALL TABLES` applies only
 to the tables that exist at the moment it runs. Without the default-privileges
@@ -109,6 +146,31 @@ permissions error.
 If the production plan offers a read replica, point the role at the replica
 instead of the primary so a full `--all` load never competes with live
 traffic.
+
+### Password characters
+
+`PRODUCTION_DATABASE_URL` is a URL, so the password is URL syntax and `@`,
+`/`, `?`, `#`, `%` and `:` all mean something in it. An `@` is the one that
+bites first: it separates userinfo from host, so `psql` and anything else
+going through libpq reject the DSN outright. Percent-encoding is the
+documented answer (`@` is `%40`), but generating an alphanumeric password
+avoids the question in psql, libpq, the Render UI and the shell at once.
+
+Django is misleadingly forgiving here, which is why this is worth writing
+down: `urlsplit` splits userinfo on the **last** `@`, so
+`dj_database_url.parse` recovers the right password from an unencoded one and
+the app connects while `psql` with the same string does not. Do not take a
+working Django connection as evidence the DSN is well-formed.
+
+To change the password on an existing role — which is also how to move it off
+MD5, since `password_encryption` only affects passwords set after it changes:
+
+```sql
+SET password_encryption = 'scram-sha-256';
+ALTER ROLE staging_sync WITH PASSWORD '<new alphanumeric password>';
+```
+
+Then update `PRODUCTION_DATABASE_URL` to match.
 
 ### 2. Set `PRODUCTION_DATABASE_URL` on the Staging env group
 
