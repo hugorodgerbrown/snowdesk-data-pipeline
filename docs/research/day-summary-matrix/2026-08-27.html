@@ -1,0 +1,1026 @@
+<title>Day Summary Matrix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground: #f4f6f8;
+  --card: #ffffff;
+  --ink-1: #16202b;
+  --ink-2: #47586a;
+  --ink-3: #7a8a99;
+  --rule: #dde3e9;
+  --rule-soft: #e9edf1;
+  --accent: #1f4e79;
+  --accent-soft: #e7eef5;
+  --l1: #8fbf3f; --l2: #e8d000; --l3: #ef8a00; --l4: #d92b1c; --l5: #1a1916;
+  --shadow: 0 1px 2px rgba(22,32,43,.05), 0 6px 18px -12px rgba(22,32,43,.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0f1620;
+    --card: #17212d;
+    --ink-1: #e7edf3;
+    --ink-2: #a2b2c1;
+    --ink-3: #6d7f90;
+    --rule: #26333f;
+    --rule-soft: #1f2b36;
+    --accent: #7db4e6;
+    --accent-soft: #1b2c3d;
+    --l1: #a5d152; --l2: #e8d84a; --l3: #f59b2c; --l4: #ef5344; --l5: #cbd4dc;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f1620;
+  --card: #17212d;
+  --ink-1: #e7edf3;
+  --ink-2: #a2b2c1;
+  --ink-3: #6d7f90;
+  --rule: #26333f;
+  --rule-soft: #1f2b36;
+  --accent: #7db4e6;
+  --accent-soft: #1b2c3d;
+  --l1: #a5d152; --l2: #e8d84a; --l3: #f59b2c; --l4: #ef5344; --l5: #cbd4dc;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px -14px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  color: var(--ink-1);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  margin: 0;
+  padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1rem, 4vw, 2.5rem) 5rem;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 78rem; margin: 0 auto; display: flex; flex-direction: column; gap: 3rem; }
+
+/* ── masthead ─────────────────────────────────────────── */
+.masthead { display: flex; flex-direction: column; gap: 1.25rem; }
+.eyebrow {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0;
+}
+h1 {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3rem); font-weight: 600; line-height: 1.08;
+  letter-spacing: -.015em; margin: 0; text-wrap: balance;
+}
+.standfirst {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1.15rem; color: var(--ink-2); max-width: 44rem; margin: 0;
+}
+
+/* ── summary strip ────────────────────────────────────── */
+.summary {
+  display: grid; gap: 1px; background: var(--rule);
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  border: 1px solid var(--rule); border-radius: 10px; overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.summary div { background: var(--card); padding: 1rem 1.15rem; }
+.summary dt {
+  font-family: "IBM Plex Mono", monospace; font-size: .68rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+}
+.summary dd {
+  margin: .25rem 0 0; font-size: 1.6rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.summary dd small { font-size: .8rem; font-weight: 400; color: var(--ink-3); }
+
+/* ── findings ─────────────────────────────────────────── */
+.findings { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+.finding {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 1.1rem 1.25rem; box-shadow: var(--shadow);
+}
+.finding h3 {
+  margin: 0 0 .4rem; font-size: .95rem; font-weight: 600;
+  font-family: "Source Serif 4", Georgia, serif;
+}
+.finding p { margin: 0; font-size: .875rem; color: var(--ink-2); }
+
+/* ── movement sections ────────────────────────────────── */
+.movement { display: flex; flex-direction: column; gap: 1.25rem; }
+.mv-head {
+  display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-end;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--ink-1); padding-bottom: .75rem;
+}
+.mv-head h2 {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1.75rem; font-weight: 600; margin: 0; letter-spacing: -.01em;
+}
+.gloss { margin: .2rem 0 0; color: var(--ink-2); font-size: .9rem; }
+.mv-stats { display: flex; gap: 1.75rem; margin: 0; }
+.mv-stats dt {
+  font-family: "IBM Plex Mono", monospace; font-size: .64rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+}
+.mv-stats dd {
+  margin: .1rem 0 0; font-size: 1.05rem; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mv-stats .of { color: var(--ink-3); font-weight: 400; }
+
+.grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); }
+.cell {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+  padding: .85rem .95rem; display: flex; flex-direction: column; gap: .5rem;
+}
+.cell.unseen { background: transparent; border-style: dashed; opacity: .62; }
+.meta { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.lvl {
+  display: inline-flex; align-items: center; gap: .38rem;
+  font-family: "IBM Plex Mono", monospace; font-size: .7rem; font-weight: 500;
+  letter-spacing: .04em; color: var(--ink-2);
+}
+.lvl i { width: .55rem; height: .55rem; border-radius: 2px; display: block; }
+.l1 i { background: var(--l1); } .l2 i { background: var(--l2); }
+.l3 i { background: var(--l3); } .l4 i { background: var(--l4); }
+.l5 i { background: var(--l5); }
+.rd {
+  font-size: .66rem; letter-spacing: .07em; text-transform: uppercase;
+  font-weight: 600; padding: .12rem .42rem; border-radius: 3px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.n {
+  margin-left: auto; font-family: "IBM Plex Mono", monospace;
+  font-size: .72rem; font-variant-numeric: tabular-nums; color: var(--ink-1);
+  font-weight: 500;
+}
+.n.zero { color: var(--ink-3); font-weight: 400; font-style: italic; }
+.copy {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 1rem; line-height: 1.45; margin: 0; color: var(--ink-1);
+}
+.copy.alt { padding-top: .5rem; border-top: 1px dashed var(--rule); color: var(--ink-2); }
+.altmark {
+  display: block; font-family: "IBM Plex Mono", monospace; font-size: .62rem;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+  margin-bottom: .2rem;
+}
+.src {
+  margin: 0; font-family: "IBM Plex Mono", monospace; font-size: .68rem;
+  color: var(--ink-3); letter-spacing: .01em;
+}
+
+/* ── rules ────────────────────────────────────────────── */
+.rules { background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 1.5rem 1.75rem; box-shadow: var(--shadow); }
+.rules h2 { font-family: "Source Serif 4", Georgia, serif; font-size: 1.3rem;
+  margin: 0 0 .85rem; font-weight: 600; }
+.rules ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .5rem; }
+.rules li { font-size: .9rem; color: var(--ink-2); }
+.rules strong { color: var(--ink-1); font-weight: 600; }
+code { font-family: "IBM Plex Mono", monospace; font-size: .85em;
+  background: var(--accent-soft); color: var(--accent); padding: .05em .3em; border-radius: 3px; }
+footer { color: var(--ink-3); font-size: .8rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+</style>
+
+
+<div class="wrap">
+ <header class="masthead">
+  <p class="eyebrow">Snowdesk · bulletin copy review · 27 August 2026</p>
+  <h1>The day summary, one sentence at a time</h1>
+  <p class="standfirst">80 hand-authored sentences replacing five fixed ones. Each is
+   chosen by how the day&rsquo;s danger moves, the level it reaches, and whether its problems
+   leave anything on the surface to read. Counts are the 8,080 committed season
+   mirrors.</p>
+ </header>
+
+ <dl class="summary">
+  <div><dt>Cells authored</dt><dd>80</dd></div>
+  <div><dt>Seen in archive</dt><dd>30<small> / 80</small></dd></div>
+  <div><dt>Days that never change</dt><dd>96.4<small>%</small></dd></div>
+  <div><dt>Split days improving</dt><dd>0</dd></div>
+ </dl>
+
+ <div class="findings">
+  <div class="finding">
+   <h3>A split day is the sun getting to work</h3>
+   <p>Wet snow is the arriving problem on 254 of the 312 days
+      that split. Nothing else comes close.</p>
+  </div>
+  <div class="finding">
+   <h3>Nothing ever improves</h3>
+   <p>All 22 falling days replace a dry problem with wet snow. The
+      number drops while the hazard swaps, so no sentence offers the afternoon as the safer
+      half.</p>
+  </div>
+  <div class="finding">
+   <h3>23 flat splits are not splits</h3>
+   <p>Of the 101 days whose level holds across a split,
+      17 keep the same problems on new ground and
+      6 carry two identical windows. Those read as static rather
+      than promising a change.</p>
+  </div>
+ </div>
+
+ <section class="movement" id="static">
+ <header class="mv-head">
+  <div>
+   <h2>Static</h2>
+   <p class="gloss">The level holds all day, and nothing under it moves.</p>
+  </div>
+  <dl class="mv-stats">
+   <div><dt>Bulletins</dt><dd>7,791</dd></div>
+   <div><dt>Share</dt><dd>96.4%</dd></div>
+   <div><dt>Cells in use</dt><dd>16<span class="of">/20</span></dd></div>
+  </dl>
+ </header>
+ <div class="grid"><article class="cell">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Quiet</span>
+  <span class="n">664</span>
+ </div>
+ <p class="copy">Low, and the bulletin names no distinct problem — the ordinary care that steep terrain always needs.</p>
+
+ <p class="src">—</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Readable</span>
+  <span class="n">369</span>
+ </div>
+ <p class="copy">Low, with only wind slab named — visible where it sits, and easy to go round.</p>
+
+ <p class="src">wind slab</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Hidden</span>
+  <span class="n">157</span>
+ </div>
+ <p class="copy">Low, with persistent weak layers buried out of sight — few places, and nothing at the surface to mark them.</p>
+
+ <p class="src">persistent weak layers</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Mixed</span>
+  <span class="n">56</span>
+ </div>
+ <p class="copy">Low, with wet snow and gliding snow named together — one of them visible at the surface, the other buried.</p>
+
+ <p class="src">wet snow, gliding snow</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Quiet</span>
+  <span class="n">46</span>
+ </div>
+ <p class="copy">Moderate, with no distinct problem named — the level itself is the whole of the message.</p>
+
+ <p class="src">—</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Readable</span>
+  <span class="n">1,839</span>
+ </div>
+ <p class="copy">Moderate, with wind slab at the surface — the evidence is there to read before you commit to a slope.</p>
+
+ <p class="src">wind slab</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Hidden</span>
+  <span class="n">479</span>
+ </div>
+ <p class="copy">Moderate, with persistent weak layers buried — the slope that fails will look like the one that held.</p>
+
+ <p class="src">persistent weak layers</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Mixed</span>
+  <span class="n">1,179</span>
+ </div>
+ <p class="copy">Moderate, with wind slab and persistent weak layers in play — part of it readable at the surface, part of it buried and silent.</p>
+
+ <p class="src">wind slab, persistent weak layers</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Considerable, with no distinct problem named — rare enough that the level alone should set your limits.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Readable</span>
+  <span class="n">573</span>
+ </div>
+ <p class="copy">Considerable, with wind slab at the surface — readable, widespread, and unforgiving of a casual line.</p>
+
+ <p class="src">wind slab</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Hidden</span>
+  <span class="n">265</span>
+ </div>
+ <p class="copy">Considerable, with persistent weak layers buried — no warning underfoot, so terrain choice is the only control left.</p>
+
+ <p class="src">persistent weak layers</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Mixed</span>
+  <span class="n">1,595</span>
+ </div>
+ <p class="copy">Considerable, with wind slab and persistent weak layers in play — you can read the surface problem; the buried one sets the consequence.</p>
+
+ <p class="src">wind slab, persistent weak layers</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">High, with no distinct problem named — at this level the number alone rules out avalanche terrain.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Readable</span>
+  <span class="n">107</span>
+ </div>
+ <p class="copy">High, with new snow and wind slab at the surface — visible everywhere, and past what route choice can offset.</p>
+
+ <p class="src">new snow, wind slab</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Hidden</span>
+  <span class="n">3</span>
+ </div>
+ <p class="copy">High, with persistent weak layers buried — remote triggering is expected, and nothing at the surface will warn you.</p>
+
+ <p class="src">persistent weak layers</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Mixed</span>
+  <span class="n">422</span>
+ </div>
+ <p class="copy">High, with new snow and persistent weak layers in play — the readable half is the smaller half; stay out of avalanche terrain.</p>
+
+ <p class="src">new snow, persistent weak layers</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Very high, with no distinct problem named — an exceptional day, and avalanche terrain is closed.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Readable</span>
+  <span class="n">2</span>
+ </div>
+ <p class="copy">Very high, with new snow and wind slab at the surface — large natural releases, running beyond the usual paths.</p>
+
+ <p class="src">new snow, wind slab</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Very high, with persistent weak layers buried — the snowpack is failing at depth, and runout zones are exposed.</p>
+
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Mixed</span>
+  <span class="n">35</span>
+ </div>
+ <p class="copy">Very high, with new snow and persistent weak layers in play — natural releases at every scale; stay out of avalanche terrain.</p>
+
+ <p class="src">new snow, persistent weak layers</p>
+</article></div>
+</section><section class="movement" id="rising">
+ <header class="mv-head">
+  <div>
+   <h2>Rising</h2>
+   <p class="gloss">The level climbs into the afternoon.</p>
+  </div>
+  <dl class="mv-stats">
+   <div><dt>Bulletins</dt><dd>189</dd></div>
+   <div><dt>Share</dt><dd>2.3%</dd></div>
+   <div><dt>Cells in use</dt><dd>7<span class="of">/20</span></dd></div>
+  </dl>
+ </header>
+ <div class="grid"><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating within low, no distinct problem named at either end of the day.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within low, no distinct problem named at either end of the day.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating within low, with wind slab at the surface — visible, and still confined to isolated places.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within low, with wind slab at the surface — visible, and still confined to isolated places.</p>
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating within low, with persistent weak layers buried — nothing at the surface gives it away.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within low, with persistent weak layers buried — nothing at the surface gives it away.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating within low, with wind slab and persistent weak layers in play — one part of it visible, one part buried.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within low, with wind slab and persistent weak layers in play — one part of it visible, one part buried.</p>
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: low this morning, moderate by afternoon, with no distinct problem named for either half.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within moderate, with no distinct problem named for either half.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Readable</span>
+  <span class="n">63</span>
+ </div>
+ <p class="copy">Deteriorating: low this morning, moderate by afternoon, with wet snow at the surface — you can watch it build.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within moderate, with wet snow at the surface — you can watch it build.</p>
+ <p class="src">wet snow</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Hidden</span>
+  <span class="n">4</span>
+ </div>
+ <p class="copy">Deteriorating: low this morning, moderate by afternoon, with gliding snow buried — nothing at the surface will show the change.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within moderate, with gliding snow buried — nothing at the surface will show the change.</p>
+ <p class="src">gliding snow</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Mixed</span>
+  <span class="n">41</span>
+ </div>
+ <p class="copy">Deteriorating: low this morning, moderate by afternoon, with persistent weak layers and wet snow in play — you will see part of it, not all.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within moderate, with persistent weak layers and wet snow in play — you will see part of it, not all.</p>
+ <p class="src">persistent weak layers, wet snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: moderate this morning, considerable by afternoon, with no distinct problem named either side.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within considerable, with no distinct problem named either side.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Readable</span>
+  <span class="n">14</span>
+ </div>
+ <p class="copy">Deteriorating: moderate this morning, considerable by afternoon, with wet snow at the surface — turn round before it gets there.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within considerable, with wet snow at the surface — turn round before it gets there.</p>
+ <p class="src">wet snow</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Hidden</span>
+  <span class="n">4</span>
+ </div>
+ <p class="copy">Deteriorating: moderate this morning, considerable by afternoon, with persistent weak layers buried — time the exit rather than feel for it.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within considerable, with persistent weak layers buried — time the exit rather than feel for it.</p>
+ <p class="src">persistent weak layers</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Mixed</span>
+  <span class="n">61</span>
+ </div>
+ <p class="copy">Deteriorating: moderate this morning, considerable by afternoon, with persistent weak layers and wet snow in play — only half of it will be visible.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within considerable, with persistent weak layers and wet snow in play — only half of it will be visible.</p>
+ <p class="src">persistent weak layers, wet snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: considerable this morning, high by afternoon, no distinct problem named, and no margin left by then.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within high, no distinct problem named, and no margin left by then.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: considerable this morning, high by afternoon, with wind slab at the surface — be out of avalanche terrain before it lands.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within high, with wind slab at the surface — be out of avalanche terrain before it lands.</p>
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: considerable this morning, high by afternoon, with persistent weak layers buried — past what timing can manage.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within high, with persistent weak layers buried — past what timing can manage.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Mixed</span>
+  <span class="n">2</span>
+ </div>
+ <p class="copy">Deteriorating: considerable this morning, high by afternoon, with persistent weak layers, wind slab and new snow in play — the afternoon is an exposure, not a plan.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within high, with persistent weak layers, wind slab and new snow in play — the afternoon is an exposure, not a plan.</p>
+ <p class="src">persistent weak layers, wind slab, new snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: high this morning, very high by afternoon, no distinct problem named, and no version of the day that stays out.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within very high, no distinct problem named, and no version of the day that stays out.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: high this morning, very high by afternoon, with wind slab at the surface — do not be out in it.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within very high, with wind slab at the surface — do not be out in it.</p>
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: high this morning, very high by afternoon, with persistent weak layers buried — failures at depth, on every scale.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within very high, with persistent weak layers buried — failures at depth, on every scale.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Deteriorating: high this morning, very high by afternoon, with wind slab and persistent weak layers in play — stay out of avalanche terrain.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Deteriorating within very high, with wind slab and persistent weak layers in play — stay out of avalanche terrain.</p>
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article></div>
+</section><section class="movement" id="shifting">
+ <header class="mv-head">
+  <div>
+   <h2>Shifting</h2>
+   <p class="gloss">The level holds; a different problem takes the later window.</p>
+  </div>
+  <dl class="mv-stats">
+   <div><dt>Bulletins</dt><dd>78</dd></div>
+   <div><dt>Share</dt><dd>1.0%</dd></div>
+   <div><dt>Cells in use</dt><dd>5<span class="of">/20</span></dd></div>
+  </dl>
+ </header>
+ <div class="grid"><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Low through both halves of the day, with no distinct problem named in either.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Readable</span>
+  <span class="n">13</span>
+ </div>
+ <p class="copy">Low all day, with wet snow across the two halves — the number holds; which problem you face does not.</p>
+
+ <p class="src">wet snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Low all day, with persistent weak layers underneath — the number holds, and nothing at the surface marks the change.</p>
+
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Low all day, with wind slab and persistent weak layers across the two halves — the number holds, the mix underneath it changes.</p>
+
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Moderate all day, with no distinct problem named — the two halves differ in timing, not in hazard.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Readable</span>
+  <span class="n">3</span>
+ </div>
+ <p class="copy">Moderate all day, with wind slab and wet snow across the two halves — same number morning and afternoon, different problem behind it.</p>
+
+ <p class="src">wind slab, wet snow</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Hidden</span>
+  <span class="n">2</span>
+ </div>
+ <p class="copy">Moderate all day, with persistent weak layers and gliding snow buried — the number holds while the problem moves out of sight.</p>
+
+ <p class="src">persistent weak layers, gliding snow</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Mixed</span>
+  <span class="n">41</span>
+ </div>
+ <p class="copy">Moderate all day, with persistent weak layers and wet snow across the two halves — the level holds; what changes is what sits under it.</p>
+
+ <p class="src">persistent weak layers, wet snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Considerable all day, with no distinct problem named — the split marks timing, not a change in level.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Considerable all day, with wind slab across the two halves — the number holds; the reason for it changes.</p>
+
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Considerable all day, with persistent weak layers buried — an unchanged number over a problem you cannot inspect.</p>
+
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Mixed</span>
+  <span class="n">19</span>
+ </div>
+ <p class="copy">Considerable all day, with persistent weak layers and wet snow across the two halves — same level, different problem, different right answer.</p>
+
+ <p class="src">persistent weak layers, wet snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">High all day, with no distinct problem named — the split changes nothing you would act on.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">High all day, with wind slab across the two halves — the number holds above travel limits either way.</p>
+
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">High all day, with persistent weak layers buried — the number holds, and so does the reason to stay out.</p>
+
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">High all day, with wind slab and persistent weak layers across the two halves — the level never drops far enough to matter.</p>
+
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Very high all day, with no distinct problem named — nothing in the split changes the answer.</p>
+
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Very high all day, with wind slab through both halves — the terrain is closed either way.</p>
+
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Very high all day, with persistent weak layers buried — the level holds at the top of the scale.</p>
+
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Very high all day, with wind slab and persistent weak layers across the two halves — no part of the day is travellable.</p>
+
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article></div>
+</section><section class="movement" id="easing">
+ <header class="mv-head">
+  <div>
+   <h2>Easing</h2>
+   <p class="gloss">The level falls — and the problem swaps rather than clears.</p>
+  </div>
+  <dl class="mv-stats">
+   <div><dt>Bulletins</dt><dd>22</dd></div>
+   <div><dt>Share</dt><dd>0.3%</dd></div>
+   <div><dt>Cells in use</dt><dd>2<span class="of">/20</span></dd></div>
+  </dl>
+ </header>
+ <div class="grid"><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: moderate this morning, low by afternoon, with no distinct problem named by then.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within low, with no distinct problem named by then.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: moderate this morning, low by afternoon, with wind slab at the surface — visible, and worth respecting all the same.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within low, with wind slab at the surface — visible, and worth respecting all the same.</p>
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: moderate this morning, low by afternoon, with persistent weak layers buried — a lower number, not a clean snowpack.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within low, with persistent weak layers buried — a lower number, not a clean snowpack.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l1"><i></i>1 Low</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: moderate this morning, low by afternoon, with wind slab and persistent weak layers in play — the number falls further than the hazard does.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within low, with wind slab and persistent weak layers in play — the number falls further than the hazard does.</p>
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: considerable this morning, moderate by afternoon, with no distinct problem named for the later half.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within moderate, with no distinct problem named for the later half.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Readable</span>
+  <span class="n">1</span>
+ </div>
+ <p class="copy">Easing: considerable this morning, moderate by afternoon, with new snow and wet snow at the surface — an easing rating, a different problem behind it.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within moderate, with new snow and wet snow at the surface — an easing rating, a different problem behind it.</p>
+ <p class="src">new snow, wet snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: considerable this morning, moderate by afternoon, with persistent weak layers buried — the number drops, the weak layer does not.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within moderate, with persistent weak layers buried — the number drops, the weak layer does not.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell">
+ <div class="meta">
+  <span class="lvl l2"><i></i>2 Moderate</span>
+  <span class="rd">Mixed</span>
+  <span class="n">21</span>
+ </div>
+ <p class="copy">Easing: considerable this morning, moderate by afternoon, with persistent weak layers and wet snow in play — the number eases, the problem swaps rather than clears.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within moderate, with persistent weak layers and wet snow in play — the number eases, the problem swaps rather than clears.</p>
+ <p class="src">persistent weak layers, wet snow</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: high this morning, considerable by afternoon, with no distinct problem named at the lower level.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within considerable, with no distinct problem named at the lower level.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: high this morning, considerable by afternoon, with wind slab at the surface — still considerable, still no place to be casual.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within considerable, with wind slab at the surface — still considerable, still no place to be casual.</p>
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: high this morning, considerable by afternoon, with persistent weak layers buried — less danger on paper, the same weakness underneath.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within considerable, with persistent weak layers buried — less danger on paper, the same weakness underneath.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l3"><i></i>3 Considerable</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: high this morning, considerable by afternoon, with wind slab and persistent weak layers in play — an easing rating, not a safer snowpack.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within considerable, with wind slab and persistent weak layers in play — an easing rating, not a safer snowpack.</p>
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: very high this morning, high by afternoon, still high, and still no distinct problem named.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within high, still high, and still no distinct problem named.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: very high this morning, high by afternoon, with wind slab at the surface — a falling number is not a green light.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within high, with wind slab at the surface — a falling number is not a green light.</p>
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: very high this morning, high by afternoon, with persistent weak layers buried — high is high, whichever way it arrived.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within high, with persistent weak layers buried — high is high, whichever way it arrived.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l4"><i></i>4 High</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing: very high this morning, high by afternoon, with wind slab and persistent weak layers in play — a level that still closes the terrain, whichever way it moved.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within high, with wind slab and persistent weak layers in play — a level that still closes the terrain, whichever way it moved.</p>
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Quiet</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing within very high, the number moves, the situation does not, and the terrain is closed.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within very high, the number moves, the situation does not, and the terrain is closed.</p>
+ <p class="src">— · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Readable</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing within very high, with wind slab at the surface — the number moves, the snow on the surface does not.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within very high, with wind slab at the surface — the number moves, the snow on the surface does not.</p>
+ <p class="src">wind slab · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Hidden</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing within very high, with persistent weak layers buried — the number moves, the snowpack does not.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within very high, with persistent weak layers buried — the number moves, the snowpack does not.</p>
+ <p class="src">persistent weak layers · illustrative</p>
+</article><article class="cell unseen">
+ <div class="meta">
+  <span class="lvl l5"><i></i>5 Very high</span>
+  <span class="rd">Mixed</span>
+  <span class="n zero">not seen</span>
+ </div>
+ <p class="copy">Easing within very high, with wind slab and persistent weak layers in play — the number moves, nothing under it does.</p>
+ <p class="copy alt"><span class="altmark">same band</span>Easing within very high, with wind slab and persistent weak layers in play — the number moves, nothing under it does.</p>
+ <p class="src">wind slab, persistent weak layers · illustrative</p>
+</article></div>
+</section>
+
+ <div class="rules">
+  <h2>Rules for editing a cell</h2>
+  <ul>
+   <li><strong>One sentence, ending in a full stop.</strong> Tests assert both.</li>
+   <li><strong>Never govern a verb from <code>%(problems)s</code>.</strong> It holds one name or
+       four, so &ldquo;wind slab <em>is</em> named&rdquo; breaks on the second. Use a noun
+       phrase: &ldquo;with %(problems)s at the surface&rdquo;.</li>
+   <li><strong>A cell may use <code>%(problems)s</code> and <code>%(transition)s</code>, nothing
+       else.</strong> The level words belong to the transition clause.</li>
+   <li><strong>Quiet cells must not name problems; every other cell must.</strong> Both
+       directions are tested.</li>
+   <li><strong>No two cells share a sentence</strong> — a duplicate means one combination was
+       written twice and another missed.</li>
+   <li><strong>Don&rsquo;t claim an arrival.</strong> &ldquo;with wind slab arriving&rdquo; is
+       false when wind slab ran all morning. Say what is in play; let the movement carry the
+       direction.</li>
+  </ul>
+ </div>
+
+ <footer>
+  Sentences from <code>apps/bulletins/services/day_summary.py</code>; contract in
+  <code>docs/day-summary.md</code>. Counts replay <code>build_render_model</code> and
+  <code>compute_period_transition</code> over <code>apps/bulletins/local_mirrors/*.ndjson</code>.
+  Regenerate with <code>bin/render-day-summary-matrix</code> after any copy edit. Cells marked
+  <em>not seen</em> are authored but have never fired; their example problems are illustrative.
+  Rising and easing cells render two openings — the second fires when the day moves on
+  subdivision alone and the digit does not change. Level colours follow the EAWS danger scale.
+ </footer>
+</div>

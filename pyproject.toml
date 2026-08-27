@@ -200,7 +200,7 @@ extend-exclude = ["docs/research", "*.md"]
 # detects them by shebang and checks them. Listing them here keeps all three
 # surfaces on the same file set (SNOW-512). Add any new bin/ Python script here;
 # the other bin/ entries are shell scripts and must stay out.
-extend-include = ["bin/docs-lint", "bin/ds-lint"]
+extend-include = ["bin/docs-lint", "bin/ds-lint", "bin/render-day-summary-matrix"]
 
 [tool.ruff.lint]
 select = [

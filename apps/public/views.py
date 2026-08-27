@@ -91,6 +91,7 @@ from apps.bulletins.models import (
     RegionDayRating,
 )
 from apps.bulletins.schema import ValidTimePeriod
+from apps.bulletins.services import day_summary
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
@@ -102,6 +103,7 @@ from apps.bulletins.services.render_model import (
     compute_period_transition,
     derive_problem_family,
     detect_prose_spatial,
+    problem_types_for,
 )
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip, is_speculative
@@ -3860,6 +3862,19 @@ def _bulletin_detail_response(
     rm_direction: str = (
         period_transition.direction if period_transition is not None else "none"
     )
+    # Day movement — the same classification the day summary uses, so the
+    # Day Risk Profile's flat-split caption cannot claim a change the
+    # summary beside it reports as a static day. 23 of the archive's 101
+    # flat splits change nothing the reader can act on; see docs/day-summary.md.
+    rm_traits: list[dict[str, Any]] = raw_render_model.get("traits") or []
+    day_movement: str = day_summary.classify_movement(
+        period_transition.direction
+        if period_transition is not None and period_transition.has_split
+        else "",
+        set(problem_types_for(rm_traits, {"all_day", "earlier"})),
+        set(problem_types_for(rm_traits, {"later"})),
+    )
+
     rm_family: str = derive_problem_family(raw_render_model)
     headline: str = headline_for(
         rm_source,
@@ -3899,6 +3914,8 @@ def _bulletin_detail_response(
         # None on all-day or flat-but-split bulletins.
         "period_transition": period_transition,
         "period_transition_chip": period_transition_chip,
+        # Day movement — gates the flat-split caption (SNOW day-summary work).
+        "day_movement": day_movement,
         # Geographic neighbours — see SNOW-82.
         "adjoining_regions": adjoining_regions,
         # Resorts in this region — see SNOW-504.
