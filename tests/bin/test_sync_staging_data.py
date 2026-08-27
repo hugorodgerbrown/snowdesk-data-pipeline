@@ -1,23 +1,27 @@
 """
 tests/bin/test_sync_staging_data.py — the staging-refresh table lists.
 
-``bin/sync-staging-data`` clears its target tables with ``TRUNCATE`` and
-**no** ``CASCADE``, which is the safety property the whole script rests on:
-a list that misses a referencing table makes Postgres name it and refuse,
-rather than quietly emptying something the script was never meant to touch.
+``bin/sync-staging-data`` clears its target tables with ordered ``DELETE``
+statements and no ``CASCADE`` anywhere, which is the safety property the whole script
+rests on: a table left out of its lists fails the run naming its own
+constraint, rather than having its rows quietly removed.
 
-That matters concretely here. ``regions_microregion.centroid_location_id``
-references ``locations_location``, so a ``CASCADE`` would reach the region
-table and, through it, most of the database. The column is nullable, so the
-script nulls it, truncates, and rebuilds it with
-``link_region_centroid_locations``.
+``TRUNCATE`` is not usable here, which is worth recording because it looks
+like it should be. Its foreign-key check is *structural* — it refuses while
+a referencing constraint exists at all, however many rows actually use it —
+and ``regions_microregion.centroid_location_id`` references
+``locations_location``. So nothing in this set can be truncated without also
+truncating the region table, and through it most of the database. ``DELETE``
+checks real rows, so releasing that one nullable column and deleting
+children before parents is enough.
 
-The cost of no-CASCADE is that the list has to be the exact closure of
-tables referencing the copied set — and that closure is a property of the
-model graph, which moves. A new model with a foreign key into a copied
-table breaks the script at 07:20 UTC in a cron job, days after the migration
-that caused it. These tests read the lists out of the script and recompute
-the closure from Django's own metadata, so the break happens here instead.
+Two things therefore have to hold, and both are properties of the model
+graph, which moves: the lists must cover every table holding rows that point
+into the copied set, and the order must be a valid topological one in each
+direction. A new model with a foreign key into a copied table breaks the
+script at 07:20 UTC in a cron job, days after the migration that caused it.
+These tests read the lists back out of the script and recompute both from
+Django's own metadata, so the break happens here instead.
 """
 
 from __future__ import annotations
@@ -76,10 +80,10 @@ def _inbound_foreign_keys() -> dict[str, list[tuple[str, str, bool]]]:
 def test_truncate_list_is_the_complete_closure(declared: set[str]) -> None:
     """Nothing outside the list references anything inside it.
 
-    If this fails, ``TRUNCATE`` without ``CASCADE`` aborts the nightly run.
-    The fix is to add the named table to ``CLEAR_ONLY`` — or, if it must
-    survive and its column is nullable, to null it first the way
-    ``centroid_location_id`` is handled.
+    If this fails, the ``DELETE`` of the referenced table aborts the nightly
+    run as soon as staging holds a row pointing at it. The fix is to add the
+    named table to ``CLEAR_ONLY`` — or, if it must survive and its column is
+    nullable, to release it first the way ``centroid_location_id`` is.
     """
     inbound = _inbound_foreign_keys()
     unlisted = [
@@ -98,9 +102,10 @@ def test_truncate_list_is_the_complete_closure(declared: set[str]) -> None:
 def test_the_nulled_reference_is_still_nullable() -> None:
     """The escape hatch only works while that column stays nullable.
 
-    Made NOT NULL by some later migration, the script would have to truncate
-    ``regions_microregion`` instead — which it must never do, and which the
-    closure test above would not catch on its own.
+    Made NOT NULL by some later migration, the rows could not be released
+    and ``regions_microregion`` would have to be cleared instead — which the
+    script must never do, and which the closure test above would not catch
+    on its own.
     """
     table, column = NULLED_REFERENCE
     model = next(m for m in apps.get_models() if m._meta.db_table == table)
@@ -139,6 +144,34 @@ def test_load_order_puts_parents_before_children() -> None:
             if parent in position and parent != table:
                 assert position[parent] < position[table], (
                     f"{table} is loaded before its parent {parent} (via {field.column})"
+                )
+
+
+def test_delete_order_is_the_reverse_of_the_load_order() -> None:
+    """Rows are cleared children-first, the mirror of how they are loaded.
+
+    The script deletes ``CLEAR_ONLY`` and then walks ``LOAD_ORDER``
+    backwards, so a valid load order is also a valid delete order — one list
+    to keep correct rather than two that can disagree. This asserts the
+    reverse direction explicitly, since ``DELETE`` fails on real referencing
+    rows and would take the nightly run down mid-clear.
+    """
+    order = _bash_array("LOAD_ORDER")
+    delete_order = _bash_array("CLEAR_ONLY") + list(reversed(order))
+    position = {table: index for index, table in enumerate(delete_order)}
+
+    for model in apps.get_models():
+        table = model._meta.db_table
+        if table not in position:
+            continue
+        for field in model._meta.concrete_fields:
+            if not field.is_relation or field.related_model is None:
+                continue
+            parent = field.related_model._meta.db_table
+            if parent in position and parent != table:
+                assert position[table] < position[parent], (
+                    f"{table} is deleted after its parent {parent} "
+                    f"(via {field.column}), so the DELETE of {parent} will fail"
                 )
 
 

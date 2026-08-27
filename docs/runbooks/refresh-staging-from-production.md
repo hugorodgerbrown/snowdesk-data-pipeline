@@ -38,7 +38,7 @@ database into crash recovery.
 
 Four of the "not copied" tables — `favourites.Favourite`,
 `observations.FieldObservation`, `bulletins.BulletinShare` and
-`BulletinShareClick` — are **truncated on staging and left empty**, because
+`BulletinShareClick` — are **cleared on staging and left empty**, because
 they reference the copied tables. Staging's user accounts, passkeys and
 routes survive untouched.
 
@@ -54,7 +54,7 @@ its lack of a natural key — the only reason it was excluded before — stops
 mattering. It is ingest telemetry, not user data.
 
 `BulletinShare` and `BulletinShareClick` are excluded: a click row
-foreign-keys `RequestLog`, which carries IP and geo. They are truncated on
+foreign-keys `RequestLog`, which carries IP and geo. They are cleared on
 staging (they reference the copied bulletins) and not refilled.
 
 ### `locations.Location` is the one mixed table
@@ -72,7 +72,7 @@ happens to have a name. It is a `\copy` of a filtered `SELECT` rather than a
 production at all, rather than read and then discarded.
 
 Region-centroid Locations are *not* copied: `regions_microregion` is not in
-the set. Its `centroid_location_id` is released before the truncate and
+the set. Its `centroid_location_id` is released before the clear and
 rebuilt afterwards by `link_region_centroid_locations --commit`, which the
 script runs for you.
 
@@ -232,11 +232,11 @@ Minutes, not tens of minutes: each table moves in a single `COPY`.
 
 **It clears before it loads, and the blast radius is wider than the table
 list.** Staging's own favourites, field observations and bulletin shares
-reference the copied tables, so they are truncated too and are *not*
+reference the copied tables, so they are deleted too and are *not*
 refilled. Staging's user accounts, passkeys and routes are untouched. The
 script's `CLEAR_ONLY` array is the exhaustive list.
 
-Region centroids are released before the truncate
+Region centroids are released before the clear
 (`regions_microregion.centroid_location_id`) and rebuilt at the end by
 `link_region_centroid_locations --commit`, which the script runs for you.
 
@@ -271,20 +271,36 @@ come from insertion order and are equal only because `build.sh` loads the
 same fixtures in the same order on both sides. If they have diverged, the
 fix is to reconcile the fixtures and reload, not to bypass the check.
 
-### `cannot truncate a table referenced in a foreign key constraint`
+### `update or delete on table … violates foreign key constraint`
 
 A model gained a foreign key into the copied set and its table is not in the
-script's `CLEAR_ONLY` list. Postgres names the offender because the script
-truncates **without** `CASCADE` — deliberately, since
-`regions_microregion.centroid_location_id` references `locations_location`
-and a `CASCADE` would reach the region table and most of the database
-through it.
+script's `CLEAR_ONLY` list, so staging holds rows pointing at something the
+script is trying to clear. Postgres names the constraint.
 
 Add the named table to `CLEAR_ONLY`, or — if it must survive and its column
-is nullable — null it first the way `centroid_location_id` is handled.
-`tests/bin/test_sync_staging_data.py` recomputes this closure from the model
-graph and should have failed in CI first; if it did not, the test needs
-fixing too.
+is nullable — release it first the way `centroid_location_id` is.
+`tests/bin/test_sync_staging_data.py` recomputes this from the model graph
+and should have failed in CI first; if it did not, the test needs fixing
+too.
+
+### Why this uses `DELETE` rather than `TRUNCATE`
+
+`TRUNCATE` would be faster and is the obvious reach, so it is worth knowing
+why it cannot be used: its foreign-key check is **structural**. It refuses
+while a referencing constraint exists at all, however many rows actually use
+it — so nulling `regions_microregion.centroid_location_id` empties the
+references but changes nothing, and the run fails with:
+
+```
+ERROR:  cannot truncate a table referenced in a foreign key constraint
+DETAIL:  Table "regions_microregion" references "locations_location".
+```
+
+The only ways past that are truncating `regions_microregion` too, or
+`CASCADE` — and `CASCADE` from `locations_location` reaches the region table
+and most of the database behind it. `DELETE` checks real rows instead, so
+releasing that one nullable column and deleting children before parents is
+enough, and a missed table still fails loudly rather than silently.
 
 ### `pg_dump: server version mismatch`
 
@@ -301,12 +317,12 @@ change rather than anything in this repo.
 
 Exactly what it says, and the reason staging and production must never
 share a database ([`docs/deployment.md`](../deployment.md)). The script
-truncates its target, so it refuses rather than risk it. Fix the env group;
+clears its target, so it refuses rather than risk it. Fix the env group;
 do not work around it.
 
 ### Staging's favourites and observations have gone
 
-Expected. They reference the copied tables, so they are truncated with them
+Expected. They reference the copied tables, so they are cleared with them
 and not refilled — see step 4. Staging user accounts, passkeys and routes
 survive.
 

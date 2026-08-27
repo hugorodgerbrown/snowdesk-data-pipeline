@@ -20,14 +20,16 @@
 #     COPY preserves production's foreign keys verbatim and every reference
 #     still points at the right region. Re-checked on every run below,
 #     because a mismatch would mis-attribute every bulletin *silently*.
-#   * TRUNCATE is issued WITHOUT CASCADE. The list is the exact closure of
-#     tables referencing the copied set, computed from the model graph, so
-#     if it is ever incomplete Postgres names the missing table and refuses
-#     rather than quietly emptying it. This matters more than it looks:
+#   * Rows are cleared with ordered DELETEs, not TRUNCATE. TRUNCATE's
+#     foreign-key check is *structural*: it refuses while a referencing
+#     constraint exists at all, however many rows actually use it. Since
 #     regions_microregion.centroid_location_id references locations_location,
-#     so a CASCADE here would reach the region table and, through it, most
-#     of the database. That column is nullable, so it is nulled first and
-#     rebuilt afterwards by link_region_centroid_locations.
+#     nothing in this set can be truncated without also truncating the region
+#     table — which would cascade through most of the database. DELETE checks
+#     actual rows instead, so releasing that one nullable column and deleting
+#     children before parents is enough. It keeps the property that matters:
+#     a table left out fails the run naming its constraint, rather than
+#     quietly having its rows removed the way CASCADE would.
 #   * Every table loaded here is populated on staging only by this script,
 #     so clearing before loading is a refresh, not a loss.
 #
@@ -84,8 +86,9 @@ LOAD_ORDER=(
     bulletins_forecastpointweatherhistory
 )
 
-# The four tables below are cleared but never reloaded: they are staging's
-# own rows referencing the copied set. Without them TRUNCATE would refuse.
+# Cleared but never reloaded: staging's own rows referencing the copied set.
+# Listed children-first, and deleted before anything in LOAD_ORDER, because
+# every one of them points into it.
 CLEAR_ONLY=(
     bulletins_bulletinshareclick
     bulletins_bulletinshare
@@ -156,20 +159,22 @@ if [[ "$COMMIT" -eq 0 ]]; then
 fi
 
 # --- Clear -------------------------------------------------------------------
-# centroid_location_id is the one reference into the set from a table that
-# must survive. Nulling it lets TRUNCATE run without CASCADE;
+# regions_microregion must survive, and it is the only surviving table that
+# points into the set. Its reference is nullable, so release it first;
 # link_region_centroid_locations rebuilds it at the end.
 echo "Releasing region centroid references…"
 psql_local -c "UPDATE regions_microregion SET centroid_location_id = NULL;" > /dev/null
 
+# Children before parents, and CLEAR_ONLY before all of them. No CASCADE
+# anywhere: a table left out of these lists fails the run naming its own
+# constraint, which is the whole point.
 echo "Clearing $(( ${#LOAD_ORDER[@]} + ${#CLEAR_ONLY[@]} )) table(s)…"
-old_ifs=$IFS
-IFS=,
-truncate_list="${LOAD_ORDER[*]},${CLEAR_ONLY[*]}"
-IFS=$old_ifs
-# No CASCADE, deliberately: a missing table is an error naming itself, not a
-# silent truncation of something this script was never meant to touch.
-psql_local -c "TRUNCATE $truncate_list RESTART IDENTITY;"
+for table in "${CLEAR_ONLY[@]}"; do
+    psql_local -c "DELETE FROM $table;" > /dev/null
+done
+for (( i = ${#LOAD_ORDER[@]} - 1; i >= 0; i-- )); do
+    psql_local -c "DELETE FROM ${LOAD_ORDER[i]};" > /dev/null
+done
 
 # --- Load --------------------------------------------------------------------
 for table in "${LOAD_ORDER[@]}"; do
@@ -187,14 +192,24 @@ for table in "${LOAD_ORDER[@]}"; do
 done
 
 # --- Reset sequences ---------------------------------------------------------
-# The rows carried production's primary keys, so RESTART IDENTITY left every
-# sequence at 1. The next INSERT would collide until they catch up.
+# The rows carried production's primary keys, which the local sequences know
+# nothing about. The next INSERT would collide until they catch up.
 echo "Resetting sequences…"
 for table in "${LOAD_ORDER[@]}"; do
     psql_local -c "SELECT setval(
         pg_get_serial_sequence('$table', 'id'),
         COALESCE((SELECT max(id) FROM $table), 1)
     );" > /dev/null
+done
+
+# --- Reclaim and re-plan -----------------------------------------------------
+# DELETE leaves dead tuples behind, and this runs nightly over ~100k rows, so
+# without a sweep the tables bloat steadily. ANALYZE matters just as much on
+# its own: the planner's statistics describe the rows that were just deleted
+# until something refreshes them.
+echo "Vacuuming…"
+for table in "${LOAD_ORDER[@]}"; do
+    psql_local -c "VACUUM ANALYZE $table;" > /dev/null
 done
 
 # --- Rebuild what the clear released ----------------------------------------
