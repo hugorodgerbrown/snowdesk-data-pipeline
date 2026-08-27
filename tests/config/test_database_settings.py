@@ -29,14 +29,26 @@ import importlib
 from types import ModuleType
 from typing import Any
 
+import decouple
 import pytest
+from decouple import Config, RepositoryEmpty, UndefinedValueError
 
-# Enough of the environment for base.py + production.py to import. The values
-# are shape-valid but point nowhere: nothing here opens a connection.
+# Every setting the deployed overlays read with **no default** — importing
+# them fails outright without these. The values are shape-valid but point
+# nowhere; nothing here opens a connection.
+#
+# The list is short because almost everything else carries a default. Keep it
+# complete: a `config("X")` with no default added to base.py or production.py
+# has to appear here too, or these tests fail on a CI runner while passing on
+# any machine with a .env — which is exactly how CSRF_TRUSTED_ORIGINS was
+# missed the first time.
 STUB_ENV = {
     "SECRET_KEY": "test-only-not-a-real-key",
     "ALLOWED_HOSTS": "example.com",
     "DATABASE_URL": "postgresql://user:pw@db.example:5432/snowdesk",
+    "CSRF_TRUSTED_ORIGINS": "https://example.com",
+    # Has a default, but a localhost one that check_site_base_url rejects
+    # under DEBUG=False. Pinned so the overlay is exercised as deployed.
     "SITE_BASE_URL": "https://example.com",
 }
 
@@ -53,9 +65,25 @@ def _load(module: str, monkeypatch: pytest.MonkeyPatch, **extra: str) -> ModuleT
         The freshly imported module.
 
     """
+    # Read settings the way a deploy does: environment only. python-decouple
+    # otherwise falls back to the repo's .env, so a value missing from
+    # STUB_ENV resolves on a developer machine and raises only on a bare CI
+    # runner — which is precisely how CSRF_TRUSTED_ORIGINS slipped through a
+    # green local `tox`. Swapping in an empty repository makes local and CI
+    # the same test. monkeypatch restores the real one afterwards.
+    monkeypatch.setattr(decouple.config, "config", Config(RepositoryEmpty()))
+
     for key, value in {**STUB_ENV, **extra}.items():
         monkeypatch.setenv(key, value)
-    return importlib.reload(importlib.import_module(module))
+    try:
+        return importlib.reload(importlib.import_module(module))
+    except UndefinedValueError as exc:  # pragma: no cover - guard rail
+        # With the .env fallback gone this now fires identically everywhere,
+        # so name the culprit rather than leaving a raw decouple traceback.
+        raise AssertionError(
+            f"{module} needs an environment variable STUB_ENV does not set "
+            f"({exc}). Add it to STUB_ENV in this module."
+        ) from exc
 
 
 def _default_db(module: ModuleType) -> dict[str, Any]:
