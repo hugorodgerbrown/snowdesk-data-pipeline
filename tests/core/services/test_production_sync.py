@@ -23,15 +23,17 @@ intersection that depends on it, which is covered by stubbing instead.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 from django.apps import apps
-from django.db import connections, models
+from django.db import OperationalError, connections, models
 from django.utils import timezone
 
 from apps.bulletins.models import Bulletin, RegionBulletin
 from apps.core.services import production_sync
 from apps.core.services.production_sync import (
+    CONNECTION_ATTEMPTS,
     ID_MAP_SPECS,
     MIXED_TABLES,
     SYNC_PLAN,
@@ -44,6 +46,7 @@ from apps.core.services.production_sync import (
     _update_fields,
     build_id_map,
     check_safe_to_write,
+    fetch_all,
     shared_fields,
     sync_table,
 )
@@ -317,6 +320,104 @@ def test_coerce_aware_stamps_utc_on_a_naive_datetime() -> None:
     assert _coerce_aware(date(2026, 4, 8)) == date(2026, 4, 8)
     assert _coerce_aware("CH-4115") == "CH-4115"
     assert _coerce_aware(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Connection resilience
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_fetch_all_reconnects_after_a_dropped_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A connection that dies mid-run is re-dialled, not surfaced.
+
+    This is the failure SNOW-734 exists for: a managed Postgres reaps a
+    connection that has sat idle while the other database was being written
+    to, and the next query dies with "SSL error: unexpected eof". The run
+    must ride that out rather than abandon a 60,000-row table.
+    """
+    calls: list[str] = []
+    real_cursor = connections["default"].cursor
+    closed: list[bool] = []
+
+    def flaky_cursor(*args: object, **kwargs: object) -> Any:
+        calls.append("cursor")
+        if len(calls) == 1:
+            raise OperationalError("consuming input failed: SSL error: unexpected eof")
+        return real_cursor(*args, **kwargs)
+
+    monkeypatch.setattr(connections["default"], "cursor", flaky_cursor)
+    monkeypatch.setattr(connections["default"], "close", lambda: closed.append(True))
+
+    rows = fetch_all("default", "SELECT 1")
+
+    assert rows == [(1,)]
+    assert len(calls) == 2, "did not retry after the connection dropped"
+    assert closed, "did not discard the dead connection before retrying"
+
+
+@pytest.mark.django_db
+def test_fetch_all_gives_up_after_the_attempt_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuinely unreachable database fails loudly instead of looping.
+
+    The retry is for a reaped connection, not for a database that is down —
+    an unbounded loop there would hang the nightly cron job silently.
+    """
+    attempts: list[int] = []
+
+    def always_dead(*args: object, **kwargs: object) -> Any:
+        attempts.append(1)
+        raise OperationalError("connection refused")
+
+    monkeypatch.setattr(connections["default"], "cursor", always_dead)
+    monkeypatch.setattr(connections["default"], "close", lambda: None)
+
+    with pytest.raises(ProductionSyncError, match="Lost the 'default' connection"):
+        fetch_all("default", "SELECT 1")
+
+    assert len(attempts) == CONNECTION_ATTEMPTS
+
+
+@pytest.mark.django_db
+def test_read_rows_holds_no_cursor_between_batches(
+    self_copy: None, seeded_bulletins: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each batch opens its own cursor, so none is held across the writes.
+
+    The original code opened one cursor per *table* and, being a generator,
+    suspended inside it at every yield — leaving the production connection
+    idle through each staging write. Counting cursors is the only way to
+    assert the fix from the outside: the row results are identical either
+    way, which is precisely why the bug reached production.
+    """
+    cursors: list[int] = []
+    real = production_sync.fetch_all
+
+    def counting(
+        alias: str, sql: str, params: list | None = None
+    ) -> list[tuple[Any, ...]]:
+        cursors.append(1)
+        return real(alias, sql, params)
+
+    monkeypatch.setattr(production_sync, "fetch_all", counting)
+
+    batches = list(
+        production_sync.read_rows(
+            table="bulletins_bulletin",
+            columns=["bulletin_id"],
+            since=None,
+            batch_size=1,
+        )
+    )
+
+    # batch_size=1 over N rows means N batches plus the empty terminator, and
+    # one fetch_all call each — never one cursor spanning them all.
+    assert len(batches) >= 2
+    assert len(cursors) == len(batches) + 1
 
 
 # ---------------------------------------------------------------------------

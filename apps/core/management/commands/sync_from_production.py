@@ -32,10 +32,11 @@ from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import OperationalError, connections, transaction
 from django.utils import timezone
 
 from apps.core.services.production_sync import (
+    CONNECTION_ATTEMPTS,
     ID_MAP_SPECS,
     SYNC_PLAN,
     IdMap,
@@ -147,15 +148,11 @@ class Command(BaseCommand):
                 self.stdout.write(f"{remaining} table(s) remaining: {spec.model_label}")
             remaining -= 1
 
-            try:
-                with transaction.atomic():
-                    result = sync_table(
-                        spec, id_maps=id_maps, since=since, commit=commit
-                    )
-            except ProductionSyncError as exc:
-                raise CommandError(f"{spec.model_label}: {exc}") from exc
-
-            results.append(result)
+            results.append(
+                self._sync_table_with_retry(
+                    spec, id_maps=id_maps, since=since, commit=commit
+                )
+            )
 
             # Rebuild this table's id map so the children that follow can see
             # the rows it just inserted.
@@ -165,6 +162,70 @@ class Command(BaseCommand):
                 )
 
         self._report(results, commit=commit, verbosity=verbosity)
+
+    def _sync_table_with_retry(
+        self,
+        spec: Any,
+        *,
+        id_maps: dict[str, IdMap],
+        since: datetime | None,
+        commit: bool,
+    ) -> TableResult:
+        """Copy one table, restarting it if the write connection dies.
+
+        The read side reconnects per batch (``production_sync.fetch_all``),
+        but the write connection can go stale too — it sits idle for as long
+        as each production read takes. There is no batch to resume from on
+        that side, because the whole table is one transaction, so the retry
+        restarts the table.
+
+        That is safe rather than merely tolerable: the failed attempt rolled
+        back, and every table upserts on its natural key, so a fresh attempt
+        writes the same rows to the same place.
+
+        Args:
+            spec: The table's copy rules.
+            id_maps: The available foreign-key translations, by name.
+            since: Update-window start, or ``None`` for the whole table.
+            commit: Whether to write.
+
+        Returns:
+            The per-table counts.
+
+        Raises:
+            CommandError: if the table could not be copied within
+                :data:`CONNECTION_ATTEMPTS` attempts, or the plan is wrong.
+
+        """
+        last: OperationalError | None = None
+        for attempt in range(1, CONNECTION_ATTEMPTS + 1):
+            try:
+                with transaction.atomic():
+                    return sync_table(spec, id_maps=id_maps, since=since, commit=commit)
+            except ProductionSyncError as exc:
+                raise CommandError(f"{spec.model_label}: {exc}") from exc
+            except OperationalError as exc:
+                last = exc
+                logger.warning(
+                    "sync_from_production: %s lost its write connection on "
+                    "attempt %d/%d (%s); restarting the table",
+                    spec.model_label,
+                    attempt,
+                    CONNECTION_ATTEMPTS,
+                    exc,
+                )
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  {spec.model_label}: connection lost, retrying "
+                        f"({attempt}/{CONNECTION_ATTEMPTS})"
+                    )
+                )
+                connections["default"].close()
+
+        raise CommandError(
+            f"{spec.model_label}: lost the write connection "
+            f"{CONNECTION_ATTEMPTS} times in a row: {last}"
+        )
 
     def _window_start(self, since_days: int) -> datetime:
         """Return the start of the update window.
