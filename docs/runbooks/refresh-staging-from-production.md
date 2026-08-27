@@ -257,6 +257,42 @@ behind and no partial state to reconcile: a failed run costs one day's
 freshness and the next run is a clean slate. Running it twice in a row is
 harmless.
 
+## Verifying a change to the script locally
+
+The script cannot be exercised by the test suite — that runs on SQLite, and
+everything interesting here is Postgres behaviour. Two real databases in a
+container is the only way to see it work, and it is worth the five minutes:
+this procedure caught three defects that a green `tox` did not.
+
+```bash
+docker run -d --name snowdesk-synctest -e POSTGRES_PASSWORD=testpw \
+    -p 55432:5432 postgres:17
+export PATH="$(brew --prefix libpq)/bin:$PATH"   # psql/pg_dump are keg-only
+export PGPASSWORD=testpw
+psql -h localhost -p 55432 -U postgres -c "CREATE DATABASE prod;" \
+                                       -c "CREATE DATABASE staging;"
+```
+
+Migrate and `loaddata` the four EAWS fixtures into **both**, seed `prod` with
+factories, then point the script at them. Settings need a Postgres overlay
+without `ssl_require`, since a local container serves no TLS.
+
+Confirm afterwards, and not only that it exited 0:
+
+| Check | Expected |
+| ----- | -------- |
+| Row counts per copied table | identical to `prod` |
+| `locations_location` | fewer than `prod` — the UGC rows stay behind |
+| Orphaned foreign keys | zero, on every copied table |
+| A bulletin's `region_id` | resolves to the same `region_id` as in `prod` |
+| Sequences | `last_value` = `max(id)`; an insert afterwards succeeds |
+| `favourites` / `observations` / shares | empty |
+| `auth_user` | untouched |
+| Second consecutive run | exit 0, counts unchanged |
+
+The region-attribution check is the one to keep. Every other failure mode is
+loud; mis-attributed regions are silent, and the counts all still match.
+
 ## Troubleshooting
 
 ### `regions_microregion primary keys differ between the two databases`
