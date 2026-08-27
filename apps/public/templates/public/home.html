@@ -229,6 +229,12 @@ in addition to the shared map assets.
     {# parse time (installRegionsLayers registers the fallback image before  #}
     {# adding the layer that names it), so it must load before the bundle.   #}
     <script defer src="{% static 'js/hatch_core.js' %}"></script>
+    {# SNOW-737: the stored map camera and its validation                     #}
+    {# (window.pwaViewportCore) — what the visitor was looking at when they   #}
+    {# last closed the app. Read by map.js at parse time (the MapLibre        #}
+    {# constructor takes the restored centre and zoom), so it must load       #}
+    {# before the bundle.                                                    #}
+    <script defer src="{% static 'js/map_viewport_core.js' %}"></script>
     {# SNOW-573: pure projection / merge / forecast-window math for the map   #}
     {# Weather overlay (window.pwaWeatherCore), extracted so it can be        #}
     {# unit-tested (tests/js/test_map_weather_core.js).                       #}

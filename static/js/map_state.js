@@ -177,6 +177,15 @@ function overlayKeyForCountry(code) {
 
 const BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
 const AUTOZOOM_STORAGE_KEY = 'snowdesk.map.autozoom';
+// SNOW-737: where the visitor last left the camera. ONE key holding a JSON
+// blob of all five numbers, deliberately unlike the boolean-per-key shape
+// above: a centre, a zoom, a bearing and a pitch are only meaningful
+// together, and five independent keys make a half-written camera — a
+// longitude from this session beside a zoom from the last — representable.
+// Read and validated through `window.pwaViewportCore` (map_viewport_core.js),
+// which rejects a camera the current build's limits no longer allow rather
+// than letting MapLibre clamp it silently.
+const VIEWPORT_STORAGE_KEY = 'snowdesk.map.viewport';
 
 // SNOW-620: the strings this file writes into the DOM itself, server-
 // translated into the template _map_embed.html renders and read back here.
