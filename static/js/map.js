@@ -420,12 +420,22 @@
 
   const RESORTS_BY_REGION  = {};
 
+  // The EAWS danger-scale palette, which the standard mandates and this
+  // project does not adjust. Literal values because MapLibre paint
+  // properties cannot read a CSS variable — the same five colours live in
+  // src/css/main.css @theme for every other surface. Keep the two in step.
+  //
+  // very_high is #820100, from SLF's interpretation guide: EAWS gives level
+  // 5 no colour of its own, SLF darkens it (Hugo, SNOW-739). It was
+  // #a500a5 — a magenta belonging to no scale — from this layer's first
+  // commit, so the map alone painted a level-5 region a colour the legend,
+  // the tiles and the calendar never used.
   const RATING_COLOURS = {
     low:          '#ccff66',
     moderate:     '#ffff00',
     considerable: '#ff9900',
     high:         '#ff0000',
-    very_high:    '#a500a5',
+    very_high:    '#820100',
     no_rating:    '#e0e0e0',
   };
 

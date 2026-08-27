@@ -296,7 +296,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-eaws-moderate", "Moderate", "#ffff00", None),
             Token("--color-eaws-considerable", "Considerable", "#ff9900", None),
             Token("--color-eaws-high", "High", "#ff0000", None),
-            Token("--color-eaws-very-high", "Very high", "#ff0000", None),
+            Token("--color-eaws-very-high", "Very high", "#820100", None),
             Token("--color-eaws-low-tint", "Low tint", "#e8ffb8", None),
             Token("--color-eaws-moderate-tint", "Moderate tint", "#fff7b8", None),
             Token(

@@ -7,19 +7,22 @@ The copy that sits on them is ours to choose, and choosing it wrongly is
 invisible in review — a tile reads as "obviously fine" long after it has
 stopped clearing 4.5:1.
 
-Levels 4 and 5 carry white, which is 4.00:1 on #ff0000 and so does not
-clear AA. That is deliberate: it is SLF's own pairing on its danger-level
+Level 4 carries white, which is 4.00:1 on #ff0000 and so does not clear
+AA. That is deliberate: it is SLF's own pairing on its danger-level
 legend, and this app renders SLF's bulletins (Hugo, SNOW-739). #ff0000
 admits no compliant light ink at all — white is the lightest colour there
 is and it reaches 4.00 — so the real choice was white against near-black,
 and near-black on EAWS red reads worse than the number it would satisfy.
-``KNOWN_EXCEPTIONS`` pins both pairs, so the exception stays deliberate,
-stays two, and cannot quietly grow a third.
+``KNOWN_EXCEPTIONS`` pins the pair, so the exception stays deliberate,
+stays one, and cannot quietly grow a second.
+
+Level 5 needs no exception: SLF darkens it to #820100 where EAWS gives it
+no colour of its own, and white on that is 10.75:1.
 
 Everything else must pass, including the case that has no SLF precedent: a
 split calendar cell paints ONE ink across a two-colour gradient, so its ink
-has to clear every fill, not just its own. Before SNOW-739 those cells took
-a level's own -fg and put white over a yellow half at 1.07:1.
+has to clear both fills, not just one. Before SNOW-739 those cells took a
+level's own -fg and put white over a yellow half at 1.07:1.
 
 Read against FOUNDATION_CATEGORIES rather than main.css: the existing
 ``check_design_tokens_match_css`` system check already fails when the two
@@ -52,14 +55,10 @@ EAWS_FG_ON_OWN_FILL: tuple[tuple[str, str], ...] = tuple(
 )
 
 # Pairs that knowingly fall short, and why. Matching the issuing service was
-# judged to matter more than the ratio on exactly these two.
+# judged to matter more than the ratio on exactly these.
 KNOWN_EXCEPTIONS: dict[tuple[str, str], str] = {
     ("--color-eaws-high-fg", "--color-eaws-high"): (
         "SLF renders level 4 as white on EAWS red; #ff0000 admits no "
-        "compliant light ink"
-    ),
-    ("--color-eaws-very-high-fg", "--color-eaws-very-high"): (
-        "SLF renders level 5 as white on EAWS red; #ff0000 admits no "
         "compliant light ink"
     ),
 }
@@ -145,12 +144,12 @@ def test_eaws_foreground_clears_aa_on_its_own_fill(
     )
 
 
-def test_the_slf_parity_exceptions_are_still_exactly_the_known_two() -> None:
-    """Every shortfall on a fill is one of the two SLF-parity pairs.
+def test_the_slf_parity_exceptions_are_still_exactly_the_recorded_set() -> None:
+    """Every shortfall on a fill is one of the recorded SLF-parity pairs.
 
     The skip above would hide a NEW failure introduced on a different level,
-    so the set of shortfalls is asserted whole. Adding a third means either
-    fixing it or recording it in KNOWN_EXCEPTIONS with its reason.
+    so the set of shortfalls is asserted whole. One more means either fixing
+    it or recording it in KNOWN_EXCEPTIONS with its reason.
     """
     values = _token_values()
     failing = {
@@ -175,12 +174,19 @@ def test_eaws_text_clears_aa_on_its_tint(fg_token: str, bg_token: str) -> None:
     )
 
 
-@pytest.mark.parametrize("bg_token", EAWS_FILLS)
-def test_mixed_level_ink_clears_aa_on_every_fill(bg_token: str) -> None:
-    """The split-cell ink clears every fill — it is painted across two.
+# The four fills a split cell can pair without involving level 5. Its ink is
+# painted across both halves, so it has to clear every one of them.
+LIGHT_FILLS: tuple[str, ...] = tuple(
+    fill for fill in EAWS_FILLS if fill != "--color-eaws-very-high"
+)
 
-    A split calendar cell has no dominant half to tune for, and no SLF
-    equivalent to match, so this one gets no exception.
+
+@pytest.mark.parametrize("bg_token", LIGHT_FILLS)
+def test_mixed_level_ink_clears_aa_on_every_light_fill(bg_token: str) -> None:
+    """The split-cell ink clears every fill it can be asked to sit on.
+
+    A split calendar cell has no dominant half to tune for and no SLF
+    equivalent to match, so among levels 1–4 it gets no exception.
     """
     values = _token_values()
     ratio = _contrast_ratio(values["--color-eaws-mixed-fg"], values[bg_token])
@@ -189,3 +195,40 @@ def test_mixed_level_ink_clears_aa_on_every_fill(bg_token: str) -> None:
         f"{bg_token} ({values[bg_token]}) is {ratio:.2f}:1, below WCAG AA "
         f"{AA_NORMAL_TEXT}:1 — a split cell can pair these"
     )
+
+
+def test_a_level_5_split_cell_takes_white_because_no_ink_serves_both() -> None:
+    """Pairing 5 with a light fill is unservable, and unreachable in practice.
+
+    #820100 is dark and #ccff66 is bright: an ink light enough for one is
+    too light for the other, so no flat colour clears 4.5:1 on both. The
+    CSS gives those cells white — right for the only realistic pairing
+    (4 with 5, 4.00:1, the same value as the High exception) and wrong for
+    the rest, which would need a region to be at level 1 and level 5 on the
+    same day. Across a full season of all three providers — the 8,080
+    bulletins in apps/bulletins/local_mirrors/ — exactly one carries a
+    level-5 rating, and it is level 5 throughout: a solid cell.
+
+    This test records the arithmetic rather than asserting a pass, so the
+    gap is visible to whoever next reads the palette.
+    """
+    values = _token_values()
+    mixed = _contrast_ratio(
+        values["--color-eaws-mixed-fg"], values["--color-eaws-very-high"]
+    )
+    white_on_5 = _contrast_ratio(
+        values["--color-eaws-very-high-fg"], values["--color-eaws-very-high"]
+    )
+    white_on_4 = _contrast_ratio(
+        values["--color-eaws-very-high-fg"], values["--color-eaws-high"]
+    )
+    white_on_1 = _contrast_ratio(
+        values["--color-eaws-very-high-fg"], values["--color-eaws-low"]
+    )
+    # Near-black is not an option on level 5 — this is why the CSS flips.
+    assert mixed < AA_NORMAL_TEXT
+    # White serves the 4+5 cell at the same ratio the High exception accepts.
+    assert white_on_5 >= AA_NORMAL_TEXT
+    assert white_on_4 == pytest.approx(4.0, abs=0.05)
+    # And cannot serve a 1+5 cell, which no bulletin has ever produced.
+    assert white_on_1 < AA_NORMAL_TEXT
