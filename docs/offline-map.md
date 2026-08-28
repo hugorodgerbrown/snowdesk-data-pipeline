@@ -1616,10 +1616,9 @@ group" (SNOW-645, Hugo's design).** Top to bottom:
 2. **Budget, folded into the header.** One row: the segmented bar (fills
    the remaining width — see "Budget bar segments" below), `"<used> of"`,
    then the budget `<select>` itself, styled as a rounded pill (e.g.
-   "500 MB"). A caption underneath — "Downloads and budget stay on this
-   device.", or, once `download_sync` is on, "Your areas follow your
-   account. The map data and the budget stay on this device." (SNOW-749
-   made the line branch, because which half is true depends on the flag).
+   "500 MB"). A caption underneath: "Your areas follow your account. The
+   map data and the budget stay on this device." (SNOW-749 rewrote it —
+   "Downloads and budget stay on this device." had become half false.)
    This REVERSES SNOW-641's own conclusion (that the total and
    the budget control belonged at the FOOT, beside the "you already
    have" list) — worth recording so a future reader does not assume
@@ -1702,8 +1701,15 @@ screenshot).
 
 ### Account sync for download areas (SNOW-749)
 
-Behind the `download_sync` waffle flag. Off is exactly the pre-SNOW-749
-behaviour, in both halves.
+Ships unconditionally — there is no rollout flag. One was written and
+carried through review, then deleted before merge: the read sits in
+`_downloads_context`, which runs on the homepage, and it took that page
+from 5 queries to 8. Waffle reads through Django's `default` cache, which
+in production is `DatabaseCache`, so a warm cache trades three model
+queries for a cache-table one rather than for none. Hugo's call was that a
+permanent cost on the most-requested page was the wrong price for a kill
+switch nobody intended to pull; reverting is a deploy, as it is for every
+other capability here.
 
 **The gate.** STARTING a download needs an account. Two controls check it —
 the per-region roundel (`map_region_download.js`'s new `signin` state) and

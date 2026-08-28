@@ -1568,7 +1568,10 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {
             "title": "Your downloads",
             "icon_template": "includes/_icon_downloads.html",
-            "context_line": "Downloads and budget stay on this device.",
+            "context_line": (
+                "Your areas follow your account. The map data and the budget "
+                "stay on this device."
+            ),
             # No section_label: this panel groups its rows under two
             # headings of its own, rendered from its rows template.
             "header_template": "public/partials/_map_downloads_header.html",

@@ -235,14 +235,19 @@ _PANELS: dict[str, dict[str, Any]] = {
         ),
     },
     "downloads": {
-        # SNOW-749: matches the real sheet, whose title stopped being
-        # "Downloads on this device" when the AREAS started following the
-        # account. The context line below still says the device-local part,
-        # which is what the sheet says while `download_sync` is off — the
-        # default, and the state a reader of this illustration is in.
+        # SNOW-749: both strings track the real sheet, which stopped saying
+        # "Downloads on this device" and "Downloads and budget stay on this
+        # device." when the AREAS started following the account. The
+        # illustration renders the real partial, so a stale string here is
+        # not a stale mock — it is /help/ showing a reader a panel that
+        # does not exist. Identical msgids to _map_downloads_sheet.html's
+        # own, so the catalogue carries one entry for each.
         "title": _("Your downloads"),
         "icon_template": "includes/_icon_downloads.html",
-        "context_line": _("Downloads and budget stay on this device."),
+        "context_line": _(
+            "Your areas follow your account. The map data and the budget "
+            "stay on this device."
+        ),
         "section_label": _("Regions"),
         "cta_label": _("Download a custom area"),
         "toggle_id": "help-illustration-toggle-downloads",

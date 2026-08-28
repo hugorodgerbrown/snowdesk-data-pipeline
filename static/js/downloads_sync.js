@@ -51,9 +51,10 @@
  * operation carries `HX-Request: true` — the endpoints are `@require_htmx`
  * and would otherwise 400 on replay.
  *
- * Everything is gated on `download_sync`. With the flag off `isEnabled()`
- * is false and every function is an immediate no-op, which is exactly the
- * behaviour that shipped before this ticket.
+ * Everything is gated on being signed in. For an anonymous visitor
+ * `isEnabled()` is false and every function is an immediate no-op — which
+ * is also what a page carrying no downloads surface at all gets, since the
+ * configuration is read off that surface.
  */
 
 (function () {
@@ -90,21 +91,22 @@
   /**
    * Whether the account half of downloads is switched on for this visitor.
    *
-   * Three conditions, and all three are needed. The `download_sync` flag
-   * is the rollout gate; authentication is what the endpoints require; a
-   * sync URL is what says the server side is actually wired up. Any of
-   * them missing means every function below is a no-op rather than a
-   * failed request.
+   * Two conditions, and both are needed: authentication is what every
+   * endpoint here requires, and a sync URL is what says the server side is
+   * wired up at all — a page with no downloads surface supplies neither.
+   * Either missing means every function below is an immediate no-op rather
+   * than a request that would fail.
+   *
+   * SNOW-749 had a third, the `download_sync` rollout flag. It was dropped
+   * before merge on query cost (see
+   * ``apps.public.views._downloads_context``), so the gate is the session
+   * alone.
    *
    * @returns {boolean}
    */
   function isEnabled() {
     var cfg = config();
-    return (
-      cfg.downloadsSync === 'true' &&
-      cfg.downloadsEligible === 'true' &&
-      !!cfg.downloadSyncUrl
-    );
+    return cfg.downloadsEligible === 'true' && !!cfg.downloadSyncUrl;
   }
 
   /**
@@ -344,8 +346,8 @@
   /**
    * Every area on the requesting user's account.
    *
-   * Resolves `[]` for every unhappy path there is — flag off, signed out
-   * (403), offline, timed out, refused, or a body that will not parse. The
+   * Resolves `[]` for every unhappy path there is — signed out (403),
+   * offline, timed out, refused, or a body that will not parse. The
    * caller (`basemap_manage_core.js`'s `reconcileAreas`, through
    * `map_basemap_downloads.js`'s `basemapDownloadedAreas`) treats an empty
    * list as "no account rows", which produces exactly the pre-SNOW-749

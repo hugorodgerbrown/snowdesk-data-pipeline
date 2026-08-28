@@ -2,8 +2,7 @@
  * tests/js/test_map_region_download_signin.js — the region download
  * roundel's sign-in gate (SNOW-749).
  *
- * Once the ``download_sync`` flag is on, STARTING a download needs an
- * account. The requirement that makes this worth a test is not the refusal
+ * STARTING a download needs an account. The requirement that makes this worth a test is not the refusal
  * but its shape: the control stays VISIBLE and stays TAPPABLE, and the tap
  * goes somewhere useful. A hidden control reads as a missing feature and a
  * dead one reads as a bug, so both are asserted rather than assumed.
@@ -173,7 +172,7 @@ function installDbStub(initial) {
  * reproduce, since getting it wrong leaves the gate reading `undefined`
  * and silently off.
  */
-function buildFixture({ gated, eligible }) {
+function buildFixture({ eligible, surface = true }) {
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
@@ -182,10 +181,13 @@ function buildFixture({ gated, eligible }) {
          data-default-basemap-key="standard"
          data-season-end="2026-05-31"></div>
     <button id="map-download-control" type="button"></button>
-    <button id="map-custom-download-control" type="button"
-            data-downloads-sync="${gated}"
+    ${
+      surface
+        ? `<button id="map-custom-download-control" type="button"
             data-downloads-eligible="${eligible}"
-            data-signin-url="${SIGNIN_URL}"></button>
+            data-signin-url="${SIGNIN_URL}"></button>`
+        : ''
+    }
     <div id="search-pill" data-state="collapsed">
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
@@ -216,8 +218,8 @@ async function waitFor(predicate, timeoutMs = 1000) {
  * of a document, unlike connectivity), so a test that changes them has to
  * run the IIFE again.
  */
-async function boot({ gated, eligible, cached }) {
-  buildFixture({ gated: gated, eligible: eligible });
+async function boot({ eligible, cached, surface = true }) {
+  buildFixture({ eligible: eligible, surface: surface });
   const mapStub = stubMapLibre(
     // A VECTOR source whose runtime `tiles` array resolves — that is the
     // exact shape `activeBasemapTileTemplate` reads, and without it the
@@ -314,7 +316,7 @@ afterEach(() => {
 
 describe('signed out with the gate on', () => {
   it('paints the signin state instead of idle', async () => {
-    const btn = await boot({ gated: true, eligible: false, cached: false });
+    const btn = await boot({ eligible: false, cached: false });
 
     await waitFor(() => btn.dataset.downloadState === 'signin');
     expect(btn.dataset.downloadState).toBe('signin');
@@ -324,7 +326,7 @@ describe('signed out with the gate on', () => {
     // The show-controls rule: a gate the visitor can pass is an
     // affordance. Announcing aria-disabled would be the same mistake as
     // hiding the button, told to a screen reader instead of an eye.
-    const btn = await boot({ gated: true, eligible: false, cached: false });
+    const btn = await boot({ eligible: false, cached: false });
 
     await waitFor(() => btn.dataset.downloadState === 'signin');
     expect(btn.getAttribute('aria-disabled')).toBe('false');
@@ -334,7 +336,7 @@ describe('signed out with the gate on', () => {
   it('labels itself as needing a sign-in, and names no size', async () => {
     // The megabyte figure answers "is this worth downloading", which is
     // not the question in front of someone who cannot download at all.
-    const btn = await boot({ gated: true, eligible: false, cached: false });
+    const btn = await boot({ eligible: false, cached: false });
 
     await waitFor(() => btn.dataset.downloadState === 'signin');
     expect(btn.getAttribute('aria-label')).toContain('Sign in');
@@ -342,7 +344,7 @@ describe('signed out with the gate on', () => {
   });
 
   it('sends the tap to sign-in rather than starting a run', async () => {
-    const btn = await boot({ gated: true, eligible: false, cached: false });
+    const btn = await boot({ eligible: false, cached: false });
 
     await waitFor(() => btn.dataset.downloadState === 'signin');
     btn.click();
@@ -362,29 +364,38 @@ describe('signed out with the gate on', () => {
     // The load-bearing one. Reading an already-downloaded region is never
     // gated: a signed-out visitor out of signal must still see that their
     // tiles are there.
-    const btn = await boot({ gated: true, eligible: false, cached: true });
+    const btn = await boot({ eligible: false, cached: true });
 
     await waitFor(() => btn.dataset.downloadState === 'done');
     expect(btn.dataset.downloadState).toBe('done');
   });
 });
 
-describe('the gate off', () => {
-  it('is exactly the pre-SNOW-749 behaviour for a signed-out visitor', async () => {
-    // Flag off means no gate at all. This is the path every existing
-    // visitor takes until the flag is opened, so it has to be idle — not
-    // signin, and not a disabled variant of it.
-    const btn = await boot({ gated: false, eligible: false, cached: false });
-
-    await waitFor(() => btn.dataset.downloadState === 'idle');
-    expect(btn.dataset.downloadState).toBe('idle');
-  });
-
-  it('leaves a signed-in visitor actionable with the gate on', async () => {
-    const btn = await boot({ gated: true, eligible: true, cached: false });
+describe('signed in', () => {
+  it('leaves the control actionable', async () => {
+    const btn = await boot({ eligible: true, cached: false });
 
     await waitFor(() => btn.dataset.downloadState === 'idle');
     expect(btn.dataset.downloadState).toBe('idle');
     expect(btn.getAttribute('aria-disabled')).toBe('false');
+  });
+});
+
+describe('a page with no downloads surface', () => {
+  it('applies no gate rather than locking for want of an answer', async () => {
+    // This control reads its eligibility off #map-custom-download-control,
+    // which lives in a DIFFERENT partial. Absent it, the page carries no
+    // downloads surface at all: no roundel, no sheet, nothing to sync and
+    // no session to read. The control must fall back to its pre-SNOW-749
+    // behaviour rather than paint an unanswerable gate — a permanently
+    // signed-out-looking control on a page that never had an account
+    // question to ask.
+    //
+    // NOT a flag-off case: SNOW-749's `download_sync` flag was dropped
+    // before merge on query cost. This is the real remaining one.
+    const btn = await boot({ eligible: false, cached: false, surface: false });
+
+    await waitFor(() => btn.dataset.downloadState === 'idle');
+    expect(btn.dataset.downloadState).toBe('idle');
   });
 });

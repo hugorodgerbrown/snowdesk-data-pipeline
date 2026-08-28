@@ -107,20 +107,12 @@ the row's own label, so home.html loads that module once for both.
     {# it for every panel now, directly under the title, with the budget    #}
     {# meter below it — the one place a panel may extend the strip.         #}
     {#                                                                      #}
-    {# SNOW-749 rewrote it, because it had become half false — and made it  #}
-    {# branch, because which half is true depends on the flag. With         #}
-    {# `download_sync` on, the AREAS follow the account while the MAP DATA  #}
-    {# and the BUDGET still do not, and that second half is worth saying    #}
-    {# out loud: it is what explains how a row can be listed here and       #}
-    {# still not be available offline. With the flag off nothing leaves the #}
-    {# device at all, and the original line is exactly right — so it is     #}
-    {# kept verbatim rather than softened into one sentence that would be   #}
-    {# vague in both states.                                                #}
-    {% if downloads_sync_enabled %}
-        {% trans "Your areas follow your account. The map data and the budget stay on this device." as downloads_context_line %}
-    {% else %}
-        {% trans "Downloads and budget stay on this device." as downloads_context_line %}
-    {% endif %}
+    {# SNOW-749 rewrote it, because "Downloads and budget stay on this      #}
+    {# device." had become half false: the AREAS follow the account now.    #}
+    {# The other half still holds and is the more useful half to say —      #}
+    {# it is what explains how a row can be listed here and still not be    #}
+    {# available offline.                                                   #}
+    {% trans "Your areas follow your account. The map data and the budget stay on this device." as downloads_context_line %}
     {# No `section_label`: this panel has TWO groups (Regions, Custom       #}
     {# areas) and renders both headings itself, through the same partial.   #}
     {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" context_line=downloads_context_line header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}

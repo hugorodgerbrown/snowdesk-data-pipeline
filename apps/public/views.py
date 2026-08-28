@@ -1182,11 +1182,8 @@ def help_page(request: HttpRequest) -> HttpResponse:
     teaches the avalanche domain rather than the product. Named
     ``help_page`` rather than ``help`` to avoid shadowing the ``help``
     builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
-    the manage-page sync-log panel; ``downloads_sync_enabled`` (SNOW-749)
-    mirrors ``download_sync``, which gates the account half of offline
-    downloads — a feature's help has to arrive with the feature and not
-    before it, or the page describes something the reader cannot find.
-    Every other topic section renders for everyone (SNOW-724).
+    the manage-page sync-log panel — the one surviving waffle flag; every
+    other topic section renders for everyone (SNOW-724).
 
     Args:
         request: The incoming HTTP request.
@@ -1202,10 +1199,6 @@ def help_page(request: HttpRequest) -> HttpResponse:
     """
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
-        # SNOW-749: the same flag the map surface reads — see
-        # _downloads_context. Two paragraphs of the downloads topic
-        # describe behaviour that only exists while it is on.
-        "downloads_sync_enabled": waffle.flag_is_active(request, "download_sync"),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)
@@ -1615,37 +1608,27 @@ def _downloads_context(request: HttpRequest) -> dict[str, Any]:
     learnt from a response the mutation queue may have discarded long before
     the write replays.
 
-    ``downloads_sync_enabled`` is the ``download_sync`` rollout flag, and it
-    gates BOTH halves of SNOW-749 — the sign-in gate on the two start
-    controls and the account sync itself. Flag off is exactly the behaviour
-    that shipped before this ticket: every visitor can start a download, and
-    nothing is sent anywhere. It is deliberately a SEPARATE key from
-    ``downloads_eligible`` rather than folded into it, because the two say
-    different things (is the gate switched on / does this visitor pass it)
-    and a single boolean would leave the client unable to tell "gate off"
-    from "gate passed".
+    **The gate ships unconditionally — there is no rollout flag.** SNOW-749
+    carried a ``download_sync`` waffle flag through review and dropped it
+    before merge, on cost: the read took the homepage from 5 queries to 8,
+    and waffle reads through Django's ``default`` cache, which in production
+    is ``DatabaseCache`` against the ``django_cache`` table — so a warm
+    cache traded three model queries for a cache-table one rather than for
+    none. Three queries on the site's most-requested page, permanently, to
+    hold a kill switch open on a gate nobody intended to close, was the
+    wrong trade. What was given up is the admin toggle; reverting the
+    feature is a deploy, as it is for every other capability here.
 
-    Every URL here is a ``reverse()`` and costs nothing. The flag read does
-    NOT: it takes the homepage from 5 queries to 8, which is why this ticket
-    rebases ``perf/query_counts.txt``. That is a real cost on the site's
-    most-requested page, and it is not bought back by caching — waffle reads
-    through Django's ``default`` cache, which in production is
-    ``DatabaseCache`` against the ``django_cache`` table, so a warm cache
-    trades three model queries for a cache-table one rather than for none.
-    It is accepted as temporary: the three queries leave when the flag does
-    at general availability, and until then a kill switch on a gate that
-    removes an existing capability from anonymous visitors is worth one
-    round trip. If the flag outlives this ticket, move the read off the
-    homepage rather than letting the cost calcify.
+    That is why this helper reads no flag and costs no query: every value
+    below is a ``reverse()``, and the homepage's count is unmoved.
 
     Args:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``downloads_eligible``, ``downloads_sync_enabled``,
-        ``download_sync_url``, ``download_areas_url``,
-        ``download_rename_url_template``, ``download_forget_url_template``
-        and ``downloads_signin_url``.
+        Dict with ``downloads_eligible``, ``download_sync_url``,
+        ``download_areas_url``, ``download_rename_url_template``,
+        ``download_forget_url_template`` and ``downloads_signin_url``.
 
     """
     # See the docstring: a plain alphanumeric placeholder, because the URL
@@ -1653,7 +1636,6 @@ def _downloads_context(request: HttpRequest) -> dict[str, Any]:
     placeholder = "AREAID"
     return {
         "downloads_eligible": request.user.is_authenticated,
-        "downloads_sync_enabled": waffle.flag_is_active(request, "download_sync"),
         "download_sync_url": reverse("downloads:sync"),
         "download_areas_url": reverse("downloads:areas"),
         "download_rename_url_template": reverse(

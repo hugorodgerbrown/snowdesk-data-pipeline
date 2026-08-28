@@ -59,20 +59,21 @@ same decision written twice. Both partials render inside
 public/partials/_map_embed.html, so this element is on the page whenever
 that one is.
 
-`data-downloads-sync` is the ``download_sync`` rollout flag and
-`data-downloads-eligible` is authentication — two attributes, not one,
-because "the gate is off" and "this visitor passes the gate" are
-different facts and the client paints them differently. With the flag
-off the JS applies no gate at all, which is exactly the behaviour that
-shipped before SNOW-749.
+`data-downloads-eligible` is authentication, and it is the whole gate.
+SNOW-749 carried a second attribute beside it — `data-downloads-sync`,
+the `download_sync` rollout flag — so the client could tell "the gate is
+switched off" from "this visitor passes the gate". The flag was dropped
+before merge on query cost (see apps.public.views._downloads_context), and
+with it the only state that made those two facts distinguishable, so the
+second attribute went too rather than being left always-true.
 
 The four URLs are emitted unconditionally. They are `reverse()` output,
 not data, and every endpoint behind them 403s an anonymous request on its
 own — so there is nothing to withhold, and withholding them would leave
 the signed-out sign-in path unable to say where it leads.
 
-Context: `downloads_eligible`, `downloads_sync_enabled`,
-`downloads_signin_url`, `download_sync_url`, `download_areas_url`,
+Context: `downloads_eligible`, `downloads_signin_url`,
+`download_sync_url`, `download_areas_url`,
 `download_rename_url_template`, `download_forget_url_template` — all from
 apps.public.views._downloads_context.
 {% endcomment %}
@@ -81,7 +82,6 @@ apps.public.views._downloads_context.
     id="map-custom-download-control"
     class="map-custom-download-control map-download-control hover-affordance"
     data-overlay-shown="false"
-    data-downloads-sync="{{ downloads_sync_enabled|yesno:'true,false' }}"
     data-downloads-eligible="{{ downloads_eligible|yesno:'true,false' }}"
     data-signin-url="{{ downloads_signin_url }}"
     data-download-sync-url="{{ download_sync_url }}"

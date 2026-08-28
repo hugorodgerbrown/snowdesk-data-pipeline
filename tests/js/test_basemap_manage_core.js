@@ -793,9 +793,19 @@ describe('manageRows with the account (SNOW-749)', () => {
 });
 
 describe('reconcileAreas without an account list is unchanged (SNOW-749)', () => {
-  // The path every existing caller takes: anonymous, flag off, or offline.
-  // It must be behaviourally identical to the pre-SNOW-749 function, and
-  // this block is what says so.
+  // Three real paths reach this function with no account list, and all
+  // three are permanent: an ANONYMOUS visitor (the endpoint 403s and
+  // `accountAreas()` answers []), an OFFLINE device (it does not call the
+  // network at all), and a failed or timed-out read (it swallows and
+  // answers [] rather than rejecting — nothing downstream may wait on it).
+  //
+  // The output on those paths must be behaviourally identical to the
+  // pre-SNOW-749 function, and this block is what says so. It was
+  // originally written for a fourth path, the `download_sync` rollout flag
+  // being off; that flag was dropped before merge on query cost, and the
+  // invariant survives it untouched because it was never really about the
+  // flag — it is about every way the account can legitimately have nothing
+  // to say.
   const recorded = [
     { id: 'region-ch-4115', name: 'Verbier', bytes: 40 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
   ];

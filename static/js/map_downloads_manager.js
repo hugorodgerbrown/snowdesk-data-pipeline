@@ -307,18 +307,21 @@
   // SNOW-749: the sign-in gate's configuration, read off the roundel that
   // opens this sheet (#map-custom-download-control — see its own template
   // comment for why that one element carries the wiring for every download
-  // surface). Read once at parse time: the flag and the session are both
-  // fixed for the life of the document, unlike `navigator.onLine`, which
-  // is why the offline branch below is re-evaluated on every render and
-  // this is not. With the element absent every constant is falsy, which is
-  // the ungated pre-SNOW-749 behaviour — the safe direction for a rollout
-  // gate that has not been wired up.
+  // surface). Read once at parse time: the session is fixed for the life
+  // of the document, unlike `navigator.onLine`, which is why the offline
+  // branch below is re-evaluated on every render and this is not.
   var DOWNLOADS_CONFIG_EL = document.getElementById('map-custom-download-control');
   var DOWNLOADS_CONFIG = DOWNLOADS_CONFIG_EL ? DOWNLOADS_CONFIG_EL.dataset : {};
-  var DOWNLOADS_GATED = DOWNLOADS_CONFIG.downloadsSync === 'true';
   var DOWNLOADS_ELIGIBLE = DOWNLOADS_CONFIG.downloadsEligible === 'true';
   var DOWNLOADS_SIGNIN_URL = DOWNLOADS_CONFIG.signinUrl || '';
-  var NEEDS_SIGNIN = DOWNLOADS_GATED && !DOWNLOADS_ELIGIBLE;
+  // Authentication is the whole gate. SNOW-749 briefly paired this with a
+  // `downloadsSync` rollout-flag attribute; the flag was dropped before
+  // merge on query cost, and with it the only state in which "gate off"
+  // and "gate passed" were different things.
+  //
+  // A page with no config element applies no gate and does not sync — see
+  // `_adoptLocalAreas` for why that matters there specifically.
+  var NEEDS_SIGNIN = !!DOWNLOADS_CONFIG_EL && !DOWNLOADS_ELIGIBLE;
 
   /**
    * Send the visitor to sign in.
@@ -1392,9 +1395,10 @@
    * reach the account, never appear on a second device, and never be
    * retried, because nothing else ever looks at them again.
    *
-   * Fire-and-forget: it is a background reconciliation, nothing on screen
-   * waits for it, and a failure costs one more attempt on the next load
-   * rather than anything the user can see. Idempotent through
+   * Runs for any signed-in visitor. Fire-and-forget: it is a background
+   * reconciliation, nothing on screen waits for it, and a failure costs
+   * one more attempt on the next load rather than anything the user can
+   * see. Idempotent through
    * ``downloads_sync.js``'s own ``basemap.syncedAreaIds`` marker plus the
    * endpoint's ``update_or_create`` on ``(user, area_id)``, so calling it
    * on every load is a no-op after the first.
@@ -1416,7 +1420,7 @@
     // deliberate: this states the precondition at the CALL site, where a
     // reader asks "when does this run", rather than leaving the answer two
     // modules away.
-    if (!DOWNLOADS_GATED || !DOWNLOADS_ELIGIBLE) return;
+    if (!DOWNLOADS_ELIGIBLE) return;
     window.pwaDownloadsSync?.adopt();
   }
 

@@ -92,7 +92,7 @@ function buildFixture() {
               </p>
               <select id="map-downloads-budget" data-downloads-budget></select>
             </div>
-            <p>Downloads and budget stay on this device.</p>
+            <p>Your areas follow your account. The map data and the budget stay on this device.</p>
           </div>
         </div>
         <p data-downloads-over hidden>You're over your budget.</p>
@@ -379,17 +379,17 @@ const SIGNIN_URL = '/accounts/sign-in/';
  * ``#map-custom-download-control`` is the roundel that opens this sheet,
  * and the config carrier for every download surface (see its own template
  * comment). It is deliberately ABSENT from the default fixture — a page
- * without it is the ungated pre-SNOW-749 state, which is what every other
- * test in this file exercises — so a gate test adds it, and has to do so
- * BEFORE ``loadModule()``: the flag and the session are fixed for the life
- * of a document, so the module reads them once at parse time.
+ * without it carries no downloads surface, applies no gate and does not
+ * sync, which is what every other test in this file exercises — so a gate
+ * test adds it, and has to do so BEFORE ``loadModule()``: the session is
+ * fixed for the life of a document, so the module reads it once at parse
+ * time.
  *
- * @param {{gated: boolean, eligible: boolean}} options
+ * @param {{eligible: boolean}} options
  */
 function installDownloadsGate(options) {
   const el = document.createElement('button');
   el.id = 'map-custom-download-control';
-  el.dataset.downloadsSync = String(options.gated);
   el.dataset.downloadsEligible = String(options.eligible);
   el.dataset.signinUrl = SIGNIN_URL;
   document.body.appendChild(el);
@@ -1270,7 +1270,7 @@ describe('adopting existing local areas (SNOW-749)', () => {
 
   it('adopts on load when the flag is on and the visitor is signed in', async () => {
     seed({});
-    installDownloadsGate({ gated: true, eligible: true });
+    installDownloadsGate({ eligible: true });
     await loadModule();
     await settle();
 
@@ -1280,18 +1280,7 @@ describe('adopting existing local areas (SNOW-749)', () => {
   it('does not adopt for a signed-out visitor', async () => {
     // Every endpoint would 403, and there is no account to adopt onto.
     seed({});
-    installDownloadsGate({ gated: true, eligible: false });
-    await loadModule();
-    await settle();
-
-    expect(window.pwaDownloadsSync.adopt).not.toHaveBeenCalled();
-  });
-
-  it('does not adopt with the flag off', async () => {
-    // Flag off is the pre-SNOW-749 behaviour exactly: nothing leaves the
-    // device, including on a background reconciliation nobody asked for.
-    seed({});
-    installDownloadsGate({ gated: false, eligible: true });
+    installDownloadsGate({ eligible: false });
     await loadModule();
     await settle();
 
@@ -1299,8 +1288,8 @@ describe('adopting existing local areas (SNOW-749)', () => {
   });
 
   it('does not adopt on a page with no downloads surface at all', async () => {
-    // No config element means no gate wired up, which reads as ungated —
-    // and an ungated page must not sync either.
+    // No config element means no downloads surface at all: nothing to
+    // gate, and no eligibility to read, so nothing to sync either.
     seed({});
     await loadModule();
     await settle();
@@ -1317,7 +1306,7 @@ describe('adopting existing local areas (SNOW-749)', () => {
     // local areas through. It would find nothing, mark nothing, and never
     // run again: a permanent no-op that looks exactly like a working call.
     seed({});
-    installDownloadsGate({ gated: true, eligible: true });
+    installDownloadsGate({ eligible: true });
     Object.defineProperty(document, 'readyState', {
       value: 'interactive',
       configurable: true,
@@ -1341,7 +1330,7 @@ describe('adopting existing local areas (SNOW-749)', () => {
     // It loads from a different <script> tag; a page that ships the sheet
     // without it must still get a working sheet.
     seed({});
-    installDownloadsGate({ gated: true, eligible: true });
+    installDownloadsGate({ eligible: true });
     delete window.pwaDownloadsSync;
 
     await expect(loadModule()).resolves.toBeUndefined();
@@ -1349,8 +1338,8 @@ describe('adopting existing local areas (SNOW-749)', () => {
 });
 
 describe('the sign-in gate (SNOW-749)', () => {
-  // Starting a download needs an account once the `download_sync` flag is
-  // on. What the gate must NOT do is take anything away from a signed-out
+  // Starting a download needs an account. What the gate must NOT do is
+  // take anything away from a signed-out
   // visitor: the list is what THIS device holds, reading it needs no
   // connection and no account, and it stays exactly as it was. Only the
   // add-trigger changes.
@@ -1383,7 +1372,7 @@ describe('the sign-in gate (SNOW-749)', () => {
     // — so disabling it would be the same mistake as hiding it. That is
     // the difference from the offline branch, which is genuinely inert.
     seed({});
-    installDownloadsGate({ gated: true, eligible: false });
+    installDownloadsGate({ eligible: false });
     await loadModule();
     openSheet();
     await settle();
@@ -1395,7 +1384,7 @@ describe('the sign-in gate (SNOW-749)', () => {
 
   it('toasts and goes to sign-in instead of opening framing', async () => {
     seed({});
-    installDownloadsGate({ gated: true, eligible: false });
+    installDownloadsGate({ eligible: false });
     await loadModule();
     openSheet();
     await settle();
@@ -1413,7 +1402,7 @@ describe('the sign-in gate (SNOW-749)', () => {
     // device is still there, still sized, still deletable — reading it
     // needs no signal, which is the whole point of having downloaded it.
     seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
-    installDownloadsGate({ gated: true, eligible: false });
+    installDownloadsGate({ eligible: false });
     await loadModule();
     openSheet();
     await settle();
@@ -1425,7 +1414,7 @@ describe('the sign-in gate (SNOW-749)', () => {
 
   it('leaves a signed-in visitor exactly as before', async () => {
     seed({});
-    installDownloadsGate({ gated: true, eligible: true });
+    installDownloadsGate({ eligible: true });
     await loadModule();
     openSheet();
     await settle();
@@ -1437,11 +1426,13 @@ describe('the sign-in gate (SNOW-749)', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it('applies no gate at all with the flag off', async () => {
-    // Flag off is the pre-SNOW-749 path, and it is the one every visitor
-    // takes until the rollout opens — signed out, and downloading freely.
+  it('applies no gate on a page carrying no downloads surface', async () => {
+    // No config element means no roundel, no sheet trigger and nothing to
+    // gate. Not a flag-off state — SNOW-749's `download_sync` flag was
+    // dropped before merge — but a real one: this module is loaded from
+    // its own partial, and a page could include that partial's script
+    // without the map.
     seed({});
-    installDownloadsGate({ gated: false, eligible: false });
     await loadModule();
     openSheet();
     await settle();

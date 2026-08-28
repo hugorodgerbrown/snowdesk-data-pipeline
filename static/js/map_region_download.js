@@ -84,8 +84,8 @@
 // downloads the region under the ACTIVE basemap, and the existing
 // `beforeWarm` eviction (below) already handles the mismatched bucket.
 //
-// SNOW-749: 'signin' — the `download_sync` flag is on and the visitor is
-// signed out, so no download can START. It replaces every ACTIONABLE state
+// SNOW-749: 'signin' — the visitor is signed out, so no download can
+// START. It replaces every ACTIONABLE state
 // ('idle', and 'other-basemap' with its "download it for this basemap too"
 // invitation) and no other: 'done' still paints its green circle, because
 // reading a region already on this device is not gated and never will be —
@@ -118,13 +118,18 @@
   // rollout gate that has not been wired up.
   const DOWNLOADS_CONFIG_EL = document.getElementById('map-custom-download-control');
   const DOWNLOADS_CONFIG = DOWNLOADS_CONFIG_EL ? DOWNLOADS_CONFIG_EL.dataset : {};
-  // Two attributes, two facts: is the gate switched on at all, and does
-  // this visitor pass it. Flag off means no gate — exactly what shipped
-  // before SNOW-749 — so the two are never collapsed into one boolean.
-  const DOWNLOADS_GATED = DOWNLOADS_CONFIG.downloadsSync === 'true';
+  // Authentication is the whole gate. SNOW-749 briefly paired this with a
+  // `downloadsSync` rollout-flag attribute, so the client could tell "the
+  // gate is switched off" from "this visitor passes it"; the flag was
+  // dropped before merge on query cost, and with it the only state that
+  // made those two distinguishable.
   const DOWNLOADS_ELIGIBLE = DOWNLOADS_CONFIG.downloadsEligible === 'true';
   const DOWNLOADS_SIGNIN_URL = DOWNLOADS_CONFIG.signinUrl || '';
-  const NEEDS_SIGNIN = DOWNLOADS_GATED && !DOWNLOADS_ELIGIBLE;
+  // A page with no downloads surface leaves this false, which reads as
+  // eligible and applies no gate. That is the safe direction: the gate is
+  // a product decision belonging to the map, and a page that does not
+  // render the map has no download for it to stop.
+  const NEEDS_SIGNIN = !!DOWNLOADS_CONFIG_EL && !DOWNLOADS_ELIGIBLE;
 
   /**
    * SNOW-749: the state to paint where the control would otherwise be
@@ -268,8 +273,7 @@
       // same moment the device record is written so the two cannot
       // disagree about what was downloaded. Enqueued through the mutation
       // queue, so a region downloaded with no signal is recorded when the
-      // device surfaces; a no-op with the `download_sync` flag off or the
-      // visitor signed out.
+      // device surfaces; a no-op for a signed-out visitor.
       //
       // No bbox: a region's tiles are computed server-side from its real
       // boundary (SNOW-583 clipped them to it), so a box would be a

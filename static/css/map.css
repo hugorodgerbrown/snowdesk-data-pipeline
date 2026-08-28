@@ -2104,8 +2104,7 @@
     cursor: not-allowed;
 }
 
-/* SNOW-749: 'signin' — the download_sync flag is on and the visitor is
-   signed out. It shares the muted treatment of the three above, because it
+/* SNOW-749: 'signin' — the visitor is signed out. It shares the muted treatment of the three above, because it
    is equally "you cannot download right now", but NOT their not-allowed
    cursor: this one IS actionable — the tap goes to the sign-in page. A
    barred cursor on a control that does something is the same lie as hiding

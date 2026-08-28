@@ -8,16 +8,17 @@ download start controls and for the account sync.
 
 Three things are worth asserting here and nowhere else:
 
-  1. **The gate and the pass are separate attributes.**
-     ``data-downloads-sync`` is the ``download_sync`` rollout flag;
-     ``data-downloads-eligible`` is authentication. Folding them into one
-     boolean would leave the client unable to tell "the gate is off" from
-     "this visitor passed the gate", and those paint differently — one is
-     the pre-SNOW-749 behaviour, the other is a sign-in CTA.
+  1. **Eligibility is the whole gate, and it is one attribute.**
+     ``data-downloads-eligible`` is authentication, and the client paints
+     a sign-in state from it. SNOW-749 briefly carried a second attribute
+     beside it for a ``download_sync`` rollout flag; the flag was dropped
+     before merge on query cost, so there is one fact here now and one
+     attribute for it.
 
-  2. **Flag off is the old behaviour.** The whole rollout plan rests on
-     it, and an anonymous visitor with the flag off is the exact request
-     that shipped before this ticket.
+  2. **The helper costs no query.** That is why the flag went, so it is
+     the property most worth pinning against a future edit that quietly
+     reintroduces a lookup — the homepage is the site's most-requested
+     page and its count is monitored (docs/query-counts.md).
 
   3. **The URL templates survive ``<str:area_id>``.** ``_downloads_context``
      reverses with a placeholder and string-replaces it, the same trick
@@ -41,7 +42,6 @@ import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.test import Client, RequestFactory
 from django.urls import reverse
-from waffle.testutils import override_flag
 
 from apps.public.views import _downloads_context
 from tests.factories import UserFactory
@@ -118,36 +118,23 @@ class TestDownloadsContext:
             "__AREA_ID__", "region-ch-4115"
         ) == reverse("downloads:forget", args=["region-ch-4115"])
 
-    def test_the_flag_is_reported_separately_from_eligibility(
-        self, rf: RequestFactory
-    ) -> None:
-        """The gate and the pass are two facts, so they are two keys."""
-        request = rf.get("/")
-        request.user = UserFactory.create()
-
-        with override_flag("download_sync", active=True):
-            assert _downloads_context(request)["downloads_sync_enabled"] is True
-        with override_flag("download_sync", active=False):
-            assert _downloads_context(request)["downloads_sync_enabled"] is False
-        # Eligibility does not move with the flag — see the module docstring.
-        assert _downloads_context(request)["downloads_eligible"] is True
-
-    def test_it_costs_no_query_of_its_own(
+    def test_it_costs_no_query_at_all(
         self, rf: RequestFactory, django_assert_num_queries: Any
     ) -> None:
-        """Every URL is ``reverse()``; nothing here looks a row up.
+        """Every value is ``reverse()``; nothing here looks anything up.
 
-        The homepage's query-count budget is monitored
-        (docs/query-counts.md), and a context helper that quietly costs a
-        query per request is how that budget moves without anyone deciding
-        to move it. The flag is the one thing that can touch the DB, and
-        waffle caches it — so the SECOND call is the honest measurement of
-        what this helper itself costs, and it is zero.
+        The reason this is a test and not a comment: SNOW-749 shipped a
+        ``download_sync`` waffle flag read from this helper, which took the
+        homepage from 5 queries to 8 and had to be rebased into
+        ``perf/query_counts.txt``. The flag was removed for exactly that,
+        so the zero is the decision — asserted on the FIRST call, with no
+        cache to warm, because a cached lookup is still a lookup (waffle
+        reads through Django's ``default`` cache, which in production is
+        ``DatabaseCache``).
         """
         request = rf.get("/")
         request.user = AnonymousUser()
 
-        _downloads_context(request)
         with django_assert_num_queries(0):
             _downloads_context(request)
 
@@ -157,7 +144,7 @@ class TestDownloadsRoundelAttributes:
     """The roundel carries the wiring both start controls read off it."""
 
     def test_it_carries_every_attribute_the_js_reads(self, client: Client) -> None:
-        """Seven attributes, one element.
+        """Six attributes, one element.
 
         map_region_download.js, map_downloads_manager.js and
         downloads_sync.js all read their configuration from this element —
@@ -168,7 +155,6 @@ class TestDownloadsRoundelAttributes:
         tag = _roundel(client)
 
         for attribute in (
-            "data-downloads-sync",
             "data-downloads-eligible",
             "data-signin-url",
             "data-download-sync-url",
@@ -189,12 +175,12 @@ class TestDownloadsRoundelAttributes:
 
         assert 'data-downloads-eligible="true"' in _roundel(client)
 
-    @override_flag("download_sync", active=False)
-    def test_the_gate_is_off_by_default(self, client: Client) -> None:
-        """Flag off — the client applies no gate, exactly as before SNOW-749."""
-        assert 'data-downloads-sync="false"' in _roundel(client)
+    def test_it_carries_no_rollout_flag_attribute(self, client: Client) -> None:
+        """``data-downloads-sync`` is gone, not rendered always-true.
 
-    @override_flag("download_sync", active=True)
-    def test_the_gate_is_on_with_the_flag(self, client: Client) -> None:
-        """Flag on — the client applies the sign-in gate and syncs."""
-        assert 'data-downloads-sync="true"' in _roundel(client)
+        The flag it carried was dropped on query cost. An attribute left
+        behind reading ``"true"`` on every request would be a gate with no
+        off state that three JS modules still branch on — dead weight that
+        reads as a live control.
+        """
+        assert "data-downloads-sync" not in _roundel(client)

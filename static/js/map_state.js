@@ -258,7 +258,7 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-other-basemap-unnamed':
     "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
   // SNOW-749: the roundel's ninth state. Downloading is gated on an
-  // account once the `download_sync` flag is on, and the control stays
+  // account, and the control stays
   // VISIBLE and tappable while the visitor is signed out — a hidden
   // control reads as a missing feature. Tapping it goes to sign-in, so
   // the label has to promise that and nothing more.

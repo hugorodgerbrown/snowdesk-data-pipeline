@@ -42,14 +42,13 @@ const CSRF = 'test-csrf-token';
  * renders for a signed-in user, which is the same read
  * ``account_favourites.js`` makes.
  *
- * @param {{gated?: boolean, eligible?: boolean}} [options]
+ * @param {{eligible?: boolean}} [options]
  */
 function buildFixture(options) {
-  const opts = Object.assign({ gated: true, eligible: true }, options || {});
+  const opts = Object.assign({ eligible: true }, options || {});
   document.body.innerHTML = `
     <form><input type="hidden" name="csrfmiddlewaretoken" value="${CSRF}"></form>
     <button id="map-custom-download-control" type="button"
-            data-downloads-sync="${opts.gated}"
             data-downloads-eligible="${opts.eligible}"
             data-signin-url="/accounts/sign-in/"
             data-download-sync-url="${SYNC_URL}"
@@ -110,11 +109,12 @@ afterEach(() => {
 });
 
 describe('isEnabled', () => {
-  it('needs the flag, the session and a wired endpoint', () => {
+  it('needs the session and a wired endpoint', () => {
+    // Two conditions since SNOW-749's `download_sync` flag was dropped on
+    // query cost. The second is not redundant: a page carrying no
+    // downloads surface supplies no URL, and must no-op rather than post
+    // to undefined.
     expect(sync.isEnabled()).toBe(true);
-
-    buildFixture({ gated: false });
-    expect(sync.isEnabled()).toBe(false);
 
     buildFixture({ eligible: false });
     expect(sync.isEnabled()).toBe(false);
@@ -177,8 +177,11 @@ describe('push', () => {
     expect(body.region_id).toBe('');
   });
 
-  it('does nothing at all with the flag off', async () => {
-    buildFixture({ gated: false });
+  it('does nothing at all on a page with no downloads surface', async () => {
+    // No config element means no sync URL to post to. The no-op has to be
+    // immediate rather than a request that fails, because this runs inside
+    // a completed download's finish handler.
+    document.body.innerHTML = '';
     const ok = await sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115' });
 
     expect(ok).toBe(false);
@@ -292,10 +295,13 @@ describe('accountAreas', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('does not call the network with the flag off', async () => {
+  it('does not call the network for an anonymous visitor', async () => {
+    // The endpoint would 403. Answering [] without asking is what keeps
+    // the Manage downloads sheet's open path free of a round trip that
+    // could only fail.
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-    buildFixture({ gated: false });
+    buildFixture({ eligible: false });
 
     await expect(sync.accountAreas()).resolves.toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -396,8 +402,9 @@ describe('adopt', () => {
     expect(bodyOf(window.pwaMutationQueue.enqueue).region_id).toBe('CH-4115');
   });
 
-  it('does nothing with the flag off', async () => {
-    buildFixture({ gated: false });
+  it('does nothing for an anonymous visitor', async () => {
+    // There is no account to adopt onto, and every endpoint would 403.
+    buildFixture({ eligible: false });
     installDownloads(AREAS);
 
     await expect(sync.adopt()).resolves.toBe(0);

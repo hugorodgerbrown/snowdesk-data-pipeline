@@ -52,12 +52,9 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
-| `download_sync` | `superusers=True` | Both halves of the offline-downloads account work: the sign-in requirement on the two download start controls, and syncing each area's definition to `apps.downloads.DownloadArea`. Read in `apps.public.views._downloads_context` (reaching the client on `#map-custom-download-control`) and in `help_page` (two paragraphs of the downloads topic). Off is exactly the pre-SNOW-749 behaviour: anyone can download, and nothing leaves the device. | SNOW-749. |
 
-**A rollout gate and a diagnostic toggle.** `download_sync` is the first
-kind: it will open to everyone and then come out, following the removal
-procedure below. `sync_log` is the second, and is not a rollout gate
-waiting to be opened — it is a per-user diagnostic toggle. The
+**One flag, and it is the right shape for one.** `sync_log` is not a
+rollout gate waiting to be opened: it is a per-user diagnostic toggle. The
 panel prints a device's recent real server round-trips, which is a
 debugging read-out rather than a product surface, and the `Users` M2M is
 the point — inviting one reporter to turn it on while chasing a sync
@@ -66,12 +63,20 @@ and a permission check cannot express. Every other gate this project has
 had was either a rollout gate that eventually opened to everyone, or a
 permanent audience restriction better written as an ordinary Django check.
 
-**`download_sync` gates BOTH halves on purpose.** The sign-in requirement
-and the account sync are one product decision, and gating them separately
-would produce a state nobody designed: a visitor asked to sign in for a
-feature that then syncs nothing, or areas syncing to accounts that were
-never required to have one. Flag off has to be the behaviour that shipped
-before SNOW-749, exactly, and one flag is what makes that checkable.
+**A rollout flag has a price, and it is not always worth paying.** SNOW-749
+wrote a `download_sync` flag, carried it through review, and deleted it
+before merge. The gate it protected sits in `_downloads_context`, which
+runs on the homepage — the site's most-requested page — and the flag read
+took it from 5 queries to 8. Caching does not buy that back: waffle reads
+through Django's `default` cache, which in production is `DatabaseCache`
+against the `django_cache` table, so a warm cache trades three model
+queries for a cache-table one rather than for none. Hugo's call was that a
+permanent per-request cost on that page was the wrong price for a kill
+switch nobody intended to pull, and the feature shipped unconditionally.
+
+The general form: **a flag on a hot path is not free, and "we can always
+turn it off" is worth costing before it is assumed.** Reverting an
+un-flagged feature is a deploy, which this project can do in minutes.
 
 The saved-map-pin favourites feature (SNOW-413), the field-report button
 and submission endpoints (SNOW-324), the "Community reports" read overlay

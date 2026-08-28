@@ -86,26 +86,6 @@ is smaller now — `sync_log` is the only row left, and no monitored URL
 reads it — but the failure mode is unchanged: a database whose flag rows
 disagree with the manifest measures a page no environment serves.
 
-**SNOW-749 moved `home` from 5 to 8, and the arithmetic is the rule above
-read forwards.** `apps.public.views._downloads_context` asks waffle about
-`download_sync` on every homepage render, and a superuser-targeted flag
-that EXISTS costs three queries against an absent one's one — the same
-figure this section already prices in the other direction. Nothing else
-about the page changed: every URL in `_downloads_context` is a
-`reverse()`, and `tests/public/test_downloads_surface.py` pins that with
-a `django_assert_num_queries(0)` on the second call, once waffle's own
-cache is warm.
-
-Read that last clause carefully rather than as "so it is free in
-production". Waffle reads through Django's `default` cache, and
-`config/settings/production.py` sets that to `DatabaseCache` against the
-`django_cache` table — so a warm cache trades three model queries for a
-cache-table query, not for none. This is the site's most-requested page,
-and three extra queries on it is a real cost accepted as **temporary**:
-they go away with the flag when the rollout finishes. If the flag is
-still here after general availability, move the read off the homepage
-rather than letting the cost calcify into the baseline.
-
 A reduction looks like someone's prefetch landing, which is why the rule
 is worth stating plainly: **do not `--commit` a baseline to resolve a
 reduction you cannot attribute to a specific merged change.** Committing

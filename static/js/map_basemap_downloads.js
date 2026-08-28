@@ -564,8 +564,7 @@ async function _appendCustomArea(area) {
   // moment the device record is written so the two cannot disagree about
   // what was downloaded. Enqueued through the mutation queue, so an area
   // framed and downloaded with no signal is recorded when the device
-  // surfaces; a no-op with the `download_sync` flag off or the visitor
-  // signed out. Never awaited for its outcome and never able to fail the
+  // surfaces; a no-op for a signed-out visitor. Never awaited for its outcome and never able to fail the
   // download: the tiles are what the user asked for, and they are already
   // on disk by the time this runs.
   //

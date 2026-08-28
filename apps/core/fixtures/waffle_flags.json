@@ -1,11 +1,6 @@
 {
   "flags": [
     {
-      "name": "download_sync",
-      "note": "SNOW-749. Gates both halves of the offline-downloads account work: the sign-in requirement on the two start controls (the region roundel and the manage sheet's 'Download a custom area'), and syncing each downloaded area's definition to apps.downloads.DownloadArea. Off is exactly the pre-SNOW-749 behaviour — any visitor can download, and nothing leaves the device.",
-      "superusers": true
-    },
-    {
       "name": "sync_log",
       "note": "Gates the SNOW-482 sync-log panel (manage page) and its matching /help/ section — a read-out of the client-side log:sync IndexedDB store of recent real server round-trips.",
       "superusers": true
