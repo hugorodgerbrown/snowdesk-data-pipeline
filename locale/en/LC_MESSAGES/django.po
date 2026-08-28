@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-20 17:07+0000\n"
+"POT-Creation-Date: 2026-08-28 08:35+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -246,32 +246,22 @@ msgid ""
 "Snowdesk account."
 msgstr ""
 
-msgid "Link expired — Snowdesk"
+msgid "Favourites — Snowdesk"
 msgstr ""
 
-msgid ""
-"This account link has expired or is invalid. Request a new one to manage "
-"your Snowdesk subscriptions."
+msgid "The places you have saved to Snowdesk."
 msgstr ""
 
-msgid "This link has expired"
+msgid "Favourites"
 msgstr ""
 
-msgid ""
-"Account links are only valid for 24 hours. This one has expired or is "
-"invalid."
+msgid "Loading…"
 msgstr ""
 
-msgid "Request a new link"
+msgid "Subscriptions — Snowdesk"
 msgstr ""
 
-msgid "My account — Snowdesk"
-msgstr ""
-
-msgid "Update your Snowdesk avalanche bulletin region subscriptions."
-msgstr ""
-
-msgid "Something went wrong."
+msgid "The Snowdesk regions you are subscribed to."
 msgstr ""
 
 msgid "Your subscription is confirmed."
@@ -280,10 +270,18 @@ msgstr ""
 msgid "You'll receive alerts for the regions below."
 msgstr ""
 
-msgid "Your subscription"
-msgid_plural "Your subscriptions"
-msgstr[0] ""
-msgstr[1] ""
+msgid "Sign in faster with a passkey"
+msgstr ""
+
+msgid ""
+"Save a passkey for this device and you won't need a magic link next time."
+msgstr ""
+
+msgid "Save a passkey for this device"
+msgstr ""
+
+msgid "Subscriptions"
+msgstr ""
 
 #, python-format
 msgid "View %(region)s on the map"
@@ -301,7 +299,8 @@ msgstr ""
 msgid "Italy"
 msgstr ""
 
-msgid "Remove"
+#, python-format
+msgid "Remove %(region)s"
 msgstr ""
 
 #, python-format
@@ -314,84 +313,23 @@ msgstr ""
 msgid "Choose more regions on the map →"
 msgstr ""
 
-msgid "My favourites"
-msgstr ""
-
-msgid "Loading…"
-msgstr ""
-
-msgid "Account email"
-msgstr ""
-
-msgid "Change email"
-msgstr ""
-
-msgid "Passkeys"
-msgstr ""
-
-msgid "Sign in faster with a passkey"
+msgid "Link expired — Snowdesk"
 msgstr ""
 
 msgid ""
-"Save a passkey for this device and you won't need a magic link next time."
+"This account link has expired or is invalid. Request a new one to manage "
+"your Snowdesk subscriptions."
 msgstr ""
 
-msgid "Save a passkey for this device"
-msgstr ""
-
-#, python-format
-msgid "Last used %(date)s"
-msgstr ""
-
-msgid "Never used"
-msgstr ""
-
-msgid "Remove this passkey?"
-msgstr ""
-
-msgid "Add a passkey for this device"
-msgstr ""
-
-msgid "Sign out"
+msgid "This link has expired"
 msgstr ""
 
 msgid ""
-"Ends this session on this device. Anything already saved offline stays until "
-"you reset local data below."
+"Account links are only valid for 24 hours. This one has expired or is "
+"invalid."
 msgstr ""
 
-msgid "Reset local data on this device"
-msgstr ""
-
-msgid ""
-"Clears cached bulletins, offline data, and saved preferences on this device. "
-"Your subscription is not affected."
-msgstr ""
-
-msgid "Sync log"
-msgstr ""
-
-msgid "Anonymous usage data"
-msgstr ""
-
-#, python-format
-msgid ""
-"We collect a small stream of anonymous events (installs, updates, push "
-"delivery, errors) so we can keep the app working across browsers. No "
-"bulletin content, no email address, no location. <a href=\"%(privacy_url)s\" "
-"class=\"underline\">Read the full policy</a>."
-msgstr ""
-
-msgid "Share anonymous usage data"
-msgstr ""
-
-msgid "Unsubscribe from all alerts and delete your account?"
-msgstr ""
-
-msgid "Unsubscribe from all alerts"
-msgstr ""
-
-msgid "Passkey registration failed. Please try again."
+msgid "Request a new link"
 msgstr ""
 
 msgid "Subscriptions saved — Snowdesk"
@@ -418,6 +356,9 @@ msgstr ""
 msgid ""
 "If that address is registered, we've sent you a link to manage your "
 "subscriptions. It expires in 24 hours."
+msgstr ""
+
+msgid "Something went wrong."
 msgstr ""
 
 msgid ""
@@ -512,9 +453,6 @@ msgstr ""
 msgid "Name"
 msgstr ""
 
-msgid "(optional)"
-msgstr ""
-
 msgid "Create account"
 msgstr ""
 
@@ -580,6 +518,112 @@ msgstr ""
 msgid ""
 "If that address has a Snowdesk account with a password, we've sent you a "
 "link to reset it. It expires in 24 hours."
+msgstr ""
+
+msgid "Settings — Snowdesk"
+msgstr ""
+
+msgid "Manage your Snowdesk email address, passkeys and device data."
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "Account"
+msgstr ""
+
+msgid "Account email"
+msgstr ""
+
+msgid "Change email"
+msgstr ""
+
+msgid "Passkeys"
+msgstr ""
+
+#, python-format
+msgid "Last used %(date)s"
+msgstr ""
+
+msgid "Never used"
+msgstr ""
+
+#, python-format
+msgid "Remove %(name)s"
+msgstr ""
+
+msgid "Remove this passkey?"
+msgstr ""
+
+msgid "No passkeys saved for this account yet."
+msgstr ""
+
+msgid "Add a passkey for this device"
+msgstr ""
+
+msgid "This device"
+msgstr ""
+
+msgid "Sign out"
+msgstr ""
+
+msgid ""
+"Ends this session on this device. Anything already saved offline stays until "
+"you reset local data below."
+msgstr ""
+
+msgid "Theme"
+msgstr ""
+
+msgid ""
+"Applies to this browser only. \"System\" follows your device's light or dark "
+"appearance setting."
+msgstr ""
+
+msgid "Reset local data on this device"
+msgstr ""
+
+msgid ""
+"Clears cached bulletins, offline data, and saved preferences on this device. "
+"Your subscription is not affected."
+msgstr ""
+
+msgid "Sync log"
+msgstr ""
+
+msgid "Privacy"
+msgstr ""
+
+msgid "Anonymous usage data"
+msgstr ""
+
+msgid "Share anonymous usage data"
+msgstr ""
+
+#, python-format
+msgid ""
+"We collect a small stream of anonymous events (installs, updates, push "
+"delivery, errors) so we can keep the app working across browsers. No "
+"bulletin content, no email address, no location. <a href=\"%(privacy_url)s\" "
+"class=\"underline\">Read the full policy</a>."
+msgstr ""
+
+msgid "Danger zone"
+msgstr ""
+
+msgid ""
+"Permanently deletes your account and everything saved to it — subscriptions, "
+"favourites, passkeys and any field reports you have submitted. This cannot "
+"be undone."
+msgstr ""
+
+msgid "Permanently delete your account and everything saved to it?"
+msgstr ""
+
+msgid "Delete your account"
+msgstr ""
+
+msgid "Passkey registration failed. Please try again."
 msgstr ""
 
 msgid "Finish setting up — Snowdesk"
@@ -765,34 +809,517 @@ msgstr ""
 msgid "Favourable situation"
 msgstr ""
 
-msgid "Stable day"
+msgid "new snow"
 msgstr ""
 
-msgid "Low danger and benign problems — manage as usual."
+msgid "wind slab"
+msgstr ""
+
+msgid "persistent weak layers"
+msgstr ""
+
+msgid "wet snow"
+msgstr ""
+
+msgid "gliding snow"
+msgstr ""
+
+msgid "cornices"
+msgstr ""
+
+msgid "low"
+msgstr ""
+
+msgid "moderate"
+msgstr ""
+
+msgid "considerable"
+msgstr ""
+
+msgid "high"
+msgstr ""
+
+msgid "very high"
+msgstr ""
+
+#. Translators: joins the last two items of a problem list.
+#, python-format
+msgid "%(head)s and %(tail)s"
+msgstr ""
+
+#, python-format
+msgid "Deteriorating: %(from_word)s this morning, %(to_word)s by afternoon"
+msgstr ""
+
+#, python-format
+msgid "Deteriorating within %(to_word)s"
+msgstr ""
+
+#, python-format
+msgid "Easing: %(from_word)s this morning, %(to_word)s by afternoon"
+msgstr ""
+
+#, python-format
+msgid "Easing within %(to_word)s"
+msgstr ""
+
+msgid ""
+"Low, and the bulletin names no distinct problem — the ordinary care that "
+"steep terrain always needs."
+msgstr ""
+
+#, python-format
+msgid ""
+"Low, with only %(problems)s named — visible where it sits, and easy to go "
+"round."
+msgstr ""
+
+#, python-format
+msgid ""
+"Low, with %(problems)s buried out of sight — few places, and nothing at the "
+"surface to mark them."
+msgstr ""
+
+#, python-format
+msgid ""
+"Low, with %(problems)s named together — one of them visible at the surface, "
+"the other buried."
+msgstr ""
+
+msgid ""
+"Moderate, with no distinct problem named — the level itself is the whole of "
+"the message."
+msgstr ""
+
+#, python-format
+msgid ""
+"Moderate, with %(problems)s at the surface — the evidence is there to read "
+"before you commit to a slope."
+msgstr ""
+
+#, python-format
+msgid ""
+"Moderate, with %(problems)s buried — the slope that fails will look like the "
+"one that held."
+msgstr ""
+
+#, python-format
+msgid ""
+"Moderate, with %(problems)s in play — part of it readable at the surface, "
+"part of it buried and silent."
+msgstr ""
+
+msgid ""
+"Considerable, with no distinct problem named — rare enough that the level "
+"alone should set your limits."
+msgstr ""
+
+#, python-format
+msgid ""
+"Considerable, with %(problems)s at the surface — readable, widespread, and "
+"unforgiving of a casual line."
+msgstr ""
+
+#, python-format
+msgid ""
+"Considerable, with %(problems)s buried — no warning underfoot, so terrain "
+"choice is the only control left."
+msgstr ""
+
+#, python-format
+msgid ""
+"Considerable, with %(problems)s in play — you can read the surface problem; "
+"the buried one sets the consequence."
+msgstr ""
+
+msgid ""
+"High, with no distinct problem named — at this level the number alone rules "
+"out avalanche terrain."
+msgstr ""
+
+#, python-format
+msgid ""
+"High, with %(problems)s at the surface — visible everywhere, and past what "
+"route choice can offset."
+msgstr ""
+
+#, python-format
+msgid ""
+"High, with %(problems)s buried — remote triggering is expected, and nothing "
+"at the surface will warn you."
+msgstr ""
+
+#, python-format
+msgid ""
+"High, with %(problems)s in play — the readable half is the smaller half; "
+"stay out of avalanche terrain."
+msgstr ""
+
+msgid ""
+"Very high, with no distinct problem named — an exceptional day, and "
+"avalanche terrain is closed."
+msgstr ""
+
+#, python-format
+msgid ""
+"Very high, with %(problems)s at the surface — large natural releases, "
+"running beyond the usual paths."
+msgstr ""
+
+#, python-format
+msgid ""
+"Very high, with %(problems)s buried — the snowpack is failing at depth, and "
+"runout zones are exposed."
+msgstr ""
+
+#, python-format
+msgid ""
+"Very high, with %(problems)s in play — natural releases at every scale; stay "
+"out of avalanche terrain."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, no distinct problem named at either end of the day."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — visible, and still "
+"confined to isolated places."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — nothing at the surface gives it "
+"away."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — one part of it visible, one part "
+"buried."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, with no distinct problem named for either half."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — you can watch it build."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — nothing at the surface will show "
+"the change."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — you will see part of it, not all."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, with no distinct problem named either side."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — turn round before it gets "
+"there."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — time the exit rather than feel "
+"for it."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — only half of it will be visible."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, no distinct problem named, and no margin left by then."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — be out of avalanche "
+"terrain before it lands."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, with %(problems)s buried — past what timing can manage."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — the afternoon is an exposure, "
+"not a plan."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, no distinct problem named, and no version of the day that "
+"stays out."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, with %(problems)s at the surface — do not be out in it."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — failures at depth, on every scale."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — stay out of avalanche terrain."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, with no distinct problem named by then."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — visible, and worth "
+"respecting all the same."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — a lower number, not a clean "
+"snowpack."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — the number falls further than "
+"the hazard does."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, with no distinct problem named for the later half."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — an easing rating, a "
+"different problem behind it."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — the number drops, the weak layer "
+"does not."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — the number eases, the problem "
+"swaps rather than clears."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, with no distinct problem named at the lower level."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — still considerable, still "
+"no place to be casual."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — less danger on paper, the same "
+"weakness underneath."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — an easing rating, not a safer "
+"snowpack."
+msgstr ""
+
+#, python-format
+msgid "%(transition)s, still high, and still no distinct problem named."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — a falling number is not a "
+"green light."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — high is high, whichever way it "
+"arrived."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — a level that still closes the "
+"terrain, whichever way it moved."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, the number moves, the situation does not, and the terrain is "
+"closed."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s at the surface — the number moves, the "
+"snow on the surface does not."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s buried — the number moves, the snowpack "
+"does not."
+msgstr ""
+
+#, python-format
+msgid ""
+"%(transition)s, with %(problems)s in play — the number moves, nothing under "
+"it does."
+msgstr ""
+
+msgid ""
+"Low through both halves of the day, with no distinct problem named in either."
+msgstr ""
+
+#, python-format
+msgid ""
+"Low all day, with %(problems)s across the two halves — the number holds; "
+"which problem you face does not."
+msgstr ""
+
+#, python-format
+msgid ""
+"Low all day, with %(problems)s underneath — the number holds, and nothing at "
+"the surface marks the change."
+msgstr ""
+
+#, python-format
+msgid ""
+"Low all day, with %(problems)s across the two halves — the number holds, the "
+"mix underneath it changes."
+msgstr ""
+
+msgid ""
+"Moderate all day, with no distinct problem named — the two halves differ in "
+"timing, not in hazard."
+msgstr ""
+
+#, python-format
+msgid ""
+"Moderate all day, with %(problems)s across the two halves — same number "
+"morning and afternoon, different problem behind it."
+msgstr ""
+
+#, python-format
+msgid ""
+"Moderate all day, with %(problems)s buried — the number holds while the "
+"problem moves out of sight."
+msgstr ""
+
+#, python-format
+msgid ""
+"Moderate all day, with %(problems)s across the two halves — the level holds; "
+"what changes is what sits under it."
+msgstr ""
+
+msgid ""
+"Considerable all day, with no distinct problem named — the split marks "
+"timing, not a change in level."
+msgstr ""
+
+#, python-format
+msgid ""
+"Considerable all day, with %(problems)s across the two halves — the number "
+"holds; the reason for it changes."
+msgstr ""
+
+#, python-format
+msgid ""
+"Considerable all day, with %(problems)s buried — an unchanged number over a "
+"problem you cannot inspect."
+msgstr ""
+
+#, python-format
+msgid ""
+"Considerable all day, with %(problems)s across the two halves — same level, "
+"different problem, different right answer."
+msgstr ""
+
+msgid ""
+"High all day, with no distinct problem named — the split changes nothing you "
+"would act on."
+msgstr ""
+
+#, python-format
+msgid ""
+"High all day, with %(problems)s across the two halves — the number holds "
+"above travel limits either way."
+msgstr ""
+
+#, python-format
+msgid ""
+"High all day, with %(problems)s buried — the number holds, and so does the "
+"reason to stay out."
+msgstr ""
+
+#, python-format
+msgid ""
+"High all day, with %(problems)s across the two halves — the level never "
+"drops far enough to matter."
+msgstr ""
+
+msgid ""
+"Very high all day, with no distinct problem named — nothing in the split "
+"changes the answer."
+msgstr ""
+
+#, python-format
+msgid ""
+"Very high all day, with %(problems)s through both halves — the terrain is "
+"closed either way."
+msgstr ""
+
+#, python-format
+msgid ""
+"Very high all day, with %(problems)s buried — the level holds at the top of "
+"the scale."
+msgstr ""
+
+#, python-format
+msgid ""
+"Very high all day, with %(problems)s across the two halves — no part of the "
+"day is travellable."
+msgstr ""
+
+msgid "Stable day"
 msgstr ""
 
 msgid "Manageable day"
 msgstr ""
 
-msgid "Moderate to considerable danger — read the terrain carefully."
-msgstr ""
-
 msgid "Hard-to-read day"
-msgstr ""
-
-msgid "Persistent or gliding-snow problems can mask the real risk."
 msgstr ""
 
 msgid "Widespread danger"
 msgstr ""
 
-msgid "Considerable danger across many aspects, elevations, or problems."
-msgstr ""
-
 msgid "Dangerous conditions"
-msgstr ""
-
-msgid "High to very high danger — backcountry travel is not recommended."
 msgstr ""
 
 msgid "Upload Météo-France archive"
@@ -819,6 +1346,14 @@ msgstr ""
 msgid "← Region bulletin"
 msgstr ""
 
+#, python-format
+msgid "Saved %(when)s"
+msgstr ""
+
+#, python-format
+msgid "%(region)s · saved %(when)s"
+msgstr ""
+
 msgid "Unnamed pin"
 msgstr ""
 
@@ -826,7 +1361,15 @@ msgid "Favourite name"
 msgstr ""
 
 #, python-format
+msgid "Show details for %(name)s"
+msgstr ""
+
+#, python-format
 msgid "%(m)s m altitude"
+msgstr ""
+
+#, python-format
+msgid "Show %(name)s on the map"
 msgstr ""
 
 msgid "Avalanche danger — regional"
@@ -856,9 +1399,6 @@ msgstr ""
 msgid "You've reached your saved-pin limit. Remove one to save another."
 msgstr ""
 
-msgid "Details →"
-msgstr ""
-
 msgid "You have no saved favourites yet."
 msgstr ""
 
@@ -875,19 +1415,7 @@ msgid "Below this location"
 msgstr ""
 
 #, python-format
-msgid "Saved %(when)s"
-msgstr ""
-
-#, python-format
-msgid "%(region)s · saved %(when)s"
-msgstr ""
-
-#, python-format
 msgid "Rename %(name)s"
-msgstr ""
-
-#, python-format
-msgid "Remove %(name)s"
 msgstr ""
 
 msgid "Saved"
@@ -897,6 +1425,18 @@ msgid "Save resort"
 msgstr ""
 
 msgid "Sign in to save this resort"
+msgstr ""
+
+msgid "Observations — Snowdesk"
+msgstr ""
+
+msgid "The field observations you have reported to Snowdesk."
+msgstr ""
+
+msgid "Observations"
+msgstr ""
+
+msgid "Reports are shared with the community."
 msgstr ""
 
 msgid "You haven't reported any field observations yet."
@@ -1023,16 +1563,28 @@ msgid ""
 "down."
 msgstr ""
 
-msgid "Dry"
+msgid "Source:"
 msgstr ""
 
-msgid "Wet"
+msgid "SLF Avalanche Bulletin Interpretation Guide"
+msgstr ""
+
+#, python-format
+msgid "%(category)s avalanches"
 msgstr ""
 
 msgid "Slab"
 msgstr ""
 
 msgid "Loose"
+msgstr ""
+
+#, python-format
+msgid "Danger level %(level)s, %(sub)s"
+msgstr ""
+
+#, python-format
+msgid "Danger level %(level)s"
 msgstr ""
 
 msgid "See description below"
@@ -1042,12 +1594,6 @@ msgid "All aspects · all elevations"
 msgstr ""
 
 msgid "Field notes"
-msgstr ""
-
-msgid "Source:"
-msgstr ""
-
-msgid "SLF Avalanche Bulletin Interpretation Guide"
 msgstr ""
 
 #, python-format
@@ -1063,14 +1609,14 @@ msgid ""
 "<a class=\"underline hover:text-text-2\" href=\"%(help_url)s\">Help</a> "
 "&middot; Avalanche data: <a class=\"underline hover:text-text-2\" "
 "href=\"https://www.slf.ch\" target=\"_blank\" rel=\"noopener\">SLF</a> "
-"&middot; <a class=\"underline hover:text-text-2\" href=\"https://"
-"avalanche.report\" target=\"_blank\" rel=\"noopener\" >ALBINA</a> &middot; "
-"<a class=\"underline hover:text-text-2\" href=\"https://meteofrance.com/"
-"meteo-montagne\" target=\"_blank\" rel=\"noopener\" >Météo-France</a> "
+"&middot; <a class=\"underline hover:text-text-2\" href=\"https://avalanche."
+"report\" target=\"_blank\" rel=\"noopener\" >ALBINA</a> &middot; <a "
+"class=\"underline hover:text-text-2\" href=\"https://meteofrance.com/meteo-"
+"montagne\" target=\"_blank\" rel=\"noopener\" >Météo-France</a> &middot; <a "
+"class=\"underline hover:text-text-2\" href=\"%(terms_url)s\">Terms</a> "
 "&middot; <a class=\"underline hover:text-text-2\" "
-"href=\"%(terms_url)s\">Terms</a> &middot; <a class=\"underline hover:text-"
-"text-2\" href=\"%(privacy_url)s\">Privacy</a> &middot; <a class=\"underline "
-"hover:text-text-2\" href=\"%(tos_url)s\">Terms of Service</a> &middot; <a "
+"href=\"%(privacy_url)s\">Privacy</a> &middot; <a class=\"underline hover:"
+"text-text-2\" href=\"%(tos_url)s\">Terms of Service</a> &middot; <a "
 "class=\"underline hover:text-text-2\" href=\"%(colophon_url)s\">Colophon</a>"
 msgstr ""
 
@@ -1091,6 +1637,9 @@ msgstr ""
 
 #, python-format
 msgid "Avalanche bulletin for %(name)s."
+msgstr ""
+
+msgid "Weather — region centre"
 msgstr ""
 
 msgid "No bulletin available"
@@ -1115,6 +1664,19 @@ msgstr ""
 msgid ""
 "We are sorry for the inconvenience. Please try again later or check back for "
 "an updated bulletin."
+msgstr ""
+
+msgid "Updated off-schedule"
+msgstr ""
+
+#, python-format
+msgid ""
+"The provider reissued this bulletin at %(issued)s UTC, outside the normal "
+"publication cycle."
+msgstr ""
+
+msgid ""
+"The provider reissued this bulletin outside the normal publication cycle."
 msgstr ""
 
 msgid "Day Risk Profile"
@@ -1151,6 +1713,12 @@ msgid "Valid until"
 msgstr ""
 
 msgid "Next update"
+msgstr ""
+
+msgid "Schedule"
+msgstr ""
+
+msgid "Off-schedule"
 msgstr ""
 
 msgid "Adjoining regions"
@@ -1289,6 +1857,12 @@ msgstr ""
 msgid "— vector tile style, covering Austria"
 msgstr ""
 
+msgid ""
+"— the map's slope-angle overlay, classified as the SLF recommends (30–35°, "
+"35–40°, 40–45°, 45–50°, over 50°) and derived from a combined 10 m elevation "
+"model: swissALTI3D, RGE ALTI, TINITALY/01, DGM10, DGM1 and EU-DEM"
+msgstr ""
+
 msgid "Icons"
 msgstr ""
 
@@ -1374,7 +1948,7 @@ msgstr ""
 msgid "Map weather"
 msgstr ""
 
-msgid "Favourites"
+msgid "Slope angle"
 msgstr ""
 
 msgid "Field observations"
@@ -1519,6 +2093,59 @@ msgid ""
 "users' reports appear only when you have the community-reports overlay "
 "enabled, and their times are rounded to the nearest 15 minutes to keep "
 "individual reports from being pinpointed."
+msgstr ""
+
+msgid ""
+"The Slope angle overlay shades the ground by steepness, so you can see how "
+"steep a line is without leaving the map. The bands follow the classification "
+"the SLF recommends, the same one you will have seen on Swiss maps: "
+"30&ndash;35&deg;, 35&ndash;40&deg;, 40&ndash;45&deg;, 45&ndash;50&deg; and "
+"over 50&deg;. Ground under 30&deg; is left unshaded."
+msgstr ""
+
+msgid ""
+"The first three bands matter most. The large majority of slab avalanches "
+"release on slopes between 30 and 45 degrees, which is why that range is the "
+"one to find when a bulletin talks about steep terrain in a particular aspect "
+"and elevation."
+msgstr ""
+
+msgid "What it cannot tell you"
+msgstr ""
+
+msgid ""
+"The shading is calculated from an elevation model with a 10 metre grid, so "
+"it describes the average steepness of each 10 metre square rather than the "
+"ground itself. A short steep roll inside an otherwise gentle face will not "
+"appear at any zoom, and neither will a small bench in the middle of a steep "
+"one. Zoom in far enough and you will see the individual squares &mdash; that "
+"is the resolution of the data, not a fault in the map."
+msgstr ""
+
+msgid ""
+"Coverage does not extend across the whole map. Where the layer has no data "
+"its menu row is switched off with a note, but be careful near the edge: "
+"unshaded ground outside the covered area has simply not been surveyed, and "
+"looks exactly like ground that is under 30 degrees."
+msgstr ""
+
+msgid ""
+"The data is stitched together from several countries' national elevation "
+"models, and swisstopo, who publish it, note that accuracy is not guaranteed "
+"in the places where two of those models meet."
+msgstr ""
+
+msgid ""
+"Treat the layer as one input among several, never as a verdict. It says "
+"nothing about the snowpack, about what is above you, or about the day's "
+"danger rating &mdash; and a slope being shaded, or not being shaded, is not "
+"permission to ski it."
+msgstr ""
+
+msgid ""
+"The data is the &ldquo;Slope classes over 30&deg;&rdquo; dataset published "
+"by swisstopo, the Swiss Federal Office of Topography. Full attribution is in "
+"the colophon."
 msgstr ""
 
 msgid ""
@@ -2017,9 +2644,6 @@ msgid ""
 "Bulletin Interpretation Guide, Edition November 2025."
 msgstr ""
 
-msgid "Observations"
-msgstr ""
-
 msgid "Recent field observations reported by Snowdesk users."
 msgstr ""
 
@@ -2144,7 +2768,7 @@ msgid ""
 "%(season_label)s season archive."
 msgstr ""
 
-msgid "Find a region"
+msgid "Find a region or resort"
 msgstr ""
 
 msgid "Locate me"
@@ -2204,6 +2828,9 @@ msgstr ""
 msgid "Weather"
 msgstr ""
 
+msgid "Terrain"
+msgstr ""
+
 msgid "Base map"
 msgstr ""
 
@@ -2235,6 +2862,21 @@ msgid "EAWS Danger Scale"
 msgstr ""
 
 msgid "Map pins"
+msgstr ""
+
+msgid "30–35°"
+msgstr ""
+
+msgid "35–40°"
+msgstr ""
+
+msgid "40–45°"
+msgstr ""
+
+msgid "45–50°"
+msgstr ""
+
+msgid "Over 50°"
 msgstr ""
 
 msgid "Map data"
@@ -2445,6 +3087,9 @@ msgstr ""
 msgid "Unavailable offline — switch back online to load"
 msgstr ""
 
+msgid "Partly cached — may not load everywhere"
+msgstr ""
+
 msgid "Region data available offline"
 msgstr ""
 
@@ -2494,6 +3139,12 @@ msgstr ""
 
 #, python-format
 msgid "%%(used)s / %%(budget)s downloaded"
+msgstr ""
+
+msgid "Region"
+msgstr ""
+
+msgid "Resort"
 msgstr ""
 
 #, python-format
@@ -2558,7 +3209,21 @@ msgstr ""
 msgid "%%(m)s m ascent"
 msgstr ""
 
+#, python-format
+msgid "%%(m)s m descent"
+msgstr ""
+
+msgid "Elevation profile of this route"
+msgstr ""
+
+#, python-format
+msgid "%%(low)s–%%(high)s m"
+msgstr ""
+
 msgid "Untitled route"
+msgstr ""
+
+msgid "No slope data for this area"
 msgstr ""
 
 #, python-format
@@ -2569,9 +3234,6 @@ msgid "Loading your reports…"
 msgstr ""
 
 msgid "Report an observation"
-msgstr ""
-
-msgid "Reports are shared with the community."
 msgstr ""
 
 msgid "Reports"
@@ -2600,10 +3262,38 @@ msgstr ""
 msgid "Finding your location…"
 msgstr ""
 
-msgid "Operator"
+msgid "About this resort"
 msgstr ""
 
-msgid "Add operator name"
+#, python-format
+msgid "from %(m)s m"
+msgstr ""
+
+#, python-format
+msgid "to %(m)s m"
+msgstr ""
+
+msgid "Lifts"
+msgstr ""
+
+msgid "Runs"
+msgstr ""
+
+msgid "Piste"
+msgstr ""
+
+msgid "Typical season"
+msgstr ""
+
+#, python-format
+msgid "from %(d)s"
+msgstr ""
+
+#, python-format
+msgid "to %(d)s"
+msgstr ""
+
+msgid "Operator"
 msgstr ""
 
 msgid "Website"
@@ -2612,16 +3302,16 @@ msgstr ""
 msgid "Official website"
 msgstr ""
 
+msgid "Notes"
+msgstr ""
+
+msgid "Add operator name"
+msgstr ""
+
 msgid "Add website"
 msgstr ""
 
-msgid "Lifts"
-msgstr ""
-
 msgid "Add lift count"
-msgstr ""
-
-msgid "Runs"
 msgstr ""
 
 msgid "Add run count"
@@ -2830,8 +3520,8 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Questions about this policy? Email: <a class=\"underline\" "
-"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a>"
+"Questions about this policy? Email: <a class=\"underline\" href=\"mailto:"
+"privacy@snowdesk.info\">privacy@snowdesk.info</a>"
 msgstr ""
 
 msgid "2. What data we collect"
@@ -2945,8 +3635,20 @@ msgid ""
 msgstr ""
 
 msgid ""
-"<strong>SLF / WSL</strong> — provides the avalanche bulletin data. No "
-"personal data is shared with them."
+"<strong>SLF / WSL</strong> — provides the avalanche bulletin data for "
+"Switzerland. No personal data is shared with them."
+msgstr ""
+
+msgid ""
+"<strong>ALBINA / EUREGIO</strong> (avalanche.report) — provides the "
+"avalanche bulletin data for Tyrol, South Tyrol and Trentino. No personal "
+"data is shared with them."
+msgstr ""
+
+msgid ""
+"<strong>Météo-France</strong> (meteofrance.com) — provides the avalanche "
+"bulletin data (BRA) for the French mountain ranges. No personal data is "
+"shared with them."
 msgstr ""
 
 msgid ""
@@ -2996,15 +3698,15 @@ msgid "Withdraw consent at any time"
 msgstr ""
 
 msgid ""
-"To exercise any of these rights, email <a class=\"underline\" "
-"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a>. We will "
-"respond within 30 days."
+"To exercise any of these rights, email <a class=\"underline\" href=\"mailto:"
+"privacy@snowdesk.info\">privacy@snowdesk.info</a>. We will respond within 30 "
+"days."
 msgstr ""
 
 msgid ""
 "You also have the right to lodge a complaint with the UK Information "
-"Commissioner's Office (ICO) at <a class=\"underline\" href=\"https://"
-"ico.org.uk\" target=\"_blank\" rel=\"noopener\">ico.org.uk</a>."
+"Commissioner's Office (ICO) at <a class=\"underline\" href=\"https://ico.org."
+"uk\" target=\"_blank\" rel=\"noopener\">ico.org.uk</a>."
 msgstr ""
 
 msgid "7. Children"
@@ -3013,9 +3715,9 @@ msgstr ""
 msgid ""
 "Snowdesk is a publicly accessible information service. We do not knowingly "
 "collect personal data from children under 13. If you believe a child under "
-"13 has subscribed, please contact us at <a class=\"underline\" "
-"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a> and we will "
-"delete the data without delay."
+"13 has subscribed, please contact us at <a class=\"underline\" href=\"mailto:"
+"privacy@snowdesk.info\">privacy@snowdesk.info</a> and we will delete the "
+"data without delay."
 msgstr ""
 
 msgid "8. Cookies"
@@ -3047,6 +3749,14 @@ msgstr ""
 msgid "View bulletin →"
 msgstr ""
 
+#, python-format
+msgid "%(name)s · %(elevation)s m"
+msgstr ""
+
+#, python-format
+msgid "%(name)s"
+msgstr ""
+
 msgid "Weather — this resort"
 msgstr ""
 
@@ -3073,38 +3783,65 @@ msgstr ""
 msgid "Terms of use"
 msgstr ""
 
-msgid "Data source and licence"
+msgid "Data sources and licences"
 msgstr ""
 
 msgid ""
-"Snowdesk renders avalanche bulletins published by the <a class=\"underline\" "
-"href=\"https://www.slf.ch\" target=\"_blank\" rel=\"noopener\" >WSL "
-"Institute for Snow and Avalanche Research SLF</a>. The underlying data is "
-"licensed under <a class=\"underline\" href=\"https://creativecommons.org/"
-"licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a>."
-msgstr ""
-
-msgid "Snowdesk is not a substitute for the official bulletin"
+"Snowdesk renders avalanche bulletins published by three national and "
+"regional avalanche warning services. Each service licenses its own data, and "
+"the licence that applies to a bulletin is the one belonging to the service "
+"that issued it."
 msgstr ""
 
 msgid ""
-"Snowdesk renders avalanche bulletins published by SLF. It is an information "
-"service only — it does not replace the official SLF bulletin, professional "
-"avalanche training, or your own assessment of conditions in the field. "
-"Always verify current conditions directly with SLF before venturing into "
-"avalanche terrain."
+"<a class=\"underline\" href=\"https://www.slf.ch\" target=\"_blank\" "
+"rel=\"noopener\" >WSL Institute for Snow and Avalanche Research SLF</a> — "
+"bulletins for Switzerland, licensed under <a class=\"underline\" "
+"href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\" "
+"rel=\"noopener\" >CC BY 4.0</a>."
 msgstr ""
 
-msgid "Always consult SLF and make your own on-site assessment"
+msgid ""
+"<a class=\"underline\" href=\"https://avalanche.report\" target=\"_blank\" "
+"rel=\"noopener\" >Avalanche.report (ALBINA / EUREGIO)</a> — bulletins for "
+"Tyrol, South Tyrol and Trentino, licensed under <a class=\"underline\" "
+"href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\" "
+"rel=\"noopener\" >CC BY 4.0</a>."
+msgstr ""
+
+msgid ""
+"<a class=\"underline\" href=\"https://meteofrance.com/meteo-montagne\" "
+"target=\"_blank\" rel=\"noopener\" >Météo-France</a> — avalanche bulletins "
+"(BRA) for the French mountain ranges, used under the <a class=\"underline\" "
+"href=\"https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/"
+"license\" target=\"_blank\" rel=\"noopener\" >Météo-France open-data "
+"licence</a>."
+msgstr ""
+
+msgid "A complete rendering, not the authority"
+msgstr ""
+
+msgid ""
+"Snowdesk aims to render each bulletin in full — every danger rating, "
+"avalanche problem and comment the issuing service published. Nothing is "
+"withheld or summarised away. It remains an information service: the "
+"avalanche warning service that issued the bulletin is the authority on it, "
+"and every bulletin page links back to the official source so you can check "
+"it for yourself. Snowdesk does not replace that source, professional "
+"avalanche training, or your own assessment of conditions in the field."
+msgstr ""
+
+msgid "Always check the official bulletin and make your own on-site assessment"
 msgstr ""
 
 msgid ""
 "Avalanche conditions change rapidly and vary with aspect, elevation, and "
 "recent weather. No digital service can capture every local hazard. Before "
-"entering avalanche terrain, check the official SLF bulletin at <a "
-"class=\"underline\" href=\"https://www.avalanches.org\" target=\"_blank\" "
-"rel=\"noopener\" >avalanches.org</a>, seek current local knowledge, and make "
-"your own on-site assessment. Your safety is your responsibility."
+"entering avalanche terrain, check the official bulletin for the region you "
+"are heading to — the European services are indexed at <a class=\"underline\" "
+"href=\"https://www.avalanches.org\" target=\"_blank\" rel=\"noopener\" "
+">avalanches.org</a> — seek current local knowledge, and make your own on-"
+"site assessment. Your safety is your responsibility."
 msgstr ""
 
 msgid "Limitation of liability"
@@ -3118,7 +3855,14 @@ msgid ""
 "completeness."
 msgstr ""
 
-msgid "SLF's own no-liability clause"
+msgid "Provider disclaimers"
+msgstr ""
+
+msgid ""
+"Each avalanche warning service publishes its bulletin for information "
+"purposes and sets its own terms for the use of that data. Those terms apply "
+"to you as a reader of Snowdesk exactly as they would on the service's own "
+"site."
 msgstr ""
 
 msgid ""
@@ -3127,6 +3871,21 @@ msgid ""
 "service terms of use</a>, SLF makes bulletin data available for information "
 "purposes only and accepts no liability for the delivery of that data or for "
 "decisions made on the basis of it."
+msgstr ""
+
+msgid ""
+"ALBINA / EUREGIO publishes the Tyrol, South Tyrol and Trentino bulletin "
+"under CC BY 4.0. See <a class=\"underline\" href=\"https://avalanche.report/"
+"more/open-data\" target=\"_blank\" rel=\"noopener\" >avalanche.report's open-"
+"data page</a> for the terms that apply to its data."
+msgstr ""
+
+msgid ""
+"Météo-France publishes the BRA under its <a class=\"underline\" "
+"href=\"https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/"
+"license\" target=\"_blank\" rel=\"noopener\" >open-data licence</a>, which "
+"sets out the conditions of reuse and the limits of Météo-France's "
+"responsibility for the data."
 msgstr ""
 
 msgid "Terms of Service"
@@ -3142,8 +3901,9 @@ msgstr ""
 
 msgid ""
 "Snowdesk is a free avalanche information service. It does not replace the "
-"official SLF bulletin, professional avalanche training, or your own "
-"judgement in the mountains. Your safety is your responsibility."
+"official bulletin published by your region's avalanche warning service, "
+"professional avalanche training, or your own judgement in the mountains. "
+"Your safety is your responsibility."
 msgstr ""
 
 msgid "1. About Snowdesk"
@@ -3151,10 +3911,12 @@ msgstr ""
 
 msgid ""
 "Snowdesk is operated by Henri Tamboral (\"I\", \"me\", \"my\"), an "
-"individual based in London, UK. Snowdesk displays Swiss avalanche bulletins "
-"published by the WSL Institute for Snow and Avalanche Research (SLF) and "
-"provides optional email notifications for subscribed regions. There are no "
-"employees; the service is run entirely by the sole operator."
+"individual based in London, UK. Snowdesk displays avalanche bulletins "
+"published by the WSL Institute for Snow and Avalanche Research (SLF) for "
+"Switzerland, by ALBINA / EUREGIO for Tyrol, South Tyrol and Trentino, and by "
+"Météo-France for the French mountain ranges, and provides optional email "
+"notifications for subscribed regions. There are no employees; the service is "
+"run entirely by the sole operator."
 msgstr ""
 
 msgid "2. Acceptance of terms"
@@ -3171,7 +3933,9 @@ msgstr ""
 msgid "Snowdesk provides:"
 msgstr ""
 
-msgid "A viewer for Swiss avalanche bulletins published by SLF"
+msgid ""
+"A viewer for avalanche bulletins published by SLF (Switzerland), ALBINA / "
+"EUREGIO (Tyrol, South Tyrol, Trentino) and Météo-France (the French ranges)"
 msgstr ""
 
 msgid "An interactive map showing current avalanche danger ratings by region"
@@ -3193,8 +3957,9 @@ msgstr ""
 msgid ""
 "Avalanche bulletins are a forecast tool, not a guarantee of safe conditions. "
 "Snowdesk is an information service only — it does not replace the official "
-"SLF bulletin, professional avalanche training, or your own assessment of "
-"conditions in the field."
+"bulletin published by the avalanche warning service for the region you are "
+"in, professional avalanche training, or your own assessment of conditions in "
+"the field."
 msgstr ""
 
 msgid ""
@@ -3206,8 +3971,10 @@ msgid "Before entering avalanche terrain, you should:"
 msgstr ""
 
 msgid ""
-"Check the official SLF bulletin at <a class=\"underline\" href=\"https://"
-"www.avalanches.org\" target=\"_blank\" rel=\"noopener\" >avalanches.org</a>"
+"Check the official bulletin for the region you are heading to — the European "
+"avalanche warning services are indexed at <a class=\"underline\" "
+"href=\"https://www.avalanches.org\" target=\"_blank\" rel=\"noopener\" "
+">avalanches.org</a>"
 msgstr ""
 
 msgid "Seek current local knowledge from guides, hut keepers, or ski patrol"
@@ -3228,13 +3995,23 @@ msgid ""
 "You may not reproduce, redistribute, or republish it without permission."
 msgstr ""
 
+#, python-format
 msgid ""
-"The avalanche bulletin data displayed on Snowdesk is published by the <a "
-"class=\"underline\" href=\"https://www.slf.ch\" target=\"_blank\" "
-"rel=\"noopener\" >WSL Institute for Snow and Avalanche Research SLF</a> and "
-"licensed under <a class=\"underline\" href=\"https://creativecommons.org/"
-"licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" >CC BY 4.0</a>. That "
-"data remains SLF's intellectual property."
+"The avalanche bulletin data displayed on Snowdesk is published by three "
+"avalanche warning services — the <a class=\"underline\" href=\"https://www."
+"slf.ch\" target=\"_blank\" rel=\"noopener\" >WSL Institute for Snow and "
+"Avalanche Research SLF</a>, <a class=\"underline\" href=\"https://avalanche."
+"report\" target=\"_blank\" rel=\"noopener\" >ALBINA / EUREGIO</a> and <a "
+"class=\"underline\" href=\"https://meteofrance.com/meteo-montagne\" "
+"target=\"_blank\" rel=\"noopener\" >Météo-France</a>. The SLF and ALBINA "
+"bulletins are licensed under <a class=\"underline\" href=\"https://"
+"creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\" "
+">CC BY 4.0</a>; the Météo-France BRA is used under the <a "
+"class=\"underline\" href=\"https://portail-api.meteofrance.fr/web/en/"
+"DonneesPubliquesBRA/license\" target=\"_blank\" rel=\"noopener\" >Météo-"
+"France open-data licence</a>. Each service retains the intellectual property "
+"in its own data. Full licence details are on the <a class=\"underline\" "
+"href=\"%(terms_url)s\">terms of use</a> page."
 msgstr ""
 
 msgid "6. Email subscriptions"
@@ -3260,8 +4037,9 @@ msgid "You agree not to:"
 msgstr ""
 
 msgid ""
-"Scrape or republish SLF bulletin data commercially without SLF's permission "
-"(the data is licensed under CC BY 4.0 and remains SLF's property)"
+"Scrape or republish bulletin data commercially without the issuing service's "
+"permission — each of SLF, ALBINA / EUREGIO and Météo-France licenses its own "
+"data and retains the rights in it"
 msgstr ""
 
 msgid "Attempt to gain unauthorised access to Snowdesk's systems or data"
@@ -3308,8 +4086,8 @@ msgid "11. Contact"
 msgstr ""
 
 msgid ""
-"Questions about these terms? Email: <a class=\"underline\" "
-"href=\"mailto:privacy@snowdesk.info\">privacy@snowdesk.info</a>"
+"Questions about these terms? Email: <a class=\"underline\" href=\"mailto:"
+"privacy@snowdesk.info\">privacy@snowdesk.info</a>"
 msgstr ""
 
 msgid "Elevation: above lower bound"
@@ -3351,6 +4129,12 @@ msgstr ""
 msgid "basemap.at (AT)"
 msgstr ""
 
+msgid "lower end of the band"
+msgstr ""
+
+msgid "upper end of the band"
+msgstr ""
+
 msgid "Stable snowpack"
 msgstr ""
 
@@ -3370,6 +4154,15 @@ msgid "No rating available"
 msgstr ""
 
 msgid "No distinct problem"
+msgstr ""
+
+msgid "all day"
+msgstr ""
+
+msgid "earlier"
+msgstr ""
+
+msgid "later"
 msgstr ""
 
 msgid "Few"
@@ -3417,18 +4210,40 @@ msgstr ""
 msgid "Avalanche danger outlook"
 msgstr ""
 
-msgid "Route name"
+msgid "Routes — Snowdesk"
+msgstr ""
+
+msgid "The GPX routes you have saved to Snowdesk."
+msgstr ""
+
+msgid "Your routes are private and not shared."
 msgstr ""
 
 #, python-format
 msgid "%(km)s km"
 msgstr ""
 
-msgid "You have no saved routes yet."
+#, python-format
+msgid "%(km)s km · %(ascent)s m ascent · %(descent)s m descent"
 msgstr ""
 
 #, python-format
 msgid "%(km)s km · %(ascent)s m ascent"
+msgstr ""
+
+#, python-format
+msgid "%(km)s km · %(descent)s m descent"
+msgstr ""
+
+msgid "Route name"
+msgstr ""
+
+#, python-format
+msgid ""
+"You have no saved routes yet. Upload a .gpx file exported from your watch "
+"app, or plan one at <a href=\"%(planner_url)s\" target=\"_blank\" "
+"rel=\"noopener\" class=\"text-status-info-text underline\" >Suunto "
+"Routeplanner ↗</a> (free, no account needed)."
 msgstr ""
 
 msgid "Fetch today's weather"
@@ -3451,6 +4266,15 @@ msgstr ""
 msgid "Reload"
 msgstr ""
 
+msgid "Updating…"
+msgstr ""
+
+msgid "Updating Snowdesk"
+msgstr ""
+
+msgid "Applying the new version — the page will reload in a moment."
+msgstr ""
+
 #, python-format
 msgid "%%(metres)s m altitude"
 msgstr ""
@@ -3466,12 +4290,22 @@ msgstr ""
 msgid "Showing cached data — as of %%(time)s"
 msgstr ""
 
+msgid "Freezing level"
+msgstr ""
+
+#, python-format
+msgid "%(m)s m"
+msgstr ""
+
 #, python-format
 msgid "%(cm)s cm"
 msgstr ""
 
 #, python-format
 msgid "Hourly detail — %(weekday)s"
+msgstr ""
+
+msgid "(optional)"
 msgstr ""
 
 #, python-format
@@ -3494,6 +4328,9 @@ msgid ""
 msgstr ""
 
 msgid "Rename"
+msgstr ""
+
+msgid "Remove"
 msgstr ""
 
 msgid "No data supplied"
@@ -3551,6 +4388,18 @@ msgstr ""
 msgid "Reload now"
 msgstr ""
 
+msgid "Build version"
+msgstr ""
+
+msgid "System"
+msgstr ""
+
+msgid "Light"
+msgstr ""
+
+msgid "Dark"
+msgstr ""
+
 msgid "Some changes couldn't be saved and won't be retried."
 msgstr ""
 
@@ -3577,9 +4426,6 @@ msgid "Show %(label)s season heatmap"
 msgstr ""
 
 msgid "Account menu"
-msgstr ""
-
-msgid "My account"
 msgstr ""
 
 msgid "Admin menu"
