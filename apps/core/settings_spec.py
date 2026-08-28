@@ -336,6 +336,9 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     SettingSpec("FAVOURITES_MAX_PER_USER", validator=positive_int, note="Per-user cap"),
     SettingSpec("ROUTES_MAX_PER_USER", validator=positive_int, note="Per-user cap"),
     SettingSpec(
+        "DOWNLOAD_AREAS_MAX_PER_USER", validator=positive_int, note="Per-user cap"
+    ),
+    SettingSpec(
         "ROUTE_UPLOAD_MAX_BYTES",
         validator=positive_int,
         note="Largest accepted .gpx upload (bytes)",

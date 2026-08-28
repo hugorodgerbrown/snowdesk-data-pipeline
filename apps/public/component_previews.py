@@ -235,7 +235,12 @@ _PANELS: dict[str, dict[str, Any]] = {
         ),
     },
     "downloads": {
-        "title": _("Downloads on this device"),
+        # SNOW-749: matches the real sheet, whose title stopped being
+        # "Downloads on this device" when the AREAS started following the
+        # account. The context line below still says the device-local part,
+        # which is what the sheet says while `download_sync` is off — the
+        # default, and the state a reader of this illustration is in.
+        "title": _("Your downloads"),
         "icon_template": "includes/_icon_downloads.html",
         "context_line": _("Downloads and budget stay on this device."),
         "section_label": _("Regions"),

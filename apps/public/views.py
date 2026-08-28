@@ -1182,8 +1182,11 @@ def help_page(request: HttpRequest) -> HttpResponse:
     teaches the avalanche domain rather than the product. Named
     ``help_page`` rather than ``help`` to avoid shadowing the ``help``
     builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
-    the manage-page sync-log panel — the one surviving waffle flag; every
-    other topic section renders for everyone (SNOW-724).
+    the manage-page sync-log panel; ``downloads_sync_enabled`` (SNOW-749)
+    mirrors ``download_sync``, which gates the account half of offline
+    downloads — a feature's help has to arrive with the feature and not
+    before it, or the page describes something the reader cannot find.
+    Every other topic section renders for everyone (SNOW-724).
 
     Args:
         request: The incoming HTTP request.
@@ -1199,6 +1202,10 @@ def help_page(request: HttpRequest) -> HttpResponse:
     """
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
+        # SNOW-749: the same flag the map surface reads — see
+        # _downloads_context. Two paragraphs of the downloads topic
+        # describe behaviour that only exists while it is on.
+        "downloads_sync_enabled": waffle.flag_is_active(request, "download_sync"),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)

@@ -128,8 +128,8 @@ class DownloadArea(BaseModel):
         an unknown kind fails loudly at the point of use.
         """
 
-        REGION = "region", "Region"
-        CUSTOM = "custom", "Custom area"
+        REGION = "REGION", "Region"
+        CUSTOM = "CUSTOM", "Custom area"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

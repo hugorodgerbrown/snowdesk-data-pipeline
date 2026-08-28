@@ -52,9 +52,12 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
+| `download_sync` | `superusers=True` | Both halves of the offline-downloads account work: the sign-in requirement on the two download start controls, and syncing each area's definition to `apps.downloads.DownloadArea`. Read in `apps.public.views._downloads_context` (reaching the client on `#map-custom-download-control`) and in `help_page` (two paragraphs of the downloads topic). Off is exactly the pre-SNOW-749 behaviour: anyone can download, and nothing leaves the device. | SNOW-749. |
 
-**One flag, and it is the right shape for one.** `sync_log` is not a
-rollout gate waiting to be opened: it is a per-user diagnostic toggle. The
+**A rollout gate and a diagnostic toggle.** `download_sync` is the first
+kind: it will open to everyone and then come out, following the removal
+procedure below. `sync_log` is the second, and is not a rollout gate
+waiting to be opened — it is a per-user diagnostic toggle. The
 panel prints a device's recent real server round-trips, which is a
 debugging read-out rather than a product surface, and the `Users` M2M is
 the point — inviting one reporter to turn it on while chasing a sync
@@ -62,6 +65,13 @@ complaint, then turning it off again, is a thing an admin does repeatedly
 and a permission check cannot express. Every other gate this project has
 had was either a rollout gate that eventually opened to everyone, or a
 permanent audience restriction better written as an ordinary Django check.
+
+**`download_sync` gates BOTH halves on purpose.** The sign-in requirement
+and the account sync are one product decision, and gating them separately
+would produce a state nobody designed: a visitor asked to sign in for a
+feature that then syncs nothing, or areas syncing to accounts that were
+never required to have one. Flag off has to be the behaviour that shipped
+before SNOW-749, exactly, and one flag is what makes that checkable.
 
 The saved-map-pin favourites feature (SNOW-413), the field-report button
 and submission endpoints (SNOW-324), the "Community reports" read overlay

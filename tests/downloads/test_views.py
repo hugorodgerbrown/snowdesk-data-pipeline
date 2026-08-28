@@ -440,7 +440,7 @@ class TestAreasJson:
         area = client.get(AREAS_URL).json()["areas"][0]
 
         assert area["area_id"] == "custom-abc"
-        assert area["kind"] == "custom"
+        assert area["kind"] == DownloadArea.KIND.CUSTOM
         assert area["bbox"] == [7.0, 45.9, 7.3, 46.1]
         assert area["name"] == "Verbier bowl"
         assert area["basemap_key"] == "outdoor"

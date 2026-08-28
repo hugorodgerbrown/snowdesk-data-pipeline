@@ -35,7 +35,7 @@ class Migration(migrations.Migration):
                 (
                     "kind",
                     models.CharField(
-                        choices=[("region", "Region"), ("custom", "Custom area")],
+                        choices=[("REGION", "Region"), ("CUSTOM", "Custom area")],
                         help_text="Whether this is a whole region or a user-framed area.",
                         max_length=16,
                     ),

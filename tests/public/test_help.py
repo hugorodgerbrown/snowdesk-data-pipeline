@@ -17,8 +17,11 @@ Covers:
     switch ids, and the page still issues no queries.
   * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
     absent by default, present under ``@override_flag``. It is the only
-    gated panel left; SNOW-724 opened the Map-weather (SNOW-573) and
-    Slope-angle (SNOW-691) topics to everyone.
+    gated PANEL left; SNOW-724 opened the Map-weather (SNOW-573) and
+    Slope-angle (SNOW-691) topics to everyone. SNOW-749 adds a gated pair
+    of PARAGRAPHS inside the always-on downloads topic, on
+    ``download_sync`` — same rule one level down: help arrives with the
+    feature, never before it.
   * The bulletin-guide cross-link is present in the page content.
   * The footer and top nav (both rendered on the homepage) independently
     link to /help/.
@@ -157,6 +160,40 @@ class TestHelpPageFlagGating:
     def test_sync_log_panel_present_when_flag_active(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-sync-log"' in response.content
+
+    def test_downloads_account_paragraphs_absent_by_default(
+        self, client: Client
+    ) -> None:
+        """SNOW-749: the help must not describe a feature nobody can find.
+
+        The downloads TOPIC is always on; two of its paragraphs are not.
+        With ``download_sync`` off there is no sign-in gate and nothing
+        follows the account, so describing either would send a reader
+        looking for a control that is not there.
+        """
+        response = client.get(reverse("public:help"))
+
+        assert b'data-testid="help-downloads-signin"' not in response.content
+        assert b'data-testid="help-downloads-cross-device"' not in response.content
+        # And the device-local paragraph still states the whole truth.
+        assert b"They do not follow your account to your phone" in response.content
+
+    @override_flag("download_sync", active=True)
+    def test_downloads_account_paragraphs_present_when_flag_active(
+        self, client: Client
+    ) -> None:
+        """Flag on: the gate and the cross-device split are both explained.
+
+        The second is the one that matters. A user who sees an area listed
+        on a new phone and assumes the map is there too is the failure
+        this paragraph exists to prevent.
+        """
+        response = client.get(reverse("public:help"))
+
+        assert b'data-testid="help-downloads-signin"' in response.content
+        assert b'data-testid="help-downloads-cross-device"' in response.content
+        # The superseded claim must be gone, not merely joined.
+        assert b"They do not follow your account to your phone" not in response.content
 
     def test_weather_layer_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))

@@ -1606,7 +1606,9 @@ source.
 **Layout — "1c: grouped by kind · budget in the header · CTA in its
 group" (SNOW-645, Hugo's design).** Top to bottom:
 
-1. **Header.** The title reads noticeably larger/bolder than every other
+1. **Header.** The title — "Your downloads" since SNOW-749, which retired
+   "Downloads on this device" because the areas stopped being device-local
+   even though the map data did not — reads noticeably larger/bolder than every other
    sheet's — `includes/_sheet_header.html`'s own `title_class` override
    (`"text-lg font-bold"`), added for this. The × itself is the SAME
    control every sheet has (see "Sheet header ×", below) — the size and
@@ -1614,8 +1616,11 @@ group" (SNOW-645, Hugo's design).** Top to bottom:
 2. **Budget, folded into the header.** One row: the segmented bar (fills
    the remaining width — see "Budget bar segments" below), `"<used> of"`,
    then the budget `<select>` itself, styled as a rounded pill (e.g.
-   "500 MB"). A caption underneath: "Downloads and budget stay on this
-   device." This REVERSES SNOW-641's own conclusion (that the total and
+   "500 MB"). A caption underneath — "Downloads and budget stay on this
+   device.", or, once `download_sync` is on, "Your areas follow your
+   account. The map data and the budget stay on this device." (SNOW-749
+   made the line branch, because which half is true depends on the flag).
+   This REVERSES SNOW-641's own conclusion (that the total and
    the budget control belonged at the FOOT, beside the "you already
    have" list) — worth recording so a future reader does not assume
    SNOW-641's reasoning still holds; Hugo's design reads the budget as
@@ -1694,6 +1699,122 @@ five more per-key pale declarations. `--color-sync-off` and every
 both the light and dark `--color-card` — checked by computing the blended
 colour against each, not by eye (this session had no way to render a
 screenshot).
+
+### Account sync for download areas (SNOW-749)
+
+Behind the `download_sync` waffle flag. Off is exactly the pre-SNOW-749
+behaviour, in both halves.
+
+**The gate.** STARTING a download needs an account. Two controls check it —
+the per-region roundel (`map_region_download.js`'s new `signin` state) and
+the sheet's `[data-panel-add]` — and both stay VISIBLE and TAPPABLE while
+signed out, sending the visitor to sign-in. Nothing else is gated. Reading
+an area already on this device needs no account and no connection, so
+`done` still paints green for a signed-out visitor and the sheet keeps
+listing, sizing, renaming and deleting everything on the device. Sign-out
+and session expiry leave the pinned buckets and the local records
+untouched — this is the one feature whose entire purpose is working with
+no signal, and checking a session is exactly what needs one.
+
+`/api/region-basemap-tiles/` stays public and cacheable. Adding
+`Vary: Cookie` there would defeat CDN caching, and the tiles come from an
+external origin Django cannot gate anyway. The gate is a product gate.
+
+**What syncs.** The DEFINITION of an area — which region, or which framed
+box, under which basemap, called what — as a row in `apps/downloads/`
+(`DownloadArea`, one per `(user, area_id)`). The BYTES do not: Cache
+Storage is per-browser, so the tiles and the budget stay device-local.
+
+Three fields are deliberately not synced. `band` is the constant
+`MICRO_BAND` and is identical on every download; `template` is derived from
+settings plus the basemap key, so syncing it would pin an external tile
+endpoint into a DB row; `bytes` is a per-device measurement, not a property
+of the area.
+
+**The join key is the client-minted area id.** `region-<region_id>` is
+deterministic and identical on every device (`areaIdForRegion`), and
+`custom-<uuid>` is already a uuid. The server stores it verbatim, so
+`reconcileAreas` stays a single keyed join with no server-id ↔ local-id
+mapping to maintain. Rows are addressed by that id in the URL rather than
+by a server uuid, because the writes replay through the mutation queue long
+after the response carrying a uuid was discarded.
+
+**The client.** `static/js/downloads_sync.js`, a frozen
+`window.pwaDownloadsSync`:
+
+| Member | What it does |
+|--------|--------------|
+| `push(record)` | Enqueues one area to `downloads:sync`. Called from `_recordRegionDownload` and `_appendCustomArea` — the two places a completed download is already recorded locally, so the account row and the device record are written from the same moment. |
+| `rename(areaId, name)` | Carries a local rename to the account row, after the local write has landed. |
+| `forget(areaId)` | Drops the account row. Does NOT evict tiles. |
+| `accountAreas()` | Reads `downloads:areas`. Resolves `[]` for anonymous (403), offline, refused, timed out and unparseable alike. |
+| `adopt()` | Pushes every local area the account has not been told about — the migration path for a device that was downloading before the feature existed, and the repair path for a push that never landed. |
+
+Writes go through `window.pwaMutationQueue` (so a download completed in a
+tunnel is recorded when the device surfaces) and carry `HX-Request: true`,
+because the endpoints are `@require_htmx` and the queue replays with a
+plain fetch. The one read is a plain `fetch()` — a queued read has nothing
+to deliver its answer to — bounded by an `AbortController`, on the same
+reasoning as the SW's own read paths
+([`docs/decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)).
+It has no latch of its own: an empty list is a correct, complete answer
+here, unlike a missing bulletin.
+
+**The merge.** `basemapDownloadedAreas()` stays the single normalising
+layer, and the account list unions in there, exactly where SNOW-612's
+orphans already do. `reconcileAreas(recorded, storedAreaIds, bytesById,
+accountAreas)` is now a three-way keyed join and every entry carries
+`onDevice` and `synced`. An account-only area becomes an entry with
+`onDevice: false`, `bytes: 0`, `orphaned: false` (an orphan is a failed
+download's leftovers HERE — a different fact with a different remedy),
+carrying the account row's name, basemap, region id and bbox.
+
+With `accountAreas` empty or absent the output is what it always was —
+which is the anonymous path, the flag-off path and the offline path, and
+the one that must not move.
+
+**Two consumers filter on `onDevice` explicitly, and must.**
+
+- `planBasemapDownloadBudget` — the budget is what THIS device is holding,
+  so an account-only area is not an eviction candidate; it frees no bytes
+  and would name an area the user cannot see in a confirm banner.
+- `map_layer_sync_status.js`'s `_downloadedBasemapKeys` — the layers menu
+  is a live cache-state dashboard. **A synced-but-not-here area must never
+  paint a green sync dot.** "In your account" is not "available offline",
+  and this is the single worst thing the feature could do to that surface.
+
+**Row states in the sheet.** `manageRows` carries both flags through.
+
+| `onDevice` | `synced` | How it reads |
+|---|---|---|
+| yes | yes | Normal row. Both destructive verbs offered. |
+| yes | no | Normal row, unchanged from before this ticket. Trash only — with no account row to keep, "free up space" would be a second, identical trash. |
+| no | yes | Dimmed, no size, subtitle "On your account — not downloaded here", a pale `bg-sync-off` rule (never `.basemap-identity-fill`, whose keyless fallback is the "downloaded" green). "Download here" and the trash; no rename — the rename writes to a local record this device does not have. |
+| no | no | Not produced by `reconcileAreas`; tolerated by `manageRows`, which paints it as the row above without the account claim. |
+
+**"Download here"** hands off to whichever start control owns the kind of
+area it is, rather than reimplementing a run: a region to
+`window.pwaRegionDownload.start(regionId)`, a custom area to
+`window.pwaCustomAreaDownload.openFramingAt(bbox)`, which fits the map to
+the stored box and opens framing there. The custom case is deliberately not
+a silent re-fetch of the original tile set — the frame's size derives from
+the current zoom, so a different device at a different viewport would fetch
+a different set anyway, and the user gets to see and confirm what they are
+spending their budget on.
+
+**Delete splits into two verbs.** The trash calls `forget()` AND the local
+eviction: gone everywhere. "Free up space" calls only the local eviction:
+gone from here, still on the account, one tap to bring back. SNOW-586's
+automatic budget eviction (`evictBasemapAreas`) already took the second
+path and is unchanged, which is what makes an evicted area survive as a
+re-download rather than disappearing with no record it existed.
+
+The forget is a queued mutation, so the account row survives the re-render
+that follows the tap. `map_downloads_manager.js` keeps a session-scoped
+`FORGOTTEN` set and filters those ids out of the rendered list — the
+optimistic half of the same shape the favourites panel's pending pin uses.
+An area forgotten and then re-downloaded here is listed again: the local
+record is newer than the pending forget.
 
 **The overlay switch.** `includes/_switch.html` — a real
 `input[type="checkbox" role="switch"]` drawn as a track+thumb with
