@@ -86,6 +86,17 @@ is smaller now — `sync_log` is the only row left, and no monitored URL
 reads it — but the failure mode is unchanged: a database whose flag rows
 disagree with the manifest measures a page no environment serves.
 
+**SNOW-749 moved `home` from 5 to 8, and the arithmetic is the rule above
+read forwards.** `apps.public.views._downloads_context` asks waffle about
+`download_sync` on every homepage render, and a superuser-targeted flag
+that EXISTS costs three queries against an absent one's one — the same
+figure this section already prices in the other direction. Nothing else
+about the page changed: every URL in `_downloads_context` is a
+`reverse()`, and `tests/public/test_downloads_surface.py` pins that with
+a `django_assert_num_queries(0)` on the second call, once waffle's own
+cache is warm. The three go away with the flag when the rollout finishes,
+which is the ordinary end of a rollout gate rather than a debt.
+
 A reduction looks like someone's prefetch landing, which is why the rule
 is worth stating plainly: **do not `--commit` a baseline to resolve a
 reduction you cannot attribute to a specific merged change.** Committing
