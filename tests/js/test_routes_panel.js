@@ -579,3 +579,58 @@ describe('framing a route from its row', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Forced-offline gating (SNOW-748) — the header's network toggle can put the
+// app in an offline mode while the interface stays up. An upload is
+// online-only, and "online" has to mean the mode the user chose, not the
+// state of the radio: `navigator.onLine` is true throughout the first two
+// cases below. The `auto` case is the regression guard — a swap that refused
+// every upload would satisfy the forced ones on its own.
+// ---------------------------------------------------------------------------
+
+describe('forced-offline gating (SNOW-748)', () => {
+  afterEach(() => {
+    delete window.pwaConnectivity;
+  });
+
+  it('refuses the picker under a forced mode, with the interface up', () => {
+    window.pwaConnectivity = { isOnline: () => false };
+    expect(navigator.onLine).toBe(true);
+    const picker = vi.spyOn(uploadInput, 'click');
+    btn.click();
+
+    addCta().click();
+
+    expect(picker).not.toHaveBeenCalled();
+    expect(toastText()).toContain('online');
+  });
+
+  it('refuses the upload itself under a forced mode', () => {
+    // The second gate, in `upload()` — the picker may already have been open
+    // when the toggle was pressed, so the choice has to be refused too rather
+    // than posted over a connection the user asked the app not to spend.
+    btn.click();
+    window.pwaConnectivity = { isOnline: () => false };
+
+    choose(gpxFile());
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(toastText()).toContain('online');
+  });
+
+  it('still opens the picker and posts under the auto mode', async () => {
+    window.pwaConnectivity = { isOnline: () => true };
+    const picker = vi.spyOn(uploadInput, 'click');
+    btn.click();
+
+    addCta().click();
+    expect(picker).toHaveBeenCalledTimes(1);
+
+    choose(gpxFile());
+    await Promise.resolve();
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch.mock.calls[0][0]).toBe(CREATE_URL);
+  });
+});
