@@ -707,3 +707,17 @@ class TestNavOfflineModeSwitch:
         row = html.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
         assert 'for="nav-offline-mode"' in row
         assert "Offline mode" in row
+
+    def test_switch_row_is_words_and_switch_with_no_glyph(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """The row carries a label and a switch, and nothing else.
+
+        It shipped with a struck-through wifi mark beside the label for one
+        pass, which restated in a glyph what the words already say and put a
+        second copy of the header symbol's offline mark two inches below it
+        — in a menu whose every other row is text.
+        """
+        html = _render_nav_for(rf, regular_user)
+        row = html.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
+        assert "<svg" not in row
