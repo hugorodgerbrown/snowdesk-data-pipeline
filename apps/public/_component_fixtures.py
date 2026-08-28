@@ -1594,12 +1594,31 @@ UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "Renameable row — the label itself is the edit target",
+        # The caption said "the label itself is the edit target" until the
+        # label grew a job of its own (below). It never was: SNOW-658 took
+        # rename off the label and left it on the pencil, which is the
+        # control this variant actually renders.
+        "caption": "Renameable row — the pencil opens an editor over the label",
         "context": {
             "label": "Cabane des Dix",
             "meta": "Val des Dix",
             "renameable": True,
             "rename_label": "Favourite name",
+            "actions_template": "includes/_map_downloads_row_actions.html",
+        },
+    },
+    {
+        # The map panels' rows only. Pressing the name frames that place —
+        # a route's bbox, a pin's coordinates — which is why the name is a
+        # real button here and inert text in every variant above: the
+        # difference is visible at rest as the hover fill and the focus
+        # ring a `<span>` cannot take.
+        "caption": "Row whose name frames its place on the map",
+        "context": {
+            "label": "Lac de Vaux hike",
+            "meta": "8.4 km · 645 m ascent · 525 m descent",
+            "focus_target": "7.231800,46.089100,7.290300,46.120400",
+            "focus_label": "Zoom to Lac de Vaux hike",
             "actions_template": "includes/_map_downloads_row_actions.html",
         },
     },

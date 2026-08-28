@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n map_focus %}
 {% comment %}
 favourites/partials/_favourite.html — one saved-pin row. The ONE saved-pin
 row: every surface that lists a favourite renders this file (SNOW-711).
@@ -55,10 +55,31 @@ that quietly stopped expanding. The map sheet is the exception (SNOW-658,
 Hugo's design: a pin's detail is reached by tapping the pin, which is
 where that user already is).
 
+THE NAME FRAMES THE PIN, on the map variant. Hugo: "For routes, resorts,
+and observations, clicking on the name of an item should zoom in to it." A
+favourite is either — a dropped pin or a saved resort, one model either way
+(``Favourite.resort``) — so both answer to the same press: fly to the pin's
+coordinates, close the panel, and leave the pin sitting in the middle of the
+map at a scale where it is named and its region is drawn.
+
+The coordinates are the same pair ``favourites_geojson`` sends the layer, so
+the camera lands on the pin the map is actually drawing rather than near it.
+
+Deliberately NOT the ``?favourite=<uuid>`` deep link's fuller behaviour,
+which also opens the pin's popup. The three panels share this row and the
+community-reports layer carries no identifier a row could name (its feed is
+anonymised), so a popup is available to one of the three and not the other
+two. One gesture that means the same thing on all three beats a richer one
+on the panel that happens to allow it.
+
 Context:
     favourite       : Favourite — the saved pin to render.
     hide_disclosure : bool, optional — drop the trailing chevron. Passed
                       by _favourite_list_map.html; see above.
+    map_focus       : bool, optional — render the name as a control that
+                      frames this pin on the map. Passed by
+                      _favourite_list_map.html; the account page passes
+                      nothing, having no map to fly.
 {% endcomment %}
 {% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
     {% firstof "favourite-"|add:uuid as row_dom_id %}
@@ -77,8 +98,12 @@ Context:
         {% firstof "includes/_row_disclosure.html" as row_disclosure %}
         {% firstof "favourite-panel-"|add:uuid as row_panel_id %}
     {% endif %}
+    {% if map_focus %}
+        {% focus_target favourite.longitude favourite.latitude as row_focus_target %}
+        {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
+    {% endif %}
     {% blocktrans trimmed with name=row_label asvar disclosure_label %}Show details for {{ name }}{% endblocktrans %}
     {% url 'favourites:detail' favourite.uuid as detail_url %}
     {% url 'favourites:card' favourite.uuid as card_url %}
-    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
+    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
 {% endwith %}

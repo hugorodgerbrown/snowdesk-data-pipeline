@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import '../../static/js/row_focus.js';
 import '../../static/js/map_sheet.js';
 
 const LIST_URL = '/partials/report/list/';
@@ -209,5 +210,52 @@ describe('a list load that fails', () => {
     );
 
     expect(sheet.hidden).toBe(true);
+  });
+});
+
+describe('framing a report from its row', () => {
+  // This panel's rows are the only ones with nothing else to press — an
+  // observation cannot be renamed and has no page of its own — so the
+  // label going from inert text to a control is the biggest of the three
+  // changes, and it is the same control. window.pwaRowFocus owns the
+  // behaviour (test_row_focus.js); what is asserted here is the wire.
+
+  /** Put one row carrying `target` into the open panel. */
+  function renderRow(target) {
+    btn.click();
+    rows().innerHTML = `
+      <ul><li>
+        <button data-row-label data-row-focus="${target}">Whumpfing</button>
+      </li></ul>`;
+    return sheet.querySelector('[data-row-focus]');
+  }
+
+  beforeEach(() => {
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+  });
+
+  afterEach(() => {
+    delete window.pwaMapFocus;
+  });
+
+  it('flies to the report and closes the panel', () => {
+    renderRow('7.5,46.1').click();
+
+    expect(window.pwaMapFocus.point).toHaveBeenCalledWith(7.5, 46.1);
+    expect(sheet.hidden).toBe(true);
+  });
+
+  it('switches the community-reports overlay on first', () => {
+    renderRow('7.5,46.1').click();
+
+    expect(overlay.show).toHaveBeenCalledOnce();
+  });
+
+  it('does not start the report flow', () => {
+    // The label and the add CTA share one delegated handler, so the label
+    // has to stop the click before the CTA test.
+    renderRow('7.5,46.1').click();
+
+    expect(window.PlacePicker.activate).not.toHaveBeenCalled();
   });
 });

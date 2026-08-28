@@ -1505,6 +1505,67 @@ class TestFavouriteList:
         assert f'hx-get="{_card_url(favourite.uuid)}"' not in content
         assert "View favourites on the map" not in content
 
+    def test_map_variant_frames_the_pin(self, client: Client) -> None:
+        """The row's name carries the pin's coordinates and is a button.
+
+        Hugo: "For routes, resorts, and observations, clicking on the name
+        of an item should zoom in to it." A favourite is both of the first
+        two — a dropped pin and a saved resort are one model — so one
+        control serves both.
+
+        The ordinates are formatted through ``%f`` in Python rather than
+        interpolated as floats: a template renders a float through the
+        active locale, and a decimal comma in a comma-separated attribute
+        cannot even be split apart again.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine", latitude=46.1, longitude=7.5)
+
+        content = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+
+        assert 'data-row-focus="7.500000,46.100000"' in content
+        assert 'aria-label="Zoom to Mine"' in content
+
+    def test_map_variant_frames_a_pin_by_the_coordinates_the_layer_draws(
+        self, client: Client
+    ) -> None:
+        """The row and favourites_geojson agree on where the pin is.
+
+        Two sources for one coordinate is how a camera comes to rest beside
+        a pin rather than on it, so this pins them to the same pair.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, latitude=45.9, longitude=6.87)
+
+        content = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+        feature = client.get(GEOJSON_URL).json()["features"][0]
+
+        assert (
+            f'data-row-focus="{favourite.longitude:f},{favourite.latitude:f}"'
+            in content
+        )
+        assert feature["geometry"]["coordinates"] == [
+            favourite.longitude,
+            favourite.latitude,
+        ]
+
+    def test_default_variant_has_no_focus_control(self, client: Client) -> None:
+        """/account/favourites/ renders the same row with an inert name.
+
+        There is no map on that page to fly, and a button that did nothing
+        would read as broken rather than as absent.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        FavouriteFactory.create(user=user, name="Mine")
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "data-row-focus" not in content
+        assert "Zoom to" not in content
+
     def test_map_variant_keeps_the_roster_sidecar(self, client: Client) -> None:
         """The sheet still caches the roster for offline reads."""
         user = UserFactory.create()
@@ -1516,14 +1577,18 @@ class TestFavouriteList:
         assert 'id="favourites-roster-cache"' in response.content.decode()
 
     def test_map_variant_does_not_link_the_row_anywhere(self, client: Client) -> None:
-        """The map row has no navigation at all (SNOW-658, Hugo's design).
+        """The map row has no NAVIGATION (SNOW-658, Hugo's design).
 
         It had three, in turn, in three days: a "Details →" control beside
         the title, the title itself as a link, and the title as a
-        click-to-rename target. The row's primary line is inert now — a
-        favourite's detail page is reached by tapping its pin on the map,
-        which is where the user already is, and renaming is the pencil's
-        job.
+        click-to-rename target. None came back. A favourite's detail page is
+        reached by tapping its pin on the map, which is where the user
+        already is, and renaming is the pencil's job.
+
+        The primary line is a control again — it frames the pin on the map —
+        but that is not navigation: it leaves the user on the page they are
+        on, which is the whole reason this row has no detail link.
+        ``test_map_variant_frames_the_pin`` below covers it.
         """
         user = UserFactory.create()
         client.force_login(user)

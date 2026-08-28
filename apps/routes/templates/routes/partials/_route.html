@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n map_focus %}
 {% comment %}
 routes/partials/_route.html — one imported-route row. The ONE route row:
 every surface that lists a route renders this file (SNOW-711).
@@ -22,8 +22,18 @@ detail page, so neither surface has a disclosure.
   * Remove is the trash, last in the row, in the same place on every list
     a user meets.
 
-The primary line is inert, as it is on every panel: renaming is the
-pencil's job, and a route has no detail page to link to.
+THE PRIMARY LINE FRAMES THE ROUTE, on the map variant. Hugo: "For routes,
+resorts, and observations, clicking on the name of an item should zoom in to
+it." Pressing the name fits the viewport to ``Route.bounds`` — the stored
+bbox over the SIMPLIFIED points, so it frames exactly the line the map
+draws — and closes the panel so the track is visible when the camera
+arrives. The shared row renders that as a real ``<button>``; renaming is
+still the pencil's, and a route still has no detail page to link to.
+
+``map_focus`` is what turns it on, and only ``_route_list_map.html`` passes
+it. On ``/account/routes/`` the same row renders the same route with an
+inert name, because there is no map on that page to fly — a button that did
+nothing would be worse than no button.
 
 The row's id is ``route-<uuid>``, which is what its own Remove form
 addresses.
@@ -62,7 +72,10 @@ column mean "size" on one panel and "distance" on another. Same reasoning
 as the favourite row's own note.
 
 Context:
-    route : Route — the saved route to render.
+    route     : Route — the saved route to render.
+    map_focus : bool, optional — render the name as a control that frames
+                this route on the map. Passed by _route_list_map.html; see
+                above.
 {% endcomment %}
 {% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=route.ascent_m|floatformat:0 descent=route.descent_m|floatformat:0 %}
     {% trans "Untitled route" as untitled_route %}
@@ -82,5 +95,13 @@ Context:
         {% endblocktrans %}
     {% endif %}
     {% trans "Route name" as rename_label %}
-    {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label actions_template="routes/partials/_route_row_actions.html" %}
+    {# The bbox, only on the map variant. Four indexes off the JSON field    #}
+    {# rather than the field itself: the tag formats each ordinate through   #}
+    {# %f, which is what keeps a decimal comma out of the attribute under a  #}
+    {# non-English locale (see apps/public/templatetags/map_focus.py).       #}
+    {% if map_focus %}
+        {% focus_target route.bounds.0 route.bounds.1 route.bounds.2 route.bounds.3 as row_focus_target %}
+        {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
+    {% endif %}
+    {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
 {% endwith %}

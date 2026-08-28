@@ -406,6 +406,15 @@ def observation_list(request: HttpRequest) -> HttpResponse:
     Ordering is the model's own ``-observed_at``, so the most recent report
     leads the list.
 
+    ``map_focus`` is what tells the shared row it is being read over a map,
+    so each row's label renders as a control that frames its report (see
+    ``observations/partials/_observation.html``).  It is set HERE rather
+    than in the template because this endpoint *is* the map variant — the
+    routes and favourites lists express the same thing by rendering a
+    separate ``?variant=map`` template, which this list has never needed;
+    ``/account/observations/`` includes the same partial from its own page
+    and passes nothing.
+
     Args:
         request: The incoming HTMX GET request.
 
@@ -425,7 +434,7 @@ def observation_list(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "observations/partials/_observation_list.html",
-        {"observations": observations},
+        {"observations": observations, "map_focus": True},
     )
 
 

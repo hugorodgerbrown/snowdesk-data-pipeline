@@ -536,6 +536,40 @@ screen on my laptop" are both the intended behaviour. Both layouts are
 bounded and scroll internally: a panel never grows past the viewport and
 never pushes its own content off-screen, whatever the list contains.
 
+### 3.7a Pressing a row's name frames its place
+
+On the three panels whose rows are **places** — routes, favourites
+(a dropped pin or a saved resort) and field observations — a row's name is
+a control: pressing it takes the map to that item. A route fits to its
+whole track; a pin and a report centre at a scale where the pin arrives
+named and inside its danger-rated region.
+
+Three things happen together, and each is part of the answer rather than a
+side effect:
+
+* **the overlay switches on** if the user had it off. Flying to a route
+  with its layer hidden lands on an empty map, which reads as a broken
+  button rather than as a hidden layer. This writes the same persisted
+  preference the panel's own "Display on the map" switch writes;
+* **the panel closes.** Below `sm` it covers the map entirely (see above),
+  so a camera move behind it would be invisible on the device most likely
+  to be holding it open. It closes at every width, because one behaviour
+  is easier to describe than two, and the roundel that opened it is one
+  tap away;
+* **the camera moves**, and never *out* for a point — a viewer already
+  closer than the framing zoom chose that scale. A route is an extent, not
+  a place, so fitting one may legitimately zoom out.
+
+The **downloads** panel has no such control: its rows are basemap areas,
+not places, and its own "zoom to this area" question is already answered
+by the map behind it.
+
+This does not open the item's popup, which a tap on the pin or the line
+does. The three panels share one row, and only one of the three could
+offer a popup — the community-reports feed is anonymised and carries no
+identifier a row could name — so the gesture means the same thing on all
+three rather than more on one.
+
 ## 3.8 Overlay roundel state — is it on the map right now?
 
 Each of the four roundels — downloads, favourites, field observations and,

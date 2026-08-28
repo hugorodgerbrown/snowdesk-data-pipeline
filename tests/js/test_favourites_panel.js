@@ -36,6 +36,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+import '../../static/js/row_focus.js';
 import '../../static/js/map_sheet.js';
 
 // As apps.public.views._favourites_context builds it — the map sheet asks for
@@ -293,5 +294,63 @@ describe('removing a row from the panel', () => {
 
     expect(changed).not.toHaveBeenCalled();
     document.removeEventListener('snowdesk:favourites-changed', changed);
+  });
+});
+
+describe('framing a favourite from its row', () => {
+  // The panel's share of window.pwaRowFocus (covered on its own in
+  // test_row_focus.js) is which overlay is ours and how this sheet closes.
+  // A missing wire is invisible from either side, so it is asserted here.
+  //
+  // A favourite is a dropped pin or a saved resort — one model, so one
+  // control: Hugo's "routes, resorts, and observations" names two of the
+  // three things this single row can be.
+
+  /** Put one row carrying `target` into the open panel. */
+  function renderRow(target) {
+    btn.click();
+    rows().innerHTML = `
+      <ul><li data-row-renameable>
+        <button data-row-label data-row-focus="${target}">Mont Fort</button>
+      </li></ul>`;
+    return sheet.querySelector('[data-row-focus]');
+  }
+
+  beforeEach(() => {
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+  });
+
+  afterEach(() => {
+    delete window.pwaMapFocus;
+  });
+
+  it('flies to the pin and closes the panel', () => {
+    renderRow('7.5,46.1').click();
+
+    expect(window.pwaMapFocus.point).toHaveBeenCalledWith(7.5, 46.1);
+    expect(sheet.hidden).toBe(true);
+  });
+
+  it('leaves an already-enabled overlay alone', () => {
+    // This overlay defaults ON, so the usual press has nothing to switch.
+    renderRow('7.5,46.1').click();
+
+    expect(overlay.show).not.toHaveBeenCalled();
+  });
+
+  it('switches the overlay on when the user had it off', () => {
+    overlay.isEnabled.mockReturnValue(false);
+
+    renderRow('7.5,46.1').click();
+
+    expect(overlay.show).toHaveBeenCalledOnce();
+  });
+
+  it('does not start the create flow', () => {
+    // The name and the add CTA are both clicks on the same delegated
+    // handler; the name has to stop it before the CTA test.
+    renderRow('7.5,46.1').click();
+
+    expect(window.PlacePicker.activate).not.toHaveBeenCalled();
   });
 });

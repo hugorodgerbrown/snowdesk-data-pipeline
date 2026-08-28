@@ -36,7 +36,10 @@ Context:
 <div data-testid="route-list">
     <ul class="flex flex-col">
         {% for route in routes %}
-            {% include "routes/partials/_route.html" with route=route %}
+            {# map_focus: this list is read over a map, so a row's name is a #}
+            {# control that frames its track. The account variant passes    #}
+            {# nothing — see _route.html's own note.                        #}
+            {% include "routes/partials/_route.html" with route=route map_focus=True %}
         {% endfor %}
     </ul>
     {% if not routes %}

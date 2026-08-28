@@ -9,7 +9,9 @@ one anatomy, five slots, always in this order:
           carries the basemap the download derives from); favourites and
           observations have no equivalent, so they omit the slot
           entirely rather than render it empty.
-  label   15px/500, truncates.
+  label   15px/500, truncates. Inert by default; on the map panels whose
+          rows are PLACES it is a button that frames the place — see
+          `focus_target` below.
   meta    13px muted, optional — region · date · location.
   value   mono, optional, right-aligned, ONLY for a measured quantity
           (downloads' size). The other two panels have none: a date is
@@ -57,6 +59,26 @@ Parameters (passed via {% include … with … %}):
                 JS-filled row.
   label_testid  (string, optional) — `data-testid` on the primary line,
                 for a server-rendered row a pytest asserts on.
+  focus_target  (string, optional) — where on the map this row's item is,
+                as plain comma-separated WGS-84 degrees: two numbers
+                ("lon,lat") for a point, four ("west,south,east,north") for
+                a bbox. Passing one turns the primary line from an inert
+                `<span>` into a real `<button>` that frames the item —
+                see the note above the markup.
+
+                A STRING, not a JSON attribute or a pair of numeric
+                parameters, for one reason: a template renders floats
+                through the active locale, so interpolating
+                `favourite.longitude` directly gives "7,53" in a German UI
+                — unparseable to `Number()`, and not even splittable back
+                apart on the comma. Callers build the value with
+                {% focus_target … %} (apps/public/templatetags/map_focus.py),
+                which formats each ordinate through `%f` in Python;
+                static/js/row_focus.js parses it back.
+  focus_label   (string, optional) — the focus button's accessible name
+                ("Zoom to Lac de Vaux hike"). Required alongside
+                `focus_target`: the visible text is truncated and says
+                only what the item is called, not what pressing it does.
   meta          (string, optional) — the muted secondary line, as text.
   meta_template (string, optional) — template path rendering the secondary
                 line instead of `meta`, for a line that needs markup rather
@@ -164,23 +186,56 @@ buildRow still finds its hooks by attribute, not by depth.
             {# The label is NOT a rename trigger, on any panel. It carried      #}
             {# `cursor-text hover:border-border-strong` for a day, and clicking #}
             {# it opened the editor. Hugo: "We have inline editing & the pencil #}
-            {# - choose one." The pencil is the one kept: this is a `<span>`,   #}
-            {# so its click was mouse-only — nothing to tab to, nothing for a   #}
-            {# screen reader to announce — while the pencil is a real 44×44     #}
-            {# button naming the row it renames. With the label inert, a        #}
-            {# renameable row also reads exactly like a non-renameable one at   #}
-            {# rest, which is the point of a shared row.                        #}
+            {# - choose one." The pencil is the one kept, and the argument that #}
+            {# settled it was not "labels are inert" but "a `<span>`'s click is #}
+            {# mouse-only" — nothing to tab to, nothing for a screen reader to  #}
+            {# announce, an affordance only some users have — while the pencil  #}
+            {# is a real 44×44 button naming the row it renames.                #}
+            {#                                                                  #}
+            {# WHICH IS WHY THE NAME CAN CARRY ZOOM. Hugo, on the routes panel: #}
+            {# "clicking on the name of an item should zoom in to it." A row     #}
+            {# that passes `focus_target` renders its name as a real `<button>`  #}
+            {# — tabbable, pressable with Enter or Space, announced with its own #}
+            {# "Zoom to <name>" — so it is the shape the pencil argument asked    #}
+            {# for rather than the shape it rejected. Rename stays the pencil's;  #}
+            {# one control, one job, and the two are still not the same control.  #}
+            {#                                                                    #}
+            {# The three panels whose rows are places (routes, favourites,        #}
+            {# observations) pass it on the MAP only. On /account/ there is no    #}
+            {# map to fly, so those rows keep the inert span rather than offering #}
+            {# a button that would do nothing — and so does a downloads row,      #}
+            {# whose "item" is a basemap area, not a place.                       #}
+            {#                                                                    #}
+            {# Both branches carry the SAME box — identical padding, radius and   #}
+            {# negative margins — because the editor beneath them has to line up  #}
+            {# with whichever one rendered (see the note above). `hover-affordance`#}
+            {# (src/css/main.css) adds only the pointer and the translucent       #}
+            {# infill on hover and focus-visible; it changes no metric, so a      #}
+            {# focusable label still sits exactly where an inert one did.         #}
             {#                                                                  #}
             {# The -6px bleed stays: it puts the label's TEXT on the row's own  #}
             {# left edge, in line with the meta line below it, in both states.  #}
             {# What made it visible as a defect was the scroll container it     #}
             {# bled out of — fixed where that container is declared, in         #}
             {# includes/_ugc_panel.html.                                        #}
-            <span
-                data-row-label
-                {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
-                class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
-            >{{ label }}</span>
+            {% if focus_target %}
+                <button
+                    type="button"
+                    data-row-label
+                    data-row-focus="{{ focus_target }}"
+                    aria-label="{{ focus_label }}"
+                    {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
+                    class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-left text-label font-medium text-text-1"
+                >
+                    {{ label }}
+                </button>
+            {% else %}
+                <span
+                    data-row-label
+                    {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
+                    class="-mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-label font-medium text-text-1"
+                >{{ label }}</span>
+            {% endif %}
             {% if renameable or js_filled %}
                 {# Hidden until inline_rename.js reveals it. Rendered here      #}
                 {# rather than created in JS so its own copy (the aria-label)   #}

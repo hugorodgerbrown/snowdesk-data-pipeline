@@ -4104,6 +4104,91 @@
     isEnabled: () => !!overlayState.routes,
   });
 
+  // ==== The camera, for a panel row that names a place ====
+  //
+  // Hugo: "For routes, resorts, and observations, clicking on the name of an
+  // item should zoom in to it." Each of those three panels lives in its own
+  // IIFE with no access to ``map`` — ``map.js`` declares it with ``const``
+  // inside this one, so it is not a window property and a panel could not
+  // reach it even by name (the class of miss ``tox -e js-globals-lint``
+  // exists to catch). This is the bridge they call instead, and it is
+  // deliberately the SMALLEST one that answers the question: move the
+  // camera to a coordinate. It knows nothing about routes, favourites or
+  // observations, so a fifth surface with a place in it needs no edit here.
+  //
+  // WHY IT TAKES A COORDINATE AND NOT A UUID. The obvious alternative is
+  // ``focus(uuid)`` per overlay, looking the feature up in the collection
+  // the layer was installed from, the way ``openFavouriteDeepLink`` does.
+  // Two things rule it out. The community-reports feed carries no uuid at
+  // all — it is anonymised server-side (apps/public/api.py), and adding an
+  // identifier to a public payload to serve the owner's own panel is the
+  // wrong trade. And a uuid lookup can only answer once the overlay's
+  // source has loaded, so every caller would need the deep link's
+  // wait-for-``sourcedata`` dance for a camera move that does not depend on
+  // it. The rows are server-rendered from the owner's own data and already
+  // know where their item is; passing that through is both simpler and the
+  // only thing that works for all three.
+  //
+  // The overlay is a separate concern and stays with the caller: each panel
+  // already holds its own ``pwa*Overlay`` bridge and turns it on before
+  // calling here, so nothing about which layers are drawn leaks into a
+  // camera API.
+
+  // Close enough to read one pin against its surroundings. Past the
+  // favourite-label minzoom (8) so a pin arrives named, past the L4
+  // boundary minzoom (8.5) so it sits visibly inside its danger-rated
+  // region, and past the resort-label minzoom (10) so the places around it
+  // name themselves too. Tighter than this fills the viewport with terrain
+  // and drops every one of those cues. Shared with the
+  // ``/map/?favourite=<uuid>`` deep link, which framed a pin first and set
+  // the number.
+  const POINT_FOCUS_ZOOM = 11;
+
+  window.pwaMapFocus = Object.freeze({
+    /**
+     * Centre the map on one point.
+     *
+     * Zooms IN only: a viewer already closer than ``POINT_FOCUS_ZOOM`` has
+     * chosen that scale, and pulling them back out to frame a pin they
+     * asked to be taken to would undo it. From further out — the usual
+     * case, since the panels are opened over a country-level map — this
+     * lands at the readable floor above.
+     *
+     * @param {number} lon Longitude in WGS-84 degrees.
+     * @param {number} lat Latitude in WGS-84 degrees.
+     * @returns {void}
+     */
+    point(lon, lat) {
+      if (!map || !Number.isFinite(lon) || !Number.isFinite(lat)) return;
+      map.flyTo({
+        center: [lon, lat],
+        zoom: Math.max(map.getZoom(), POINT_FOCUS_ZOOM),
+      });
+    },
+
+    /**
+     * Frame a bounding box.
+     *
+     * No zoom floor here, and no "in only" rule: a bbox names an extent
+     * rather than a place, and a long route can only be seen whole by
+     * zooming out. Padding, ``maxZoom`` and duration match
+     * ``activateRoute``'s own fit, so a route framed from its panel row and
+     * the same route framed by tapping its line come to rest identically.
+     *
+     * @param {number[]} bbox GeoJSON bbox — [west, south, east, north].
+     * @returns {void}
+     */
+    bounds(bbox) {
+      if (!map || !Array.isArray(bbox) || bbox.length !== 4) return;
+      if (!bbox.every((n) => Number.isFinite(n))) return;
+      map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
+        padding: { top: 60, right: 40, bottom: 40, left: 40 },
+        maxZoom: 10,
+        duration: 400,
+      });
+    },
+  });
+
   // SNOW-658: all four bridges now exist, so a listener can safely be told
   // to read them. Announced HERE rather than beside the seed loop near the
   // top of this IIFE, because a listener that hears it will immediately call
@@ -5145,13 +5230,13 @@
     // and it answers for a pin outside the current viewport, which for a
     // pin the visitor is asking to be flown to is the usual case.
 
-    // Close enough to read one pin against its surroundings. Past the
-    // favourite-label minzoom (8) so the pin arrives named, past the L4
-    // boundary minzoom (8.5) so it sits visibly inside its danger-rated
-    // region, and past the resort-label minzoom (10) so the places around
-    // it name themselves too. Tighter than this fills the viewport with
-    // terrain and drops every one of those cues.
-    const FAVOURITE_DEEP_LINK_ZOOM = 11;
+    // The reasoning for the number, and the number itself, moved out to
+    // ``POINT_FOCUS_ZOOM`` beside ``window.pwaMapFocus`` when the panel
+    // rows started framing a pin too. Two constants at 11 would have been
+    // one edit away from disagreeing, and there is no reason a favourite
+    // reached by link should sit at a different scale from the same
+    // favourite reached from its row.
+    const FAVOURITE_DEEP_LINK_ZOOM = POINT_FOCUS_ZOOM;
 
     /**
      * The cached favourite feature carrying ``uuid``, if the collection

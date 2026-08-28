@@ -16,7 +16,9 @@ Covers:
   route_list   — SNOW-686: the owner's own routes only; the empty state;
                  anonymous → 403; non-HTMX → 400; POST → 405; both row
                  variants render, and an unknown variant falls back to the
-                 default rather than reaching a template path.
+                 default rather than reaching a template path; the map
+                 variant's name is a button carrying the route's bbox, and
+                 the account variant's is not.
   routes_geojson — SNOW-687: anonymous → 403 JSON; served without an
                  HX-Request header (a fetch(), not a swap); private/no-store;
                  LineString geometry carrying ``points`` verbatim in
@@ -665,6 +667,65 @@ class TestRouteListVariants:
 
         assert response.status_code == 200
         assert 'data-testid="route-list-default"' in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestRouteListFocus:
+    """The row's name frames the route on the map — and only on the map.
+
+    Hugo: "For routes, resorts, and observations, clicking on the name of an
+    item should zoom in to it." The server's whole share of that is two
+    attributes on the name, and both are asserted here because the JS half
+    (static/js/row_focus.js) can only be as right as what it reads.
+    """
+
+    def test_the_map_row_carries_the_routes_bbox(self, client: Client) -> None:
+        """``data-row-focus`` is Route.bounds, west/south/east/north.
+
+        The ordinates are formatted through ``%f`` in Python rather than
+        interpolated as floats: a template renders a float through the
+        active locale, and a decimal comma in a comma-separated attribute
+        cannot even be split apart again.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, bounds=[7.4, 46.1, 7.42, 46.12])
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-row-focus="7.400000,46.100000,7.420000,46.120000"' in body
+
+    def test_the_map_rows_name_is_a_real_button(self, client: Client) -> None:
+        """A `<button>`, not a clickable `<span>`.
+
+        This is the whole reason the label was allowed to grow a second job
+        at all: the argument that took rename away from it (SNOW-658) was
+        that a span's click is mouse-only. A control announcing "Zoom to
+        <name>" is the shape that argument asked for.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, name="Haute Route")
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "<button" in body
+        assert 'aria-label="Zoom to Haute Route"' in body
+
+    def test_the_account_row_has_no_focus_control(self, client: Client) -> None:
+        """/account/routes/ renders the same row with an inert name.
+
+        There is no map on that page to fly, and a button that did nothing
+        would read as broken rather than as absent.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "data-row-focus" not in body
+        assert "Zoom to" not in body
 
 
 @pytest.mark.django_db

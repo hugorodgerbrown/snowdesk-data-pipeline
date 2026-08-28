@@ -1125,6 +1125,35 @@ class TestObservationList:
         # No orphaned separator where the region would have been.
         assert "· <time" not in content
 
+    def test_the_row_label_frames_the_report_on_the_map(self, client: Client) -> None:
+        """The label carries the report's coordinates and is a button.
+
+        Hugo: "For routes, resorts, and observations, clicking on the name
+        of an item should zoom in to it." This panel's rows are the only
+        ones with nothing else to press — an observation cannot be renamed
+        and has no page of its own — so this is the whole of the label's
+        job, and it is the same control the other two panels grew.
+
+        The coordinates come from the owner's own row because they exist
+        nowhere else at full precision: the community-reports feed rounds
+        every pin to 3 dp and strips the identity before the layer sees it.
+        This endpoint is ``for_user``-scoped, so the exact pair only ever
+        reaches the person who chose it.
+        """
+        user = _verified_user()
+        FieldObservationFactory.create(
+            user=user,
+            latitude=46.1,
+            longitude=7.5,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-row-focus="7.500000,46.100000"' in content
+        assert 'aria-label="Zoom to Whumpfing"' in content
+
     def test_remove_is_a_trash_control_on_the_row(self, client: Client) -> None:
         """Remove is a visible icon control, not a menu item (SNOW-658).
 
