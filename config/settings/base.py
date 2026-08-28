@@ -93,6 +93,51 @@ def comma_separated_frozenset(raw: str) -> frozenset[str]:
 
 
 APP_VERSION: str = RELEASE_VERSION
+
+# ---------------------------------------------------------------------------
+# Human-readable release number
+# ---------------------------------------------------------------------------
+# ``APP_VERSION`` above is a git SHA. It is the right identity for a machine —
+# it changes on every deploy and names one build exactly, which is what the
+# update check, the blocked-builds list and the ETags all need — and the
+# wrong one for a person: "which version are you on?" cannot be answered with
+# forty hex characters.
+#
+# ``APP_RELEASE`` is that second, human identity: the ordinal of the
+# production release, shown in the account menu as ``v24``. The two are
+# deliberately separate. Collapsing them would mean either a machine identity
+# too coarse to tell two builds of one release apart, or a human identity
+# nobody can read.
+#
+# It is read from the tracked ``VERSION`` file rather than from a tag or the
+# environment, and that is the whole point of the design. Render's build gets
+# ``RENDER_GIT_COMMIT`` and no tags; ``release.yml`` creates the CalVer tag
+# AFTER the deploy has already started; and a redeployed commit would count
+# tags differently from its first deploy. A file in the tree has none of
+# those problems — it is present, identical and unambiguous at build time on
+# every tier. ``bin/cut-release`` refuses to ship a release whose number has
+# not moved, which is what keeps it honest.
+#
+# The env var wins when set, so a test or a one-off container can pin a value
+# without editing the file.
+
+
+def _release_from_file() -> str:
+    """Read the release number from the tracked ``VERSION`` file.
+
+    Returns:
+        The stripped contents, or ``""`` when the file is missing or
+        unreadable — an unnumbered build simply shows no version rather
+        than failing to boot over a cosmetic string.
+
+    """
+    try:
+        return (BASE_DIR / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+APP_RELEASE: str = config("APP_RELEASE", default=_release_from_file())
 APP_BLOCKED_VERSIONS: frozenset[str] = config(
     "APP_BLOCKED_VERSIONS",
     default="",

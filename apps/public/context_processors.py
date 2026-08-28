@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
+from apps.public.release import release_label
 from apps.public.site_environment import PWAEnvironmentIdentity
 
 if TYPE_CHECKING:
@@ -52,6 +53,12 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
     page load to know the version the current shell was delivered on,
     then compares it against ``X-App-Version`` on every response.
 
+    ``APP_RELEASE_LABEL`` is the other half of the same subject and is
+    deliberately not the same string: the SHA above identifies a build to
+    a machine, this names the release to a person ("v24"), and the account
+    menu shows it. See ``apps.public.release`` for how the two combine per
+    environment.
+
     SNOW-609 removed the companion ``APP_MIN_VERSION`` value and its
     ``<meta name="pwa-app-min-version">`` tag: the forced-update verdict is
     a server decision (``update_required`` in the ``/api/version`` body),
@@ -61,12 +68,17 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
         request: The incoming HTTP request (unused — value comes from settings).
 
     Returns:
-        ``{"APP_VERSION": str}``. An empty string is passed through
-        unchanged — the client treats it as "no build declared" and makes
-        the whole version check a no-op.
+        ``{"APP_VERSION": str, "APP_RELEASE_LABEL": str}``. An empty
+        ``APP_VERSION`` is passed through unchanged — the client treats it
+        as "no build declared" and makes the whole version check a no-op.
+        An empty label means no release number is configured, and the menu
+        row is omitted rather than rendered blank.
 
     """
-    return {"APP_VERSION": str(getattr(settings, "APP_VERSION", ""))}
+    return {
+        "APP_VERSION": str(getattr(settings, "APP_VERSION", "")),
+        "APP_RELEASE_LABEL": release_label(),
+    }
 
 
 def pwa_telemetry(request: HttpRequest) -> dict[str, Any]:

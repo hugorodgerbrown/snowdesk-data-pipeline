@@ -8,7 +8,9 @@ everything it needs to run the check.
 Covered:
 
 * ``apps.public.context_processors.pwa_version`` returns the build string
-  and passes it through untouched.
+  and passes it through untouched, alongside the human-readable release
+  label the account menu shows (covered in full by
+  ``tests/public/test_release_label.py``).
 * Every page response bakes the current build into the
   ``<meta name="pwa-app-version">`` tag.
 * The ``<meta name="pwa-app-min-version">`` tag is gone (SNOW-609) — there
@@ -27,19 +29,34 @@ from apps.public.context_processors import pwa_version
 
 
 def test_context_processor_returns_configured_values() -> None:
-    """The context processor exposes the build setting verbatim as a string."""
-    with override_settings(APP_VERSION="2026.07.15.abcdef"):
+    """The context processor exposes the build setting verbatim as a string.
+
+    ``APP_RELEASE`` is pinned here only to keep the assertion exact — the
+    label's own rules live in ``tests/public/test_release_label.py``.
+    """
+    with override_settings(
+        APP_VERSION="2026.07.15.abcdef",
+        APP_RELEASE="24",
+        SITE_ENVIRONMENT="production",
+    ):
         result = pwa_version(HttpRequest())
 
-    assert result == {"APP_VERSION": "2026.07.15.abcdef"}
+    assert result == {
+        "APP_VERSION": "2026.07.15.abcdef",
+        "APP_RELEASE_LABEL": "v24",
+    }
 
 
 def test_context_processor_defaults_to_empty_string() -> None:
-    """A missing setting is exposed as an empty string, not raised."""
-    with override_settings(APP_VERSION=""):
+    """A missing setting is exposed as an empty string, not raised.
+
+    Both of them: an unversioned build declares no build to the PWA check
+    and shows no release in the menu, rather than either one raising.
+    """
+    with override_settings(APP_VERSION="", APP_RELEASE=""):
         result = pwa_version(HttpRequest())
 
-    assert result == {"APP_VERSION": ""}
+    assert result == {"APP_VERSION": "", "APP_RELEASE_LABEL": ""}
 
 
 @pytest.mark.django_db

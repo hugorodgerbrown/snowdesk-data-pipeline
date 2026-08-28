@@ -39,7 +39,10 @@ Optional context:
                 have never carried this attribute.
   kind        — status-palette key ("warning" default) — strip variant only.
   icon        — "calendar" (strip) | "refresh" | "location-off" (floating).
-                Omit for none.
+                Omit for none. The floating variant's roundel carries
+                ``data-overlay-icon`` so an owning module can animate it —
+                static/js/sw_register.js spins the refresh arrow while the
+                update it is offering applies.
   position    — "top" | "bottom" (floating only; default "bottom"). "top"
                 anchors near the top-centre (clears the nav) — used by the
                 off-map nudge; the update/install nudges use the default.
@@ -121,7 +124,7 @@ Optional context:
                 type="button"
                 data-action="dismiss"
                 aria-label="{% trans 'Dismiss' %}"
-                class="ml-auto shrink-0 px-2 text-lg leading-none opacity-70 transition-opacity hover:opacity-100"
+                class="ml-auto shrink-0 cursor-pointer px-2 text-lg leading-none opacity-70 transition-opacity hover:opacity-100"
             >
                 &times;
             </button>
@@ -143,6 +146,7 @@ Optional context:
         <div class="bg-card text-text-1 rounded-card border border-border shadow-glass px-4 py-3 flex items-center gap-3">
             {% if icon %}
                 <span
+                    data-overlay-icon
                     class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-status-info-bg text-status-info-text"
                     aria-hidden="true"
                 >
@@ -197,7 +201,7 @@ Optional context:
                         type="button"
                         data-action="dismiss"
                         aria-label="{% trans 'Dismiss' %}"
-                        class="text-text-3 hover:text-text-1 text-lg leading-none px-2"
+                        class="cursor-pointer text-text-3 hover:text-text-1 text-lg leading-none px-2"
                     >
                         &times;
                     </button>

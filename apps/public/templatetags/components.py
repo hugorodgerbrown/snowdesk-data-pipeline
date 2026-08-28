@@ -51,7 +51,19 @@ register: Library = template.Library()
 # Helpers
 # ---------------------------------------------------------------------------
 
-_BUTTON_BASE = "text-sm font-medium rounded-tag"
+# ``cursor-pointer`` is not redundant: Tailwind v4's preflight gives
+# ``<button>`` the ``default`` cursor, so a native button reads as inert
+# under the mouse unless it says otherwise. ``_ICON_BUTTON_BASE`` below
+# already learned this the hard way (SNOW-658, via ``hover-affordance``);
+# the ordinary button did not, so every CTA rendered through
+# ``_button.html`` — the update toast's Reload among them — took the arrow.
+# The disabled pair goes with it: a button JS disables mid-action (that
+# same Reload, while the update applies) has to look unavailable, not
+# merely unresponsive.
+_BUTTON_BASE = (
+    "text-sm font-medium rounded-tag cursor-pointer"
+    " disabled:cursor-not-allowed disabled:opacity-60"
+)
 
 _BUTTON_VARIANT_CLASSES: dict[str, str] = {
     "primary": ("bg-text-1 text-card hover:opacity-90 transition-opacity"),

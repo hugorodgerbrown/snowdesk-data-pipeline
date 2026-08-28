@@ -67,6 +67,9 @@
  *   fallback timer downgrades to the cache-clearing reload if activation
  *   never fires ``controllerchange``.
  *
+ *   Either way it also takes a moment, so the click is acknowledged on
+ *   screen before any of it starts — see ``showBannerBusy``.
+ *
  * Because the reload is gated on the user having clicked "Reload"
  * (``userTriggeredUpdate``), a first-install ``clients.claim()`` does not
  * reload the page, and there is no dev reload-loop.
@@ -112,6 +115,10 @@
       'saved data are kept.',
     reload: 'Reload',
     dismiss: 'Dismiss',
+    updating: 'Updating…',
+    'updating-title': 'Updating Snowdesk',
+    'updating-body':
+      'Applying the new version — the page will reload in a moment.',
   });
 
   // Guard on the truthy value, not ``'serviceWorker' in navigator``: the
@@ -558,9 +565,11 @@
     const copy = document.createElement('div');
     copy.style.cssText = 'flex:1;min-width:0;';
     const title = document.createElement('div');
+    title.id = 'sw-update-banner-title';
     title.textContent = STRINGS['update-title'];
     title.style.cssText = 'font-weight:600;font-size:14px;';
     const sub = document.createElement('div');
+    sub.id = 'sw-update-banner-body';
     sub.textContent = STRINGS['update-body'];
     sub.style.cssText = 'color:#475569;font-size:12px;margin-top:2px;';
     copy.append(title, sub);
@@ -722,6 +731,52 @@
   });
 
   /**
+   * Put the banner into its working state, the moment the click lands.
+   *
+   * The click used to change nothing on screen. Both reload paths are
+   * asynchronous — the SW path posts SKIP_WAITING and waits for the new
+   * worker to activate, backstopped by a three-second timer; the
+   * version-header path enumerates and deletes Cache Storage entries
+   * first — so between the press and the reload there was a stretch of
+   * seconds in which the only feedback was a button that had stopped
+   * responding. That reads as a dead control, and the natural response to
+   * a dead control is to press it again.
+   *
+   * Three things change, in the order the eye finds them: the CTA says
+   * what it is doing and is visibly disabled (`disabled:opacity-60`,
+   * `disabled:cursor-not-allowed` — see `_button_chrome_classes` in
+   * apps/public/templatetags/components.py), the banner's refresh icon
+   * spins, and the copy switches from an offer to a progress report.
+   *
+   * No state is restored afterwards, deliberately: every path out of here
+   * ends in `location.reload()`, so the busy banner's successor is a
+   * fresh document. A restore would only ever run if the reload itself
+   * failed, and a banner that quietly went back to "Update available"
+   * would be claiming the update had not started when it had.
+   *
+   * The icon spin is public-page only — the admin fallback banner has no
+   * icon to spin and no Tailwind to spin it with. The label and copy
+   * changes, which are the load-bearing half, land on both.
+   *
+   * @returns {void}
+   */
+  function showBannerBusy() {
+    const btn = document.getElementById('sw-update-banner-reload');
+    if (btn) {
+      btn.setAttribute('aria-busy', 'true');
+      btn.textContent = STRINGS.updating;
+    }
+    const title = document.getElementById('sw-update-banner-title');
+    if (title) title.textContent = STRINGS['updating-title'];
+    const body = document.getElementById('sw-update-banner-body');
+    if (body) body.textContent = STRINGS['updating-body'];
+    const icon = banner && banner.querySelector('[data-overlay-icon]');
+    // `motion-safe:` so the spin honours prefers-reduced-motion; the copy
+    // and the disabled CTA carry the message on their own without it.
+    if (icon) icon.classList.add('motion-safe:animate-spin');
+  }
+
+  /**
    * Reload click handler. Handles both the SW-driven path (a fresh worker
    * is waiting) and the version-header-driven path (the server's
    * ``X-App-Version`` drifted from the shell's ``<meta>`` but ``sw.js`` did
@@ -750,6 +805,7 @@
       btn.dataset.busy = '1';
       btn.setAttribute('disabled', 'disabled');
     }
+    showBannerBusy();
 
     userTriggeredUpdate = true;
 

@@ -206,7 +206,13 @@ to measure by session continuity.
 
 1. Confirm `main` is green and what is on `main` has been verified on
    staging.
-2. Fast-forward `release` to `main`. Use the helper, which lists the
+2. **Bump `VERSION`** on `main` (via a PR, like any other change) — one
+   line holding the release ordinal, e.g. `24` → `25`. This is what the
+   account menu shows as "v25"; see "Two version numbers" below for why it
+   is a tracked file rather than something derived. `bin/cut-release`
+   refuses to release when it has not moved, so a forgotten bump stops the
+   release rather than shipping a menu that names the previous one.
+3. Fast-forward `release` to `main`. Use the helper, which lists the
    `SNOW-xx` tickets that are on `main` but not yet on `release` and then
    advances the ref:
 
@@ -218,9 +224,9 @@ to measure by session continuity.
    The push carries the exact `main` commit, so no new CI run is needed: the
    ruleset reuses that commit's already-green checks, and the push is
    rejected if they are not green. There is no release PR.
-3. Render redeploys the three production services from the new `release`
+4. Render redeploys the three production services from the new `release`
    tip.
-4. The [`release.yml`](../.github/workflows/release.yml) workflow fires on
+5. The [`release.yml`](../.github/workflows/release.yml) workflow fires on
    the push to `release`, tags the commit, and creates a GitHub Release.
 
 ### One-time migration off the PR flow
@@ -241,6 +247,47 @@ deploy of whatever is on `main` but not yet released), and from then on
 every `bin/cut-release --commit` is a clean fast-forward. Run it as, or in
 place of, the next release.
 
+## Two version numbers, and why
+
+The app carries two, for two different readers. Conflating them is the
+mistake this section exists to prevent.
+
+| | `APP_VERSION` | `APP_RELEASE` |
+|---|---|---|
+| Value | git SHA (`RENDER_GIT_COMMIT`) | release ordinal (`24`) |
+| Source | Render's build environment | the tracked `VERSION` file |
+| Changes | every deploy | every production release |
+| Read by | the PWA update check, `APP_BLOCKED_VERSIONS`, ETags | people |
+| Surfaced as | `X-App-Version`, `<meta name="pwa-app-version">` | "v24" in the account menu |
+
+`APP_VERSION` has to change on every deploy and name one build exactly, or
+the update check cannot tell a stale shell from a current one and
+`APP_BLOCKED_VERSIONS` cannot name a build to retire. A SHA is right for
+that and unreadable for anything else.
+
+`APP_RELEASE` answers "which version are you on?". It is rendered by
+[`apps/public/release.py`](../apps/public/release.py): `v24` on production,
+`v24 · fce4f14` on every other tier, since staging deploys on every merge
+to `main` and therefore sits between releases — there the build id is the
+part that identifies what is actually running.
+
+**Why a tracked file and not the CalVer tag.** Three things rule out
+deriving it at build time:
+
+* Render's build gets `RENDER_GIT_COMMIT` and no tag context.
+* `release.yml` creates the CalVer tag *after* the push to `release`, which
+  is the same event that starts the deploy — so at build time the tag for
+  the release being deployed does not exist yet.
+* A commit redeployed later (a Render rollback or a manual redeploy) would
+  see a different set of tags than its first deploy did, so any count would
+  disagree with itself.
+
+A file in the tree has none of those problems: present, identical and
+unambiguous at build time on every tier, and reviewable in the PR that
+changes it. The cost is that it is bumped by hand, which is exactly the
+failure the `bin/cut-release` guard covers — a forgotten bump has no other
+symptom, since the deploy is green either way and only the menu is wrong.
+
 ## Versioning and Releases
 
 Each production deploy is tagged **CalVer**: `YYYY.MM.DD`, with a `.N`
@@ -251,6 +298,12 @@ the merged PRs since the previous release. Because PR titles carry the
 `SNOW-xx:` prefix, the GitHub Release is the record of which tickets
 reached production. Note categorisation/exclusions live in
 [`.github/release.yml`](../.github/release.yml).
+
+The CalVer tag and `APP_RELEASE` are separate identities on purpose: the
+tag is how a release is looked up in GitHub, the ordinal is how a user
+names it. Nothing links them automatically today — if that matters, the
+place to reconcile it is `release.yml`, which computes the tag and could
+equally read the number the deploy shipped with.
 
 This is distinct from Linear status: a ticket goes **Done** in Linear when
 its PR merges to `main` (work complete, on staging). The GitHub Release is

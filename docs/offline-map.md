@@ -71,14 +71,25 @@ on an `X-App-Version` drift. The banner offers two actions:
 Contract, end-user-facing: *if there is an update, you see one "Reload"
 message; if there is no message, you are already on the latest version.*
 
-The banner uses design tokens (`bg-card`, `border-border`, `rounded-card`,
-`shadow-glass`) so it reads as a first-class Snowdesk surface — matching
-the `_pwa_install_prompt.html` shape rather than a raw status pill. It is
-offset above the mobile timeline scrubber via a `bottom: calc(5.5rem +
-env(safe-area-inset-bottom))` inline style. Reveal is via the `hidden`
-class toggle; the self-injected admin fallback in `sw_register.js`
-mirrors this via `display: flex`/`none` and carries `data-fallback="1"`
-so both reveal-sites use the same branch selector.
+### What the click looks like
+
+Both reload paths take a moment — the SW path waits for the new worker to
+activate, backstopped by a three-second timer; the version-header path
+enumerates and deletes Cache Storage entries first — so the click is
+acknowledged before any of it starts (`showBannerBusy` in
+`sw_register.js`): the CTA reads "Updating…" and is visibly disabled, the
+refresh icon spins (`motion-safe:animate-spin` on the partial's
+`[data-overlay-icon]` roundel), and the copy switches from an offer to a
+progress report. Nothing is restored afterwards, because every path out
+of the handler ends in a reload.
+
+The busy copy lives in a strings `<template>` in
+`includes/_sw_update_banner.html`, read back through
+`window.pwaStrings.read()` — a state that only exists at runtime still
+has to reach the message catalogue (see [`i18n.md`](i18n.md)). The admin
+fallback's copy of that template (`templates/admin/base_site.html`)
+carries the same keys; `tests/templates/includes/test_sw_update_banner.py`
+fails if the two key sets drift.
 
 ### How the trigger fires
 

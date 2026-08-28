@@ -11,6 +11,11 @@ Covers:
     (``sw-update-banner-reload``) so a single ``getElementById`` covers
     both reveal paths.
   * The dismiss button carries ``data-action="dismiss"``.
+  * Both controls take the pointer cursor — Tailwind v4's preflight gives
+    ``<button>`` the default arrow, so a control that does not say
+    otherwise reads as inert under the mouse.
+  * The strings ``<template>`` carries the runtime-only copy (the busy
+    state) with the same keys the admin fallback declares.
   * The rendered surface uses design tokens (``bg-card``, ``rounded-card``,
     ``border-border``, ``shadow-glass``) and avoids raw palette utilities.
   * The banner is embedded in the public base template on every page.
@@ -18,7 +23,11 @@ Covers:
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
+from django.conf import settings
 from django.template.loader import render_to_string
 from django.test import Client
 
@@ -67,12 +76,61 @@ class TestActions:
         """Dismiss button carries data-action="dismiss"."""
         assert 'data-action="dismiss"' in render()
 
+    def test_reload_button_takes_the_pointer_cursor(self) -> None:
+        """The CTA says it is clickable.
+
+        Tailwind v4's preflight leaves a ``<button>`` on the default arrow
+        cursor, so every CTA rendered through ``_button.html`` read as
+        inert under the mouse until ``_BUTTON_BASE`` said otherwise.
+        """
+        assert "cursor-pointer" in render()
+
+    def test_dismiss_button_takes_the_pointer_cursor(self) -> None:
+        """The × is a control too, and carries its own cursor class.
+
+        It is not rendered through ``_button.html``, so the shared base
+        class string does not reach it.
+        """
+        html = render()
+        dismiss = html[html.index('data-action="dismiss"') :]
+        assert "cursor-pointer" in dismiss[: dismiss.index("</button>")]
+
     def test_dismiss_button_type_is_button(self) -> None:
         """Dismiss button is type=button so it never submits an enclosing form."""
         html = render()
         # There are two buttons — reload (rendered via _button.html) and dismiss.
         # Both must be non-submitting.
         assert html.count('type="button"') >= 2
+
+
+class TestRuntimeStrings:
+    """Copy for states that only exist after a click."""
+
+    def test_strings_template_present(self) -> None:
+        """The busy-state copy ships as markup so it reaches the catalogue."""
+        html = render()
+        assert 'id="sw-update-strings-template"' in html
+        assert 'data-string="updating"' in html
+
+    def test_keys_match_the_admin_fallback(self) -> None:
+        """Both copies of this template feed the same ``pwaStrings.read``.
+
+        ``sw_register.js`` reads whichever template the page carries — this
+        one on public pages, the one in ``admin/base_site.html`` on admin
+        pages. A key in one and not the other is a string that silently
+        ships as English on half the site.
+        """
+        public_keys = set(re.findall(r'data-string="([^"]+)"', render()))
+        admin_keys = set(
+            re.findall(
+                r'data-string="([^"]+)"',
+                (
+                    Path(settings.BASE_DIR) / "templates" / "admin" / "base_site.html"
+                ).read_text(encoding="utf-8"),
+            )
+        )
+
+        assert public_keys == admin_keys
 
 
 class TestDesignTokens:
