@@ -151,8 +151,18 @@ function basemapIdentityColour(key) {
 // have almost always already been fetched (and cached, via the existing
 // basemap stale-while-revalidate strategy) as a side effect of ordinary
 // browsing; enumerating them ourselves would mean re-deriving MapLibre's
-// own glyph-range logic for marginal benefit. Documented as a known gap
-// in docs/offline-map.md rather than reverse-engineered here.
+// own glyph-range logic for marginal benefit.
+//
+// SNOW-742: that reasoning still holds — this function still does not
+// enumerate glyph ranges, and `activeBasemapGlyphPrefix` below does not
+// either. But the conclusion it drew, that ordinary browsing therefore
+// leaves the area covered, was wrong. Browsing caches those ranges into
+// BASEMAP_CACHE, which is FIFO-trimmed to 600 entries, while pinned
+// download buckets are never trimmed — so within a couple of sessions the
+// glyphs get evicted and the area decays into geometry with no labels,
+// its tiles still perfectly intact. The fix is not to enumerate but to
+// PROMOTE: sw.js's `_promoteGlyphs` copies the already-cached entries into
+// the pinned bucket at the end of a download, using the prefix below.
 function computeBasemapSpriteURLs(map) {
   if (!map) return [];
   const style = map.getStyle && map.getStyle();
@@ -165,6 +175,36 @@ function computeBasemapSpriteURLs(map) {
     urls.push(`${base}.json`, `${base}.png`, `${base}@2x.json`, `${base}@2x.png`);
   }
   return urls;
+}
+
+/**
+ * SNOW-742: the URL prefix every glyph request for `map`'s current style
+ * shares — its `glyphs` template truncated at the first placeholder.
+ *
+ * A style's `glyphs` looks like
+ * `https://tiles.example/fonts/{fontstack}/{range}.pbf`, so everything before
+ * `{fontstack}` is a prefix that matches every glyph URL for that style and
+ * nothing else. That is all `_promoteGlyphs` (sw.js) needs: it is selecting
+ * already-cached entries out of BASEMAP_CACHE, not constructing URLs, so it
+ * never has to know which fontstacks or ranges exist.
+ *
+ * Returns '' when the style has no `glyphs` (the offline fallback style), or
+ * when the template has no placeholder at all — a prefix of the whole string
+ * would match only an exact URL, and a prefix of '' would match EVERY entry
+ * in the passive cache and promote the lot. Both cases mean "promote
+ * nothing", which is what the empty string tells the worker.
+ *
+ * @param {object|null} map
+ * @returns {string}
+ */
+function activeBasemapGlyphPrefix(map) {
+  if (!map) return '';
+  const style = map.getStyle && map.getStyle();
+  const glyphs = style && style.glyphs;
+  if (typeof glyphs !== 'string') return '';
+  const brace = glyphs.indexOf('{');
+  if (brace <= 0) return '';
+  return glyphs.slice(0, brace);
 }
 
 // SNOW-521: same-origin data-feed + active-basemap-style URL list —
@@ -1683,6 +1723,7 @@ const PINNED_DOWNLOAD_DEPS = {
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),
   feedUrls: () => assembleBasemapDownloadFeedURLs(),
+  glyphPrefix: () => activeBasemapGlyphPrefix(MAP),
   progressGrid: (plan, offset) => createDownloadProgressGrid(plan, offset),
   warmCache: (urls, opts) =>
     typeof window.pwaWarmCache === 'function' ? window.pwaWarmCache(urls, opts) : null,

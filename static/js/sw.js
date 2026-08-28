@@ -1716,7 +1716,64 @@ async function _warmCache(urls, options) {
     _basemapPutsSinceTrim = 0;
     await _trimCache(basemapCache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
   }
+  // SNOW-742: make this area's labels as durable as its tiles.
+  if (pinned && opts.glyphPrefix) {
+    bytes += await _promoteGlyphs(opts.glyphPrefix, basemapCache);
+  }
   return { ok, failed, reason, bytes, cancelled };
+}
+
+/**
+ * SNOW-742: copy the glyph entries already in ``BASEMAP_CACHE`` into a pinned
+ * bucket, so a downloaded area stops losing its labels.
+ *
+ * The bug this fixes is not "glyphs are never downloaded". They ARE fetched,
+ * by ordinary browsing, via ``_basemapStaleWhileRevalidate`` — but they land
+ * in ``BASEMAP_CACHE``, which is FIFO-trimmed to ``BASEMAP_CACHE_MAX_ENTRIES``
+ * (600), while pinned buckets are never trimmed at all. A single browsing
+ * session logs 150-300 distinct URLs (see that constant's note), so within a
+ * couple of sessions the glyphs an area needs are evicted while its tiles sit
+ * safe in the pinned bucket. The area quietly decays into geometry with no
+ * labels — which is what "the map only partially loaded" looked like.
+ *
+ * Deliberately NOT an enumeration of every glyph range the style could ask
+ * for. That would mean re-deriving MapLibre's own range logic, which
+ * ``computeBasemapSpriteURLs`` (map_basemap_downloads.js) rejected for good
+ * reasons that still hold. Ranges the user has never browsed stay uncovered,
+ * exactly as before; what changes is that an area stops losing the ones it
+ * already had.
+ *
+ * Idempotent: ``cache.put`` overwrites, so re-downloading an area re-promotes
+ * the same entries rather than duplicating them. The byte total is returned so
+ * the caller can add it to the run's own — a promoted glyph occupies real disk
+ * in the pinned bucket, and the page's budget has to see it. A re-download
+ * REPLACES the area's recorded size rather than adding to it (SNOW-632), so
+ * counting these cannot inflate the budget across runs.
+ *
+ * @param {string} prefix The active style's glyph URL prefix — everything
+ *   before the first ``{`` in its ``glyphs`` template.
+ * @param {Cache} pinnedCache The open pinned bucket for this area.
+ * @returns {Promise<number>} Bytes promoted; 0 if nothing matched or the
+ *   passive cache could not be read.
+ */
+async function _promoteGlyphs(prefix, pinnedCache) {
+  let promoted = 0;
+  try {
+    const passive = await caches.open(BASEMAP_CACHE);
+    const requests = await passive.keys();
+    for (const request of requests) {
+      if (!request.url.startsWith(prefix)) continue;
+      const response = await passive.match(request);
+      if (!response || !response.ok) continue;
+      await pinnedCache.put(request, response.clone());
+      promoted += await _warmCacheResponseBytes(response);
+    }
+  } catch (_err) {
+    // Best-effort, and deliberately silent. A download whose tiles all landed
+    // has succeeded; failing it over the labels would be a worse answer than
+    // the labels that browsing will re-cache anyway.
+  }
+  return promoted;
 }
 
 /**
@@ -2586,6 +2643,12 @@ self.addEventListener('message', (event) => {
         areaId,
         onProgress,
         shouldCancel,
+        // SNOW-742: the active style's glyph URL prefix, so a pinned run can
+        // promote the labels this area needs out of the trimmable passive
+        // cache and into its own bucket. Absent on a non-pinned run, and on
+        // an older page still serving a cached shell — ``_warmCache`` skips
+        // the promotion entirely when it is missing.
+        glyphPrefix: event.data.glyphPrefix,
       }).then((result) => {
         // SNOW-632: this requestId's run has settled one way or another —
         // drop it from the cancelled set now rather than waiting for the

@@ -223,7 +223,13 @@
     // a deliberate download can't be evicted by casual panning elsewhere.
     // SNOW-586: `areaId` selects WHICH bucket, so one area can never
     // perforate (or be perforated by) another.
-    const warming = deps.warmCache(urls, { pinned: true, areaId, onProgress });
+    // SNOW-742: `glyphPrefix` lets the worker promote this style's
+    // already-cached glyph entries into the pinned bucket once the tiles are
+    // down, so the area keeps its labels when the passive cache trims its own
+    // copies. Optional — a deps object without it (or a style with no
+    // `glyphs`) simply skips the promotion.
+    const glyphPrefix = typeof deps.glyphPrefix === 'function' ? deps.glyphPrefix() : '';
+    const warming = deps.warmCache(urls, { pinned: true, areaId, onProgress, glyphPrefix });
     if (warming) {
       warming.then(settle).catch(() => settle(null));
     } else {

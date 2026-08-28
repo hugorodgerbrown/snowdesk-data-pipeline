@@ -822,10 +822,20 @@ trip.
 3. `map.js` assembles the rest of the URL list: same-origin data feeds
    in sw.js's `STATIC_PATHS` (regions/major-regions/sub-regions/
    resorts/ratings, one per currently-enabled country), the active
-   basemap's style JSON + sprite JSON/PNG (1×/2×). Glyph PBFs are
-   deliberately excluded (MapLibre only requests the specific glyph
-   ranges the current labels use, and those are almost always already
-   in `BASEMAP_CACHE` from ordinary browsing). Favourites and
+   basemap's style JSON + sprite JSON/PNG (1×/2×). Glyph PBFs are still
+   not *enumerated* — MapLibre only requests the specific ranges the
+   current labels use, and deriving that set ourselves would mean
+   re-implementing its range logic. But they are **promoted**: at the end
+   of a pinned run, `_promoteGlyphs` (sw.js) copies every `BASEMAP_CACHE`
+   entry matching the active style's glyph prefix into the area's pinned
+   bucket. SNOW-742 — this used to be listed here as an accepted gap on
+   the grounds that browsing leaves those ranges cached anyway, which was
+   half right: browsing does cache them, but into `BASEMAP_CACHE`, which
+   is FIFO-trimmed to 600 entries while pinned buckets never are. Two or
+   three browsing sessions (150–300 URLs each) evicted them, and the
+   downloaded area decayed into geometry with no labels while its tiles
+   stayed perfectly intact. Ranges never browsed remain uncovered.
+   Favourites and
    community-reports are also excluded — both are `network`-classified
    in sw.js, so the SW never reads back whatever this would write;
    their offline availability is handled by the `data:map_overlays`

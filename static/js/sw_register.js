@@ -471,6 +471,11 @@
         // SNOW-586: which pinned bucket a pinned run writes into —
         // undefined for a non-pinned call, same as before this ticket.
         areaId: options.areaId,
+        // SNOW-742: the active basemap style's glyph URL prefix. The worker
+        // uses it to promote already-cached glyphs into the pinned bucket, so
+        // a downloaded area keeps its labels once the passive cache trims its
+        // copies. Undefined for a non-pinned call.
+        glyphPrefix: options.glyphPrefix,
       });
     });
   }
