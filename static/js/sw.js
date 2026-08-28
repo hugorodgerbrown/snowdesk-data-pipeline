@@ -293,6 +293,99 @@ const BASEMAP_CACHE_TRIM_INTERVAL = 32;
 // pinned buckets are never trimmed — see `_warmCache`).
 let _basemapPutsSinceTrim = 0;
 
+// ---------------------------------------------------------------------------
+// Read-path budgets and the offline latch (SNOW-742)
+// ---------------------------------------------------------------------------
+//
+// Every offline fallback below this line used to be a ``catch`` branch, which
+// assumes a dead network REJECTS. On a radio that is attached but has no route
+// — the Underground, a valley with no coverage, a captive portal that black-
+// holes rather than refuses — ``fetch`` does not reject. It hangs on TCP
+// retries for tens of seconds to minutes. The catch never ran, so the fallback
+// never engaged, and the app sat blank on top of data already on disk.
+//
+// Two mechanisms, and the distinction between them is the whole design:
+//
+//   The BUDGETS below are the DETECTOR. They convert a hang into a rejection
+//   so the existing fallback paths fire on time. They are not the fix on their
+//   own: a budget alone turns one multi-minute hang into a 3-5 second hang per
+//   request, indefinitely, which for a day in the backcountry means paying the
+//   tax on every navigation and every uncached tile.
+//
+//   The LATCH is the fix. Once the app has established there is no route it
+//   stops asking: read paths skip the network entirely, a cache hit serves and
+//   a miss 504s immediately, with no waiting at all, until something says
+//   otherwise. That steady state is what the ticket is actually about.
+//
+// Both apply to READ paths only. ``_warmCache`` keeps unbounded fetches and
+// ignores the latch — a download is a long operation the user explicitly asked
+// for, on a connection they believe they have, and its failures already reach
+// them (SNOW-568).
+
+// How long a navigation's network attempt gets before it is aborted. Generous
+// relative to the tile budget because a navigation is one request whose whole
+// page depends on it, and because the fallback it unlocks (the cached shell)
+// is a strictly worse answer than the live page when the live page is merely
+// slow rather than absent.
+const NAVIGATION_FETCH_BUDGET_MS = 5000;
+
+// The same, for a same-origin shell asset or SWR-cached feed. Equal to the
+// navigation budget rather than derived from it: they are independently
+// tunable, and a stylesheet the page is blocked on is as load-bearing as the
+// document that references it.
+const SHELL_FETCH_BUDGET_MS = 5000;
+
+// The same, for a basemap-origin request (tile, sprite, glyph, style JSON).
+// Shorter: a map view issues these by the hundred, MapLibre retries and
+// overzooms on a failed tile on its own (see the SNOW-492 note on map.js's
+// error handler), and three of these timing out is what trips the latch — so
+// this number also sets how fast a genuinely dead radio is recognised.
+const BASEMAP_FETCH_BUDGET_MS = 3000;
+
+// Consecutive read-path timeouts before the worker latches offline. Any
+// successful read-path response resets the count, so a single slow request can
+// never latch on its own — but a map page fires many tile requests at once, so
+// a genuinely dead radio trips this in one burst (~9s).
+const OFFLINE_LATCH_THRESHOLD = 3;
+
+// How long the ``/livez`` probe gets. Shorter than any read budget: its only
+// job is to answer "is there a route at all", and a route that cannot manage a
+// no-op 200 in two seconds is not one the read paths want back yet.
+const OFFLINE_PROBE_BUDGET_MS = 2000;
+
+// Backoff schedule for the unlatch probe, in ms — 30s, then 60s, then 5 min
+// for every attempt after that. The last entry repeats rather than growing, so
+// a device left latched overnight still notices signal within five minutes.
+// One 2s probe per five minutes is a rounding error against the per-request
+// tax the latch removes.
+const OFFLINE_PROBE_BACKOFF_MS = [30000, 60000, 300000];
+
+// The same-origin endpoint the unlatch probe hits. ``/livez``
+// (apps/core/views.py) does no work at all: it never reads request.user, never
+// touches the database, and is exempt from PosthogContextMiddleware — so it
+// measures the route and nothing else. A worker's own fetches do not re-enter
+// its ``fetch`` handler, so this can never be intercepted, cached, or counted
+// as one of the timeouts that trips the latch.
+const OFFLINE_PROBE_URL = '/livez';
+
+// ``'auto'`` — normal operation: read paths use the network, bounded.
+// ``'offline'`` — latched: read paths do not touch the network at all.
+let _networkMode = 'auto';
+
+// Consecutive read-path timeouts seen while in ``'auto'``. Reset to 0 by any
+// successful read-path response, and by an unlatch.
+let _consecutiveTimeouts = 0;
+
+// Index into OFFLINE_PROBE_BACKOFF_MS for the next probe, and the handle of
+// the pending probe timer (null when none is scheduled). The timer is the only
+// thing that runs while latched, and ``_unlatch`` clears it.
+let _probeBackoffIndex = 0;
+let _probeTimer = null;
+
+// True while a probe's fetch is in flight, so a burst of ``online`` events
+// (browsers fire several as an interface comes up) cannot stack probes.
+let _probeInFlight = false;
+
 /**
  * Trim BASEMAP_CACHE, but only once per ``BASEMAP_CACHE_TRIM_INTERVAL``
  * puts (SNOW-614).
@@ -1123,7 +1216,14 @@ async function _staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_VERSION);
   const cached = await cache.match(request);
   const url = new URL(request.url);
-  const fetchPromise = fetch(request)
+  // SNOW-742: with no route to try, answer from what is on disk and stop.
+  // Without this an offline reload still paid a stalled fetch per CSS file, JS
+  // module and font — a request each, all of them doomed, all of them holding
+  // a connection slot for the OS TCP timeout.
+  if (!_shouldUseNetwork()) {
+    return cached ? _stampCacheHit(cached) : _synthesizedGatewayTimeout();
+  }
+  const fetchPromise = _boundedFetch(request, SHELL_FETCH_BUDGET_MS)
     .then((response) => {
       // Only cache successful, basic (same-origin) responses. ``opaque``
       // responses from cross-origin no-cors requests are unreadable, and
@@ -1154,13 +1254,7 @@ async function _staleWhileRevalidate(request) {
   if (cached) return _stampCacheHit(cached);
   const network = await fetchPromise;
   if (network) return network;
-  // SNOW-490: stamp the synthesized fallback so pwa_offline.js can't
-  // mistake an offline cache miss for a successful sync.
-  return new Response('', {
-    status: 504,
-    statusText: 'Gateway Timeout',
-    headers: { 'X-SW-Cache': 'miss' },
-  });
+  return _synthesizedGatewayTimeout();
 }
 
 /**
@@ -1622,7 +1716,296 @@ async function _warmCache(urls, options) {
     _basemapPutsSinceTrim = 0;
     await _trimCache(basemapCache, BASEMAP_CACHE_MAX_ENTRIES).catch(() => {});
   }
+  // SNOW-742: make this area's labels as durable as its tiles.
+  if (pinned && opts.glyphPrefix) {
+    bytes += await _promoteGlyphs(opts.glyphPrefix, basemapCache);
+  }
   return { ok, failed, reason, bytes, cancelled };
+}
+
+/**
+ * SNOW-742: copy the glyph entries already in ``BASEMAP_CACHE`` into a pinned
+ * bucket, so a downloaded area stops losing its labels.
+ *
+ * The bug this fixes is not "glyphs are never downloaded". They ARE fetched,
+ * by ordinary browsing, via ``_basemapStaleWhileRevalidate`` — but they land
+ * in ``BASEMAP_CACHE``, which is FIFO-trimmed to ``BASEMAP_CACHE_MAX_ENTRIES``
+ * (600), while pinned buckets are never trimmed at all. A single browsing
+ * session logs 150-300 distinct URLs (see that constant's note), so within a
+ * couple of sessions the glyphs an area needs are evicted while its tiles sit
+ * safe in the pinned bucket. The area quietly decays into geometry with no
+ * labels — which is what "the map only partially loaded" looked like.
+ *
+ * Deliberately NOT an enumeration of every glyph range the style could ask
+ * for. That would mean re-deriving MapLibre's own range logic, which
+ * ``computeBasemapSpriteURLs`` (map_basemap_downloads.js) rejected for good
+ * reasons that still hold. Ranges the user has never browsed stay uncovered,
+ * exactly as before; what changes is that an area stops losing the ones it
+ * already had.
+ *
+ * Idempotent: ``cache.put`` overwrites, so re-downloading an area re-promotes
+ * the same entries rather than duplicating them. The byte total is returned so
+ * the caller can add it to the run's own — a promoted glyph occupies real disk
+ * in the pinned bucket, and the page's budget has to see it. A re-download
+ * REPLACES the area's recorded size rather than adding to it (SNOW-632), so
+ * counting these cannot inflate the budget across runs.
+ *
+ * @param {string} prefix The active style's glyph URL prefix — everything
+ *   before the first ``{`` in its ``glyphs`` template.
+ * @param {Cache} pinnedCache The open pinned bucket for this area.
+ * @returns {Promise<number>} Bytes promoted; 0 if nothing matched or the
+ *   passive cache could not be read.
+ */
+async function _promoteGlyphs(prefix, pinnedCache) {
+  let promoted = 0;
+  try {
+    const passive = await caches.open(BASEMAP_CACHE);
+    const requests = await passive.keys();
+    for (const request of requests) {
+      if (!request.url.startsWith(prefix)) continue;
+      const response = await passive.match(request);
+      if (!response || !response.ok) continue;
+      await pinnedCache.put(request, response.clone());
+      promoted += await _warmCacheResponseBytes(response);
+    }
+  } catch (_err) {
+    // Best-effort, and deliberately silent. A download whose tiles all landed
+    // has succeeded; failing it over the labels would be a worse answer than
+    // the labels that browsing will re-cache anyway.
+  }
+  return promoted;
+}
+
+/**
+ * SNOW-742: ``fetch`` with a deadline, for read paths only.
+ *
+ * Resolves exactly as ``fetch`` does, and rejects on a timeout the same way it
+ * rejects on a refusal — that equivalence is the point. Every fallback in this
+ * worker was written against a rejection, so converting a hang into one makes
+ * all of them fire on time without restating any of their logic.
+ *
+ * A timeout also feeds the latch: it increments ``_consecutiveTimeouts`` and
+ * trips ``_latchOffline()`` on the third in a row, while any success resets the
+ * count. A REFUSAL deliberately does not count. A refusal is a fast, honest
+ * answer the existing fallbacks already handle well, and it is what a browser
+ * gives for a blocked request, a CORS failure or a DNS miss on an otherwise
+ * live connection — latching on those would take the app offline while the
+ * network is fine.
+ *
+ * @param {Request|string} request
+ * @param {number} ms Budget in milliseconds.
+ * @returns {Promise<Response>}
+ */
+async function _boundedFetch(request, ms) {
+  // An explicit AbortController rather than ``AbortSignal.timeout(ms)``, for
+  // two reasons. It is controllable by a test's fake clock — ``timeout``'s
+  // internal timer is not driven by ``setTimeout``, so a suite could only
+  // exercise a real multi-second wait — and it works on every browser that
+  // has a service worker at all, where ``timeout`` needs Safari 16.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, ms);
+  let response;
+  try {
+    response = await fetch(request, { signal: controller.signal });
+  } catch (err) {
+    // Only OUR abort is evidence about the route. A refusal is a fast, honest
+    // answer the existing fallbacks handle well, and it is also what a browser
+    // gives for a blocked request, a CORS failure or a DNS miss on an
+    // otherwise live connection — latching on those would take the app offline
+    // while the network is fine.
+    if (timedOut) _recordReadPathTimeout();
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  _recordReadPathSuccess();
+  return response;
+}
+
+/**
+ * True when a read path should attempt the network at all.
+ *
+ * False while latched, and false when the platform already knows the interface
+ * is down (``navigator.onLine === false``) — that second case never needed a
+ * budget to discover, and checking it costs nothing. The Underground case is
+ * precisely the one where ``onLine`` stays TRUE, which is why the latch has to
+ * exist alongside it rather than instead of it.
+ *
+ * @returns {boolean}
+ */
+function _shouldUseNetwork() {
+  if (_networkMode === 'offline') return false;
+  return !(typeof navigator !== 'undefined' && navigator.onLine === false);
+}
+
+/**
+ * SNOW-490: the synthesized offline-miss response, stamped so
+ * ``pwa_offline.js`` cannot mistake it for a successful sync.
+ *
+ * SNOW-742 factored this out of the two stale-while-revalidate paths that had
+ * a copy each, and gave it a third caller: a latched read path answers with it
+ * the moment every cache partition has missed, without touching the network.
+ *
+ * @returns {Response}
+ */
+function _synthesizedGatewayTimeout() {
+  return new Response('', {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'X-SW-Cache': 'miss' },
+  });
+}
+
+/**
+ * Refresh one basemap entry in the background, writing only ``BASEMAP_CACHE``.
+ *
+ * Fire-and-forget by design: the caller has already answered from cache, so
+ * nothing waits on this and a failure is not an error — it is the ordinary
+ * outcome on a weak connection. Never writes a pinned bucket (see the SNOW-521
+ * note on ``_basemapStaleWhileRevalidate``).
+ *
+ * @param {Request} request
+ * @param {Cache} cache The open ``BASEMAP_CACHE``.
+ */
+function _revalidateBasemap(request, cache) {
+  _boundedFetch(request, BASEMAP_FETCH_BUDGET_MS)
+    .then(async (response) => {
+      if (response && response.ok && response.type === 'cors') {
+        await cache.put(request, response.clone()).catch(() => {});
+        await _trimBasemapCacheEvery(cache);
+      }
+    })
+    .catch(() => {});
+}
+
+/**
+ * Note that a read-path request answered within its budget, so the route is
+ * alive. Clears the timeout run; does NOT unlatch, because while latched no
+ * read path calls the network at all and so nothing can reach here — an
+ * unlatch is the probe's job alone.
+ */
+function _recordReadPathSuccess() {
+  _consecutiveTimeouts = 0;
+}
+
+/**
+ * Note that a read-path request burned its whole budget, and latch once
+ * ``OFFLINE_LATCH_THRESHOLD`` of them have happened in a row.
+ */
+function _recordReadPathTimeout() {
+  _consecutiveTimeouts += 1;
+  if (_consecutiveTimeouts >= OFFLINE_LATCH_THRESHOLD) _latchOffline();
+}
+
+/**
+ * Enter offline mode: read paths stop touching the network entirely until a
+ * probe (or the user) says otherwise.
+ *
+ * Idempotent — a second call while already latched neither restarts the
+ * backoff nor re-notifies the page, so a burst of timeouts arriving after the
+ * third does not reset the probe schedule it just set.
+ */
+function _latchOffline() {
+  if (_networkMode === 'offline') return;
+  _networkMode = 'offline';
+  _consecutiveTimeouts = 0;
+  _probeBackoffIndex = 0;
+  _scheduleProbe();
+  _publishNetworkMode();
+}
+
+/**
+ * Leave offline mode and resume ordinary bounded network reads.
+ *
+ * Also idempotent, and always cancels a pending probe — a probe firing after
+ * an unlatch would be a wasted request whose failure could re-enter the
+ * backoff for a mode nothing is in any more.
+ */
+function _unlatchOffline() {
+  if (_probeTimer !== null) {
+    clearTimeout(_probeTimer);
+    _probeTimer = null;
+  }
+  if (_networkMode === 'auto') return;
+  _networkMode = 'auto';
+  _consecutiveTimeouts = 0;
+  _probeBackoffIndex = 0;
+  _publishNetworkMode();
+}
+
+/**
+ * Schedule the next unlatch probe, advancing the backoff.
+ *
+ * The last entry in ``OFFLINE_PROBE_BACKOFF_MS`` repeats forever rather than
+ * growing without bound: a device left latched overnight should still notice
+ * signal within five minutes of getting it, not hours later.
+ */
+function _scheduleProbe() {
+  if (_probeTimer !== null) clearTimeout(_probeTimer);
+  const index = Math.min(_probeBackoffIndex, OFFLINE_PROBE_BACKOFF_MS.length - 1);
+  _probeBackoffIndex += 1;
+  _probeTimer = setTimeout(() => {
+    _probeTimer = null;
+    _probeNetwork();
+  }, OFFLINE_PROBE_BACKOFF_MS[index]);
+}
+
+/**
+ * One bounded request to ``OFFLINE_PROBE_URL``. Unlatches on any response at
+ * all — even a 5xx, which still proves a route exists, which is the only
+ * question being asked. Reschedules on failure.
+ *
+ * ``cache: 'no-store'`` so an HTTP-cached 200 can never answer for a route
+ * that is no longer there.
+ */
+async function _probeNetwork() {
+  if (_networkMode !== 'offline' || _probeInFlight) return;
+  _probeInFlight = true;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), OFFLINE_PROBE_BUDGET_MS);
+    try {
+      await fetch(OFFLINE_PROBE_URL, { cache: 'no-store', signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+    _unlatchOffline();
+  } catch (_err) {
+    // Still no route. Back off and try again later; the mode is unchanged.
+    if (_networkMode === 'offline') _scheduleProbe();
+  } finally {
+    _probeInFlight = false;
+  }
+}
+
+/**
+ * Tell every client which mode the worker is in, so ``pwa_offline.js`` can
+ * render the banner and persist the mode to ``meta:app``.
+ *
+ * The worker deliberately does NOT read that row back on the fetch hot path.
+ * Durability comes from the page re-asserting the persisted mode on boot (see
+ * ``pwa_offline.js``), which costs one message instead of an IndexedDB read
+ * per navigation. A restarted worker therefore starts in ``'auto'`` and, if
+ * the radio really is dead, re-latches within about nine seconds.
+ */
+function _publishNetworkMode() {
+  const mode = _networkMode;
+  // Guarded rather than assumed: a worker with no clients attached is normal
+  // (every tab closed while it finishes a background sync), and the mode is
+  // worker state that stays correct whether or not anyone is listening.
+  if (!self.clients || typeof self.clients.matchAll !== 'function') return;
+  self.clients
+    .matchAll({ includeUncontrolled: true })
+    .then((clients) => {
+      for (const client of clients) {
+        client.postMessage({ type: 'network-mode', mode });
+      }
+    })
+    .catch(() => {});
 }
 
 /**
@@ -1663,7 +2046,29 @@ async function _warmCache(urls, options) {
 async function _basemapStaleWhileRevalidate(request) {
   const cache = await caches.open(BASEMAP_CACHE);
   const cached = await cache.match(request);
-  const fetchPromise = fetch(request)
+  if (cached) {
+    // SNOW-742: revalidate AFTER the hit is in hand, not before it is looked
+    // up. This call used to start its fetch on the function's first line, so
+    // every tile — hits included — launched a request. Offline that meant
+    // several hundred hanging revalidations holding connection slots, and the
+    // requests that genuinely needed the network queued behind them; the
+    // "sporadic" half of the reported failure was that queue draining as
+    // sockets timed out one by one. Unawaited, so a hit still returns at cache
+    // speed, and skipped entirely when there is nothing to revalidate against.
+    if (_shouldUseNetwork()) _revalidateBasemap(request, cache);
+    return cached;
+  }
+  // SNOW-586: BASEMAP_CACHE miss — check every live pinned bucket before
+  // falling through to the network.
+  const pinnedHit = await _searchPinnedBuckets(request);
+  if (pinnedHit) {
+    if (_shouldUseNetwork()) _revalidateBasemap(request, cache);
+    return pinnedHit;
+  }
+  // SNOW-742: latched offline — every cache partition has missed and there is
+  // no route to try, so answer now rather than burning a budget proving it.
+  if (!_shouldUseNetwork()) return _synthesizedGatewayTimeout();
+  const fetchPromise = _boundedFetch(request, BASEMAP_FETCH_BUDGET_MS)
     .then(async (response) => {
       if (response && response.ok && response.type === 'cors') {
         await cache.put(request, response.clone()).catch(() => {});
@@ -1673,11 +2078,6 @@ async function _basemapStaleWhileRevalidate(request) {
       return response;
     })
     .catch(() => null);
-  if (cached) return cached;
-  // SNOW-586: BASEMAP_CACHE miss — check every live pinned bucket before
-  // falling through to the network.
-  const pinnedHit = await _searchPinnedBuckets(request);
-  if (pinnedHit) return pinnedHit;
   // Cache miss (both partitions): fall through to the network. If that
   // also fails (e.g. offline and never previously cached), this
   // deliberately does NOT throw — the caller (_guardedRespond via the
@@ -1686,13 +2086,7 @@ async function _basemapStaleWhileRevalidate(request) {
   // network error.
   const network = await fetchPromise;
   if (network) return network;
-  // SNOW-490: stamp the synthesized fallback so pwa_offline.js can't
-  // mistake an offline cache miss for a successful sync.
-  return new Response('', {
-    status: 504,
-    statusText: 'Gateway Timeout',
-    headers: { 'X-SW-Cache': 'miss' },
-  });
+  return _synthesizedGatewayTimeout();
 }
 
 // ---------------------------------------------------------------------------
@@ -1935,26 +2329,67 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  * is the branded page whose whole purpose is to be shown when nothing else
  * can be.
  */
+/**
+ * The cached answer for a navigation the network could not serve, or ``null``
+ * when neither the cache nor the offline fallback page has one.
+ *
+ * SNOW-742 lifted this out of ``_networkFirst``'s ``catch`` block so the
+ * latched path can reach it without a network attempt first. The logic is
+ * unchanged from C1 (docs/code-reviews/2026-08-03-js-review.md): both
+ * request-matched reads serve an entry only to the principal its HTML was
+ * rendered for, while ``OFFLINE_FALLBACK`` is deliberately exempt — it is
+ * precached, carries no account identity, and exists to be shown when nothing
+ * else can be.
+ *
+ * Returning ``null`` rather than throwing keeps the decision with the caller:
+ * the network branch rethrows the original error (so a genuine failure still
+ * surfaces with its own cause), while the latched branch answers with a
+ * synthesized 504.
+ *
+ * @param {Request} request
+ * @param {Cache} cache The open shell cache.
+ * @returns {Promise<Response|null>}
+ */
+async function _networkFirstFallback(request, cache) {
+  const current = await _currentPrincipal();
+  const cached = await cache.match(request);
+  if (cached && _principalMatches(cached, current)) return _stampCacheHit(cached);
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    const searchless = await cache.match(request, { ignoreSearch: true });
+    if (searchless && _principalMatches(searchless, current)) {
+      return _stampCacheHit(searchless);
+    }
+    const fallback = await cache.match(OFFLINE_FALLBACK);
+    if (fallback) return _stampCacheHit(fallback);
+  }
+  return null;
+}
+
 async function _networkFirst(request) {
   const cache = await caches.open(CACHE_VERSION);
+  // SNOW-742: latched offline — go straight to the cache branch rather than
+  // spending a 5s budget re-proving there is no route. This is the difference
+  // between a day in the backcountry costing five seconds per navigation and
+  // costing nothing.
+  if (!_shouldUseNetwork()) {
+    const offline = await _networkFirstFallback(request, cache);
+    if (offline) return offline;
+    return _synthesizedGatewayTimeout();
+  }
   try {
-    const response = await fetch(request);
+    const response = await _boundedFetch(request, NAVIGATION_FETCH_BUDGET_MS);
     if (response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
       _cacheNavigation(cache, request, response.clone(), response.clone());
     }
     return response;
   } catch (err) {
-    const current = await _currentPrincipal();
-    const cached = await cache.match(request);
-    if (cached && _principalMatches(cached, current)) return _stampCacheHit(cached);
-    if (request.mode === 'navigate' || request.destination === 'document') {
-      const searchless = await cache.match(request, { ignoreSearch: true });
-      if (searchless && _principalMatches(searchless, current)) {
-        return _stampCacheHit(searchless);
-      }
-      const fallback = await cache.match(OFFLINE_FALLBACK);
-      if (fallback) return _stampCacheHit(fallback);
-    }
+    // SNOW-742: a budget expiry rejects exactly as a refusal does, so a hang
+    // now reaches this branch — the whole point of bounding the fetch. Before,
+    // the network held the request open for the OS TCP timeout and this code
+    // simply never ran, which is why the app showed a blank page for minutes
+    // with the cached shell sitting on disk the entire time.
+    const fallback = await _networkFirstFallback(request, cache);
+    if (fallback) return fallback;
     throw err;
   }
 }
@@ -2055,6 +2490,26 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data === 'version') {
     event.source?.postMessage({ type: 'version', version: CACHE_VERSION });
+  }
+  // SNOW-742: the page setting the network mode, from three sources — the
+  // user's own control in the offline banner, the mode persisted in
+  // ``meta:app`` being re-asserted on boot (which is what makes the latch
+  // survive a worker restart without an IndexedDB read on the fetch path),
+  // and the page's ``online`` listener asking for an immediate probe rather
+  // than waiting out the backoff.
+  //
+  // ``'auto'`` unlatches directly instead of probing first: the caller is
+  // either a user who can see they have signal or an ``online`` event, and in
+  // both cases the next real read is a better probe than a synthetic one — it
+  // is bounded, and if the route is still dead three of them re-latch within
+  // about nine seconds.
+  if (event.data && event.data.type === 'network-mode') {
+    if (event.data.mode === 'offline') _latchOffline();
+    if (event.data.mode === 'auto') _unlatchOffline();
+    // Answer the sender directly as well as broadcasting, so a page that has
+    // just booted learns the mode even when nothing has changed and
+    // ``_publishNetworkMode`` therefore had nothing to announce.
+    event.source?.postMessage({ type: 'network-mode', mode: _networkMode });
   }
   // The page sends this when the user clicks "Reload" on the update
   // banner. Activating the waiting worker triggers ``activate`` (and its
@@ -2188,6 +2643,12 @@ self.addEventListener('message', (event) => {
         areaId,
         onProgress,
         shouldCancel,
+        // SNOW-742: the active style's glyph URL prefix, so a pinned run can
+        // promote the labels this area needs out of the trimmable passive
+        // cache and into its own bucket. Absent on a non-pinned run, and on
+        // an older page still serving a cached shell — ``_warmCache`` skips
+        // the promotion entirely when it is missing.
+        glyphPrefix: event.data.glyphPrefix,
       }).then((result) => {
         // SNOW-632: this requestId's run has settled one way or another —
         // drop it from the cancelled set now rather than waiting for the

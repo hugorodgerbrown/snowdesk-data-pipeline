@@ -6,7 +6,9 @@ Rendered hidden by base.html on every public page. Revealed by
 static/js/pwa_offline.js when:
 
   * ``navigator.onLine === false``, or
-  * a fetch / HTMX request just failed with a network error.
+  * a fetch / HTMX request just failed with a network error, or
+  * the service worker has latched into offline mode (SNOW-742 — see below;
+    this one can be true while ``navigator.onLine`` is still true).
 
 The banner is a ``<details>`` disclosure (SNOW-482). The summary row
 reads "Offline — last synced <relative>", where ``static/js/pwa_offline.js``
@@ -21,6 +23,33 @@ Opening the caret reveals a short explanation of the offline state. There
 is one clock, not two: a ``freshness.last_generated_at`` companion read
 from ``X-Data-Generated-At`` (SNOW-370) was absorbed and persisted but
 never surfaced anywhere, and SNOW-615 removed it.
+
+SNOW-742 — two states, not one. The banner now distinguishes "the network
+is failing" from "the app has given up on the network", because they make
+different promises to the user and only one of them is true at a time:
+
+  * struggling (``offline-message`` / ``offline-explainer``) — requests are
+    still being attempted, and the app will update as soon as one lands.
+  * latched (``latched-message`` / ``latched-explainer``) — the service
+    worker has stopped calling the network entirely after three consecutive
+    read timeouts, and is serving downloaded data only. This state can be
+    reached while ``navigator.onLine`` is still TRUE (a radio that is
+    attached but has no route — the Underground), which is exactly why the
+    banner cannot key off ``onLine`` alone.
+
+Both variants of the message and the explanation are rendered here and
+toggled by ``hidden`` in static/js/pwa_offline.js, rather than having their
+text set from JavaScript: ``makemessages`` never scans ``static/js``, so a
+string built there ships as English to every locale. ``bin/i18n-lint``
+enforces this. See docs/i18n.md.
+
+The two buttons are mutually exclusive, each offered only where it does
+something — "Try reconnecting" while latched, "Stay offline" while merely
+struggling (a user who can see the banner and knows they are about to lose
+signal for the day).
+
+Spec §3.5, §10.1, §12.6 — freshness is non-negotiable, and an app that has
+stopped asking the server has to say so.
 
 In-flow, not ``fixed`` — it sits as the first child of the body, above
 ``includes/nav.html``, so when revealed it pushes the nav and page
@@ -51,10 +80,19 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
                 d="M12 20h.01M2.42 8.577a13 13 0 0119.16 0M5.879 11.879a8 8 0 0112.242 0M9.172 14.828a4 4 0 015.656 0"
             />
         </svg>
+        {# SNOW-742: two message variants, both rendered server-side and #}
+        {# toggled by ``hidden``. Swapping the text in JavaScript instead #}
+        {# would ship an English literal to every locale — makemessages   #}
+        {# never scans static/js — which is exactly what i18n-lint fails  #}
+        {# on. See docs/i18n.md.                                          #}
         <span
             data-role="offline-message"
             class="whitespace-nowrap"
         >{% trans "Offline — last synced" %}</span>
+        <span
+            data-role="latched-message"
+            class="hidden whitespace-nowrap"
+        >{% trans "Offline mode — last synced" %}</span>
         <span data-role="synced-at">—</span>
         <svg
             aria-hidden="true"
@@ -71,11 +109,40 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
     {# overrides the UA rule that hides a closed <details>, so we drive the     #}
     {# collapse ourselves: display:none when closed, block only when open.       #}
     <div class="hidden group-open:block max-w-4xl mx-auto px-4 pb-2 pl-10 text-xs opacity-90">
-        <p>
+        <p data-role="offline-explainer">
             {% blocktrans %}
                 The app has lost contact with the server, and is displaying the latest cached data. It will update as
                 soon as the connection is restored.
             {% endblocktrans %}
         </p>
+        {# SNOW-742: the latched explanation. The app has stopped trying the #}
+        {# network entirely, which is a different promise from "it will      #}
+        {# update as soon as the connection is restored" above — so it says  #}
+        {# so, and offers the way back.                                      #}
+        <p
+            data-role="latched-explainer"
+            class="hidden"
+        >
+            {% blocktrans %}
+                There is no usable connection, so the app has stopped trying and is running from downloaded data only.
+                It will check again periodically, and reconnect on its own once there is signal.
+            {% endblocktrans %}
+        </p>
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+            <button
+                type="button"
+                data-role="reconnect"
+                class="hidden rounded-pill border border-border px-3 py-1 font-medium"
+            >
+                {% trans "Try reconnecting" %}
+            </button>
+            <button
+                type="button"
+                data-role="stay-offline"
+                class="rounded-pill border border-border px-3 py-1 font-medium"
+            >
+                {% trans "Stay offline" %}
+            </button>
+        </div>
     </div>
 </details>

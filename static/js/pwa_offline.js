@@ -54,6 +54,34 @@
  * out by the manage-page sync-log panel behind the ``sync_log`` waffle
  * flag.
  *
+ * Network mode (SNOW-742)
+ * ------------------------
+ * The banner used to key entirely off ``navigator.onLine`` plus "did a fetch
+ * just fail". Neither can see the state this ticket added: the service worker
+ * has LATCHED offline — stopped calling the network at all after three
+ * consecutive read timeouts — while ``navigator.onLine`` is still true. That
+ * combination is the Underground exactly: the radio is attached, so the
+ * platform reports online; there is no route, so nothing completes.
+ *
+ * So the banner has two states rather than one, and they make different
+ * promises. "Offline — last synced" means requests are still going out and the
+ * app will update as soon as one lands. "Offline mode — last synced" means it
+ * has stopped asking and is serving downloaded data only. Showing the first
+ * while the second is true would be a lie about avalanche data, which is why
+ * the reveal rule is ``!online || latched`` rather than ``!online``.
+ *
+ * The worker owns the mode; ``networkMode`` here is a mirror, kept in step by
+ * the ``network-mode`` message in both directions. It is persisted to
+ * ``meta:app`` under ``network.mode`` and re-asserted to the worker on boot —
+ * a worker terminated while idle comes back in ``'auto'`` having forgotten the
+ * latch, and re-asserting is what restores it without putting an IndexedDB
+ * read on the worker's own fetch path.
+ *
+ * Every user-facing string for both states is rendered by
+ * ``includes/_offline_banner.html`` and toggled here by ``hidden``. Setting the
+ * text from JavaScript would ship English to every locale — ``makemessages``
+ * never scans ``static/js`` — which is what ``bin/i18n-lint`` fails on.
+ *
  * Deferred to SNOW-375 / follow-ups:
  *   * Pull-to-refresh explicit-network path.
  *   * "Updated HH:MM" post-refresh toast.
@@ -64,6 +92,18 @@
 
   const BANNER_ID = 'pwa-offline-banner';
   const NETWORK_ATTR = 'data-network-required';
+
+  // SNOW-742: the meta:app key the network mode is persisted under, and the
+  // mode itself as this page last heard it from the worker.
+  //
+  // The worker owns the mode; this is a mirror, for two jobs. It decides which
+  // banner variant to show, and it is re-asserted to the worker on boot — a
+  // worker that was terminated while idle comes back in 'auto' with no memory
+  // of the latch, and re-asserting is what restores it without putting an
+  // IndexedDB read on the worker's fetch path. See sw.js's
+  // ``_publishNetworkMode``.
+  const NETWORK_MODE_KEY = 'network.mode';
+  let networkMode = 'auto';
 
   // SNOW-482: the meta:app key the last-sync clock is persisted under.
   // A sibling ``freshness.last_generated_at`` key went with the write-only
@@ -196,7 +236,17 @@
   function renderBanner(online) {
     const banner = document.getElementById(BANNER_ID);
     if (!banner) return;
-    if (online) {
+    // SNOW-742: a latched app keeps the banner up even though
+    // ``navigator.onLine`` may well be true — on the Underground it stays true
+    // throughout, which is the whole reason the latch exists. Hiding the
+    // banner there would leave the user reading cached avalanche ratings with
+    // nothing on screen saying so.
+    // Update the variant before deciding on visibility, not after: leaving a
+    // hidden banner holding the previous mode's message means the next reveal
+    // shows the wrong one for a frame, and the banner is revealed by a network
+    // failure at an arbitrary later moment.
+    renderNetworkMode(banner);
+    if (online && networkMode !== 'offline') {
       banner.classList.add('hidden');
       stopFreshnessTicker();
       return;
@@ -204,6 +254,88 @@
     banner.classList.remove('hidden');
     renderFreshnessCells(banner);
     startFreshnessTicker();
+  }
+
+  /**
+   * SNOW-742: show the message, explanation and control that match the current
+   * network mode. Both variants of each are rendered server-side by
+   * ``includes/_offline_banner.html`` and toggled here, so no user-facing
+   * string is ever built in JavaScript (docs/i18n.md).
+   *
+   * @param {HTMLElement} banner
+   */
+  function renderNetworkMode(banner) {
+    const latched = networkMode === 'offline';
+    const toggle = (role, shown) => {
+      const el = banner.querySelector(`[data-role="${role}"]`);
+      if (el) el.classList.toggle('hidden', !shown);
+    };
+    toggle('offline-message', !latched);
+    toggle('latched-message', latched);
+    toggle('offline-explainer', !latched);
+    toggle('latched-explainer', latched);
+    // The two controls are mutually exclusive, and each is only offered in the
+    // state where it does something: "try reconnecting" while latched, "stay
+    // offline" while merely struggling.
+    toggle('reconnect', latched);
+    toggle('stay-offline', !latched);
+  }
+
+  /**
+   * Ask the service worker to change mode, and persist the request so a
+   * restarted worker can be told about it again on the next boot.
+   *
+   * @param {'auto'|'offline'} mode
+   */
+  function requestNetworkMode(mode) {
+    networkMode = mode;
+    persistMeta(NETWORK_MODE_KEY, mode);
+    renderBanner(navigator.onLine);
+    try {
+      navigator.serviceWorker?.controller?.postMessage({ type: 'network-mode', mode });
+    } catch (_err) {
+      // No controller yet (first load before activation), or messaging
+      // unavailable. The persisted row is re-asserted on the next boot, so the
+      // user's choice is not lost — it just takes effect a load later.
+    }
+  }
+
+  /**
+   * Bind the banner's two mode controls, and listen for the worker announcing
+   * a mode change it made on its own (the latch tripping, or a probe finding
+   * a route again).
+   */
+  function bindNetworkModeControls() {
+    const banner = document.getElementById(BANNER_ID);
+    if (banner) {
+      banner.querySelector('[data-role="reconnect"]')?.addEventListener('click', () => {
+        requestNetworkMode('auto');
+      });
+      banner.querySelector('[data-role="stay-offline"]')?.addEventListener('click', () => {
+        requestNetworkMode('offline');
+      });
+    }
+    // ``navigator.serviceWorker``'s message queue is disabled until something
+    // enables it — setting ``onmessage``, or calling this. An
+    // ``addEventListener`` listener alone does NOT enable it, so a message the
+    // worker posts before the queue opens is simply never delivered. In
+    // practice the queue opens at document load and sw_register.js has always
+    // relied on that, but the latch can trip during the initial tile burst,
+    // which is close enough to that boundary to be worth removing the
+    // question. Idempotent, and a no-op once already enabled.
+    try {
+      navigator.serviceWorker?.startMessages?.();
+    } catch (_err) {
+      // Not available (or no container at all) — fall back to the implicit
+      // load-time enablement, which is what the rest of the app already uses.
+    }
+    navigator.serviceWorker?.addEventListener('message', (event) => {
+      if (!event.data || event.data.type !== 'network-mode') return;
+      networkMode = event.data.mode === 'offline' ? 'offline' : 'auto';
+      persistMeta(NETWORK_MODE_KEY, networkMode);
+      renderBanner(navigator.onLine);
+      syncNetworkRequired(navigator.onLine && networkMode !== 'offline');
+    });
   }
 
   /**
@@ -460,6 +592,11 @@
    */
   function bindConnectionEvents() {
     window.addEventListener('online', () => {
+      // SNOW-742: an interface coming back is the strongest signal there is
+      // that the latch should lift, and it beats waiting out the worker's own
+      // backoff (up to five minutes). If the route is still dead, three
+      // bounded reads re-latch within about nine seconds.
+      if (networkMode === 'offline') requestNetworkMode('auto');
       renderBanner(true);
       syncNetworkRequired(true);
       broadcastConnectivity(true);
@@ -490,6 +627,16 @@
     } catch (_err) {
       // Best-effort — the banner falls back to "no data yet" copy.
     }
+    // SNOW-742: and the network mode, which is re-asserted to the worker by
+    // ``init`` below. Read separately from the clock above so one failing row
+    // can't cost the other.
+    try {
+      const modeRow = await window.pwaDb.get('meta:app', NETWORK_MODE_KEY);
+      if (modeRow && modeRow.value === 'offline') networkMode = 'offline';
+    } catch (_err) {
+      // Best-effort — an unread mode simply starts in 'auto', and the latch
+      // re-trips within about nine seconds if the radio really is dead.
+    }
   }
 
   /**
@@ -502,9 +649,19 @@
     bindConnectionEvents();
     wrapFetch();
     wrapHtmx();
+    // SNOW-742: bound BEFORE the IndexedDB read below, not after. The worker
+    // can latch during the page's own initial request burst, and a listener
+    // attached behind an await would miss the announcement — leaving the app
+    // latched with the banner still claiming it is merely struggling.
+    bindNetworkModeControls();
     await hydratePersistedClocks();
+    // SNOW-742: re-assert the persisted mode to the worker. A worker
+    // terminated while idle comes back in 'auto' having forgotten the latch;
+    // this is what restores it, and it is why the worker never has to read
+    // IndexedDB on its own fetch path.
+    if (networkMode === 'offline') requestNetworkMode('offline');
     renderBanner(navigator.onLine);
-    syncNetworkRequired(navigator.onLine);
+    syncNetworkRequired(navigator.onLine && networkMode !== 'offline');
     // Prime consumers with the initial state so a page that loaded offline
     // (via the SW cache) gets its cache-aware gating applied at boot, not
     // only on the next transition.
