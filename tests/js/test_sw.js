@@ -84,6 +84,11 @@ const SW_EXPORTS = [
   '_clearWarmCacheCancelled',
   '_handleWarmCacheCancelMessage',
   'WARM_CACHE_CANCEL_SET_MAX',
+  // SNOW-748: the in-flight half of that protocol — what there is to cancel
+  // when the user forces offline mode mid-download.
+  '_warmCacheActiveIds',
+  '_markWarmCacheActive',
+  '_clearWarmCacheActive',
   // SNOW-722: the cross-origin routing fix — classification, its
   // IndexedDB rehydration, and the two cache searches behind it.
   '_classifyCrossOriginGet',
@@ -1851,5 +1856,184 @@ describe('the user-forced offline mode (SNOW-748)', () => {
     // And back, which is the toggle's other direction.
     send('auto');
     expect(readNetworkMode(sw)).toBe('auto');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-748 — a forced mode stops downloads; a latch still does not
+// ---------------------------------------------------------------------------
+//
+// The distinction the block above pins for READS holds for DOWNLOADS too, in
+// the opposite direction. ``_warmCache`` ignores the auto-latch on purpose: a
+// latch is the worker's guess that there is no route, and a download the user
+// explicitly asked for should still be attempted in case the guess is wrong.
+// A forced mode is not a guess — the user has said not to spend this
+// connection — so it refuses a new run and cancels one in flight.
+//
+// The first test in each pair is the fix; the second is the regression guard
+// for the shipped latch behaviour (SNOW-568/SNOW-742), which a blanket
+// ``!== 'auto'`` here would silently break.
+
+describe('warm-cache under the two offline modes (SNOW-748)', () => {
+  const urls = Array.from({ length: 40 }, (_, i) => `${ORIGIN}/api/tile-${i}.json`);
+
+  /** A same-origin JSON response `_warmCache` accepts and writes. */
+  function jsonResponse() {
+    return basicResponse('{}', { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  /**
+   * A fetch that answers only once ``release()`` is called, so a run can be
+   * held open long enough for a mode change to land mid-flight.
+   *
+   * @returns {{fetch: Function, release: Function, count: () => number}}
+   */
+  function gatedFetch() {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    let count = 0;
+    return {
+      fetch: async () => {
+        count += 1;
+        await gate;
+        return jsonResponse();
+      },
+      release: () => release(),
+      count: () => count,
+    };
+  }
+
+  /**
+   * Dispatch a ``warm-cache`` message at the real listener and return the
+   * ``warm-cache-done`` reply it eventually posts back — the same path the
+   * page's ``pwaWarmCache()`` takes, so the in-flight bookkeeping under test
+   * is the bookkeeping that actually runs.
+   *
+   * @param {object} sw
+   * @param {string} requestId
+   * @param {string[]} list
+   * @returns {Promise<object>}
+   */
+  function dispatchWarmCache(sw, requestId, list) {
+    return new Promise((resolve) => {
+      sw.__listeners.message({
+        data: { type: 'warm-cache', urls: list, requestId },
+        source: {
+          postMessage: (data) => {
+            if (data.type === 'warm-cache-done') resolve(data);
+          },
+        },
+      });
+    });
+  }
+
+  it('refuses a new run outright while the mode is forced', async () => {
+    const fetchSpy = vi.fn(async () => jsonResponse());
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._forceOffline();
+    const result = await sw._warmCache(urls);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // The shape of a cancelled run, not a failed one: nothing was attempted,
+    // so nothing can have failed, and basemap_download_runner.js's callers
+    // read `cancelled` before they read a short `ok`.
+    expect(result).toEqual({
+      ok: 0,
+      failed: 0,
+      reason: 'offline-forced',
+      bytes: 0,
+      cancelled: true,
+    });
+  });
+
+  it('still runs one under an auto-latch — the guess may be wrong', async () => {
+    const fetchSpy = vi.fn(async () => jsonResponse());
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._latchOffline();
+    const result = await sw._warmCache(urls);
+
+    // Shipped behaviour since SNOW-568: a download is a long operation the
+    // user explicitly asked for, on a connection they believe they have.
+    expect(result.ok).toBe(urls.length);
+    expect(result.cancelled).toBe(false);
+    expect(fetchSpy).toHaveBeenCalled();
+  });
+
+  it('cancels a run in flight when the user forces the mode', async () => {
+    const gate = gatedFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: gate.fetch });
+
+    const done = dispatchWarmCache(sw, 'req-live', urls);
+    // Let the run open its caches and fill the pool before the toggle lands.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    sw._forceOffline();
+    gate.release();
+    const result = await done;
+
+    expect(result.cancelled).toBe(true);
+    // The invariant basemap_download_runner.js documents: a cancelled run has
+    // no failures, so a `finish` that checks `cancelled` first never writes it
+    // up as a partial or failed download.
+    expect(result.failed).toBe(0);
+    expect(result.ok).toBeLessThan(urls.length);
+    // Only the workers already dispatched when the cancel landed reached the
+    // network; the rest of the list never did.
+    expect(gate.count()).toBeLessThan(urls.length / 2);
+  });
+
+  it('leaves a run in flight alone when the worker merely latches', async () => {
+    const gate = gatedFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: gate.fetch });
+
+    const done = dispatchWarmCache(sw, 'req-live', urls);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    sw._latchOffline();
+    gate.release();
+    const result = await done;
+
+    expect(result.cancelled).toBe(false);
+    expect(result.ok).toBe(urls.length);
+  });
+
+  it('forgets a settled run, so a later force cancels nothing', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: async () => jsonResponse() });
+
+    const result = await dispatchWarmCache(sw, 'req-done', [`${ORIGIN}/api/one.json`]);
+    expect(result.cancelled).toBe(false);
+    expect(sw._warmCacheActiveIds.size).toBe(0);
+
+    sw._forceOffline();
+
+    // A finished run's id must not be marked cancelled — nothing would ever
+    // clear it again, and the cancelled set is consulted by requestId.
+    expect(sw._warmCacheCancelledIds.has('req-done')).toBe(false);
+  });
+
+  it('bounds the in-flight set the same way the cancelled set is bounded', () => {
+    const sw = loadSw();
+
+    sw._markWarmCacheActive(undefined);
+    sw._markWarmCacheActive(null);
+    expect(sw._warmCacheActiveIds.size).toBe(0);
+
+    for (let i = 0; i < sw.WARM_CACHE_CANCEL_SET_MAX + 1; i += 1) {
+      sw._markWarmCacheActive(`run-${i}`);
+    }
+
+    expect(sw._warmCacheActiveIds.size).toBe(sw.WARM_CACHE_CANCEL_SET_MAX);
+    expect(sw._warmCacheActiveIds.has('run-0')).toBe(false);
+
+    sw._clearWarmCacheActive(`run-${sw.WARM_CACHE_CANCEL_SET_MAX}`);
+    expect(sw._warmCacheActiveIds.has(`run-${sw.WARM_CACHE_CANCEL_SET_MAX}`)).toBe(false);
   });
 });

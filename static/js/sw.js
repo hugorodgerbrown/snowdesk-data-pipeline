@@ -318,7 +318,7 @@ let _basemapPutsSinceTrim = 0;
 //   otherwise. That steady state is what the ticket is actually about.
 //
 // Both apply to READ paths only. ``_warmCache`` keeps unbounded fetches and
-// ignores the latch — a download is a long operation the user explicitly asked
+// ignores the LATCH — a download is a long operation the user explicitly asked
 // for, on a connection they believe they have, and its failures already reach
 // them (SNOW-568).
 //
@@ -326,6 +326,13 @@ let _basemapPutsSinceTrim = 0;
 // it from the header toggle, with no failure involved at all. See
 // ``_networkMode`` below — that mode is not probed, because there is nothing
 // to discover.
+//
+// And it is the one offline mode ``_warmCache`` does NOT ignore. The bypass
+// above reasons from a connection the user believes they have; under a forced
+// mode the user has told the app not to use the connection they know they
+// have, so downloading tiles down it is the app contradicting its own header.
+// So a forced mode refuses a new run (``_warmCache``'s first guard) and
+// cancels one in flight (``_forceOffline``), while an auto-latch does neither.
 
 // How long a navigation's network attempt gets before it is aborted. Generous
 // relative to the tile budget because a navigation is one request whose whole
@@ -1380,6 +1387,60 @@ function _clearWarmCacheCancelled(requestId) {
   _warmCacheCancelledIds.delete(requestId);
 }
 
+// SNOW-748: requestIds of warm-cache runs currently in flight. The cancelled
+// set above records what the PAGE asked to stop; this one records what there
+// is to stop, which is the half the worker never had. ``_forceOffline`` needs
+// it: the user pressing the header toggle mid-download is a cancel request for
+// whatever is running, and the worker is the only side that knows what that is
+// (the page posts a cancel for one control's own run, not for anyone else's).
+//
+// Entries are added as a run is dispatched and removed as its promise settles,
+// so in normal operation the set holds at most one — but it is capped the same
+// way as the cancelled set, for the same reason: an entry that somehow escapes
+// the settle path must not accumulate for the life of the worker.
+const _warmCacheActiveIds = new Set();
+
+/**
+ * Record that a warm-cache run is in flight under ``requestId``, evicting the
+ * oldest entry first past ``WARM_CACHE_CANCEL_SET_MAX`` — the same discipline
+ * (and the same cap) as ``_markWarmCacheCancelled``.
+ *
+ * @param {*} requestId
+ */
+function _markWarmCacheActive(requestId) {
+  if (requestId === undefined || requestId === null) return;
+  _warmCacheActiveIds.add(requestId);
+  if (_warmCacheActiveIds.size > WARM_CACHE_CANCEL_SET_MAX) {
+    const oldest = _warmCacheActiveIds.values().next().value;
+    _warmCacheActiveIds.delete(oldest);
+  }
+}
+
+/**
+ * Drop ``requestId`` from the in-flight set — called once its run settles,
+ * cancelled or not.
+ *
+ * @param {*} requestId
+ */
+function _clearWarmCacheActive(requestId) {
+  _warmCacheActiveIds.delete(requestId);
+}
+
+/**
+ * SNOW-748: cancel every warm-cache run currently in flight, through the
+ * ordinary cancellation protocol rather than a second abort mechanism — each
+ * run's pool polls ``shouldCancel`` against the cancelled set and stops
+ * dispatching, and the summary it returns carries ``cancelled: true`` with
+ * ``failed: 0``, which is the shape ``basemap_download_runner.js``'s callers
+ * already know how to finish on.
+ *
+ * Called only from ``_forceOffline``. An auto-latch deliberately does NOT call
+ * it — see that function's own note.
+ */
+function _cancelActiveWarmCacheRuns() {
+  _warmCacheActiveIds.forEach((requestId) => _markWarmCacheCancelled(requestId));
+}
+
 /**
  * Handle a ``'warm-cache-cancel'`` message's ``data`` payload — factored
  * out of the ``message`` listener below so it is callable on its own, not
@@ -1570,10 +1631,27 @@ async function _warmCacheResponseBytes(response) {
  *   ``pinned`` is true — the caller (the ``message`` handler below)
  *   refuses the run rather than calling this with ``pinned`` and no
  *   ``areaId``, so this function can assume the pair is already valid.
+ * SNOW-748: refused outright while the user has forced offline mode, with the
+ * shape of a cancelled run — ``cancelled: true``, ``failed: 0``, nothing
+ * fetched — because that is what it is: the user has said not to use this
+ * connection, and a run that never starts has no failures to report. The
+ * distinct ``reason`` (``'offline-forced'``) is for a caller that wants to say
+ * why; the callers that only ask "did it succeed" already read ``cancelled``
+ * first (see ``basemap_download_runner.js``). An auto-LATCH is deliberately
+ * not refused here — see the "Both apply to READ paths only" note at the head
+ * of this file for why the two offline modes part company at exactly this
+ * point.
+ *
  * @returns {Promise<{ok: number, failed: number, reason: string|null,
  *   bytes: number, cancelled: boolean}>}
  */
 async function _warmCache(urls, options) {
+  // SNOW-748: the user's own offline mode, refused before a cache is even
+  // opened. Not ``!== 'auto'``: an auto-latch must still let a download
+  // through.
+  if (_networkMode === 'offline-forced') {
+    return { ok: 0, failed: 0, reason: 'offline-forced', bytes: 0, cancelled: true };
+  }
   const opts = options || {};
   const pinned = !!opts.pinned;
   const areaId = opts.areaId;
@@ -1946,6 +2024,13 @@ function _recordReadPathTimeout() {
  * just after the user forces the mode), and latching there would DOWNGRADE the
  * user's choice to an auto-latch — which schedules the probe that then
  * unlatches it. Only a mode nothing has claimed yet can be latched.
+ *
+ * SNOW-748: it deliberately does NOT cancel a warm-cache run in flight, where
+ * ``_forceOffline`` does. The latch is a guess drawn from three read timeouts,
+ * and a download is a long operation the user explicitly asked for on a
+ * connection they believe they have; killing it on a guess would be the
+ * worker overruling the user. See ``_warmCache``'s own guard for the other
+ * half of that distinction.
  */
 function _latchOffline() {
   if (_networkMode !== 'auto') return;
@@ -1971,6 +2056,17 @@ function _latchOffline() {
  * Any pending probe from a previous auto-latch is cancelled for the same
  * reason: it would fire under the forced mode and unlatch it.
  *
+ * So is any basemap download in flight, and that one is NOT shared with the
+ * latch. ``_warmCache`` bypasses the latch on purpose — a latch is the
+ * worker's guess that there is no route, and a download the user explicitly
+ * asked for should still be attempted in case the guess is wrong. A forced
+ * mode is the opposite kind of fact: the user has said not to spend this
+ * connection, and continuing to pull tiles down it would be the app doing the
+ * one thing its own header says it has stopped doing. Cancelled through the
+ * ordinary protocol (``_cancelActiveWarmCacheRuns``), so a run stops with
+ * ``cancelled: true`` and ``failed: 0`` rather than being written up as a
+ * failed download.
+ *
  * Idempotent, like its sibling.
  */
 function _forceOffline() {
@@ -1982,6 +2078,7 @@ function _forceOffline() {
   _networkMode = 'offline-forced';
   _consecutiveTimeouts = 0;
   _probeBackoffIndex = 0;
+  _cancelActiveWarmCacheRuns();
   _publishNetworkMode();
 }
 
@@ -2708,6 +2805,10 @@ self.addEventListener('message', (event) => {
       // docstring and the 'warm-cache-cancel' handler below, which is the
       // only thing that ever adds to this set.
       const shouldCancel = () => _warmCacheCancelledIds.has(requestId);
+      // SNOW-748: and the other half of that protocol — this run is now
+      // something there is to cancel, which is what ``_forceOffline`` needs to
+      // know when the user presses the header toggle mid-download.
+      _markWarmCacheActive(requestId);
       const onProgress = (done, total, settled, bytes) => {
         event.source?.postMessage({
           type: 'warm-cache-progress',
@@ -2738,6 +2839,10 @@ self.addEventListener('message', (event) => {
         // drop it from the cancelled set now rather than waiting for the
         // cap in _markWarmCacheCancelled to age it out.
         _clearWarmCacheCancelled(requestId);
+        // SNOW-748: and out of the in-flight set, so a later _forceOffline
+        // does not mark a finished run cancelled (which would leave its id
+        // sitting in the cancelled set with nothing to clear it).
+        _clearWarmCacheActive(requestId);
         event.source?.postMessage({
           type: 'warm-cache-done',
           ok: result.ok,
