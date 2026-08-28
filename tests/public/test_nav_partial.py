@@ -393,6 +393,30 @@ class TestNavConnectivitySymbol:
         assert 'data-role="network-online-icon"' in element
         assert 'data-role="network-offline-icon"' in element
 
+    def test_symbol_paints_available_online_and_muted_offline(
+        self, rf: RequestFactory
+    ) -> None:
+        """Coloured means reaching the network; grey means not.
+
+        The sync-status pair, whose whole purpose is "available / not
+        available" — the question this symbol answers. It shipped inverted
+        for one pass: the plain arcs took the muted ``text-text-3`` and the
+        struck-through ones ``text-status-warning-text``, which both read
+        the wrong way round (the working state was the greyed one) and
+        borrowed a flash-message severity for a state that is not an error.
+        A user who has chosen offline mode is not being warned.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        online = _class_tokens(
+            _opening_tag_around(html, 'data-role="network-online-icon"')
+        )
+        offline = _class_tokens(
+            _opening_tag_around(html, 'data-role="network-offline-icon"')
+        )
+        assert "text-sync-ok" in online
+        assert "text-sync-off" in offline
+        assert not [cls for cls in online | offline if cls.startswith("text-status-")]
+
     def test_symbol_has_an_accessible_name_for_each_state(
         self, rf: RequestFactory
     ) -> None:
@@ -450,9 +474,10 @@ class TestNavConnectionPanel:
 
         The toast version passed ``kind="info"``, so the panel painted itself
         ``status-info`` blue while the symbol beside it painted the same state
-        ``status-warning`` amber. The symbol carries the status colour because
-        it has to be legible unopened; the panel is the card the detail is
-        read on.
+        ``status-warning`` amber. Neither carries a ``status-*`` colour now:
+        the symbol paints the sync-status pair (see
+        ``test_symbol_paints_available_online_and_muted_offline``), and the
+        panel is the card the detail is read on.
         """
         html = _render_nav_for(rf, AnonymousUser())
         classes = _class_tokens(_opening_tag_around(html, 'id="pwa-connection-panel"'))

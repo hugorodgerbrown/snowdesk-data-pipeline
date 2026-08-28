@@ -171,6 +171,17 @@ Usage
                 mode. Which of those it is has a sentence in the panel; the
                 header has room for one bit and paints one bit.
 
+                The paint is the sync-status pair, not the status-* one:
+                --color-sync-ok on the plain arcs, --color-sync-off on the
+                struck-through ones. Those tokens exist for "available /
+                not available", which is what this symbol reports, and
+                src/css/main.css says so where they are defined. It painted
+                the offline state status-warning amber for one pass, which
+                borrowed a flash-message severity to say a thing that is
+                not an error: a user who has chosen offline mode is not
+                being warned. Coloured means reaching the network; grey and
+                struck through means not.
+
                 It IS a control again, but a DISCLOSURE, not a switch: pressing
                 it opens the connection-status panel
                 (includes/_connection_panel.html) anchored beneath it, and
@@ -223,10 +234,10 @@ Usage
                     aria-controls="pwa-connection-panel"
                     class="inline-flex items-center justify-center w-7 h-7 rounded-full hover:bg-tag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
                 >
-                    <span data-role="network-online-icon" class="text-text-3">
+                    <span data-role="network-online-icon" class="text-sync-ok">
                         {% include "includes/_icon_wifi.html" with size=15 only %}
                     </span>
-                    <span data-role="network-offline-icon" class="hidden text-status-warning-text">
+                    <span data-role="network-offline-icon" class="hidden text-sync-off">
                         {% include "includes/_icon_wifi_off.html" with size=15 only %}
                     </span>
                     <span
