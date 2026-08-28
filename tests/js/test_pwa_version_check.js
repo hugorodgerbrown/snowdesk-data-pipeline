@@ -298,48 +298,6 @@ describe('a drifting header is a hint, not a verdict', () => {
     expect(revealBanner).toHaveBeenCalled();
   });
 
-  it('hands the verdict to the banner so it can name the build on offer', async () => {
-    // The banner's build line needs the server's own account of what it is
-    // serving, and this path has just fetched it. Passing it through is
-    // what saves the banner a second identical round trip.
-    versionBody = {
-      current: NEWER_BUILD,
-      released_at: '2026-08-02T09:00:00+00:00',
-      update_required: false,
-    };
-
-    await respondWith({ version: NEWER_BUILD });
-    await settle();
-
-    expect(revealBanner).toHaveBeenCalledWith(
-      expect.objectContaining({
-        current: NEWER_BUILD,
-        released_at: '2026-08-02T09:00:00+00:00',
-      }),
-    );
-  });
-
-  it('re-reveals a sticky drift with the build line it already resolved', async () => {
-    versionBody = {
-      current: NEWER_BUILD,
-      released_at: '2026-08-02T09:00:00+00:00',
-      update_required: false,
-    };
-    await respondWith({ version: NEWER_BUILD });
-    await settle();
-    revealBanner.mockClear();
-
-    // A replayed cached response re-confirms the same drift from memory.
-    // It must not re-reveal with an empty verdict — that would clear a
-    // build line the user is mid-way through reading.
-    await respondWith({ version: NEWER_BUILD });
-    await settle();
-
-    expect(revealBanner).toHaveBeenCalledWith(
-      expect.objectContaining({ current: NEWER_BUILD }),
-    );
-  });
-
   it('does nothing when the banner owner has not loaded', async () => {
     delete window.pwaUpdateBanner;
     versionBody = { current: NEWER_BUILD, update_required: false };

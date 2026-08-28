@@ -224,7 +224,20 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         secret=True,
         note="read-only production DSN for bin/sync-staging-data (staging only)",
     ),
-    SettingSpec("RELEASE_VERSION", note="CalVer tag of the running release"),
+    # The note used to read "CalVer tag of the running release", which this
+    # has never been: it resolves to RENDER_GIT_COMMIT, a git SHA. The CalVer
+    # tag is created by release.yml AFTER the deploy starts and never reaches
+    # the running process. The human-readable release ordinal is APP_RELEASE
+    # below — a separate value, from a separate source, for a separate job.
+    SettingSpec(
+        "RELEASE_VERSION", note="git SHA of the running build (ETags, APP_VERSION)"
+    ),
+    # Ordinal of the production release ("24"), shown in the account menu as
+    # v24. Sourced from the tracked VERSION file; the env var exists so a
+    # test or a one-off container can pin it. No validator: any non-empty
+    # string is a legitimate release name, and an empty one simply hides the
+    # menu row.
+    SettingSpec("APP_RELEASE", note="human-readable release number — account menu"),
     # SITE_BASE_URL keeps its own dedicated check (check_site_base_url,
     # SNOW-554) for the localhost-in-production rule, which no generic
     # validator expresses. The shape check here is complementary.

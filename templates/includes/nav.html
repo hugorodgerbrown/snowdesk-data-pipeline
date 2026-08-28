@@ -268,6 +268,36 @@ Usage
                         >
                             {% trans "Settings" %}
                         </a>
+                        {% if APP_RELEASE_LABEL %}
+                            {% comment %}
+                                The running release, so "which version are you
+                                on?" has an answer a user can read out. It sits
+                                under Settings because it is the same kind of
+                                thing — account machinery rather than content —
+                                and at the foot of that group because it is the
+                                only row here that is not a destination.
+
+                                Deliberately NOT role="menuitem": this is a
+                                label, not an action, and a menuitem that does
+                                nothing when a keyboard user arrives on it is a
+                                dead stop in the menu's tab order. aria-hidden
+                                would be wrong too — the string is the point,
+                                and a screen-reader user asking the same
+                                question needs the same answer — so it is plain
+                                text inside the menu, announced when the menu
+                                is read but never focused as a control.
+
+                                The label itself is built per environment in
+                                apps/public/release.py: "v24" on production,
+                                "v24 · fce4f14" everywhere else, empty when no
+                                release number is configured (hence the guard —
+                                a blank row is worse than no row).
+                            {% endcomment %}
+                            <p class="px-3 py-1.5 text-xs text-text-3">
+                                <span class="sr-only">{% trans "Version" %}</span>
+                                {{ APP_RELEASE_LABEL }}
+                            </p>
+                        {% endif %}
                         <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         <form method="post" action="{% url 'accounts:sign_out' %}" class="contents">
                             {% csrf_token %}

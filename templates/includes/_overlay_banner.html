@@ -39,7 +39,10 @@ Optional context:
                 have never carried this attribute.
   kind        — status-palette key ("warning" default) — strip variant only.
   icon        — "calendar" (strip) | "refresh" | "location-off" (floating).
-                Omit for none.
+                Omit for none. The floating variant's roundel carries
+                ``data-overlay-icon`` so an owning module can animate it —
+                static/js/sw_register.js spins the refresh arrow while the
+                update it is offering applies.
   position    — "top" | "bottom" (floating only; default "bottom"). "top"
                 anchors near the top-centre (clears the nav) — used by the
                 off-map nudge; the update/install nudges use the default.
@@ -56,25 +59,6 @@ Optional context:
                 sentence that would otherwise sit in ``title``.
   cta_id      — DOM id for an optional primary CTA button (floating only).
   cta_label   — CTA button label, same translation convention as body.
-  detail_id   — id for an optional THIRD line (floating only), rendered
-                hidden and empty for the owning JS module to fill in and
-                unhide. Distinct from ``body_id``, which rewrites prose the
-                server already wrote: this line is for a value only the
-                client knows — the update banner's build identifiers, which
-                the shell reads from its own <meta> and from /api/version
-                (see static/js/sw_register.js). Monospace and quiet,
-                because what lands here is an identifier rather than a
-                sentence.
-  detail      — Initial text for that line. Almost always omitted — a
-                server-rendered value would not need the JS hook — so the
-                line ships hidden unless one is supplied. The component
-                library supplies one, because an invisible element shows
-                a design reviewer nothing.
-  detail_label — aria-label naming what the detail line holds. Required in
-                spirit whenever ``detail_id`` is used: a bare pair of build
-                hashes is meaningless read aloud, and the prose that would
-                explain it belongs in the catalogue, not in the JS that
-                fills the values in.
   bottom_offset — Optional CSS ``bottom`` value overriding the default
                 ``bottom-4`` (floating only) — e.g. so a banner clears
                 the mobile season scrubber. Only legitimate use of an
@@ -159,100 +143,70 @@ Optional context:
             style="bottom: {{ bottom_offset }}"
         {% endif %}
     >
-        <div class="bg-card text-text-1 rounded-card border border-border shadow-glass px-4 py-3">
-            {# The row is its own element so an optional detail line can sit #}
-            {# BELOW it at full card width. Nested unconditionally: a bare   #}
-            {# wrapper costs nothing, and one shape for every caller beats  #}
-            {# two that differ by whether a slot was asked for.             #}
-            <div class="flex items-center gap-3">
-                {% if icon %}
-                    <span
-                        data-overlay-icon
-                        class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-status-info-bg text-status-info-text"
-                        aria-hidden="true"
-                    >
-                        {% if icon == "refresh" %}
-                            <svg
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <polyline points="23 4 23 10 17 10" />
-                                <path d="M20.49 15A9 9 0 1 1 5.64 5.64L23 10" />
-                            </svg>
-                        {% elif icon == "location-off" %}
-                            <svg
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <path d="M5.43 5.43A8.06 8.06 0 0 0 4 10c0 6 8 12 8 12a29.94 29.94 0 0 0 5-5" />
-                                <path d="M19.18 13.52A8.66 8.66 0 0 0 20 10a8 8 0 0 0-8-8 7.88 7.88 0 0 0-3.52.82" />
-                                <path d="M9.13 9.13A2.78 2.78 0 0 0 9 10a3 3 0 0 0 3 3 2.78 2.78 0 0 0 .87-.13" />
-                                <path d="M14.9 9.25a3 3 0 0 0-2.15-2.16" />
-                                <line x1="2" x2="22" y1="2" y2="22" />
-                            </svg>
-                        {% endif %}
-                    </span>
-                {% endif %}
-                <div class="min-w-0 flex-1">
-                    {% if title %}
-                        <p id="{{ title_id }}" class="text-sm font-semibold leading-snug">{{ title }}</p>
-                        <p {% if body_id %}id="{{ body_id }}"{% endif %} class="text-xs text-text-2 mt-0.5">
-                            {{ body }}
-                        </p>
-                    {% else %}
-                        <p id="{{ title_id }}" class="text-sm font-semibold leading-snug">{{ body }}</p>
-                    {% endif %}
-                </div>
-                <div class="flex flex-none items-center gap-1">
-                    {% if cta_id and cta_label %}
-                        {% include "includes/_button.html" with variant="primary" size="compact" button_type="button" button_id=cta_id extra_classes="whitespace-nowrap" label=cta_label %}
-                    {% endif %}
-                    {% if dismissible %}
-                        <button
-                            type="button"
-                            data-action="dismiss"
-                            aria-label="{% trans 'Dismiss' %}"
-                            class="cursor-pointer text-text-3 hover:text-text-1 text-lg leading-none px-2"
-                        >
-                            &times;
-                        </button>
-                    {% endif %}
-                </div>
-            </div>
-            {% if detail_id %}
-                {# Below the row, not inside the copy column: what lands here #}
-                {# is a pair of build identifiers, which wraps to two lines   #}
-                {# in a column narrowed by an icon and a CTA and reads as     #}
-                {# broken prose when it does. Full card width fits it.        #}
-                {# The HTML5 ``hidden`` ATTRIBUTE, not the Tailwind ``hidden`` #}
-                {# class the outer element uses: that class is part of the    #}
-                {# overlay hide contract (data-overlay-hide="class"), this    #}
-                {# line is not an overlay, and its owning module fills the    #}
-                {# same-id node in the admin fallback banner sw_register.js   #}
-                {# synthesises, where no Tailwind is loaded and ``.hidden``   #}
-                {# would style nothing. The attribute is honoured by both, so #}
-                {# the fill stays one code path.                              #}
-                <p
-                    id="{{ detail_id }}"
-                    {% if not detail %}hidden{% endif %}
-                    class="mt-2 truncate font-mono text-meta text-text-3"
-                    {% if detail_label %}aria-label="{{ detail_label }}"{% endif %}
+        <div class="bg-card text-text-1 rounded-card border border-border shadow-glass px-4 py-3 flex items-center gap-3">
+            {% if icon %}
+                <span
+                    data-overlay-icon
+                    class="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-status-info-bg text-status-info-text"
+                    aria-hidden="true"
                 >
-                    {{ detail|default:"" }}
-                </p>
+                    {% if icon == "refresh" %}
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15A9 9 0 1 1 5.64 5.64L23 10" />
+                        </svg>
+                    {% elif icon == "location-off" %}
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M5.43 5.43A8.06 8.06 0 0 0 4 10c0 6 8 12 8 12a29.94 29.94 0 0 0 5-5" />
+                            <path d="M19.18 13.52A8.66 8.66 0 0 0 20 10a8 8 0 0 0-8-8 7.88 7.88 0 0 0-3.52.82" />
+                            <path d="M9.13 9.13A2.78 2.78 0 0 0 9 10a3 3 0 0 0 3 3 2.78 2.78 0 0 0 .87-.13" />
+                            <path d="M14.9 9.25a3 3 0 0 0-2.15-2.16" />
+                            <line x1="2" x2="22" y1="2" y2="22" />
+                        </svg>
+                    {% endif %}
+                </span>
             {% endif %}
+            <div class="min-w-0 flex-1">
+                {% if title %}
+                    <p id="{{ title_id }}" class="text-sm font-semibold leading-snug">{{ title }}</p>
+                    <p {% if body_id %}id="{{ body_id }}"{% endif %} class="text-xs text-text-2 mt-0.5">{{ body }}</p>
+                {% else %}
+                    <p id="{{ title_id }}" class="text-sm font-semibold leading-snug">{{ body }}</p>
+                {% endif %}
+            </div>
+            <div class="flex flex-none items-center gap-1">
+                {% if cta_id and cta_label %}
+                    {% include "includes/_button.html" with variant="primary" size="compact" button_type="button" button_id=cta_id extra_classes="whitespace-nowrap" label=cta_label %}
+                {% endif %}
+                {% if dismissible %}
+                    <button
+                        type="button"
+                        data-action="dismiss"
+                        aria-label="{% trans 'Dismiss' %}"
+                        class="cursor-pointer text-text-3 hover:text-text-1 text-lg leading-none px-2"
+                    >
+                        &times;
+                    </button>
+                {% endif %}
+            </div>
         </div>
     </div>
 {% endif %}

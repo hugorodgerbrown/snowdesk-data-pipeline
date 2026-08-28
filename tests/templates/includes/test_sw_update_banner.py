@@ -14,9 +14,6 @@ Covers:
   * Both controls take the pointer cursor — Tailwind v4's preflight gives
     ``<button>`` the default arrow, so a control that does not say
     otherwise reads as inert under the mouse.
-  * The build line ships empty and hidden with the id ``sw_register.js``
-    fills, and an ``aria-label``, since two git SHAs read aloud are not
-    self-explanatory.
   * The strings ``<template>`` carries the runtime-only copy (the busy
     state) with the same keys the admin fallback declares.
   * The rendered surface uses design tokens (``bg-card``, ``rounded-card``,
@@ -104,33 +101,6 @@ class TestActions:
         # There are two buttons — reload (rendered via _button.html) and dismiss.
         # Both must be non-submitting.
         assert html.count('type="button"') >= 2
-
-
-class TestBuildLine:
-    """The third line naming the build on either side of the reload."""
-
-    def test_slot_ships_empty_and_hidden(self) -> None:
-        """Only the client knows both builds, so the server renders neither.
-
-        The shell's build is in its own ``<meta>`` and the server's is in
-        ``/api/version``; ``sw_register.js`` composes the line and unhides
-        it. A slot that shipped visible would show an empty row under the
-        copy on every reveal that could not resolve one.
-        """
-        html = render()
-        slot = html[html.index('id="sw-update-banner-versions"') :]
-        slot = slot[: slot.index("</p>")]
-        assert "hidden" in slot
-        assert slot.rstrip().endswith(">")
-
-    def test_slot_is_labelled(self) -> None:
-        """An accessible name, because "a1b2c3d → e4f5g6h" read aloud is not one.
-
-        The label is prose and therefore belongs in the template, where
-        ``makemessages`` can see it — not in the JavaScript that fills the
-        values in.
-        """
-        assert 'aria-label="Build version"' in render()
 
 
 class TestRuntimeStrings:

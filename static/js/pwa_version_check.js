@@ -103,10 +103,6 @@
   // drift (the soft banner is already showing, and it is sticky).
   const staleConfirmed = new Set();
   const driftConfirmed = new Set();
-  // The verdict behind the most recent ``driftConfirmed`` entry, so a
-  // replayed cached response re-reveals the banner with the build line
-  // intact instead of clearing it.
-  let confirmedVerdict = null;
   // Single-flight guard for the verification fetch.
   let verifyInFlight = null;
   // SNOW-384: separate latch so pwa.forced_update.triggered fires exactly
@@ -172,14 +168,6 @@
    * remembers. The dev-bypass suppression is checked there too, so the
    * banner cannot be revealed by either path under the bypass.
    *
-   * The verdict is passed through when we have one: this path already
-   * asked the server which build it is serving, so the banner can name
-   * the build the reload will land on without asking again.
-   *
-   * @param {{current: string, released_at: string} | undefined} detail
-   *   The server's own account of the build on offer, or ``undefined``
-   *   from the header-replay path, where the banner probes for itself.
-   *
    * SNOW-609: nothing else stays here. This function used to also stamp
    * ``localStorage['pwa.update.first_shown_at']``, the clock behind the
    * 24h escalation to the blocking modal. That escalation is gone — it
@@ -187,9 +175,9 @@
    * that the build was unacceptable — and the stamp had no other reader,
    * so revealing the banner is now the whole job.
    */
-  function showSoftBanner(detail) {
+  function showSoftBanner() {
     if (!window.pwaUpdateBanner) return;
-    window.pwaUpdateBanner.reveal(detail);
+    window.pwaUpdateBanner.reveal();
   }
 
   /**
@@ -255,12 +243,10 @@
    * Storage never sees it). Uses the pristine pre-wrap fetch so the
    * request cannot recurse into ``inspectHeaders``.
    *
-   * @returns {Promise<{current: string, released_at: string,
-   *   update_required: boolean} | null>} The trimmed ``current``, the
-   *   ISO-8601 instant that build was released, and the server's
-   *   forced-update verdict — or ``null`` when the endpoint is
-   *   unreachable / non-2xx: "cannot confirm" must never be treated as
-   *   "confirmed".
+   * @returns {Promise<{current: string, update_required: boolean} | null>}
+   *   The trimmed ``current`` and the server's forced-update verdict, or
+   *   ``null`` when the endpoint is unreachable / non-2xx — "cannot
+   *   confirm" must never be treated as "confirmed".
    */
   async function fetchAuthoritativeVersion() {
     if (!pristineFetch) return null;
@@ -270,9 +256,6 @@
       const json = await res.json();
       return {
         current: String(json.current || '').trim(),
-        // The age half of the update banner's build line. Absent on a
-        // server that predates it, which costs the age and nothing else.
-        released_at: String(json.released_at || '').trim(),
         // Strict ``=== true``: a server that predates SNOW-609 omits the
         // field entirely, and an absent verdict must read as "not
         // blocked" rather than as truthiness on ``undefined``.
@@ -281,27 +264,6 @@
     } catch (_err) {
       return null;
     }
-  }
-
-  // The soft banner names the build the reload will land on, and this is
-  // the only module that asks the server what that build is. The
-  // SW-driven reveal in ``sw_register.js`` has no such answer — a waiting
-  // worker is a fact about the browser, not about the server — so it
-  // borrows this probe rather than growing a second copy of the same
-  // round trip. Read lazily at reveal time, long after both modules have
-  // loaded, so the load order between them does not matter.
-  //
-  // Defined once and only once: the property is non-configurable, like the
-  // other cross-module exports in this tree, and re-defining one of those
-  // throws — which would take the whole version check down with it if this
-  // file were ever evaluated twice on a page. The first definition wins and
-  // a second evaluation quietly keeps it.
-  if (!Object.getOwnPropertyDescriptor(window, 'pwaVersionProbe')) {
-    Object.defineProperty(window, 'pwaVersionProbe', {
-      value: fetchAuthoritativeVersion,
-      writable: false,
-      configurable: false,
-    });
   }
 
   /**
@@ -340,8 +302,7 @@
 
         if (verdict.current && differs(verdict.current, CURRENT_BUILD)) {
           driftConfirmed.add(observed);
-          confirmedVerdict = verdict;
-          showSoftBanner(verdict);
+          showSoftBanner();
           return;
         }
 
@@ -376,9 +337,8 @@
     if (staleConfirmed.has(serverVer)) return;
     if (driftConfirmed.has(serverVer)) {
       // Already verified as a real drift — keep the sticky banner visible
-      // without another round trip, and with the build line it was given
-      // the first time rather than a blank one.
-      showSoftBanner(confirmedVerdict);
+      // without another round trip.
+      showSoftBanner();
       return;
     }
     verifyObservedDrift(serverVer);

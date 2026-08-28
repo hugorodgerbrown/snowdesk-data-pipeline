@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
+from apps.public.release import release_label
 from apps.public.site_environment import PWAEnvironmentIdentity
 
 if TYPE_CHECKING:
@@ -52,14 +53,11 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
     page load to know the version the current shell was delivered on,
     then compares it against ``X-App-Version`` on every response.
 
-    ``APP_RELEASED_AT`` rides along for the same reason, one level down:
-    a git SHA says WHICH build this shell is, and nothing at all about
-    how old it is. The update banner shows both builds side by side
-    (``static/js/sw_register.js``), and "abc1234 → def5678" only becomes
-    a delta a person can read once each half carries an age. The server
-    already returns the CURRENT build's timestamp in ``/api/version``;
-    this is the same fact for the build the shell itself was delivered
-    on, which no endpoint can tell the client after the fact.
+    ``APP_RELEASE_LABEL`` is the other half of the same subject and is
+    deliberately not the same string: the SHA above identifies a build to
+    a machine, this names the release to a person ("v24"), and the account
+    menu shows it. See ``apps.public.release`` for how the two combine per
+    environment.
 
     SNOW-609 removed the companion ``APP_MIN_VERSION`` value and its
     ``<meta name="pwa-app-min-version">`` tag: the forced-update verdict is
@@ -70,16 +68,16 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
         request: The incoming HTTP request (unused — value comes from settings).
 
     Returns:
-        ``{"APP_VERSION": str, "APP_RELEASED_AT": str}``. An empty
+        ``{"APP_VERSION": str, "APP_RELEASE_LABEL": str}``. An empty
         ``APP_VERSION`` is passed through unchanged — the client treats it
         as "no build declared" and makes the whole version check a no-op.
-        An empty ``APP_RELEASED_AT`` costs only the age half of the banner's
-        build line; the identifiers still render.
+        An empty label means no release number is configured, and the menu
+        row is omitted rather than rendered blank.
 
     """
     return {
         "APP_VERSION": str(getattr(settings, "APP_VERSION", "")),
-        "APP_RELEASED_AT": str(getattr(settings, "APP_RELEASED_AT", "")),
+        "APP_RELEASE_LABEL": release_label(),
     }
 
 

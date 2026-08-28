@@ -28,13 +28,6 @@ owns a non-Tailwind admin-page fallback banner (self-injected via
 hide idiom differs, and one listener covering both keeps that contract
 in one place.
 
-The ``detail_id`` line is the build delta: which build this shell was
-delivered on, and which one the reload will land on. It ships empty and
-hidden — only the client knows both halves (its own ``<meta
-name="pwa-app-version">`` and ``/api/version``'s ``current``), so
-``sw_register.js`` fills it in and reveals it. Two opaque git SHAs are
-not self-explanatory prose, hence the ``detail_label``.
-
 The strings ``<template>`` below is read back by ``sw_register.js``
 through ``window.pwaStrings.read()``. It carries the copy for the states
 that only exist at runtime — the busy state the Reload button enters
@@ -48,8 +41,7 @@ is a string that silently falls back to English on half the site.
 {% trans "Update available" as sw_update_banner_title %}
 {% trans "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept." as sw_update_banner_body %}
 {% trans "Reload" as sw_update_banner_cta_label %}
-{% trans "Build version" as sw_update_banner_detail_label %}
-{% include "includes/_overlay_banner.html" with id="sw-update-banner" variant="floating" aria_live="polite" icon="refresh" title_id="sw-update-banner-title" title=sw_update_banner_title body_id="sw-update-banner-body" body=sw_update_banner_body cta_id="sw-update-banner-reload" cta_label=sw_update_banner_cta_label detail_id="sw-update-banner-versions" detail_label=sw_update_banner_detail_label dismissible=True bottom_offset="calc(5.5rem + env(safe-area-inset-bottom))" %}
+{% include "includes/_overlay_banner.html" with id="sw-update-banner" variant="floating" aria_live="polite" icon="refresh" title_id="sw-update-banner-title" title=sw_update_banner_title body_id="sw-update-banner-body" body=sw_update_banner_body cta_id="sw-update-banner-reload" cta_label=sw_update_banner_cta_label dismissible=True bottom_offset="calc(5.5rem + env(safe-area-inset-bottom))" %}
 <template id="sw-update-strings-template">
     <span data-string="update-title">{% trans "Update available" %}</span>
     <span

@@ -114,12 +114,6 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# pwa-app-min-version tag: the forced-update verdict is a server    #}
         {# decision (update_required), never a client-side comparison.       #}
         <meta name="pwa-app-version" content="{{ APP_VERSION }}">
-        {# When THIS shell's build was released. The SHA above says which   #}
-        {# build the page came from and nothing about its age, so the        #}
-        {# update banner's build line ("abc1234 → def5678") would be two     #}
-        {# opaque hashes; with this it can date each half. Read by           #}
-        {# static/js/sw_register.js; absent or empty simply drops the ages.  #}
-        <meta name="pwa-app-released-at" content="{{ APP_RELEASED_AT }}">
         {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
         {# SNOW-549: Account.uuid, never the sequential auth.User PK — the #}
         {# PK leaks user count and growth rate and is trivially guessable. #}

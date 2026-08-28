@@ -91,43 +91,6 @@ fallback's copy of that template (`templates/admin/base_site.html`)
 carries the same keys; `tests/templates/includes/test_sw_update_banner.py`
 fails if the two key sets drift.
 
-### The build line
-
-The banner names both builds — the one this shell was delivered on and
-the one the reload will land on — on a third line under the copy:
-
-```
-0123456 (27 Aug 09:12) → fedcba9 (28 Aug 07:31)
-```
-
-Neither side can render that alone. The shell's build and release
-timestamp are baked into `<meta name="pwa-app-version">` /
-`<meta name="pwa-app-released-at">` (`apps.public.context_processors.pwa_version`);
-the build being offered is only in `/api/version`. So the partial ships
-an empty, hidden slot (`detail_id` on `includes/_overlay_banner.html`)
-and `fillBuildLine` in `sw_register.js` composes the line into it —
-taking the verdict `pwa_version_check.js` already fetched, or borrowing
-that module's `window.pwaVersionProbe` on the SW-driven path, which has
-no verdict of its own. SHAs are shortened to seven characters; a build
-we cannot date is shown without a date; identical builds, an unreachable
-endpoint or a missing meta tag all leave the line hidden, since none of
-those can produce an honest delta.
-
-Absolute timestamps rather than relative ages ("2 hours ago") on
-purpose: `relative_time.js` owns that arithmetic but is loaded only on
-the three pages that render observation rows, and this banner is on
-every page including the admin — so relative ages here would mean a
-second copy of its unit ladder.
-
-The banner uses design tokens (`bg-card`, `border-border`, `rounded-card`,
-`shadow-glass`) so it reads as a first-class Snowdesk surface — matching
-the `_pwa_install_prompt.html` shape rather than a raw status pill. It is
-offset above the mobile timeline scrubber via a `bottom: calc(5.5rem +
-env(safe-area-inset-bottom))` inline style. Reveal is via the `hidden`
-class toggle; the self-injected admin fallback in `sw_register.js`
-mirrors this via `display: flex`/`none` and carries `data-fallback="1"`
-so both reveal-sites use the same branch selector.
-
 ### How the trigger fires
 
 The browser detects an SW update by **byte-comparing** the freshly fetched
