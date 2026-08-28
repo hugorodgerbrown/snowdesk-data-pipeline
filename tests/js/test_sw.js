@@ -102,6 +102,11 @@ const SW_EXPORTS = [
   '_boundedFetch',
   '_shouldUseNetwork',
   '_latchOffline',
+  // SNOW-748: the user-forced offline mode, which is the one that is never
+  // probed. ``_shouldUseNetwork`` cannot tell it apart from an auto-latch (both
+  // are false), so the mode itself is read back through the ``network-mode``
+  // message handler's direct reply — see ``readNetworkMode`` below.
+  '_forceOffline',
   '_unlatchOffline',
   '_probeNetwork',
   'NAVIGATION_FETCH_BUDGET_MS',
@@ -1677,5 +1682,174 @@ describe('the offline latch (SNOW-742)', () => {
 
     expect(summary.ok).toBe(1);
     expect(summary.failed).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-748 — the user-forced offline mode
+// ---------------------------------------------------------------------------
+//
+// SNOW-742 had two modes, so a user asking for offline mode was routed into
+// ``_latchOffline()`` — which schedules the unlatch probe. Pressed on a live
+// connection the probe succeeds, being online is the premise, and the user is
+// back in ``'auto'`` within thirty seconds. That was hidden by the control
+// living in a banner which only appears once the network is already failing.
+// The header toggle (SNOW-748) is always reachable, so the third mode is what
+// makes the control mean what it says.
+//
+// The distinction these tests pin: ``'offline'`` is probed and comes back on
+// its own; ``'offline-forced'`` is not probed at all and is left alone until
+// the user changes it.
+
+describe('the user-forced offline mode (SNOW-748)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Read the worker's mode back through the ``network-mode`` handler's direct
+   * reply to the sender. ``_networkMode`` is a ``let`` and deliberately not
+   * exported, and ``_shouldUseNetwork`` collapses the two offline values into
+   * one boolean — this reply is the same channel the page itself learns the
+   * mode on, so asserting on it tests what a client would actually see.
+   *
+   * @param {object} sw
+   * @returns {string}
+   */
+  function readNetworkMode(sw) {
+    let seen = null;
+    sw.__listeners.message({
+      data: { type: 'network-mode', mode: 'query' },
+      source: {
+        postMessage: (data) => {
+          seen = data.mode;
+        },
+      },
+    });
+    return seen;
+  }
+
+  /** A fetch that always answers, so any probe that runs would succeed. */
+  function answeringFetch() {
+    return vi.fn(() => Promise.resolve(basicResponse('ok')));
+  }
+
+  it('survives a probe that would succeed, where an auto-latch does not', async () => {
+    const forced = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+    forced._forceOffline();
+    await forced._probeNetwork();
+
+    expect(forced._shouldUseNetwork()).toBe(false);
+    expect(readNetworkMode(forced)).toBe('offline-forced');
+
+    // The contrast case, on the same premise: an auto-latch is exactly the
+    // mode a successful probe is meant to end.
+    const latched = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+    latched._latchOffline();
+    await latched._probeNetwork();
+
+    expect(latched._shouldUseNetwork()).toBe(true);
+  });
+
+  it('schedules no probe at all, so the mode holds past every backoff step', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._forceOffline();
+    fetchSpy.mockClear();
+
+    const total = sw.OFFLINE_PROBE_BACKOFF_MS.reduce((a, b) => a + b, 0);
+    await vi.advanceTimersByTimeAsync(total * 2);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(sw._shouldUseNetwork()).toBe(false);
+    expect(readNetworkMode(sw)).toBe('offline-forced');
+  });
+
+  it('cancels a pending probe left over from an auto-latch', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._latchOffline();
+    sw._forceOffline();
+    fetchSpy.mockClear();
+
+    await vi.advanceTimersByTimeAsync(sw.OFFLINE_PROBE_BACKOFF_MS[0] * 2);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(readNetworkMode(sw)).toBe('offline-forced');
+  });
+
+  it('is not downgraded to an auto-latch, and stays unprobed when one is attempted', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._forceOffline();
+    sw._latchOffline();
+    fetchSpy.mockClear();
+
+    // Not just the label: a downgrade would also schedule the probe that ends
+    // the mode, so the absence of a fetch is the half that matters.
+    await vi.advanceTimersByTimeAsync(sw.OFFLINE_PROBE_BACKOFF_MS[0] * 2);
+
+    expect(readNetworkMode(sw)).toBe('offline-forced');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('survives in-flight reads timing out after the user forced the mode', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: hangingFetch() });
+
+    // A tile burst already on the wire when the user presses the toggle. Those
+    // requests cannot be recalled, so their timeouts arrive under the forced
+    // mode — and there are enough of them to reach OFFLINE_LATCH_THRESHOLD,
+    // which is the only way ``_latchOffline`` is reached from a mode where
+    // reads no longer touch the network.
+    const inFlight = [];
+    for (let i = 0; i < sw.OFFLINE_LATCH_THRESHOLD; i += 1) {
+      inFlight.push(sw._basemapStaleWhileRevalidate(new Request(`https://tiles.example/${i}.pbf`)));
+    }
+    // Let each read get past its (async) cache lookups and onto the wire
+    // before the mode changes — otherwise they answer 504 from the new mode
+    // and never time out at all, which would make this assertion vacuous.
+    await vi.advanceTimersByTimeAsync(0);
+    sw._forceOffline();
+    await vi.advanceTimersByTimeAsync(sw.BASEMAP_FETCH_BUDGET_MS + 1);
+    await Promise.all(inFlight);
+
+    expect(readNetworkMode(sw)).toBe('offline-forced');
+  });
+
+  it('blocks the network under both offline values, and only those', () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+
+    expect(sw._shouldUseNetwork()).toBe(true);
+    sw._latchOffline();
+    expect(sw._shouldUseNetwork()).toBe(false);
+    sw._unlatchOffline();
+    expect(sw._shouldUseNetwork()).toBe(true);
+    sw._forceOffline();
+    expect(sw._shouldUseNetwork()).toBe(false);
+  });
+
+  it('reaches all three modes through the network-mode message', () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+    const send = (mode) => sw.__listeners.message({ data: { type: 'network-mode', mode } });
+
+    send('offline');
+    expect(readNetworkMode(sw)).toBe('offline');
+
+    send('auto');
+    expect(readNetworkMode(sw)).toBe('auto');
+
+    send('offline-forced');
+    expect(readNetworkMode(sw)).toBe('offline-forced');
+
+    // And back, which is the toggle's other direction.
+    send('auto');
+    expect(readNetworkMode(sw)).toBe('auto');
   });
 });

@@ -321,6 +321,11 @@ let _basemapPutsSinceTrim = 0;
 // ignores the latch — a download is a long operation the user explicitly asked
 // for, on a connection they believe they have, and its failures already reach
 // them (SNOW-568).
+//
+// SNOW-748 added a THIRD way into the same steady state: the user asking for
+// it from the header toggle, with no failure involved at all. See
+// ``_networkMode`` below — that mode is not probed, because there is nothing
+// to discover.
 
 // How long a navigation's network attempt gets before it is aborted. Generous
 // relative to the tile budget because a navigation is one request whose whole
@@ -368,8 +373,32 @@ const OFFLINE_PROBE_BACKOFF_MS = [30000, 60000, 300000];
 // as one of the timeouts that trips the latch.
 const OFFLINE_PROBE_URL = '/livez';
 
-// ``'auto'`` — normal operation: read paths use the network, bounded.
-// ``'offline'`` — latched: read paths do not touch the network at all.
+// Three modes, not two (SNOW-748):
+//
+//   ``'auto'``           — normal operation: read paths use the network,
+//                          bounded.
+//   ``'offline'``        — LATCHED by the worker itself, after
+//                          ``OFFLINE_LATCH_THRESHOLD`` consecutive read-path
+//                          timeouts. Read paths do not touch the network at
+//                          all, and a probe on a backoff schedule looks for a
+//                          route so the app can come back on its own.
+//   ``'offline-forced'`` — the USER asked for offline mode, from the header
+//                          toggle in templates/includes/nav.html. Read paths
+//                          behave exactly as they do while latched, but
+//                          nothing probes: a mode the user chose is left alone
+//                          until the user changes it back.
+//
+// The distinction is the SNOW-748 fix. SNOW-742 had two values, so a user's
+// request was routed into ``_latchOffline()``, which schedules the unlatch
+// probe. Pressed while there was a live connection, the probe then succeeded
+// — being online is the premise — and put the user back in ``'auto'`` within
+// thirty seconds. That was invisible while the control lived in the offline
+// banner (which only reveals once the network is already failing, so the probe
+// failed too); it cannot survive an always-reachable toggle in the header.
+//
+// So the comparisons below are NOT interchangeable. Some mean "any offline
+// mode" (``!== 'auto'``) and some mean "auto-latched only" (``=== 'offline'``);
+// each site says which it means and why.
 let _networkMode = 'auto';
 
 // Consecutive read-path timeouts seen while in ``'auto'``. Reset to 0 by any
@@ -1829,7 +1858,8 @@ async function _boundedFetch(request, ms) {
 /**
  * True when a read path should attempt the network at all.
  *
- * False while latched, and false when the platform already knows the interface
+ * False under either offline mode — latched or user-forced (SNOW-748) — and
+ * false when the platform already knows the interface
  * is down (``navigator.onLine === false``) — that second case never needed a
  * budget to discover, and checking it costs nothing. The Underground case is
  * precisely the one where ``onLine`` stays TRUE, which is why the latch has to
@@ -1838,7 +1868,9 @@ async function _boundedFetch(request, ms) {
  * @returns {boolean}
  */
 function _shouldUseNetwork() {
-  if (_networkMode === 'offline') return false;
+  // ANY offline mode blocks the network — latched or forced, the promise to
+  // the user is the same one: this app is not calling the server.
+  if (_networkMode !== 'auto') return false;
   return !(typeof navigator !== 'undefined' && navigator.onLine === false);
 }
 
@@ -1908,13 +1940,48 @@ function _recordReadPathTimeout() {
  * Idempotent — a second call while already latched neither restarts the
  * backoff nor re-notifies the page, so a burst of timeouts arriving after the
  * third does not reset the probe schedule it just set.
+ *
+ * SNOW-748: the guard is ``!== 'auto'``, not ``=== 'offline'``. Timeouts keep
+ * arriving under ``'offline-forced'`` (an in-flight read can still time out
+ * just after the user forces the mode), and latching there would DOWNGRADE the
+ * user's choice to an auto-latch — which schedules the probe that then
+ * unlatches it. Only a mode nothing has claimed yet can be latched.
  */
 function _latchOffline() {
-  if (_networkMode === 'offline') return;
+  if (_networkMode !== 'auto') return;
   _networkMode = 'offline';
   _consecutiveTimeouts = 0;
   _probeBackoffIndex = 0;
   _scheduleProbe();
+  _publishNetworkMode();
+}
+
+/**
+ * SNOW-748: enter offline mode because the USER asked for it, from the header
+ * toggle in templates/includes/nav.html.
+ *
+ * Sibling to ``_latchOffline`` and identical to it in every way but one: it
+ * deliberately does NOT call ``_scheduleProbe()``. That omission IS the fix.
+ * A probe exists to notice that a dead route came back; a forced mode is not
+ * waiting for a route, it is a user who has one and has chosen not to spend it
+ * (a metered roam, a battery to nurse, a tunnel they are about to enter). The
+ * probe would succeed on the first attempt and ``_unlatchOffline`` would undo
+ * the user's choice within thirty seconds.
+ *
+ * Any pending probe from a previous auto-latch is cancelled for the same
+ * reason: it would fire under the forced mode and unlatch it.
+ *
+ * Idempotent, like its sibling.
+ */
+function _forceOffline() {
+  if (_probeTimer !== null) {
+    clearTimeout(_probeTimer);
+    _probeTimer = null;
+  }
+  if (_networkMode === 'offline-forced') return;
+  _networkMode = 'offline-forced';
+  _consecutiveTimeouts = 0;
+  _probeBackoffIndex = 0;
   _publishNetworkMode();
 }
 
@@ -1924,6 +1991,11 @@ function _latchOffline() {
  * Also idempotent, and always cancels a pending probe — a probe firing after
  * an unlatch would be a wasted request whose failure could re-enter the
  * backoff for a mode nothing is in any more.
+ *
+ * SNOW-748: the guard stays ``=== 'auto'``, which already clears EITHER
+ * offline value. Returning to ``'auto'`` is the one transition both offline
+ * modes share, and its only callers are the user and an ``online`` event —
+ * both of which mean the same thing whichever mode they interrupt.
  */
 function _unlatchOffline() {
   if (_probeTimer !== null) {
@@ -1961,6 +2033,12 @@ function _scheduleProbe() {
  *
  * ``cache: 'no-store'`` so an HTTP-cached 200 can never answer for a route
  * that is no longer there.
+ *
+ * SNOW-748: both mode comparisons in here stay ``'offline'`` exactly, and that
+ * is load-bearing rather than incidental. ``'offline-forced'`` is therefore
+ * never probed and never rescheduled — a mode the user chose is theirs to
+ * leave. Widening either to ``!== 'auto'`` would reinstate the bug this ticket
+ * fixed.
  */
 async function _probeNetwork() {
   if (_networkMode !== 'offline' || _probeInFlight) return;
@@ -2492,8 +2570,8 @@ self.addEventListener('message', (event) => {
     event.source?.postMessage({ type: 'version', version: CACHE_VERSION });
   }
   // SNOW-742: the page setting the network mode, from three sources — the
-  // user's own control in the offline banner, the mode persisted in
-  // ``meta:app`` being re-asserted on boot (which is what makes the latch
+  // user's own control (the header toggle since SNOW-748), the mode persisted
+  // in ``meta:app`` being re-asserted on boot (which is what makes the mode
   // survive a worker restart without an IndexedDB read on the fetch path),
   // and the page's ``online`` listener asking for an immediate probe rather
   // than waiting out the backoff.
@@ -2503,8 +2581,14 @@ self.addEventListener('message', (event) => {
   // both cases the next real read is a better probe than a synthetic one — it
   // is bounded, and if the route is still dead three of them re-latch within
   // about nine seconds.
+  //
+  // SNOW-748: three modes rather than two. ``'offline-forced'`` is the user's
+  // own choice and goes to ``_forceOffline()``, which schedules no probe;
+  // ``'offline'`` remains the auto-latch, and is only ever sent back by a page
+  // re-asserting a persisted auto-latch on boot.
   if (event.data && event.data.type === 'network-mode') {
     if (event.data.mode === 'offline') _latchOffline();
+    if (event.data.mode === 'offline-forced') _forceOffline();
     if (event.data.mode === 'auto') _unlatchOffline();
     // Answer the sender directly as well as broadcasting, so a page that has
     // just booted learns the mode even when nothing has changed and
