@@ -1625,8 +1625,18 @@ def _downloads_context(request: HttpRequest) -> dict[str, Any]:
     and a single boolean would leave the client unable to tell "gate off"
     from "gate passed".
 
-    All ``reverse()`` plus one flag read, no queries, so the homepage's
-    query count is unmoved.
+    Every URL here is a ``reverse()`` and costs nothing. The flag read does
+    NOT: it takes the homepage from 5 queries to 8, which is why this ticket
+    rebases ``perf/query_counts.txt``. That is a real cost on the site's
+    most-requested page, and it is not bought back by caching — waffle reads
+    through Django's ``default`` cache, which in production is
+    ``DatabaseCache`` against the ``django_cache`` table, so a warm cache
+    trades three model queries for a cache-table one rather than for none.
+    It is accepted as temporary: the three queries leave when the flag does
+    at general availability, and until then a kill switch on a gate that
+    removes an existing capability from anonymous visitors is worth one
+    round trip. If the flag outlives this ticket, move the read off the
+    homepage rather than letting the cost calcify.
 
     Args:
         request: The current HTTP request.
