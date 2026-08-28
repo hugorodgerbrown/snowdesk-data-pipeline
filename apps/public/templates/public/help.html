@@ -83,7 +83,14 @@ Routes and Offline downloads came to have neither.
         {# only something to scroll past. The id sits on a wrapper rather    #}
         {# than on the <details> itself, so _collapsible_panel.html keeps    #}
         {# one shape for all of its callers.                                 #}
-        <div id="help-topic-slope">
+        {#                                                                   #}
+        {# The wrapper repeats the panel's own "mb-2 last:mb-0" because it    #}
+        {# SWALLOWS it: the <details> is this div's only child, so the        #}
+        {# panel's `last:mb-0` matches and zeroes the margin every unwrapped  #}
+        {# sibling keeps. The gap under Slope angle was half the others' from #}
+        {# SNOW-691 until it was spotted by eye. Any future wrapper around a  #}
+        {# panel needs the same two classes for the same reason.              #}
+        <div id="help-topic-slope" class="mb-2 last:mb-0">
             {% translate "Slope angle" as t_slope %}
             {% include "includes/_collapsible_panel.html" with title=t_slope data_testid="help-topic-slope" body_template="public/help/_topic_slope.html" %}
         </div>

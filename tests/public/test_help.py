@@ -171,6 +171,22 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'id="help-topic-slope"' in response.content
 
+    def test_slope_panel_wrapper_keeps_the_shared_bottom_margin(
+        self, client: Client
+    ) -> None:
+        """The anchor wrapper must not swallow the panel's own margin.
+
+        ``_collapsible_panel.html`` carries ``mb-2 last:mb-0``. Inside the
+        wrapper the ``<details>`` is the only child, so ``last:mb-0``
+        matches and zeroes the gap every unwrapped sibling keeps — the
+        space under Slope angle was half its neighbours' from SNOW-691
+        until it was spotted by eye. The wrapper repeats both classes to
+        put it back, and this pins that.
+        """
+        content = client.get(reverse("public:help")).content.decode()
+        wrapper = content[content.index('id="help-topic-slope"') :][:120]
+        assert 'class="mb-2 last:mb-0"' in wrapper, wrapper
+
     def test_slope_panel_states_the_layer_is_not_a_verdict(
         self, client: Client
     ) -> None:
