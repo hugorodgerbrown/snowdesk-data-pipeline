@@ -185,4 +185,27 @@
 
   document.addEventListener('click', handleRenameClick);
   document.addEventListener('click', handleDisclosureClick, true);
+
+  // SNOW-752: 3 — A REMOVAL. The trash needs nothing from here to delete a
+  // pin (it is a plain HTMX form, and favourite_delete's empty 200 is what
+  // the row's own hx-swap turns into a removal), but it does need this page
+  // to notice: that swap empties one <li> and nothing else, so a page which
+  // has just lost its last pin keeps rendering as a list of none.
+  // favourites:list's empty state is a server-side ``{% if not favourites %}``
+  // clause and only a fresh response can carry it.
+  //
+  // The refetch itself is the list container's own second hx-trigger (see
+  // accounts/favourites.html) — the URL is written once, in the template
+  // that already had it. All this does is say the fact out loud, using the
+  // same event name the map's own favourites layer listens for: "your
+  // favourites changed" is one fact, and each surface decides what it costs.
+  //
+  // Watched on LIST_SELECTOR, and window.pwaRowRemoved additionally requires
+  // the request to come from the delete form's own ``data-row-remove`` hook.
+  // That second condition is what this page needs most: the chevron hx-gets
+  // a pin's detail card from inside this same list, and a watcher keyed on
+  // the list alone would re-read it — closing the card the user just opened.
+  window.pwaRowRemoved?.watch(LIST_SELECTOR, function () {
+    document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+  });
 })();

@@ -64,6 +64,7 @@ from apps.accounts.models import user_is_verified
 from apps.core.coordinates import validate_accuracy_radius_km, validate_coordinates
 from apps.core.decorators import require_htmx
 from apps.locations.models import Location
+from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.services.point_match import region_for_point
 
@@ -408,18 +409,29 @@ def observation_list(request: HttpRequest) -> HttpResponse:
 
     ``map_focus`` is what tells the shared row it is being read over a map,
     so each row's label renders as a control that frames its report (see
-    ``observations/partials/_observation.html``).  It is set HERE rather
-    than in the template because this endpoint *is* the map variant — the
-    routes and favourites lists express the same thing by rendering a
-    separate ``?variant=map`` template, which this list has never needed;
-    ``/account/observations/`` includes the same partial from its own page
-    and passes nothing.
+    ``observations/partials/_observation.html``).  It follows the
+    ``?variant=map`` query parameter, the same convention
+    ``apps.routes.views.route_list`` and ``apps.favourites.views
+    .favourite_list`` use — those two pick a whole template out of a fixed
+    map, and this one has a single template whose one variable choice is
+    this flag, but the caller-facing contract is identical.
+
+    It was set unconditionally until SNOW-752, on the reasoning that this
+    endpoint *is* the map variant: ``/account/observations/`` renders the
+    same partial from its own page context and passes nothing, so nothing
+    else called this.  That stopped being true when that page needed to
+    re-read its own list after a row was deleted — its empty state is a
+    server-side clause, and only a fresh response can carry it.  Served the
+    map variant, every row's label would render as a zoom control on a page
+    with no map to zoom.
 
     Args:
         request: The incoming HTMX GET request.
 
     Returns:
-        Rendered ``_observation_list.html`` partial, or an error response.
+        Rendered ``_observation_list.html`` partial — with map-focus rows
+        for ``?variant=map``, without them otherwise — or an error
+        response.
 
     """
     gate = _auth_gate(request)
@@ -434,7 +446,12 @@ def observation_list(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "observations/partials/_observation_list.html",
-        {"observations": observations, "map_focus": True},
+        {
+            "observations": observations,
+            "map_focus": (
+                request.GET.get("variant", "") == OBSERVATION_LIST_MAP_VARIANT
+            ),
+        },
     )
 
 

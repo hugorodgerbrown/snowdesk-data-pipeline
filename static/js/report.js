@@ -516,10 +516,27 @@
       return true;
     }
     if (gate) gate.remove();
-    if (rows && LIST_URL && typeof htmx !== 'undefined') {
-      htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
-    }
+    loadRows();
     return true;
+  }
+
+  /** (Re)load the panel's rows from observations:list over HTMX.
+   *
+   * Called on open, and again after a row is deleted — the same
+   * re-read-the-truth move static/js/favourites.js and static/js/routes.js
+   * make on their own lists, rather than trusting the row's own swap to be
+   * the whole update.
+   *
+   * That endpoint IS the map variant (it sets ``map_focus`` itself, where
+   * the other two lists express the same thing with a ``?variant=map``
+   * template), so the URL is used verbatim and there is nothing to append.
+   *
+   * @returns {void}
+   */
+  function loadRows() {
+    const rows = sheet.querySelector('[data-report-rows]');
+    if (!rows || !LIST_URL || typeof htmx === 'undefined') return;
+    htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 
   // SNOW-658: the roundel TOGGLES, matching the layers pill and the downloads
@@ -693,4 +710,33 @@
     // Ask SNOW-328's GeolocateControl (owned by map.js) for a fresh fix.
     document.dispatchEvent(new CustomEvent('snowdesk:locate-request'));
   }
+
+  // ---------------------------------------------------------------------------
+  // A row removed from the panel.
+  //
+  // The row's Remove is a plain HTMX form (nothing here handles the POST),
+  // but a report that no longer exists has to leave two more places:
+  //
+  //   the LIST — the row's own swap empties one <li>, so a panel that has
+  //     just lost its last report keeps rendering as a list of none.
+  //     observations:list's empty state is a server-side
+  //     ``{% if not observations %}`` clause and only a fresh response can
+  //     carry it.
+  //
+  //   the MAP — the community-reports flag. That feed is anonymised
+  //     server-side and carries no uuid, so the map cannot know which pin
+  //     was this user's; only a refetch can tell it.
+  //
+  // SNOW-752: the beforeRequest/afterRequest mark-pair that recognises the
+  // removal is window.pwaRowRemoved's, shared with the other five UGC lists
+  // — see static/js/row_removed.js for why it has to be two events and why
+  // the mark rides the xhr. This panel needs that isolation more than most:
+  // its own form-load ``htmx.ajax()`` is another document-level request on
+  // the same page.
+  // ---------------------------------------------------------------------------
+
+  window.pwaRowRemoved?.watch('[data-report-rows]', function () {
+    loadRows();
+    document.dispatchEvent(new CustomEvent('snowdesk:reports-changed'));
+  });
 }());

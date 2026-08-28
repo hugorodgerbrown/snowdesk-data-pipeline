@@ -37,6 +37,7 @@ R·0.01·π/180 = 1111.95 m for R = 6 371 008.8 m.
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -486,6 +487,96 @@ class TestParseGpxSimplification:
 # ---------------------------------------------------------------------------
 # create_route / delete_route
 # ---------------------------------------------------------------------------
+
+
+class TestParseGpxTiming:
+    """The recording's two ends, and the several ways they are unknown."""
+
+    def test_a_timed_track_yields_both_ends(self) -> None:
+        """A real device export gives a start and a finish."""
+        parsed = parse_gpx(_fixture("timed_track.gpx"))
+        assert parsed.started_at == datetime(2026, 3, 13, 13, 6, 5, tzinfo=UTC)
+        assert parsed.finished_at == datetime(2026, 3, 13, 13, 48, 2, tzinfo=UTC)
+
+    def test_the_span_is_the_elapsed_time(self) -> None:
+        """Start to finish, stops included — the figure the popup shows.
+
+        The fixture is trimmed around its recording's longest stationary
+        gap, so this span really does contain 988 seconds of standing
+        still. Elapsed is what is claimed and elapsed is what is measured.
+        """
+        parsed = parse_gpx(_fixture("timed_track.gpx"))
+        assert parsed.started_at is not None
+        assert parsed.finished_at is not None
+        assert parsed.finished_at - parsed.started_at == timedelta(
+            minutes=41, seconds=57
+        )
+
+    def test_a_time_inside_extensions_is_not_the_points_own(self) -> None:
+        """The read takes a direct child, not the first time-named descendant.
+
+        Every point in a real export carries an <extensions> subtree, and
+        ``_find_all`` walks ``element.iter()``. This fixture puts a
+        plausible <time> inside that subtree and none on the point itself:
+        a descendant search reports a duration the file does not state.
+        """
+        parsed = parse_gpx(_fixture("timed_in_extensions.gpx"))
+        assert parsed.started_at is None
+        assert parsed.finished_at is None
+
+    def test_an_untimed_track_yields_neither_end(self) -> None:
+        """No <time> anywhere means unknown, on the ascent_m rule."""
+        parsed = parse_gpx(_fixture("single_track.gpx"))
+        assert parsed.started_at is None
+        assert parsed.finished_at is None
+
+    def test_a_naive_timestamp_is_stamped_utc(self) -> None:
+        """GPX 1.1 mandates UTC, so an offset-less stamp is not rejected."""
+        parsed = parse_gpx(_fixture("timed_naive.gpx"))
+        assert parsed.started_at == datetime(2026, 3, 13, 9, 0, tzinfo=UTC)
+        assert parsed.finished_at == datetime(2026, 3, 13, 10, 30, tzinfo=UTC)
+
+    def test_a_malformed_timestamp_yields_neither_end(self) -> None:
+        """An unparseable <time> is a gap in the data, not a broken file.
+
+        The same call a malformed <ele> gets: the file still parses, and
+        the points still carry their positions.
+        """
+        parsed = parse_gpx(_fixture("timed_malformed.gpx"))
+        assert parsed.started_at is None
+        assert parsed.finished_at is None
+        assert parsed.point_count == 3
+
+    def test_a_track_timed_at_one_end_only_yields_neither(self) -> None:
+        """Half a fact is no duration, so neither half is kept."""
+        parsed = parse_gpx(_fixture("timed_one_end.gpx"))
+        assert parsed.started_at is None
+        assert parsed.finished_at is None
+
+    def test_a_last_before_first_pair_is_rejected(self) -> None:
+        """A negative span is corrupt data, not a duration to render."""
+        parsed = parse_gpx(_fixture("timed_reversed.gpx"))
+        assert parsed.started_at is None
+        assert parsed.finished_at is None
+
+    def test_the_two_ends_are_unknown_together(self) -> None:
+        """One read produces both, so neither can be known alone."""
+        for name in (
+            "timed_track.gpx",
+            "single_track.gpx",
+            "timed_one_end.gpx",
+            "timed_reversed.gpx",
+            "timed_malformed.gpx",
+        ):
+            parsed = parse_gpx(_fixture(name))
+            assert (parsed.started_at is None) is (parsed.finished_at is None), name
+
+    def test_timing_does_not_disturb_the_derived_figures(self) -> None:
+        """Reading the ends changes nothing about the geometry."""
+        parsed = parse_gpx(_fixture("timed_track.gpx"))
+        assert parsed.point_count == 300
+        assert parsed.ascent_m is not None
+        assert parsed.distance_m > 0
 
 
 @pytest.mark.django_db

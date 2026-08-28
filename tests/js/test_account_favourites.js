@@ -29,6 +29,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/inline_rename.js';
 import '../../static/js/row_rename_commit.js';
+import '../../static/js/row_removed.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 const RENAME_URL = `/favourites/partials/${UUID}/rename/`;
@@ -56,7 +57,7 @@ function rowMarkup(name) {
         <input type="text" data-row-rename-input hidden aria-label="Favourite name">
         <button type="button" data-row-rename data-favourite-rename="${UUID}"
                 aria-label="Rename ${name}">edit</button>
-        <form hx-post="/favourites/partials/${UUID}/delete/">
+        <form data-row-remove hx-post="/favourites/partials/${UUID}/delete/">
           <input type="hidden" name="csrfmiddlewaretoken" value="tok">
           <button type="submit" aria-label="Remove ${name}">bin</button>
         </form>
@@ -234,5 +235,66 @@ describe('expanding a row', () => {
     document.querySelector('[data-row-label]').click();
 
     expect(chevron().getAttribute('aria-expanded')).toBe('false');
+  });
+});
+
+describe('a row removed from the list', () => {
+  beforeEach(() => {
+    renderList('Mont Fort');
+  });
+
+  /**
+   * Drive one htmx request lifecycle from `elt`.
+   *
+   * @param {Element} elt The element htmx names as the source.
+   * @param {boolean} [successful] Whether the response was a 2xx.
+   * @returns {void}
+   */
+  function request(elt, successful = true) {
+    const xhr = {};
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', { detail: { xhr, elt } }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful } }),
+    );
+  }
+
+  it('announces the change, so the page re-reads its own list', () => {
+    // The list container carries the hx-get and re-reads on this event (see
+    // accounts/favourites.html) — the URL is written once, in the template
+    // that already had it. The row's own swap empties one <li>, so a page
+    // that has just lost its last pin keeps rendering as a list of none.
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:favourites-changed', changed);
+
+    request(document.querySelector('[data-row-remove]'));
+
+    expect(changed).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:favourites-changed', changed);
+  });
+
+  it('says nothing when the CHEVRON fetches a card from the same row', () => {
+    // The reason window.pwaRowRemoved tests the delete form and not just
+    // the list: this hx-get comes from inside the very same <li>, and read
+    // as a removal it would re-read the list — closing the card the user
+    // had just opened.
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:favourites-changed', changed);
+
+    request(chevron());
+
+    expect(changed).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:favourites-changed', changed);
+  });
+
+  it('stays quiet when the delete failed', () => {
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:favourites-changed', changed);
+
+    request(document.querySelector('[data-row-remove]'), false);
+
+    expect(changed).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:favourites-changed', changed);
   });
 });

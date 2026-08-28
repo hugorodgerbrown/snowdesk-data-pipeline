@@ -78,6 +78,12 @@ ALWAYS_ON_MAP_SENTENCE_TESTIDS = [
     "help-map-report",
 ]
 
+# The route editor the Routes panel names, in one place so a change of
+# destination touches one line. The uploader cannot crop, split or join a
+# file and is not going to, so this is the only place a user is told where
+# that is done — the routes empty clause carries no link.
+ROUTE_EDITOR_URL = "https://gpx.studio/"
+
 
 @pytest.mark.django_db
 class TestHelpPage:
@@ -103,6 +109,20 @@ class TestHelpPage:
     def test_always_on_map_sentences_present(self, client: Client, testid: str) -> None:
         response = client.get(reverse("public:help"))
         assert f'data-testid="{testid}"'.encode() in response.content
+
+    def test_routes_panel_names_a_route_editor(self, client: Client) -> None:
+        """The Routes topic says where a .gpx is cropped or sliced.
+
+        Snowdesk's uploader draws a file and nothing else. Naming one free
+        browser tool is the whole of the answer to "my track has the drive
+        home on the end of it", so the link is asserted rather than left to
+        the copy.
+        """
+        response = client.get(reverse("public:help"))
+        body = response.content.decode()
+        assert 'data-testid="help-routes-editing"' in body
+        assert ROUTE_EDITOR_URL in body
+        assert 'rel="noopener"' in body
 
     @pytest.mark.parametrize("testid", LAYERS_GROUP_TESTIDS)
     def test_layers_panel_covers_every_menu_group(

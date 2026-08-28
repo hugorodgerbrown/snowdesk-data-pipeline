@@ -365,3 +365,55 @@ class TestMyObservationsSharedPartials:
 
         assert "data-row-focus" not in html
         assert "Zoom to" not in html
+
+    def test_delete_form_carries_the_shared_removal_hook(self, client: Client) -> None:
+        """``data-row-remove`` is what tells this page a row has gone.
+
+        On the FORM rather than the row, so a watcher can tell a removal
+        apart from the other HTMX requests a row can make — see
+        ``static/js/row_removed.js``.
+        """
+        user = _verified_user()
+        FieldObservationFactory.create(user=user)
+        client.force_login(user)
+
+        html = client.get(PAGE_URL).content.decode()
+
+        assert "data-row-remove" in html
+
+    def test_the_list_re_reads_when_a_row_is_removed(self, client: Client) -> None:
+        """The wrapper re-reads observations:list on ``snowdesk:reports-changed``.
+
+        A row's Remove empties one ``<li>`` and nothing else, so a page that
+        has just lost its last report keeps rendering as a list of none — the
+        empty state is a server-side clause and only a fresh response can
+        carry it (SNOW-752).
+
+        No ``load`` trigger: the view already rendered the list. And no
+        ``?variant=map``, which is the whole reason that parameter exists —
+        it would answer with map-focus rows, on a page with no map.
+        """
+        client.force_login(_verified_user())
+
+        html = client.get(PAGE_URL).content.decode()
+
+        assert f'hx-get="{reverse("observations:list")}"' in html
+        assert 'hx-trigger="snowdesk:reports-changed from:document"' in html
+        assert "variant=map" not in html
+
+    def test_page_loads_the_removal_modules_in_order(self, client: Client) -> None:
+        """row_removed.js before account_observations.js.
+
+        Document order is execution order for deferred scripts, and the
+        second reads ``window.pwaRowRemoved`` as its IIFE runs.
+        """
+        client.force_login(_verified_user())
+
+        html = client.get(PAGE_URL).content.decode()
+
+        positions = [
+            html.index("js/htmx.min.js"),
+            html.index("js/row_removed.js"),
+            html.index("js/account_observations.js"),
+        ]
+        assert positions == sorted(positions)

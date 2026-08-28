@@ -44,7 +44,7 @@ Context:
     </ul>
     {% if not routes %}
         {# SNOW-721: the clause is shared with the other variant — it was #}
-        {# duplicated verbatim in both until it named a planner.          #}
+        {# duplicated verbatim in both until it was extracted.            #}
         {% include "routes/partials/_route_list_empty.html" %}
     {% endif %}
 </div>

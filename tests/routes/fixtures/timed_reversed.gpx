@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="snowdesk-tests" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Reversed timestamps</name>
+    <trkseg>
+      <trkpt lat="46.0000" lon="7.0000"><ele>1000.0</ele><time>2026-03-13T11:00:00Z</time></trkpt>
+      <trkpt lat="46.0100" lon="7.0000"><ele>1100.0</ele><time>2026-03-13T10:00:00Z</time></trkpt>
+      <trkpt lat="46.0200" lon="7.0000"><ele>1200.0</ele><time>2026-03-13T09:00:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

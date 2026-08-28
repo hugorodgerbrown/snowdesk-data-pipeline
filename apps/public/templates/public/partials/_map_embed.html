@@ -1719,6 +1719,13 @@ Optional context:
     {# dash is the range dash, not a hyphen.                                #}
     <span data-string="route-profile-label">{% trans "Elevation profile of this route" %}</span>
     <span data-string="route-elevation-range">{% blocktrans %}%(low)s–%(high)s m{% endblocktrans %}</span>
+    {# SNOW-750: the tour's ELAPSED time, shown on the same caption line as  #}
+    {# the range. Two forms, not one padded string: a 41-minute tour written #}
+    {# "0h41m" states an hours figure it does not have, and an hour count is #}
+    {# not a leading zero on a minute count. A locale that writes durations  #}
+    {# differently ("4 h 05") can say so in each form independently.         #}
+    <span data-string="route-duration-hours">{% blocktrans %}%(hours)sh%(minutes)sm{% endblocktrans %}</span>
+    <span data-string="route-duration-minutes">{% blocktrans %}%(minutes)sm{% endblocktrans %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
     {# SNOW-691: the Terrain row's one disable reason (title attribute), set  #}
     {# by updateSlopeRowAvailability in map.js when the viewport centre       #}

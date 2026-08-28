@@ -34,6 +34,7 @@ there is nothing browser-shaped in this ticket, and a 404 needs no browser.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -80,10 +81,6 @@ LIST_URL = "/routes/partials/list/"
 
 # The map sheet's variant, as apps.public.views._routes_context builds it.
 MAP_LIST_URL = f"{LIST_URL}?variant={ROUTE_LIST_MAP_VARIANT}"
-
-# SNOW-721: the planner the empty clause links, in one place so a change of
-# destination touches one line rather than every assertion.
-PLANNER_URL = "https://routeplanner.suunto.com/"
 
 # SNOW-687: the map layer's data endpoint. Outside the ``partials/`` prefix
 # on purpose — it is a plain-JSON fetch target, not an HTMX fragment.
@@ -567,7 +564,7 @@ class TestRouteListScoping:
         assert response.status_code == 200
         assert 'data-testid="route-list-empty"' in body
 
-    def test_empty_state_links_a_route_planner(self, client: Client) -> None:
+    def test_empty_state_names_where_a_gpx_comes_from(self, client: Client) -> None:
         """The map panel's empty clause names a source for a .gpx (SNOW-721).
 
         The same clause the account page renders — one partial, included by
@@ -578,11 +575,10 @@ class TestRouteListScoping:
 
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
-        assert PLANNER_URL in body
-        assert 'rel="noopener"' in body
+        assert "Routes can be recorded with smart devices" in body
 
     def test_empty_state_is_absent_once_a_route_exists(self, client: Client) -> None:
-        """A user WITH a route gets neither the clause nor the outbound link."""
+        """A user WITH a route gets no empty clause at all."""
         user = UserFactory.create()
         RouteFactory.create(user=user)
         client.force_login(user)
@@ -590,7 +586,7 @@ class TestRouteListScoping:
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
         assert 'data-testid="route-list-empty"' not in body
-        assert PLANNER_URL not in body
+        assert "Upload routes as GPX files." not in body
 
 
 @pytest.mark.django_db
@@ -916,7 +912,7 @@ class TestRoutesGeojsonShape:
         assert feature["geometry"]["coordinates"][0][1] == pytest.approx(46.1)
 
     def test_every_property_the_client_reads_is_present(self, client: Client) -> None:
-        """uuid, name, distance_m, ascent_m, descent_m, bounds — popup + fitBounds."""
+        """uuid, name, the figures, duration_s, bounds — popup + fitBounds."""
         user = UserFactory.create()
         client.force_login(user)
         route = RouteFactory.create(user=user, name="Haute Route")
@@ -929,8 +925,46 @@ class TestRoutesGeojsonShape:
             "distance_m": route.distance_m,
             "ascent_m": route.ascent_m,
             "descent_m": route.descent_m,
+            "duration_s": 7200,
             "bounds": route.bounds,
         }
+
+    def test_duration_is_derived_seconds_not_two_timestamps(
+        self, client: Client
+    ) -> None:
+        """The server does the subtraction, so the client parses no dates.
+
+        SNOW-750. Sending ``started_at``/``finished_at`` would push ISO
+        parsing and a timezone question onto the popup for a figure the
+        server already holds.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            started_at=datetime(2026, 3, 13, 9, 41, 38, tzinfo=UTC),
+            finished_at=datetime(2026, 3, 13, 14, 41, 35, tzinfo=UTC),
+        )
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties["duration_s"] == 17997
+        assert "started_at" not in properties
+        assert "finished_at" not in properties
+
+    def test_an_untimed_route_sends_a_null_duration(self, client: Client) -> None:
+        """Null passes through, on the same rule ``ascent_m`` follows.
+
+        The client omits the segment for a null rather than rendering
+        "0m" — a planned <rte> has no duration, it does not take no time.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, started_at=None, finished_at=None)
+
+        properties = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert properties["duration_s"] is None
 
     def test_a_null_descent_passes_through_as_null(self, client: Client) -> None:
         """Descent's null survives serialisation exactly as ascent's does."""

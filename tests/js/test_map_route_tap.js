@@ -27,6 +27,28 @@ import { loadMapBundle } from './_load_map_bundle.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
+/**
+ * The routes feed, whose geometry the popup's profile is drawn from.
+ *
+ * THE CACHE, NOT THE TAPPED FEATURE — see appendElevationProfile. A click
+ * feature is the tile's clipped, zoom-simplified copy of the line; this is
+ * the whole track as the server sent it, and the uuid is what ties one to
+ * the other. The elevations here are what the range caption reports.
+ */
+const ROUTES_FC = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [[7.0, 46.0, 1500], [7.0, 46.015, 2100], [7.0, 46.03, 1800]],
+      },
+      properties: { uuid: '11111111-2222-3333-4444-555555555555' },
+    },
+  ],
+};
+
 /** The screen row the route's line is drawn across, in pixels. */
 const LINE_Y = 16;
 
@@ -40,6 +62,7 @@ const ROUTE_FEATURE = {
     distance_m: 12400,
     ascent_m: 850,
     descent_m: 1100,
+    duration_s: 17997,
     bounds: JSON.stringify([7.0, 46.0, 7.0, 46.03]),
   },
 };
@@ -175,6 +198,8 @@ function buildFixture() {
          data-resorts-url="/api/resorts.json"
          data-resorts-geojson-url="/api/resorts.geojson"
          data-community-reports-url="/api/community-reports.geojson"
+         data-routes-url="/routes/routes.geojson"
+         data-routes-eligible="true"
          data-default-basemap-key="openfreemap_liberty"
          data-season-end="2026-05-31"></div>
     <div id="search-pill" data-state="collapsed">
@@ -214,7 +239,12 @@ beforeAll(async () => {
   });
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(EMPTY_FC) })),
+    vi.fn((url) => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(
+        String(url).includes('routes.geojson') ? ROUTES_FC : EMPTY_FC,
+      ),
+    })),
   );
 
   mapStub = stubMapLibre();
@@ -225,11 +255,17 @@ beforeAll(async () => {
   await import('../../static/js/elevation_profile_core.js');
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
+
+  // Populates routesGeojsonCache, which is where the popup's profile — and
+  // so the elevation half of its caption — comes from.
+  await window.pwaRoutesOverlay.show();
 });
 
 beforeEach(() => {
   installedLayers = new Set(['routes-line', 'routes-line-casing']);
   favouriteUnderPoint = false;
+  ROUTE_FEATURE.properties.duration_s = 17997;
+  ROUTE_FEATURE.properties.uuid = '11111111-2222-3333-4444-555555555555';
 });
 
 describe('tapping a saved route', () => {
@@ -249,6 +285,66 @@ describe('tapping a saved route', () => {
     expect(node.textContent).toContain('12.4 km');
     expect(node.textContent).toContain('850 m ascent');
     expect(node.textContent).toContain('1100 m descent');
+  });
+
+  // SNOW-750: the caption line under the profile. Two independent facts,
+  // either of which may be unknown, joined by the same separator the
+  // figures line uses.
+  it('captions the profile with its range and the duration', () => {
+    const node = tapAt(LINE_Y - 6);
+
+    expect(node.textContent).toContain('1500–2100 m · 5h00m');
+  });
+
+  it('shows the duration even when no profile was drawn', () => {
+    // The regression the caption was lifted out of appendElevationProfile
+    // to fix. A GPX with timing but no <ele> draws no chart, and until the
+    // two were separated the duration went with it. Here the geometry is
+    // simply absent from the cache, which reaches the same branch.
+    ROUTE_FEATURE.properties.uuid = 'not-in-the-cache';
+
+    const node = tapAt(LINE_Y - 6);
+
+    expect(node.textContent).not.toContain('–');
+    expect(node.textContent).toContain('5h00m');
+  });
+
+  it('omits the duration entirely for an untimed route', () => {
+    // Null means "the file carried no timing", never "took no time" — the
+    // same contract the null ascent figure carries. A planned <rte> reaches
+    // this branch, and "0m" would be a claim the file does not make.
+    ROUTE_FEATURE.properties.duration_s = null;
+
+    const node = tapAt(LINE_Y - 6);
+
+    expect(node.textContent).not.toMatch(/\dh\d|\dm/);
+  });
+
+  it('drops the hours segment under an hour', () => {
+    // 41m57s — the committed timed_track.gpx fixture's own span. "0h42m"
+    // would state an hours figure the tour does not have.
+    ROUTE_FEATURE.properties.duration_s = 2517;
+
+    const node = tapAt(LINE_Y - 6);
+
+    expect(node.textContent).toContain('42m');
+    expect(node.textContent).not.toContain('0h42m');
+  });
+
+  it('pads the minutes inside an hours figure', () => {
+    // "4h5m" reads as four hours five minutes only if you already know the
+    // format; "4h05m" cannot be misread.
+    ROUTE_FEATURE.properties.duration_s = 14700;
+
+    expect(tapAt(LINE_Y - 6).textContent).toContain('4h05m');
+  });
+
+  it('keeps counting in hours past a day', () => {
+    // A hut trip recorded as one track. Elapsed is elapsed — a days unit
+    // would be a third form for a case worth stating in hours.
+    ROUTE_FEATURE.properties.duration_s = 111960;
+
+    expect(tapAt(LINE_Y - 6).textContent).toContain('31h06m');
   });
 
   it('still opens for a tap exactly on the line', () => {

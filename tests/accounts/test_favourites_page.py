@@ -159,10 +159,28 @@ class TestFavouritesPageHosting:
         html = client.get(PAGE_URL).content.decode()
 
         assert f'hx-get="{reverse("favourites:list")}"' in html
-        assert 'hx-trigger="load"' in html
+        assert 'hx-trigger="load,' in html
 
-    def test_page_loads_the_four_row_modules(self, client: Client) -> None:
-        """htmx, then inline_rename, row_rename_commit and this page's half.
+    def test_the_list_re_reads_when_a_row_is_removed(self, client: Client) -> None:
+        """A second trigger on the same ``hx-get`` (SNOW-752).
+
+        A row's Remove empties one ``<li>`` and nothing else, so a page that
+        has just lost its last pin keeps rendering as a list of none — the
+        empty state is a server-side clause and only a fresh response can
+        carry it. ``static/js/account_favourites.js`` dispatches the event
+        and the URL stays here, written once.
+
+        ``from:document`` and not ``from:body``: the dispatch goes to
+        ``document``, and an event dispatched there never reaches a listener
+        bound on ``body``.
+        """
+        client.force_login(UserFactory.create())
+        html = client.get(PAGE_URL).content.decode()
+
+        assert "snowdesk:favourites-changed from:document" in html
+
+    def test_page_loads_the_five_row_modules(self, client: Client) -> None:
+        """htmx, then the three shared row modules, then this page's half.
 
         Document order is execution order for deferred scripts, and each
         module reads the previous one's ``window.pwa*`` global — so the order
@@ -177,6 +195,7 @@ class TestFavouritesPageHosting:
             html.index("js/htmx.min.js"),
             html.index("js/inline_rename.js"),
             html.index("js/row_rename_commit.js"),
+            html.index("js/row_removed.js"),
             html.index("js/account_favourites.js"),
         ]
         assert positions == sorted(positions)

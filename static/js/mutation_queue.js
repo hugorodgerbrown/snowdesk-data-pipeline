@@ -651,19 +651,31 @@
       } finally {
         emitTelemetry('pwa.mutation.drained', { count: drained });
         // SNOW-479: once ≥1 row synced we are online and server state has
-        // moved, so tell the map to refetch its favourites overlay — this is
-        // what replaces an offline-created pin's synthetic "pending" marker
-        // with the authoritative server pin. Kept queue-neutral (fires for any
-        // successful drain, not just favourites); map.js's listener is
-        // eligible-gated and a no-op when nothing changed, so a report-only
-        // drain harmlessly triggers one cheap favourites refetch.
+        // moved, so tell the map to refetch the overlays that draw it. The
+        // favourites announcement is what replaces an offline-created pin's
+        // synthetic "pending" marker with the authoritative server pin; the
+        // reports one is what puts a filed field observation onto the
+        // community-reports layer, which nothing else did — an accepted
+        // report was listed in its panel and absent from the map until the
+        // page was reloaded.
+        //
+        // Both are deliberately fired for ANY successful drain rather than
+        // being matched to what actually replayed: this queue carries no
+        // per-operation kind, and map.js's listeners are gated on their own
+        // overlay being loaded and eligible, so the wrong-kind case costs one
+        // cheap refetch and never a wrong picture. Matching would mean
+        // teaching the queue what its rows mean, which is the coupling the
+        // queue exists to avoid.
         if (drained > 0) {
-          try {
-            document.dispatchEvent(
-              new CustomEvent('snowdesk:favourites-changed'),
-            );
-          } catch (_e2) {
-            // Non-fatal — the drain itself already succeeded.
+          for (const name of [
+            'snowdesk:favourites-changed',
+            'snowdesk:reports-changed',
+          ]) {
+            try {
+              document.dispatchEvent(new CustomEvent(name));
+            } catch (_e2) {
+              // Non-fatal — the drain itself already succeeded.
+            }
           }
         }
         _drainInFlight = null;

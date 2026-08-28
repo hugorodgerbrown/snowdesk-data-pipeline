@@ -3,12 +3,14 @@
  *
  * /account/routes/ renders routes/partials/_route_list.html, whose rows are
  * the shared UGC row (includes/_ugc_panel_row.html) carrying a pencil and a
- * trash. The trash needs nothing from here — it is a plain HTMX form and
- * route_delete answers an empty 200 the row's own hx-swap turns into a
- * removal. The pencil does, and a pencil nothing listens to is a dead
- * control, which is worse than no pencil at all.
+ * trash. The trash needs nothing from here to DELETE — it is a plain HTMX
+ * form and route_delete answers an empty 200 the row's own hx-swap turns
+ * into a removal — but the swap it produces empties one <li> and nothing
+ * else, so the list still has to be told (SNOW-752, below). The pencil needs
+ * this module outright, and a pencil nothing listens to is a dead control,
+ * which is worse than no pencil at all.
  *
- * So this module is one behaviour: rename. window.pwaInlineRename owns the
+ * So this module is two behaviours. RENAME: window.pwaInlineRename owns the
  * interaction (reveal the editor, Enter or blur commits, Escape cancels, an
  * emptied field leaves the title alone) and window.pwaRowRenameCommit owns
  * the POST — the same two modules the map's four panels use. What is this
@@ -127,4 +129,21 @@
   }
 
   document.addEventListener('click', handleRenameClick);
+
+  // SNOW-752: the second behaviour, and the reason this module's header no
+  // longer reads "one behaviour: rename". The trash still needs nothing
+  // from here to delete a route — it is a plain HTMX form, and
+  // route_delete's empty 200 is what the row's own hx-swap turns into a
+  // removal — but it does need this page to notice. That swap empties one
+  // <li> and nothing else, so a page which has just lost its last route
+  // keeps rendering as a list of none: routes:list's empty state is a
+  // server-side ``{% if not routes %}`` clause and only a fresh response
+  // can carry it.
+  //
+  // The refetch is the list wrapper's own hx-get (see my_routes.html), so
+  // the URL is written once, in the template. All this does is say the fact
+  // out loud — under the same name the map's routes layer listens for.
+  window.pwaRowRemoved?.watch(LIST_SELECTOR, function () {
+    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+  });
 })();

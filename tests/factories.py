@@ -754,6 +754,12 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     and these points plainly carry some. A test that needs the unknown
     case passes ``ascent_m=None, descent_m=None`` with elevation-free
     ``points`` to match.
+
+    ``started_at`` / ``finished_at`` default to a two-hour span, the shape
+    a recorded upload has (SNOW-750). A test that needs an untimed route —
+    a planned ``<rte>``, or a row predating migration ``0003`` — passes
+    ``started_at=None, finished_at=None``; the pair is always set or unset
+    together, never one of the two.
     """
 
     class Meta:
@@ -775,6 +781,8 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     distance_m = 2500.0
     ascent_m = 100.0
     descent_m = 0.0
+    started_at = datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC)
+    finished_at = datetime.datetime(2026, 3, 13, 11, 0, tzinfo=UTC)
     point_count = 3
     bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])
 

@@ -4,7 +4,8 @@ apps/routes/models.py — Database models for the routes application.
 Defines ``Route``: a polyline an authenticated user imported from a GPX
 file. The row stores the coordinate list itself (``points``) plus the
 derived figures the list rows and the later fit-to-bounds need
-(``distance_m``, ``ascent_m``, ``point_count``, ``bounds``), so neither
+(``distance_m``, ``ascent_m``, ``point_count``, ``bounds``) plus the
+recording's two ends (``started_at``, ``finished_at``), so neither
 surface ever has to re-walk the geometry.
 
 The uploaded ``.gpx`` is parsed and discarded — there is no ``FileField``
@@ -18,6 +19,7 @@ create, delete) live in ``apps/routes/services/routes.py``.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -89,6 +91,20 @@ class Route(BaseModel):
     is therefore measured on that coarser track; see
     ``apps/routes/migrations/0002_route_descent_m.py`` for what that costs.
 
+    ``started_at`` and ``finished_at`` are the first and last track
+    point's own ``<time>``, and their span is the tour's **elapsed**
+    time — a track paused for lunch or overnight counts the pause.
+    Moving time would need a timestamp on every stored point (SNOW-751).
+    They are null on the same rule as ``ascent_m``: a planned ``<rte>``, a
+    planning tool's export, and an unparseable series all mean "we don't
+    know", never "instantaneous". The pair is read and validated
+    together, so one is never set without the other.
+
+    Rows created before SNOW-750 keep both as null and cannot be
+    backfilled. ``descent_m`` could be recovered from the simplified
+    ``points`` when it was added late; timing cannot, because the
+    uploaded ``.gpx`` is parsed and discarded and no copy of it survives.
+
     ``point_count`` and ``bounds`` describe what is actually stored in
     ``points``: the count is ``len(points)``, and ``bounds`` is a GeoJSON
     bbox — ``[min_lon, min_lat, max_lon, max_lat]`` — over the stored
@@ -149,6 +165,22 @@ class Route(BaseModel):
             "always known or unknown together."
         ),
     )
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The first track point's own <time>. Null when the source file "
+            "carried no usable timing."
+        ),
+    )
+    finished_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The last track point's own <time>. Null on the same condition "
+            "as started_at — the pair is read and validated together."
+        ),
+    )
     point_count = models.PositiveIntegerField(
         help_text="Number of coordinates stored in points.",
     )
@@ -173,6 +205,19 @@ class Route(BaseModel):
         the maths produces, but kilometres is what a route is read in.
         """
         return self.distance_m / 1000
+
+    @property
+    def duration(self) -> timedelta | None:
+        """Return the recording's elapsed time, or ``None`` if untimed.
+
+        Elapsed, not moving: the span includes every stop the recording
+        sat through. ``None`` means the file carried no usable timing, and
+        callers must omit the figure rather than render a zero — the same
+        contract ``ascent_m``'s null carries.
+        """
+        if self.started_at is None or self.finished_at is None:
+            return None
+        return self.finished_at - self.started_at
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this route.

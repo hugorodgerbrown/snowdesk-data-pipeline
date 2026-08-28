@@ -37,6 +37,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/row_focus.js';
+import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
 
 // As apps.public.views._favourites_context builds it — the map sheet asks for
@@ -260,7 +261,8 @@ describe('removing a row from the panel', () => {
     // until a reload, while deleting from the pin popup did not.
     btn.click();
     const container = rows();
-    container.innerHTML = '<ul><li id="favourite-a1b2"><button></button></li></ul>';
+    container.innerHTML =
+      '<ul><li id="favourite-a1b2"><form data-row-remove><button></button></form></li></ul>';
     const button = container.querySelector('button');
 
     const changed = vi.fn();
@@ -276,6 +278,33 @@ describe('removing a row from the panel', () => {
 
     expect(changed).toHaveBeenCalledTimes(1);
     document.removeEventListener('snowdesk:favourites-changed', changed);
+  });
+
+  it('re-reads the list, so the empty state arrives with the last row', () => {
+    // The row's own hx-swap empties one <li> and nothing else, so a panel
+    // that has just lost its last pin keeps rendering as a list of none:
+    // favourites:list's empty state is a server-side clause and only a
+    // fresh response can carry it. Hugo, deleting the last row: it
+    // "doesn't show until you refresh the page". The refetch is also what
+    // re-emits the roster sidecar favourites_offline.js reconciles its
+    // cached copy against.
+    btn.click();
+    const container = rows();
+    container.innerHTML =
+      '<ul><li id="favourite-a1b2"><form data-row-remove><button></button></form></li></ul>';
+    const button = container.querySelector('button');
+    globalThis.htmx.ajax.mockClear();
+
+    const xhr = {};
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', { detail: { xhr, elt: button } }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: true } }),
+    );
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
   });
 
   it('stays quiet for a request that came from outside the rows', () => {

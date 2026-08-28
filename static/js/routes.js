@@ -447,6 +447,12 @@
         }
         window.pwaTelemetry?.emit('map.route.created', {});
         loadRows();
+        // The map draws the same routes this panel lists, and an upload
+        // that only reached the list is the defect this announcement
+        // exists for: the overlay's source is already installed for
+        // anybody who has the layer switched on, so nothing else would
+        // ever put the new line on the map. map.js owns what it costs.
+        document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
       })
       .catch(function () {
         showToast(STRINGS['upload-failed']);
@@ -489,42 +495,30 @@
   }
 
   // ---------------------------------------------------------------------------
-  // htmx response handling — a row removed from the panel.
+  // A row removed from the panel.
   //
-  // The panel row's own Remove form posts and swaps itself out, and it is
-  // the only htmx request this module has to notice. Two-step: mark on
-  // htmx:beforeRequest whether the element making the request lives inside
-  // the panel's rows (checked *before* any swap runs, so elt.closest() sees
-  // a properly attached tree — an outerHTML swap like that row removal
-  // detaches the element by the time a later event fires), then act on
-  // htmx:afterRequest, the last event in htmx's lifecycle.
+  // The row's Remove is a plain HTMX form (nothing here handles the POST),
+  // but a route that no longer exists has to leave two more places:
   //
-  // The mark is stamped on the request's own XMLHttpRequest, not on a
-  // module-level variable: both listeners are document-level, so every HTMX
-  // request on the page runs through them — this surface shares the map
-  // homepage with the favourites, report and downloads panels — and a
-  // shared variable is rewritten by whichever request fires last, with no
-  // way to correlate an afterRequest back to the beforeRequest that set it.
-  // htmx carries the same xhr object on both events, so the mark rides the
-  // request it describes. Lifted from favourites.js, which needs it for the
-  // same reason.
+  //   the LIST — the row's own swap empties one <li>, so a panel that has
+  //     just lost its last route keeps rendering as a list of none.
+  //     routes:list's empty state is a server-side ``{% if not routes %}``
+  //     clause and only a fresh response can carry it.
+  //
+  //   the MAP — the line and its start/finish markers, which nothing else
+  //     takes off.
+  //
+  // Both are the same move rename and upload already make.
+  //
+  // SNOW-752: the beforeRequest/afterRequest mark-pair that recognises the
+  // removal is window.pwaRowRemoved's, shared with the other five UGC lists
+  // — see static/js/row_removed.js for why it has to be two events and why
+  // the mark rides the xhr.
   // ---------------------------------------------------------------------------
 
-  const PANEL_ROW_REQUEST_MARK = 'snowdeskRoutePanelRowRequest';
-
-  document.addEventListener('htmx:beforeRequest', function (event) {
-    const detail = event.detail || {};
-    if (!detail.xhr) return;
-    const elt = detail.elt;
-    detail.xhr[PANEL_ROW_REQUEST_MARK] = !!(
-      elt && elt.closest && elt.closest('[data-routes-rows]')
-    );
-  });
-
-  document.addEventListener('htmx:afterRequest', function (event) {
-    const xhr = event.detail && event.detail.xhr;
-    if (!xhr || !xhr[PANEL_ROW_REQUEST_MARK]) return;
-    if (!event.detail.successful) return;
+  window.pwaRowRemoved?.watch('[data-routes-rows]', function () {
     window.pwaTelemetry?.emit('map.route.deleted', {});
+    loadRows();
+    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
   });
 }());

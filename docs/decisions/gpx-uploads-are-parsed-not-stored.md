@@ -10,7 +10,8 @@ last-reviewed: 2026-08-17
 **Decision.** An uploaded `.gpx` is read into memory, parsed by
 `apps.routes.services.gpx.parse_gpx`, and dropped. What persists is the
 derived `Route` row — the coordinate list in `points`, the derived
-`distance_m` / `ascent_m` / `point_count` / `bounds`, and the original
+`distance_m` / `ascent_m` / `descent_m` / `point_count` / `bounds`, the
+recording's two ends in `started_at` / `finished_at`, and the original
 filename as a label in `source_filename`. There is no `FileField` on
 `Route` and no copy of the original anywhere.
 
@@ -30,8 +31,12 @@ something needs it; nothing does.
 Nothing of consequence is lost. GPX is XML over a coordinate list, so a
 re-export from `points` reconstructs a usable file whenever one is wanted —
 the only casualties are the extension elements this parser already ignores
-(heart rate, cadence, per-point timestamps), none of which any planned
-surface reads. The route the user sees drawn is `points`, not the upload,
+(heart rate, cadence) and the per-point timestamps between the two ends,
+none of which any planned surface reads. SNOW-750 took the first and last
+`<time>` for the tour's elapsed duration precisely because they are cheap
+to keep and impossible to recover later; SNOW-751 is where keeping the
+whole series gets argued, and it will be a decision about `points`, not a
+reason to keep the file. The route the user sees drawn is `points`, not the upload,
 so the stored row is the authoritative artefact either way.
 
 The privacy arithmetic points the same way. A GPX track is location
@@ -48,6 +53,11 @@ the smaller the exposure. Simplification (see `MAX_POINTS` in
   path, and diagnosing a rejected file means asking the user for it.
 - Re-processing a track under improved parsing rules is not possible for
   routes already imported — a rules change applies to new uploads only.
+  This is why a field added late can only sometimes be backfilled:
+  `descent_m` (migration `0002`) was recoverable from the simplified
+  `points`, and `started_at` / `finished_at` (migration `0003`) were not,
+  because no column holds a timestamp. A row predating a field keeps its
+  null, and re-uploading is the only remedy.
   If that ever needs to change, retaining originals is the prerequisite,
   and that is the moment to add object storage.
 - Per-point timestamps, heart rate and other GPX extensions are gone at

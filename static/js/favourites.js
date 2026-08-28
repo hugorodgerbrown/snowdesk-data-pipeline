@@ -577,26 +577,32 @@
   });
 
   // ---------------------------------------------------------------------------
-  // htmx response handling — a row removed from the panel.
+  // A row removed from the panel.
   //
-  // Create is no longer htmx-driven: SNOW-479 routes it through the client
-  // mutation queue (see the #favourite-create-form submit interceptor below).
-  // The only htmx request this module still has to notice is the panel row's
-  // own Remove form, which posts and swaps itself out. Two-step: mark on
-  // htmx:beforeRequest whether the element making the request lives inside
-  // the panel's rows (checked *before* any swap runs, so elt.closest() sees a
-  // properly attached tree — an outerHTML swap like that row removal detaches
-  // the element by the time a later event fires), then act on
-  // htmx:afterRequest, the last event in htmx's lifecycle.
+  // The row's Remove is a plain HTMX form (nothing here handles the POST),
+  // but a favourite that no longer exists has to leave two more places, and
+  // neither happens on its own:
   //
-  // The mark is stamped on the request's own XMLHttpRequest, not on a
-  // module-level variable: both listeners are document-level, so every HTMX
-  // request on the page runs through them — report.js's form-load
-  // htmx.ajax() shares the map homepage with this surface — and a shared
-  // variable is rewritten by whichever request fires last, with no way to
-  // correlate an afterRequest back to the beforeRequest that set it. htmx
-  // carries the same xhr object on both events, so the mark rides the
-  // request it describes.
+  //   the LIST — the row's own swap empties one <li>, so a panel that has
+  //     just lost its last pin keeps rendering as a list of none.
+  //     favourites:list's empty state is a server-side
+  //     ``{% if not favourites %}`` clause and only a fresh response can
+  //     carry it. Hugo, deleting the last row: it "doesn't show until you
+  //     refresh the page". The refetch also re-emits the roster sidecar,
+  //     which is what keeps static/js/favourites_offline.js's cached copy
+  //     from holding a deleted pin (see its ``_evictAbsent`` reconcile) —
+  //     until SNOW-752 that only caught up on the panel's NEXT open.
+  //
+  //   the MAP — deleting from the pin popup already announced this; deleting
+  //     from the panel silently did not, and the pin stayed until a reload.
+  //
+  // Both are the same move rename already makes: re-read the truth rather
+  // than patch in what we think we just wrote.
+  //
+  // SNOW-752: the beforeRequest/afterRequest mark-pair that recognises the
+  // removal is window.pwaRowRemoved's, shared with the other five UGC lists
+  // — see static/js/row_removed.js for why it has to be two events and why
+  // the mark rides the xhr.
   //
   // SNOW-658: the same idiom applied to the PIN POPUP's own rename/delete
   // forms (DETAIL_REQUEST_MARK, scoped to [data-favourite-detail]). Those
@@ -605,26 +611,9 @@
   // along with the responseError toast that reported their failures.
   // ---------------------------------------------------------------------------
 
-  const PANEL_ROW_REQUEST_MARK = 'snowdeskFavouritePanelRowRequest';
-
-  document.addEventListener('htmx:beforeRequest', function (event) {
-    const detail = event.detail || {};
-    if (!detail.xhr) return;
-    const elt = detail.elt;
-    detail.xhr[PANEL_ROW_REQUEST_MARK] = !!(
-      elt && elt.closest && elt.closest('[data-favourites-rows]')
-    );
-  });
-
-  // A row removed from the panel is a favourite that no longer exists, so the
-  // map's own pins have to be refetched — nothing else does it. Deleting from
-  // the pin popup already dispatched this (above); deleting from the panel
-  // silently did not, and the pin stayed on the map until a reload.
-  document.addEventListener('htmx:afterRequest', function (event) {
-    const xhr = event.detail && event.detail.xhr;
-    if (!xhr || !xhr[PANEL_ROW_REQUEST_MARK]) return;
-    if (!event.detail.successful) return;
+  window.pwaRowRemoved?.watch('[data-favourites-rows]', function () {
     window.pwaTelemetry?.emit('map.favourite.deleted', {});
+    loadRows();
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
   });
 

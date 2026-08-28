@@ -58,6 +58,7 @@ import '../../static/js/i18n_strings.js';
 import '../../static/js/inline_rename.js';
 import '../../static/js/row_rename_commit.js';
 import '../../static/js/row_focus.js';
+import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
 
 // As apps.public.views._routes_context builds it — the map sheet asks for the
@@ -401,6 +402,21 @@ describe('uploading a chosen file', () => {
     expect(globalThis.htmx.ajax.mock.calls[1][1]).toBe(LIST_URL);
   });
 
+  it('tells the map, so the new route is drawn without a reload', async () => {
+    // The overlay's source is already installed for anybody with the layer
+    // switched on, so nothing else would ever put the uploaded line on it.
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:routes-changed', changed);
+    btn.click();
+
+    choose(gpxFile());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(changed).toHaveBeenCalled();
+    document.removeEventListener('snowdesk:routes-changed', changed);
+  });
+
   it('emits telemetry for the upload', async () => {
     btn.click();
 
@@ -490,7 +506,7 @@ describe('a row removed from the panel', () => {
   it('emits telemetry when the row’s own Remove form succeeds', () => {
     btn.click();
     const rows = sheet.querySelector('[data-routes-rows]');
-    rows.innerHTML = '<ul><li><form id="rm"></form></li></ul>';
+    rows.innerHTML = '<ul><li><form id="rm" data-row-remove></form></li></ul>';
     const xhr = {};
 
     document.dispatchEvent(
@@ -505,6 +521,56 @@ describe('a row removed from the panel', () => {
     );
 
     expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.route.deleted', {});
+  });
+
+  it('re-reads the list, so the empty state arrives with the last row', () => {
+    // The row's own hx-swap empties one <li> and nothing else, so a panel
+    // that has just lost its last route keeps rendering as a list of none:
+    // routes:list's empty state is a server-side clause and only a fresh
+    // response can carry it. Hugo, deleting the last row: it "doesn't show
+    // until you refresh the page".
+    btn.click();
+    const rows = sheet.querySelector('[data-routes-rows]');
+    rows.innerHTML = '<ul><li><form id="rm" data-row-remove></form></li></ul>';
+    globalThis.htmx.ajax.mockClear();
+    const xhr = {};
+
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', {
+        detail: { xhr: xhr, elt: rows.querySelector('#rm') },
+      }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', {
+        detail: { xhr: xhr, successful: true },
+      }),
+    );
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
+  });
+
+  it('tells the map, so the deleted route’s line goes with the row', () => {
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:routes-changed', changed);
+    btn.click();
+    const rows = sheet.querySelector('[data-routes-rows]');
+    rows.innerHTML = '<ul><li><form id="rm" data-row-remove></form></li></ul>';
+    const xhr = {};
+
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', {
+        detail: { xhr: xhr, elt: rows.querySelector('#rm') },
+      }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', {
+        detail: { xhr: xhr, successful: true },
+      }),
+    );
+
+    expect(changed).toHaveBeenCalled();
+    document.removeEventListener('snowdesk:routes-changed', changed);
   });
 
   it('ignores an HTMX request from outside the panel’s rows', () => {

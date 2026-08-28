@@ -177,7 +177,11 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         slug="hex-colour",
-        pattern=re.compile(r"#[0-9a-fA-F]{3,8}\b(?![0-9a-fA-F])"),
+        # The leading (?<!&) excludes NUMERIC HTML ENTITIES: `&#8599;`
+        # (an arrow) and `&#x2197;` both present four hex-ish digits
+        # after a `#` and were reported as colours. Nothing preceded by
+        # `&` is ever a colour, so the lookbehind cannot mask a real one.
+        pattern=re.compile(r"(?<!&)#[0-9a-fA-F]{3,8}\b(?![0-9a-fA-F])"),
         message=(
             "Literal hex colour in a template — colours belong in "
             "`src/css/main.css` `@theme` and are surfaced via Tailwind "

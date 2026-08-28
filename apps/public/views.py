@@ -112,6 +112,7 @@ from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache
 from apps.core.utils import html_to_markdown
 from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
+from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
@@ -1471,7 +1472,15 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
         # SNOW-658: the roundel opens a panel listing the user's own reports
         # before it offers to file another, so the panel needs the list
         # endpoint.
-        "report_list_url": reverse("observations:list"),
+        # SNOW-752: ``?variant=map`` asks for map-focus rows, whose label
+        # frames the report on the map behind the sheet. The parameter was
+        # added when /account/observations/ needed to re-read the same
+        # endpoint and must NOT get those rows — there is no map on that
+        # page to fly. Same convention, same spelling, as the favourites
+        # and routes lists above and below.
+        "report_list_url": (
+            f"{reverse('observations:list')}?variant={OBSERVATION_LIST_MAP_VARIANT}"
+        ),
         "report_signin_url": reverse("accounts:sign_in"),
     }
 
