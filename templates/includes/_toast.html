@@ -9,38 +9,6 @@
   Optional context:
     id          — DOM id on the outer element. Required when JS toggles
                   visibility (SW banner, HTMX error banner).
-    body_template — Template path rendered INSIDE the body slot instead of
-                  the plain ``body`` string. For a caller whose body is
-                  richer than one escaped line: SNOW-748's offline-status
-                  toast carries a summary line with a live relative
-                  timestamp plus four mutually-exclusive explanations,
-                  each server-rendered and toggled by ``hidden`` (a string
-                  set from JavaScript would ship English to every locale —
-                  ``makemessages`` never scans ``static/js``; see
-                  docs/i18n.md). Supplying it also switches the toast from
-                  its pill shape to a PANEL: ``rounded-card``, wrapped so
-                  the CTA and "×" sit under the body rather than beside
-                  it, and height-bounded with ``max-h-[60dvh]`` +
-                  ``overflow-y-auto`` — the house rule for anything fixed
-                  over the map, and ``dvh``/``dvw`` rather than ``vh``/``vw``
-                  because the viewport units ignore mobile browser chrome
-                  (and ``vw`` counts the scrollbar). It is also WIDTH-set
-                  (``w-[calc(100dvw-2rem)]`` under the existing
-                  ``max-w-md``): a ``fixed`` flex box with no width shrinks
-                  to fit its content, which for a wrapped paragraph
-                  collapses to a ~200px column. ``flex`` IS baked
-                  in for this variant (unlike the pill — see "Display
-                  notes"), which is safe because ``hidden`` is emitted
-                  last in Tailwind's display group and so wins while both
-                  classes are present; a caller reveals by removing
-                  ``hidden`` alone.
-    cta_label_template — Template path rendered inside the CTA button
-                  instead of the plain ``cta_label`` string. Same reason as
-                  ``body_template``: the offline toast's one button has two
-                  labels ("Try reconnecting" when the app gave up, "Use the
-                  network again" when the user chose it), both rendered
-                  server-side and toggled by ``hidden``. Emits the CTA when
-                  paired with ``cta_href``, exactly as ``cta_label`` does.
     cta_label   — Label for inline CTA button (paired with cta_href).
     cta_href    — Sentinel value (e.g. "#") gating CTA emission. Not used
                   for navigation — the rendered button carries
@@ -77,13 +45,6 @@
     ``hidden``/``flex`` on reveal (see static/js/sw_register.js lines
     46–67), and the HTMX error JS only removes ``hidden``. Adding ``flex``
     here would break both patterns.
-
-    The ``body_template`` panel variant is the one exception: it needs a
-    flex context for ``flex-wrap`` + ``basis-full`` to do anything, so it
-    bakes ``flex`` in alongside ``hidden``. Both callers' patterns still
-    work — Tailwind emits ``.hidden`` last within the display group, so it
-    wins whenever both classes are present, and revealing is still
-    "remove ``hidden``".
 {% endcomment %}
 <div
     {% if id %}id="{{ id }}"{% endif %}
@@ -98,32 +59,19 @@
     data-kind="{{ kind }}"
     {% if not static %}data-overlay data-overlay-hide="class"{% endif %}
     {% if timeout %}data-toast-timeout="{{ timeout }}"{% endif %}
-    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% if body_template %} flex{% endif %}{% endif %} {% if body_template %}flex-wrap items-start rounded-card w-[calc(100dvw-2rem)] max-h-[60dvh] overflow-y-auto py-3{% else %}items-center rounded-full py-2{% endif %} gap-3 max-w-md bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 text-sm shadow-lg"
+    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% endif %} items-center gap-3 max-w-md rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
 >
     {# data-toast-body: the hook a JS owner writes through to replace the  #}
     {# message without rebuilding the toast (static/js/map_sheet.js). A    #}
     {# server-rendered toast simply never has it written to.               #}
-    {# ``basis-full`` in the panel variant: the body takes a whole flex     #}
-    {# line, so the CTA and "×" wrap onto the next one instead of being    #}
-    {# squeezed alongside a paragraph.                                     #}
-    <span data-toast-body {% if body_template %}class="basis-full"{% endif %}>
-        {% if body_template %}
-            {% include body_template %}
-        {% else %}
-            {{ body }}
-        {% endif %}
-    </span>
-    {% if cta_href and cta_label or cta_href and cta_label_template %}
+    <span data-toast-body>{{ body }}</span>
+    {% if cta_label and cta_href %}
         <button
             type="button"
             data-action="reload"
             class="rounded-full bg-status-{{ kind }}-text text-status-{{ kind }}-bg px-3 py-1 text-xs font-medium hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-{{ kind }}-text"
         >
-            {% if cta_label_template %}
-                {% include cta_label_template %}
-            {% else %}
-                {{ cta_label }}
-            {% endif %}
+            {{ cta_label }}
         </button>
     {% endif %}
     {% if dismissible|default_if_none:True %}
