@@ -34,7 +34,9 @@ from typing import Any
 import pytest
 from django.test import Client
 
+from apps.downloads import views
 from apps.downloads.models import DownloadArea
+from apps.regions.services import basemap_tiles
 from tests.factories import DownloadAreaFactory, UserFactory
 
 SYNC_URL = "/downloads/partials/sync/"
@@ -142,6 +144,115 @@ class TestAreaSyncGuards:
 
         assert response.status_code == 400
         assert not DownloadArea.objects.exists()
+
+    @pytest.mark.parametrize(
+        ("bbox", "label"),
+        [
+            # Every ordinate is a legal lon/lat, so the RANGE check passes
+            # it untouched. 357 million tiles across the micro band, ~17 TB
+            # at the worst-case rate — this is the box the range check was
+            # once claimed to stop and never did.
+            (json.dumps([-179.0, -89.0, 179.0, 89.0]), "whole world"),
+            # Switzerland: legal, plausible, and still ~1.8 GB.
+            (json.dumps([5.9, 45.8, 10.5, 47.8]), "whole country"),
+        ],
+    )
+    def test_an_undownloadable_box_is_refused(
+        self, client: Client, signed_in: Any, bbox: str, label: str
+    ) -> None:
+        """A box over the download ceiling is refused rather than stored.
+
+        A stored bbox is not inert: another device replays it through
+        ``openFramingAt`` and is offered a download. Storing a box this
+        server knows to be undownloadable produces a row whose only purpose
+        is to be acted on and cannot be.
+        """
+        response = client.post(
+            SYNC_URL, {**CUSTOM_PAYLOAD, "bbox": bbox}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 400, label
+        assert not DownloadArea.objects.exists()
+
+    def test_a_box_a_real_client_could_frame_is_accepted(
+        self, client: Client, signed_in: Any
+    ) -> None:
+        """The ceiling is the client's own, so it never refuses a real frame.
+
+        The bound reuses ``basemap_tiles.DOWNLOAD_CEILING_MB`` — the same
+        constant ``basemap_download_core.js`` mirrors and the framing
+        control already enforces — so this is a backstop for a client we
+        did not ship, not a second, tighter policy. A box at the largest
+        size the real control permits has to pass.
+        """
+        # ~0.9° x 0.6°, which prices just under the 200 MB ceiling.
+        bbox = json.dumps([7.0, 46.0, 7.9, 46.6])
+        response = client.post(
+            SYNC_URL, {**CUSTOM_PAYLOAD, "bbox": bbox}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 200
+        assert DownloadArea.objects.get().bbox == [7.0, 46.0, 7.9, 46.6]
+
+    def test_the_ceiling_is_the_shared_constant_not_a_second_one(self) -> None:
+        """``_clean_bbox`` prices against ``basemap_tiles``, not a local copy.
+
+        There is one download ceiling in this system and it is already
+        mirrored in JavaScript. A third would be a limit no control was
+        designed against — so this asserts the module reads the shared one
+        rather than restating it.
+        """
+        assert views.DOWNLOAD_CEILING_MB is basemap_tiles.DOWNLOAD_CEILING_MB
+        assert views.MICRO_BAND is basemap_tiles.MICRO_BAND
+        assert (
+            views.WORST_CASE_BYTES_PER_TILE is basemap_tiles.WORST_CASE_BYTES_PER_TILE
+        )
+
+    @pytest.mark.parametrize(
+        ("field", "limit"),
+        [("name", 100), ("region_id", 50), ("basemap_key", 50)],
+    )
+    def test_an_over_long_value_is_refused_not_truncated(
+        self, client: Client, signed_in: Any, field: str, limit: int
+    ) -> None:
+        """Refused, matching ``area_rename`` — the two used to disagree.
+
+        ``area_sync`` silently clipped each value to its column width while
+        ``area_rename`` 400d at the identical limit. A clipped value is
+        stored, echoed to every other device and read as what the user
+        meant; a clipped ``region_id`` names a region that does not exist,
+        so the area arrives elsewhere un-downloadable.
+        """
+        response = client.post(
+            SYNC_URL,
+            {**REGION_PAYLOAD, field: "x" * (limit + 1)},
+            **HTMX_HEADERS,
+        )
+
+        assert response.status_code == 400
+        assert field in response.content.decode()
+        assert not DownloadArea.objects.exists()
+
+    @pytest.mark.parametrize(
+        ("field", "limit"),
+        [("name", 100), ("region_id", 50), ("basemap_key", 50)],
+    )
+    def test_a_value_exactly_at_the_limit_is_accepted(
+        self, client: Client, signed_in: Any, field: str, limit: int
+    ) -> None:
+        """The limit is inclusive, and matches the column and the input.
+
+        ``maxlength="100"`` on the rename field means a legitimate client
+        can post exactly 100 characters; refusing that would be a gate the
+        UI invites the user through.
+        """
+        value = "x" * limit
+        response = client.post(
+            SYNC_URL, {**REGION_PAYLOAD, field: value}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 200
+        assert getattr(DownloadArea.objects.get(), field) == value
 
     def test_region_area_needs_a_region_id(
         self, client: Client, signed_in: Any

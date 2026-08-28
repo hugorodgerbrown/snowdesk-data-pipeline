@@ -32,6 +32,22 @@ point of a downloaded area is that it works with no signal — and a signal
 is exactly what checking a session would need. The authentication gate here
 covers *starting* a download and syncing it, nothing else.
 
+**Two validation rules worth stating up front**, because both were got
+wrong first:
+
+- A posted bbox is **priced**, not merely range-checked. Bounding each
+  ordinate to a valid lon/lat leaves ``[-179, -89, 179, 89]`` acceptable,
+  and that box is 357 million tiles across the micro band. ``_clean_bbox``
+  therefore prices it against the shared ``DOWNLOAD_CEILING_MB`` from
+  ``apps.regions.services.basemap_tiles`` — the same constant
+  ``static/js/basemap_download_core.js`` mirrors and the framing control
+  already enforces, imported rather than restated so there is one ceiling
+  and not three. This matters because a stored bbox is replayed on another
+  device by ``openFramingAt``: a box we know to be undownloadable would be
+  a row whose only purpose is to be acted on and cannot be.
+- An over-long ``name``, ``region_id`` or ``basemap_key`` is **refused**,
+  never truncated, in both write paths. See ``_too_long_error``.
+
 All four views are authentication-gated (403 for anonymous) and owner-scoped
 via ``DownloadArea.objects.for_user()``. An area id belonging to somebody
 else returns 404, never 403, so a probing request cannot distinguish "not
@@ -58,6 +74,13 @@ from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
+from apps.regions.services.basemap_tiles import (
+    DOWNLOAD_CEILING_MB,
+    MICRO_BAND,
+    WORST_CASE_BYTES_PER_TILE,
+    tile_count,
+    tile_ranges,
+)
 
 from .models import DownloadArea
 
@@ -74,6 +97,17 @@ _AREA_ID_RE = re.compile(r"^(region|custom)-[A-Za-z0-9_-]{1,88}$")
 
 # Longest accepted ``name``, mirroring ``DownloadArea.name``'s max_length.
 _NAME_MAX_LENGTH = 100
+
+# Longest accepted ``region_id`` and ``basemap_key``, each mirroring its own
+# column's ``max_length``.
+_REGION_ID_MAX_LENGTH = 50
+_BASEMAP_KEY_MAX_LENGTH = 50
+
+# Bytes in a megabyte, 1024-based — matching ``basemap_tiles.py``'s own
+# arithmetic and the JS twin's. Every size a user has been shown for a
+# download is computed this way, so a decimal megabyte here would price the
+# same box differently from the control that framed it.
+_BYTES_PER_MB = 1024 * 1024
 
 
 def _kind_for_area_id(area_id: str) -> str:
@@ -98,18 +132,64 @@ def _kind_for_area_id(area_id: str) -> str:
     return DownloadArea.KIND.REGION
 
 
+def _bbox_download_mb(bbox: list[float]) -> float:
+    """Return the worst-case download size of ``bbox``, in megabytes.
+
+    The same arithmetic ``build_blob`` performs for a region, applied to a
+    posted box: expand it into per-zoom tile ranges across the micro band,
+    count the tiles, and price them at the worst-case bytes-per-tile figure
+    SNOW-631 calibrated. Every constant is imported from
+    ``apps.regions.services.basemap_tiles`` rather than restated here —
+    there is one download ceiling in this system, and it is mirrored in
+    ``static/js/basemap_download_core.js`` as it is, so a second one would
+    be a limit no control was designed against.
+
+    Deliberately a worst case, not an estimate of what a run would really
+    fetch. It over-reads on sparse alpine terrain by three to five times,
+    which is the trade that keeps a single constant that never
+    under-promises — and under-promising is the direction that matters for
+    a ceiling.
+
+    Args:
+        bbox: ``[west, south, east, north]`` in degrees, already validated
+            as a non-empty in-range box.
+
+    Returns:
+        Megabytes (1024-based).
+
+    """
+    tiles = tile_count(tile_ranges(bbox, *MICRO_BAND))
+    return tiles * WORST_CASE_BYTES_PER_TILE / _BYTES_PER_MB
+
+
 def _clean_bbox(raw: str) -> list[float] | None:
     """Parse and validate a posted bbox, or return None.
 
     Returns None for anything that is not four finite numbers describing a
-    non-empty, in-range box in ``[west, south, east, north]`` (lon, lat)
-    order. A rejected bbox is not an error the caller has to surface — a
-    region area legitimately has none — so the two callers decide for
-    themselves whether its absence matters.
+    non-empty box in ``[west, south, east, north]`` (lon, lat) order, in
+    range, AND small enough to be downloadable. A rejected bbox is not an
+    error the caller has to surface — a region area legitimately has none —
+    so the two callers decide for themselves whether its absence matters.
 
-    The range check is what stops a hostile or buggy client storing a box
-    another device would later expand into an enormous tile list: at zoom
-    14 a whole-world bbox is a quarter of a billion tiles.
+    **Two separate checks, because the coordinate range is not a size
+    limit.** Bounding each ordinate to valid lon/lat leaves
+    ``[-179, -89, 179, 89]`` perfectly acceptable, and that box is 357
+    million tiles across the micro band — roughly 17 TB at the worst-case
+    rate. The size check is what actually stops it.
+
+    The size check exists because a stored bbox is not inert data: another
+    device replays it through ``openFramingAt`` in
+    static/js/map_downloads_manager.js, which fits the map to it and offers
+    a download. A box this server knows to be undownloadable is a row whose
+    only purpose is to be acted on and cannot be, so it is refused at the
+    door rather than stored for a second device to discover.
+
+    It is deliberately the SAME ceiling the framing control already
+    enforces client-side (``basemap_download_core.js``'s
+    ``DOWNLOAD_CEILING_MB``, mirroring the constant imported here), so no
+    box a legitimate client can frame is ever refused here. This is the
+    backstop for a client that is not the one we ship — not a second,
+    tighter policy.
 
     Args:
         raw: The posted JSON string.
@@ -137,7 +217,61 @@ def _clean_bbox(raw: str) -> list[float] | None:
         return None
     if not (-90.0 <= south < north <= 90.0):
         return None
-    return [west, south, east, north]
+    bbox = [west, south, east, north]
+    # Last, because it is the only check here that does real work — five
+    # zoom levels of index arithmetic — and every cheaper rejection above
+    # has already run.
+    size_mb = _bbox_download_mb(bbox)
+    if size_mb > DOWNLOAD_CEILING_MB:
+        logger.info(
+            "Download area bbox refused: %.0f MB exceeds the %d MB ceiling",
+            size_mb,
+            DOWNLOAD_CEILING_MB,
+        )
+        return None
+    return bbox
+
+
+def _too_long_error(name: str, region_id: str, basemap_key: str) -> str | None:
+    """Return the 400 message for the first over-long field, or None.
+
+    Over-long values are REFUSED, not truncated — and the same way
+    ``area_rename`` refuses one. The two write paths used to disagree:
+    this one silently clipped each value to its column width while the
+    other 400d at the identical limit.
+
+    Rejecting is right in both, and the argument is not consistency for its
+    own sake. A clipped value is stored, echoed back to every other device
+    and read as what the user meant. A truncated ``region_id`` is worse
+    still: it names a region that does not exist, so the area arrives on
+    another device un-downloadable — exactly the class of row
+    ``_clean_bbox`` refuses an over-large box for.
+
+    Rejecting costs nothing a legitimate client can hit, including a queued
+    one that cannot be retried. The rename field carries
+    ``maxlength="100"`` (includes/_ugc_panel_row.html), a region id is an
+    EAWS code, and a basemap key is a ``settings.BASEMAP_STYLES`` key — so
+    anything over these limits came from a client we did not ship, and
+    failing it loudly is the honest answer.
+
+    Args:
+        name: The posted display name.
+        region_id: The posted EAWS micro-region id.
+        basemap_key: The posted basemap picker key.
+
+    Returns:
+        A message naming the offending field and its limit, or None when
+        every value fits.
+
+    """
+    for value, limit, label in (
+        (name, _NAME_MAX_LENGTH, "name"),
+        (region_id, _REGION_ID_MAX_LENGTH, "region_id"),
+        (basemap_key, _BASEMAP_KEY_MAX_LENGTH, "basemap_key"),
+    ):
+        if len(value) > limit:
+            return f"{label} must be at most {limit} characters."
+    return None
 
 
 def _serialise(area: DownloadArea) -> dict[str, Any]:
@@ -206,7 +340,9 @@ def area_sync(request: HttpRequest) -> HttpResponse:
 
     Errors:
         400 — non-HTMX request; malformed area id; a custom area with no
-            usable bbox.
+            usable bbox (absent, malformed, out of range, or larger than
+            ``DOWNLOAD_CEILING_MB`` — see ``_clean_bbox``); an over-long
+            ``name``, ``region_id`` or ``basemap_key``.
         403 — anonymous request.
         409 — the user has reached ``settings.DOWNLOAD_AREAS_MAX_PER_USER``.
         429 — rate limit exceeded.
@@ -233,7 +369,9 @@ def area_sync(request: HttpRequest) -> HttpResponse:
 
     kind = _kind_for_area_id(area_id)
     bbox = _clean_bbox(request.POST.get("bbox", ""))
-    region_id = request.POST.get("region_id", "")[:50]
+    region_id = request.POST.get("region_id", "")
+    basemap_key = request.POST.get("basemap_key", "")
+    name = request.POST.get("name", "")
     if kind == DownloadArea.KIND.CUSTOM and bbox is None:
         # Without a bbox there is nothing another device could download —
         # the row would list an area it could never act on, which is worse
@@ -242,13 +380,21 @@ def area_sync(request: HttpRequest) -> HttpResponse:
     if kind == DownloadArea.KIND.REGION and not region_id:
         return HttpResponse("A region area needs a region_id.", status=400)
 
+    too_long = _too_long_error(name=name, region_id=region_id, basemap_key=basemap_key)
+    if too_long:
+        return HttpResponse(too_long, status=400)
+
+    # One condition, short-circuited, not two nested ones: the cap is only
+    # consulted for an area the account does NOT already hold, and `and`
+    # says so while guaranteeing the `count()` is skipped in the common
+    # re-sync case.
     owned = DownloadArea.objects.for_user(request.user)
-    if not owned.filter(area_id=area_id).exists():
-        if owned.count() >= settings.DOWNLOAD_AREAS_MAX_PER_USER:
-            logger.info(
-                "Download area sync blocked: user=%s hit the cap", request.user.pk
-            )
-            return HttpResponse("You have reached the saved-area limit.", status=409)
+    if (
+        not owned.filter(area_id=area_id).exists()
+        and owned.count() >= settings.DOWNLOAD_AREAS_MAX_PER_USER
+    ):
+        logger.info("Download area sync blocked: user=%s hit the cap", request.user.pk)
+        return HttpResponse("You have reached the saved-area limit.", status=409)
 
     area, _created = DownloadArea.objects.update_or_create(
         user=request.user,
@@ -260,8 +406,8 @@ def area_sync(request: HttpRequest) -> HttpResponse:
             # second, coarser answer to a question already answered.
             "region_id": region_id if kind == DownloadArea.KIND.REGION else "",
             "bbox": bbox if kind == DownloadArea.KIND.CUSTOM else None,
-            "basemap_key": request.POST.get("basemap_key", "")[:50],
-            "name": request.POST.get("name", "")[:_NAME_MAX_LENGTH],
+            "basemap_key": basemap_key,
+            "name": name,
         },
     )
     return JsonResponse(_serialise(area))
@@ -300,11 +446,15 @@ def area_rename(request: HttpRequest, area_id: str) -> HttpResponse:
     if area.kind != DownloadArea.KIND.CUSTOM:
         return HttpResponse("A region area cannot be renamed.", status=400)
 
+    # Refused, not truncated. Both write paths go through
+    # ``_too_long_error`` now — they used to disagree, this one refusing
+    # while ``area_sync`` silently clipped — so the limit and the message
+    # have one owner and cannot drift apart again. The empty arguments are
+    # the fields this path does not take.
     name = request.POST.get("name", "")
-    if len(name) > _NAME_MAX_LENGTH:
-        return HttpResponse(
-            f"name must be at most {_NAME_MAX_LENGTH} characters.", status=400
-        )
+    too_long = _too_long_error(name=name, region_id="", basemap_key="")
+    if too_long:
+        return HttpResponse(too_long, status=400)
 
     area.name = name
     # updated_at is auto_now — it must be listed in update_fields or the

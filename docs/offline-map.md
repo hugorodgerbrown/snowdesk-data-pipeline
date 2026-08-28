@@ -1731,6 +1731,31 @@ settings plus the basemap key, so syncing it would pin an external tile
 endpoint into a DB row; `bytes` is a per-device measurement, not a property
 of the area.
 
+**What the server refuses.** `apps/downloads/views.py` prices a posted
+bbox rather than only range-checking it: bounding each ordinate to a valid
+lon/lat leaves `[-179, -89, 179, 89]` acceptable, and that box is 357
+million tiles across `MICRO_BAND` — about 17 TB at
+`WORST_CASE_BYTES_PER_TILE`. `_clean_bbox` therefore expands the box
+through `tile_ranges`/`tile_count` and refuses anything over
+`DOWNLOAD_CEILING_MB`, all four imported from
+`apps.regions.services.basemap_tiles` so there is ONE ceiling rather than a
+server copy, a client copy and a third here. It is the same ceiling the
+framing control already enforces, so no box a real client can frame is
+ever refused — this is the backstop for a client we did not ship.
+
+It matters because a stored bbox is not inert: another device replays it
+through `openFramingAt` and is offered a download. A box the server knows
+to be undownloadable would be a row whose only purpose is to be acted on
+and cannot be.
+
+An over-long `name`, `region_id` or `basemap_key` is refused rather than
+truncated, in both write paths (`_too_long_error`). A clipped value is
+stored, echoed to every other device and read as what the user meant; a
+clipped `region_id` names a region that does not exist, so the area arrives
+elsewhere un-downloadable. Nothing a legitimate client can post hits these
+limits — the rename field is `maxlength="100"`, a region id is an EAWS
+code, a basemap key is a settings key.
+
 **The join key is the client-minted area id.** `region-<region_id>` is
 deterministic and identical on every device (`areaIdForRegion`), and
 `custom-<uuid>` is already a uuid. The server stores it verbatim, so
@@ -1749,6 +1774,22 @@ after the response carrying a uuid was discarded.
 | `forget(areaId)` | Drops the account row. Does NOT evict tiles. |
 | `accountAreas()` | Reads `downloads:areas`. Resolves `[]` for anonymous (403), offline, refused, timed out and unparseable alike. |
 | `adopt()` | Pushes every local area the account has not been told about — the migration path for a device that was downloading before the feature existed, and the repair path for a push that never landed. |
+
+`adopt()` is called once per load, fire-and-forget, from
+`map_downloads_manager.js`'s IIFE, guarded on the flag and the session. It
+is **the only** path by which an area downloaded before this ticket ever
+reaches an account: `push()` fires from the two places a download is
+recorded, so it covers downloads made from here on and nothing else, and
+every existing user's areas predate the ticket entirely.
+
+It hangs off `DOMContentLoaded` and **not** the `readyState === 'loading'`
+idiom used elsewhere in this codebase. The parser sets `readyState` to
+`'interactive'` *before* it runs deferred scripts, so that idiom fires
+immediately — ahead of `map_basemap_downloads.js`, a later deferred script,
+publishing the bridge `adopt()` reads the local areas through. It would
+find nothing, mark nothing and never run again: a permanent no-op that
+looks exactly like a working call. `tests/js/test_map_downloads_manager.js`
+pins the ordering.
 
 Writes go through `window.pwaMutationQueue` (so a download completed in a
 tunnel is recorded when the device surfaces) and carry `HX-Request: true`,
@@ -1788,7 +1829,7 @@ the one that must not move.
 | `onDevice` | `synced` | How it reads |
 |---|---|---|
 | yes | yes | Normal row. Both destructive verbs offered. |
-| yes | no | Normal row, unchanged from before this ticket. Trash only — with no account row to keep, "free up space" would be a second, identical trash. |
+| yes | no | Normal row, unchanged from before this ticket. Trash only — with no account row to keep, "free up space" would be a second, identical trash. Reachable on a page where the feature is fully ON (an area downloaded before the flag opened, or one whose queued push has not drained), which is why the trash's confirmation copy is keyed off THIS FLAG and not off `pwaDownloadsSync.isEnabled()`: the global would promise to remove it "from your other devices too" when it was never on any. |
 | no | yes | Dimmed, no size, subtitle "On your account — not downloaded here", a pale `bg-sync-off` rule (never `.basemap-identity-fill`, whose keyless fallback is the "downloaded" green). "Download here" and the trash; no rename — the rename writes to a local record this device does not have. |
 | no | no | Not produced by `reconcileAreas`; tolerated by `manageRows`, which paints it as the row above without the account claim. |
 
