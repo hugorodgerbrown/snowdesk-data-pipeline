@@ -193,6 +193,19 @@
  * The budget row (``basemap.budgetMb``) is the one piece of storage this
  * module touches directly, because it is the only thing that ever writes
  * it; ``map.js``'s ``basemapDownloadBudgetBytes()`` is the reader.
+ *
+ * ## Its one non-map dependency (SNOW-749)
+ *
+ * ``window.pwaDownloadsSync`` (static/js/downloads_sync.js) — the account
+ * half. Three uses: the trash calls ``forget()`` alongside the local
+ * eviction, ``isEnabled()`` decides nothing on its own any more (see
+ * ``_handleDeleteClick``, which keys its copy off the ROW), and this
+ * module owns the one call to ``adopt()``, on DOMContentLoaded. That last
+ * one is here rather than in ``downloads_sync.js`` itself because a module
+ * that self-invokes on load is a module whose behaviour cannot be reasoned
+ * about from its call sites — and because this file already computes the
+ * flag-and-session pair the call is conditional on. Optional throughout:
+ * without it the sheet is exactly what it was before that ticket.
  */
 
 (function mapDownloadsManagerInit() {
@@ -878,10 +891,16 @@
       // in its confirmation without re-reading the record.
       button.setAttribute('data-downloads-label', row.label);
       button.setAttribute('data-downloads-size', row.size);
-      // SNOW-749: and whether this device holds it, so the handler knows
-      // whether there is anything local to evict alongside the account
-      // row — and so its confirmation says the right thing.
+      // SNOW-749: and the row's own two facts, so the handler knows
+      // whether there is anything local to evict alongside the account row
+      // — and whether there is an account row at all. Both are read off
+      // the ROW rather than off a global: a download made before the flag
+      // was opened, or one whose sync push has not landed, is
+      // `synced: false` on a page where the sync feature is switched on
+      // and working, and the confirmation must not promise to remove it
+      // from other devices it was never on.
       button.setAttribute('data-downloads-on-device', String(row.onDevice !== false));
+      button.setAttribute('data-downloads-synced', String(!!row.synced));
       // SNOW-658: and the control names the row it acts on. A server-
       // rendered panel interpolates this in its own template; a row cloned
       // from a <template> has no name until here.
@@ -1231,17 +1250,29 @@
     const name = button.getAttribute('data-downloads-label') || areaId;
     const size = button.getAttribute('data-downloads-size') || '';
     const onDevice = button.getAttribute('data-downloads-on-device') !== 'false';
+    const synced = button.getAttribute('data-downloads-synced') === 'true';
     // Three confirmations, because there are three outcomes and the user
     // is choosing between them:
     //   free up space — gone from here, one tap to bring back;
     //   remove (synced) — gone from here AND from the other devices;
-    //   remove (not synced) — the pre-SNOW-749 wording, unchanged for a
-    //     device with no account behind it, which is the flag-off and
-    //     signed-out case.
+    //   remove (not synced) — the pre-SNOW-749 wording, correct for an
+    //     area with no account row behind it.
+    //
+    // That last branch is keyed off THIS ROW's `synced`, not off
+    // `pwaDownloadsSync.isEnabled()`. The global answers "is the feature
+    // switched on for this visitor", which is a different question and
+    // gives the wrong answer for the rows that matter most: an area
+    // downloaded before the flag opened, or one whose queued push has not
+    // drained, is unsynced on a page where the feature is fully on. Told
+    // "this removes it from your other devices too", the user would be
+    // reading a sentence about something that was never anywhere else.
+    // The queued `forget()` is still harmless for such a row (404, which
+    // the client treats as success — the row is gone either way), so the
+    // defect was purely in what we said, which is the half a user acts on.
     let message;
     if (evictButton) {
       message = interpolate(STRINGS['confirm-free-space'], { name: name, size: size });
-    } else if (window.pwaDownloadsSync?.isEnabled()) {
+    } else if (synced) {
       message = interpolate(STRINGS['confirm-forget'], { name: name, size: size });
     } else {
       message = interpolate(STRINGS['confirm-remove'], { name: name, size: size });
@@ -1349,6 +1380,64 @@
     },
     close: close,
   });
+
+  /**
+   * SNOW-749: push every local area the account has not been told about.
+   *
+   * The migration path, and the only one there is. ``push()`` fires from
+   * the two places a download is RECORDED, so it covers downloads made
+   * from here on and nothing else — while every existing user's areas were
+   * downloaded before this ticket, when the product had no account gate at
+   * all. Without this call they would sign in and their areas would never
+   * reach the account, never appear on a second device, and never be
+   * retried, because nothing else ever looks at them again.
+   *
+   * Fire-and-forget: it is a background reconciliation, nothing on screen
+   * waits for it, and a failure costs one more attempt on the next load
+   * rather than anything the user can see. Idempotent through
+   * ``downloads_sync.js``'s own ``basemap.syncedAreaIds`` marker plus the
+   * endpoint's ``update_or_create`` on ``(user, area_id)``, so calling it
+   * on every load is a no-op after the first.
+   *
+   * Deferred to DOMContentLoaded rather than run at parse time, and the
+   * reason is load order: this module is loaded from the sheet's own
+   * partial in the page CONTENT, while ``window.pwaBasemapDownloads`` — the
+   * bridge ``adopt()`` reads the local areas through — is published by
+   * ``map_basemap_downloads.js`` in ``extra_js``. Deferred classic scripts
+   * run in document order, so at this file's parse time that bridge does
+   * not exist yet and ``adopt()`` would silently find nothing and mark
+   * nothing, which is exactly the permanent no-op this call exists to
+   * prevent.
+   *
+   * @returns {void}
+   */
+  function _adoptLocalAreas() {
+    // Guarded here as well as inside `adopt()` itself. The duplication is
+    // deliberate: this states the precondition at the CALL site, where a
+    // reader asks "when does this run", rather than leaving the answer two
+    // modules away.
+    if (!DOWNLOADS_GATED || !DOWNLOADS_ELIGIBLE) return;
+    window.pwaDownloadsSync?.adopt();
+  }
+
+  // Only ``'complete'`` runs it now; every other state waits for
+  // DOMContentLoaded.
+  //
+  // NOT the ``readyState === 'loading'`` idiom used elsewhere in this
+  // codebase (``mutation_queue.js``'s ``_wireLifecycle``), which would be
+  // wrong here and silently so. The parser sets ``readyState`` to
+  // ``'interactive'`` BEFORE it runs deferred scripts, not after — so
+  // during this file's own execution the state is ``'interactive'``, that
+  // idiom takes its else branch, and the call fires immediately: before
+  // ``map_basemap_downloads.js`` (a later deferred script) has published
+  // the bridge ``adopt()`` needs. It would find no areas, mark nothing and
+  // never run again, which is precisely the permanent no-op above.
+  // DOMContentLoaded is the first moment every deferred script has run.
+  if (document.readyState === 'complete') {
+    _adoptLocalAreas();
+  } else {
+    document.addEventListener('DOMContentLoaded', _adoptLocalAreas);
+  }
 
   window.pwaDownloadsManager = Object.freeze({
     open: open,

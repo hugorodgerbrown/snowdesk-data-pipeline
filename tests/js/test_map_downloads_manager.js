@@ -1213,10 +1213,12 @@ describe('the two destructive verbs (SNOW-749)', () => {
     expect(window.confirm.mock.calls[1][0]).toContain('your other devices');
   });
 
-  it('keeps the pre-SNOW-749 wording when there is no account behind it', async () => {
-    // Flag off, or signed out: one outcome, and the older copy is exactly
-    // right for it.
-    window.pwaDownloadsSync.isEnabled = vi.fn(() => false);
+  it('keeps the pre-SNOW-749 wording for a row with no account row', async () => {
+    // The row is unsynced ON A PAGE WHERE THE FEATURE IS FULLY ON — the
+    // case that matters, because it is every area downloaded before the
+    // flag opened plus any whose queued push has not drained. Telling that
+    // user "this removes it from your other devices too" describes
+    // something that was never anywhere else.
     installAreas([{ ...SYNCED_HERE, synced: false }]);
     await loadModule();
     openSheet();
@@ -1225,7 +1227,124 @@ describe('the two destructive verbs (SNOW-749)', () => {
     document.querySelector('[data-downloads-delete]').click();
     await settle();
 
-    expect(window.confirm.mock.calls[0][0]).toContain("back online");
+    expect(window.confirm.mock.calls[0][0]).toContain('back online');
+    expect(window.confirm.mock.calls[0][0]).not.toContain('other devices');
+  });
+
+  it('reads the account claim off the row, not off the global switch', async () => {
+    // Two rows, one page, one `isEnabled()`. If the copy were keyed off
+    // the global they would read identically; they must not.
+    installAreas([SYNCED_HERE, { ...SYNCED_HERE, id: 'region-CH-9999', name: 'Anzère', synced: false }]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const trashes = document.querySelectorAll('[data-downloads-delete]');
+    trashes[0].click();
+    await settle();
+    trashes[1].click();
+    await settle();
+
+    const messages = window.confirm.mock.calls.map((call) => call[0]);
+    expect(messages[0]).toContain('other devices');
+    expect(messages[1]).not.toContain('other devices');
+  });
+});
+
+describe('adopting existing local areas (SNOW-749)', () => {
+  // The migration path, and the only one there is. push() fires from the
+  // two places a download is RECORDED, so it covers downloads made from
+  // here on and nothing else — while every existing user's areas predate
+  // this ticket entirely, the product having had no account gate at all.
+  // Without this call they sign in and their areas never reach the
+  // account, never appear on a second device, and are never retried.
+
+  beforeEach(() => {
+    installDbStub({});
+    window.pwaDownloadsSync = { isEnabled: vi.fn(() => true), adopt: vi.fn(async () => 0) };
+  });
+
+  afterEach(() => {
+    delete window.pwaDownloadsSync;
+  });
+
+  it('adopts on load when the flag is on and the visitor is signed in', async () => {
+    seed({});
+    installDownloadsGate({ gated: true, eligible: true });
+    await loadModule();
+    await settle();
+
+    expect(window.pwaDownloadsSync.adopt).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not adopt for a signed-out visitor', async () => {
+    // Every endpoint would 403, and there is no account to adopt onto.
+    seed({});
+    installDownloadsGate({ gated: true, eligible: false });
+    await loadModule();
+    await settle();
+
+    expect(window.pwaDownloadsSync.adopt).not.toHaveBeenCalled();
+  });
+
+  it('does not adopt with the flag off', async () => {
+    // Flag off is the pre-SNOW-749 behaviour exactly: nothing leaves the
+    // device, including on a background reconciliation nobody asked for.
+    seed({});
+    installDownloadsGate({ gated: false, eligible: true });
+    await loadModule();
+    await settle();
+
+    expect(window.pwaDownloadsSync.adopt).not.toHaveBeenCalled();
+  });
+
+  it('does not adopt on a page with no downloads surface at all', async () => {
+    // No config element means no gate wired up, which reads as ungated —
+    // and an ungated page must not sync either.
+    seed({});
+    await loadModule();
+    await settle();
+
+    expect(window.pwaDownloadsSync.adopt).not.toHaveBeenCalled();
+  });
+
+  it('waits for DOMContentLoaded rather than firing mid-parse', async () => {
+    // The load-order assertion. A deferred script runs with readyState
+    // already 'interactive', not 'loading' — the parser sets it BEFORE
+    // running deferred scripts — so the usual `readyState === 'loading'`
+    // idiom would fire this immediately, before map_basemap_downloads.js
+    // (a later deferred script) has published the bridge adopt() reads the
+    // local areas through. It would find nothing, mark nothing, and never
+    // run again: a permanent no-op that looks exactly like a working call.
+    seed({});
+    installDownloadsGate({ gated: true, eligible: true });
+    Object.defineProperty(document, 'readyState', {
+      value: 'interactive',
+      configurable: true,
+    });
+
+    await loadModule();
+    await settle();
+    expect(window.pwaDownloadsSync.adopt).not.toHaveBeenCalled();
+
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await settle();
+    expect(window.pwaDownloadsSync.adopt).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, 'readyState', {
+      value: 'complete',
+      configurable: true,
+    });
+  });
+
+  it('does not throw when the sync module is absent', async () => {
+    // It loads from a different <script> tag; a page that ships the sheet
+    // without it must still get a working sheet.
+    seed({});
+    installDownloadsGate({ gated: true, eligible: true });
+    delete window.pwaDownloadsSync;
+
+    await expect(loadModule()).resolves.toBeUndefined();
   });
 });
 
