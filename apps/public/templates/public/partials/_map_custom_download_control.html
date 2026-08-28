@@ -49,13 +49,45 @@ gets its own sequential default label ("Custom area N", derived from
 `default-custom-name` string) rather than a single frozen-at-download-time
 one, so this element no longer has a name to hand it.
 
-Takes no context.
+SNOW-749: this element is the CONFIG CARRIER for the whole downloads
+surface — both start controls and the account sync read their wiring off
+it. That includes static/js/map_region_download.js, whose own button
+(#map-download-control, in the season ribbon) is a different element
+entirely: the two controls start the same kind of work under the same
+gate, and duplicating six attributes onto the ribbon button would be the
+same decision written twice. Both partials render inside
+public/partials/_map_embed.html, so this element is on the page whenever
+that one is.
+
+`data-downloads-sync` is the ``download_sync`` rollout flag and
+`data-downloads-eligible` is authentication — two attributes, not one,
+because "the gate is off" and "this visitor passes the gate" are
+different facts and the client paints them differently. With the flag
+off the JS applies no gate at all, which is exactly the behaviour that
+shipped before SNOW-749.
+
+The four URLs are emitted unconditionally. They are `reverse()` output,
+not data, and every endpoint behind them 403s an anonymous request on its
+own — so there is nothing to withhold, and withholding them would leave
+the signed-out sign-in path unable to say where it leads.
+
+Context: `downloads_eligible`, `downloads_sync_enabled`,
+`downloads_signin_url`, `download_sync_url`, `download_areas_url`,
+`download_rename_url_template`, `download_forget_url_template` — all from
+apps.public.views._downloads_context.
 {% endcomment %}
 <button
     type="button"
     id="map-custom-download-control"
     class="map-custom-download-control map-download-control hover-affordance"
     data-overlay-shown="false"
+    data-downloads-sync="{{ downloads_sync_enabled|yesno:'true,false' }}"
+    data-downloads-eligible="{{ downloads_eligible|yesno:'true,false' }}"
+    data-signin-url="{{ downloads_signin_url }}"
+    data-download-sync-url="{{ download_sync_url }}"
+    data-download-areas-url="{{ download_areas_url }}"
+    data-download-rename-url-template="{{ download_rename_url_template }}"
+    data-download-forget-url-template="{{ download_forget_url_template }}"
     aria-haspopup="dialog"
     aria-controls="map-downloads-sheet"
     aria-label='{% trans "Manage offline downloads" %}'

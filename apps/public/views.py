@@ -841,6 +841,7 @@ def home(request: HttpRequest) -> HttpResponse:
     report_ctx = _report_context(request)
     favourites_ctx = _favourites_context(request)
     routes_ctx = _routes_context(request)
+    downloads_ctx = _downloads_context(request)
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_context(request)
     slope_ctx = _slope_context(request)
@@ -854,6 +855,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **report_ctx,
             **favourites_ctx,
             **routes_ctx,
+            **downloads_ctx,
             **community_reports_ctx,
             **weather_ctx,
             **slope_ctx,
@@ -1576,6 +1578,74 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # is nothing to draw.
         "routes_geojson_url": reverse("routes:geojson"),
         "routes_signin_url": reverse("accounts:sign_in"),
+    }
+
+
+def _downloads_context(request: HttpRequest) -> dict[str, Any]:
+    """Build the template context dict for the offline-downloads affordances (SNOW-749).
+
+    ``downloads_eligible`` is authentication, mirroring ``routes_eligible``
+    and ``favourites_eligible``. It gates *starting* a download, not reading
+    one: static/js/map_region_download.js and
+    static/js/map_downloads_manager.js paint a sign-in state on their two
+    start controls when it is false, and the controls stay visible either
+    way — a hidden control reads as a bug, not as a gate. Nothing here gates
+    the manage sheet, which must keep listing an already-downloaded area for
+    a signed-out user, because working with no signal is the entire point of
+    having downloaded it.
+
+    ``__AREA_ID__`` templating, mirroring ``_favourites_context``'s
+    ``__UUID__`` trick: reverse with a placeholder, then string-replace at
+    runtime with the id of the area actually being acted on. The placeholder
+    literal has to survive ``path("<str:area_id>/")``'s converter, so it is
+    ``AREAID`` rather than a bracketed token — ``str`` accepts any non-empty
+    run without a slash, and a bare alphanumeric run is the safest thing to
+    round-trip through ``reverse()``.
+
+    Areas are addressed by their client-minted ``area_id`` rather than by a
+    server uuid because the client always has the area id to hand — it names
+    the device's own Cache Storage bucket — while a uuid would have to be
+    learnt from a response the mutation queue may have discarded long before
+    the write replays.
+
+    ``downloads_sync_enabled`` is the ``download_sync`` rollout flag, and it
+    gates BOTH halves of SNOW-749 — the sign-in gate on the two start
+    controls and the account sync itself. Flag off is exactly the behaviour
+    that shipped before this ticket: every visitor can start a download, and
+    nothing is sent anywhere. It is deliberately a SEPARATE key from
+    ``downloads_eligible`` rather than folded into it, because the two say
+    different things (is the gate switched on / does this visitor pass it)
+    and a single boolean would leave the client unable to tell "gate off"
+    from "gate passed".
+
+    All ``reverse()`` plus one flag read, no queries, so the homepage's
+    query count is unmoved.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        Dict with ``downloads_eligible``, ``downloads_sync_enabled``,
+        ``download_sync_url``, ``download_areas_url``,
+        ``download_rename_url_template``, ``download_forget_url_template``
+        and ``downloads_signin_url``.
+
+    """
+    # See the docstring: a plain alphanumeric placeholder, because the URL
+    # pattern's <str:area_id> converter would not match a bracketed one.
+    placeholder = "AREAID"
+    return {
+        "downloads_eligible": request.user.is_authenticated,
+        "downloads_sync_enabled": waffle.flag_is_active(request, "download_sync"),
+        "download_sync_url": reverse("downloads:sync"),
+        "download_areas_url": reverse("downloads:areas"),
+        "download_rename_url_template": reverse(
+            "downloads:rename", args=[placeholder]
+        ).replace(placeholder, "__AREA_ID__"),
+        "download_forget_url_template": reverse(
+            "downloads:forget", args=[placeholder]
+        ).replace(placeholder, "__AREA_ID__"),
+        "downloads_signin_url": reverse("accounts:sign_in"),
     }
 
 
