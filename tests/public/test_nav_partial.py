@@ -259,6 +259,19 @@ class TestNavAccountMenuEntries:
             assert f'href="{reverse(url_name)}"' not in html, url_name
 
 
+def _class_tokens(opening_tag: str) -> set[str]:
+    """Return the class utilities on an opening tag, as whole tokens.
+
+    ``"hidden" in tag`` is not the same question as "is this element
+    hidden": a Tailwind variant such as
+    ``[&::-webkit-details-marker]:hidden`` contains the substring while
+    hiding only the disclosure triangle. Every ``<summary>`` in this nav
+    carries exactly that, so the distinction is load-bearing here.
+    """
+    _, _, after = opening_tag.partition('class="')
+    return set(after.partition('"')[0].split())
+
+
 def _opening_tag_around(html: str, marker: str) -> str:
     """Return the whole opening tag containing ``marker``.
 
@@ -285,15 +298,17 @@ class TestNavConnectivitySymbol:
     only once it was not. Its permanence is what allowed
     ``includes/_offline_banner.html`` to be deleted.
 
-    It is a control, but a DISCLOSURE: pressing it opens the
-    connection-status toast (``includes/_offline_toast.html``). It never
-    changes the network mode — that is the switch below, and a control in
-    the status area that changes the thing it reports invites exactly the
+    It is a control, but a DISCLOSURE: it is the ``<summary>`` of a native
+    ``<details>``, and pressing it opens the connection-status panel
+    (``includes/_connection_panel.html``) anchored beneath it — the third
+    disclosure in this header, built like the two dropdowns beside it. It
+    never changes the network mode — that is the switch below, and a control
+    in the status area that changes the thing it reports invites exactly the
     misread that the symbol IS the switch.
 
     It is shown to anonymous viewers as well as signed-in ones, unlike the
     switch. The worker latches itself for anybody, so the state the symbol
-    reports is one an anonymous user can be in, and the toast's CTA is
+    reports is one an anonymous user can be in, and the panel's CTA is
     their only way out of it; only CHOOSING the mode needs an account.
     """
 
@@ -326,23 +341,45 @@ class TestNavConnectivitySymbol:
         opening_tag = _opening_tag_around(
             _render_nav_for(rf, AnonymousUser()), "data-network-indicator"
         )
-        assert "hidden" not in opening_tag
+        # The class TOKEN, not the substring: the summary carries
+        # ``[&::-webkit-details-marker]:hidden`` to suppress the disclosure
+        # triangle, exactly as its two sibling menus do, and a substring
+        # check reads that as the element hiding itself.
+        assert "hidden" not in _class_tokens(opening_tag)
         assert 'data-network-state="online"' in opening_tag
 
     def test_symbol_is_a_disclosure_not_a_toggle(self, rf: RequestFactory) -> None:
         """``aria-expanded`` + ``aria-controls``, never ``aria-pressed``.
 
         SNOW-748 shipped this as a ``<button aria-pressed>`` that switched
-        the network mode. It is a button again, but for a different job: it
-        discloses the toast and nothing else. These assertions are what
+        the network mode. It is a control again, but for a different job: it
+        discloses the panel and nothing else. These assertions are what
         stops it drifting back into a mode control.
         """
         opening_tag = _opening_tag_around(
             _render_nav_for(rf, AnonymousUser()), "data-network-indicator"
         )
         assert 'aria-expanded="false"' in opening_tag
-        assert 'aria-controls="pwa-offline-toast"' in opening_tag
+        assert 'aria-controls="pwa-connection-panel"' in opening_tag
         assert "aria-pressed" not in opening_tag
+
+    def test_symbol_is_the_summary_of_a_native_disclosure(
+        self, rf: RequestFactory
+    ) -> None:
+        """A ``<details data-network-panel>`` wrapping a ``<summary>``.
+
+        The same primitive as the account and admin menus, and the reason
+        this surface needs no dismissal mechanism of its own: opening,
+        closing, Enter/Space and focus are the browser's, and nav.html's
+        shared ``enhanceDisclosure`` script adds outside-click and Escape to
+        all three alike. The first pass anchored nothing and fixed the panel
+        to the bottom of the viewport instead.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert '<details class="relative" data-network-panel>' in html
+        opening_tag = _opening_tag_around(html, "data-network-indicator")
+        assert opening_tag.startswith("<summary")
+        assert 'id="network-indicator-toggle"' in opening_tag
 
     def test_symbol_carries_both_glyphs(self, rf: RequestFactory) -> None:
         """Both marks are server-rendered; the script only toggles ``hidden``.
@@ -352,7 +389,7 @@ class TestNavConnectivitySymbol:
         arrive a frame after the state it reports.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        element = html.split("data-network-indicator", 1)[1].split("</button>", 1)[0]
+        element = html.split("data-network-indicator", 1)[1].split("</summary>", 1)[0]
         assert 'data-role="network-online-icon"' in element
         assert 'data-role="network-offline-icon"' in element
 
@@ -369,9 +406,161 @@ class TestNavConnectivitySymbol:
         ``makemessages`` never scans ``static/js``.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        element = html.split("data-network-indicator", 1)[1].split("</button>", 1)[0]
+        element = html.split("data-network-indicator", 1)[1].split("</summary>", 1)[0]
         assert "Connection status: using the network" in element
         assert "Connection status: offline" in element
+
+
+@pytest.mark.django_db
+class TestNavConnectionPanel:
+    """The SNOW-748 connection-status panel, anchored to the symbol above.
+
+    Built first on ``includes/_toast.html`` and rebuilt here, because a toast
+    is transient, system-initiated, bottom-centred and status-coloured, and
+    this surface is none of those: it is user-invoked, persistent, read at
+    the point that summoned it, and it describes a healthy connection as
+    often as a broken one. Every complaint the toast version drew — a new
+    blue, the wrong end of the screen, a "×" that was neither top-right nor
+    a tap target — followed from that one wrong primitive.
+
+    What replaces it is the shape this header already uses twice: a popover
+    anchored under its disclosure, on the card tokens, closed by the shared
+    ``enhanceDisclosure`` script. The tests below pin the three properties a
+    later refactor would silently drop — where it is anchored, that it is
+    neutral rather than status-coloured, and that its close control is a real
+    44×44 target — plus the CTA, which is the only exit an anonymous reader
+    has from an auto-latched service worker.
+    """
+
+    def test_panel_is_anchored_under_the_symbol(self, rf: RequestFactory) -> None:
+        """Positioned like the account and admin dropdowns, not fixed.
+
+        ``absolute right-0 top-full`` inside the ``relative`` <details> puts
+        the detail under the finger that asked for it. The toast version was
+        ``fixed bottom-4 left-1/2``, i.e. as far from the control as the
+        screen allows, on a page whose control is in the top-right corner.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        classes = _class_tokens(_opening_tag_around(html, 'id="pwa-connection-panel"'))
+        assert {"absolute", "right-0", "top-full"} <= classes
+        assert "fixed" not in classes
+
+    def test_panel_is_a_card_not_a_status_colour(self, rf: RequestFactory) -> None:
+        """Neutral surface tokens, and no ``status-*`` paint anywhere on it.
+
+        The toast version passed ``kind="info"``, so the panel painted itself
+        ``status-info`` blue while the symbol beside it painted the same state
+        ``status-warning`` amber. The symbol carries the status colour because
+        it has to be legible unopened; the panel is the card the detail is
+        read on.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        classes = _class_tokens(_opening_tag_around(html, 'id="pwa-connection-panel"'))
+        assert {"bg-card", "border-border", "text-text-1"} <= classes
+        assert not [cls for cls in classes if cls.startswith("bg-status-")]
+
+    def test_panel_is_height_bounded_and_scrolls(self, rf: RequestFactory) -> None:
+        """It floats over the map, and that rule has no exceptions here.
+
+        ``dvh`` rather than ``vh``: ``vh`` ignores mobile browser chrome, so
+        a ``vh``-bounded panel resolves taller than the visible viewport
+        exactly where the bound is needed.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        classes = _class_tokens(_opening_tag_around(html, 'id="pwa-connection-panel"'))
+        assert "max-h-[60dvh]" in classes
+        assert "overflow-y-auto" in classes
+
+    def test_close_control_is_top_right_and_a_real_tap_target(
+        self, rf: RequestFactory
+    ) -> None:
+        """44×44 minimum, named "Dismiss", first control in the panel.
+
+        The toast's "×" was ``px-1 leading-none`` with no minimum size, and
+        sat after the CTA so it wrapped to the bottom of the panel. This one
+        is drawn with ``icon_button_classes`` — the ``h-11 w-11`` idiom every
+        panel header's close already uses — and is emitted before the
+        explanation and the CTA, so it renders in the top-right corner.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        panel = html.split('id="pwa-connection-panel"', 1)[1]
+        closer = _opening_tag_around(panel, "data-disclosure-close")
+        classes = _class_tokens(closer)
+        assert {"h-11", "w-11"} <= classes
+        assert "Dismiss" in closer
+        assert panel.index("data-disclosure-close") < panel.index(
+            "data-network-reconnect"
+        )
+
+    def test_close_control_uses_the_shared_disclosure_mechanism(
+        self, rf: RequestFactory
+    ) -> None:
+        """``[data-disclosure-close]``, handled by nav.html's own script.
+
+        Not a third dismissal mechanism and not ``overlays.js``: the same
+        script that gives all three of this header's disclosures
+        outside-click and Escape closes this control too, so there is one
+        answer to "how does a nav disclosure close".
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert "enhanceDisclosure('data-network-panel'" in html
+        assert "[data-disclosure-close]" in html
+
+    def test_panel_carries_every_state_and_both_ways_back(
+        self, rf: RequestFactory
+    ) -> None:
+        """All four explanations and both CTA labels are server-rendered.
+
+        ``makemessages`` never scans ``static/js``, so a string set from a JS
+        literal ships as English to every locale — ``bin/i18n-lint`` fails on
+        exactly that. Every variant is rendered here and toggled by
+        ``hidden`` in ``static/js/pwa_offline.js``.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        panel = html.split('id="pwa-connection-panel"', 1)[1]
+        for role in (
+            "online-message",
+            "offline-message",
+            "latched-message",
+            "synced-at",
+            "online-explainer",
+            "offline-explainer",
+            "latched-explainer",
+            "forced-explainer",
+            "reconnect-label",
+            "resume-label",
+        ):
+            assert f'data-role="{role}"' in panel
+
+    def test_anonymous_gets_the_panel_and_its_way_back(
+        self, rf: RequestFactory
+    ) -> None:
+        """The whole panel renders for a signed-out reader, switch or no switch.
+
+        This is the asymmetry the feature turns on: the service worker
+        latches offline for anybody, and an anonymous user has no account
+        menu and therefore no "Offline mode" switch, so the panel's CTA is
+        their ONLY exit from that state. A refactor that folded the panel in
+        with the menu would take it away from exactly the people who cannot
+        do without it.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert 'id="pwa-connection-panel"' in html
+        assert "data-network-reconnect" in html
+        assert "Try reconnecting" in html
+        assert "Use the network again" in html
+        assert "data-network-toggle" not in html
+
+    def test_panel_ships_closed(self, rf: RequestFactory) -> None:
+        """Closed at rest: the <details> has no ``open`` attribute.
+
+        Visibility belongs to the disclosure, not to a class the script
+        toggles — which is why nothing in ``pwa_offline.js`` opens or closes
+        this panel any more.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert '<details class="relative" data-network-panel>' in html
+        assert "data-network-panel open" not in html
 
 
 @pytest.mark.django_db

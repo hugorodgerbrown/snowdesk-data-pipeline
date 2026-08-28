@@ -171,41 +171,62 @@ def test_freshness_indicator_label_formatted() -> None:
 
 
 # ---------------------------------------------------------------------------
-# End-to-end — symbol + toast + script + subscribe form
+# End-to-end — symbol + panel + script + subscribe form
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_connection_toast_ships_closed_on_home_page() -> None:
-    """The connection-status toast renders on every page, closed by default.
+def test_connection_panel_ships_closed_on_home_page() -> None:
+    """The connection-status panel renders on every page, closed by default.
 
-    SNOW-748 replaced the offline banner with this. It is fixed over the
-    page rather than in flow — the banner pushed the nav down, which is
-    why it could not be permanent — and it opens only when the user
-    presses the header symbol, so it ships with the ``hidden`` class.
+    SNOW-748 replaced the offline banner with this. It is a popover
+    anchored to the header symbol rather than a strip in flow — the banner
+    pushed the nav down, which is why it could not be permanent — and it
+    opens only when the user presses that symbol, so the <details> it
+    lives in ships without ``open``.
+
+    Rendered through ``includes/nav.html`` rather than ``public/base.html``,
+    which is what "anchored" means structurally: the panel is a child of
+    the disclosure whose summary is the symbol.
     """
     body = Client().get("/").content.decode("utf-8")
-    assert 'id="pwa-offline-toast"' in body
+    assert 'id="pwa-connection-panel"' in body
     assert 'id="pwa-offline-banner"' not in body
-    assert "hidden fixed" in body
+    assert "data-network-panel>" in body
+    assert "data-network-panel open" not in body
 
 
 @pytest.mark.django_db
-def test_connection_toast_is_height_bounded_and_scrolls() -> None:
-    """Fixed over the map, so the house rule applies: bound it and scroll it.
+def test_connection_panel_is_anchored_not_fixed() -> None:
+    """Under the control that opened it, not at the foot of the viewport.
+
+    The first pass built this on ``includes/_toast.html``, whose position is
+    hardcoded ``fixed bottom-4 left-1/2`` — the far corner from the header
+    symbol that summons it. This assertion is the one that would fail if the
+    panel were ever put back through a toast.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    panel = body.split('id="pwa-connection-panel"', 1)[1].split(">", 1)[0]
+    assert "absolute right-0 top-full" in panel
+    assert "fixed" not in panel
+
+
+@pytest.mark.django_db
+def test_connection_panel_is_height_bounded_and_scrolls() -> None:
+    """Floating over the map, so the house rule applies: bound it and scroll it.
 
     ``dvh``, not ``vh``: on mobile ``vh`` ignores the browser chrome, so a
     ``vh``-bounded panel is taller than the visible viewport exactly where
     the constraint matters.
     """
     body = Client().get("/").content.decode("utf-8")
-    toast = body.split('id="pwa-offline-toast"', 1)[1].split(">", 1)[0]
-    assert "max-h-[60dvh]" in toast
-    assert "overflow-y-auto" in toast
+    panel = body.split('id="pwa-connection-panel"', 1)[1].split(">", 1)[0]
+    assert "max-h-[60dvh]" in panel
+    assert "overflow-y-auto" in panel
 
 
 @pytest.mark.django_db
-def test_connection_toast_carries_every_state_and_the_way_back() -> None:
+def test_connection_panel_carries_every_state_and_the_way_back() -> None:
     """All four explanations and both CTA labels are server-rendered.
 
     ``makemessages`` never scans ``static/js``, so a string set from a JS
@@ -218,7 +239,7 @@ def test_connection_toast_carries_every_state_and_the_way_back() -> None:
     mode" switch lives in the account menu.
     """
     body = Client().get("/").content.decode("utf-8")
-    toast = body.split('id="pwa-offline-toast"', 1)[1].split("</div>", 1)[0]
+    panel = body.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
     for role in (
         "online-message",
         "offline-message",
@@ -231,20 +252,21 @@ def test_connection_toast_carries_every_state_and_the_way_back() -> None:
         "reconnect-label",
         "resume-label",
     ):
-        assert f'data-role="{role}"' in toast
+        assert f'data-role="{role}"' in panel
 
 
 @pytest.mark.django_db
-def test_connection_toast_has_no_auto_dismiss_timeout() -> None:
+def test_connection_panel_does_not_auto_dismiss() -> None:
     """No ``timeout``: this is reference information, not a notification.
 
-    The user asked to see it by pressing the symbol, so it stays until
-    they dismiss it or press again — unlike the map's offline toasts,
-    which opt into the shared 6s auto-dismiss.
+    The user asked to see it by pressing the symbol, so it stays until they
+    close it or press again — unlike the map's offline toasts, which opt
+    into the shared 6s auto-dismiss. A <details> has no such timer at all,
+    which is the point of not being a toast.
     """
     body = Client().get("/").content.decode("utf-8")
-    toast = body.split('id="pwa-offline-toast"', 1)[1].split(">", 1)[0]
-    assert "data-toast-timeout" not in toast
+    panel = body.split('id="pwa-connection-panel"', 1)[1].split("</details>", 1)[0]
+    assert "data-toast-timeout" not in panel
 
 
 @pytest.mark.django_db
@@ -254,11 +276,16 @@ def test_connectivity_symbol_ships_visible_on_home_page() -> None:
     This is what made deleting the banner an improvement rather than a
     subtraction: the banner said nothing at all while the app was healthy,
     so a user only ever discovered it by losing their connection.
+
+    ``hidden`` is checked as a class token, not a substring: the summary
+    carries ``[&::-webkit-details-marker]:hidden`` to suppress the
+    disclosure triangle, as every summary in this nav does.
     """
     body = Client().get("/").content.decode("utf-8")
     symbol = body.split("data-network-indicator", 1)[1].split(">", 1)[0]
-    assert "hidden" not in symbol
-    assert 'aria-controls="pwa-offline-toast"' in symbol
+    classes = symbol.partition('class="')[2].partition('"')[0].split()
+    assert "hidden" not in classes
+    assert 'aria-controls="pwa-connection-panel"' in symbol
 
 
 @pytest.mark.django_db

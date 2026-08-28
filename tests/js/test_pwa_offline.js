@@ -28,8 +28,13 @@
  *
  * SNOW-742 added a third mode; SNOW-748 rebuilt the surfaces that carry it. The
  * offline BANNER is gone. In its place: a PERMANENT header symbol, painted on
- * every page for every viewer and never hidden, and a connection-status TOAST
- * the symbol opens. The distinction the mode tests turn on is that
+ * every page for every viewer and never hidden, and a connection-status PANEL
+ * anchored beneath it. The symbol is the <summary> of a native <details>, so
+ * the panel's opening and closing belong to the browser and to nav.html's
+ * shared disclosure script — this module only follows the ``toggle`` event.
+ * (It was briefly a bottom-centred toast, which is why the tests below assert
+ * so hard about who owns visibility.) The distinction the mode tests turn on
+ * is that
  * ``'offline'`` is the worker's guess that there is no route while
  * ``'offline-forced'`` is the user's instruction — so an ``online`` event, a
  * probe and a page reload all treat the two differently.
@@ -49,63 +54,69 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const TOAST_ID = 'pwa-offline-toast';
+const PANEL_ID = 'pwa-connection-panel';
 const SWITCH_ID = 'nav-offline-mode';
 const INDICATOR_SELECTOR = '[data-network-indicator]';
+const DISCLOSURE_SELECTOR = '[data-network-panel]';
 const TOGGLE_ROW_SELECTOR = '[data-network-toggle]';
-const CTA_SELECTOR = `#${TOAST_ID} [data-action="reload"]`;
+const CTA_SELECTOR = `#${PANEL_ID} [data-network-reconnect]`;
 
 /**
- * The header symbol from templates/includes/nav.html plus the
- * connection-status toast from templates/includes/_offline_toast.html (which
- * renders through _toast.html's body_template / cta_label_template slots).
+ * The header disclosure from templates/includes/nav.html — the <details>, the
+ * <summary> that is the connectivity symbol, and the connection-status panel
+ * from templates/includes/_connection_panel.html inside it.
  *
  * Mirrored here rather than only in the templates because the module toggles
  * them by ``data-role``, so a fixture missing one would silently make those
- * assertions vacuous — the role helper skips a role it cannot find.
+ * assertions vacuous — the role helper skips a role it cannot find. The
+ * <details> wrapper is mirrored for the same reason one layer up: the module
+ * now reads open/closed from it, so a fixture that kept the old
+ * button-plus-hidden-div shape would test a surface that no longer exists.
  *
  * This is what an ANONYMOUS page renders: the symbol is shown to every viewer,
  * while the "Offline mode" switch below is signed-in only. Kept as its own
  * constant so ``buildAnonymousFixture`` can render exactly this and no row.
  *
- * The toast carries ``hidden flex`` at rest exactly as the real partial does:
- * ``hidden`` is emitted last in Tailwind's display group and so wins while
- * both are present, and revealing is removing ``hidden`` alone.
+ * No ``hidden`` class anywhere on the panel: visibility is the <details>'s
+ * ``open`` property now, which is what stops this module and the template
+ * disagreeing about which of them closes the surface.
  */
-const SYMBOL_AND_TOAST = `
-  <button
-    type="button"
-    data-network-indicator
-    data-network-state="online"
-    aria-expanded="false"
-    aria-controls="${TOAST_ID}"
-  >
-    <span data-role="network-online-icon"><svg></svg></span>
-    <span data-role="network-offline-icon" class="hidden"><svg></svg></span>
-    <span data-role="network-name-online" class="sr-only">Connection status: using the network</span>
-    <span data-role="network-name-offline" class="sr-only hidden">Connection status: offline</span>
-  </button>
-  <div id="${TOAST_ID}" role="status" data-overlay data-overlay-hide="class" class="hidden flex">
-    <span data-toast-body>
-      <span>
-        <span data-role="online-message">Online — last synced</span>
-        <span data-role="offline-message" class="hidden">Offline — last synced</span>
-        <span data-role="latched-message" class="hidden">Offline mode — last synced</span>
-        <span data-role="synced-at">—</span>
-      </span>
+const SYMBOL_AND_PANEL = `
+  <details class="relative" data-network-panel>
+    <summary
+      id="network-indicator-toggle"
+      data-network-indicator
+      data-network-state="online"
+      aria-expanded="false"
+      aria-controls="${PANEL_ID}"
+    >
+      <span data-role="network-online-icon"><svg></svg></span>
+      <span data-role="network-offline-icon" class="hidden"><svg></svg></span>
+      <span data-role="network-name-online" class="sr-only">Connection status: using the network</span>
+      <span data-role="network-name-offline" class="sr-only hidden">Connection status: offline</span>
+    </summary>
+    <div id="${PANEL_ID}">
+      <div>
+        <span>
+          <span data-role="online-message">Online — last synced</span>
+          <span data-role="offline-message" class="hidden">Offline — last synced</span>
+          <span data-role="latched-message" class="hidden">Offline mode — last synced</span>
+          <span data-role="synced-at">—</span>
+        </span>
+        <button type="button" data-disclosure-close aria-label="Dismiss">×</button>
+      </div>
       <span>
         <span data-role="online-explainer">Using the network.</span>
         <span data-role="offline-explainer" class="hidden">Lost contact.</span>
         <span data-role="latched-explainer" class="hidden">Stopped trying.</span>
         <span data-role="forced-explainer" class="hidden">You asked it to stay offline.</span>
       </span>
-    </span>
-    <button type="button" data-action="reload">
-      <span data-role="reconnect-label">Try reconnecting</span>
-      <span data-role="resume-label" class="hidden">Use the network again</span>
-    </button>
-    <button type="button" data-action="dismiss">×</button>
-  </div>
+      <button type="button" data-network-reconnect>
+        <span data-role="reconnect-label">Try reconnecting</span>
+        <span data-role="resume-label" class="hidden">Use the network again</span>
+      </button>
+    </div>
+  </details>
   <button type="button" data-network-required>Sync now</button>
 `;
 
@@ -131,44 +142,58 @@ const MENU_SWITCH_ROW = `
 `;
 
 /**
- * A signed-in page: symbol, toast, and the menu switch that changes the mode.
+ * A signed-in page: symbol, panel, and the menu switch that changes the mode.
  *
- * The ``data-network-required`` button inside ``SYMBOL_AND_TOAST`` is any
+ * The ``data-network-required`` button inside ``SYMBOL_AND_PANEL`` is any
  * page's stand-in for a control that cannot work without the network — that
  * attribute is the generic mechanism the whole site gates on, and the last
  * block asserts a forced mode reaches it.
  */
 function buildFixture() {
-  document.body.innerHTML = SYMBOL_AND_TOAST + MENU_SWITCH_ROW;
+  document.body.innerHTML = SYMBOL_AND_PANEL + MENU_SWITCH_ROW;
 }
 
-/** An anonymous page: the symbol and toast, and no way to switch the mode. */
+/** An anonymous page: the symbol and panel, and no way to switch the mode. */
 function buildAnonymousFixture() {
-  document.body.innerHTML = SYMBOL_AND_TOAST;
+  document.body.innerHTML = SYMBOL_AND_PANEL;
 }
 
 /**
- * The shared "×" dismiss handler from static/js/overlays.js, in the one form
- * this module depends on: it adds ``hidden`` and dispatches
- * ``overlay:dismissed``, and pwa_offline.js listens for the second so a close
- * it did not perform still lands on ``aria-expanded`` and the ticker.
+ * nav.html's shared ``enhanceDisclosure`` script, mirrored in the three
+ * behaviours pwa_offline.js has to survive: outside-click, Escape, and the
+ * panel's ``[data-disclosure-close]`` control. All three close the <details>,
+ * and the module learns about each one the same way — the ``toggle`` event.
  *
- * Imported rather than reimplemented would drag the whole module's other
- * listeners into every test in this file; this is the contract, stated once.
+ * Mirrored rather than imported because the real thing is an inline <script>
+ * in a Django template, which Vitest cannot import; this is that contract,
+ * stated once, in the same spirit as the old overlays.js mirror it replaces.
  *
- * @returns {() => void} a teardown that unbinds it again
+ * @returns {() => void} a teardown that unbinds the document/window listeners
  */
-function installDismissHandler() {
-  const listener = (event) => {
-    const trigger = event.target.closest?.('[data-action="dismiss"]');
-    if (!trigger) return;
-    const overlay = trigger.closest('[data-overlay]');
-    if (!overlay) return;
-    overlay.classList.add('hidden');
-    overlay.dispatchEvent(new CustomEvent('overlay:dismissed', { bubbles: true }));
+function installNavDisclosureScript() {
+  const details = document.querySelector(DISCLOSURE_SELECTOR);
+  const toggle = document.getElementById('network-indicator-toggle');
+  const onClick = (event) => {
+    if (!details.open) return;
+    if (details.contains(event.target)) return;
+    details.open = false;
   };
-  document.addEventListener('click', listener);
-  return () => document.removeEventListener('click', listener);
+  const onKeydown = (event) => {
+    if (event.key === 'Escape' && details.open) {
+      details.open = false;
+      toggle.focus();
+    }
+  };
+  document.addEventListener('click', onClick);
+  window.addEventListener('keydown', onKeydown);
+  details.querySelector('[data-disclosure-close]').addEventListener('click', () => {
+    details.open = false;
+    toggle.focus();
+  });
+  return () => {
+    document.removeEventListener('click', onClick);
+    window.removeEventListener('keydown', onKeydown);
+  };
 }
 
 /** Whether the element carrying ``data-role`` is currently visible. */
@@ -197,17 +222,30 @@ function indicatorState() {
   return indicator().getAttribute('data-network-state');
 }
 
-/** The connection-status toast. */
-function toast() {
-  return document.getElementById(TOAST_ID);
+/** The <details> the symbol and the panel live in. */
+function disclosure() {
+  return document.querySelector(DISCLOSURE_SELECTOR);
 }
 
-/** Whether the toast is currently open. */
-function toastShown() {
-  return !toast().classList.contains('hidden');
+/** Whether the connection-status panel is currently open. */
+function panelShown() {
+  return disclosure().open;
 }
 
-/** The toast's one CTA — the way back to the network. */
+/**
+ * Yield to the task queue.
+ *
+ * A <details> fires ``toggle`` asynchronously, so the module's
+ * ``aria-expanded`` and freshness work lands a task after the press that
+ * caused it. Every assertion about those follows an ``await tick()``.
+ *
+ * @returns {Promise<void>}
+ */
+function tick() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** The panel's one CTA — the way back to the network. */
 function reconnectButton() {
   return document.querySelector(CTA_SELECTOR);
 }
@@ -413,16 +451,23 @@ describe('the header symbol tracks the connection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// SNOW-748 — the toast the symbol opens
+// SNOW-748 — the panel the symbol discloses
 // ---------------------------------------------------------------------------
 //
 // The banner this replaces revealed itself whenever the app stopped reaching
-// the server, and hid itself again when it recovered. The toast does neither:
+// the server, and hid itself again when it recovered. The panel does neither:
 // it opens and closes on the user's press alone, and the module only ever
 // repaints its copy. These tests are what stops the old reveal-on-failure
 // behaviour creeping back in under a different element id.
+//
+// Visibility is the <details>'s, not this module's — the panel was briefly a
+// toast whose ``hidden`` class pwa_offline.js owned, and the symbol's
+// ``aria-expanded`` could therefore disagree with the screen whenever anything
+// else closed it. Now every close arrives on one event, so the tests below
+// press the symbol, the "×", Escape and the page behind it, and expect the
+// same three consequences each time.
 
-describe('the connection-status toast (SNOW-748)', () => {
+describe('the connection-status panel (SNOW-748)', () => {
   it('stays closed until the symbol is pressed', async () => {
     window.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     await loadModule();
@@ -432,19 +477,21 @@ describe('the connection-status toast (SNOW-748)', () => {
     // Offline, and still nothing over the page. The header says so; the detail
     // is one press away.
     expect(indicatorState()).toBe('offline');
-    expect(toastShown()).toBe(false);
+    expect(panelShown()).toBe(false);
   });
 
-  it('opens on a press and closes on the next one', async () => {
+  it('opens on a press of the symbol and closes on the next one', async () => {
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
     indicator().click();
-    expect(toastShown()).toBe(true);
+    await tick();
+    expect(panelShown()).toBe(true);
     expect(indicator().getAttribute('aria-expanded')).toBe('true');
 
     indicator().click();
-    expect(toastShown()).toBe(false);
+    await tick();
+    expect(panelShown()).toBe(false);
     expect(indicator().getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -454,6 +501,7 @@ describe('the connection-status toast (SNOW-748)', () => {
     await loadModule();
 
     indicator().click();
+    await tick();
 
     // A disclosure, not a switch. An earlier pass shipped this element as a
     // toggle for the mode itself, which is what aria-expanded (rather than
@@ -462,22 +510,83 @@ describe('the connection-status toast (SNOW-748)', () => {
     expect(switchChecked()).toBe(false);
   });
 
-  it('follows a "×" dismiss it did not perform', async () => {
-    const teardown = installDismissHandler();
+  it('follows the panel\'s own close control', async () => {
+    const teardown = installNavDisclosureScript();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
     try {
       indicator().click();
+      await tick();
       expect(indicator().getAttribute('aria-expanded')).toBe('true');
 
-      document.querySelector(`#${TOAST_ID} [data-action="dismiss"]`).click();
+      document.querySelector('[data-disclosure-close]').click();
+      await tick();
 
-      // overlays.js hides it; the module learns via overlay:dismissed. Without
-      // that binding the symbol would claim the toast was still open, and the
-      // next press would close an already-closed panel.
-      expect(toastShown()).toBe(false);
+      // nav.html's shared script closes the <details>; the module learns from
+      // the toggle event. Without that the symbol would claim the panel was
+      // still open, and the next press would "close" an already-closed one.
+      expect(panelShown()).toBe(false);
       expect(indicator().getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      teardown();
+    }
+  });
+
+  it('follows an Escape it did not handle', async () => {
+    const teardown = installNavDisclosureScript();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      indicator().click();
+      await tick();
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      await tick();
+
+      expect(panelShown()).toBe(false);
+      expect(indicator().getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      teardown();
+    }
+  });
+
+  it('follows a click on the page behind it', async () => {
+    const teardown = installNavDisclosureScript();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      indicator().click();
+      await tick();
+
+      networkRequiredButton().click();
+      await tick();
+
+      // Outside-click is the dismissal a popover is judged on: it floats over
+      // the map, and a reader who has finished with it reaches for the map,
+      // not for the "×".
+      expect(panelShown()).toBe(false);
+      expect(indicator().getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      teardown();
+    }
+  });
+
+  it('leaves the panel open on a click inside it', async () => {
+    const teardown = installNavDisclosureScript();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      indicator().click();
+      await tick();
+
+      document.querySelector('[data-role="synced-at"]').click();
+      await tick();
+
+      expect(panelShown()).toBe(true);
     } finally {
       teardown();
     }
@@ -490,6 +599,7 @@ describe('the connection-status toast (SNOW-748)', () => {
 
     // Em dash until a sync is known; a relative phrase once one is.
     indicator().click();
+    await tick();
 
     expect(document.querySelector('[data-role="synced-at"]').textContent).not.toBe('—');
   });
@@ -499,7 +609,7 @@ describe('the connection-status toast (SNOW-748)', () => {
     await loadModule();
 
     // The banner only existed in the failure case, so it had no copy for this
-    // one. The symbol is pressable at any moment, so the toast needs it.
+    // one. The symbol is pressable at any moment, so the panel needs it.
     expect(roleShown('online-message')).toBe(true);
     expect(roleShown('online-explainer')).toBe(true);
     expect(roleShown('offline-message')).toBe(false);
@@ -511,6 +621,25 @@ describe('the connection-status toast (SNOW-748)', () => {
     await loadModule();
 
     expect(reconnectButton().classList.contains('hidden')).toBe(true);
+  });
+
+  it('shows the way back in both offline states', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    // The worker's own latch: a repair, and "Try reconnecting" is the verb.
+    sw.emit({ type: 'network-mode', mode: 'offline' });
+    expect(reconnectButton().classList.contains('hidden')).toBe(false);
+    expect(roleShown('reconnect-label')).toBe(true);
+
+    // The user's choice: nothing is broken, so the verb changes and the button
+    // stays. It is the whole exit for a signed-out reader either way, which is
+    // why it is asserted in both and not just the one the header text differs
+    // on.
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    expect(reconnectButton().classList.contains('hidden')).toBe(false);
+    expect(roleShown('resume-label')).toBe(true);
   });
 });
 
@@ -780,7 +909,7 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
   it('gives an anonymous reader the only exit they have', async () => {
     // The menu switch is signed-in only, so for an anonymous user latched by
     // the worker this button is the whole way back. It is the reason the
-    // banner's reconnect control had to survive the move into the toast.
+    // banner's reconnect control had to survive the move into the panel.
     buildAnonymousFixture();
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
