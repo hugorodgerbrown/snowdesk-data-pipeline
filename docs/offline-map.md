@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-08-24
+last-reviewed: 2026-08-28
 ---
 
 # PWA shell
@@ -1982,7 +1982,7 @@ re-asserts it to the worker on boot (a worker terminated while idle comes back
 in `auto` having forgotten). Since SNOW-748 the worker also reads that row for
 itself on startup (`_hydrateNetworkMode`), recovering a user-FORCED mode with
 no page to push it — a recycled worker was otherwise back on the network with
-the header toggle still showing offline. A persisted auto-latch is deliberately
+the header symbol still showing offline. A persisted auto-latch is deliberately
 not recovered that way. Why the read paths latch at all, and why the two modes
 part company here:
 [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md).
@@ -1991,7 +1991,7 @@ part company here:
 |---|---|---|---|---|
 | `auto` | the default | bounded network fetch, cache fallback | n/a | three consecutive budget expiries latch it |
 | `offline` | the worker, after `OFFLINE_LATCH_THRESHOLD` read timeouts | never touch the network; a miss 504s at once | yes — `/livez` on a 30s → 60s → 300s backoff | the probe finds a route, an `online` event, or the user |
-| `offline-forced` | the user, from the header toggle | as `offline` | **no** | the user, and nothing else |
+| `offline-forced` | the user, from the account menu's "Offline mode" row | as `offline` | **no** | the user, and nothing else |
 
 **The two offline values are not interchangeable, and half the comparisons in
 each file turn on which one is meant.** `offline` is the worker inferring there
@@ -2003,23 +2003,43 @@ probe. SNOW-742 had two values and routed the user's request into
 comparison in `sw.js` and `pwa_offline.js` carries a comment saying which sense
 it is in.
 
-**Where the control lives.** `[data-network-toggle]` in
-`templates/includes/nav.html`, beside the sync badge, on every page for every
-viewer including anonymous ones (basemap downloads are not auth-gated either).
-It is rendered `hidden` and revealed by `pwa_offline.js`, the same contract the
-sync badge has with `mutation_queue.js`. It paints **two** states for the
-worker's three — `aria-pressed` plus a struck-through glyph
-(`includes/_icon_wifi_off.html`) answer "is the network in use", which is one
-bit; which offline mode it is belongs to the banner, which has room for a
-sentence.
+**Where the symbol and the switch live.** Both are in
+`templates/includes/nav.html`, split the way a phone splits aeroplane mode.
+
+* `[data-network-indicator]` — the **symbol**, beside the sync badge, on every
+  page for every viewer including anonymous ones. A status element, not a
+  control: no button, no pressed state, no tab stop. It is shown only while
+  the app is not using the network — either offline mode — and nothing renders
+  there in `auto`, as a phone shows the aeroplane glyph only while the mode is
+  on. Anonymous viewers get it because the worker latches itself for anybody,
+  so the state it reports is one they can be in.
+* `[data-network-toggle]` — the **switch**, an "Offline mode" row in the
+  account menu's `<details>` dropdown, in the group with Settings. Signed-in
+  only: turning the mode on is a device preference, and it belongs with the
+  other preferences. `role="menuitemcheckbox"` with `aria-checked`, because
+  the row has an on/off state and that is how a menu says so; its tick and
+  colour follow that attribute in CSS.
+
+Both are rendered `hidden` and revealed by `pwa_offline.js`, the same contract
+the sync badge has with `mutation_queue.js` — for the row because it drives a
+service worker and would otherwise be dead, and for the symbol because it would
+be *wrong*, claiming a mode on a page whose script never ran to read one.
+`pwa_offline.js` looks the two up independently: an anonymous page has the
+symbol and no row, and the symbol must still be painted. Both carry **one** bit
+for the worker's three modes — "is the network in use"; which offline mode it
+is belongs to the banner, which has room for a sentence. The struck-through
+glyph (`includes/_icon_wifi_off.html`) is the mark in both places.
 
 SNOW-742 put this control inside `includes/_offline_banner.html`, which
 `pwa_offline.js` reveals only when the connection has already failed — so the
 user it was built for, "I have signal now and am about to lose it", could never
-reach it. The banner keeps the way *back* (labelled "Try reconnecting" under a
-latch, "Use the network again" under a forced mode) and gains a third
-explanation, because the latched copy asserts there is no usable connection and
-that is exactly what is false when the user chose the mode while online.
+reach it. SNOW-748 first moved it to the header as a toggle, then split it into
+the symbol and the switch above: a control in the status area invites the
+reading that the symbol *is* the switch. The banner keeps the way *back*
+(labelled "Try reconnecting" under a latch, "Use the network again" under a
+forced mode) and gains a third explanation, because the latched copy asserts
+there is no usable connection and that is exactly what is false when the user
+chose the mode while online.
 
 **Downloads under each mode (SNOW-748).** `_warmCache` ignores the auto-latch
 — see [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)
@@ -2044,7 +2064,7 @@ consult it, falling back to `navigator.onLine` on a page where
 `pwa_offline.js` has not run. Nothing is dropped under a forced mode: a
 telemetry event stays in `queue:events`, a queued mutation stays in
 `queue:mutations` without spending an attempt, and both go out when the
-toggle returns to `auto` — the states those subsystems are already built
+mode returns to `auto` — the states those subsystems are already built
 around. The one refusal is a GPX upload, which is online-only by design and
 says so.
 

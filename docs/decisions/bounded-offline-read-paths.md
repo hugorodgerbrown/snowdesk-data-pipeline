@@ -12,8 +12,8 @@ last-reviewed: 2026-08-28
 `_boundedFetch`, which aborts after a fixed budget. Three consecutive budget
 expiries **latch** the worker into an offline mode in which read paths do not
 call the network at all. The latch lifts on a bounded probe to `/livez`, on the
-`online` event, or on the user's own control — the network toggle in the nav
-header. `_warmCache` is exempt from both — from the **latch**, not from the
+`online` event, or on the user's own control — the "Offline mode" row in the
+account menu. `_warmCache` is exempt from both — from the **latch**, not from the
 user's own offline mode (see below).
 
 **Amended by SNOW-748.** The mode has three values, not two: `auto`, `offline`
@@ -98,7 +98,7 @@ of them should be removed as "noise" without replacing it:
 
 ## The one exception: `offline-forced` (SNOW-748)
 
-A user who presses the header toggle gets **none of the three**. No probe is
+A user who switches "Offline mode" on gets **none of the three**. No probe is
 scheduled, an `online` event does not lift it, and a read-path timeout cannot
 convert it into an auto-latch. That is a deliberate hole in the rule above, so
 it needs a reason.
@@ -114,17 +114,18 @@ back in `auto` within thirty seconds.
 
 **The staleness is on screen the whole time.** The reason to bound a latch is
 that a user may not know they are reading old ratings. Here they cannot not
-know: the toggle is pressed and struck through in the header of every page, the
-banner is up throughout with its own explanation, and its "last synced" phrase
-counts up live on a 30s ticker. The danger the bounding answers — silent
+know: the struck-through offline symbol is in the header of every page — the
+model is a phone's aeroplane mode, where the status bar carries the glyph for
+as long as the mode is on — the banner is up throughout with its own
+explanation, and its "last synced" phrase counts up live on a 30s ticker. The danger the bounding answers — silent
 staleness — is the one state this mode cannot be in.
 
 **Auto-expiry would spend data the user chose not to spend.** Any bound short
 enough to matter (an hour, a day) fires precisely when the user is least able
 to notice, and the cost lands on the connection they were protecting.
 
-The user's way back is present in both places at all times: the header toggle
-and the banner's "Use the network again" button.
+The user's way back is present in both places at all times: the account menu's
+"Offline mode" row and the banner's "Use the network again" button.
 
 ## Why `_warmCache` is exempt from the latch — and not from a forced mode
 
@@ -148,7 +149,7 @@ change, and `window.pwaConnectivity.isOnline()` answers the same question for
 the controls that re-read it when they repaint. Before that the event carried
 `navigator.onLine` alone, which is true throughout a forced mode — so the
 layers menu kept its green dots and the download controls stayed enabled while
-the header said the app was offline.
+the header symbol said the app was offline.
 
 ## Durability
 
@@ -170,8 +171,8 @@ that was the bug: `_networkMode` is module scope, Chrome terminates an idle
 worker after about thirty seconds, and a **user-forced** mode was therefore
 silently lost. The restarted worker came back in `auto`, resumed using the
 network, and fired no `online`/`offline` event at all — so nothing corrected
-the header toggle, which went on showing `aria-pressed="true"` over an app that
-was back on the wire. Reproduced twice in a browser and confirmed with an
+the header symbol, which went on showing the app offline over one that was back
+on the wire. Reproduced twice in a browser and confirmed with an
 instrumented run: `workerMode: "auto"`, `persistedUserChoice: "offline-forced"`,
 `pageIsOnline: true`, no interface events. It survived review because polling
 the worker to check on it is exactly what keeps it from being recycled.
@@ -183,14 +184,14 @@ first read path. A worker wakes for four reasons (`fetch`, `message`, `push`,
 asked for its mode by a bare `postMessage({type: 'network-mode'})` still
 answered `'auto'` — and that answer is acted on, not merely observed:
 `pwa_offline.js` treats any `network-mode` announcement as authoritative and
-repainted the user's toggle off. Hence also the handler awaiting hydration
+repainted the user's mode off. Hence also the handler awaiting hydration
 before it replies. `activate` is not the hook for any of this: it fires on
 install and update, not on the idle restart that loses the mode. This is the same worker-side IndexedDB read `_currentPrincipal()`
 has always done on the navigation path, with the same shape: `try`/`finally`
 `db.close()`, and fail-safe to `auto` on any error, so a DB the worker cannot
 read never wedges it offline. Once hydration resolves, the recovered mode is
 published to every client, so a page that was open across the restart resyncs
-its toggle rather than continuing to show a stale one.
+its symbol and its menu row rather than continuing to show a stale mode.
 
 **Only `offline-forced` is recovered this way.** A persisted `offline` is the
 worker's own inference from three read-path timeouts, and by the time a

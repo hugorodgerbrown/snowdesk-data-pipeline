@@ -136,13 +136,14 @@ class TestHelpPage:
         assert b"help-install-staleness" in content
 
     def test_install_panel_documents_the_network_toggle(self, client: Client) -> None:
-        """The header toggle is explained where the offline copy already is.
+        """Offline mode is explained where the offline copy already is.
 
         SNOW-748 moved the control out of the offline banner and into the
-        nav, where it is now visible on every page to every visitor. A
-        control a user meets before they meet the state it produces needs
-        a sentence saying what it does and, more to the point, that
-        Snowdesk will not quietly undo it.
+        account menu, leaving a symbol in the header that reports the mode
+        — a phone's aeroplane mode. A control a user meets before they meet
+        the state it produces needs a sentence saying what it does, where
+        it is, and, more to the point, that Snowdesk will not quietly undo
+        it.
         """
         content = client.get(reverse("public:help")).content
         assert b"help-install-network-toggle" in content

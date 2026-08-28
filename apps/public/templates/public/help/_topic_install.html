@@ -37,15 +37,18 @@ and points at the banner that dates it.
             reached the server. Check it before you trust a rating, and reload once you have signal.
         {% endblocktrans %}
     </p>
-    {# SNOW-748: the header toggle. A paragraph in this topic rather than a #}
-    {# topic of its own — the control moved out of the offline banner       #}
-    {# described just above, and it is the same subject.                    #}
+    {# SNOW-748: offline mode. A paragraph in this topic rather than a topic #}
+    {# of its own — the control moved out of the offline banner described    #}
+    {# just above, and it is the same subject. The split it describes is the #}
+    {# aeroplane-mode one: the switch is in the account menu, and the header #}
+    {# carries only a symbol while the mode is on.                           #}
     <p class="mb-3 last:mb-0" data-testid="help-install-network-toggle">
         {% blocktrans trimmed %}
-            You can also stop Snowdesk using the network yourself, with the signal button at the top of every page. Turn
-            it off before you lose coverage, or to spare a metered or roaming connection, and the app runs from what it
-            has already stored. It stays off until you turn it back on &mdash; Snowdesk will not quietly reconnect
-            &mdash; and the banner stays up meanwhile so you can see how old the stored data is.
+            You can also stop Snowdesk using the network yourself. If you are signed in, open the account menu and turn
+            on "Offline mode" &mdash; before you lose coverage, or to spare a metered or roaming connection &mdash; and
+            the app runs from what it has already stored. It stays on until you turn it off again: Snowdesk will not
+            quietly reconnect. While it is on, a struck-through signal symbol sits at the top of every page, much like
+            aeroplane mode on a phone, and the banner stays up so you can see how old the stored data is.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-install-downloads-pointer">
