@@ -63,7 +63,15 @@ PANEL_TEMPLATE_IDS = tuple(PANEL_ICONS)
 # the sentence: a panel that stopped saying whether its contents leave the
 # device would still render a strip, and still pass a shape-only check.
 PANEL_CONTEXT_LINES = {
-    "map-downloads-body-template": "Downloads and budget stay on this device.",
+    "map-downloads-body-template": (
+        # SNOW-749: the areas follow the account now, so the old
+        # "Downloads and budget stay on this device." was half false. The
+        # half that survived is the load-bearing one — it is what explains
+        # how a row can be listed in this panel and still not be available
+        # offline here.
+        "Your areas follow your account. The map data and the budget stay "
+        "on this device."
+    ),
     "favourite-list-template": "Favourites are private and not shared.",
     "report-list-template": "Reports are shared with the community.",
 }

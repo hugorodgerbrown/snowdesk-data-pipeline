@@ -1402,7 +1402,7 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Manage downloads sheet (title_class override)",
         "context": {
-            "title": "Downloads on this device",
+            "title": "Your downloads",
             "close_action": "dismiss",
             "title_class": "text-lg font-bold",
         },
@@ -1566,9 +1566,12 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Downloads panel (budget block in the header slot)",
         "context": {
-            "title": "Downloads on this device",
+            "title": "Your downloads",
             "icon_template": "includes/_icon_downloads.html",
-            "context_line": "Downloads and budget stay on this device.",
+            "context_line": (
+                "Your areas follow your account. The map data and the budget "
+                "stay on this device."
+            ),
             # No section_label: this panel groups its rows under two
             # headings of its own, rendered from its rows template.
             "header_template": "public/partials/_map_downloads_header.html",

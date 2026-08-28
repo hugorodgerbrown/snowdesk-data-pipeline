@@ -17,8 +17,10 @@ Covers:
     switch ids, and the page still issues no queries.
   * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
     absent by default, present under ``@override_flag``. It is the only
-    gated panel left; SNOW-724 opened the Map-weather (SNOW-573) and
-    Slope-angle (SNOW-691) topics to everyone.
+    gated panel left, and now the only gate on this page at all: SNOW-724
+    opened the Map-weather (SNOW-573) and Slope-angle (SNOW-691) topics to
+    everyone, and SNOW-749's downloads paragraphs ship ungated after its
+    own ``download_sync`` flag was dropped on query cost.
   * The bulletin-guide cross-link is present in the page content.
   * The footer and top nav (both rendered on the homepage) independently
     link to /help/.
@@ -157,6 +159,35 @@ class TestHelpPageFlagGating:
     def test_sync_log_panel_present_when_flag_active(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-sync-log"' in response.content
+
+    def test_downloads_account_paragraphs_are_always_present(
+        self, client: Client
+    ) -> None:
+        """SNOW-749: the sign-in gate and the cross-device split, ungated.
+
+        The second is the one that matters. A user who sees an area listed
+        on a new phone and assumes the map is there too is the failure that
+        paragraph exists to prevent — and since the feature ships to
+        everyone, so must its explanation. These were briefly behind a
+        ``download_sync`` flag; it was dropped before merge on query cost.
+        """
+        response = client.get(reverse("public:help"))
+
+        assert b'data-testid="help-downloads-signin"' in response.content
+        assert b'data-testid="help-downloads-cross-device"' in response.content
+
+    def test_the_superseded_device_local_claim_is_gone(self, client: Client) -> None:
+        """The old paragraph is deleted, not merely joined by the new ones.
+
+        "They do not follow your account to your phone" is now false, and a
+        help page that says both things leaves a reader to pick. Asserted
+        separately from the presence check above because the two failures
+        are different: one is a missing explanation, this one is a wrong
+        one.
+        """
+        response = client.get(reverse("public:help"))
+
+        assert b"They do not follow your account to your phone" not in response.content
 
     def test_weather_layer_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))

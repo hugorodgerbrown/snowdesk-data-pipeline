@@ -63,6 +63,21 @@ and a permission check cannot express. Every other gate this project has
 had was either a rollout gate that eventually opened to everyone, or a
 permanent audience restriction better written as an ordinary Django check.
 
+**A rollout flag has a price, and it is not always worth paying.** SNOW-749
+wrote a `download_sync` flag, carried it through review, and deleted it
+before merge. The gate it protected sits in `_downloads_context`, which
+runs on the homepage — the site's most-requested page — and the flag read
+took it from 5 queries to 8. Caching does not buy that back: waffle reads
+through Django's `default` cache, which in production is `DatabaseCache`
+against the `django_cache` table, so a warm cache trades three model
+queries for a cache-table one rather than for none. Hugo's call was that a
+permanent per-request cost on that page was the wrong price for a kill
+switch nobody intended to pull, and the feature shipped unconditionally.
+
+The general form: **a flag on a hot path is not free, and "we can always
+turn it off" is worth costing before it is assumed.** Reverting an
+un-flagged feature is a deploy, which this project can do in minutes.
+
 The saved-map-pin favourites feature (SNOW-413), the field-report button
 and submission endpoints (SNOW-324), the "Community reports" read overlay
 (SNOW-419), and the `/observations/` page (SNOW-476) were all pre-launch

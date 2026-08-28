@@ -76,10 +76,14 @@
  *     SNOW-645 review: manageRows' own rows partitioned into
  *     {region, custom} — the sheet's REGIONS / CUSTOM AREAS grouping —
  *     without re-sorting either group.
- *   reconcileAreas(recorded, storedAreaIds, bytesById)
+ *   reconcileAreas(recorded, storedAreaIds, bytesById, accountAreas)
  *     The recorded areas unioned with the pinned buckets actually on
  *     disk, so a download that failed partway is visible rather than
- *     stranded (SNOW-612).
+ *     stranded (SNOW-612), and (SNOW-749) with the areas on the user's
+ *     ACCOUNT, so an area downloaded on another device — or evicted here
+ *     to make room — is listed as a one-tap re-download rather than
+ *     vanishing. Every entry carries ``onDevice`` and ``synced``; with no
+ *     account list the output is what it always was.
  *   budgetSegments(areas)
  *     SNOW-645 review: the budget bar's segments, one per basemap
  *     actually stored (grouped and summed, not one per area), largest
@@ -245,7 +249,10 @@
    *   (SNOW-612 — a bucket with no record at all) ever leave it unset.
    *   ``basemapKey`` (SNOW-645) is null on a record written before this
    *   ticket shipped, and always null on an orphan — both read as an
-   *   unknown basemap, never a wrong one.
+   *   unknown basemap, never a wrong one. ``onDevice`` / ``synced`` /
+   *   ``bbox`` / ``regionId`` (SNOW-749) come from ``reconcileAreas``;
+   *   an area list built without it reads as on-device and unsynced,
+   *   which is what every such list was before that ticket.
    * @param {{isCustomAreaId?: function(string): boolean}} [options]
    *   ``isCustomAreaId`` is ``pwaBasemapDownloadCore.isCustomAreaId`` — an
    *   area whose id it accepts is a user-framed download rather than a
@@ -260,7 +267,17 @@
    *   longer needs a caller-supplied fallback string for it.
    * @returns {Array<{id: string, kind: string, orphaned: boolean,
    *   label: string, renameable: boolean, bytes: number, savedAt: string,
-   *   size: string, basemapKey: string}>}
+   *   size: string, basemapKey: string, onDevice: boolean,
+   *   synced: boolean, redownloadable: boolean, bbox: number[]|null,
+   *   regionId: string}>} SNOW-749: ``onDevice`` and ``synced`` are the
+   *   two independent facts a row now carries, and the four combinations
+   *   are all reachable — on both, on the device only (a download made
+   *   before the account gate, or one whose sync has not drained yet),
+   *   on the account only (another device's, or one evicted here), and
+   *   neither (an orphaned bucket on a signed-out device).
+   *   ``redownloadable`` is the account-only row's own affordance: the
+   *   sheet offers "Download here" instead of a size, and it is false
+   *   unless the row carries enough to act on — a region id, or a bbox.
    */
   function manageRows(areas, options) {
     var list = Array.isArray(areas) ? areas : [];
@@ -275,13 +292,24 @@
 
       var id = String(area.id);
       var isCustom = typeof opts.isCustomAreaId === 'function' && opts.isCustomAreaId(id);
+      // SNOW-749: default true, so an area list built before this ticket
+      // (or by a caller that does not reconcile) reads as on-device —
+      // which is what it was.
+      var onDevice = area.onDevice !== false;
       // SNOW-635: a region's name is its real name; a custom area's own
       // name (stored or defaulted — see this function's own docstring) is
       // still something the user can override — REGIONS are never
       // renameable, and neither is an ORPHANED custom bucket (SNOW-612):
       // there is no record entry left to write a name onto, only a bare
       // bucket id.
-      var renameable = isCustom && !area.orphaned;
+      //
+      // SNOW-749: nor is an ACCOUNT-ONLY row. The rename this flag gates
+      // is the local one (`renameCustomArea` writes to
+      // `basemap.customAreas`), and there is no local record to write to
+      // for an area this device has never downloaded — the editor would
+      // accept a name and drop it. Renaming it where it does exist is a
+      // download away.
+      var renameable = isCustom && !area.orphaned && onDevice;
 
       // Uniform for every row now: the record's own name (always present
       // except for an orphan — see the docstring) falls back to the id,
@@ -309,6 +337,21 @@
         // wrong basemap, so map_downloads_manager.js's buildRow removes
         // the swatch+name line rather than showing an unknown one.
         basemapKey: area.basemapKey || '',
+        // SNOW-749: the two facts the sheet paints four row states from.
+        // `synced` says the account knows about this area, which is NOT
+        // the same as it being available offline — the sheet must never
+        // let it green a sync dot.
+        onDevice: onDevice,
+        synced: !!area.synced,
+        // Only an account-only row is offered a download; one already on
+        // the device has nothing to fetch. A region needs its id, a
+        // custom area its box — without either there is nothing to hand
+        // the download control, so the affordance is withheld rather than
+        // rendered dead.
+        redownloadable:
+          !onDevice && (isCustom ? Array.isArray(area.bbox) : !!area.regionId),
+        bbox: Array.isArray(area.bbox) ? area.bbox : null,
+        regionId: area.regionId || '',
       });
     }
 
@@ -349,54 +392,108 @@
 
 
   /**
-   * The union of what is RECORDED as downloaded and what is actually
-   * stored in Cache Storage (SNOW-612).
+   * The union of what is RECORDED as downloaded, what is actually stored
+   * in Cache Storage (SNOW-612), and what is on the user's ACCOUNT
+   * (SNOW-749).
    *
-   * A download that fails partway leaves its pinned bucket on disk with no
-   * ``basemap.regions`` / ``basemap.customAreas`` record, because the
-   * record is only written when a run completes. The byte budget never
-   * counted that bucket and the manage sheet could not list it, so the
-   * stranded quota was invisible to the user and to the planner —
-   * accumulating silently across failed attempts until the origin ran out
-   * of room.
+   * Three sources, one keyed join on the area id — the id that names the
+   * Cache Storage bucket and is also what the server stores verbatim, so
+   * there is no id mapping to maintain anywhere.
    *
-   * Reading the buckets is what makes the orphan visible; this is the
-   * arithmetic half, kept here so it can be tested without Cache Storage.
-   * The recorded entry always wins for an id present in both, because it
-   * carries the name and the timestamp a bucket id cannot.
+   * **The record.** A download that fails partway leaves its pinned bucket
+   * on disk with no ``basemap.regions`` / ``basemap.customAreas`` record,
+   * because the record is only written when a run completes. The byte
+   * budget never counted that bucket and the manage sheet could not list
+   * it, so the stranded quota was invisible to the user and to the
+   * planner — accumulating silently across failed attempts until the
+   * origin ran out of room.
+   *
+   * **The account.** An area the user downloaded on another device, or
+   * downloaded here and later evicted to make room, has a row on the
+   * account and nothing on this device. It becomes an entry with
+   * ``onDevice: false`` and ``bytes: 0``, carrying the account row's own
+   * name, basemap and geometry — enough for the sheet to offer it as a
+   * one-tap re-download. It is NOT ``orphaned``: an orphan is a failed
+   * download's leftovers on THIS device, which is a different fact with a
+   * different remedy.
+   *
+   * Reading the buckets and the account is what makes both visible; this
+   * is the arithmetic half, kept here so it can be tested without Cache
+   * Storage or a network.
+   *
+   * Precedence is local-first for everything except ``synced``. The
+   * recorded entry always wins for an id present in more than one source,
+   * because it carries the name, the timestamp and the byte figure a
+   * bucket id cannot and an account row does not have.
+   *
+   * With ``accountAreas`` empty or absent the output is what it was before
+   * SNOW-749 plus two flags — ``onDevice: true`` and ``synced: false`` on
+   * every entry, which is the truth for a device whose account list could
+   * not be read. That is the anonymous path, the flag-off path and the
+   * offline path, and it is the one that must not move.
    *
    * @param {Array<{id: string, name?: string, bytes?: number,
-   *   savedAt?: string}>} recorded Areas derived from the stored records.
+   *   savedAt?: string, basemapKey?: string|null, bbox?: number[]|null,
+   *   regionId?: string}>} recorded Areas derived from the stored records.
    * @param {string[]} storedAreaIds Area ids with a pinned bucket present
    *   in Cache Storage, as ``map.js``'s ``pinnedBucketAreaIds()`` reads
    *   them back off ``caches.keys()``.
    * @param {Object<string, number>} [bytesById] Measured sizes for the
    *   orphans, keyed by area id. An orphan with no measurement counts as
    *   0 bytes — visible and deletable, but not guessed at.
+   * @param {Array<{area_id: string, name?: string, basemap_key?: string,
+   *   bbox?: number[]|null, region_id?: string, created_at?: string}>}
+   *   [accountAreas] The rows on the user's account, in the server's own
+   *   JSON shape (``downloads/areas.json``) — snake_case, because
+   *   translating it in the transport layer would put the same mapping in
+   *   two places. Absent for an anonymous, offline or flag-off page.
    * @returns {Array<{id: string, name?: string, bytes: number,
-   *   savedAt?: string, orphaned: boolean}>} The recorded areas in their
-   *   original order, then any orphans, id-ascending so the sheet's own
-   *   sort has a stable input.
+   *   savedAt?: string, orphaned: boolean, basemapKey: string|null,
+   *   onDevice: boolean, synced: boolean, bbox: number[]|null,
+   *   regionId: string}>} The recorded areas in their original order, then
+   *   any orphans id-ascending, then any account-only areas id-ascending —
+   *   so the sheet's own sort has a stable input.
    */
-  function reconcileAreas(recorded, storedAreaIds, bytesById) {
+  function reconcileAreas(recorded, storedAreaIds, bytesById, accountAreas) {
     var list = Array.isArray(recorded) ? recorded : [];
     var stored = Array.isArray(storedAreaIds) ? storedAreaIds : [];
     var sizes = bytesById || {};
+    var account = Array.isArray(accountAreas) ? accountAreas : [];
+
+    // The account rows, keyed by area id. Built first because every
+    // branch below asks it the same question — "does the account know
+    // about this one" — and it is what decides `synced`.
+    var accountById = Object.create(null);
+    for (var a = 0; a < account.length; a += 1) {
+      var row = account[a];
+      if (!row || !row.area_id) continue;
+      accountById[String(row.area_id)] = row;
+    }
 
     var out = [];
     var known = Object.create(null);
     for (var i = 0; i < list.length; i += 1) {
       var area = list[i];
       if (!area || !area.id) continue;
-      known[String(area.id)] = true;
+      var recordedId = String(area.id);
+      known[recordedId] = true;
       out.push({
-        id: String(area.id),
+        id: recordedId,
         name: area.name,
         bytes: Number(area.bytes) || 0,
         savedAt: area.savedAt,
         orphaned: false,
         // SNOW-645: absent on a pre-SNOW-645 record — see manageRows.
         basemapKey: area.basemapKey || null,
+        // SNOW-749: the tiles are here.
+        onDevice: true,
+        synced: recordedId in accountById,
+        // SNOW-749: what a re-download on another device would need. Null
+        // for a region, whose tiles are computed server-side from its real
+        // boundary — a box would be a second, coarser answer to a question
+        // already answered.
+        bbox: Array.isArray(area.bbox) ? area.bbox : null,
+        regionId: area.regionId || '',
       });
     }
 
@@ -419,13 +516,55 @@
         orphaned: true,
         // No record means no known basemap either.
         basemapKey: null,
+        // The bucket is on this device, whatever state it is in — which is
+        // exactly why the sheet has to be able to delete it.
+        onDevice: true,
+        synced: id in accountById,
+        bbox: null,
+        regionId: '',
       });
     }
-    orphans.sort(function (a, b) {
-      return a.id.localeCompare(b.id);
+    orphans.sort(function (a2, b2) {
+      return a2.id.localeCompare(b2.id);
     });
 
-    return out.concat(orphans);
+    // SNOW-749: whatever the account knows about that this device does
+    // not. Sorted by id for the same stable-render reason as the orphans,
+    // and appended after them so the two never interleave — they are
+    // different kinds of "not a normal download" and the sheet labels them
+    // differently.
+    var accountOnly = [];
+    for (var k = 0; k < account.length; k += 1) {
+      var accountRow = account[k];
+      if (!accountRow || !accountRow.area_id) continue;
+      var accountId = String(accountRow.area_id);
+      if (known[accountId]) continue;
+      known[accountId] = true;
+      accountOnly.push({
+        id: accountId,
+        name: accountRow.name || undefined,
+        // Nothing of it is on this device, so it costs this device
+        // nothing — which is what keeps it out of the byte budget.
+        bytes: 0,
+        // The account's own timestamp, not a local one: there is no local
+        // event to date it by, and leaving it unset would sort every
+        // account-only row against every other by id alone.
+        savedAt: accountRow.created_at,
+        // Emphatically not an orphan: nothing failed here, and there is
+        // nothing on disk to reclaim.
+        orphaned: false,
+        basemapKey: accountRow.basemap_key || null,
+        onDevice: false,
+        synced: true,
+        bbox: Array.isArray(accountRow.bbox) ? accountRow.bbox : null,
+        regionId: accountRow.region_id || '',
+      });
+    }
+    accountOnly.sort(function (a3, b3) {
+      return a3.id.localeCompare(b3.id);
+    });
+
+    return out.concat(orphans, accountOnly);
   }
 
   /**
