@@ -917,48 +917,83 @@ offline maps most. It settled on: opening the sheet still turns the
 overlay ON (`map_downloads_manager.js`'s `open()` calls
 `window.pwaDownloadedOverlay.show()`), but closing the sheet no longer
 turns it off. A second toggle — a switch, "Display on the map" — now
-lives INSIDE the sheet, in its own panel above the row groups (see
-"Manage downloads" sheet below) and is the ONLY thing that ever calls
-`hide()`. This is a deliberately
-session-scoped inspection mode, not persisted anywhere: close the sheet
-with the overlay on, look at the map, reopen the always-on-screen
-custom-area roundel to switch it off again. A fresh page load always
-starts it off — `OVERLAY_STORAGE_KEY.downloaded` (`static/js/map_state.js`)
-is documented dead rather than revived.
+lives INSIDE the sheet, at the foot of the panel (see "Manage downloads"
+sheet below) and is the ONLY thing that ever calls `show()`/`hide()`:
+SNOW-656 stopped `open()` calling `show()`, so opening the panel no longer
+repaints the map either.
 
-**And it is mutually exclusive with the bulletin fill (SNOW-656).** The
-squares are translucent and are drawn over the same polygons the danger
-choropleth fills, so the two together are unreadable. Turning "Show areas on
-the map" on therefore drops the bulletin-fill control (`#map-fill-toggle`'s
-flyout) to its 0 step, and turning it off restores the exact step the user had;
-choosing any step above 0 switches the squares off. The two controls visibly
-mirror each other, so the colour never just goes missing. `show()`/`hide()` are the single choke point — they are
-already the only writers of this overlay's visibility, so every caller
-inherits the lockstep — and the binding is deliberately to THAT visibility
-rather than to the sheet's open/closed lifecycle, for exactly the reason the
-paragraph above gives. Full rule:
-[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md).
+What that switch sets is a **persisted preference**, under
+`OVERLAY_STORAGE_KEY.downloads` (`static/js/map_state.js`), restored into
+`downloadedOverlayVisible` at parse time and painted at boot by the
+`refreshDownloadedOverlay()` call that follows `installRegionsLayers` in
+the `load` handler — visible layers over an empty source draw nothing, so
+restoring the flag alone is half a fix. It was a deliberately
+session-scoped "inspection mode" for the life of SNOW-645, and Hugo
+reported that as a bug: three other panels carry the identical switch under
+the identical label and all three survive a reload, so this one forgetting
+reads as breakage rather than as design.
 
-**Every basemap at once, each in its own colour (SNOW-645).** The overlay
-used to key off the ACTIVE basemap's tile template alone, so downloading
-under Standard and switching to Swisstopo emptied it outright.
+The key is a NEW name. SNOW-570's `snowdesk.map.overlay.downloaded` is
+still on disk wherever the old layers-menu row was used, holding a value
+given to a control that no longer exists — reading it back would switch the
+overlay on at boot for a user whose last actual instruction was addressed
+to something else. It stays dead and unread.
+
+**It shares the map with the bulletin fill (SNOW-663).** It did not always:
+the squares were a second translucent tint over the very polygons the danger
+choropleth fills, unreadable together, so SNOW-656 made the two mutually
+exclusive — "Display on the map" dropped the fill control to its 0 step and
+any step above 0 switched the squares off. SNOW-663 changed the MARK instead.
+The squares are a 45-degree hatch now (`static/js/hatch_core.js`, one image
+per basemap identity colour at a fixed screen-space period), a third of the
+area in hard strokes with the choropleth's own colour showing through the
+rest — the way an atlas draws one area layer over another. A hatch makes no
+colour claim, so neither control touches the other's state any more:
+`show()`/`hide()` suppress nothing, and raising the step switches nothing
+off. "Which days are dangerous" and "which areas do I have offline" are
+different questions and belong on screen together. The decision this
+reverses, and the parts of its mechanism that survive:
+[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md)
+(historical).
+
+**The active basemap's downloads, in that basemap's colour.** This rule
+has moved twice. It began as the active basemap alone; SNOW-645's review
+widened it to paint EVERY downloaded basemap at once, each area in the
+identity colour of the basemap it was downloaded under, because switching
+from Standard to Swisstopo emptied the overlay and that read as data loss.
+Hugo's call after living with it: two basemaps' squares stacked over the
+same ground describe neither basemap's coverage — "it should filter to the
+current basemap, so it never overlays downloads. If you are on Swisstopo
+and toggle on the downloads it shows Swisstopo downloads. If you then
+switch maps it honours the toggle and shows the new map downloads."
+
 `basemapDownloadedTemplates()` (`static/js/map_basemap_downloads.js`)
-reads `basemap.regions` / `basemap.customAreas` directly (not through the
-lossy `basemapDownloadedAreas()` normaliser — see that function's own
-docstring for why it must not be widened) for the DISTINCT
-`(template, basemapKey)` pairs actually recorded.
-`refreshDownloadedOverlay` runs `cachedTilesFromURLs` once per distinct
-template — still a real Cache Storage read per tile, "probed, never
-stored" still holds — and tags every resulting feature with the
-`basemapKey` its template belongs to. `downloadedTilesColourExpression`
-turns whatever keys are actually present into a MapLibre
-`['match', ['get', 'basemapKey'], key1, colour1, …, fallback]` paint
-expression (`basemapIdentityColour(null)` — `--color-sync-ok` — as the
-fallback, for a keyless/unresolved area), applied via `setPaintProperty`
-on every refresh so an already-installed pair of layers repaints rather
-than freezing at whichever keys were present the last time. This
-replaces the earlier flat-colour `downloadedOutlineColour`, which is
-gone.
+still reads `basemap.regions` / `basemap.customAreas` directly (not
+through the lossy `basemapDownloadedAreas()` normaliser — see that
+function's own docstring for why it must not be widened) for the DISTINCT
+`(template, basemapKey)` pairs recorded; `refreshDownloadedOverlay` keeps
+the entry whose template matches the LIVE style's own tile template
+(`activeBasemapTileTemplate`) and runs `cachedTilesFromURLs` against that
+one — still a real Cache Storage read per tile, "probed, never stored"
+still holds. Every square it paints therefore belongs to the basemap under
+it, so the colour is one flat value per refresh —
+`basemapIdentityColour(activeKey)` for the outline, one hatch image for
+the fill — applied via `setPaintProperty` on every refresh, so an
+already-installed pair of layers repaints on a basemap swap rather than
+freezing at the last basemap's colour. The per-feature `basemapKey`
+property and the `['match', ['get', 'basemapKey'], …]` expressions that
+read it (`downloadedTilesColourExpression` /
+`downloadedTilesPatternExpression`) are gone with the rule that needed
+them.
+
+The emptying-out that prompted the widening is no longer silent: the
+switch is persisted and stays on across the swap, the overlay repaints
+from the `snowdesk:basemap-changed` listener, and the "Manage downloads"
+panel lists every area under every basemap with its own basemap named on
+the row. A style with no vector source at all (SNOW-483's offline fallback,
+when the basemap's style document can't be fetched) paints nothing: there
+is no current basemap to filter to, and squares drawn there would be
+attributed to a basemap that is not being rendered.
 
 **On-map progress grid** (SNOW-569, since reworked as a tile grid) — alongside
 the roundel's own fill, the tiles being fetched are drawn over the map as
@@ -1438,9 +1473,8 @@ with a same-basemap RETRY (which re-counts bytes already on disk).
 
 The two roundels answer "is *this* area downloaded?" one area at a time.
 The **downloaded-tiles overlay** answers it for the whole map: one
-translucent square per tile actually present in the pinned cache, each
-coloured by the identity of the basemap it was downloaded under (see
-"Colour" above).
+translucent square per tile of the ACTIVE basemap actually present in the
+pinned cache, in that basemap's identity colour (see "Colour" above).
 
 **No longer a layers-menu toggle (SNOW-645).** It was originally a
 `data-overlay-key="downloaded"` row, off by default and persisted like
@@ -1453,14 +1487,16 @@ on (`window.pwaDownloadedOverlay.show()`, called from
 turn it off — an in-sheet switch ("Display on the map") is the only
 thing that calls `hide()` (see "Manage downloads" sheet below for why: the
 sheet covers the whole screen on mobile, so binding visibility to "sheet
-open" made the overlay unreachable there). Session-scoped, never
-persisted across a reload.
+open" made the overlay unreachable there). SNOW-656 then stopped `open()`
+calling `show()` as well, so the switch is the overlay's only writer — and
+what it sets is persisted across a reload, like the other three panels'
+switches (see "No longer a layers-menu toggle" above).
 
 Two layers, both installed with the regions source (not lazy) so a basemap
 swap rebuilds them with everything else: `cached-tiles-fill` and
 `cached-tiles-line`, over a `cached-tiles` source that `refreshDownloadedOverlay`
-fills from `cachedTilesFromURLs`, run once per distinct downloaded
-template (see "Colour" above for the multi-basemap read). Derived from
+fills from `cachedTilesFromURLs`, run against the active basemap's
+template (see "Colour" above). Derived from
 `BASEMAP_PINNED_CACHE` contents ALONE — no stored record of any download
 is involved — so it cannot drift from what is on disk: eviction, a
 basemap swap and Clear Site Data all change the answer, and all of them
@@ -1504,24 +1540,24 @@ readers outside this overlay are the roundel's own `done` probe and the
 manage sheet.
 
 **One `cache.keys()` pass per bucket.** The roundel probes one region and
-can afford `cache.match()`; this checks every tile the user has pinned,
-across every downloaded basemap, so it takes one pass over every per-area
-bucket's URLs (`pinnedBasemapCacheURLs`, unioned) and answers from that
-one set, run once per DISTINCT downloaded template (see "Colour" above).
+can afford `cache.match()`; this checks every tile the user has pinned, so
+it takes one pass over every per-area bucket's URLs
+(`pinnedBasemapCacheURLs`, unioned) and answers from that one set, matched
+against the active basemap's template (see "Colour" above).
 Never call it per frame — the pinned buckets together hold thousands of
-entries. It refreshes whenever `show()` runs — the sheet opening, or the
-in-sheet toggle being switched back on — on `snowdesk:basemap-changed`, on
+entries. It refreshes whenever `show()` runs — the panel's switch being turned on —
+at boot when the stored preference is on, on `snowdesk:basemap-changed`, on
 `snowdesk:regions-loaded`, when a download settles (both controls call
 `window.pwaDownloadedOverlay?.refresh()` beside their existing
 `pwaLayerSyncStatus.refresh()`), and on `visibilitychange` — tiles can be
 evicted while the tab is backgrounded, and a square for a tile that is no
 longer cached is worse than no square.
 
-**Every basemap at once (SNOW-645)**, unlike the roundels: the overlay
-used to key off the active basemap's tile template alone, so downloading
-on Standard and switching to Swisstopo emptied it. It now paints every
-downloaded basemap's tiles simultaneously, each in its own identity
-colour — see "Colour" above.
+**The active basemap only**, like the roundels: an area downloaded under
+another basemap is not drawn, and switching basemap with the overlay on
+repaints it with the new basemap's areas rather than turning it off. This
+reverses SNOW-645's "every basemap at once" — see "Colour" above for both
+the reason and what went with it.
 
 **No sync dot** — SNOW-645 removed the layers-menu row this overlay used
 to live in (and the `pinned-tiles` resource kind /
@@ -1546,10 +1582,13 @@ budget control itself.
 (SNOW-645, reworked twice more; SNOW-656).** Opening the sheet used to call
 `window.pwaDownloadedOverlay.show()` unconditionally, so the overlay appeared
 the moment the sheet did. SNOW-656 removed that: the squares and the danger
-choropleth are now mutually exclusive, so the auto-show meant merely OPENING
-this sheet took the choropleth off the map and unchecked the layers menu's
-Bulletins row — an implicit action undoing an explicit one, in exchange for
-discoverability. The overlay now starts off and waits to be asked.
+choropleth were mutually exclusive at the time, so the auto-show meant merely
+OPENING this sheet took the choropleth off the map and dropped the fill
+control to 0 — an implicit action undoing an explicit one, in exchange for
+discoverability. That exclusivity is gone (SNOW-663), but the auto-show has
+not come back: an implicit repaint of the map is still a poor trade for
+discoverability. The overlay waits to be asked, and comes back at whatever
+the user last asked for.
 
 Closing the sheet does NOT call `.hide()` either — the
 `#map-downloads-overlay-toggle` switch (see "The overlay switch" below) is
@@ -1559,8 +1598,10 @@ reflects the overlay's real state rather than one it just imposed. That is
 `isEnabled()`, not `isVisible()`, since SNOW-658's review split the bridge's
 two questions: `isVisible()` now answers from the squares MapLibre is
 actually drawing (the roundel ring's question), while `isEnabled()` is the
-session's inspection-mode flag `show()`/`hide()` write — what this switch
-states the user asked for.
+persisted preference `show()`/`hide()` write — what this switch states the
+user asked for. The two disagree legitimately when the overlay is on and the
+active basemap has nothing downloaded: the switch reads ON over an empty
+source.
 
 **Layout — "1c: grouped by kind · budget in the header · CTA in its
 group" (SNOW-645, Hugo's design).** Top to bottom:

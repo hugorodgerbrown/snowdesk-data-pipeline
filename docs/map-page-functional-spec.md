@@ -105,13 +105,19 @@ the region.
 
 **Why the geography and the bulletin fill are separate** (SNOW-656). The
 geography is fixed and date-independent; the data painted onto it changes with
-every scrubbed day. Separating them lets the borders stay up throughout, since
-they never interfere with anything, while the infill can yield to the
-downloaded-areas overlay — which paints translucent squares over the very same
-polygons and is unreadable on top of a coloured fill. **The fill and the
-downloads panel's own map switch ("Display on the map") can never both be
-on**, and the two controls mirror each other:
-[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md).
+every scrubbed day. One control for both was a control for two different
+things — and it meant the borders, which interfere with nothing, could not
+stay up while the infill came off.
+
+The infill's original reason to come off was the downloaded-areas overlay,
+which paints over the very same polygons: **the fill and the downloads
+panel's "Display on the map" switch could not both be on**, and the two
+controls mirrored each other. That is no longer true. SNOW-663 made the
+download squares a hatch the danger colour reads through, so both can be on
+at once and neither control moves the other. The reversed decision, and what
+of its mechanism survives:
+[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md)
+(historical).
 
 **The fill's strength is the user's choice, in five steps** — 0, 25%, 50%
 (default), 75%, 100% — from a roundel in the bottom-right stack whose flyout
@@ -540,10 +546,16 @@ roundel's accessible label ("Your favourites — shown on the map"). One
 signal, one meaning, on all of them.
 
 It is live rather than a snapshot: the rim follows the panel switch, and
-also follows anything else that takes an overlay off the map — turning
-Bulletins on switches the downloaded-area squares off, because the two
-paint the same polygons, and the roundel says so without the panel being
-open. It survives a basemap switch, which re-draws every layer.
+also follows anything else that takes an overlay off the map — positioning
+a pin clears every overlay for the duration, and the roundels say so
+without any panel being open. It survives a basemap switch, which re-draws
+every layer; the downloads rim stays lit across one, since the overlay
+repaints with the new basemap's areas rather than switching off.
+
+(Turning Bulletins on used to be one of those "anything elses" — it
+switched the downloaded-area squares off, the two paint the same polygons.
+SNOW-663 ended that: the squares are a hatch the danger colour reads
+through, and the two overlays are now independent.)
 
 **The rim states what is drawn, not what was asked for.** Switch an
 overlay on with no data to draw — offline, first enable, a fetch that
@@ -593,7 +605,12 @@ paint the ACTIVE basemap's colour, never a basemap some earlier download
 happened to use — a control sitting on the Swisstopo map is never painted
 in Standard's colour, whatever is stored underneath it. Per-area basemap
 identity is the "Manage downloads" sheet's job, one tap away. The
-per-region download roundel goes one step further: switch basemap after
+downloaded-areas overlay follows the same rule: with "Display on the map"
+on, it draws the ACTIVE basemap's downloaded tiles in that basemap's
+colour and no other basemap's, and switching basemap repaints it with the
+new one's areas rather than switching it off. Two basemaps' squares over
+the same ground would describe neither basemap's coverage. The per-region
+download roundel goes one step further: switch basemap after
 downloading a region and its roundel doesn't just go quiet — it shows a
 distinct "downloaded, but for another basemap" ring, in that OTHER
 basemap's colour, that a tap turns into a download for the basemap now

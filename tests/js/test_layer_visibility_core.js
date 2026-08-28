@@ -3,13 +3,22 @@
  * preference-vs-suppression state machine (SNOW-656).
  *
  * The four bullets in the ticket are a state machine, not a pair of
- * booleans, and the one that is easy to get wrong is the restore: turning
- * the downloaded-areas overlay OFF must return Bulletins to whatever it was
- * BEFORE, so a user who had already switched it off does not get it
- * switched back on for them. That falls out of never overwriting the
- * preference — which is exactly the property a test has to pin, because the
- * obvious implementation (flip the preference, remember the old one) passes
- * a casual read and fails this.
+ * booleans, and the one that is easy to get wrong is the restore: lifting a
+ * suppression must return Bulletins to whatever it was BEFORE, so a user who
+ * had already switched it off does not get it switched back on for them.
+ * That falls out of never overwriting the preference — which is exactly the
+ * property a test has to pin, because the obvious implementation (flip the
+ * preference, remember the old one) passes a casual read and fails this.
+ *
+ * The suppression these cases were written against was the downloaded-areas
+ * overlay's, and it is gone: SNOW-663 made the download squares a hatch the
+ * danger colour reads through, so the two layers coexist,
+ * `SUPPRESSION.DOWNLOADS` has no setter and was removed, and `choose()` —
+ * the transition that cleared it — went with it. The cases themselves are
+ * not about downloads, though: they are about what a suppression does to a
+ * preference, and they run against `EDIT_RESORTS`, the reason that remains.
+ * A second, non-enum reason appears in one case deliberately, to hold the
+ * multi-reason shape honest while only one mode uses it.
  *
  * `regionsFillLayout`'s four quadrants are here too. The fill is the map's
  * hit-test target, so the off step has to mean transparent rather than
@@ -49,26 +58,26 @@ describe('preference and suppression', () => {
   });
 
   it('is not effective while suppressed, whatever the preference', () => {
-    const state = core.suppress(core.create(0.5), core.SUPPRESSION.DOWNLOADS);
+    const state = core.suppress(core.create(0.5), core.SUPPRESSION.EDIT_RESORTS);
     expect(core.isEffective(state)).toBe(false);
   });
 
   it('keeps the preference intact through a suppress/unsuppress round trip', () => {
     const on = core.create(0.5);
     const restored = core.unsuppress(
-      core.suppress(on, core.SUPPRESSION.DOWNLOADS),
-      core.SUPPRESSION.DOWNLOADS,
+      core.suppress(on, core.SUPPRESSION.EDIT_RESORTS),
+      core.SUPPRESSION.EDIT_RESORTS,
     );
     expect(core.isEffective(restored)).toBe(true);
   });
 
   it('does NOT switch Bulletins on for a user who had already switched it off', () => {
-    // The restore case the ticket calls out: Show areas goes on and then off
-    // again, over a preference that was already at the off step.
+    // The restore case the ticket calls out: a mode takes the fill off the
+    // map and then ends, over a preference already at the off step.
     const off = core.create(0);
     const restored = core.unsuppress(
-      core.suppress(off, core.SUPPRESSION.DOWNLOADS),
-      core.SUPPRESSION.DOWNLOADS,
+      core.suppress(off, core.SUPPRESSION.EDIT_RESORTS),
+      core.SUPPRESSION.EDIT_RESORTS,
     );
     expect(core.isEffective(restored)).toBe(false);
     expect(restored.preference).toBe(0);
@@ -79,80 +88,68 @@ describe('preference and suppression', () => {
     // that restored a boolean would have to guess which step to come back at.
     const quarter = core.create(0.25);
     const restored = core.unsuppress(
-      core.suppress(quarter, core.SUPPRESSION.DOWNLOADS),
-      core.SUPPRESSION.DOWNLOADS,
+      core.suppress(quarter, core.SUPPRESSION.EDIT_RESORTS),
+      core.SUPPRESSION.EDIT_RESORTS,
     );
     expect(core.effectiveOpacity(restored)).toBe(0.25);
   });
 
   it('treats suppress and unsuppress as idempotent', () => {
     let state = core.create(0.5);
-    state = core.suppress(state, core.SUPPRESSION.DOWNLOADS);
-    state = core.suppress(state, core.SUPPRESSION.DOWNLOADS);
-    expect(state.suppressedBy).toEqual([core.SUPPRESSION.DOWNLOADS]);
-    state = core.unsuppress(state, core.SUPPRESSION.DOWNLOADS);
-    state = core.unsuppress(state, core.SUPPRESSION.DOWNLOADS);
+    state = core.suppress(state, core.SUPPRESSION.EDIT_RESORTS);
+    state = core.suppress(state, core.SUPPRESSION.EDIT_RESORTS);
+    expect(state.suppressedBy).toEqual([core.SUPPRESSION.EDIT_RESORTS]);
+    state = core.unsuppress(state, core.SUPPRESSION.EDIT_RESORTS);
+    state = core.unsuppress(state, core.SUPPRESSION.EDIT_RESORTS);
     expect(state.suppressedBy).toEqual([]);
   });
 
   it('stays suppressed while a second, independent reason is still in force', () => {
-    let state = core.suppress(core.create(0.5), core.SUPPRESSION.DOWNLOADS);
-    state = core.suppress(state, core.SUPPRESSION.EDIT_RESORTS);
-    state = core.unsuppress(state, core.SUPPRESSION.DOWNLOADS);
+    // `suppressedBy` is a LIST, and one mode currently uses it. That shape is
+    // the module's answer to "what happens when two things suppress at once",
+    // so it is worth holding even while only one enum member exists — the
+    // literal below stands in for whatever the next mode turns out to be.
+    const SOME_OTHER_MODE = 'some-other-mode';
+    let state = core.suppress(core.create(0.5), core.SUPPRESSION.EDIT_RESORTS);
+    state = core.suppress(state, SOME_OTHER_MODE);
+    state = core.unsuppress(state, core.SUPPRESSION.EDIT_RESORTS);
+    expect(state.suppressedBy).toEqual([SOME_OTHER_MODE]);
     expect(core.isEffective(state)).toBe(false);
   });
 
   it('never mutates the state it is given', () => {
     const original = core.create(0.5);
-    core.suppress(original, core.SUPPRESSION.DOWNLOADS);
-    core.choose(original, 0);
+    core.suppress(original, core.SUPPRESSION.EDIT_RESORTS);
+    core.setPreference(original, 0);
     expect(original.preference).toBe(0.5);
     expect(original.suppressedBy).toEqual([]);
   });
 });
 
-describe('setPreference is the mechanical write', () => {
+describe('setPreference is the only writer of the preference', () => {
   it('leaves every suppression in place, even when turning the preference on', () => {
-    // The boot seed and the basemap-swap re-seed both re-read the stored
-    // preference. Neither is a user action, so neither may clear the
-    // downloads suppression — doing so would reveal the choropleth under
-    // the download squares with nobody having asked for it.
-    const suppressed = core.suppress(core.create(0), core.SUPPRESSION.DOWNLOADS);
+    // Three callers now come through here — the boot seed, the basemap-swap
+    // re-seed, and the user's own click on the step control — and none of
+    // them may lift a suppression. The first two are not user actions at
+    // all; the third is the user saying what to show when the mode ENDS,
+    // not asking to leave it.
+    const suppressed = core.suppress(core.create(0), core.SUPPRESSION.EDIT_RESORTS);
     const next = core.setPreference(suppressed, 0.75);
     expect(next.preference).toBe(0.75);
-    expect(next.suppressedBy).toEqual([core.SUPPRESSION.DOWNLOADS]);
-    expect(core.isEffective(next)).toBe(false);
-  });
-});
-
-describe('mutual exclusion with the downloads overlay', () => {
-  it('turning Bulletins ON clears the downloads suppression', () => {
-    const suppressed = core.suppress(core.create(0), core.SUPPRESSION.DOWNLOADS);
-    const next = core.choose(suppressed, 0.5);
-    expect(next.suppressedBy).toEqual([]);
-    expect(core.isEffective(next)).toBe(true);
-  });
-
-  it('turning Bulletins OFF leaves the downloads suppression alone', () => {
-    const suppressed = core.suppress(core.create(0.5), core.SUPPRESSION.DOWNLOADS);
-    const next = core.choose(suppressed, 0);
-    expect(next.suppressedBy).toEqual([core.SUPPRESSION.DOWNLOADS]);
-  });
-
-  it('leaves resort-edit mode in force when Bulletins is turned on', () => {
-    // Edit mode is a mode the user is still in, not a competing view
-    // control — only the downloads exclusivity is a radio-ish pair.
-    const suppressed = core.suppress(core.create(0), core.SUPPRESSION.EDIT_RESORTS);
-    const next = core.choose(suppressed, 0.5);
     expect(next.suppressedBy).toEqual([core.SUPPRESSION.EDIT_RESORTS]);
     expect(core.isEffective(next)).toBe(false);
   });
 
-  it('allows both Bulletins and the downloads overlay to be off at once', () => {
-    // Not a radio pair: basemap plus borders, nothing else, is reachable.
-    const state = core.choose(core.create(0.5), 0);
-    expect(core.isEffective(state)).toBe(false);
-    expect(state.suppressedBy).toEqual([]);
+  it('is the only transition exported — `choose` is gone with the exclusivity', () => {
+    // `choose()` cleared SUPPRESSION.DOWNLOADS on the user's behalf, because
+    // the fill and the downloaded-areas overlay could not both be on. SNOW-663
+    // ended that (the squares are a hatch the danger colour reads through), so
+    // nothing sets that reason and `choose` did nothing `setPreference` does
+    // not. Pinned as an assertion because a re-added second writer of the
+    // preference is exactly the drift this module exists to prevent — see
+    // docs/decisions/bulletins-yield-to-downloaded-areas.md, marked historical.
+    expect(core.choose).toBeUndefined();
+    expect(core.SUPPRESSION.DOWNLOADS).toBeUndefined();
   });
 });
 
@@ -172,7 +169,7 @@ describe('regionsFillLayout', () => {
   });
 
   it('keeps the fill installed but transparent while suppressed', () => {
-    const suppressed = core.suppress(on(), core.SUPPRESSION.DOWNLOADS);
+    const suppressed = core.suppress(on(), core.SUPPRESSION.EDIT_RESORTS);
     expect(core.regionsFillLayout(true, suppressed)).toEqual({
       visibility: 'visible',
       opacity: 0,

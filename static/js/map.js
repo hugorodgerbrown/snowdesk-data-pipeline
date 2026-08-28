@@ -316,22 +316,23 @@
   const BULLETINS_CORE = self.pwaLayerVisibilityCore;
   let bulletinsVisibility = BULLETINS_CORE.create(overlayState.bulletins);
 
-  // SNOW-645 review, twice over: NOT persisted and NOT seeded from
-  // overlayState's boot loop or its basemap-swap re-seed below — see the
-  // comment on overlayState above for why 'downloaded' isn't a key there
-  // any more. Read by installRegionsLayers (initial layout.visibility),
-  // refreshDownloadedOverlay, and window.pwaDownloadedOverlay.isVisible()
-  // (the "Available offline" toggle INSIDE the "Manage downloads" sheet
-  // reads this, not a flag of its own, so the two can never drift);
-  // written only by show()/hide() on window.pwaDownloadedOverlay.
-  // map_downloads_manager.js's open() calls show() unconditionally, so
-  // opening the sheet always turns the overlay on — but hide() is now
-  // called ONLY from that in-sheet toggle, never from a close route: a
-  // sheet that covers the whole screen on mobile made "open = visible,
-  // closed = hidden" unusable there, so this is deliberately a
-  // session-scoped inspection mode that survives the sheet closing, not
-  // the sheet's own visibility echoed into a second variable.
-  let downloadedOverlayVisible = false;
+  // The downloaded-areas overlay's own state. Read by installRegionsLayers
+  // (initial layout.visibility), refreshDownloadedOverlay, and
+  // window.pwaDownloadedOverlay.isEnabled() (the "Display on the map"
+  // switch INSIDE the "Manage downloads" panel reads this, not a flag of
+  // its own, so the two can never drift); written only by show()/hide() on
+  // window.pwaDownloadedOverlay, which persist it alongside.
+  //
+  // PERSISTED, reversing SNOW-645's session-scoped inspection mode — see
+  // OVERLAY_STORAGE_KEY.downloads in map_state.js for why, and for why the
+  // key is a new name rather than SNOW-570's. It is still NOT a key of
+  // overlayState: that object's boot loop and its basemap-swap re-seed
+  // drive layer visibility through the install functions, and this overlay's
+  // two layers are installed from this variable directly. Keeping it out of
+  // overlayState is also what keeps a basemap swap from reaching in and
+  // closing the overlay out from under an open panel — the swap re-seeds
+  // overlayState wholesale, and this must survive it untouched.
+  let downloadedOverlayVisible = readBoolStorage(OVERLAY_STORAGE_KEY.downloads, false);
 
   // The bulletin-boundary layer (internal key ``l3``) is not an overlay the
   // user toggles — it is a companion to the choropleth, drawn whenever the
@@ -909,37 +910,33 @@
   // z14 — the same mark at both ends.
   const HATCH_CORE = self.pwaHatchCore;
 
-  // SNOW-645 review (Hugo's explicit call, overruling the plan's own
-  // non-goal, then widened again once the overlay itself was rebuilt to
-  // paint every basemap's downloads at once — see refreshDownloadedOverlay
-  // below): each tile now carries the identity colour of the basemap it
-  // was downloaded UNDER, not the active basemap. A single colour constant
-  // can no longer describe that, so this builds a MapLibre `match`
-  // expression instead, keyed off each tile feature's own `basemapKey`
-  // property (set by refreshDownloadedOverlay when it builds the
-  // FeatureCollection). basemapIdentityColour(null) — --color-sync-ok — is
-  // both the fallback arm (a keyless/unresolved basemap) and the colour
-  // used before any tiles have been probed at all, matching the
-  // established "green matching the sync dots" default for the common
-  // case (a legacy record, or nothing downloaded yet).
+  // The colour of the squares is the identity colour of the basemap they
+  // belong to — and, since the overlay shows the ACTIVE basemap's downloads
+  // and only those, that is one flat colour resolved per refresh rather
+  // than a per-feature expression.
   //
-  // @param {string[]} keys Distinct non-empty basemapKey values actually
-  //   present in the tile set right now.
-  // @returns {string|Array} A flat colour when there is nothing to match on
-  //   (no keys yet, e.g. at layer-creation time), or a full `match` array.
-  const downloadedTilesColourExpression = (keys) => {
-    const fallback = basemapIdentityColour(null);
-    if (!keys || !keys.length) return fallback;
-    const expr = ['match', ['get', 'basemapKey']];
-    for (const key of keys) expr.push(key, basemapIdentityColour(key));
-    expr.push(fallback);
-    return expr;
-  };
+  // It was a MapLibre `match` on each tile's own `basemapKey` for the life
+  // of SNOW-645, when the overlay painted every basemap's downloads at
+  // once. Hugo's call: two basemaps' squares over the same ground is a
+  // picture of nothing anyone asked for — "it should filter to the current
+  // basemap, so it never overlays downloads. If you are on Swisstopo and
+  // toggle on the downloads it shows Swisstopo downloads. If you then
+  // switch maps it honours the toggle and shows the new map downloads."
+  // With the tile set filtered in refreshDownloadedOverlay, every feature
+  // in it belongs to the active basemap by construction, so the expression
+  // had exactly one arm and the `basemapKey` property nothing left to
+  // discriminate. Both are gone.
+  //
+  // basemapIdentityColour(null) — --color-sync-ok — remains the answer for
+  // an unresolved basemap: the picker DOM not yet readable, or a template
+  // recorded before SNOW-645 wrote keys. That is the same "green matching
+  // the sync dots" default the layer is created with, before any tile has
+  // been probed at all.
 
   /**
    * The id of the hatch image for one basemap key. ``null``/unknown gets the
    * fallback image, painted in the same colour ``basemapIdentityColour``
-   * falls back to, so the two expressions agree arm for arm.
+   * falls back to, so the fill and the outline always agree.
    *
    * @param {?string} key A settings.BASEMAP_STYLES key, or null.
    * @returns {string} A map image id.
@@ -1000,24 +997,6 @@
     // hatch on screen — fine enough to read as texture, coarse enough that
     // the choropleth colour is visible between the strokes.
     map.addImage(id, buildHatchImage(basemapIdentityColour(key)), { pixelRatio: 2 });
-  };
-
-  /**
-   * The `fill-pattern` counterpart to ``downloadedTilesColourExpression`` —
-   * same match on each tile's own ``basemapKey``, resolving to that
-   * basemap's hatch image instead of its flat colour. Every image named
-   * here must already be registered; a missing one paints nothing at all.
-   *
-   * @param {string[]} keys Distinct non-empty basemapKey values present.
-   * @returns {string|Array} An image id, or a `match` expression.
-   */
-  const downloadedTilesPatternExpression = (keys) => {
-    const fallback = hatchImageId(null);
-    if (!keys || !keys.length) return fallback;
-    const expr = ['match', ['get', 'basemapKey']];
-    for (const key of keys) expr.push(key, hatchImageId(key));
-    expr.push(fallback);
-    return expr;
   };
 
   // SNOW-478: the text-font every overlay symbol layer we add uses. MapLibre
@@ -1287,11 +1266,11 @@
       source: 'cached-tiles',
       layout: { visibility: downloadedOverlayVisible ? 'visible' : 'none' },
       paint: {
-        // No tiles painted yet at (re)install time, so nothing to match on
-        // — the fallback hatch. refreshDownloadedOverlay repaints this with
-        // the real per-basemap match expression once it has something to
-        // key off.
-        'fill-pattern': downloadedTilesPatternExpression([]),
+        // No tiles painted yet at (re)install time, and the active basemap's
+        // template is not necessarily resolvable this early — the fallback
+        // hatch. refreshDownloadedOverlay repaints this in the active
+        // basemap's own identity colour as soon as it can read one.
+        'fill-pattern': hatchImageId(null),
         'fill-opacity': CACHED_TILES_OPACITY,
       },
     });
@@ -1305,7 +1284,7 @@
         'line-cap': 'round',
       },
       paint: {
-        'line-color': downloadedTilesColourExpression([]),
+        'line-color': basemapIdentityColour(null),
         'line-width': 0.75,
         // Same reasoning as the download grid's own gridlines: a few
         // thousand sub-pixel outlines read as a mesh, so they fade out as
@@ -3634,15 +3613,17 @@
   // Bridge for basemapPickerInit, mirroring the snowdesk:country-toggle one
   // below: the picker owns the click, this IIFE owns the state.
   //
-  // The downloads half of the exclusivity is gone — raising the step no
-  // longer switches the squares off, because the hatch and the infill are
-  // legible together. ``choose`` is still the transition used rather than
-  // ``setPreference``: it clears a DOWNLOADS suppression nothing sets any
-  // more (a harmless no-op) and, unlike the mechanical write, it is the one
-  // that means "the user just chose this".
+  // The downloads half of the exclusivity is gone (SNOW-663) — raising the
+  // step no longer switches the squares off, because the hatch and the infill
+  // are legible together. This used to call ``choose``, the transition that
+  // cleared the DOWNLOADS suppression on the user's behalf; with nothing
+  // setting that reason it did nothing ``setPreference`` does not, and it has
+  // been removed rather than left as a second name for one operation.
+  // Suppressions are deliberately untouched here: resort-edit mode is a mode
+  // the user is still in, and picking a step says what to show when it ends.
   document.addEventListener('snowdesk:bulletins-step', (e) => {
     const next = BULLETINS_CORE.nearestStep(e.detail && e.detail.step);
-    bulletinsVisibility = BULLETINS_CORE.choose(bulletinsVisibility, next);
+    bulletinsVisibility = BULLETINS_CORE.setPreference(bulletinsVisibility, next);
     overlayState.bulletins = bulletinsVisibility.preference;
     writeStorage(OVERLAY_STORAGE_KEY.bulletins, String(overlayState.bulletins));
     applyBulletinsVisibility();
@@ -3684,12 +3665,14 @@
   // ==== SNOW-570/SNOW-587: the downloaded-tiles overlay ====
   // (SNOW-645 review: no longer a togglable layers-menu row — see
   // downloadedOverlayVisible's own declaration above for why. SNOW-645
-  // second review: it is now an "Available offline" toggle INSIDE the
-  // "Manage downloads" sheet, not the sheet's own open/closed state — a
+  // second review: it is now a "Display on the map" switch INSIDE the
+  // "Manage downloads" panel, not the sheet's own open/closed state — a
   // sheet that is bottom-docked and full-width on mobile would otherwise
   // cover the very squares it draws, making the overlay unreachable on
-  // the platform that needs offline maps most. Opening the sheet still
-  // turns it on; closing the sheet no longer turns it off.)
+  // the platform that needs offline maps most. Neither opening nor closing
+  // the sheet touches the overlay now — SNOW-656 also stopped open() calling
+  // show() — and the switch's setting is persisted across reloads like the
+  // other three panels'.)
   //
   // Answers "where is the basemap I already have?" for the whole map at
   // once, where the download roundels only ever answer it for the one
@@ -3710,19 +3693,33 @@
   // (pwaBasemapDownloadCore.cachedTilesFromURLs). Never call it per frame —
   // the pinned buckets together hold thousands of entries.
   //
-  // EVERY BASEMAP AT ONCE (SNOW-645 review — widened from "the ACTIVE
-  // basemap only", the roundels' own scope). Downloading under Standard and
-  // switching to Swisstopo used to empty the overlay outright; a user with
-  // areas under more than one basemap wants to see all of them, so this now
-  // reads basemapDownloadedTemplates() (static/js/map_basemap_downloads.js)
-  // for the DISTINCT (template, basemapKey) pairs actually recorded, runs
-  // cachedTilesFromURLs ONCE PER TEMPLATE (still a real Cache Storage read
-  // per tile — "probed, never stored" above still holds, this is not a
-  // switch to painting stored record geometry), and tags every resulting
-  // feature with the basemapKey it came from. downloadedTilesColourExpression
-  // (above) turns whatever keys are actually present into a MapLibre `match`
-  // paint expression, so each area's tiles render in ITS OWN basemap's
-  // identity colour regardless of which basemap is active right now.
+  // THE ACTIVE BASEMAP ONLY — the roundels' own scope, and Hugo's call
+  // after living with the alternative. SNOW-645 review widened this to
+  // paint EVERY downloaded basemap at once, each in its own identity
+  // colour, because switching from Standard to Swisstopo emptied the
+  // overlay outright and that read as data loss. The cure was worse: two
+  // basemaps' squares stack over the same ground, so what the map showed
+  // was neither basemap's coverage. "It should filter to the current
+  // basemap, so it never overlays downloads. If you are on Swisstopo and
+  // toggle on the downloads it shows Swisstopo downloads. If you then
+  // switch maps it honours the toggle and shows the new map downloads."
+  //
+  // The emptying-out that started all this is no longer a silent one: the
+  // switch is persisted and stays on across the swap, the overlay repaints
+  // from the snowdesk:basemap-changed listener below, and the "Manage
+  // downloads" panel lists every area under every basemap, each row naming
+  // the basemap its record was written under — so an area that is not drawn
+  // right now is still one tap from being accounted for.
+  //
+  // So this reads basemapDownloadedTemplates()
+  // (static/js/map_basemap_downloads.js) for the DISTINCT templates
+  // actually recorded, keeps the one matching the live style's own tile
+  // template, and runs cachedTilesFromURLs against that alone (still a real
+  // Cache Storage read per tile — "probed, never stored" above still holds,
+  // this is not a switch to painting stored record geometry). Every square
+  // it paints therefore belongs to the basemap under it, which is what lets
+  // the colour be one flat value per refresh rather than a per-feature
+  // expression.
 
   // Coalesces overlapping refreshes: several of the signals below can land
   // together (a download settling also refreshes the sync dashboard, which
@@ -3749,8 +3746,9 @@
   };
 
   /**
-   * Re-derive which tiles are cached, across EVERY downloaded basemap, and
-   * paint the overlay.
+   * Re-derive which of the ACTIVE basemap's tiles are cached, and paint the
+   * overlay. Areas downloaded under any other basemap are not drawn — see
+   * the block comment above.
    *
    * A no-op while the overlay is switched off: nothing is on screen to be
    * wrong, and the work is a cache scan per template. Every path that turns
@@ -3773,25 +3771,47 @@
         _refreshDownloadedWhenStyleSettles();
         return;
       }
+      const activeTemplate = activeBasemapTileTemplate(map);
+      if (!activeTemplate) {
+        // The style is settled (guarded above) but declares no vector tile
+        // source — SNOW-483's inline fallback style, swapped in when the
+        // basemap's own style document can't be fetched. There is no basemap
+        // on screen, so there is no "current basemap" to filter to, and
+        // squares drawn here would be attributed to a basemap that is not
+        // being rendered.
+        //
+        // Reachable while downloads exist: every download pins the style
+        // document of the basemap it ran under, so a user offline on a
+        // basemap they HAVE downloaded still gets a real style and real
+        // squares. It is the other case — offline, having switched to a
+        // basemap they never downloaded under — that lands here, and under
+        // this overlay's rule the answer for that basemap is "nothing"
+        // either way. The "Manage downloads" panel still accounts for every
+        // area, on every basemap, offline included.
+        const emptySource = map.getSource('cached-tiles');
+        if (emptySource) emptySource.setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
       const [cached, templates] = await Promise.all([
         pinnedBasemapCacheURLs(),
         basemapDownloadedTemplates(),
       ]);
 
-      // One cachedTilesFromURLs pass per DISTINCT template — still a real
-      // Cache Storage read per tile, never a read of stored record
-      // geometry (see the block comment above). Every resulting feature is
-      // tagged with the basemapKey its template belongs to, so the paint
-      // expression built below can colour each area's tiles independently.
+      // ONE cachedTilesFromURLs pass, against the ACTIVE basemap's template
+      // alone. Still a real Cache Storage read per tile, never a read of
+      // stored record geometry (see the block comment above).
+      //
+      // `basemapDownloadedTemplates()` returns every downloaded basemap's
+      // template; the ones that are not on screen are dropped here rather
+      // than in that reader, which several other callers share.
+      const activeKey = activeBasemapKey();
       const features = [];
-      const presentKeys = new Set();
-      for (const { template, basemapKey } of templates) {
-        const tiles = core.cachedTilesFromURLs(template, cached, CACHED_TILES_ZOOM);
-        if (basemapKey) presentKeys.add(basemapKey);
-        for (const tile of tiles) {
+      for (const { template } of templates) {
+        if (template !== activeTemplate) continue;
+        for (const tile of core.cachedTilesFromURLs(template, cached, CACHED_TILES_ZOOM)) {
           features.push({
             type: 'Feature',
-            properties: { basemapKey: basemapKey || '' },
+            properties: {},
             geometry: core.bboxPolygon(core.tileBounds(tile.z, tile.x, tile.y)),
           });
         }
@@ -3803,21 +3823,16 @@
       // layer), but this call is also the one show()/hide() and a settling
       // download themselves trigger — with no re-add — and relying on
       // re-add alone would leave an already-installed pair of layers
-      // holding whichever keys were present at the LAST refresh, drifting
-      // the moment a new basemap's downloads appear or an old one's are
-      // evicted entirely.
-      const keys = Array.from(presentKeys);
-      const colourExpr = downloadedTilesColourExpression(keys);
+      // painted in the colour of the basemap that was active at the LAST
+      // refresh.
       if (map.getLayer('cached-tiles-fill')) {
-        // Every arm of the pattern expression has to resolve to an image the
-        // style is already holding, so the images come first.
-        for (const key of keys) ensureHatchImage(key);
-        map.setPaintProperty(
-          'cached-tiles-fill', 'fill-pattern', downloadedTilesPatternExpression(keys),
-        );
+        // A `fill-pattern` naming an image the style is not holding paints
+        // nothing at all, so the image comes first.
+        ensureHatchImage(activeKey);
+        map.setPaintProperty('cached-tiles-fill', 'fill-pattern', hatchImageId(activeKey));
       }
       if (map.getLayer('cached-tiles-line')) {
-        map.setPaintProperty('cached-tiles-line', 'line-color', colourExpr);
+        map.setPaintProperty('cached-tiles-line', 'line-color', basemapIdentityColour(activeKey));
       }
 
       const tileSource = map.getSource('cached-tiles');
@@ -3868,10 +3883,14 @@
    * stopped open() calling show(); that stays, since opening a sheet should
    * not repaint the map on its own.
    *
+   * The choice is persisted here and restored at boot, the same as the other
+   * three panel switches — see downloadedOverlayVisible's own declaration.
+   *
    * @returns {Promise<void>}
    */
   const showDownloadedOverlay = () => {
     downloadedOverlayVisible = true;
+    writeStorage(OVERLAY_STORAGE_KEY.downloads, 'true');
     for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
     }
@@ -3891,18 +3910,21 @@
    */
   const hideDownloadedOverlay = () => {
     downloadedOverlayVisible = false;
+    writeStorage(OVERLAY_STORAGE_KEY.downloads, 'false');
     for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
     }
     announceDownloadedOverlay();
   };
 
-  // Any downloaded basemap can gain or lose tiles while the overlay is on —
-  // a lazy country load brings regions whose download state has never been
-  // probed, and a basemap swap can change which template is active without
-  // changing what is recorded (irrelevant now the overlay spans every
-  // basemap, but the source geometry itself is re-added by setStyle either
-  // way, so a refresh is still needed to repopulate it).
+  // The tile set can change under a switched-on overlay — a lazy country
+  // load brings regions whose download state has never been probed, and a
+  // basemap swap changes which template is the active one, which is now
+  // exactly what decides WHICH downloads are drawn. The swap listener is
+  // therefore load-bearing rather than housekeeping: it is what makes the
+  // switch survive a basemap change and come back showing the new basemap's
+  // areas. (setStyle also re-adds the source geometry empty, so a refresh
+  // would be needed to repopulate it either way.)
   document.addEventListener('snowdesk:basemap-changed', () => refreshDownloadedOverlay());
   document.addEventListener('snowdesk:regions-loaded', () => refreshDownloadedOverlay());
 
@@ -3914,13 +3936,12 @@
   // SNOW-645 review (Hugo's second call — the first version of this bridge
   // bound visibility to the sheet being OPEN, full stop; that made the
   // overlay unreachable on mobile, where the sheet is bottom-docked and
-  // full-width, covering the very squares it would have drawn): opening the
-  // sheet still turns the overlay ON (map_downloads_manager.js's open()
-  // calls show()), but CLOSING the sheet no longer turns it off — the
-  // in-sheet "Available offline" toggle is the only thing that calls
-  // hide(), and it is a genuine session-scoped inspection mode: close the
-  // sheet with it on, look at the map, reopen the always-on-screen roundel
-  // to switch it off again. Both reads below are functions, not plain frozen
+  // full-width, covering the very squares it would have drawn): neither
+  // opening nor closing the sheet touches the overlay any more. The panel's
+  // "Display on the map" switch is the only caller of show()/hide(), and
+  // what it sets is a PERSISTED preference like the other three panels' —
+  // close the sheet with it on, look at the map, come back tomorrow and it
+  // is still on. Both reads below are functions, not plain frozen
   // properties, since what they answer changes after this object is built.
   //
   // SNOW-658 review: ``isVisible()`` reads the SQUARES, not the flag that
@@ -3928,10 +3949,11 @@
   // panel-driven bridges below for why the pair exists. The flag and the
   // paint agree everywhere show()/hide() are the only writers, which was the
   // whole of this overlay's life until placement focus (which clears every
-  // app layer off the map without touching any bridge). ``isEnabled()``
-  // publishes the flag itself — the inspection mode, this overlay's
-  // equivalent of the other two's persisted preference — which is what the
-  // in-sheet "Display on the map" switch reads on every open.
+  // app layer off the map without touching any bridge). They also disagree,
+  // legitimately, while the overlay is on and the active basemap has no
+  // downloads: the switch reads ON (the preference took) over an empty
+  // source. ``isEnabled()`` publishes the flag itself, which is what the
+  // in-sheet switch reads on every open.
   window.pwaDownloadedOverlay = Object.freeze({
     refresh: refreshDownloadedOverlay,
     show: showDownloadedOverlay,
@@ -4016,9 +4038,10 @@
   // and conflating them was the defect this pair of methods removes. ``isVisible()`` is "these layers
   // are drawn on the map right now" — read off MapLibre, never off a flag.
   // ``isEnabled()`` is "the user asked for this overlay" — the persisted
-  // preference (or, for downloads, the session's inspection mode), which is
-  // what decides what to restore at boot and what the panel switch shows as
-  // its own checked state on open.
+  // preference, which is what decides what to restore at boot and what the
+  // panel switch shows as its own checked state on open. All four are
+  // persisted now; downloads was the session-scoped exception until its
+  // switch was found to forget across a reload.
   //
   // The two can legitimately disagree, and the case they disagree in is the
   // one that matters: enable favourites offline with nothing cached and the
@@ -4337,6 +4360,18 @@
     // styledata path running these two the other way round.
     installSlopeLayer();
     installRegionsLayers(geojson);
+    // The downloaded-areas overlay is a persisted preference now, so a
+    // reload with it switched on has to arrive with the squares ON the map.
+    // installRegionsLayers has just created the two layers VISIBLE (it reads
+    // downloadedOverlayVisible for their layout), but visible layers over an
+    // empty source paint nothing — only a refresh fills it. The other paths
+    // that fill it are all reactions to something happening later (a basemap
+    // swap, a lazy country load, a settling download, the switch itself), and
+    // a boot where none of those fires is exactly the case being fixed. The
+    // call is free when the overlay is off — refreshDownloadedOverlay returns
+    // immediately — and self-retries on MapLibre idle if the style is not
+    // settled enough to resolve a tile template yet.
+    refreshDownloadedOverlay();
     // SNOW-235: installOverlayLayers / installResortsLayer are no longer
     // called here; they run inside ensureOverlayLoaded when each tier is
     // first requested. The styledata re-install handler below is
