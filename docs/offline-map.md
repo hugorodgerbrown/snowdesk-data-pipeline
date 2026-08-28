@@ -1979,7 +1979,12 @@ The worker holds one value, `_networkMode` in `static/js/sw.js`, which decides
 whether **read** paths call the network at all. `static/js/pwa_offline.js`
 mirrors it, persists it to IndexedDB `meta:app` under `network.mode`, and
 re-asserts it to the worker on boot (a worker terminated while idle comes back
-in `auto` having forgotten). Why the read paths latch at all:
+in `auto` having forgotten). Since SNOW-748 the worker also reads that row for
+itself on startup (`_hydrateNetworkMode`), recovering a user-FORCED mode with
+no page to push it — a recycled worker was otherwise back on the network with
+the header toggle still showing offline. A persisted auto-latch is deliberately
+not recovered that way. Why the read paths latch at all, and why the two modes
+part company here:
 [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md).
 
 | Mode | Set by | Read paths | Probed? | Ends when |

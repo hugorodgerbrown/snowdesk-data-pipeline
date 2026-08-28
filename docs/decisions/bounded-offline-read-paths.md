@@ -152,19 +152,53 @@ the header said the app was offline.
 
 ## Durability
 
-The mode is mirrored to `meta:app` under `network.mode` and **re-asserted by
-the page on boot**, rather than read by the worker on its own fetch path. A
-worker terminated while idle comes back in `auto` having forgotten the latch;
-re-asserting restores it, at the cost of one message instead of an IndexedDB
-read per navigation. If the re-assertion is lost, the latch simply re-trips
-within about nine seconds.
+The mode is mirrored to `meta:app` under `network.mode`, and it is restored by
+**two** paths — which one applies depends on which mode it is.
 
-SNOW-748: the re-assertion carries **which** offline mode, not just that there
-was one. A `offline-forced` row re-asserted as `offline` would hand the worker
-a latch, and the probe that comes with it would end the user's choice on the
-next page load. Durability is also the whole difference between a setting and a
-gesture here — unlike a latch, nothing re-establishes a forced mode if the row
-is lost.
+**The page re-asserts on boot.** `pwa_offline.js` reads the row and posts it to
+the worker, carrying *which* offline mode it was: an `offline-forced` row
+re-asserted as `offline` would hand the worker a latch, and the probe that
+comes with it would end the user's choice on the next page load. This is the
+fast path, and the only one that restores an auto-latch.
+
+**The worker re-reads the row itself** (`_hydrateNetworkMode`, SNOW-748), once
+per worker lifetime, memoised in a single promise that every read-path mode
+decision awaits — `_shouldUseNetwork()` and `_warmCache`'s refusal. The earlier
+version of this document said the worker never read the row on its own, and
+that was the bug: `_networkMode` is module scope, Chrome terminates an idle
+worker after about thirty seconds, and a **user-forced** mode was therefore
+silently lost. The restarted worker came back in `auto`, resumed using the
+network, and fired no `online`/`offline` event at all — so nothing corrected
+the header toggle, which went on showing `aria-pressed="true"` over an app that
+was back on the wire. Reproduced twice in a browser and confirmed with an
+instrumented run: `workerMode: "auto"`, `persistedUserChoice: "offline-forced"`,
+`pageIsOnline: true`, no interface events. It survived review because polling
+the worker to check on it is exactly what keeps it from being recycled.
+
+Recovery cannot depend on a page being there to push the mode, so the worker
+recovers it. This is the same worker-side IndexedDB read `_currentPrincipal()`
+has always done on the navigation path, with the same shape: `try`/`finally`
+`db.close()`, and fail-safe to `auto` on any error, so a DB the worker cannot
+read never wedges it offline. Once hydration resolves, the recovered mode is
+published to every client, so a page that was open across the restart resyncs
+its toggle rather than continuing to show a stale one.
+
+**Only `offline-forced` is recovered this way.** A persisted `offline` is the
+worker's own inference from three read-path timeouts, and by the time a
+recycled worker reads it back, the radio it was inferred from may have been
+alive for hours. Restoring it would strand the user offline on expired
+evidence, with nothing to clear it but a probe on a backoff that reaches five
+minutes; declining to restore it costs a re-latch within about nine seconds if
+the radio really is still dead. Detection is cheap and self-correcting here,
+and restoration is not. A forced mode has no evidence to expire — it is the
+user's standing instruction, and only the user ends it. Durability is also the
+whole difference between a setting and a gesture: unlike a latch, nothing
+re-establishes a forced mode if the row is lost.
+
+A live page's `network-mode` message outranks the row, exactly as an explicit
+`register-basemap-origins` message outranks `_hydrateBasemapOrigins`. The row
+is only as fresh as its last write, so a user pressing "use the network again"
+while the read is in flight must not be forced offline again by it.
 
 ## Consequences
 
