@@ -3613,15 +3613,17 @@
   // Bridge for basemapPickerInit, mirroring the snowdesk:country-toggle one
   // below: the picker owns the click, this IIFE owns the state.
   //
-  // The downloads half of the exclusivity is gone — raising the step no
-  // longer switches the squares off, because the hatch and the infill are
-  // legible together. ``choose`` is still the transition used rather than
-  // ``setPreference``: it clears a DOWNLOADS suppression nothing sets any
-  // more (a harmless no-op) and, unlike the mechanical write, it is the one
-  // that means "the user just chose this".
+  // The downloads half of the exclusivity is gone (SNOW-663) — raising the
+  // step no longer switches the squares off, because the hatch and the infill
+  // are legible together. This used to call ``choose``, the transition that
+  // cleared the DOWNLOADS suppression on the user's behalf; with nothing
+  // setting that reason it did nothing ``setPreference`` does not, and it has
+  // been removed rather than left as a second name for one operation.
+  // Suppressions are deliberately untouched here: resort-edit mode is a mode
+  // the user is still in, and picking a step says what to show when it ends.
   document.addEventListener('snowdesk:bulletins-step', (e) => {
     const next = BULLETINS_CORE.nearestStep(e.detail && e.detail.step);
-    bulletinsVisibility = BULLETINS_CORE.choose(bulletinsVisibility, next);
+    bulletinsVisibility = BULLETINS_CORE.setPreference(bulletinsVisibility, next);
     overlayState.bulletins = bulletinsVisibility.preference;
     writeStorage(OVERLAY_STORAGE_KEY.bulletins, String(overlayState.bulletins));
     applyBulletinsVisibility();

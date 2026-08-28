@@ -939,18 +939,22 @@ given to a control that no longer exists — reading it back would switch the
 overlay on at boot for a user whose last actual instruction was addressed
 to something else. It stays dead and unread.
 
-**And it is mutually exclusive with the bulletin fill (SNOW-656).** The
-squares are translucent and are drawn over the same polygons the danger
-choropleth fills, so the two together are unreadable. Turning "Show areas on
-the map" on therefore drops the bulletin-fill control (`#map-fill-toggle`'s
-flyout) to its 0 step, and turning it off restores the exact step the user had;
-choosing any step above 0 switches the squares off. The two controls visibly
-mirror each other, so the colour never just goes missing. `show()`/`hide()` are the single choke point — they are
-already the only writers of this overlay's visibility, so every caller
-inherits the lockstep — and the binding is deliberately to THAT visibility
-rather than to the sheet's open/closed lifecycle, for exactly the reason the
-paragraph above gives. Full rule:
-[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md).
+**It shares the map with the bulletin fill (SNOW-663).** It did not always:
+the squares were a second translucent tint over the very polygons the danger
+choropleth fills, unreadable together, so SNOW-656 made the two mutually
+exclusive — "Display on the map" dropped the fill control to its 0 step and
+any step above 0 switched the squares off. SNOW-663 changed the MARK instead.
+The squares are a 45-degree hatch now (`static/js/hatch_core.js`, one image
+per basemap identity colour at a fixed screen-space period), a third of the
+area in hard strokes with the choropleth's own colour showing through the
+rest — the way an atlas draws one area layer over another. A hatch makes no
+colour claim, so neither control touches the other's state any more:
+`show()`/`hide()` suppress nothing, and raising the step switches nothing
+off. "Which days are dangerous" and "which areas do I have offline" are
+different questions and belong on screen together. The decision this
+reverses, and the parts of its mechanism that survive:
+[`decisions/bulletins-yield-to-downloaded-areas.md`](decisions/bulletins-yield-to-downloaded-areas.md)
+(historical).
 
 **The active basemap's downloads, in that basemap's colour.** This rule
 has moved twice. It began as the active basemap alone; SNOW-645's review
@@ -1578,10 +1582,13 @@ budget control itself.
 (SNOW-645, reworked twice more; SNOW-656).** Opening the sheet used to call
 `window.pwaDownloadedOverlay.show()` unconditionally, so the overlay appeared
 the moment the sheet did. SNOW-656 removed that: the squares and the danger
-choropleth are now mutually exclusive, so the auto-show meant merely OPENING
-this sheet took the choropleth off the map and unchecked the layers menu's
-Bulletins row — an implicit action undoing an explicit one, in exchange for
-discoverability. The overlay now starts off and waits to be asked.
+choropleth were mutually exclusive at the time, so the auto-show meant merely
+OPENING this sheet took the choropleth off the map and dropped the fill
+control to 0 — an implicit action undoing an explicit one, in exchange for
+discoverability. That exclusivity is gone (SNOW-663), but the auto-show has
+not come back: an implicit repaint of the map is still a poor trade for
+discoverability. The overlay waits to be asked, and comes back at whatever
+the user last asked for.
 
 Closing the sheet does NOT call `.hide()` either — the
 `#map-downloads-overlay-toggle` switch (see "The overlay switch" below) is

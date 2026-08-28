@@ -78,11 +78,13 @@ const OVERLAY_STORAGE_KEY = {
   l4: 'snowdesk.map.overlay.l4',
   // SNOW-656: the "Bulletins" row — regions-fill (the danger choropleth) and
   // bulletin-groupings-line. Unlike the micro-region geography these are
-  // DATE-BOUND, and they are mutually exclusive with the downloads sheet's
-  // the downloads panel's "Display on the map" (both paint the same
-  // polygons). This key stores
-  // the user's PREFERENCE only; the exclusivity is a session-scoped
-  // suppression on top of it — see static/js/layer_visibility_core.js.
+  // DATE-BOUND. They were mutually exclusive with the downloads panel's
+  // "Display on the map" — both paint the same polygons — until SNOW-663
+  // made the download squares a hatch the danger colour reads through; the
+  // two overlays are independent now, and nothing suppresses this one but
+  // staff resort-edit mode. This key stores the user's PREFERENCE only; a
+  // suppression sits on top of it, unpersisted — see
+  // static/js/layer_visibility_core.js.
   //
   // A device that has never seen this key seeds it from 'l4' exactly once
   // (seedFromLegacy), so an existing 'l4=false' comes back with both rows

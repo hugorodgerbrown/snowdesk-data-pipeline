@@ -58,8 +58,14 @@ colours, and can dial the fill up to 1 to get the old constancy back.
   reads stronger than its neighbours at every step rather than at a fixed
   value that could fall below the resting one.
 - **The step is not a visibility.** It is a *preference*, AND-ed with any
-  active suppression — see
-  [`bulletins-yield-to-downloaded-areas.md`](bulletins-yield-to-downloaded-areas.md).
+  active suppression — a mode that overrides it for as long as the mode
+  lasts, and gives back the exact step when it ends. Staff resort-edit mode
+  is the only one
+  (`SUPPRESSION.EDIT_RESORTS`, `static/js/layer_visibility_core.js`). The
+  downloaded-areas overlay was the other until SNOW-663 made its squares a
+  hatch the danger colour reads through:
+  [`bulletins-yield-to-downloaded-areas.md`](bulletins-yield-to-downloaded-areas.md)
+  records that reversal and is historical.
 
 **Unresolved.** No single step suits all five basemaps: the darker ones wash
 the colours out at 0.5 in a way openfreemap does not. Per-basemap defaults

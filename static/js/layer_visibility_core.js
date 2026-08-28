@@ -9,7 +9,11 @@
  * split that into two rows, **Micro regions** (the boundary and its label)
  * and **Bulletins** (the coloured infill and the dissolved bulletin
  * boundary), because the downloaded-areas overlay and the danger choropleth
- * paint the same polygons and are unreadable together.
+ * paint the same polygons and were unreadable together — the geography can
+ * stay up throughout, since borders interfere with nothing, while only the
+ * infill yields. The two layers coexist now (SNOW-663, below), but the split
+ * outlived its occasion: the boundary is fixed and the infill is date-bound,
+ * and one control for both was always a control for two different things.
  *
  * Two pieces of state, and conflating them is the bug this module exists to
  * prevent:
@@ -19,22 +23,23 @@
  *     active suppression.
  *
  * A suppression is a reason some other mode is temporarily overriding the
- * preference — the downloads overlay being on (`SUPPRESSION.DOWNLOADS`), or
- * staff resort-edit mode (`SUPPRESSION.EDIT_RESORTS`). It has to restore
- * CLEANLY: a user who had already switched Bulletins off must not find it
- * switched back on for them when the suppression lifts. Keeping the
- * preference as the only persisted value gets that for free — there is no
- * "remembered" second copy to drift, and a reload while the downloads
- * overlay is on comes back with what the user actually chose rather than
- * with the suppressed value.
+ * preference — today only staff resort-edit mode
+ * (`SUPPRESSION.EDIT_RESORTS`). It has to restore CLEANLY: a user who had
+ * already switched Bulletins off must not find it switched back on for them
+ * when the suppression lifts. Keeping the preference as the only persisted
+ * value gets that for free — there is no "remembered" second copy to drift,
+ * and a reload during a suppression comes back with what the user actually
+ * chose rather than with the suppressed value.
  *
- * The layers-menu row shows the EFFECTIVE value, not the preference, so a
- * user can see why the colour went away rather than finding it mysteriously
- * missing. Clicking that row therefore sets the preference to the opposite
- * of what is currently effective, and — because Bulletins and the downloads
- * overlay are mutually exclusive — turning it on clears the downloads
- * suppression. `choose` owns that rule so both entry points (the layers
- * menu, and the downloads panel's "Display on the map" switch) inherit it.
+ * SNOW-656 had a second reason, `SUPPRESSION.DOWNLOADS`: the downloaded-areas
+ * overlay painted a second translucent tint over the polygons the choropleth
+ * fills, so the two could not both be on. SNOW-663 made the squares a hatch
+ * the danger colour reads through, and the exclusivity went with it. The
+ * reason and the `choose()` transition that cleared it are gone — a
+ * transition whose only difference from `setPreference` was clearing
+ * something nothing sets is two names for one operation. The `suppress` /
+ * `unsuppress` machinery stays: resort-edit mode still uses it, and it is
+ * what a future exclusivity would register through.
  *
  * Lives here rather than in `map.js` for the usual reason: `map.js` is one
  * file of IIFEs that cannot be imported under jsdom, and the four-quadrant
@@ -47,8 +52,7 @@
  *
  *   SUPPRESSION
  *   create(preference)
- *   choose(state, next)          — the user clicked one of the two toggles
- *   setPreference(state, next)   — a mechanical re-read, no side effects
+ *   setPreference(state, next)   — the only writer of the preference
  *   suppress(state, reason) / unsuppress(state, reason)
  *   isEffective(state)
  *   regionsFillLayout(microRegionsOn, state)
@@ -62,15 +66,18 @@
    * The reasons something other than the user's own preference can hide the
    * Bulletins layers.
    *
-   * `DOWNLOADS` is the downloaded-areas exclusivity: the download
-   * squares are drawn over the same polygons the choropleth fills, and the
-   * two together are unreadable. `EDIT_RESORTS` is the staff resort-edit
-   * mode, which hid `regions-fill` directly before this module existed —
-   * routing it through the same path keeps the number of writers of that
-   * layer's visibility at one.
+   * `EDIT_RESORTS` is the staff resort-edit mode, which hid `regions-fill`
+   * directly before this module existed — routing it through the same path
+   * keeps the number of writers of that layer's visibility at one. It is the
+   * only reason left: `DOWNLOADS` went with the exclusivity SNOW-663 removed
+   * (see the module header).
+   *
+   * Still an object rather than a bare string constant. `suppress` /
+   * `unsuppress` take a reason and hold a LIST of them precisely so a second
+   * one can be added without either function changing, and a one-member enum
+   * is what that shape looks like while there is one mode.
    */
   const SUPPRESSION = Object.freeze({
-    DOWNLOADS: 'downloads',
     EDIT_RESORTS: 'edit-resorts',
   });
 
@@ -153,14 +160,18 @@
   /**
    * Write the preference and nothing else.
    *
-   * This is the MECHANICAL write, for the paths that re-read the persisted
-   * value rather than acting on a click — the boot seed, and the re-seed
-   * after a basemap swap. It must not disturb any suppression: a basemap
-   * swap while the downloads overlay is on has to leave the overlay on, and
-   * clearing the suppression there would reveal the choropleth under the
-   * download squares with nobody having asked for it.
+   * The ONLY way the preference moves — the boot seed, the re-seed after a
+   * basemap swap, and the user's own click on the step control all come
+   * through here. It must not disturb any suppression: a basemap swap during
+   * resort-edit mode has to leave that mode's suppression in force, and a
+   * user picking a step is choosing what to see when the mode ENDS, not
+   * asking to leave it.
    *
-   * `choose` is the one to call for a user action.
+   * A second entry point, `choose()`, existed while the downloads overlay
+   * was mutually exclusive with this one: it cleared that suppression on the
+   * way through, on the grounds that the user had just said which of the two
+   * they wanted. SNOW-663 ended the exclusivity, which left `choose` doing
+   * nothing this does not, so it is gone.
    *
    * @param {{preference: boolean, suppressedBy: string[]}} state
    * @param {boolean} next
@@ -168,29 +179,6 @@
    */
   function setPreference(state, next) {
     return Object.freeze({ preference: nearestStep(next), suppressedBy: state.suppressedBy });
-  }
-
-  /**
-   * Record a choice the USER just made on one of the two mirrored toggles.
-   *
-   * Turning Bulletins ON also clears the DOWNLOADS suppression, because the
-   * two are mutually exclusive and the user has just said which one they
-   * want. It deliberately does NOT clear `EDIT_RESORTS`: that is a mode the
-   * user is still in, not a competing view control, and the caller leaves it
-   * on their behalf.
-   *
-   * Turning Bulletins OFF leaves every suppression alone — both may be off
-   * at once (basemap plus borders, nothing else). This is not a radio pair.
-   *
-   * @param {{preference: boolean, suppressedBy: string[]}} state
-   * @param {boolean} next The preference the user just chose.
-   * @returns {{preference: boolean, suppressedBy: string[]}} A new state.
-   */
-  function choose(state, next) {
-    const wanted = nearestStep(next);
-    return wanted > 0
-      ? unsuppress(setPreference(state, wanted), SUPPRESSION.DOWNLOADS)
-      : setPreference(state, 0);
   }
 
   /**
@@ -314,7 +302,6 @@
     DEFAULT_STEP: DEFAULT_STEP,
     nearestStep: nearestStep,
     create: create,
-    choose: choose,
     setPreference: setPreference,
     suppress: suppress,
     unsuppress: unsuppress,
