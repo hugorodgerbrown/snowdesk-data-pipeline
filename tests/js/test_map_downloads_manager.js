@@ -128,7 +128,9 @@ function buildFixture() {
         </span>
         <span>
           <span data-row-value class="text-text-2"></span>
+          <button type="button" data-downloads-here aria-label="Download here">⤓</button>
           <button type="button" data-row-rename data-downloads-rename aria-label="Rename">✎</button>
+          <button type="button" data-downloads-evict aria-label="Free up space">⤒</button>
           <button type="button" data-downloads-delete aria-label="Remove">🗑</button>
         </span>
       </li>
@@ -150,6 +152,15 @@ function buildFixture() {
       <span data-string="add-disabled">Downloading needs a connection</span>
       <span data-string="add-signin">Sign in to download a new area.</span>
       <span data-string="add-signin-disabled">Downloading needs an account</span>
+      <span data-string="not-on-device">On your account — not downloaded here</span>
+      <span data-string="download-here-row-label">Download %(name)s to this device</span>
+      <span data-string="free-space-row-label">Free up the space %(name)s uses on this device</span>
+      <span data-string="confirm-free-space">Remove the offline map for %(name)s from this
+            device? This frees %(size)s and keeps %(name)s on your account, so you can download it
+            again in one tap.</span>
+      <span data-string="confirm-forget">Remove %(name)s from your account and from this device?
+            This frees %(size)s here and removes it from your other devices too.</span>
+      <span data-string="download-here-failed">That download couldn't be started here. Try again.</span>
       <span data-string="rename-prompt">Name this area</span>
       <span data-string="rename-failed">That name couldn't be saved. Try again.</span>
       <span data-string="row-menu-label">More actions for %(name)s</span>
@@ -902,6 +913,319 @@ describe('the budget readout', () => {
     const track = document.querySelector('[data-downloads-track]');
     expect(track.classList.contains('ring-2')).toBe(false);
     expect(track.classList.contains('ring-status-error-text')).toBe(false);
+  });
+});
+
+describe('account-only rows (SNOW-749)', () => {
+  // An area on the user's ACCOUNT that this device does not hold — saved
+  // on another device, or evicted here to make room. The whole point of
+  // this block is that it must NOT read as available offline: this sheet
+  // is a live cache-state surface, and "in your account" is a different
+  // claim from "on this device".
+
+  /**
+   * Replace the areas bridge with one that returns exactly `areas`.
+   *
+   * The real bridge reconciles three sources; what this block is about is
+   * how the sheet PAINTS the result, so the result is supplied directly
+   * rather than assembled from records, buckets and a stubbed fetch. The
+   * reconciliation itself is covered in test_basemap_manage_core.js.
+   */
+  function installAreas(areas) {
+    window.pwaBasemapDownloads = {
+      areas: vi.fn(async () => areas),
+      evict: vi.fn(async () => {}),
+      rename: vi.fn(async () => true),
+      basemapLabel: vi.fn(() => 'Standard'),
+    };
+  }
+
+  const ACCOUNT_ONLY_REGION = {
+    id: 'region-CH-1000',
+    name: 'Aletsch',
+    bytes: 0,
+    onDevice: false,
+    synced: true,
+    regionId: 'CH-1000',
+    basemapKey: 'openfreemap_liberty',
+  };
+
+  const HERE_AND_SYNCED = {
+    id: 'region-CH-2101',
+    name: 'Verbier',
+    bytes: 40 * MB,
+    savedAt: '2026-08-01T10:00:00.000Z',
+    onDevice: true,
+    synced: true,
+    basemapKey: 'openfreemap_liberty',
+  };
+
+  beforeEach(() => {
+    installDbStub({});
+    window.pwaDownloadsSync = {
+      isEnabled: vi.fn(() => true),
+      forget: vi.fn(async () => true),
+    };
+  });
+
+  afterEach(() => {
+    delete window.pwaDownloadsSync;
+  });
+
+  function row() {
+    return document.querySelector('#map-downloads-sheet li');
+  }
+
+  it('says it is not downloaded here, in place of a basemap name', async () => {
+    installAreas([ACCOUNT_ONLY_REGION]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(row().querySelector('[data-row-meta]').textContent).toBe(
+      'On your account — not downloaded here',
+    );
+  });
+
+  it('shows no size, rather than a misleading zero', async () => {
+    // The value column is for a measured quantity. "0.0 MB" would read as
+    // a download that somehow takes no space rather than one not here.
+    installAreas([ACCOUNT_ONLY_REGION]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(row().querySelector('[data-row-value]')).toBeNull();
+  });
+
+  it('never paints anything that reads as cached', async () => {
+    // The load-bearing assertion of the whole ticket's client half. The
+    // shared .basemap-identity-fill class carries a green "downloaded,
+    // basemap unknown" fallback; an account-only row must not have it.
+    installAreas([ACCOUNT_ONLY_REGION]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const rule = row().querySelector('[data-row-rule]');
+    expect(rule.classList.contains('basemap-identity-fill')).toBe(false);
+    expect(rule.classList.contains('bg-sync-off')).toBe(true);
+    expect(rule.classList.contains('opacity-35')).toBe(true);
+  });
+
+  it('offers Download here, and no rename or free-up-space', async () => {
+    installAreas([ACCOUNT_ONLY_REGION]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(row().querySelector('[data-downloads-here]')).not.toBeNull();
+    // Nothing local to rename, and nothing local to free.
+    expect(row().querySelector('[data-downloads-rename]')).toBeNull();
+    expect(row().querySelector('[data-downloads-evict]')).toBeNull();
+    // The trash stays: it removes the account row.
+    expect(row().querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+
+  it('starts the region download and hides the sheet on Download here', async () => {
+    installAreas([ACCOUNT_ONLY_REGION]);
+    window.pwaRegionDownload = { start: vi.fn(async () => true) };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-1000');
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    delete window.pwaRegionDownload;
+  });
+
+  it('opens framing over a custom area\'s stored box', async () => {
+    installAreas([
+      {
+        id: 'custom-a1',
+        name: 'Ridge',
+        bytes: 0,
+        onDevice: false,
+        synced: true,
+        bbox: [7.9, 46.4, 8.1, 46.6],
+      },
+    ]);
+    window.pwaCustomAreaDownload.openFramingAt = vi.fn();
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.openFramingAt).toHaveBeenCalledWith([
+      7.9, 46.4, 8.1, 46.6,
+    ]);
+  });
+
+  it('refuses Download here while offline', async () => {
+    installAreas([ACCOUNT_ONLY_REGION]);
+    window.pwaRegionDownload = { start: vi.fn(async () => true) };
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.pwaRegionDownload.start).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      "You're offline — connect to download a new area.",
+    );
+    delete window.pwaRegionDownload;
+  });
+
+  it('forgets the account row without trying to evict a bucket', async () => {
+    installAreas([ACCOUNT_ONLY_REGION]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-delete]').click();
+    await settle();
+
+    expect(window.pwaDownloadsSync.forget).toHaveBeenCalledWith('region-CH-1000');
+    // Nothing here to evict — calling the local eviction would be a
+    // no-op whose verification could only fail.
+    expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
+  });
+
+  it('drops the row immediately, before the queued forget drains', async () => {
+    // The forget is a queued mutation, so the account list still contains
+    // the row on the very next read. Without the optimistic removal the
+    // row the user just deleted reappears, which reads as a failure.
+    installAreas([ACCOUNT_ONLY_REGION]);
+    await loadModule();
+    openSheet();
+    await settle();
+    expect(rowLabels()).toEqual(['Aletsch']);
+
+    document.querySelector('[data-downloads-delete]').click();
+    await settle();
+
+    expect(rowLabels()).toEqual([]);
+  });
+});
+
+describe('the two destructive verbs (SNOW-749)', () => {
+  function installAreas(areas) {
+    window.pwaBasemapDownloads = {
+      areas: vi.fn(async () => areas),
+      evict: vi.fn(async () => {}),
+      rename: vi.fn(async () => true),
+      basemapLabel: vi.fn(() => 'Standard'),
+    };
+  }
+
+  const SYNCED_HERE = {
+    id: 'region-CH-2101',
+    name: 'Verbier',
+    bytes: 40 * MB,
+    savedAt: '2026-08-01T10:00:00.000Z',
+    onDevice: true,
+    synced: true,
+    basemapKey: 'openfreemap_liberty',
+  };
+
+  beforeEach(() => {
+    installDbStub({});
+    window.pwaDownloadsSync = {
+      isEnabled: vi.fn(() => true),
+      forget: vi.fn(async () => true),
+    };
+  });
+
+  afterEach(() => {
+    delete window.pwaDownloadsSync;
+  });
+
+  it('offers both verbs on a row that is here AND on the account', async () => {
+    installAreas([SYNCED_HERE]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('[data-downloads-evict]')).not.toBeNull();
+    expect(document.querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+
+  it('offers only the trash on a row with no account row behind it', async () => {
+    // With nothing to keep, the two verbs would do the same thing — and a
+    // second control indistinguishable in effect is worse than one.
+    installAreas([{ ...SYNCED_HERE, synced: false }]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('[data-downloads-evict]')).toBeNull();
+    expect(document.querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+
+  it('free-up-space evicts locally and keeps the account row', async () => {
+    installAreas([SYNCED_HERE]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-downloads-evict]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.evict).toHaveBeenCalledWith(['region-CH-2101']);
+    expect(window.pwaDownloadsSync.forget).not.toHaveBeenCalled();
+  });
+
+  it('the trash does both', async () => {
+    installAreas([SYNCED_HERE]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-downloads-delete]').click();
+    await settle();
+
+    expect(window.pwaDownloadsSync.forget).toHaveBeenCalledWith('region-CH-2101');
+    expect(window.pwaBasemapDownloads.evict).toHaveBeenCalledWith(['region-CH-2101']);
+  });
+
+  it('says what each verb will actually do before it does it', async () => {
+    // The two confirmations differ in exactly the clause that differs in
+    // effect, so the choice can be judged rather than discovered.
+    installAreas([SYNCED_HERE]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-downloads-evict]').click();
+    await settle();
+    expect(window.confirm.mock.calls[0][0]).toContain('keeps Verbier on your account');
+
+    document.querySelector('[data-downloads-delete]').click();
+    await settle();
+    expect(window.confirm.mock.calls[1][0]).toContain('your other devices');
+  });
+
+  it('keeps the pre-SNOW-749 wording when there is no account behind it', async () => {
+    // Flag off, or signed out: one outcome, and the older copy is exactly
+    // right for it.
+    window.pwaDownloadsSync.isEnabled = vi.fn(() => false);
+    installAreas([{ ...SYNCED_HERE, synced: false }]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-downloads-delete]').click();
+    await settle();
+
+    expect(window.confirm.mock.calls[0][0]).toContain("back online");
   });
 });
 

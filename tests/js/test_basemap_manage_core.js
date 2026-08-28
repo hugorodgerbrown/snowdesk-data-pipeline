@@ -539,3 +539,294 @@ describe('reconcileAreas (SNOW-612)', () => {
     expect(core.reconcileAreas(null, null, null)).toEqual([]);
   });
 });
+
+describe('reconcileAreas with the account (SNOW-749)', () => {
+  // The three-way merge: what is RECORDED here, what is in Cache Storage
+  // here, and what is on the ACCOUNT. Every combination is reachable and
+  // each one paints differently, so each one is asserted.
+  //
+  // The assertion that matters most is the LAST describe in this block:
+  // with no account list, the output must be what it was before this
+  // ticket. That is the anonymous path, the flag-off path and the offline
+  // path — three of the four ways this function is called in production.
+
+  const RECORD = {
+    id: 'region-ch-4115',
+    name: 'Verbier',
+    bytes: 40 * MB,
+    savedAt: '2026-08-01T00:00:00.000Z',
+    basemapKey: 'openfreemap_liberty',
+    regionId: 'CH-4115',
+  };
+
+  /** One account row in the server's own JSON shape (downloads/areas.json). */
+  function accountRow(overrides) {
+    return Object.assign(
+      {
+        area_id: 'region-ch-4115',
+        kind: 'region',
+        region_id: 'CH-4115',
+        bbox: null,
+        basemap_key: 'openfreemap_liberty',
+        name: '',
+        created_at: '2026-07-01T00:00:00.000Z',
+      },
+      overrides || {},
+    );
+  }
+
+  const byId = (areas, id) => areas.find((area) => area.id === id);
+
+  it('marks a recorded area synced when the account knows it', () => {
+    const areas = core.reconcileAreas([RECORD], ['region-ch-4115'], {}, [accountRow()]);
+
+    expect(areas).toHaveLength(1);
+    expect(areas[0].onDevice).toBe(true);
+    expect(areas[0].synced).toBe(true);
+    // The record still wins for everything it carries — it has the bytes
+    // and the completion time an account row does not.
+    expect(areas[0].bytes).toBe(40 * MB);
+    expect(areas[0].savedAt).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  it('marks a recorded area unsynced when the account does not', () => {
+    // A download made before the gate opened, or one whose queued sync has
+    // not drained yet. It is on the device and it works; it just is not on
+    // the account.
+    const areas = core.reconcileAreas([RECORD], ['region-ch-4115'], {}, []);
+
+    expect(areas[0].onDevice).toBe(true);
+    expect(areas[0].synced).toBe(false);
+  });
+
+  it('surfaces an account row this device has never downloaded', () => {
+    // The whole point of the ticket: an area framed on a laptop is listed
+    // on the phone.
+    const areas = core.reconcileAreas([], [], {}, [
+      accountRow({ area_id: 'region-ch-1000', region_id: 'CH-1000', name: 'Aletsch' }),
+    ]);
+
+    expect(areas).toHaveLength(1);
+    expect(areas[0].onDevice).toBe(false);
+    expect(areas[0].synced).toBe(true);
+    expect(areas[0].name).toBe('Aletsch');
+    expect(areas[0].regionId).toBe('CH-1000');
+  });
+
+  it('gives an account-only area no bytes, so it cannot touch the budget', () => {
+    // It costs THIS device nothing, and the budget is what this device is
+    // holding. A non-zero figure here would charge a user for storage they
+    // are not using.
+    const areas = core.reconcileAreas([RECORD], [], {}, [
+      accountRow({ area_id: 'custom-elsewhere', kind: 'custom', bbox: [7, 46, 8, 47] }),
+    ]);
+    const summary = core.budgetSummary(areas, 500 * MB);
+
+    expect(byId(areas, 'custom-elsewhere').bytes).toBe(0);
+    expect(summary.usedBytes).toBe(40 * MB);
+  });
+
+  it('never calls an account-only area an orphan', () => {
+    // An orphan is a failed download's leftovers ON THIS DEVICE, with
+    // space to reclaim. An account-only area is neither of those things,
+    // and the sheet offers a completely different action for each.
+    const areas = core.reconcileAreas([], [], {}, [accountRow()]);
+
+    expect(areas[0].orphaned).toBe(false);
+  });
+
+  it('carries a custom area\'s bbox, so another device can fetch it', () => {
+    const areas = core.reconcileAreas([], [], {}, [
+      accountRow({ area_id: 'custom-a1', kind: 'custom', bbox: [7.9, 46.4, 8.1, 46.6] }),
+    ]);
+
+    expect(areas[0].bbox).toEqual([7.9, 46.4, 8.1, 46.6]);
+  });
+
+  it('does not list an area twice when it is in all three sources', () => {
+    const areas = core.reconcileAreas(
+      [RECORD],
+      ['region-ch-4115'],
+      {},
+      [accountRow()],
+    );
+
+    expect(areas.map((a) => a.id)).toEqual(['region-ch-4115']);
+  });
+
+  it('marks an orphaned bucket synced when the account knows it', () => {
+    // Reachable: the sync landed, then the run failed and left no record.
+    // It is still an orphan — there are stranded bytes to reclaim — but it
+    // is one the account can describe.
+    const areas = core.reconcileAreas([], ['region-ch-4115'], { 'region-ch-4115': MB }, [
+      accountRow(),
+    ]);
+
+    expect(areas[0].orphaned).toBe(true);
+    expect(areas[0].onDevice).toBe(true);
+    expect(areas[0].synced).toBe(true);
+  });
+
+  it('orders records, then orphans, then account-only areas', () => {
+    // Three ordered groups, each internally stable, so the sheet's own
+    // sort has a deterministic input and a re-open never reshuffles.
+    const areas = core.reconcileAreas([RECORD], ['region-orphan'], {}, [
+      accountRow({ area_id: 'region-zz' }),
+      accountRow({ area_id: 'region-aa' }),
+    ]);
+
+    expect(areas.map((a) => a.id)).toEqual([
+      'region-ch-4115',
+      'region-orphan',
+      'region-aa',
+      'region-zz',
+    ]);
+  });
+
+  it('ignores an account row with no area_id', () => {
+    expect(core.reconcileAreas([], [], {}, [{ name: 'nameless' }])).toEqual([]);
+  });
+});
+
+describe('manageRows with the account (SNOW-749)', () => {
+  const isCustomAreaId = (id) => id.indexOf('custom-') === 0;
+
+  const rowFor = (area) => core.manageRows([area], { isCustomAreaId: isCustomAreaId })[0];
+
+  it('offers a re-download for an account-only region', () => {
+    const row = rowFor({
+      id: 'region-ch-1000',
+      name: 'Aletsch',
+      bytes: 0,
+      onDevice: false,
+      synced: true,
+      regionId: 'CH-1000',
+    });
+
+    expect(row.onDevice).toBe(false);
+    expect(row.synced).toBe(true);
+    expect(row.redownloadable).toBe(true);
+    expect(row.regionId).toBe('CH-1000');
+  });
+
+  it('offers a re-download for an account-only custom area with a box', () => {
+    const row = rowFor({
+      id: 'custom-a1',
+      name: 'Ridge',
+      bytes: 0,
+      onDevice: false,
+      synced: true,
+      bbox: [7.9, 46.4, 8.1, 46.6],
+    });
+
+    expect(row.kind).toBe('custom');
+    expect(row.redownloadable).toBe(true);
+  });
+
+  it('withholds the re-download when there is nothing to act on', () => {
+    // A custom area with no stored box, or a region with no id, cannot be
+    // fetched — so no control, rather than a control that does nothing.
+    expect(
+      rowFor({ id: 'custom-a1', bytes: 0, onDevice: false, synced: true }).redownloadable,
+    ).toBe(false);
+    expect(
+      rowFor({ id: 'region-x', bytes: 0, onDevice: false, synced: true }).redownloadable,
+    ).toBe(false);
+  });
+
+  it('never offers a re-download for something already here', () => {
+    const row = rowFor({
+      id: 'custom-a1',
+      name: 'Ridge',
+      bytes: 12 * MB,
+      onDevice: true,
+      synced: true,
+      bbox: [7.9, 46.4, 8.1, 46.6],
+    });
+
+    expect(row.redownloadable).toBe(false);
+  });
+
+  it('refuses to rename an account-only custom area', () => {
+    // The rename this flag gates is the LOCAL one, and there is no local
+    // record to write to — the editor would take a name and drop it.
+    const row = rowFor({
+      id: 'custom-a1',
+      name: 'Ridge',
+      bytes: 0,
+      onDevice: false,
+      synced: true,
+      bbox: [7.9, 46.4, 8.1, 46.6],
+    });
+
+    expect(row.renameable).toBe(false);
+  });
+
+  it('still renames a custom area that IS here', () => {
+    const row = rowFor({
+      id: 'custom-a1',
+      name: 'Ridge',
+      bytes: 12 * MB,
+      onDevice: true,
+      synced: true,
+      bbox: [7.9, 46.4, 8.1, 46.6],
+    });
+
+    expect(row.renameable).toBe(true);
+  });
+
+  it('sorts account-only rows below everything on the device', () => {
+    // They carry no bytes, and the sheet is ordered largest-first, so this
+    // falls out of the existing sort rather than needing a rule — asserted
+    // because the sheet's usefulness depends on it: what is costing space
+    // leads the list.
+    const rows = core.manageRows(
+      [
+        { id: 'region-a', name: 'A', bytes: 0, onDevice: false, synced: true, regionId: 'A' },
+        { id: 'region-b', name: 'B', bytes: 5 * MB, onDevice: true, synced: true },
+      ],
+      { isCustomAreaId: isCustomAreaId },
+    );
+
+    expect(rows.map((r) => r.id)).toEqual(['region-b', 'region-a']);
+  });
+});
+
+describe('reconcileAreas without an account list is unchanged (SNOW-749)', () => {
+  // The path every existing caller takes: anonymous, flag off, or offline.
+  // It must be behaviourally identical to the pre-SNOW-749 function, and
+  // this block is what says so.
+  const recorded = [
+    { id: 'region-ch-4115', name: 'Verbier', bytes: 40 * MB, savedAt: '2026-08-01T00:00:00.000Z' },
+  ];
+
+  it('produces the same list for absent, empty and undefined account lists', () => {
+    const withNothing = core.reconcileAreas(recorded, ['region-orphan'], {});
+    const withEmpty = core.reconcileAreas(recorded, ['region-orphan'], {}, []);
+    const withUndefined = core.reconcileAreas(recorded, ['region-orphan'], {}, undefined);
+
+    expect(withEmpty).toEqual(withNothing);
+    expect(withUndefined).toEqual(withNothing);
+  });
+
+  it('reports everything as on this device and nothing as synced', () => {
+    const areas = core.reconcileAreas(recorded, ['region-orphan'], {});
+
+    for (const area of areas) {
+      expect(area.onDevice).toBe(true);
+      expect(area.synced).toBe(false);
+    }
+  });
+
+  it('leaves the rows the sheet renders exactly as they were', () => {
+    const areas = core.reconcileAreas(recorded, [], {});
+    const rows = core.manageRows(areas, { isCustomAreaId: (id) => id.indexOf('custom-') === 0 });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe('Verbier');
+    expect(rows[0].size).toBe(core.formatMegabytes(40 * MB));
+    expect(rows[0].orphaned).toBe(false);
+    // And no re-download affordance, because there is nothing to fetch.
+    expect(rows[0].redownloadable).toBe(false);
+  });
+});
