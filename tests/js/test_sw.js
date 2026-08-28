@@ -336,20 +336,22 @@ function settleHydration(sw) {
  * and (since SNOW-748) does not count as a page asserting a mode, so reading
  * the mode cannot suppress the hydration under test.
  *
+ * Awaited rather than read synchronously, because the handler now waits for
+ * the persisted row before it answers — the fix for a recycled worker replying
+ * ``'auto'`` over a forced mode it had not read yet.
+ *
  * @param {object} sw
- * @returns {string}
+ * @returns {Promise<string>}
  */
 function readNetworkMode(sw) {
-  let seen = null;
-  sw.__listeners.message({
-    data: { type: 'network-mode', mode: 'query' },
-    source: {
-      postMessage: (data) => {
-        seen = data.mode;
+  return new Promise((resolve) => {
+    sw.__listeners.message({
+      data: { type: 'network-mode', mode: 'query' },
+      source: {
+        postMessage: (data) => resolve(data.mode),
       },
-    },
+    });
   });
-  return seen;
 }
 
 /** Let the fire-and-forget cache write settle before asserting on it. */
@@ -1856,7 +1858,7 @@ describe('the user-forced offline mode (SNOW-748)', () => {
     await forced._probeNetwork();
 
     expect(await forced._shouldUseNetwork()).toBe(false);
-    expect(readNetworkMode(forced)).toBe('offline-forced');
+    expect(await readNetworkMode(forced)).toBe('offline-forced');
 
     // The contrast case, on the same premise: an auto-latch is exactly the
     // mode a successful probe is meant to end.
@@ -1879,7 +1881,7 @@ describe('the user-forced offline mode (SNOW-748)', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(await sw._shouldUseNetwork()).toBe(false);
-    expect(readNetworkMode(sw)).toBe('offline-forced');
+    expect(await readNetworkMode(sw)).toBe('offline-forced');
   });
 
   it('cancels a pending probe left over from an auto-latch', async () => {
@@ -1893,7 +1895,7 @@ describe('the user-forced offline mode (SNOW-748)', () => {
     await vi.advanceTimersByTimeAsync(sw.OFFLINE_PROBE_BACKOFF_MS[0] * 2);
 
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(readNetworkMode(sw)).toBe('offline-forced');
+    expect(await readNetworkMode(sw)).toBe('offline-forced');
   });
 
   it('is not downgraded to an auto-latch, and stays unprobed when one is attempted', async () => {
@@ -1908,7 +1910,7 @@ describe('the user-forced offline mode (SNOW-748)', () => {
     // the mode, so the absence of a fetch is the half that matters.
     await vi.advanceTimersByTimeAsync(sw.OFFLINE_PROBE_BACKOFF_MS[0] * 2);
 
-    expect(readNetworkMode(sw)).toBe('offline-forced');
+    expect(await readNetworkMode(sw)).toBe('offline-forced');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -1932,7 +1934,7 @@ describe('the user-forced offline mode (SNOW-748)', () => {
     await vi.advanceTimersByTimeAsync(sw.BASEMAP_FETCH_BUDGET_MS + 1);
     await Promise.all(inFlight);
 
-    expect(readNetworkMode(sw)).toBe('offline-forced');
+    expect(await readNetworkMode(sw)).toBe('offline-forced');
   });
 
   it('blocks the network under both offline values, and only those', async () => {
@@ -1947,22 +1949,22 @@ describe('the user-forced offline mode (SNOW-748)', () => {
     expect(await sw._shouldUseNetwork()).toBe(false);
   });
 
-  it('reaches all three modes through the network-mode message', () => {
+  it('reaches all three modes through the network-mode message', async () => {
     const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
     const send = (mode) => sw.__listeners.message({ data: { type: 'network-mode', mode } });
 
     send('offline');
-    expect(readNetworkMode(sw)).toBe('offline');
+    expect(await readNetworkMode(sw)).toBe('offline');
 
     send('auto');
-    expect(readNetworkMode(sw)).toBe('auto');
+    expect(await readNetworkMode(sw)).toBe('auto');
 
     send('offline-forced');
-    expect(readNetworkMode(sw)).toBe('offline-forced');
+    expect(await readNetworkMode(sw)).toBe('offline-forced');
 
     // And back, which is the toggle's other direction.
     send('auto');
-    expect(readNetworkMode(sw)).toBe('auto');
+    expect(await readNetworkMode(sw)).toBe('auto');
   });
 });
 
@@ -2188,6 +2190,40 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     return { postMessage: (data) => seen.push(data), seen };
   }
 
+  it('answers a bare mode query with the forced mode, having served nothing', async () => {
+    await setStoredNetworkMode('offline-forced');
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    // The exact repro, at the level it happens: a recycled worker, a single
+    // ``postMessage({type: 'network-mode'})`` from a page, and NOTHING else —
+    // no fetch, no warm-cache, nothing that consults a read path. Hydrating
+    // lazily from the read paths left this route answering ``'auto'`` from the
+    // startup default, and the answer is acted on rather than ignored:
+    // pwa_offline.js takes any ``network-mode`` announcement as authoritative
+    // and repainted the user's toggle OFF.
+    expect(await readNetworkMode(sw)).toBe('offline-forced');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('starts the read at script evaluation, before any wake reason asks', async () => {
+    await setStoredNetworkMode('offline-forced');
+    const opened = vi.spyOn(indexedDB, 'open');
+
+    const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+
+    // Asserted before a single await: the read is in flight by the time the
+    // worker's listeners are registered. A worker wakes for four reasons —
+    // fetch, message, push, sync — and hydrating from the read paths alone
+    // covered only the first, which is how the message path went on answering
+    // from the unhydrated default. ``activate`` would not have covered it
+    // either: it fires on install and update, not on an idle restart.
+    expect(opened).toHaveBeenCalledTimes(1);
+
+    opened.mockRestore();
+    await sw._hydrateNetworkMode();
+  });
+
   it('comes up in the forced mode with nothing having pushed one to it', async () => {
     await setStoredNetworkMode('offline-forced');
     const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
@@ -2195,7 +2231,7 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     // The regression guard. No ``network-mode`` message, no ``_forceOffline``
     // call — just the worker and the row the user's choice left behind.
     expect(await sw._shouldUseNetwork()).toBe(false);
-    expect(readNetworkMode(sw)).toBe('offline-forced');
+    expect(await readNetworkMode(sw)).toBe('offline-forced');
   });
 
   it('answers a read from cache without a single request going out', async () => {
@@ -2245,7 +2281,7 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     // FORCED mode has no evidence to expire — it is the user's standing
     // instruction — which is why the two are treated differently here.
     expect(await sw._shouldUseNetwork()).toBe(true);
-    expect(readNetworkMode(sw)).toBe('auto');
+    expect(await readNetworkMode(sw)).toBe('auto');
     expect(client.seen).toEqual([]);
   });
 
@@ -2253,7 +2289,7 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
 
     expect(await sw._shouldUseNetwork()).toBe(true);
-    expect(readNetworkMode(sw)).toBe('auto');
+    expect(await readNetworkMode(sw)).toBe('auto');
   });
 
   it('stays in auto when the row cannot be read at all', async () => {
@@ -2263,7 +2299,7 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     // Fail safe, like ``_currentPrincipal``: a DB the worker cannot read must
     // never wedge it offline, because nothing but a page load would free it.
     expect(await sw._shouldUseNetwork()).toBe(true);
-    expect(readNetworkMode(sw)).toBe('auto');
+    expect(await readNetworkMode(sw)).toBe('auto');
   });
 
   it('reads the row once, however many requests arrive', async () => {
@@ -2271,15 +2307,18 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     const opened = vi.spyOn(indexedDB, 'open');
     const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
 
-    // A tile burst on a freshly restarted worker, which is when this runs.
-    // ``_basemapStaleWhileRevalidate`` touches no other IndexedDB row, so
-    // every open counted here belongs to the hydration.
+    // A tile burst on a freshly restarted worker, plus a mode query, which is
+    // when this runs. ``_basemapStaleWhileRevalidate`` touches no other
+    // IndexedDB row, so every open counted here belongs to the hydration —
+    // including the one ``loadSw`` itself starts, since the read now begins at
+    // script evaluation rather than on the first read path.
     await Promise.all([
       sw._basemapStaleWhileRevalidate(new Request('https://tiles.example/1.pbf')),
       sw._basemapStaleWhileRevalidate(new Request('https://tiles.example/2.pbf')),
       sw._basemapStaleWhileRevalidate(new Request('https://tiles.example/3.pbf')),
     ]);
     await sw._shouldUseNetwork();
+    await readNetworkMode(sw);
     await sw._hydrateNetworkMode();
 
     expect(opened).toHaveBeenCalledTimes(1);
@@ -2291,14 +2330,15 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
 
     // The user pressing "go back online" while the restarted worker is still
-    // reading the row. The row is only as fresh as its last write, so the
-    // message is newer by construction and must win — otherwise the read lands
-    // and forces the user offline again for no reason they can see.
-    const hydrating = sw._hydrateNetworkMode();
+    // reading the row — ``loadSw`` starts that read, and it cannot have
+    // finished, because an IndexedDB read takes a macrotask and this line does
+    // not yield. The row is only as fresh as its last write, so the message is
+    // newer by construction and must win; otherwise the read lands and forces
+    // the user offline again for no reason they can see.
     sw.__listeners.message({ data: { type: 'network-mode', mode: 'auto' } });
-    await hydrating;
+    await sw._hydrateNetworkMode();
 
-    expect(readNetworkMode(sw)).toBe('auto');
+    expect(await readNetworkMode(sw)).toBe('auto');
     expect(await sw._shouldUseNetwork()).toBe(true);
   });
 });

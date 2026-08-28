@@ -161,9 +161,10 @@ re-asserted as `offline` would hand the worker a latch, and the probe that
 comes with it would end the user's choice on the next page load. This is the
 fast path, and the only one that restores an auto-latch.
 
-**The worker re-reads the row itself** (`_hydrateNetworkMode`, SNOW-748), once
-per worker lifetime, memoised in a single promise that every read-path mode
-decision awaits — `_shouldUseNetwork()` and `_warmCache`'s refusal. The earlier
+**The worker re-reads the row itself** (`_hydrateNetworkMode`, SNOW-748),
+started at **script evaluation** and memoised in a single promise that every
+consumer of the mode awaits: `_shouldUseNetwork()`, `_warmCache`'s refusal, and
+the `network-mode` message handler's reply. The earlier
 version of this document said the worker never read the row on its own, and
 that was the bug: `_networkMode` is module scope, Chrome terminates an idle
 worker after about thirty seconds, and a **user-forced** mode was therefore
@@ -176,7 +177,15 @@ instrumented run: `workerMode: "auto"`, `persistedUserChoice: "offline-forced"`,
 the worker to check on it is exactly what keeps it from being recycled.
 
 Recovery cannot depend on a page being there to push the mode, so the worker
-recovers it. This is the same worker-side IndexedDB read `_currentPrincipal()`
+recovers it — and it must start that read at evaluation rather than on the
+first read path. A worker wakes for four reasons (`fetch`, `message`, `push`,
+`sync`) and only the first consults a read path, so a lazily-hydrating worker
+asked for its mode by a bare `postMessage({type: 'network-mode'})` still
+answered `'auto'` — and that answer is acted on, not merely observed:
+`pwa_offline.js` treats any `network-mode` announcement as authoritative and
+repainted the user's toggle off. Hence also the handler awaiting hydration
+before it replies. `activate` is not the hook for any of this: it fires on
+install and update, not on the idle restart that loses the mode. This is the same worker-side IndexedDB read `_currentPrincipal()`
 has always done on the navigation path, with the same shape: `try`/`finally`
 `db.close()`, and fail-safe to `auto` on any error, so a DB the worker cannot
 read never wedges it offline. Once hydration resolves, the recovered mode is

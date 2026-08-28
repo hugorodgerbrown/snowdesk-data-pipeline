@@ -2287,6 +2287,77 @@ function _hydrateNetworkMode() {
 }
 
 /**
+ * Apply a ``network-mode`` message from a page, and answer the sender with the
+ * mode the worker is actually in.
+ *
+ * Three sources send one: the user's own control (the header toggle since
+ * SNOW-748), the mode persisted in ``meta:app`` being re-asserted on boot, and
+ * the page's ``online`` listener asking for an immediate probe rather than
+ * waiting out the backoff. A page can also send no mode at all, which is a
+ * pure query.
+ *
+ * ``'auto'`` unlatches directly instead of probing first: the caller is either
+ * a user who can see they have signal or an ``online`` event, and in both
+ * cases the next real read is a better probe than a synthetic one — it is
+ * bounded, and if the route is still dead three of them re-latch within about
+ * nine seconds.
+ *
+ * SNOW-748: three modes rather than two. ``'offline-forced'`` is the user's own
+ * choice and goes to ``_forceOffline()``, which schedules no probe;
+ * ``'offline'`` remains the auto-latch, and is only ever sent back by a page
+ * re-asserting a persisted auto-latch on boot.
+ *
+ * SNOW-748: the reply AWAITS hydration, and that is not a tidiness point. A
+ * message is one of the four reasons a worker wakes, and it touches no read
+ * path — so a recycled worker asked for its mode answered from the unhydrated
+ * ``'auto'`` default while the user's forced mode sat unread on disk. That
+ * answer is acted on: ``pwa_offline.js`` treats any ``network-mode``
+ * announcement as authoritative and repainted the toggle OFF, which is the
+ * original bug arriving down a second route. Answering ``'auto'`` while a
+ * forced mode is persisted and unread is the thing this must never do.
+ *
+ * The transition above still runs SYNCHRONOUSLY, before that await: a mode a
+ * page actively pushed outranks a row read still in flight (see
+ * ``_hydrateNetworkMode``), and the flag has to be set before anything yields
+ * for that precedence to hold.
+ *
+ * @param {string} mode The mode asked for; anything unrecognised is a query.
+ * @param {object|null} source The sending client, when there is one.
+ * @returns {Promise<void>}
+ */
+async function _handleNetworkModeMessage(mode, source) {
+  // Set only for the three known modes: an unrecognised value changes nothing
+  // here, and must not suppress a hydration that would.
+  if (['auto', 'offline', 'offline-forced'].includes(mode)) _networkModePushed = true;
+  if (mode === 'offline') _latchOffline();
+  if (mode === 'offline-forced') _forceOffline();
+  if (mode === 'auto') _unlatchOffline();
+  await _hydrateNetworkMode();
+  // Answer the sender directly as well as broadcasting, so a page that has just
+  // booted learns the mode even when nothing has changed and
+  // ``_publishNetworkMode`` therefore had nothing to announce.
+  source?.postMessage({ type: 'network-mode', mode: _networkMode });
+}
+
+// Started at script evaluation, deliberately, and deliberately NOT awaited
+// here — a top-level await would delay the worker's own listeners registering.
+//
+// SNOW-748: kicking this off lazily from the first read path was not enough,
+// and the gap it left reproduced the original bug exactly. A worker is woken
+// for four reasons — ``fetch``, ``message``, ``push``, ``sync`` — and only the
+// first consults a read path. A recycled worker asked for its mode by a page
+// (a bare ``postMessage({type: 'network-mode'})``) therefore answered from the
+// unhydrated ``'auto'`` default, and that answer is not inert: ``pwa_offline.js``
+// acts on any ``network-mode`` announcement, so the worker's wrong answer
+// repainted the user's toggle OFF. Starting the read at evaluation means every
+// wake reason finds the memo already in flight, and every consumer awaits the
+// same promise.
+//
+// ``activate`` is NOT the hook for this: it fires on install and update, not on
+// the ordinary idle restart — which is the only case that loses the mode.
+_hydrateNetworkMode();
+
+/**
  * SNOW-484: stale-while-revalidate for the active basemap's cross-origin
  * requests (vector tiles, sprites, glyphs), against the dedicated
  * ``BASEMAP_CACHE`` rather than the shell's ``CACHE_VERSION`` cache.
@@ -2769,39 +2840,15 @@ self.addEventListener('message', (event) => {
   if (event.data === 'version') {
     event.source?.postMessage({ type: 'version', version: CACHE_VERSION });
   }
-  // SNOW-742: the page setting the network mode, from three sources — the
-  // user's own control (the header toggle since SNOW-748), the mode persisted
-  // in ``meta:app`` being re-asserted on boot (still the fast path for a
-  // restarted worker, now that ``_hydrateNetworkMode`` also recovers a forced
-  // mode without a page), and the page's ``online`` listener asking for an
-  // immediate probe rather than waiting out the backoff.
-  //
-  // ``'auto'`` unlatches directly instead of probing first: the caller is
-  // either a user who can see they have signal or an ``online`` event, and in
-  // both cases the next real read is a better probe than a synthetic one — it
-  // is bounded, and if the route is still dead three of them re-latch within
-  // about nine seconds.
-  //
-  // SNOW-748: three modes rather than two. ``'offline-forced'`` is the user's
-  // own choice and goes to ``_forceOffline()``, which schedules no probe;
-  // ``'offline'`` remains the auto-latch, and is only ever sent back by a page
-  // re-asserting a persisted auto-latch on boot.
+  // SNOW-742: the page setting the network mode, or asking what it is. Every
+  // rule about which mode goes where — and why the reply waits for the
+  // persisted row (SNOW-748) — lives in ``_handleNetworkModeMessage``.
   if (event.data && event.data.type === 'network-mode') {
-    // SNOW-748: a page naming a mode outranks the row ``_hydrateNetworkMode``
-    // is reading — the page is where the mode changes, so its message is
-    // newer than any row by construction. Set only for the three known modes:
-    // an unrecognised value changes nothing here, and must not suppress a
-    // hydration that would.
-    if (['auto', 'offline', 'offline-forced'].includes(event.data.mode)) {
-      _networkModePushed = true;
-    }
-    if (event.data.mode === 'offline') _latchOffline();
-    if (event.data.mode === 'offline-forced') _forceOffline();
-    if (event.data.mode === 'auto') _unlatchOffline();
-    // Answer the sender directly as well as broadcasting, so a page that has
-    // just booted learns the mode even when nothing has changed and
-    // ``_publishNetworkMode`` therefore had nothing to announce.
-    event.source?.postMessage({ type: 'network-mode', mode: _networkMode });
+    const answered = _handleNetworkModeMessage(event.data.mode, event.source);
+    // The reply now lands after an await, so it needs the same keep-alive the
+    // warm-cache handler below takes. Guarded because not every dispatcher is
+    // an ExtendableMessageEvent.
+    if (typeof event.waitUntil === 'function') event.waitUntil(answered);
   }
   // The page sends this when the user clicks "Reload" on the update
   // banner. Activating the waiting worker triggers ``activate`` (and its
