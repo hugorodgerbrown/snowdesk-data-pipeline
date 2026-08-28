@@ -46,7 +46,7 @@ Routes and Offline downloads came to have neither.
         {% translate "Getting started" as t_section_start %}
         {% include "includes/_eyebrow.html" with text=t_section_start class_extra="mb-2" only %}
 
-        {% translate "What Snowdesk is" as t_overview %}
+        {% translate "What is Snowdesk" as t_overview %}
         {% include "includes/_collapsible_panel.html" with title=t_overview data_testid="help-topic-overview" body_template="public/help/_topic_overview.html" %}
 
         {% translate "Bulletins" as t_section_bulletins %}
@@ -58,8 +58,11 @@ Routes and Offline downloads came to have neither.
         {% translate "The weather header" as t_weather %}
         {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" body_template="public/help/_topic_weather.html" %}
 
-        {% translate "The season timeline & calendar" as t_timeline %}
-        {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
+        {# Split from one "season timeline & calendar" panel: the heatmap is #}
+        {# opened from a bulletin page, so it belongs here, while the        #}
+        {# scrubber is a map control and sits in the map group below.        #}
+        {% translate "The season calendar" as t_calendar %}
+        {% include "includes/_collapsible_panel.html" with title=t_calendar data_testid="help-topic-calendar" body_template="public/help/_topic_calendar.html" %}
 
         {# The map's own controls, in the order the control column runs:      #}
         {# orientation, then layers (and the two layers deep enough to need a #}
@@ -71,6 +74,9 @@ Routes and Offline downloads came to have neither.
 
         {% translate "Getting around the map" as t_map %}
         {% include "includes/_collapsible_panel.html" with title=t_map data_testid="help-topic-map" body_template="public/help/_topic_map.html" %}
+
+        {% translate "The season timeline" as t_timeline %}
+        {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
 
         {% translate "Layers" as t_layers %}
         {% include "includes/_collapsible_panel.html" with title=t_layers data_testid="help-topic-layers" body_template="public/help/_topic_layers.html" %}
