@@ -43,7 +43,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/basemap_cache_core.js';
 import '../../static/js/mutation_queue_core.js';
@@ -93,6 +93,23 @@ const SW_EXPORTS = [
   'BASEMAP_CACHE',
   'BASEMAP_PINNED_CACHE_PREFIX',
   'BASEMAP_HYDRATION_MAX_ATTEMPTS',
+  // SNOW-742: the read-path budgets and the offline latch. ``_networkMode``
+  // itself is deliberately NOT exported — it is a ``let``, so a test would
+  // capture its value at load time and never see a change. ``_shouldUseNetwork``
+  // is the real predicate every read path consults, so asserting on it tests
+  // the thing that actually gates behaviour rather than a mirror of it.
+  '_staleWhileRevalidate',
+  '_boundedFetch',
+  '_shouldUseNetwork',
+  '_latchOffline',
+  '_unlatchOffline',
+  '_probeNetwork',
+  'NAVIGATION_FETCH_BUDGET_MS',
+  'SHELL_FETCH_BUDGET_MS',
+  'BASEMAP_FETCH_BUDGET_MS',
+  'OFFLINE_LATCH_THRESHOLD',
+  'OFFLINE_PROBE_URL',
+  'OFFLINE_PROBE_BACKOFF_MS',
 ];
 
 /**
@@ -1378,5 +1395,287 @@ describe('cross-origin routing when the basemap allowlist is empty (SNOW-722)', 
 
     expect(cachesStub.counters.matchedNames).toContain(PINNED_BUCKET);
     expect(cachesStub.counters.matchedNames[0]).toBe(sw.BASEMAP_CACHE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-742 — read-path budgets and the offline latch
+// ---------------------------------------------------------------------------
+//
+// The failure these cover is specifically NOT "the network is down". A refused
+// fetch has always worked: it rejects, and every fallback below is a ``catch``
+// branch waiting for exactly that. What broke on the Underground is a radio
+// that is attached but has no route, where ``fetch`` neither resolves nor
+// rejects — it hangs on TCP retries for minutes, the catch never runs, and the
+// app sits blank on top of data already on disk.
+//
+// So every test here models a HANGING fetch (a promise that never settles),
+// not a failing one, and drives the clock with fake timers. A stub that
+// rejects would pass against the old code and prove nothing.
+
+/**
+ * A ``fetch`` stub that models the dead-but-attached radio: it never resolves
+ * and never rejects on its own, but it DOES honour an ``AbortSignal``, which
+ * is the contract real ``fetch`` has and the entire mechanism under test.
+ *
+ * A stub that ignored the signal would hang these tests rather than fail them,
+ * and a stub that rejected immediately would pass against the unfixed code.
+ *
+ * @returns {import('vitest').Mock}
+ */
+function hangingFetch() {
+  return vi.fn(
+    (_input, init) =>
+      new Promise((_resolve, reject) => {
+        const signal = init && init.signal;
+        if (!signal) return;
+        if (signal.aborted) {
+          reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+        });
+      }),
+  );
+}
+
+describe('read-path budgets (SNOW-742)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('serves the cached shell when a navigation hangs, within the budget', async () => {
+    const cachesStub = makeCaches();
+    const url = `${ORIGIN}/map/`;
+    const fetchSpy = hangingFetch();
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+    // Stamped anonymous: an entry with no ``X-SW-Principal`` is fail-closed by
+    // design (C1) and would never be served, which is a different test.
+    cachesStub.seed(
+      'snowdesk-shell-UNSUBSTITUTED',
+      url,
+      basicResponse('<html><meta name="pwa-user-id" content=""></html>', {
+        headers: { [sw.PRINCIPAL_HEADER]: sw.PRINCIPAL_ANONYMOUS },
+      }),
+    );
+
+    const pending = sw._networkFirst(new Request(url));
+    await vi.advanceTimersByTimeAsync(sw.NAVIGATION_FETCH_BUDGET_MS + 1);
+    const response = await pending;
+
+    // The assertion that fails against the old code: before the budget the
+    // promise above simply never settled, so this line hung with the test.
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-SW-Cache')).toBe('hit');
+  });
+
+  it('returns the synthesized 504 when a basemap tile hangs, within the budget', async () => {
+    const cachesStub = makeCaches();
+    const fetchSpy = hangingFetch();
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+
+    const pending = sw._basemapStaleWhileRevalidate(new Request('https://tiles.example/1/2/3.pbf'));
+    await vi.advanceTimersByTimeAsync(sw.BASEMAP_FETCH_BUDGET_MS + 1);
+    const response = await pending;
+
+    expect(response.status).toBe(504);
+    expect(response.headers.get('X-SW-Cache')).toBe('miss');
+  });
+
+  // The ordering pair. A cache HIT always resolved, even under the old
+  // fetch-first implementation, so "the hit is served" proves nothing on its
+  // own — the bug was that a doomed request went out ANYWAY, several hundred
+  // of them, each holding a connection slot until the OS gave up. So the
+  // assertion that matters is about the call count, not the response.
+
+  it('serves a basemap cache hit with zero network calls when there is no route', async () => {
+    const cachesStub = makeCaches();
+    const url = 'https://tiles.example/1/2/3.pbf';
+    const fetchSpy = hangingFetch();
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+    cachesStub.seed(sw.BASEMAP_CACHE, url, basicResponse('tile'));
+    sw._latchOffline();
+    fetchSpy.mockClear();
+
+    const response = await sw._basemapStaleWhileRevalidate(new Request(url));
+
+    expect(await response.text()).toBe('tile');
+    // Fails against the old implementation, which started its fetch on the
+    // function's first line — before the cache was even read.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still revalidates a hit in the background when there IS a route', async () => {
+    const cachesStub = makeCaches();
+    const url = 'https://tiles.example/4/5/6.pbf';
+    const fetchSpy = hangingFetch();
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+    cachesStub.seed(sw.BASEMAP_CACHE, url, basicResponse('tile'));
+
+    const response = await sw._basemapStaleWhileRevalidate(new Request(url));
+
+    // Stale-while-revalidate is intact: the hit is answered from disk without
+    // waiting (no timer is advanced here), and the refresh still goes out.
+    expect(await response.text()).toBe('tile');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not touch the network for a shell asset once latched', async () => {
+    const cachesStub = makeCaches();
+    const url = `${ORIGIN}/static/css/output.css`;
+    const fetchSpy = hangingFetch();
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+    cachesStub.seed('snowdesk-shell-UNSUBSTITUTED', url, basicResponse('body{}'));
+
+    sw._latchOffline();
+    const response = await sw._staleWhileRevalidate(new Request(url));
+
+    expect(await response.text()).toBe('body{}');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('the offline latch (SNOW-742)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Drive one hanging basemap read to its budget expiry. */
+  async function timeOutOneRead(sw) {
+    const pending = sw._basemapStaleWhileRevalidate(
+      new Request(`https://tiles.example/${Math.random()}.pbf`),
+    );
+    await vi.advanceTimersByTimeAsync(sw.BASEMAP_FETCH_BUDGET_MS + 1);
+    await pending;
+  }
+
+  it('latches after OFFLINE_LATCH_THRESHOLD consecutive timeouts, not before', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: hangingFetch() });
+
+    for (let i = 0; i < sw.OFFLINE_LATCH_THRESHOLD - 1; i++) {
+      await timeOutOneRead(sw);
+      expect(sw._shouldUseNetwork()).toBe(true);
+    }
+    await timeOutOneRead(sw);
+
+    expect(sw._shouldUseNetwork()).toBe(false);
+  });
+
+  it('a success part-way through resets the run, so a slow request never latches alone', async () => {
+    const cachesStub = makeCaches();
+    let hang = true;
+    const hanging = hangingFetch();
+    const fetchSpy = vi.fn((input, init) =>
+      hang ? hanging(input, init) : Promise.resolve(basicResponse('ok')),
+    );
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+
+    await timeOutOneRead(sw);
+    await timeOutOneRead(sw);
+    // One good answer in the middle of the run — the route is alive after all.
+    hang = false;
+    await sw._boundedFetch(`${ORIGIN}/anything`, 1000);
+    hang = true;
+    await timeOutOneRead(sw);
+
+    // Three timeouts have now happened in total, but not three in a ROW.
+    expect(sw._shouldUseNetwork()).toBe(true);
+  });
+
+  it('makes zero network calls while latched, and 504s a miss immediately', async () => {
+    const fetchSpy = hangingFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._latchOffline();
+    fetchSpy.mockClear();
+
+    // No timer advance: a latched miss must answer now, not after a budget.
+    const response = await sw._basemapStaleWhileRevalidate(
+      new Request('https://tiles.example/9/9/9.pbf'),
+    );
+
+    expect(response.status).toBe(504);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('unlatches when the probe finds a route, and probes the no-op endpoint', async () => {
+    let answer = false;
+    const fetchSpy = vi.fn((input) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.includes('/livez') && answer) return Promise.resolve(basicResponse('ok'));
+      return new Promise(() => {});
+    });
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._latchOffline();
+    expect(sw._shouldUseNetwork()).toBe(false);
+
+    answer = true;
+    await sw._probeNetwork();
+
+    expect(sw._shouldUseNetwork()).toBe(true);
+    expect(fetchSpy.mock.calls.some(([input]) => String(input).includes(sw.OFFLINE_PROBE_URL))).toBe(
+      true,
+    );
+  });
+
+  it('backs off rather than retrying tightly when the probe finds nothing', async () => {
+    const fetchSpy = hangingFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    sw._latchOffline();
+    fetchSpy.mockClear();
+
+    // Nothing should fire before the first backoff step elapses.
+    await vi.advanceTimersByTimeAsync(sw.OFFLINE_PROBE_BACKOFF_MS[0] - 1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // That probe hangs and times out, which must reschedule rather than spin.
+    await vi.advanceTimersByTimeAsync(sw.OFFLINE_PROBE_BACKOFF_MS[1] + 10);
+    expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(sw._shouldUseNetwork()).toBe(false);
+  });
+
+  it('honours an explicit latch with no timeouts, and an explicit unlatch', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: hangingFetch() });
+
+    // Pre-arming before a tunnel: no failed request has happened at all.
+    sw._latchOffline();
+    expect(sw._shouldUseNetwork()).toBe(false);
+
+    sw._unlatchOffline();
+    expect(sw._shouldUseNetwork()).toBe(true);
+  });
+
+  it('leaves _warmCache unbounded — a download is not a read path', async () => {
+    const cachesStub = makeCaches();
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const fetchSpy = vi.fn(() => gate.then(() => basicResponse('tile')));
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+
+    const run = sw._warmCache([`${ORIGIN}/api/regions.geojson`]);
+    // Well past every read budget in the worker. A read would have been
+    // aborted by now; a download must still be waiting.
+    await vi.advanceTimersByTimeAsync(sw.NAVIGATION_FETCH_BUDGET_MS * 4);
+    release();
+    const summary = await run;
+
+    expect(summary.ok).toBe(1);
+    expect(summary.failed).toBe(0);
   });
 });
