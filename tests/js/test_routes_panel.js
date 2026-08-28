@@ -57,6 +57,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/inline_rename.js';
 import '../../static/js/row_rename_commit.js';
+import '../../static/js/row_focus.js';
 import '../../static/js/map_sheet.js';
 
 // As apps.public.views._routes_context builds it — the map sheet asks for the
@@ -524,5 +525,57 @@ describe('a row removed from the panel', () => {
     );
 
     expect(window.pwaTelemetry.emit).not.toHaveBeenCalled();
+  });
+});
+
+describe('framing a route from its row', () => {
+  // The panel's share of window.pwaRowFocus (covered on its own in
+  // test_row_focus.js) is three lines: which overlay is ours, how this
+  // sheet closes, and that the delegated handler asks about the name
+  // before anything else. A missing wire is invisible from either side, so
+  // it is asserted here.
+
+  /** Put one row carrying `target` into the open panel. */
+  function renderRow(target) {
+    btn.click();
+    sheet.querySelector('[data-routes-rows]').innerHTML = `
+      <ul><li data-row-renameable>
+        <button data-row-label data-row-focus="${target}">Haute Route</button>
+      </li></ul>`;
+    return sheet.querySelector('[data-row-focus]');
+  }
+
+  beforeEach(() => {
+    window.pwaMapFocus = { point: vi.fn(), bounds: vi.fn() };
+  });
+
+  afterEach(() => {
+    delete window.pwaMapFocus;
+  });
+
+  it('fits the route’s bbox and closes the panel', () => {
+    // Closing matters most on a phone, where the sheet is a full-width
+    // bottom dock covering the map it just flew.
+    renderRow('7.1,46.0,7.3,46.2').click();
+
+    expect(window.pwaMapFocus.bounds).toHaveBeenCalledWith([7.1, 46.0, 7.3, 46.2]);
+    expect(sheet.hidden).toBe(true);
+  });
+
+  it('switches the routes overlay on first', () => {
+    // The overlay defaults OFF (opt-in, unlike favourites), so without this
+    // the common case is a flight to an empty map.
+    renderRow('7.1,46.0,7.3,46.2').click();
+
+    expect(window.pwaRoutesOverlay.show).toHaveBeenCalledOnce();
+  });
+
+  it('does not treat the name as a rename', () => {
+    // The two controls are the name and the pencil, and SNOW-658 settled
+    // that they stay different controls.
+    const row = renderRow('7.1,46.0,7.3,46.2');
+    row.click();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

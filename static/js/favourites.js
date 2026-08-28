@@ -347,12 +347,41 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
+    if (handleFocusClick(event)) return;
     if (handleRenameClick(event)) return;
     if (!target.closest('[data-panel-add]')) return;
     event.stopPropagation();
     if (!IS_ELIGIBLE) return;
     startCreateFlow();
   });
+
+  /** Handle a click on a row's name, which frames that pin on the map.
+   *
+   * Hugo: "For routes, resorts, and observations, clicking on the name of
+   * an item should zoom in to it." A favourite is both of the first two —
+   * a dropped pin or a saved resort is one model — so both take this path.
+   * The row carries its own coordinates (favourites/partials/_favourite.html);
+   * window.pwaRowFocus owns what to do with them, shared unchanged with the
+   * routes and field-observation panels.
+   *
+   * NOT stopPropagation'd, unlike the add CTA below it. That one replaces
+   * the sheet's body, which detaches the clicked button before MapSheet's
+   * document-level click-outside handler asks whether the click was inside
+   * the sheet. This one CLOSES the sheet, which the same handler already
+   * guards against — its first line is a check that the sheet is open, and
+   * by then it is not.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a focus, so the caller stops
+   *   rather than also testing rename and the add CTA.
+   */
+  function handleFocusClick(event) {
+    if (!window.pwaRowFocus) return false;
+    return window.pwaRowFocus.handleClick(event, {
+      overlay: window.pwaFavouritesOverlay,
+      close: closeSheet,
+    });
+  }
 
   /** Handle a click that starts a row's inline rename (SNOW-658).
    *

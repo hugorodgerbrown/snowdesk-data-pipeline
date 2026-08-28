@@ -47,7 +47,10 @@ Context:
     {{ roster_payload|json_script:"favourites-roster-cache" }}
     <ul class="flex flex-col">
         {% for favourite in favourites %}
-            {% include "favourites/partials/_favourite.html" with favourite=favourite hide_disclosure=True %}
+            {# map_focus: this list is read over a map, so a row's name is a #}
+            {# control that frames its pin. The account variant passes      #}
+            {# nothing — see _favourite.html's own note.                    #}
+            {% include "favourites/partials/_favourite.html" with favourite=favourite hide_disclosure=True map_focus=True %}
         {% endfor %}
     </ul>
     {% if not favourites %}

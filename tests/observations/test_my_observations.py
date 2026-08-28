@@ -348,3 +348,20 @@ class TestMyObservationsSharedPartials:
         assert "data-row-label" in html
         assert f"/partials/report/{observation.uuid}/delete/" in html
         assert f'hx-target="#observation-{observation.uuid}"' in html
+
+    def test_the_row_label_is_inert_off_the_map(self, client: Client) -> None:
+        """No focus control here — the same partial, a page with no map.
+
+        The map panel's copy of this row makes the label a button that
+        frames the report; this page has nothing to fly, so the label stays
+        the plain text it has always been. The two surfaces render one
+        partial, so the difference has to be asserted or it drifts.
+        """
+        user = _verified_user()
+        FieldObservationFactory.create(user=user)
+        client.force_login(user)
+
+        html = client.get(PAGE_URL).content.decode()
+
+        assert "data-row-focus" not in html
+        assert "Zoom to" not in html

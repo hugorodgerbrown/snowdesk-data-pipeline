@@ -19,11 +19,22 @@ on any of the three panels.
 Context:
     observations : QuerySet[FieldObservation] — the requesting user's own
                    reports, newest first (FieldObservation.objects.for_user()).
+    map_focus    : bool, optional — set by observation_list (the map panel's
+                   endpoint) and absent on /account/observations/, which
+                   renders this same partial with no map behind it. Makes
+                   each row's label a control that frames its report; see
+                   _observation.html.
 {% endcomment %}
 <div data-testid="observation-list">
     <ul class="flex flex-col">
         {% for observation in observations %}
-            {% include "observations/partials/_observation.html" with observation=observation %}
+            {# map_focus is forwarded EXPLICITLY though an unqualified       #}
+            {# {% include %} would inherit it anyway: this partial has two   #}
+            {# callers with different context (the map endpoint sets it,     #}
+            {# my_observations.html does not), and a dependency that only    #}
+            {# works because nothing wrote `only` is one a later edit        #}
+            {# silently breaks.                                              #}
+            {% include "observations/partials/_observation.html" with observation=observation map_focus=map_focus %}
         {% endfor %}
     </ul>
     {% if not observations %}

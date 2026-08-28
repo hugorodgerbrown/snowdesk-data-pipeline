@@ -264,6 +264,7 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
+    if (handleFocusClick(event)) return;
     if (handleRenameClick(event)) return;
     if (!target.closest('[data-panel-add]')) return;
     if (!IS_ELIGIBLE || !uploadInput) return;
@@ -289,6 +290,32 @@
     if (target.checked) window.pwaRoutesOverlay?.show();
     else window.pwaRoutesOverlay?.hide();
   });
+
+  /** Handle a click on a row's name, which frames that route on the map.
+   *
+   * Hugo: "clicking on the name of an item should zoom in to it." The row
+   * carries its own bbox (routes/partials/_route.html), so the whole
+   * behaviour — switch the overlay on, close this panel, fit the viewport —
+   * is window.pwaRowFocus's, shared unchanged with the favourites and
+   * field-observation panels. What is left here is the two things only this
+   * module holds: which overlay bridge is ours, and how this sheet closes.
+   *
+   * Tested first in the delegated handler above, before the rename test:
+   * the two are different elements (the name, the pencil) and cannot both
+   * match, so the order is only about reading — the name is the row's
+   * primary control, so it is the first thing the handler asks about.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a focus, so the caller stops
+   *   rather than also testing rename and the add CTA.
+   */
+  function handleFocusClick(event) {
+    if (!window.pwaRowFocus) return false;
+    return window.pwaRowFocus.handleClick(event, {
+      overlay: window.pwaRoutesOverlay,
+      close: closeSheet,
+    });
+  }
 
   /** Handle a click that starts a row's inline rename.
    *

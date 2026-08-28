@@ -1,3 +1,4 @@
+{% load i18n map_focus %}
 {% comment %}
 observations/partials/_observation.html — One field-observation row (SNOW-658).
 
@@ -20,15 +21,37 @@ out exactly this row on the empty body the delete endpoint returns, and
 nothing on the page has to know which row was clicked.
 
 The label is not a link and not renameable: an observation has no page of
-its own to navigate to, and nothing about it is editable after the fact.
+its own to navigate to, and nothing about it is editable after the fact. On
+the map it IS a control, and the one thing it does is frame the report —
+Hugo: "For routes, resorts, and observations, clicking on the name of an
+item should zoom in to it." Pressing it flies to where the report was made
+and closes the panel.
+
+The coordinates come from the OWNER'S OWN row, which is the only place they
+exist at full precision: ``apps.public.api.community_reports_geojson``
+rounds every pin to 3 dp (~100 m) and strips the identity before the layer
+ever sees it, and that anonymisation is not something a convenience gesture
+gets to unpick. This partial is rendered by ``observation_list``, which is
+scoped to ``for_user`` — so the exact coordinate is only ever put in front
+of the person who chose it. The pin the camera lands beside is the rounded
+one, up to ~100 m off; at this scale that is inside the marker.
 
 Context:
     observation : FieldObservation — the report to render.
+    map_focus   : bool, optional — render the label as a control that frames
+                  this report on the map. Set by ``observation_list``, the
+                  map panel's own endpoint; ``/account/observations/``
+                  renders the same partial without it, having no map to fly.
 {% endcomment %}
 {% with uuid=observation.uuid|stringformat:"s" %}
     {# The meta line — region and relative age — is its own partial rather   #}
     {# than a string built here: it carries a `<time>` element, and the row's #}
     {# `meta` parameter is text. See _observation_meta.html for why the age   #}
     {# has to be an element and not a sentence fragment.                     #}
-    {% include "includes/_ugc_panel_row.html" with row_id="observation-"|add:uuid label=observation.get_observation_type_display meta_template="observations/partials/_observation_meta.html" actions_template="observations/partials/_observation_row_actions.html" %}
+    {% if map_focus %}
+        {% focus_target observation.longitude observation.latitude as row_focus_target %}
+        {% blocktrans trimmed with name=observation.get_observation_type_display asvar row_focus_label %}Zoom to
+            {{ name }}{% endblocktrans %}
+    {% endif %}
+    {% include "includes/_ugc_panel_row.html" with row_id="observation-"|add:uuid label=observation.get_observation_type_display meta_template="observations/partials/_observation_meta.html" focus_target=row_focus_target focus_label=row_focus_label actions_template="observations/partials/_observation_row_actions.html" %}
 {% endwith %}

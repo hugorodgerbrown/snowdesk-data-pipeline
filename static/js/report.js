@@ -540,11 +540,41 @@
   sheet.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
+    if (handleFocusClick(event)) return;
     if (!target.closest('[data-panel-add]')) return;
     event.stopPropagation();
     if (!IS_ELIGIBLE) return;
     startReportFlow();
   });
+
+  /** Handle a click on a row's label, which frames that report on the map.
+   *
+   * Hugo: "For routes, resorts, and observations, clicking on the name of
+   * an item should zoom in to it." This panel's rows are the only ones
+   * with nothing else to click — an observation cannot be renamed and has
+   * no page of its own — so the label going from inert text to a control
+   * is the biggest change of the three, and it is the same control.
+   *
+   * The coordinates ride on the row rather than being looked up on the
+   * layer, and here that is not merely simpler: the community-reports feed
+   * is anonymised server-side (rounded, de-identified) and carries no uuid
+   * to look one up BY. See observations/partials/_observation.html.
+   *
+   * window.pwaRowFocus owns the behaviour, shared unchanged with the routes
+   * and favourites panels; this passes the two things only this module
+   * holds — its overlay bridge and its close.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a focus, so the caller stops
+   *   rather than also testing the add CTA.
+   */
+  function handleFocusClick(event) {
+    if (!window.pwaRowFocus) return false;
+    return window.pwaRowFocus.handleClick(event, {
+      overlay: window.pwaCommunityReportsOverlay,
+      close: closeSheet,
+    });
+  }
 
   // SNOW-658: the overlay switch drives window.pwaCommunityReportsOverlay
   // directly — show()/hide() are the only writers of that overlay's

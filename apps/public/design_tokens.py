@@ -1283,7 +1283,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "below), outside the action cluster because it is not an "
             "action, and puts the account page's favourite rows on this "
             "same row — the last surface still managing user data with an "
-            "always-visible text field and an underlined 'Remove'."
+            "always-visible text field and an underlined 'Remove'. The "
+            "name is inert text except on the three map panels whose rows "
+            "are places, where it is a button that frames that place; "
+            "rename stays the pencil's, so the two are still different "
+            "controls."
         ),
         kind="components",
         partial="includes/_ugc_panel_row.html",

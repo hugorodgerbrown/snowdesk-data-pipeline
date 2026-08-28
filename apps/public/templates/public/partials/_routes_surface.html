@@ -15,7 +15,7 @@ Included from home.html unconditionally since SNOW-724 retired the
 still decides what the panel shows: routes.js branches on
 ``data-routes-eligible`` for the anonymous sign-in CTA.
 
-Three shared modules are loaded once each by home.html before this partial
+Five shared modules are loaded once each by home.html before this partial
 — none is repeated here:
 
   htmx.min.js       the panel's row list and each row's Remove form.
@@ -26,6 +26,11 @@ Three shared modules are loaded once each by home.html before this partial
   row_rename_commit.js
                     the POST that rename commits to (SNOW-711), shared
                     with the favourites panel and the account page.
+  row_focus.js      pressing a row's NAME frames that route on the map —
+                    overlay on, panel closed, viewport fit to the bbox the
+                    row carries. Likewise shared with the favourites and
+                    field-observation panels; routes.js passes only its own
+                    overlay bridge and its own close.
 
 SNOW-687 closed the gap SNOW-686 left: there IS a routes map layer now (a
 MapLibre line pair driven by window.pwaRoutesOverlay), so
