@@ -28,7 +28,9 @@ def test_settings_page_has_reset_trigger() -> None:
 
     assert response.status_code == 200
     assert "data-pwa-reset-trigger" in body
-    assert "Reset local data on this device" in body
+    # SNOW-746: the row's heading carries the name and the button reads
+    # "Reset" — the row already says what is being reset.
+    assert "Reset local data" in body
 
 
 @pytest.mark.django_db

@@ -74,6 +74,21 @@ _BUTTON_VARIANT_CLASSES: dict[str, str] = {
         "text-text-2 border border-text-3/30"
         " hover:text-text-1 hover:border-text-2 transition-colors"
     ),
+    # SNOW-746 — the outlined destructive control. Delete account is the one
+    # button on the settings page that must not read as a peer of Reset local
+    # data beside it, and ``ghost`` makes them identical.
+    #
+    # Outlined rather than filled, and that is the whole point: a solid red
+    # button is the loudest thing on a page whose other controls are quiet
+    # outlines, which invites the press it is trying to make deliberate.  It
+    # names itself in the border and the label instead, and fills only under
+    # the pointer.  ``icon_button_classes``'s own ``destructive`` variant
+    # reaches the same conclusion from the other side — neutral at rest,
+    # red on hover — because a row of red bins reads as an error state.
+    "destructive": (
+        "text-status-error-text border border-status-error-text"
+        " hover:bg-status-error-bg transition-colors"
+    ),
 }
 
 _BUTTON_SIZE_CLASSES: dict[str, str] = {
@@ -238,7 +253,7 @@ def button_classes(
 
     Args:
         variant: Visual style — ``"primary"`` (default), ``"secondary"``,
-            or ``"ghost"``.
+            ``"ghost"``, or ``"destructive"``.
         size: Padding scale — ``"standard"`` (default, ``px-5 py-2.5``) or
             ``"compact"`` (``px-4 py-2``).
         full_width: When ``True``, appends ``w-full``.

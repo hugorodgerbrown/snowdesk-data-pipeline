@@ -276,6 +276,31 @@ class TestPasskeyCredentialModel:
         )
         assert passkey.display_name == "Synced passkey — 1 Jan 2025"
 
+    def test_provider_name_omits_the_date_display_name_appends(self) -> None:
+        """SNOW-746: the name alone, for a surface that prints the date itself.
+
+        The settings page's passkey row carries an "Added {date}" meta line
+        under the name, so ``display_name`` there would print the date twice.
+        """
+        _1password_aaguid = uuid.UUID("bada5566-a7aa-401f-bd96-45619a55120d")
+        passkey = PasskeyCredentialFactory.create(
+            aaguid=_1password_aaguid,
+            name="Synced passkey — 1 Jan 2025",
+        )
+        assert passkey.provider_name == "1Password"
+        assert " — " not in passkey.provider_name
+        assert passkey.display_name.startswith("1Password — ")
+
+    def test_provider_name_falls_back_to_stored_name_for_unknown_aaguid(self) -> None:
+        """With no provider to look up, both properties agree on the stored name."""
+        unknown_aaguid = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        passkey = PasskeyCredentialFactory.create(
+            aaguid=unknown_aaguid,
+            name="Device passkey — 1 Jan 2025",
+        )
+        assert passkey.provider_name == "Device passkey — 1 Jan 2025"
+        assert passkey.provider_name == passkey.display_name
+
 
 @pytest.mark.django_db
 class TestPasskeyCredentialQuerySet:

@@ -10,7 +10,9 @@ Context:
     href          : str  — if supplied, renders an ``<a>``; otherwise a ``<button>``.
     button_type   : str  — ``type`` attribute for ``<button>`` (default ``"submit"``).
     button_id     : str  — optional ``id`` attribute. Auto-escaped.
-    variant       : str  — ``"primary"`` (default), ``"secondary"``, or ``"ghost"``.
+    variant       : str  — ``"primary"`` (default), ``"secondary"``,
+                           ``"ghost"``, or ``"destructive"`` (outlined in
+                           ``status-error-text``; SNOW-746).
     size          : str  — ``"standard"`` (default, px-5 py-2.5) or
                            ``"compact"`` (px-4 py-2).
     full_width    : bool — when truthy, adds ``w-full`` (default False).

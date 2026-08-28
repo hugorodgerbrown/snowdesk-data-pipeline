@@ -1412,13 +1412,20 @@ class TestHubViewAuthenticated:
         assert b"CH-4115" in response.content
 
     def test_shows_telemetry_toggle_with_role_switch(self) -> None:
-        """SNOW-387: the Anonymous usage data section renders a role="switch" toggle."""
+        """SNOW-387: the Anonymous usage data section renders a role="switch" toggle.
+
+        SNOW-746 swapped the hand-rolled ``<button role="switch">`` for
+        ``includes/_switch.html``, whose control is a real checkbox. The id
+        is the binding contract the inline script selects on — the partial
+        takes no data-attribute passthrough, by design (SNOW-645, SAST).
+        """
         account = AccountFactory.create()
         client = _make_session_client(account)
         response = client.get(reverse("accounts:settings"))
         assert response.status_code == 200
-        assert b"data-telemetry-toggle" in response.content
+        assert b'id="telemetry-switch"' in response.content
         assert b'role="switch"' in response.content
+        assert b'for="telemetry-switch"' in response.content
 
     def test_telemetry_toggle_explainer_copy_present(self) -> None:
         """SNOW-387: the telemetry section explains what is (and isn't) collected."""

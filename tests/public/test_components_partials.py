@@ -85,6 +85,29 @@ class TestButtonChromeClasses:
         assert "border-text-3/30" in cls
         assert "text-text-2" in cls
 
+    def test_destructive_is_outlined_not_filled(self) -> None:
+        """SNOW-746: destructive draws the status-error colour on the border.
+
+        Outlined, not filled — the settings page's Delete account row sits
+        among quiet outlines, and a solid red button there would be the
+        loudest thing on the page. The fill belongs to hover only.
+        """
+        cls = _button_chrome_classes("destructive", "compact", False, False)
+        assert "border-status-error-text" in cls
+        assert "text-status-error-text" in cls
+        assert "hover:bg-status-error-bg" in cls
+
+    def test_destructive_is_distinguishable_from_ghost(self) -> None:
+        """The delete control must not resolve to the same chrome as Reset.
+
+        Both sit on the settings page; if the variants collapsed, the page
+        would offer two identical-looking buttons for a reversible and an
+        irreversible action.
+        """
+        destructive = _button_chrome_classes("destructive", "compact", False, False)
+        ghost = _button_chrome_classes("ghost", "compact", False, False)
+        assert destructive != ghost
+
     def test_full_width(self) -> None:
         """full_width=True appends w-full."""
         cls = _button_chrome_classes("primary", "standard", True, False)
@@ -174,6 +197,15 @@ class TestButtonPartial:
         )
         assert "border-text-3/30" in html
         assert "text-text-2" in html
+
+    def test_destructive_button(self) -> None:
+        """SNOW-746: destructive variant button carries the status-error border."""
+        html = render_to_string(
+            "includes/_button.html",
+            {"label": "Delete account", "variant": "destructive"},
+        )
+        assert "border-status-error-text" in html
+        assert "text-status-error-text" in html
 
     def test_compact_size(self) -> None:
         """size=compact uses px-4 py-2 padding."""

@@ -481,6 +481,25 @@ class PasskeyCredential(models.Model):
         ordering = ["-created_at"]
 
     @property
+    def provider_name(self) -> str:
+        """Return the passkey's name alone, with no date appended.
+
+        ``display_name`` below is this string plus the creation date, which
+        is the right shape for a label that has to identify a passkey on its
+        own — ``to_string``, the admin list, the Remove control's aria-label.
+        It is the wrong shape wherever the surface already prints the date
+        beside it: the settings page's passkey row carries an "Added {date}"
+        meta line under the name (SNOW-746), and ``display_name`` there reads
+        "Google Password Manager — 26 Aug 2026 / Added 26 Aug 2026".
+
+        Two properties rather than a parameter on one, because the two
+        callers want two different things and neither wants to decide: a
+        list of passkeys wants the name, and a sentence about one passkey
+        wants the date that tells it apart from the others.
+        """
+        return _aaguid_lookup(self.aaguid) or self.name
+
+    @property
     def display_name(self) -> str:
         """Return the provider name from AAGUID lookup, or fall back to stored name.
 
