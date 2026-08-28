@@ -25,6 +25,12 @@ What the parser accepts, and why:
   Reporting zero climb for a file that simply never recorded elevation
   would state a fact we do not have. The two figures are always known or
   unknown together — they are read off the same series.
+* **Only the first and last ``<time>`` are read** (SNOW-750). A recorded
+  track carries one on every point; the span between the ends is the
+  route's elapsed time, and that is the whole of what the popup shows.
+  Per-point timing is a separate storage decision — see SNOW-751. A file
+  with no ``<time>``, an unparseable one, or a last-before-first pair
+  yields ``(None, None)``: unknown, on the same rule as elevation.
 
 Parsing goes through ``defusedxml.ElementTree`` rather than the stdlib
 parser — the same choice, for the same reason, as the Météo-France DPBRA
@@ -38,9 +44,11 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from defusedxml.ElementTree import ParseError, fromstring
+from django.utils.dateparse import parse_datetime
 
 from apps.core.coordinates import InvalidCoordinatesError, validate_coordinates
 from apps.core.geo import haversine_m
@@ -99,6 +107,11 @@ class ParsedRoute:
         descent_m: Total elevation loss over the full-resolution track, as
             a positive magnitude, or ``None`` on the same condition —
             the two are always known or unknown together.
+        started_at: The first track point's ``<time>``, tz-aware, or
+            ``None`` when the file carries no usable timing.
+        finished_at: The last track point's ``<time>``, tz-aware, or
+            ``None``. Always known or unknown together with
+            ``started_at`` — the pair is read and validated as one.
         point_count: ``len(points)`` — what is stored, not what was read.
         bounds: GeoJSON bbox over ``points``:
             ``[min_lon, min_lat, max_lon, max_lat]``.
@@ -115,6 +128,8 @@ class ParsedRoute:
     distance_m: float
     ascent_m: float | None
     descent_m: float | None
+    started_at: datetime | None
+    finished_at: datetime | None
     point_count: int
     bounds: list[float]
     track_count: int
@@ -229,6 +244,71 @@ def _point_from_element(element: "Element") -> tuple[float, float, float | None]
             elevation = candidate
 
     return longitude, latitude, elevation
+
+
+def _point_time(element: "Element") -> datetime | None:
+    """Return one point's ``<time>`` as a tz-aware datetime, or ``None``.
+
+    Reads a DIRECT child, via ``_child_text``. Every point in a real
+    device export also carries an ``<extensions>`` subtree (heart rate,
+    cadence, power), and a descendant search would walk into it — today
+    Garmin's ``TrackPointExtension`` happens to hold nothing time-named,
+    which is not a guarantee to build on.
+
+    GPX 1.1 mandates UTC, so a timestamp that parses without an offset is
+    stamped UTC rather than rejected. An unparseable one is a gap in the
+    data, not a broken file — the same call ``<ele>`` already gets.
+
+    Args:
+        element: The point element.
+
+    Returns:
+        A tz-aware datetime, or ``None`` when absent or unparseable.
+
+    """
+    raw = _child_text(element, "time")
+    if not raw:
+        return None
+    try:
+        parsed = parse_datetime(raw)
+    except ValueError:
+        # Well-formed ISO shape, impossible value ("2026-02-30T…").
+        return None
+    if parsed is None:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _track_span(
+    point_elements: list["Element"],
+) -> tuple[datetime | None, datetime | None]:
+    """Return the ``(first, last)`` timestamps of a track, or ``(None, None)``.
+
+    Only the two ends are read — the span between them is the elapsed
+    time, and nothing here needs the points in between (SNOW-751 is where
+    per-point timing gets argued).
+
+    Both ends must be present and in order. A file timed at one end only
+    cannot yield a duration, and a last-before-first pair is a corrupt or
+    hand-edited series whose "duration" would be negative; both answer
+    ``(None, None)`` rather than half a fact.
+
+    Args:
+        point_elements: The chosen track's point elements, in document
+            order.
+
+    Returns:
+        A ``(started_at, finished_at)`` pair, both tz-aware, or
+        ``(None, None)``.
+
+    """
+    if not point_elements:
+        return None, None
+    started_at = _point_time(point_elements[0])
+    finished_at = _point_time(point_elements[-1])
+    if started_at is None or finished_at is None or finished_at < started_at:
+        return None, None
+    return started_at, finished_at
 
 
 def _select_track(root: "Element") -> tuple[list["Element"], int, str]:
@@ -482,7 +562,8 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
 
     Returns:
         A ``ParsedRoute``. ``distance_m``, ``ascent_m`` and ``descent_m``
-        are measured on the full-resolution track; ``points``,
+        are measured on the full-resolution track, and ``started_at`` /
+        ``finished_at`` are read from its two ends; ``points``,
         ``point_count`` and ``bounds`` describe the simplified track that
         will be stored.
 
@@ -517,6 +598,7 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
     # and the drop.
     distance_m = _total_distance_m(source_points)
     ascent_m, descent_m = _total_ascent_descent_m(source_points)
+    started_at, finished_at = _track_span(point_elements)
 
     simplified = _simplify(source_points)
     points: list[list[float | None]] = [
@@ -531,6 +613,8 @@ def parse_gpx(raw: bytes) -> ParsedRoute:
         distance_m=distance_m,
         ascent_m=ascent_m,
         descent_m=descent_m,
+        started_at=started_at,
+        finished_at=finished_at,
         point_count=len(points),
         bounds=_bounds(points),
         track_count=track_count,

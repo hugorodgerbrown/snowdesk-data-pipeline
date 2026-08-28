@@ -298,6 +298,15 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // carried no elevation.
   'route-profile-label': 'Elevation profile of this route',
   'route-elevation-range': '%(low)s–%(high)s m',
+  // SNOW-750: how long the recording ran, shown on the caption line beside
+  // the range. ELAPSED, not moving time — the span between the file's first
+  // and last <time>, stops included. Two forms rather than one padded
+  // string: a 41-minute tour reading "0h41m" states an hours figure it does
+  // not have, and an hour count is not a leading zero on a minute count. A
+  // multi-day track keeps counting in hours ("31h05m"); days would need a
+  // third form for a case a ski tour does not have.
+  'route-duration-hours': '%(hours)sh%(minutes)sm',
+  'route-duration-minutes': '%(minutes)sm',
   // The same last-resort label routes/partials/_route.html falls
   // back to, so one route reads identically in the panel and in the popup.
   // The popup's payload carries no ``source_filename`` (the row's middle

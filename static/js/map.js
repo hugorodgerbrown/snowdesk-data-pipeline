@@ -5638,41 +5638,98 @@
      * Silently draws nothing when the track has no elevation at all — a
      * GPX with no `<ele>` means "unknown", and an empty flat line at zero
      * would be the same lie the omitted ascent figure exists to avoid.
+     * Returns the profile either way, so appendRouteCaption can caption a
+     * chart that exists without having to re-read the geometry.
      *
      * @param {HTMLElement} container The popup body being built.
      * @param {string} uuid The route's uuid, from the feature properties.
+     * @returns {object|null} The profile drawn, or null if none was.
      */
     const appendElevationProfile = (container, uuid) => {
       const core = self.pwaElevationProfileCore;
-      if (!core || !uuid || !routesGeojsonCache) return;
+      if (!core || !uuid || !routesGeojsonCache) return null;
 
       const features = routesGeojsonCache.features || [];
       const cached = features.find(
         (f) => f && f.properties && f.properties.uuid === uuid,
       );
       const coordinates = cached && cached.geometry && cached.geometry.coordinates;
-      if (!Array.isArray(coordinates)) return;
+      if (!Array.isArray(coordinates)) return null;
 
       const profile = core.readProfile(coordinates);
       const svg = core.createProfileSvg(profile, {
         label: MAP_STRINGS['route-profile-label'],
       });
-      if (!svg) return;
+      if (!svg) return null;
       container.appendChild(svg);
+      return profile;
+    };
 
-      // The chart's y-axis is scaled to this track's own highest and
-      // lowest point, so the curve's height means nothing without the
-      // pair that bounds it. Caption, not decoration.
-      const range = document.createElement('div');
-      range.className = 'text-xs text-text-3';
-      range.textContent = self.pwaStrings.interpolate(
-        MAP_STRINGS['route-elevation-range'],
-        {
-          low: String(Math.round(profile.minEle)),
-          high: String(Math.round(profile.maxEle)),
-        },
-      );
-      container.appendChild(range);
+    /**
+     * Format a duration in seconds as hours and minutes, or null.
+     *
+     * Whole minutes: a tour is not read to the second, and rounding rather
+     * than truncating keeps 59.6 minutes from reading as 59. The hours form
+     * pads the minutes so "4h05m" cannot be misread as "4h5m"; the
+     * minutes-only form does not, since there is nothing to align it to.
+     *
+     * @param {number} seconds Elapsed seconds, from the feature's duration_s.
+     * @returns {string|null} The formatted span, or null if not a duration.
+     */
+    const formatDuration = (seconds) => {
+      if (typeof seconds !== 'number' || !isFinite(seconds) || seconds <= 0) {
+        return null;
+      }
+      const totalMinutes = Math.round(seconds / 60);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      if (hours === 0) {
+        return self.pwaStrings.interpolate(
+          MAP_STRINGS['route-duration-minutes'],
+          { minutes: String(minutes) },
+        );
+      }
+      return self.pwaStrings.interpolate(MAP_STRINGS['route-duration-hours'], {
+        hours: String(hours),
+        minutes: String(minutes).padStart(2, '0'),
+      });
+    };
+
+    /**
+     * Append the caption line under the profile: elevation range, duration.
+     *
+     * SEPARATE FROM THE CHART ON PURPOSE (SNOW-750). The range caption used
+     * to live inside appendElevationProfile, which tied it to a chart being
+     * drawn — so a GPX carrying timing but no <ele> drew nothing and lost
+     * its duration with it. The two facts are independent: either, both or
+     * neither may be known, and the line renders whatever is.
+     *
+     * The range half is not decoration. The chart's y-axis is scaled to
+     * this track's own highest and lowest point, so the curve's height
+     * means nothing without the pair that bounds it.
+     *
+     * @param {HTMLElement} container The popup body being built.
+     * @param {object|null} profile The drawn profile, or null if none was.
+     * @param {number} durationSeconds The feature's duration_s.
+     */
+    const appendRouteCaption = (container, profile, durationSeconds) => {
+      const parts = [];
+      if (profile) {
+        parts.push(
+          self.pwaStrings.interpolate(MAP_STRINGS['route-elevation-range'], {
+            low: String(Math.round(profile.minEle)),
+            high: String(Math.round(profile.maxEle)),
+          }),
+        );
+      }
+      const duration = formatDuration(durationSeconds);
+      if (duration) parts.push(duration);
+      if (!parts.length) return;
+
+      const caption = document.createElement('div');
+      caption.className = 'text-xs text-text-3';
+      caption.textContent = parts.join(' · ');
+      container.appendChild(caption);
     };
 
     // SNOW-687: tapping a saved route frames the whole track and opens its
@@ -5755,7 +5812,8 @@
         container.appendChild(meta);
       }
 
-      appendElevationProfile(container, props.uuid);
+      const profile = appendElevationProfile(container, props.uuid);
+      appendRouteCaption(container, profile, props.duration_s);
 
       // The already-registered 'map-detail-popup' exclusivity member, so a
       // route tap closes every other map overlay and needs no registration
