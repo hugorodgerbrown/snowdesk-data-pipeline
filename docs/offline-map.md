@@ -2026,7 +2026,22 @@ connectivity (`navigator.onLine && networkMode === 'auto'`) and fires on every
 mode change, and `window.pwaConnectivity.isOnline()` is the read of that same
 value for the surfaces that re-read state when they repaint — the two download
 roundels, the downloads sheet's add-trigger, and the layers menu's sync dots.
-Those controls are disabled and explained, never hidden.
+Those controls are disabled and explained, never hidden. A cancelled run rests
+the roundel rather than erroring it in either control: the user stopping a
+download is not a fault, and `finish` reads `cancelled` before it reads the
+failure count, which a cancelled run always reports as 0.
+
+`isOnline()` is the read for **every** module that decides whether to talk to
+the server, not just the download surfaces. `telemetry.js` (`flush` and the
+critical-event `sendBeacon`), `mutation_queue.js` (`drain`, and the inline
+drain `enqueue` makes), `favourites.js`, `report.js` and `routes.js` all
+consult it, falling back to `navigator.onLine` on a page where
+`pwa_offline.js` has not run. Nothing is dropped under a forced mode: a
+telemetry event stays in `queue:events`, a queued mutation stays in
+`queue:mutations` without spending an attempt, and both go out when the
+toggle returns to `auto` — the states those subsystems are already built
+around. The one refusal is a GPX upload, which is online-only by design and
+says so.
 
 ## Offline gating of the layers menu
 

@@ -240,7 +240,7 @@ is what `report_submit`'s `CsrfViewMiddleware` check needs.
 function of the same name in `static/js/telemetry.js`: `online`,
 `visibilitychange` → visible, a 30s timer that runs only while the tab is
 visible (`DRAIN_INTERVAL_MS`), and `pagehide`. `enqueue()` is the fifth — it
-drains inline once the row is persisted, when `navigator.onLine` is true
+drains inline once the row is persisted, when the app is using the network
 (`mutation_queue.js:580`). All of them funnel through one in-flight guard
 (`_drainInFlight`) so concurrent triggers can never double-POST the same
 row, and one pass replays at most `BATCH_SIZE` (50) rows.
@@ -264,10 +264,19 @@ did reach the view.
 
 ### Offline guard
 
-`drain()` returns an already-resolved promise when `navigator.onLine` is
-false (`mutation_queue.js:603`) — ahead of the in-flight guard, so no row is
-read and no request is made. It is the same guard `telemetry.js`'s `flush()`
-carries (`telemetry.js:372`).
+`drain()` returns an already-resolved promise when the app is not using the
+network — ahead of the in-flight guard, so no row is read and no request is
+made. It is the same guard `telemetry.js`'s `flush()` carries.
+
+"Not using the network" is `_networkInUse()`, not `navigator.onLine`
+(SNOW-748). The interface being up is only half the question: the header's
+network toggle can put the app in a forced offline mode while the radio
+stays up, and replaying a queued mutation under it spends one of the row's
+20 attempts on a connection the user asked the app not to use. Both modules
+consult `window.pwaConnectivity.isOnline()` (`pwa_offline.js`), falling back
+to `navigator.onLine` on a page where that module has not run. A forced mode
+leaves the row queued, which is the state the queue is built around — nothing
+is dropped, and the next drain after the toggle returns to `auto` replays it.
 
 The service worker cannot absorb an offline replay. Classification returns
 `'network'` for every non-GET request — `basemap_cache_core.js:84`, and the
@@ -341,8 +350,10 @@ logic: offline enqueue → online replay, identical Idempotency-Key across
 retries, permanent-4xx immediate failure (toast + telemetry), backoff
 scheduling and the 20-attempt ceiling, the nav badge, feature-detected
 Background Sync registration, the offline guard (`attempts` holds across
-repeated drains while `navigator.onLine` is false) and the `pagehide`
-trigger. `test_mutation_queue_core.js` unit-tests `backoffDelayMs` /
+repeated drains while the app is not using the network — both with the
+interface down and under SNOW-748's forced offline mode, with a matching
+`auto` case so a guard that never drained at all would be caught) and the
+`pagehide` trigger. `test_mutation_queue_core.js` unit-tests `backoffDelayMs` /
 `classifyStatus` / `isRowEligible` against the shared core directly, with no
 IndexedDB row or HTTP round trip. The SNOW-462 principal-stamping and
 reconcile-on-load scenarios (account change / uninitialised baseline)
