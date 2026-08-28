@@ -130,16 +130,24 @@
   const NETWORK_MODE_KEY = 'network.mode';
   let networkMode = 'auto';
 
-  // SNOW-748: the header toggle in includes/nav.html, and the ids of the
-  // strings ``<template>`` beside it. English fallbacks are here rather than
-  // only in the template because a page whose nav is absent (or an older
-  // cached shell) must still label the control with words.
+  // SNOW-748: the header toggle in includes/nav.html.
   const NETWORK_TOGGLE_SELECTOR = '[data-network-toggle]';
-  const NETWORK_TOGGLE_STRINGS_ID = 'network-toggle-strings-template';
-  const NETWORK_TOGGLE_FALLBACKS = {
+
+  // Its two labels, server-translated into the strings ``<template>`` that
+  // nav.html renders and read back here (SNOW-620's pattern — see
+  // static/js/i18n_strings.js). The label names the ACTION rather than the
+  // state, so it has to change with the mode; a label assigned from a JS
+  // literal would ship English to every locale, because ``makemessages``
+  // never scans ``static/js``.
+  //
+  // The literals below are the English fallback for a page that renders no
+  // nav — read at parse time because i18n_strings.js and this file are both
+  // deferred from base.html in that order, so the helper and the template are
+  // both in place by the time this runs.
+  const NETWORK_TOGGLE_STRINGS = self.pwaStrings.read('network-toggle-strings-template', {
     'go-offline': 'Go offline — stop using the network',
     'go-online': 'Go back online — start using the network',
-  };
+  });
 
   // SNOW-482: the meta:app key the last-sync clock is persisted under.
   // A sibling ``freshness.last_generated_at`` key went with the write-only
@@ -374,13 +382,13 @@
     button.classList.toggle('bg-status-warning-bg', offline);
     button.classList.toggle('text-status-warning-text', offline);
     button.classList.toggle('text-text-3', !offline);
-    const strings = window.pwaStrings
-      ? window.pwaStrings.read(NETWORK_TOGGLE_STRINGS_ID, NETWORK_TOGGLE_FALLBACKS)
-      : NETWORK_TOGGLE_FALLBACKS;
     // The label names the ACTION, not the state — the state is aria-pressed's
     // job, and a control labelled with its own state reads back ambiguously.
-    button.setAttribute('aria-label', offline ? strings['go-online'] : strings['go-offline']);
-    button.setAttribute('title', offline ? strings['go-online'] : strings['go-offline']);
+    const label = offline
+      ? NETWORK_TOGGLE_STRINGS['go-online']
+      : NETWORK_TOGGLE_STRINGS['go-offline'];
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
     const glyph = (role, shown) => {
       const el = button.querySelector(`[data-role="${role}"]`);
       if (el) el.classList.toggle('hidden', !shown);
