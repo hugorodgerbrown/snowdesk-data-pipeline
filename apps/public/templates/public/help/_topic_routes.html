@@ -9,6 +9,21 @@ no help section of its own.
 The two caps (settings.ROUTES_MAX_PER_USER, ROUTE_UPLOAD_MAX_BYTES) are
 described without their numbers on purpose: both are env-overridable, so
 a figure written here would be a claim this page cannot keep true.
+
+WHY IT NAMES AN EDITOR. The uploader takes a file and draws it; it has no
+way to crop, split or join one, and it never will &mdash; that is a route
+editor's job, not an avalanche site's. A device export is often not the
+file a user wants on the map (the drive home on the end of a recording, a
+week-long trip in one track), so the panel names a free browser tool that
+does it. The routes empty clause deliberately does NOT carry this link:
+it is two sentences telling a newcomer what to upload, and a tool
+recommendation belongs in the documentation rather than in the panel.
+
+The sentence is ONE msgid, anchor included &mdash; the shape
+public/partials/_resort_why_it_matters.html already uses &mdash; so a
+translator can move the link within the sentence instead of reassembling
+fragments. The URL is a context variable and NOT part of the msgid:
+changing where we point must not invalidate every translation.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -19,6 +34,20 @@ a figure written here would be a claim this page cannot keep true.
             watch, a planning tool or a touring app exports.
         {% endblocktrans %}
     </p>
+    {% with editor_url="https://gpx.studio/" %}
+        <p class="mb-3 last:mb-0" data-testid="help-routes-editing">
+            {% blocktrans trimmed %}
+                The file you exported is not always the file you want on the map. <a
+                    href="{{ editor_url }}"
+                    target="_blank"
+                    rel="noopener"
+                    class="text-status-info-text underline"
+                >gpx.studio ↗</a> opens a .gpx in the browser and lets you crop its ends, slice it into pieces, join
+                two together or redraw a stretch, then export the result &mdash; enough to take the drive home off a
+                recorded track, or to cut a multi-day tour into a day each. It is free and needs no account.
+            {% endblocktrans %}
+        </p>
+    {% endwith %}
     <p class="mb-3 last:mb-0" data-testid="help-routes-panel">
         {% blocktrans trimmed %}
             The panel lists everything you have uploaded, each row with its distance and, where the file recorded
