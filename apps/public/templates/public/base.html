@@ -217,12 +217,6 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# when a queued mutation is marked "failed" (a non-408/429 4xx, #}
         {# or one that exhausted its retry budget).                      #}
         {% include "includes/_toast_banner.html" %}
-        {# SNOW-748: connection-status toast, opened by the permanent      #}
-        {# connectivity symbol in includes/nav.html. Replaces the SNOW-377 #}
-        {# offline banner that used to sit above the nav — the symbol says #}
-        {# whether the app is reaching the server, and this says when it   #}
-        {# last did, why not, and offers the way back.                     #}
-        {% include "includes/_offline_toast.html" %}
         {# SNOW-486: shared "×" dismiss handler for every [data-action=    #}
         {# "dismiss"] control inside a [data-overlay] element, plus the   #}
         {# toast auto-dismiss controller. No dependency on the scripts    #}

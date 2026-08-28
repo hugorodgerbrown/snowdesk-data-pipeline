@@ -29,15 +29,16 @@ Sync badge (SNOW-376):
   permanently failed.
 
 Connectivity symbol (SNOW-748):
-  A [data-network-indicator] button beside the sync badge, rendered for
+  A [data-network-indicator] <summary> beside the sync badge, rendered for
   every viewer including anonymous ones and NEVER hidden — the
   phone-status-bar half of the aeroplane-mode model this feature follows.
   static/js/pwa_offline.js swaps its glyph, its colour and its accessible
   name between "using the network" and "not using the network", and writes
   the same bit to [data-network-state]. Pressing it opens the
-  connection-status toast (includes/_offline_toast.html), which is why it
-  carries aria-expanded / aria-controls and NOT aria-pressed: it is a
-  disclosure, and it never changes the network mode.
+  connection-status panel (includes/_connection_panel.html) anchored under
+  it, which is why it carries aria-expanded / aria-controls and NOT
+  aria-pressed: it is a disclosure, and it never changes the network mode.
+  A third native <details>, alongside the two dropdowns below.
 
 Offline mode switch (SNOW-748):
   A [data-network-toggle] row at the TOP of the subscriber menu below, in
@@ -167,23 +168,34 @@ Usage
                 the struck-through pair (includes/_icon_wifi_off.html) while it
                 is not — whether the interface is down, the worker latched
                 itself after repeated failures, or the user asked for offline
-                mode. Which of those it is has a sentence in the toast; the
+                mode. Which of those it is has a sentence in the panel; the
                 header has room for one bit and paints one bit.
 
                 It IS a control again, but a DISCLOSURE, not a switch: pressing
-                it opens the connection-status toast
-                (includes/_offline_toast.html) and pressing it again closes it.
-                Hence `aria-expanded` + `aria-controls`, and deliberately NOT
-                `aria-pressed` — an earlier pass shipped it as a toggle for the
-                network mode itself, and a control in the status area that
-                changes the thing it is reporting invites exactly the misread
-                that the symbol IS the switch. The switch is in the account
-                menu below. Nothing here changes the network mode.
+                it opens the connection-status panel
+                (includes/_connection_panel.html) anchored beneath it, and
+                pressing it again closes it. Hence `aria-expanded` +
+                `aria-controls`, and deliberately NOT `aria-pressed` — an
+                earlier pass shipped it as a toggle for the network mode
+                itself, and a control in the status area that changes the thing
+                it is reporting invites exactly the misread that the symbol IS
+                the switch. The switch is in the account menu below. Nothing
+                here changes the network mode.
+
+                A native <details> whose <summary> IS the symbol, exactly like
+                the two dropdowns below it. That is the third thing this header
+                discloses, so it is the third one built the same way: open,
+                close, Enter/Space and focus are the browser's, the script at
+                the foot of this file adds outside-click, Escape and the
+                panel's own close control, and nothing invents a fourth
+                dismissal mechanism. The panel it discloses was briefly a TOAST
+                fixed to the bottom of the viewport, which put the detail as
+                far from the control that summoned it as the screen allows.
 
                 Shown to anonymous viewers as well as signed-in ones, and that
                 asymmetry with the menu switch is deliberate: the worker
                 latches itself for anybody, so the state it announces is one an
-                anonymous user can be in, and the toast's "Try reconnecting"
+                anonymous user can be in, and the panel's "Try reconnecting"
                 CTA is their only way out of it. Only CHOOSING the mode needs
                 an account.
 
@@ -201,30 +213,33 @@ Usage
                 showing without inferring it from which child span carries a
                 class.
             {% endcomment %}
-            <button
-                type="button"
-                data-network-indicator
-                data-network-state="online"
-                data-testid="network-indicator"
-                aria-expanded="false"
-                aria-controls="pwa-offline-toast"
-                class="inline-flex items-center justify-center w-7 h-7 rounded-full hover:bg-tag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-2"
-            >
-                <span data-role="network-online-icon" class="text-text-3">
-                    {% include "includes/_icon_wifi.html" with size=15 only %}
-                </span>
-                <span data-role="network-offline-icon" class="hidden text-status-warning-text">
-                    {% include "includes/_icon_wifi_off.html" with size=15 only %}
-                </span>
-                <span
-                    data-role="network-name-online"
-                    class="sr-only"
-                >{% trans "Connection status: using the network" %}</span>
-                <span
-                    data-role="network-name-offline"
-                    class="sr-only hidden"
-                >{% trans "Connection status: offline" %}</span>
-            </button>
+            <details class="relative" data-network-panel>
+                <summary
+                    id="network-indicator-toggle"
+                    data-network-indicator
+                    data-network-state="online"
+                    data-testid="network-indicator"
+                    aria-expanded="false"
+                    aria-controls="pwa-connection-panel"
+                    class="inline-flex items-center justify-center w-7 h-7 rounded-full hover:bg-tag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
+                >
+                    <span data-role="network-online-icon" class="text-text-3">
+                        {% include "includes/_icon_wifi.html" with size=15 only %}
+                    </span>
+                    <span data-role="network-offline-icon" class="hidden text-status-warning-text">
+                        {% include "includes/_icon_wifi_off.html" with size=15 only %}
+                    </span>
+                    <span
+                        data-role="network-name-online"
+                        class="sr-only"
+                    >{% trans "Connection status: using the network" %}</span>
+                    <span
+                        data-role="network-name-offline"
+                        class="sr-only hidden"
+                    >{% trans "Connection status: offline" %}</span>
+                </summary>
+                {% include "includes/_connection_panel.html" %}
+            </details>
             {% if request.user.is_authenticated %}
                 {# ── Subscriber avatar dropdown ── #}
                 {# SNOW-616: a native <details> disclosure, not a scripted one. #}
@@ -576,12 +591,22 @@ Usage
         {# /right-side wrapper #}
     </div>
 </nav>
-{# SNOW-616: enhancement only. Both menus are <details> elements, so      #}
+{# SNOW-616: enhancement only. All three menus are <details> elements, so  #}
 {# opening, closing, Enter/Space and focus all work with this script       #}
 {# absent — which is what makes sign out reachable without JavaScript.     #}
-{# What is added here is the two behaviours <details> does not give you:   #}
-{# click-outside to close, and Escape to close and return focus. Both are  #}
-{# conveniences; neither is load-bearing.                                  #}
+{# What is added here is the behaviours <details> does not give you:       #}
+{# click-outside to close, Escape to close and return focus, and an        #}
+{# explicit in-panel close control. All are conveniences; none is          #}
+{# load-bearing.                                                           #}
+{#                                                                         #}
+{# SNOW-748 added the third caller — the connection-status panel — and     #}
+{# with it [data-disclosure-close], the optional control inside a panel    #}
+{# that closes its own disclosure. A popover with no menu items needs a    #}
+{# visible way out that is not "press the thing that opened me": the       #}
+{# account and admin menus close when you pick an entry, and an            #}
+{# information panel has none to pick. Handled here rather than in         #}
+{# static/js/pwa_offline.js so one mechanism owns every way this header's  #}
+{# disclosures close.                                                      #}
 <script nonce="{{ request.csp_nonce }}">
     (function () {
         function enhanceDisclosure(wrapperAttr, toggleId) {
@@ -600,8 +625,16 @@ Usage
                     toggle.focus();
                 }
             });
+            var closer = details.querySelector('[data-disclosure-close]');
+            if (closer) {
+                closer.addEventListener('click', function () {
+                    details.open = false;
+                    toggle.focus();
+                });
+            }
         }
         enhanceDisclosure('data-subscriber-menu', 'subscriber-menu-toggle');
         enhanceDisclosure('data-admin-menu', 'admin-menu-toggle');
+        enhanceDisclosure('data-network-panel', 'network-indicator-toggle');
     })();
 </script>

@@ -4,16 +4,17 @@
  * Ships spec §3.5, §10.1, §10.2, §10.4, §10.7 non-negotiables:
  *
  *   (1) Permanent connectivity symbol — the ``[data-network-indicator]``
- *       button in ``includes/nav.html``, painted "using the network" or
+ *       <summary> in ``includes/nav.html``, painted "using the network" or
  *       "not using the network" on every state change. Not using the
  *       network means ``navigator.onLine === false``, OR a fetch just
  *       failed (an ``AbortError`` is a caller cancelling its own request,
  *       not a connectivity failure, so it is excluded), OR the service
  *       worker is in an offline mode.
  *   (2) Freshness on demand — pressing that symbol opens the
- *       connection-status toast (``includes/_offline_toast.html``), which
- *       shows how long ago this device last reached the server, explains
- *       the current state, and offers the way back to the network.
+ *       connection-status panel (``includes/_connection_panel.html``),
+ *       anchored beneath it in the header, which shows how long ago this
+ *       device last reached the server, explains the current state, and
+ *       offers the way back to the network.
  *   (3) Network-required buttons — any element carrying
  *       ``data-network-required`` is set ``disabled`` when offline and
  *       re-enabled when back online. Non-button elements get an
@@ -28,7 +29,7 @@
  * than the strip ever gave — the strip said nothing at all while the app was
  * healthy, so a user only ever learned where to look by losing their
  * connection — and the strip's own content (the "last synced" phrase, the
- * per-state explanation, the reconnect button) moved into the toast behind a
+ * per-state explanation, the reconnect button) moved into the panel behind a
  * press on that symbol.
  *
  * The freshness timestamp is therefore one interaction further away than it
@@ -58,7 +59,7 @@
  * SNOW-615: there was a second clock here, ``freshnessLastGeneratedAt``,
  * tracking the newest ``X-Data-Generated-At`` header. It was declared,
  * assigned on every qualifying response, persisted, and hydrated on every
- * page boot — and never read. The toast has one ``data-role="synced-at"``
+ * page boot — and never read. The panel has one ``data-role="synced-at"``
  * cell, filled from the clock above; the template's own comment said so
  * while this header claimed both reached the UI. Deleted rather than
  * wired in: nothing had asked for a second timestamp in three tickets'
@@ -80,7 +81,7 @@
  * combination is the Underground exactly: the radio is attached, so the
  * platform reports online; there is no route, so nothing completes.
  *
- * So the toast has four states rather than one, and they make different
+ * So the panel has four states rather than one, and they make different
  * promises. "Online — last synced" means the app is using the network.
  * "Offline — last synced" means requests are still going out and the app will
  * update as soon as one lands. "Offline mode — last synced" means it has
@@ -108,8 +109,14 @@
  *   * ``[data-network-indicator]`` — the header symbol. ALWAYS rendered,
  *     never hidden; this module swaps its glyph, its colour, its accessible
  *     name and its ``data-network-state`` between the two states. It is a
- *     disclosure button: pressing it opens the toast and pressing it again
- *     closes it (``aria-expanded``), and it never changes the network mode.
+ *     disclosure — the ``<summary>`` of a ``<details data-network-panel>``,
+ *     like the two dropdowns beside it — so pressing it opens the panel and
+ *     pressing it again closes it, and it never changes the network mode.
+ *     Opening and closing are the BROWSER's; this module follows the
+ *     ``toggle`` event to keep ``aria-expanded`` and the freshness ticker in
+ *     step, and nav.html's own script adds outside-click, Escape and the
+ *     panel's close control. That is why nothing here binds a click on the
+ *     symbol, and why the panel needs no help from ``overlays.js``.
  *   * ``[data-network-toggle]`` — the "Offline mode" row at the top of the
  *     subscriber menu, an ``includes/_switch.html`` checkbox. Revealed here,
  *     its ``checked`` state painted here, its ``change`` event bound here.
@@ -152,7 +159,7 @@
  * which refuses a download the UI somehow still dispatches.
  *
  * Every user-facing string for all four states is rendered by
- * ``includes/_offline_toast_body.html`` / ``_offline_toast_cta.html`` and
+ * ``includes/_connection_panel.html`` and
  * toggled here by ``hidden``, and the symbol's two accessible names by
  * ``includes/nav.html``. Setting any of that text from JavaScript would ship
  * English to every locale — ``makemessages`` never scans ``static/js`` —
@@ -167,21 +174,22 @@
 (function () {
   'use strict';
 
-  // SNOW-748: the connection-status toast, opened by the header symbol.
-  // Replaces the ``pwa-offline-banner`` strip this module used to reveal.
-  const TOAST_ID = 'pwa-offline-toast';
-  // The toast's one CTA. ``includes/_toast.html`` renders its own button and
-  // stamps it ``data-action="reload"`` — the partial's documented generic JS
-  // hook, which nothing global listens for — so it is selected by id + that
-  // attribute, the same way sw_register.js selects its own.
-  const TOAST_CTA_SELECTOR = `#${TOAST_ID} [data-action="reload"]`;
+  // SNOW-748: the connection-status panel, disclosed by the header symbol.
+  // Replaces the ``pwa-offline-banner`` strip this module used to reveal, and
+  // the bottom-centred toast that briefly stood in for it.
+  const PANEL_ID = 'pwa-connection-panel';
+  // The <details> the panel and the symbol live in (``includes/nav.html``).
+  // It owns open/closed; this module only reads it and follows its ``toggle``.
+  const PANEL_SELECTOR = '[data-network-panel]';
+  // The panel's one CTA — the way back to the network.
+  const PANEL_CTA_SELECTOR = `#${PANEL_ID} [data-network-reconnect]`;
   const NETWORK_ATTR = 'data-network-required';
 
   // SNOW-742: the meta:app key the network mode is persisted under, and the
   // mode itself as this page last heard it from the worker.
   //
   // The worker owns the mode; this is a mirror, for two jobs. It decides which
-  // toast variant to show, and it is re-asserted to the worker on boot — a
+  // panel variant to show, and it is re-asserted to the worker on boot — a
   // worker that was terminated while idle comes back in 'auto' with no memory
   // of the latch, and re-asserting is what restores it.
   //
@@ -218,7 +226,7 @@
   // migration to delete one small row.
   const SYNC_LAST_AT_KEY = 'sync.last_at';
 
-  // SNOW-482: cadence at which the toast re-renders its relative
+  // SNOW-482: cadence at which the panel re-renders its relative
   // "last synced" phrase while OPEN, so it counts up live rather than
   // freezing at the value captured when the user pressed the symbol.
   const FRESHNESS_TICK_MS = 30000;
@@ -298,7 +306,7 @@
    * Show or hide every element carrying ``data-role="<role>"``.
    *
    * Document-scoped rather than scoped to one root, because SNOW-748 split
-   * the roles across two surfaces — the toast owns the messages, the
+   * the roles across two surfaces — the panel owns the messages, the
    * explanations and the CTA's two labels, the header symbol owns its glyph
    * pair and its two accessible names — and both are painted from the same
    * state in the same pass. Each role is unique in the document.
@@ -314,7 +322,7 @@
   }
 
   /**
-   * Fill the toast's "last synced" span with the sync clock as a relative
+   * Fill the panel's "last synced" span with the sync clock as a relative
    * phrase, degrading to an em dash until the first sync is known.
    *
    * @returns {void}
@@ -324,13 +332,12 @@
     if (syncedCell) syncedCell.textContent = formatRelative(syncLastAt) || '—';
   }
 
-  // SNOW-482: re-render the "last synced" phrase on a timer while the toast
+  // SNOW-482: re-render the "last synced" phrase on a timer while the panel
   // is OPEN, so the phrase counts up ("6 minutes ago" → "7 minutes ago")
   // rather than freezing at the value it had when the symbol was pressed.
-  // Started on open, cleared on close; also self-clears if it wakes to find
-  // the toast gone or closed — a dismiss it did not initiate (the "×", handled
-  // by overlays.js's delegated listener) is caught by the
-  // ``overlay:dismissed`` binding, and this is the belt to that's braces.
+  // Started and cleared from the <details>'s ``toggle`` event, which fires
+  // however the panel was closed — the symbol, the "×", Escape or a click
+  // outside — and it also self-clears if it wakes to find the panel gone.
   let freshnessTicker = null;
 
   /**
@@ -341,7 +348,7 @@
   function startFreshnessTicker() {
     if (freshnessTicker !== null) return;
     freshnessTicker = window.setInterval(() => {
-      if (!toastIsOpen()) {
+      if (!panelIsOpen()) {
         stopFreshnessTicker();
         return;
       }
@@ -361,40 +368,41 @@
   }
 
   /**
-   * The connection-status toast, or null on a page that does not render it.
+   * The <details> carrying the symbol and its panel, or null on a page that
+   * renders neither.
    *
-   * @returns {HTMLElement|null}
+   * @returns {HTMLDetailsElement|null}
    */
-  function toastElement() {
-    return document.getElementById(TOAST_ID);
+  function panelDisclosure() {
+    return document.querySelector(PANEL_SELECTOR);
   }
 
   /**
-   * Whether the toast is currently on screen.
+   * Whether the connection-status panel is currently open.
+   *
+   * Read from the <details>, which is the only thing that knows: the panel
+   * opens and closes natively, and this module never toggles it.
    *
    * @returns {boolean}
    */
-  function toastIsOpen() {
-    const toast = toastElement();
-    return !!toast && !toast.classList.contains('hidden');
+  function panelIsOpen() {
+    const disclosure = panelDisclosure();
+    return !!disclosure && disclosure.open;
   }
 
   /**
-   * Open or close the toast, and keep the symbol's ``aria-expanded``, the
-   * freshness cell and the re-render ticker in step with it.
+   * Follow the disclosure's own open/closed state: paint the symbol's
+   * ``aria-expanded``, fill the freshness cell, and run the re-render ticker
+   * only while the panel is on screen.
    *
-   * The toast carries ``flex`` in its own class string (the ``body_template``
-   * variant of ``includes/_toast.html``), so revealing is removing ``hidden``
-   * and nothing else — which is also exactly what overlays.js's "×" handler
-   * undoes.
+   * Called from the ``toggle`` event, so it lands however the panel was
+   * closed — the symbol again, the "×", Escape, or a click outside — without
+   * this module having to know about any of those mechanisms.
    *
-   * @param {boolean} open
    * @returns {void}
    */
-  function setToastOpen(open) {
-    const toast = toastElement();
-    if (!toast) return;
-    toast.classList.toggle('hidden', !open);
+  function syncPanelState() {
+    const open = panelIsOpen();
     const indicator = document.querySelector(NETWORK_INDICATOR_SELECTOR);
     if (indicator) indicator.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (open) {
@@ -416,9 +424,9 @@
    * reports online throughout (the Underground). The offline modes are folded
    * in here rather than at each call site.
    *
-   * The toast is repainted whether or not it is open, so pressing the symbol
+   * The panel is repainted whether or not it is open, so pressing the symbol
    * never shows a frame of the previous state's copy. Its VISIBILITY is not
-   * touched: the toast opens and closes on the user's press alone.
+   * touched: the <details> opens and closes on the user's press alone.
    *
    * @param {boolean} online
    * @returns {void}
@@ -427,13 +435,13 @@
     const reaching = online && networkMode === 'auto';
     renderNetworkUi(reaching);
     renderNetworkCopy(reaching);
-    if (toastIsOpen()) renderFreshnessCells();
+    if (panelIsOpen()) renderFreshnessCells();
   }
 
   /**
    * SNOW-742/748: show the message, explanation and CTA label that match the
    * current state. Every variant of each is rendered server-side by
-   * ``includes/_offline_toast_body.html`` and ``_offline_toast_cta.html`` and
+   * ``includes/_connection_panel.html`` and
    * toggled here, so no user-facing string is ever built in JavaScript
    * (docs/i18n.md).
    *
@@ -467,7 +475,7 @@
     // The way back to normal operation, offered only where it does something
     // — under either offline mode, and not while the app is merely struggling
     // and still trying on its own, nor while it is succeeding.
-    const cta = document.querySelector(TOAST_CTA_SELECTOR);
+    const cta = document.querySelector(PANEL_CTA_SELECTOR);
     if (cta) cta.classList.toggle('hidden', auto);
   }
 
@@ -566,31 +574,28 @@
   }
 
   /**
-   * Bind the header symbol, the toast's CTA and its dismiss, and the menu's
-   * "Offline mode" switch; then listen for the worker announcing a mode
-   * change it made on its own (the latch tripping, or a probe finding a route
-   * again).
+   * Follow the panel's disclosure, bind its CTA and the menu's "Offline mode"
+   * switch; then listen for the worker announcing a mode change it made on
+   * its own (the latch tripping, or a probe finding a route again).
    */
   function bindNetworkModeControls() {
-    // SNOW-748: the header symbol is a DISCLOSURE. Its press opens and closes
-    // the toast and nothing else — it never changes the network mode, which is
-    // what an earlier pass shipped and what ``aria-expanded`` (rather than
-    // ``aria-pressed``) promises a screen-reader user here.
-    document.querySelector(NETWORK_INDICATOR_SELECTOR)?.addEventListener('click', () => {
-      setToastOpen(!toastIsOpen());
-    });
-    // The "×" is handled by overlays.js's delegated listener, which only adds
-    // ``hidden``; this is how the symbol's ``aria-expanded`` and the freshness
-    // ticker learn about a close this module did not perform. Bound on the
-    // toast itself — the event bubbles from the button, and the toast is the
-    // element overlays.js dispatches from.
-    toastElement()?.addEventListener('overlay:dismissed', () => {
-      setToastOpen(false);
+    // SNOW-748: the header symbol is the <summary> of a native disclosure, so
+    // the press that opens and closes the panel is the browser's and nothing
+    // is bound to it here — which is also what stops this module ever
+    // changing the network mode from the status area, the misread an earlier
+    // pass invited and ``aria-expanded`` (rather than ``aria-pressed``)
+    // promises against.
+    //
+    // ``toggle`` is the one event every close arrives on: the symbol, the
+    // panel's "×", Escape and a click outside (the last three from nav.html's
+    // shared disclosure script) all set ``open``, and this fires for each.
+    panelDisclosure()?.addEventListener('toggle', () => {
+      syncPanelState();
     });
     // The way back to the network, and the only one an anonymous reader has:
     // the "Offline mode" switch below lives in the subscriber menu, so a
     // signed-out user who gets auto-latched can leave that state only here.
-    document.querySelector(TOAST_CTA_SELECTOR)?.addEventListener('click', () => {
+    document.querySelector(PANEL_CTA_SELECTOR)?.addEventListener('click', () => {
       requestNetworkMode('auto');
     });
     // SNOW-748: the menu's "Offline mode" switch. Its two directions are not
@@ -809,7 +814,7 @@
       if (navigator.onLine) renderConnectionUi(true);
     }
 
-    // Repaint while offline so an open toast's clock updates live when a
+    // Repaint while offline so an open panel's clock updates live when a
     // fresh(er) response arrives, and so the symbol keeps reporting the
     // failure a successful response has not yet cleared.
     if (!navigator.onLine) renderConnectionUi(false);
@@ -927,7 +932,7 @@
   }
 
   /**
-   * Bind ``online`` / ``offline`` events on window so the symbol, the toast
+   * Bind ``online`` / ``offline`` events on window so the symbol, the panel
    * and network-required elements track the connection state without
    * requiring a page reload.
    */
@@ -979,7 +984,7 @@
         if (!Number.isNaN(parsed.valueOf())) syncLastAt = parsed;
       }
     } catch (_err) {
-      // Best-effort — the toast falls back to "no data yet" copy.
+      // Best-effort — the panel falls back to "no data yet" copy.
     }
     // SNOW-742: and the network mode, which is re-asserted to the worker by
     // ``init`` below. Read separately from the clock above so one failing row
@@ -1002,7 +1007,7 @@
    * Prime the initial state. If the page loaded while offline (unlikely
    * via the browser — offline navigations normally show the browser's
    * own error page — but possible via the SW cache), we want the symbol
-   * painted offline immediately, and the toast holding the persisted clock
+   * painted offline immediately, and the panel holding the persisted clock
    * rather than a blank the moment the user presses it.
    */
   async function init() {
@@ -1012,7 +1017,7 @@
     // SNOW-742: bound BEFORE the IndexedDB read below, not after. The worker
     // can latch during the page's own initial request burst, and a listener
     // attached behind an await would miss the announcement — leaving the app
-    // latched with the toast still claiming it is merely struggling.
+    // latched with the panel still claiming it is merely struggling.
     bindNetworkModeControls();
     await hydratePersistedClocks();
     // SNOW-742: re-assert the persisted mode to the worker. A worker
