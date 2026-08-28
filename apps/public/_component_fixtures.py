@@ -827,6 +827,14 @@ BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "caption": "Destructive · compact",
+        "context": {
+            "label": "Delete account",
+            "variant": "destructive",
+            "size": "compact",
+        },
+    },
+    {
         "caption": "Primary · full width",
         "context": {
             "label": "Yes, unsubscribe me",

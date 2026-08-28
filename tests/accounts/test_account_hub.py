@@ -150,7 +150,7 @@ class TestDeleteAccountControl:
         """The settings page calls it deletion, not unsubscription."""
         client = _client_for(AccountFactory.create())
         html = client.get(reverse("accounts:settings")).content.decode()
-        assert "Delete your account" in html
+        assert "Delete account" in html
         assert "Unsubscribe from all alerts" not in html
 
     def test_control_still_posts_to_delete_account(self) -> None:

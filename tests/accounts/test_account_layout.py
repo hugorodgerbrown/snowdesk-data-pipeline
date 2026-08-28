@@ -37,6 +37,12 @@ What these tests pin:
     be honestly named; one page per list removed the reason.
   * **The settings page's four groups, in rank order.** Danger zone is last
     on purpose.
+  * **The settings page's card layout (SNOW-746).** Each group is one card
+    of divided rows, its controls are buttons rather than text links, and
+    the page stamps which account it is acting on. What these pin is the
+    part a redesign could quietly undo: the delete control sharing chrome
+    with the reversible one beside it, and the passkey count disagreeing
+    with the passkeys under it.
 
 Mobile reflow is not asserted here: no server-side test can measure rendered
 width, and a browser test for a layout constant is the wrong layer under
@@ -222,3 +228,120 @@ class TestAccountHeadings:
             for slug in ("account", "device", "privacy", "danger")
         ]
         assert positions == sorted(positions)
+
+
+def _element_carrying(html: str, needle: str) -> str:
+    """Return the whole opening tag of the element carrying ``needle``.
+
+    Slicing on the needle alone truncates every attribute declared after it,
+    which for these controls is the ``class`` string the assertions are
+    about.
+    """
+    at = html.index(needle)
+    return html[html.rindex("<", 0, at) : html.index(">", at) + 1]
+
+
+@pytest.mark.django_db
+class TestSettingsCardLayout:
+    """SNOW-746 — the settings page rebuilt on cards of divided rows."""
+
+    def test_page_stamps_the_signed_in_address(self) -> None:
+        """The header names the account every row below acts on.
+
+        Before this the address appeared only as the "Account email" row's
+        value, where it reads as one setting among several rather than as
+        the identity the page is scoped to — which is the thing worth being
+        sure of before pressing Delete account.
+        """
+        account = AccountFactory.create()
+        html = _client_for(account).get(reverse("accounts:settings")).content.decode()
+
+        stamp = html.split('data-testid="settings-account-stamp"')[1]
+        assert account.user.email in stamp.split("</span>")[0]
+
+    def test_passkey_count_matches_the_rows_beneath_it(self) -> None:
+        """The count is a read-out, not a caption — it must track the rows."""
+        from tests.factories import PasskeyCredentialFactory
+
+        account = AccountFactory.create()
+        for _ in range(2):
+            PasskeyCredentialFactory.create(user=account.user)
+        html = _client_for(account).get(reverse("accounts:settings")).content.decode()
+
+        assert "2 registered" in html
+        assert html.count('class="passkey-card') == 2
+
+    def test_passkey_count_reads_zero_with_none_registered(self) -> None:
+        """The account with no way back in says so, rather than omitting the line."""
+        account = AccountFactory.create()
+        html = _client_for(account).get(reverse("accounts:settings")).content.decode()
+
+        assert "0 registered" in html
+        assert "No passkeys saved for this account yet." in html
+
+    def test_passkey_row_prints_the_date_once(self) -> None:
+        """SNOW-746: the meta line owns the date, so the name must not repeat it.
+
+        ``display_name`` appends the creation date; this row prints an
+        "Added {date}" line under the name, so it uses ``provider_name``.
+        Regressing to ``display_name`` renders the date twice on one row.
+        """
+        from tests.factories import PasskeyCredentialFactory
+
+        account = AccountFactory.create()
+        passkey = PasskeyCredentialFactory.create(user=account.user)
+        html = _client_for(account).get(reverse("accounts:settings")).content.decode()
+
+        row = html.split('class="passkey-card')[1].split("</div>")[0]
+        assert passkey.provider_name in row
+        assert "Added" in html
+
+    def test_destructive_control_does_not_share_chrome_with_reset(self) -> None:
+        """Delete account must not look like the reversible button above it.
+
+        Both are compact buttons on the same page. Ghost for both — which is
+        what a redesign reaching for one button style would produce — makes
+        the irreversible one indistinguishable at a glance.
+        """
+        client = _client_for(AccountFactory.create())
+        html = client.get(reverse("accounts:settings")).content.decode()
+
+        button = _element_carrying(html, 'data-testid="delete-account"')
+        assert "border-status-error-text" in button
+        assert "border-text-3/30" not in button
+
+    def test_former_text_links_are_buttons(self) -> None:
+        """Sign out, Reset and Delete are controls, and now look like controls.
+
+        Each was a ``text-link`` span of body copy until SNOW-746. The class
+        is the assertion: it is what made them read as prose.
+        """
+        client = _client_for(AccountFactory.create())
+        html = client.get(reverse("accounts:settings")).content.decode()
+
+        for testid in ("manage-sign-out", "delete-account"):
+            control = _element_carrying(html, f'data-testid="{testid}"')
+            assert control.startswith("<button"), testid
+            assert "text-link" not in control, testid
+
+        # Reset has no testid of its own — pwa_reset.js's binding attribute
+        # is the hook, and it is the thing that must stay on a <button>.
+        reset = _element_carrying(html, "data-pwa-reset-trigger")
+        assert reset.startswith("<button")
+        assert "text-link" not in reset
+
+    def test_each_group_opens_a_card(self) -> None:
+        """Every group heading is followed by the card its rows sit in.
+
+        ``rounded-card``, not the mock's 16px literal: the exported design
+        system defers to ``src/css/main.css``, where ``--radius-card`` is
+        12px, and ds-lint blocks the literal outright.
+        """
+        client = _client_for(AccountFactory.create())
+        html = client.get(reverse("accounts:settings")).content.decode()
+
+        for slug in ("account", "device", "privacy", "danger"):
+            after = html.split(f'data-testid="settings-group-{slug}"')[1]
+            # The card chrome is the first element after the eyebrow closes.
+            opening = after[after.index("</h2>") : after.index("</h2>") + 200]
+            assert "bg-card rounded-card" in opening, slug
