@@ -98,6 +98,21 @@ class TestDsLintOnJavaScript:
         assert _run(DS_LINT, str(js)).returncode == 0
         assert _run(DS_LINT, str(html)).returncode == 1
 
+    def test_a_numeric_html_entity_is_not_a_hex_colour(self, tmp_path: Path) -> None:
+        """`&#8599;` is an arrow, not a colour.
+
+        Both the decimal and hexadecimal entity forms put hex-ish digits
+        after a `#`, and the rule reported them until a help-page link
+        wrote one. A real colour is never preceded by `&`.
+        """
+        entities = tmp_path / "entities.html"
+        entities.write_text("<p>gpx.studio &#8599; and &#x2197;</p>\n")
+        colour = tmp_path / "colour.html"
+        colour.write_text('<div style="color: #2197ff"></div>\n')
+
+        assert _run(DS_LINT, str(entities)).returncode == 0
+        assert _run(DS_LINT, str(colour)).returncode == 1
+
     def test_the_shipped_tree_is_clean(self) -> None:
         """Every template and first-party JS file passes today.
 
@@ -184,6 +199,21 @@ class TestJsGlobalsLint:
         )
 
         assert _run(GLOBALS_LINT, str(js)).returncode == 0
+
+    def test_a_numeric_html_entity_is_not_a_hex_colour(self, tmp_path: Path) -> None:
+        """`&#8599;` is an arrow, not a colour.
+
+        Both the decimal and hexadecimal entity forms put hex-ish digits
+        after a `#`, and the rule reported them until a help-page link
+        wrote one. A real colour is never preceded by `&`.
+        """
+        entities = tmp_path / "entities.html"
+        entities.write_text("<p>gpx.studio &#8599; and &#x2197;</p>\n")
+        colour = tmp_path / "colour.html"
+        colour.write_text('<div style="color: #2197ff"></div>\n')
+
+        assert _run(DS_LINT, str(entities)).returncode == 0
+        assert _run(DS_LINT, str(colour)).returncode == 1
 
     def test_the_shipped_tree_is_clean(self) -> None:
         """No first-party module reads a global nothing assigns.

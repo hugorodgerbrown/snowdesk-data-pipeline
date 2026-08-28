@@ -330,11 +330,19 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     the two representations.
 
     Properties per feature: ``uuid``, ``name``, ``distance_m``,
-    ``ascent_m``, ``descent_m`` and ``bounds``. ``ascent_m`` and
-    ``descent_m`` are passed through **as stored**, including ``None`` —
-    ``Route``'s own docstring is explicit that null means "the source file
-    carried no elevation data", not "flat", and the client omits those
-    figures entirely rather than rendering a zero for an unknown.
+    ``ascent_m``, ``descent_m``, ``duration_s`` and ``bounds``.
+    ``ascent_m`` and ``descent_m`` are passed through **as stored**,
+    including ``None`` — ``Route``'s own docstring is explicit that null
+    means "the source file carried no elevation data", not "flat", and the
+    client omits those figures entirely rather than rendering a zero for an
+    unknown.
+
+    ``duration_s`` is DERIVED here rather than sending ``started_at`` and
+    ``finished_at`` as a pair (SNOW-750). The popup renders one elapsed
+    figure; shipping two ISO strings would push date parsing and a
+    timezone question onto the client for a subtraction the server has
+    already done. It carries the same null contract as the elevation
+    figures — an untimed route sends ``None`` and shows no duration.
     ``bounds`` rides on the feature so a tap can fit the viewport to the
     route from the payload the map already holds, offline included.
 
@@ -388,6 +396,13 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
                     # None passes straight through: "unknown", not zero.
                     "ascent_m": route.ascent_m,
                     "descent_m": route.descent_m,
+                    # int, not float: a GPX records whole seconds, and the
+                    # popup renders hours and minutes off this.
+                    "duration_s": (
+                        int(duration.total_seconds())
+                        if (duration := route.duration) is not None
+                        else None
+                    ),
                     "bounds": route.bounds,
                 },
             }

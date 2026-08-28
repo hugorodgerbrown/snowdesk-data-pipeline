@@ -35,6 +35,7 @@ class RouteAdmin(admin.ModelAdmin):
         "source_filename",
         "distance_m",
         "ascent_m",
+        "started_at",
         "point_count",
         "created_at",
     ]
@@ -54,6 +55,12 @@ class RouteAdmin(admin.ModelAdmin):
         "points",
         "distance_m",
         "ascent_m",
+        # descent_m was added by SNOW-686's follow-up and never reached
+        # this list, leaving one derived figure editable while its pair
+        # was not — every field here is read-only for the same reason.
+        "descent_m",
+        "started_at",
+        "finished_at",
         "point_count",
         "bounds",
         "created_at",
