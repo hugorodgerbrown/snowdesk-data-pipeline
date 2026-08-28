@@ -1,33 +1,31 @@
 /*
- * tests/js/test_map_downloaded_overlay_colour.js — Vitest DOM test for
- * SNOW-645 (review item — "every basemap at once"): the "downloaded areas"
- * map overlay (`cached-tiles-fill` / `cached-tiles-line`) paints EACH tile
- * in the identity colour of the basemap it was downloaded UNDER, not the
- * one active on screen right now.
+ * tests/js/test_map_downloaded_overlay_colour.js — the "downloaded areas"
+ * map overlay (`cached-tiles-fill` / `cached-tiles-line`) draws the ACTIVE
+ * basemap's downloads, and only those, in that basemap's own identity
+ * colour — repainting to the new basemap's downloads when the basemap
+ * changes under a switched-on overlay.
  *
- * This supersedes an earlier version of this file, which covered a
- * single-colour-tied-to-the-active-basemap mechanism — Hugo's own
- * follow-up call, after the overlay itself was rebuilt to show downloads
- * across every basemap at once rather than emptying out on a basemap
- * switch (see refreshDownloadedOverlay's own "EVERY BASEMAP AT ONCE"
- * comment in map.js). The mechanism is a MapLibre `match` PAINT EXPRESSION
- * keyed on each tile feature's own `basemapKey` property, not a flat colour
- * re-resolved on a basemap-changed event — this file tests that shape.
+ * This file has now covered three rules in turn, and the middle one is
+ * worth stating because its remains are still visible in the fixture. The
+ * original overlay drew the active basemap's downloads in one flat colour.
+ * SNOW-645's review widened it to draw EVERY downloaded basemap at once,
+ * each area in the colour of the basemap it was downloaded UNDER, via a
+ * MapLibre `match` expression keyed on a per-feature `basemapKey` property
+ * — because switching basemap emptied the overlay and that read as data
+ * loss. Hugo's call after living with it: two basemaps' squares stacked
+ * over the same ground describe neither basemap's coverage. "It should
+ * filter to the current basemap, so it never overlays downloads."
  *
- * There are TWO such expressions now that the squares are a hatch rather
- * than a tint (the mark that lets them share a polygon with the danger
- * choropleth): `downloadedTilesColourExpression` still resolves each
- * area's OUTLINE colour, and `downloadedTilesPatternExpression` resolves
- * its FILL to one hatch image per basemap — the identity colour having
- * moved into that image's pixels. Both are asserted, along with the
- * registration of every image named, since a `fill-pattern` pointing at an
- * image the style is not holding paints nothing at all and says nothing.
+ * So the fixture still seeds downloads under TWO basemaps — that is the
+ * case that matters — but the assertion is now that only the active one's
+ * squares are on the map, and that the other's arrive when the user
+ * switches to it with the overlay still on.
  *
  * Booting map.js in jsdom follows test_map_download_bytes.js's pattern —
  * see its header for the general rationale. This file's stub additionally
- * TRACKS added layers and setPaintProperty calls (most other harnesses'
- * stubs are pure no-ops for these, since nothing before this ticket needed
- * to assert on paint state), which is the whole point here.
+ * TRACKS added layers, registered images and setPaintProperty calls (most
+ * other harnesses' stubs are pure no-ops for these), which is the whole
+ * point here, and lets the ACTIVE tile template be swapped mid-suite.
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -60,6 +58,10 @@ function stubMapLibre() {
   const layouts = new Map();
   const images = new Map();
   let cachedTilesData = null;
+  // The live style's own tile template — what `activeBasemapTileTemplate`
+  // reads, and so what decides which downloads the overlay draws. Mutable,
+  // because a basemap swap is the behaviour under test.
+  let activeTemplate = TEMPLATE_LIBERTY;
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -86,7 +88,7 @@ function stubMapLibre() {
       id === 'cached-tiles'
         ? { setData: (data) => { cachedTilesData = data; } }
         : id === 'basemap'
-          ? { tiles: [TEMPLATE_LIBERTY] }
+          ? { tiles: [activeTemplate] }
           : null,
     addSource: () => {},
     addLayer: (def) => {
@@ -144,6 +146,16 @@ function stubMapLibre() {
     layers,
     images,
     getCachedTilesData: () => cachedTilesData,
+    // Swap the rendered basemap the way the picker does: the style's tile
+    // template and the picker row's `aria-checked` both move, since
+    // `activeBasemapTileTemplate` reads the former and `activeBasemapKey`
+    // the latter.
+    setActiveBasemap: (template, key) => {
+      activeTemplate = template;
+      for (const row of document.querySelectorAll('.basemap-menu-item[data-basemap-key]')) {
+        row.setAttribute('aria-checked', String(row.dataset.basemapKey === key));
+      }
+    },
   };
   globalThis.maplibregl = {
     Map: function () {
@@ -298,14 +310,6 @@ function hatchColour(entry) {
   return Array.from(entry.image.data.slice(0, 3));
 }
 
-/** Read a `['match', ['get', 'basemapKey'], key, value, …, fallback]` expression as a plain object. */
-function matchArms(expr) {
-  if (!Array.isArray(expr)) return null;
-  const arms = {};
-  for (let i = 2; i + 1 < expr.length; i += 2) arms[expr[i]] = expr[i + 1];
-  return { arms, fallback: expr[expr.length - 1] };
-}
-
 let mapStub;
 let restoreCanvas;
 
@@ -382,10 +386,11 @@ beforeAll(async () => {
   // MapLibre never fires 'load' in jsdom; installRegionsLayers (and so the
   // two cached-tiles-* layers) hangs off it.
   for (const handler of mapStub.handlers.load || []) await handler();
-  // downloadedOverlayVisible is session-scoped, off by default — only
-  // window.pwaDownloadedOverlay.show()/hide() (called from the sheet's
-  // toggle) ever flip it, so a test must call show() itself rather than
-  // relying on any persisted flag.
+  // The overlay's state IS persisted now, but this suite seeds no
+  // localStorage, so it boots off — only window.pwaDownloadedOverlay.show()
+  // / hide() (called from the panel's switch) flip it. Restoring a stored
+  // preference at boot is tests/js/test_map_downloaded_overlay_boot.js's
+  // subject, not this file's.
   await window.pwaDownloadedOverlay.show();
 });
 
@@ -397,92 +402,103 @@ afterAll(() => {
   delete window.pwaDb;
 });
 
-describe('downloaded-areas overlay colour (SNOW-645 review — every basemap at once)', () => {
-  it('outlines each area in a match expression with one arm per basemap', async () => {
-    await waitFor(() => {
-      const expr = mapStub.layers.get('cached-tiles-line')?.['line-color'];
-      return Array.isArray(expr) && expr[0] === 'match';
-    });
+describe('downloaded-areas overlay — the active basemap only', () => {
+  it('draws the active basemap\'s squares and not the other basemap\'s', async () => {
+    await waitFor(() => (mapStub.getCachedTilesData()?.features || []).length > 0);
 
-    const lineExpr = mapStub.layers.get('cached-tiles-line')['line-color'];
-    expect(lineExpr[0]).toBe('match');
-    expect(lineExpr[1]).toEqual(['get', 'basemapKey']);
-
-    const { arms, fallback } = matchArms(lineExpr);
-    expect(arms.openfreemap_liberty).toBe(LIBERTY_COLOUR);
-    expect(arms.swisstopo_winter).toBe(SWISSTOPO_COLOUR);
-    expect(fallback).toBe(SYNC_OK_COLOUR);
+    // Two areas are downloaded — one under Standard (active), one under
+    // Swisstopo — and exactly one tile is on the map. Overlapping squares
+    // from two basemaps is the picture this rule exists to prevent.
+    expect(mapStub.getCachedTilesData().features).toHaveLength(1);
   });
 
-  it('fills each area with a hatch image in its own basemap identity colour', async () => {
-    // The fill carries a PATTERN, not a colour: the squares share their
-    // polygons with the danger choropleth, and a flat tint over it both
-    // obscured the danger colour and shifted it. The per-basemap identity
-    // survives the change — it moved from the arms of a colour expression
-    // into the pixels of one image per basemap.
-    await waitFor(() => {
-      const expr = mapStub.layers.get('cached-tiles-fill')?.['fill-pattern'];
-      return Array.isArray(expr) && expr[0] === 'match';
-    });
+  it('outlines and fills them in the active basemap\'s identity colour', async () => {
+    await waitFor(
+      () => mapStub.layers.get('cached-tiles-line')?.['line-color'] === LIBERTY_COLOUR,
+    );
 
-    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-pattern'];
-    expect(fillExpr[1]).toEqual(['get', 'basemapKey']);
-
-    const { arms, fallback } = matchArms(fillExpr);
-    expect(arms.openfreemap_liberty).toBe('cached-tiles-hatch-openfreemap_liberty');
-    expect(arms.swisstopo_winter).toBe('cached-tiles-hatch-swisstopo_winter');
-    expect(fallback).toBe('cached-tiles-hatch-default');
-
-    expect(hatchColour(mapStub.images.get(arms.openfreemap_liberty))).toEqual([1, 2, 3]);
-    expect(hatchColour(mapStub.images.get(arms.swisstopo_winter))).toEqual([9, 8, 7]);
-    expect(hatchColour(mapStub.images.get(fallback))).toEqual([4, 5, 6]);
+    // Flat values, not a `match` on a per-feature key: every square drawn
+    // belongs to the active basemap by construction, so there is nothing
+    // left for an expression to discriminate.
+    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(LIBERTY_COLOUR);
+    expect(mapStub.layers.get('cached-tiles-fill')['fill-pattern'])
+      .toBe('cached-tiles-hatch-openfreemap_liberty');
   });
 
-  it('registers every image the pattern names — an absent one paints nothing', async () => {
-    await waitFor(() => {
-      const expr = mapStub.layers.get('cached-tiles-fill')?.['fill-pattern'];
-      return Array.isArray(expr) && expr[0] === 'match';
-    });
+  it('registers the image the pattern names — an absent one paints nothing', async () => {
+    await waitFor(() => mapStub.images.has('cached-tiles-hatch-openfreemap_liberty'));
 
-    const fillExpr = mapStub.layers.get('cached-tiles-fill')['fill-pattern'];
-    const { arms, fallback } = matchArms(fillExpr);
-    for (const id of [...Object.values(arms), fallback]) {
-      expect(mapStub.images.has(id)).toBe(true);
-    }
+    // The identity colour lives in the hatch's PIXELS (the mark that lets
+    // the squares share a polygon with the danger choropleth), so this is
+    // where a wrong-basemap colour would actually show up.
+    const entry = mapStub.images.get('cached-tiles-hatch-openfreemap_liberty');
+    expect(hatchColour(entry)).toEqual([1, 2, 3]);
   });
 
   it('adds the hatch at pixelRatio 2, so the period is in device pixels', async () => {
-    await waitFor(() => mapStub.images.has('cached-tiles-hatch-default'));
+    await waitFor(() => mapStub.images.has('cached-tiles-hatch-openfreemap_liberty'));
 
-    const entry = mapStub.images.get('cached-tiles-hatch-default');
+    const entry = mapStub.images.get('cached-tiles-hatch-openfreemap_liberty');
     expect(entry.options).toEqual({ pixelRatio: 2 });
     expect(entry.image.width).toBe(globalThis.pwaHatchCore.SIZE);
   });
 
-  it('tags each feature with the basemapKey it was downloaded under', async () => {
-    const data = mapStub.getCachedTilesData();
-    const keys = new Set(data.features.map((f) => f.properties.basemapKey));
-    expect(keys).toEqual(new Set(['openfreemap_liberty', 'swisstopo_winter']));
+  it('carries no per-feature basemapKey — there is one basemap to answer for', () => {
+    for (const feature of mapStub.getCachedTilesData().features) {
+      expect(feature.properties.basemapKey).toBeUndefined();
+    }
+  });
+
+  it('honours the switch across a basemap change and repaints for the new one', async () => {
+    // Hugo's own statement of the rule: "If you are on Swisstopo and toggle
+    // on the downloads it shows Swisstopo downloads. If you then switch maps
+    // it honours the toggle and shows the new map downloads." The overlay is
+    // already on; nothing here touches show()/hide().
+    mapStub.setActiveBasemap(TEMPLATE_SWISSTOPO, 'swisstopo_winter');
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+
+    await waitFor(
+      () => mapStub.layers.get('cached-tiles-line')?.['line-color'] === SWISSTOPO_COLOUR,
+    );
+
+    // Still on, still one square — the Swisstopo custom area's, now, in
+    // Swisstopo's colour.
+    for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
+      expect(mapStub.getLayoutProperty(id, 'visibility')).toBe('visible');
+    }
+    expect(mapStub.getCachedTilesData().features).toHaveLength(1);
+    expect(mapStub.layers.get('cached-tiles-fill')['fill-pattern'])
+      .toBe('cached-tiles-hatch-swisstopo_winter');
+    expect(hatchColour(mapStub.images.get('cached-tiles-hatch-swisstopo_winter')))
+      .toEqual([9, 8, 7]);
+
+    mapStub.setActiveBasemap(TEMPLATE_LIBERTY, 'openfreemap_liberty');
+    document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
+    await waitFor(
+      () => mapStub.layers.get('cached-tiles-line')?.['line-color'] === LIBERTY_COLOUR,
+    );
   });
 });
 
-describe('downloaded-areas overlay colour — nothing downloaded', () => {
-  it('falls back to a bare id and a flat colour with no keys to match on', async () => {
+describe('downloaded-areas overlay — nothing downloaded under the active basemap', () => {
+  it('empties the source and keeps the active basemap\'s colour', async () => {
     installDbStub([], []);
     installCachesStub([]);
     window.pwaDownloadedOverlay.hide();
     await window.pwaDownloadedOverlay.show();
 
-    // Not a one-armed `match` — with nothing to key off, both properties
-    // take their fallback directly.
-    expect(mapStub.layers.get('cached-tiles-fill')['fill-pattern'])
-      .toBe('cached-tiles-hatch-default');
-    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(SYNC_OK_COLOUR);
+    await waitFor(() => (mapStub.getCachedTilesData()?.features || []).length === 0);
+
+    expect(mapStub.getCachedTilesData().features).toEqual([]);
+    // The layers stay switched on and keep the active basemap's colour —
+    // "on, with nothing to show" is a state the user asked for, and the
+    // switch says so; see the isVisible/isEnabled note in map.js.
+    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(LIBERTY_COLOUR);
   });
 });
 
 describe('window.pwaDownloadedOverlay show()/hide()/isVisible() (SNOW-645 review)', () => {
-  it('isVisible() reflects the real session-scoped flag, not a DOM read', () => {
+  it('isVisible() reflects the real overlay flag, not a DOM read', () => {
     window.pwaDownloadedOverlay.hide();
     expect(window.pwaDownloadedOverlay.isVisible()).toBe(false);
   });

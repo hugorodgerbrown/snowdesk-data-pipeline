@@ -95,18 +95,22 @@ const OVERLAY_STORAGE_KEY = {
   // SNOW-419: flag-gated only — the toggle exists in the DOM (and this key
   // is only ever read/written) when data-community-reports-eligible="true".
   community_reports: 'snowdesk.map.overlay.community_reports',
-  // SNOW-645 review, twice over: 'downloaded' was here (SNOW-570) — the
-  // layers-menu toggle it persisted is gone. It is now an "Available
-  // offline" toggle INSIDE the "Manage downloads" sheet instead
-  // (map_downloads_manager.js, driving window.pwaDownloadedOverlay in
-  // map.js directly) — deliberately SESSION-scoped, not persisted here or
-  // anywhere else: closing the sheet leaves it as the user set it, but a
-  // fresh page load always starts it off. This localStorage key is now
-  // write-once dead: an existing device may still carry a stored
-  // 'true'/'false' from before this change, but nothing reads it any
-  // more, and nothing should start reading it again — reviving it would
-  // silently turn the overlay on for a returning user who never asked to
-  // see it this session.
+  // The downloads panel's "Display on the map" switch. PERSISTED, like the
+  // three switches beside it — this reverses SNOW-645's "session-scoped
+  // inspection mode", which is what Hugo reported as a bug: four identical
+  // switches on four identical panels, three of which survive a reload and
+  // one of which silently forgets. A view setting the user set deliberately
+  // is a preference, and the panel it lives in gives no hint that this one
+  // is different.
+  //
+  // A NEW key name, not SNOW-570's 'snowdesk.map.overlay.downloaded'. That
+  // one is still on disk on any device that used the layers-menu row this
+  // control replaced, holding a value written for a control that no longer
+  // exists — reading it back now would switch the overlay on at boot for a
+  // user whose last actual instruction was given to something else. The
+  // dead key is left unread and unwritten; nothing clears it, since
+  // localStorage has no cost to leaving a stale key alone.
+  downloads: 'snowdesk.map.overlay.downloads',
   // SNOW-573: ungated since SNOW-724 retired the weather_layer flag — the
   // toggle is in the DOM for every visitor, so this key is always live.
   weather: 'snowdesk.map.overlay.weather',

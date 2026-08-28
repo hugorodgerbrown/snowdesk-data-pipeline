@@ -593,7 +593,12 @@ paint the ACTIVE basemap's colour, never a basemap some earlier download
 happened to use — a control sitting on the Swisstopo map is never painted
 in Standard's colour, whatever is stored underneath it. Per-area basemap
 identity is the "Manage downloads" sheet's job, one tap away. The
-per-region download roundel goes one step further: switch basemap after
+downloaded-areas overlay follows the same rule: with "Display on the map"
+on, it draws the ACTIVE basemap's downloaded tiles in that basemap's
+colour and no other basemap's, and switching basemap repaints it with the
+new one's areas rather than switching it off. Two basemaps' squares over
+the same ground would describe neither basemap's coverage. The per-region
+download roundel goes one step further: switch basemap after
 downloading a region and its roundel doesn't just go quiet — it shows a
 distinct "downloaded, but for another basemap" ring, in that OTHER
 basemap's colour, that a tap turns into a download for the basemap now

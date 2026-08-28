@@ -403,14 +403,17 @@ describe('a record with no stored template', () => {
     await waitFor(() => (mapStub.getCachedTilesData()?.features || []).length > 0);
 
     const features = mapStub.getCachedTilesData().features;
-    const keys = features.map((f) => f.properties.basemapKey);
-    // The templateless record's tile is drawn, coloured as the active
-    // basemap's — the region the staging screenshot showed as a solid
-    // roundel over empty map.
-    expect(keys).toContain('openfreemap_liberty');
-    // And the keyed record's tile is still drawn under its own basemap.
-    expect(keys).toContain('swisstopo_winter');
-    expect(features).toHaveLength(2);
+    // The templateless record's tile is drawn — it falls back to the ACTIVE
+    // basemap's template, which is where its tiles actually turn out to be.
+    // This is the region the staging screenshot showed as a solid roundel
+    // over empty map.
+    //
+    // ONE feature, not two: the overlay draws the active basemap's downloads
+    // and only those, so the Swisstopo record's tile is not on this map (see
+    // refreshDownloadedOverlay's own block comment). Its own tile is asserted
+    // through the roundel below, which is the surface that still answers for
+    // an area downloaded under another basemap.
+    expect(features).toHaveLength(1);
   });
 
   it('is completed from what the probe verified, once its region is read', async () => {

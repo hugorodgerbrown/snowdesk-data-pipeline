@@ -450,12 +450,14 @@
     // window.pwaDownloadedOverlay — rather than a flag of its own that could
     // drift from it.
     //
-    // SNOW-658 review: isEnabled(), the session's inspection-mode flag that
-    // show()/hide() write — NOT isVisible(), which now answers from the
-    // squares MapLibre is drawing. Same split as the other two panels' own
-    // switches: this states what the user asked for. The two only diverge
-    // while something else has cleared the map (a placement flow), and this
-    // sheet is not open then.
+    // SNOW-658 review: isEnabled(), the persisted preference that show()/
+    // hide() write — NOT isVisible(), which now answers from the squares
+    // MapLibre is drawing. Same split as the other two panels' own switches:
+    // this states what the user asked for. The two diverge while something
+    // else has cleared the map (a placement flow, and this sheet is not open
+    // then), and — since the overlay draws the ACTIVE basemap's downloads
+    // alone — whenever the overlay is on and this basemap has none, where ON
+    // over an empty map is the honest reading.
     //
     // SNOW-645 review (SAST): selected by id, not a data-attribute hook —
     // includes/_switch.html dropped its extra_attrs passthrough (a live
@@ -788,11 +790,13 @@
     // the auto-show has not come back — an implicit repaint of the map is
     // still a poor trade for discoverability.
     //
-    // So the overlay is now entirely the switch's business: it starts off,
-    // the user turns it on, and it stays on until they turn it off (closing
-    // the sheet still does not hide it — see the toggle's own change handler,
-    // and window.pwaDownloadedOverlay's comment in map.js for why visibility
-    // is bound to the switch rather than to the sheet's lifecycle).
+    // So the overlay is now entirely the switch's business: it starts at
+    // whatever the user last set (the preference is persisted, like the
+    // other three panels'), and it stays there until they change it —
+    // closing the sheet does not hide it, and opening the sheet does not
+    // show it. See the toggle's own change handler, and
+    // window.pwaDownloadedOverlay's comment in map.js for why visibility is
+    // bound to the switch rather than to the sheet's lifecycle.
     //
     // render() reads window.pwaDownloadedOverlay.isEnabled() to paint the
     // switch, so it now shows the overlay's real state on every open rather
