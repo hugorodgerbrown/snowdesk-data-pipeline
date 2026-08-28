@@ -191,9 +191,9 @@ so it is stated here rather than quietly dropped:
   name between "using the network" and "not".
 - **Weaker.** The freshness TIMESTAMP is one interaction further away.
   It used to be on screen unbidden whenever the app was offline; it now
-  lives in `#pwa-offline-toast`, which opens on a press of the symbol
-  and never opens itself. So does the per-state explanation and the
-  reconnect button.
+  lives in `#pwa-connection-panel`, a popover anchored under the symbol
+  that opens on a press of it and never opens itself. So does the
+  per-state explanation and the reconnect button.
 
 The trade was made deliberately: an indicator that is always present and
 always accurate is worth more than a timestamp that is only ever shown
@@ -211,10 +211,15 @@ every public page. Its responsibilities:
 - Repaint it on any fetch network failure or HTMX `sendError` event, so
   slow / patchy connections are reported even when the browser still
   says `onLine === true`.
-- Own the connection-status toast (`#pwa-offline-toast`,
-  `includes/_offline_toast.html`): the symbol's press opens and closes
-  it, and this module repaints its copy on every state change. It never
-  opens itself.
+- Repaint the connection-status panel (`#pwa-connection-panel`,
+  `includes/_connection_panel.html`) on every state change. It does NOT
+  own the panel's visibility: the panel is the content of a native
+  `<details data-network-panel>` in `includes/nav.html` whose `<summary>`
+  is the symbol, so opening and closing are the browser's and
+  outside-click / Escape / the panel's `[data-disclosure-close]` control
+  are nav.html's shared `enhanceDisclosure` script. This module follows
+  the `toggle` event, which is where `aria-expanded` and the freshness
+  ticker are kept in step. It never opens the panel itself.
 - Track **two distinct clocks** and persist both to IndexedDB
   `meta:app` (SNOW-482), read back on init so a cold offline launch
   shows real values instead of resetting to blank:

@@ -2209,7 +2209,7 @@ reaching the server", so a dead interface strikes it through even in `auto`.
 The switch answers "did you ask for offline mode", so a merely-struggling
 connection leaves it off — a switch that flicks itself on when the lift crosses
 a ridge reports the worker's decision as the user's. Which offline mode it is
-belongs to the toast, which has room for a sentence.
+belongs to the panel, which has room for a sentence.
 
 SNOW-742 put this control inside `includes/_offline_banner.html`, which
 `pwa_offline.js` revealed only when the connection had already failed — so the
@@ -2219,12 +2219,18 @@ the symbol and the switch above (a control in the status area invites the
 reading that the symbol *is* the switch), and finally deleted the banner
 outright: with a permanent symbol in the header, a strip announcing the same
 one bit is redundant chrome. The banner's content moved into
-`includes/_offline_toast.html`, which the symbol opens — the "last synced"
-phrase, four explanations (one per state, the fourth for the healthy case the
-banner never had to describe), and the way *back*, labelled "Try reconnecting"
-under a latch and "Use the network again" under a forced mode. That button is
-an anonymous reader's only exit from an auto-latch, since the switch is
-signed-in only.
+`includes/_connection_panel.html`, a popover anchored under the symbol that
+discloses it — the "last synced" phrase, four explanations (one per state, the
+fourth for the healthy case the banner never had to describe), and the way
+*back*, labelled "Try reconnecting" under a latch and "Use the network again"
+under a forced mode. That button is an anonymous reader's only exit from an
+auto-latch, since the switch is signed-in only.
+
+That panel was briefly a toast (`includes/_toast.html`), which put a
+persistent, user-invoked, neutral-surface panel through a primitive that is
+transient, system-initiated, bottom-centred and status-coloured. It is now a
+third `<details>` in the header, built like the account and admin dropdowns
+beside it — see [`decisions/overlay-primitives.md`](decisions/overlay-primitives.md).
 
 **Downloads under each mode (SNOW-748).** `_warmCache` ignores the auto-latch
 — see [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)

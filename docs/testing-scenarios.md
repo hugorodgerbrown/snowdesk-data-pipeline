@@ -638,7 +638,7 @@ once online since `Clear site data`.
 ### Scenario P8: Connectivity symbol + freshness toast + network-required controls
 
 > Automated: [tests/js/test_pwa_offline.js](../tests/js/test_pwa_offline.js)
-> — the symbol's two appearances, the toast's four states, the switch,
+> — the symbol's two appearances, the panel's four states, the switch,
 > and the `data-network-required` gating are all jsdom-observable, so
 > they are covered in Vitest rather than in a browser (SNOW-649 removed
 > the e2e test that used to sit here). What remains manual is the visual
@@ -651,15 +651,16 @@ once online since `Clear site data`.
 > stops the Subscribe click.
 
 **Goal**: Verify the permanent connectivity symbol (SNOW-377 / SNOW-748)
-tracks the connection state, that the toast behind it surfaces the last
+tracks the connection state, that the panel behind it surfaces the last
 sync timestamp and explains the state, and that any form or button
 carrying `data-network-required` is disabled.
 
 SNOW-748 removed the `#pwa-offline-banner` strip this scenario used to
 describe. The symbol in the header is now permanent — it is on screen in
 every state rather than only in the failure case — and the freshness
-stamp and the explanation moved into `#pwa-offline-toast`, one press
-away.
+stamp and the explanation moved into `#pwa-connection-panel`, one press
+away, anchored under the symbol rather than fixed to the bottom of the
+viewport.
 
 **Preconditions**: Scenario P1 completed. A bulletin URL such as
 http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ visited
@@ -667,12 +668,13 @@ online at least once so the timestamp is primed.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Load the bulletin page online; press the connectivity symbol in the header | Symbol shows the plain arcs and `data-network-state="online"`; the toast opens reading "Online — last synced <relative>" with the "using the network" explanation and no reconnect button. Press again to close |
-| 2 | DevTools → Network → **Offline**, then trigger any request | The symbol switches to the struck-through mark; NO panel appears on its own. Press it: the toast reads "Offline — last synced <relative>" with the "lost contact" explanation |
+| 1 | Load the bulletin page online; press the connectivity symbol in the header | Symbol shows the plain arcs and `data-network-state="online"`; the panel opens directly beneath it, on the card surface (not a status colour), reading "Online — last synced <relative>" with the "using the network" explanation and no reconnect button. Press again to close, or press Escape, or click the map behind it |
+| 2 | DevTools → Network → **Offline**, then trigger any request | The symbol switches to the struck-through mark; NO panel appears on its own. Press it: the panel reads "Offline — last synced <relative>" with the "lost contact" explanation |
 | 3 | Scroll to the bulletin's "Get avalanche alerts" subscribe form | The Subscribe button is disabled (grey / no-hover); the enclosing `<form>` carries `aria-disabled="true"` and `pointer-events: none`, so the email input is unreachable too. This is `data-network-required` in action |
-| 4 | Network → **No throttling** (back online), and trigger any request | The symbol returns to the plain arcs; an open toast repaints to the online copy live; subscribe form re-enables; no page reload needed |
-| 5 | Sign in, open the account menu and switch **Offline mode** on | The switch is the first row, above "Subscriptions"; the symbol goes struck-through while `navigator.onLine` is still true, and the toast now reads "Offline mode — last synced …" with "You asked the app to stay offline" and a **Use the network again** button |
-| 6 | Sign out and repeat step 5's state via the worker's own latch (three failed reads) | The switch is absent — it is signed-in only — but the toast still offers **Try reconnecting**, which is an anonymous reader's only way back |
+| 4 | Network → **No throttling** (back online), and trigger any request | The symbol returns to the plain arcs; an open panel repaints to the online copy live; subscribe form re-enables; no page reload needed |
+| 5 | Sign in, open the account menu and switch **Offline mode** on | The switch is the first row, above "Subscriptions"; the symbol goes struck-through while `navigator.onLine` is still true, and the panel now reads "Offline mode — last synced …" with "You asked the app to stay offline" and a **Use the network again** button |
+| 6 | Sign out and repeat step 5's state via the worker's own latch (three failed reads) | The switch is absent — it is signed-in only — but the panel still offers **Try reconnecting**, which is an anonymous reader's only way back |
+| 7 | With the panel open, press its "×" (top-right), then reopen it and press Escape | Each closes the panel and returns focus to the symbol; the "×" is a full 44×44 target, not a hairline glyph |
 
 ### Scenario P9: Offline navigation to a URL never visited
 

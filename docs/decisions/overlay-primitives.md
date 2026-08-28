@@ -28,21 +28,27 @@ control, and z-index literal.
    one nudge shape).
 2. **Toast** — `templates/includes/_toast.html`. Transient, bottom-centred
    pill. Extended with an opt-in `timeout` attribute (auto-dismiss via the
-   shared controller in `static/js/overlays.js`), and with an opt-in
-   `body_template` / `cta_label_template` pair (SNOW-748) for a caller whose
-   slot content is richer than one escaped string. Supplying `body_template`
-   also switches the pill into a **panel**: `rounded-card`, wrapped so the CTA
-   and the "×" sit under the body, and height-bounded with `max-h-[60dvh]` +
-   `overflow-y-auto`.
+   shared controller in `static/js/overlays.js`).
 
    `_offline_banner.html` was a documented exception below until SNOW-748
    deleted it. Its content — the "last synced" phrase, the per-state
-   explanation, the reconnect button — now renders through this primitive as
-   `includes/_offline_toast.html`, opened by the permanent connectivity symbol
-   in `includes/nav.html`. That absorption is what the `body_template` slot
-   was added for: the exception was never about the shape, only about the four
-   mutually-exclusive server-rendered strings the one-line `body` parameter
-   could not hold.
+   explanation, the reconnect button — went through this primitive briefly,
+   behind a `body_template` / `cta_label_template` pair added to carry its
+   four mutually-exclusive server-rendered strings. Both parameters have been
+   removed again, along with the shape switch that came with them, because
+   the surface was never a toast: it is user-invoked, persistent, neutral and
+   read at the control that summoned it, where a toast is transient,
+   system-initiated, bottom-centred and status-coloured. Widening a shared
+   primitive to make one caller behave unlike itself is the smell; the caller
+   was in the wrong place.
+
+   It now lives in `includes/_connection_panel.html` as an **anchored
+   popover** — the content of a native `<details data-network-panel>` in
+   `includes/nav.html` whose `<summary>` is the permanent connectivity
+   symbol, positioned `absolute right-0 top-full` on the card tokens like the
+   account and admin dropdowns beside it. That makes it a nav disclosure
+   rather than one of the four overlay primitives, and it is listed here only
+   so the next reader does not route it back through a toast.
 3. **Sheet** — `templates/includes/_overlay_sheet.html`. Fly-out panel
    shared by the favourite and report map surfaces; content is injected by
    the owning JS module at open time.
