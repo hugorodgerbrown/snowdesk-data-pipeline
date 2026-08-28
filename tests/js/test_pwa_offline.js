@@ -20,12 +20,13 @@
  * test_home_intro.js). Re-importing per test also stops each run's wrapper
  * stacking on the previous one's.
  *
- * ``window.pwaDb`` is left undefined throughout: the persistence and
- * sync-log helpers all guard on it and return early, which keeps these
- * tests on the banner behaviour alone.
+ * ``window.pwaDb`` is left undefined for the banner tests: the persistence
+ * and sync-log helpers all guard on it and return early, which keeps those
+ * tests on the banner behaviour alone. The sync-log block at the foot of
+ * the file stubs it, since what it asserts is what gets written.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const BANNER_ID = 'pwa-offline-banner';
 
@@ -258,5 +259,60 @@ describe('offline latch banner (SNOW-742)', () => {
     sw.emit({ type: 'network-mode', mode: 'auto' });
 
     expect(bannerShown()).toBe(false);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// The sync log's write side
+// ---------------------------------------------------------------------------
+//
+// The panel on /account/settings/ answers "has this device actually reached
+// the server", so a row only earns its place if the reader would recognise it
+// as the app fetching something. telemetry.js flushes its own buffer every 30
+// seconds and on every lifecycle event, which filled the panel with rows
+// describing nothing the reader did.
+
+describe('sync-log write filter', () => {
+  /**
+   * Stub the three ``window.pwaDb`` methods pwa_offline.js touches and
+   * record every path handed to ``appendSyncLog``.
+   *
+   * @returns {string[]} live array of logged paths
+   */
+  function stubDb() {
+    const logged = [];
+    window.pwaDb = {
+      get: async () => undefined,
+      put: async () => {},
+      appendSyncLog: async (entry) => {
+        logged.push(entry.path);
+      },
+    };
+    return logged;
+  }
+
+  afterEach(() => {
+    delete window.pwaDb;
+  });
+
+  it('does not log a telemetry flush', async () => {
+    const logged = stubDb();
+    window.fetch = vi.fn().mockResolvedValue(okResponse('/api/telemetry'));
+    await loadModule();
+
+    await window.fetch('/api/telemetry', { method: 'POST' });
+
+    expect(logged).toEqual([]);
+  });
+
+  it('still logs a request the reader would recognise', async () => {
+    const logged = stubDb();
+    window.fetch = vi.fn().mockResolvedValue(okResponse('/api/ratings/'));
+    await loadModule();
+
+    await window.fetch('/api/ratings/');
+
+    expect(logged).toEqual(['/api/ratings/']);
   });
 });

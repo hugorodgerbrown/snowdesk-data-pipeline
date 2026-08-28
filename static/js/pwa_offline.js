@@ -134,6 +134,15 @@
     '.webmanifest',
   ]);
 
+  // Same-origin paths that are the page talking to itself rather than
+  // fetching anything the user asked for, so they never belong in the
+  // sync log. static/js/telemetry.js flushes its buffer on a 30s cadence
+  // and on every lifecycle event, which swamped the panel with rows
+  // describing nothing the reader did. Listed with and without the
+  // trailing slash because the receiver is mounted without one and
+  // APPEND_SLASH can resolve either spelling.
+  const SYNC_LOG_EXCLUDED_PATHS = new Set(['/api/telemetry', '/api/telemetry/']);
+
   // In-memory copy of the last-sync clock, hydrated from IndexedDB on
   // init (see hydratePersistedClocks) and kept in sync with the persisted
   // copy on every qualifying response.
@@ -425,6 +434,19 @@
   }
 
   /**
+   * Whether a same-origin pathname is worth recording as a "sync" — a
+   * request the reader would recognise as the app fetching something,
+   * rather than a static asset or the page's own background chatter.
+   *
+   * @param {string} pathname
+   * @returns {boolean}
+   */
+  function isLoggableSyncPath(pathname) {
+    if (SYNC_LOG_EXCLUDED_PATHS.has(pathname)) return false;
+    return !isStaticAssetPath(pathname);
+  }
+
+  /**
    * Best-effort append to the ``log:sync`` IndexedDB store. Never
    * throws.
    *
@@ -443,7 +465,7 @@
   /**
    * Called whenever a response header set + resolved URL + status is
    * available (fetch or HTMX). ``syncLastAt`` / ``sync.last_at`` /
-   * the ``log:sync`` row (for qualifying, non-static-asset paths) only
+   * the ``log:sync`` row (for paths ``isLoggableSyncPath`` accepts) only
    * advance for a response that is: successful (2xx status), un-stamped
    * (no ``X-SW-Cache`` header — i.e. neither a Cache-Storage replay
    * (``X-SW-Cache: hit``) nor a synthesized offline fallback
@@ -484,7 +506,7 @@
     if (successful && !cacheHit && sameOrigin) {
       syncLastAt = now;
       persistMeta(SYNC_LAST_AT_KEY, now.toISOString());
-      if (!isStaticAssetPath(pathname)) {
+      if (isLoggableSyncPath(pathname)) {
         appendSyncLogEntry(now, pathname);
       }
       // A real same-origin round-trip proves the connection works, so it

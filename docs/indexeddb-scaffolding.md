@@ -2,7 +2,7 @@
 name: indexeddb-scaffolding
 description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, data:map_overlays
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-28
 ---
 
 # IndexedDB scaffolding
@@ -187,9 +187,14 @@ displace (see [`offline-map.md`](offline-map.md)).
 ### `log:sync` row shape (SNOW-482)
 
 Written by `static/js/pwa_offline.js`'s `appendSyncLogEntry` for every
-same-origin, non-static-asset response that did NOT carry
-`X-SW-Cache: hit` (i.e. a real network round-trip, not a Cache-Storage
-replay served by `static/js/sw.js`):
+same-origin response that did NOT carry `X-SW-Cache: hit` (i.e. a real
+network round-trip, not a Cache-Storage replay served by
+`static/js/sw.js`) and whose path `isLoggableSyncPath` accepts — that
+excludes static assets, and `/api/telemetry`, which the page POSTs to
+itself every 30 seconds and would otherwise be most of the panel.
+`static/js/sync_log.js` filters the same paths again on read, so a
+device that already banked telemetry rows under the old rule shows a
+clean panel before those rows age out:
 
 ```js
 {
