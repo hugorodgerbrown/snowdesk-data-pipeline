@@ -11,7 +11,8 @@
  *
  * Rows are plain ``{id, at, path}`` objects written by
  * ``static/js/pwa_offline.js``'s ``appendSyncLogEntry`` for every
- * qualifying same-origin, un-cached response. "Reset local data on this
+ * qualifying same-origin, un-cached response — telemetry flushes
+ * excluded at both ends, see ``EXCLUDED_PATHS``. "Reset local data on this
  * device" (SNOW-378, ``pwa_reset.js``) wipes the whole IndexedDB
  * database, so the log clears along with everything else — no separate
  * clear affordance needed here.
@@ -21,6 +22,13 @@
   'use strict';
 
   const LIST_ID = 'sync-log-list';
+
+  // Paths pwa_offline.js's SYNC_LOG_EXCLUDED_PATHS now refuses to write.
+  // Filtering on read as well is what clears the panel on a device that
+  // already banked a hundred telemetry flushes — those rows age out of
+  // the capped store on their own, and until they do they must not be
+  // painted.
+  const EXCLUDED_PATHS = new Set(['/api/telemetry', '/api/telemetry/']);
 
   // SNOW-620: server-translated placeholder copy, read back from the
   // template accounts/partials/_sync_log_body.html renders. The literals
@@ -101,12 +109,13 @@
 
     try {
       const rows = await window.pwaDb.getSyncLog();
-      if (!rows || rows.length === 0) {
+      const visible = (rows || []).filter((entry) => !EXCLUDED_PATHS.has(entry.path));
+      if (visible.length === 0) {
         renderPlaceholder(list, STRINGS.empty);
         return;
       }
       list.textContent = '';
-      rows.forEach((entry) => list.appendChild(buildRow(entry)));
+      visible.forEach((entry) => list.appendChild(buildRow(entry)));
     } catch (_err) {
       renderPlaceholder(list, STRINGS.failed);
     }

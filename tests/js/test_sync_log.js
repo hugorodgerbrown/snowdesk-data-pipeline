@@ -132,6 +132,35 @@ describe('painting real rows', () => {
   });
 });
 
+describe('telemetry rows already banked on the device', () => {
+  // pwa_offline.js no longer writes these, but the capped store still
+  // holds up to a hundred of them on a device that has been running the
+  // old build, and telemetry flushes every 30s — so left unfiltered they
+  // would be the entire panel for a long while.
+  it('drops /api/telemetry rows from the painted list', async () => {
+    window.pwaDb = {
+      getSyncLog: async () => [
+        { at: '2026-04-08T09:05:00Z', path: '/api/telemetry' },
+        { at: '2026-04-08T09:04:00Z', path: '/api/regions.geojson' },
+        { at: '2026-04-08T09:03:00Z', path: '/api/telemetry/' },
+      ],
+    };
+    await renderPanel();
+    const paths = [...list.querySelectorAll('[data-testid="sync-log-row"]')].map(
+      (li) => li.firstChild.textContent,
+    );
+    expect(paths).toEqual(['/api/regions.geojson']);
+  });
+
+  it('reads as "no syncs yet" when telemetry was all there was', async () => {
+    window.pwaDb = {
+      getSyncLog: async () => [{ at: '2026-04-08T09:05:00Z', path: '/api/telemetry' }],
+    };
+    await renderPanel();
+    expect(placeholderText()).toBe('No syncs yet.');
+  });
+});
+
 describe('hostile row data', () => {
   it('falls back to the raw string for an unparseable timestamp', async () => {
     window.pwaDb = {
