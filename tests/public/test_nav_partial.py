@@ -10,6 +10,9 @@ Covers:
     to appear and disappear with the ``routes`` waffle flag; SNOW-724
     retired it, so the entry is now asserted unconditionally like its
     siblings.
+  - The SNOW-748 network toggle: present for every viewer including
+    anonymous ones, shipped hidden and unpressed, with both glyphs and its
+    strings template.
 
 That last group is not decoration. ``docs/decisions/
 account-area-navigation-lives-in-the-nav-menu.md`` makes this menu the
@@ -254,3 +257,78 @@ class TestNavAccountMenuEntries:
             "accounts:settings",
         ):
             assert f'href="{reverse(url_name)}"' not in html, url_name
+
+
+@pytest.mark.django_db
+class TestNavNetworkToggle:
+    """The SNOW-748 network toggle, beside the sync badge.
+
+    SNOW-742 built this control and put it inside the offline banner, which
+    ``static/js/pwa_offline.js`` reveals only when the connection has already
+    failed — so the user it was built for ("I have signal now and am about
+    to lose it") could never reach it. Here it renders on every page for
+    every viewer, and these assertions are what stops it drifting back
+    behind a condition.
+    """
+
+    def test_anonymous_sees_the_toggle(self, rf: RequestFactory) -> None:
+        """Anonymous users get it too.
+
+        Deliberate, not an oversight: basemap downloads are not auth-gated,
+        so neither is the switch deciding whether the app calls the server.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert "data-network-toggle" in html
+
+    def test_authenticated_sees_the_toggle(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """...and so do signed-in users, in the same place."""
+        html = _render_nav_for(rf, regular_user)
+        assert "data-network-toggle" in html
+
+    def test_toggle_renders_hidden_and_unpressed(self, rf: RequestFactory) -> None:
+        """It ships hidden and in the "using the network" state.
+
+        Hidden because ``pwa_offline.js`` reveals it, exactly as
+        ``mutation_queue.js`` reveals the sync badge beside it: a control
+        that only works while a script is running must not be on screen when
+        that script is absent (an old cached shell, a JS error). Unpressed
+        because the mode a page boots in is ``'auto'`` — the script repaints
+        it after reading the persisted mode back.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        # The opening tag only — the button's own class list. Searching the
+        # whole element would match the ``hidden`` on the off-state glyph
+        # inside it and pass whatever the button itself carried.
+        opening_tag = html.split("data-network-toggle", 1)[1].split(">", 1)[0]
+        assert 'aria-pressed="false"' in opening_tag
+        assert "hidden" in opening_tag
+
+    def test_toggle_renders_both_glyphs(self, rf: RequestFactory) -> None:
+        """Both marks are server-rendered; the script swaps ``hidden``.
+
+        The glyph paths stay in ``includes/_icon_wifi.html`` and
+        ``includes/_icon_wifi_off.html`` — a JS-built SVG would put a second
+        copy of the mark somewhere ``bin/ds-lint`` and a reader both have to
+        find.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        button = html.split("data-network-toggle", 1)[1].split("</button>", 1)[0]
+        assert 'data-role="network-on"' in button
+        assert 'data-role="network-off"' in button
+
+    def test_toggle_labels_come_from_a_strings_template(
+        self, rf: RequestFactory
+    ) -> None:
+        """Both labels are rendered server-side for ``pwaStrings.read()``.
+
+        The label names the action, so it changes with the state — and a
+        label assigned from a JavaScript literal ships English to every
+        locale, because ``makemessages`` never scans ``static/js``. This is
+        the template ``bin/i18n-lint`` exists to keep populated.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        assert 'id="network-toggle-strings-template"' in html
+        assert 'data-string="go-offline"' in html
+        assert 'data-string="go-online"' in html
