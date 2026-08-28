@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/row_focus.js';
+import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
 
 const LIST_URL = '/partials/report/list/';
@@ -210,6 +211,78 @@ describe('a list load that fails', () => {
     );
 
     expect(sheet.hidden).toBe(true);
+  });
+});
+
+describe('a row removed from the panel', () => {
+  it('re-reads the list, so the empty state arrives with the last row', () => {
+    // The row's own hx-swap empties one <li> and nothing else, so a panel
+    // that has just lost its last report keeps rendering as a list of
+    // none: observations:list's empty state is a server-side clause and
+    // only a fresh response can carry it.
+    btn.click();
+    const container = rows();
+    container.innerHTML =
+      '<ul><li id="observation-a1b2"><form id="rm" data-row-remove></form></li></ul>';
+    globalThis.htmx.ajax.mockClear();
+
+    const xhr = {};
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', {
+        detail: { xhr, elt: container.querySelector('#rm') },
+      }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: true } }),
+    );
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
+  });
+
+  it('tells the map, so the flag goes with the row', () => {
+    // The community-reports feed is anonymised and carries no uuid, so the
+    // map cannot know which pin was this user's — only a refetch can tell
+    // it, and nothing else asks for one.
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:reports-changed', changed);
+    btn.click();
+    const container = rows();
+    container.innerHTML =
+      '<ul><li id="observation-a1b2"><form id="rm" data-row-remove></form></li></ul>';
+
+    const xhr = {};
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', {
+        detail: { xhr, elt: container.querySelector('#rm') },
+      }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: true } }),
+    );
+
+    expect(changed).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:reports-changed', changed);
+  });
+
+  it('stays quiet for a request that came from outside the rows', () => {
+    // The mark rides the request's own xhr, so this module's own form-load
+    // htmx.ajax() — and the three sibling panels' requests — cannot be
+    // mistaken for a row removal.
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:reports-changed', changed);
+    btn.click();
+
+    const xhr = {};
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', { detail: { xhr, elt: document.body } }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: true } }),
+    );
+
+    expect(changed).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:reports-changed', changed);
   });
 });
 

@@ -161,6 +161,36 @@ describe('enqueue while offline, replay on reconnect', () => {
   });
 });
 
+describe('a successful drain announces that server state moved', () => {
+  it('tells the map to re-read BOTH user-data overlays', async () => {
+    // A queued create is not on the map until it has actually replayed, so
+    // this is the only moment either overlay can learn about it — a field
+    // observation filed here was listed in its panel and absent from the
+    // community-reports layer until the page was reloaded.
+    //
+    // Both announcements fire for ANY successful drain: this queue carries
+    // no per-operation kind, and map.js's listeners are gated on their own
+    // overlay being loaded, so the wrong-kind case costs one cheap refetch
+    // and never a wrong picture.
+    const favourites = vi.fn();
+    const reports = vi.fn();
+    document.addEventListener('snowdesk:favourites-changed', favourites);
+    document.addEventListener('snowdesk:reports-changed', reports);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 201 })),
+    );
+
+    await window.pwaMutationQueue.enqueue({ method: 'POST', url: MUTATION_URL });
+    await waitFor(async () => (await mutationRows()).length === 0);
+
+    expect(favourites).toHaveBeenCalled();
+    expect(reports).toHaveBeenCalled();
+    document.removeEventListener('snowdesk:favourites-changed', favourites);
+    document.removeEventListener('snowdesk:reports-changed', reports);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 2. Identical Idempotency-Key across ≥2 successive replays.
 // ---------------------------------------------------------------------------

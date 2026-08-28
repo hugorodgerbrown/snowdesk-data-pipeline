@@ -4032,6 +4032,173 @@
     announceOverlayVisibility();
   };
 
+  // ==== A panel wrote to the server, so the layer behind it is stale ====
+  //
+  // The three UGC overlays are the user's own data drawn twice — once as
+  // rows in a panel, once as features on the map — and only ONE of the two
+  // was kept current after a write. Delete a route or a field observation
+  // from its panel and the row went, while the line or the flag stayed on
+  // the map until the page was reloaded; upload a route and the panel
+  // listed it while the map did not draw it.
+  //
+  // ``snowdesk:favourites-changed`` already existed for the third
+  // (SNOW-414), so the fix is that shape twice over rather than a new
+  // mechanism: each panel announces that ITS data moved, and this file
+  // decides what that costs the map. The panels stay ignorant of sources,
+  // caches and layer ids, which is the same division ``pwaRowFocus`` and
+  // the overlay bridges already draw.
+  //
+  // Downloads is deliberately absent: its areas are device state rather
+  // than server state, and ``window.pwaDownloadedOverlay.refresh()`` — a
+  // Cache Storage re-probe, not a fetch — is already called on every path
+  // that adds or evicts one.
+
+  /**
+   * Re-read one panel overlay's payload from the server and repaint it.
+   *
+   * Gated on ``overlayLoaded[key]``, which is the difference between a
+   * refresh and a load: an overlay the user has never enabled has no
+   * source to setData and must not be installed here, because installing
+   * is what ``ensureOverlayLoaded`` does when they ask for it — and it
+   * will fetch this same URL then. The gate is NOT ``overlayState[key]``:
+   * a hidden-but-loaded overlay keeps its layers and its cache, and
+   * skipping it would leave the stale copy to be revealed by the next
+   * show() (which short-circuits on ``overlayLoaded``).
+   *
+   * Write-through to the offline overlay cache mirrors ``_loadOverlay``'s,
+   * and for the same reason: a deletion the user made online must not come
+   * back the next time the map reads that key offline.
+   *
+   * Failure is silent. The write it follows has already been reported by
+   * the panel that made it, and a refetch that cannot land leaves the map
+   * showing what it showed a moment ago — stale, but not wrong about
+   * anything it claims to know.
+   *
+   * @param {string} key - ``'routes'`` or ``'community_reports'``.
+   * @returns {Promise<void>}
+   */
+  const refreshPanelOverlay = (key) => {
+    if (!overlayLoaded[key]) return Promise.resolve();
+    const url = key === 'routes' ? ROUTES_URL : COMMUNITY_REPORTS_URL;
+    if (!url) return Promise.resolve();
+    return fetch(url)
+      .then(r => r.json())
+      .then((data) => {
+        if (!data) return;
+        window.pwaMapOverlayCache?.putOverlay(key, data);
+        if (key === 'routes') {
+          routesGeojsonCache = data;
+          // TWO sources, not one: the lines and the derived start/finish
+          // points (see installRoutesLayer). Refreshing only the first
+          // would leave a deleted route's flag standing on the map.
+          map.getSource('routes')?.setData(data);
+          map.getSource('route-endpoints')?.setData(routeEndpointsFor(data));
+        } else {
+          // Cached pristine above, mutated here — the same order
+          // ``_loadOverlay`` uses, so the stored copy is the server's
+          // payload and the drawn copy carries the age fade.
+          communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
+          map.getSource('community-reports')?.setData(communityReportsGeojsonCache);
+        }
+      })
+      .catch(() => {});
+  };
+
+  // SNOW-752: these two bound inside ``map.on('load')`` for their whole life,
+  // which is a bind point that does not always come — ``load`` waits on the
+  // first complete render, so a basemap style that fails to load (offline
+  // with nothing cached, or an unreachable tile origin) means it never fires
+  // and every listener inside it is silently never registered. The favourites
+  // LAYER does not depend on that handler — ``snowdesk:overlay-load`` installs
+  // it from IIFE level — so the map would draw pins it then had no way to
+  // update. Moved here beside the two below so all three write-listeners bind
+  // the same way, and none of them depends on a render.
+  // SNOW-414: favourites.js dispatches this after a successful
+  // create/rename/delete so the map's own pin layer reflects the change
+  // without a full page reload. Installs the layer first if this is the
+  // very first favourite the user has ever saved (overlayLoaded.favourites
+  // is only true once ensureOverlayLoaded('favourites') has run, which
+  // requires at least one prior fetch — install here covers the case
+  // where an ineligible-at-boot state doesn't apply, since the toggle
+  // itself is eligible-gated).
+  document.addEventListener('snowdesk:favourites-changed', () => {
+    if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
+    fetch(FAVOURITES_URL).then(r => r.json()).then((fc) => {
+      // Authoritative server state replaces the whole collection — this is
+      // what drops any optimistic ``pending`` feature once the real pin
+      // lands (SNOW-479). Keep the cache in sync so a subsequent optimistic
+      // append starts from current truth.
+      favouritesGeojsonCache = fc;
+      // SNOW-499: recompute before installFavouritesLayer's own call so a
+      // resort favourited/unfavourited elsewhere (e.g. the resort popup
+      // star) is reflected on the resorts layer as soon as this refetch
+      // lands, regardless of which branch below runs.
+      syncFavouritedResortIds(fc);
+      const source = map.getSource('favourites');
+      if (source) {
+        source.setData(fc);
+      } else {
+        installFavouritesLayer(fc);
+        overlayLoaded.favourites = true;
+      }
+      // SNOW-573: a create/delete here can add or remove a favourite-
+      // anchored weather feature — re-derive the weather layer's merged
+      // data from the fresh favouritesGeojsonCache. No-op if the weather
+      // layer was never installed.
+      refreshWeatherSourceData();
+    }).catch(() => {});
+  });
+
+  // SNOW-479: favourites.js dispatches this the instant an offline (or
+  // online) create is enqueued on the mutation queue, so the saved pin is
+  // visible immediately without waiting for the queued POST to replay. We
+  // append a synthetic ``pending`` feature (no uuid) to the current
+  // collection and setData; installing the layer first if this is the user's
+  // very first favourite. The pending pin is replaced by the authoritative
+  // server pin when the queue drains and re-dispatches
+  // snowdesk:favourites-changed above (or dropped there on a permanent
+  // failure). Renders at half opacity via the favourites-pin icon-opacity
+  // expression.
+  document.addEventListener('snowdesk:favourite-pending', (event) => {
+    if (!FAVOURITES_ELIGIBLE) return;
+    const detail = (event && event.detail) || {};
+    const lat = Number(detail.lat);
+    const lon = Number(detail.lon);
+    if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+
+    const feature = {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+      properties: { name: detail.name || '', pending: true },
+    };
+    const base =
+      favouritesGeojsonCache && Array.isArray(favouritesGeojsonCache.features)
+        ? favouritesGeojsonCache.features
+        : [];
+    favouritesGeojsonCache = {
+      type: 'FeatureCollection',
+      features: base.concat([feature]),
+    };
+
+    const source = map.getSource('favourites');
+    if (source) {
+      source.setData(favouritesGeojsonCache);
+    } else {
+      installFavouritesLayer(favouritesGeojsonCache);
+      overlayLoaded.favourites = true;
+    }
+  });
+
+  // Bound at IIFE level rather than inside ``map.on('load')`` — a style that
+  // never loads must not cost the map its ability to notice a write, and
+  // every identifier these two touch is declared above.
+  document.addEventListener('snowdesk:routes-changed', () => {
+    refreshPanelOverlay('routes');
+  });
+  document.addEventListener('snowdesk:reports-changed', () => {
+    refreshPanelOverlay('community_reports');
+  });
+
   // ==== SNOW-658 review: isVisible() means PAINT, isEnabled() means INTENT ====
   //
   // All four bridges (SNOW-687 added routes) answer two different questions,
@@ -5720,82 +5887,6 @@
 
     map.on('mouseenter', 'favourites-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'favourites-pin', () => { map.getCanvas().style.cursor = ''; });
-
-    // SNOW-414: favourites.js dispatches this after a successful
-    // create/rename/delete so the map's own pin layer reflects the change
-    // without a full page reload. Installs the layer first if this is the
-    // very first favourite the user has ever saved (overlayLoaded.favourites
-    // is only true once ensureOverlayLoaded('favourites') has run, which
-    // requires at least one prior fetch — install here covers the case
-    // where an ineligible-at-boot state doesn't apply, since the toggle
-    // itself is eligible-gated).
-    document.addEventListener('snowdesk:favourites-changed', () => {
-      if (!FAVOURITES_ELIGIBLE || !FAVOURITES_URL) return;
-      fetch(FAVOURITES_URL).then(r => r.json()).then((fc) => {
-        // Authoritative server state replaces the whole collection — this is
-        // what drops any optimistic ``pending`` feature once the real pin
-        // lands (SNOW-479). Keep the cache in sync so a subsequent optimistic
-        // append starts from current truth.
-        favouritesGeojsonCache = fc;
-        // SNOW-499: recompute before installFavouritesLayer's own call so a
-        // resort favourited/unfavourited elsewhere (e.g. the resort popup
-        // star) is reflected on the resorts layer as soon as this refetch
-        // lands, regardless of which branch below runs.
-        syncFavouritedResortIds(fc);
-        const source = map.getSource('favourites');
-        if (source) {
-          source.setData(fc);
-        } else {
-          installFavouritesLayer(fc);
-          overlayLoaded.favourites = true;
-        }
-        // SNOW-573: a create/delete here can add or remove a favourite-
-        // anchored weather feature — re-derive the weather layer's merged
-        // data from the fresh favouritesGeojsonCache. No-op if the weather
-        // layer was never installed.
-        refreshWeatherSourceData();
-      }).catch(() => {});
-    });
-
-    // SNOW-479: favourites.js dispatches this the instant an offline (or
-    // online) create is enqueued on the mutation queue, so the saved pin is
-    // visible immediately without waiting for the queued POST to replay. We
-    // append a synthetic ``pending`` feature (no uuid) to the current
-    // collection and setData; installing the layer first if this is the user's
-    // very first favourite. The pending pin is replaced by the authoritative
-    // server pin when the queue drains and re-dispatches
-    // snowdesk:favourites-changed above (or dropped there on a permanent
-    // failure). Renders at half opacity via the favourites-pin icon-opacity
-    // expression.
-    document.addEventListener('snowdesk:favourite-pending', (event) => {
-      if (!FAVOURITES_ELIGIBLE) return;
-      const detail = (event && event.detail) || {};
-      const lat = Number(detail.lat);
-      const lon = Number(detail.lon);
-      if (Number.isNaN(lat) || Number.isNaN(lon)) return;
-
-      const feature = {
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [lon, lat] },
-        properties: { name: detail.name || '', pending: true },
-      };
-      const base =
-        favouritesGeojsonCache && Array.isArray(favouritesGeojsonCache.features)
-          ? favouritesGeojsonCache.features
-          : [];
-      favouritesGeojsonCache = {
-        type: 'FeatureCollection',
-        features: base.concat([feature]),
-      };
-
-      const source = map.getSource('favourites');
-      if (source) {
-        source.setData(favouritesGeojsonCache);
-      } else {
-        installFavouritesLayer(favouritesGeojsonCache);
-        overlayLoaded.favourites = true;
-      }
-    });
 
     // SNOW-445: the community-reports cluster and point taps are now dispatched
     // through the single generic click handler above (activateCommunityCluster /

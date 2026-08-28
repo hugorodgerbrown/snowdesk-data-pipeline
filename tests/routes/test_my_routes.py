@@ -262,8 +262,8 @@ class TestMyRoutesSharedPartials:
         assert "data-route-list" in html
         assert 'data-rename-url-template="/routes/partials/__UUID__/rename/"' in html
 
-    def test_page_loads_the_three_rename_modules(self, client: Client) -> None:
-        """inline_rename, row_rename_commit and this page's own half.
+    def test_page_loads_the_four_row_modules(self, client: Client) -> None:
+        """inline_rename, row_rename_commit, row_removed and this page's half.
 
         Document order is execution order for deferred scripts, and each
         module reads the previous one's ``window.pwa*`` global — so the order
@@ -275,6 +275,41 @@ class TestMyRoutesSharedPartials:
         positions = [
             html.index("js/inline_rename.js"),
             html.index("js/row_rename_commit.js"),
+            html.index("js/row_removed.js"),
             html.index("js/account_routes.js"),
         ]
         assert positions == sorted(positions)
+
+    def test_delete_form_carries_the_shared_removal_hook(self, client: Client) -> None:
+        """``data-row-remove`` is what tells this page a row has gone.
+
+        On the FORM rather than the row, so a watcher can tell a removal
+        apart from the other HTMX requests a row can make — see
+        ``static/js/row_removed.js``.
+        """
+        user = UserFactory.create()
+        RouteFactory.create(user=user)
+        client.force_login(user)
+        html = client.get(PAGE_URL).content.decode()
+
+        assert "data-row-remove" in html
+
+    def test_the_list_re_reads_when_a_row_is_removed(self, client: Client) -> None:
+        """The wrapper re-reads routes:list on ``snowdesk:routes-changed``.
+
+        A row's Remove empties one ``<li>`` and nothing else, so a page that
+        has just lost its last route keeps rendering as a list of none — the
+        empty state is a server-side clause and only a fresh response can
+        carry it (SNOW-752).
+
+        No ``load`` trigger: the view already rendered the list, and a
+        page-load refetch would be a second round trip for markup already on
+        screen. And no ``?variant=map``, which would answer with map-focus
+        rows whose label is a control for a map this page has not got.
+        """
+        client.force_login(UserFactory.create())
+        html = client.get(PAGE_URL).content.decode()
+
+        assert f'hx-get="{reverse("routes:list")}"' in html
+        assert 'hx-trigger="snowdesk:routes-changed from:document"' in html
+        assert "variant=map" not in html

@@ -30,6 +30,15 @@ Remove stays a plain HTMX form — the delete endpoint returns an empty
 200, so ``hx-target``/``hx-swap`` on the row's own id removes exactly that
 row with no JS involved.
 
+``data-row-remove`` (SNOW-752) is how the surface owning the list knows
+that happened, so it can re-read the list (the swap empties one <li>, and
+the empty state is a server-side clause only a fresh response carries) and
+tell the map its pins changed. The hook is on the FORM rather than on the
+row or the actions span because the row carries other HTMX requests — the
+account page's disclosure chevron hx-gets the pin's detail card from inside
+this same row, and a watcher keyed on the row would re-read the list every
+time a user expanded a card, closing it again. See static/js/row_removed.js.
+
 ``row_target`` rather than a hardcoded ``#favourite-<uuid>``: the row's id
 is _favourite.html's to decide, and an actions partial that rebuilt the
 same string from the uuid would be a second place to change if it ever
@@ -69,7 +78,12 @@ Context:
 >
     {% include "includes/_icon_pencil.html" only %}
 </button>
-<form hx-post="{% url 'favourites:delete' favourite.uuid %}" hx-target="{{ row_target }}" hx-swap="outerHTML">
+<form
+    data-row-remove
+    hx-post="{% url 'favourites:delete' favourite.uuid %}"
+    hx-target="{{ row_target }}"
+    hx-swap="outerHTML"
+>
     {% csrf_token %}
     <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
         {% include "includes/_icon_trash.html" only %}

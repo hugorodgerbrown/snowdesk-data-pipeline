@@ -790,6 +790,28 @@ def test_report_eligible_true_for_verified_user() -> None:
 
 
 @pytest.mark.django_db
+def test_report_list_url_asks_for_the_map_variant() -> None:
+    """The panel's list URL carries ``?variant=map`` (SNOW-752).
+
+    That is what makes each row's label a control framing the report on the
+    map behind the sheet.  ``observation_list`` set the flag unconditionally
+    until this ticket; the parameter exists so ``/account/observations/`` can
+    read the same endpoint and NOT get those rows, having no map to fly.
+    Same spelling as the favourites and routes lists, which is the point of
+    having a convention.
+    """
+    user = UserFactory.create()
+    AccountFactory.create(user=user, is_verified=True)
+    client = Client()
+    client.force_login(user)
+    content = client.get(reverse("public:home")).content.decode()
+
+    assert (
+        f'data-report-list-url="{reverse("observations:list")}?variant=map"' in content
+    )
+
+
+@pytest.mark.django_db
 def test_report_unverified_for_authenticated_unverified_user() -> None:
     """An authenticated-but-unverified user is not eligible but is flagged unverified.
 

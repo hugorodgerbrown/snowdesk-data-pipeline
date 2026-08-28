@@ -47,13 +47,22 @@ add a sub-nav: the account area is not getting one.
 
 {% block extra_head %}
     {% comment %}
-        Two modules, for the two things a row here does on its own.
+        Four modules, for the three things a row here does on its own.
 
         htmx.min.js is what makes Remove work: the trash in
         _observation_row_actions.html is a plain HTMX form posting to
         observations:delete, which answers an empty 200 that the row's own
         hx-target/hx-swap turns into a removal. It is parser-blocking, as on
         accounts/hub.html, so it has run before any row is swapped.
+
+        row_removed.js and account_observations.js are the other half of
+        that removal (SNOW-752). The swap empties one <li> and nothing else,
+        so a page that has just lost its last report keeps rendering as a
+        list of none — observations:list's empty state is a server-side
+        clause only a fresh response carries. The first recognises the
+        trash's request landing, the second announces it, and the wrapper
+        below re-reads on that announcement. Deferred, in document order, so
+        window.pwaRowRemoved exists before the module that calls it.
 
         relative_time.js keeps each row's age honest. _observation_meta.html
         renders the age server-side into a <time data-relative-time> and this
@@ -64,6 +73,8 @@ add a sub-nav: the account area is not getting one.
         attribute.
     {% endcomment %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
+    <script defer src="{% static 'js/row_removed.js' %}"></script>
+    <script defer src="{% static 'js/account_observations.js' %}"></script>
     <script defer src="{% static 'js/relative_time.js' %}"></script>
 {% endblock %}
 
@@ -92,7 +103,24 @@ add a sub-nav: the account area is not getting one.
                 round-trip would buy nothing and would leave the page briefly
                 claiming "Loading…" for content the view already has.
             {% endcomment %}
-            {% include "observations/partials/_observation_list.html" %}
+            {# SNOW-752: the hx-get is a RE-READ only — no `load` trigger,   #}
+            {# because the view already rendered the list inside. It is what  #}
+            {# brings the empty state back when the last row is removed.      #}
+            {#                                                                #}
+            {# No `?variant=map`: that parameter asks observation_list for    #}
+            {# map-focus rows, whose label is a control that frames the       #}
+            {# report on a map. There is no map on this page, so the default  #}
+            {# is the right answer here and the parameter exists precisely so #}
+            {# this page can say so (it was unconditional until this ticket). #}
+            <div
+                data-observation-list
+                hx-get="{% url 'observations:list' %}"
+                hx-trigger="snowdesk:reports-changed from:document"
+                hx-target="this"
+                hx-swap="innerHTML"
+            >
+                {% include "observations/partials/_observation_list.html" %}
+            </div>
         </div>
     </div>
 {% endblock %}

@@ -65,19 +65,28 @@ cache note in apps/accounts/views.py before adding any cache-avoidance here.
           inline_rename.js     the pencil's in-place label edit, shared
                                unchanged with the map's four panels.
           row_rename_commit.js the POST that commits it, likewise shared.
+          row_removed.js       SNOW-752: recognises the trash's own request
+                               landing, so this page can re-read the list.
+                               The third shared row module, and the reason
+                               this page needs it is the reason the map
+                               panels do — the row's swap empties one <li>,
+                               and only a fresh response carries the empty
+                               state.
           account_favourites.js this page's own half — swapping the renamed
-                               row back in, and the chevron's
-                               expand/collapse state. It calls htmx.process
-                               on a row it swapped in itself, which is why
-                               htmx is parser-blocking above rather than
-                               deferred alongside the other three.
+                               row back in, re-reading the list after a
+                               removal, and the chevron's expand/collapse
+                               state. It calls htmx.process on a row it
+                               swapped in itself, which is why htmx is
+                               parser-blocking above rather than deferred
+                               alongside the other three.
 
-        The last three are deferred, so document order is execution order
+        The last four are deferred, so document order is execution order
         and each one's window.pwa* global exists before the next reads it.
     {% endcomment %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
     <script defer src="{% static 'js/inline_rename.js' %}"></script>
     <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
+    <script defer src="{% static 'js/row_removed.js' %}"></script>
     <script defer src="{% static 'js/account_favourites.js' %}"></script>
 {% endblock %}
 
@@ -115,9 +124,26 @@ cache note in apps/accounts/views.py before adding any cache-avoidance here.
                 per-region Remove buttons, which are bare hx-post attributes
                 with no form around them.
             {% endcomment %}
+            {# SNOW-752: a SECOND trigger on the same hx-get. The row's own  #}
+            {# Remove empties one <li> and nothing else, so a page that has   #}
+            {# just lost its last pin keeps rendering as a list of none —     #}
+            {# favourites:list's empty state is a server-side clause and only #}
+            {# a fresh response carries it. Re-reading is also what           #}
+            {# reconciles the offline roster (static/js/favourites_offline.js #}
+            {# writes through on the roster swap), so a deleted pin stops     #}
+            {# surviving in the cache.                                        #}
+            {#                                                                #}
+            {# Declared here rather than fetched from JS so the URL is        #}
+            {# written once. static/js/account_favourites.js only dispatches  #}
+            {# the event — the same one the map listens for, because "your    #}
+            {# favourites changed" is one fact and each surface decides what  #}
+            {# it costs. `from:document` because that is where the dispatch   #}
+            {# goes; htmx resolves the keyword to the document itself, and an #}
+            {# event dispatched on `document` never reaches a `from:body`     #}
+            {# listener.                                                      #}
             <div
                 hx-get="{% url 'favourites:list' %}"
-                hx-trigger="load"
+                hx-trigger="load, snowdesk:favourites-changed from:document"
                 hx-target="this"
                 hx-swap="innerHTML"
             >
