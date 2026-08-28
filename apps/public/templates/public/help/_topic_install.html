@@ -37,6 +37,17 @@ and points at the banner that dates it.
             reached the server. Check it before you trust a rating, and reload once you have signal.
         {% endblocktrans %}
     </p>
+    {# SNOW-748: the header toggle. A paragraph in this topic rather than a #}
+    {# topic of its own — the control moved out of the offline banner       #}
+    {# described just above, and it is the same subject.                    #}
+    <p class="mb-3 last:mb-0" data-testid="help-install-network-toggle">
+        {% blocktrans trimmed %}
+            You can also stop Snowdesk using the network yourself, with the signal button at the top of every page. Turn
+            it off before you lose coverage, or to spare a metered or roaming connection, and the app runs from what it
+            has already stored. It stays off until you turn it back on &mdash; Snowdesk will not quietly reconnect
+            &mdash; and the banner stays up meanwhile so you can see how old the stored data is.
+        {% endblocktrans %}
+    </p>
     <p class="mb-3 last:mb-0" data-testid="help-install-downloads-pointer">
         {% blocktrans trimmed %}
             The background map is the exception: it is stored only for the areas you download yourself &mdash; see

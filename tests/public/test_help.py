@@ -135,6 +135,18 @@ class TestHelpPage:
         assert b"never shows you a stale danger rating" not in content
         assert b"help-install-staleness" in content
 
+    def test_install_panel_documents_the_network_toggle(self, client: Client) -> None:
+        """The header toggle is explained where the offline copy already is.
+
+        SNOW-748 moved the control out of the offline banner and into the
+        nav, where it is now visible on every page to every visitor. A
+        control a user meets before they meet the state it produces needs
+        a sentence saying what it does and, more to the point, that
+        Snowdesk will not quietly undo it.
+        """
+        content = client.get(reverse("public:help")).content
+        assert b"help-install-network-toggle" in content
+
     def test_links_to_bulletin_guide(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert reverse("public:how_to_read_bulletin").encode() in response.content

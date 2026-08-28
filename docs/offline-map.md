@@ -1973,6 +1973,49 @@ because `djangofmt` reflows a long `{% blocktrans %}` across lines and
 would otherwise put source indentation into the middle of a
 `window.confirm` dialog.
 
+## Network mode (SNOW-742, SNOW-748)
+
+The worker holds one value, `_networkMode` in `static/js/sw.js`, which decides
+whether **read** paths call the network at all. `static/js/pwa_offline.js`
+mirrors it, persists it to IndexedDB `meta:app` under `network.mode`, and
+re-asserts it to the worker on boot (a worker terminated while idle comes back
+in `auto` having forgotten). Why the read paths latch at all:
+[`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md).
+
+| Mode | Set by | Read paths | Probed? | Ends when |
+|---|---|---|---|---|
+| `auto` | the default | bounded network fetch, cache fallback | n/a | three consecutive budget expiries latch it |
+| `offline` | the worker, after `OFFLINE_LATCH_THRESHOLD` read timeouts | never touch the network; a miss 504s at once | yes — `/livez` on a 30s → 60s → 300s backoff | the probe finds a route, an `online` event, or the user |
+| `offline-forced` | the user, from the header toggle | as `offline` | **no** | the user, and nothing else |
+
+**The two offline values are not interchangeable, and half the comparisons in
+each file turn on which one is meant.** `offline` is the worker inferring there
+is no route, so an `online` event and a successful probe both end it.
+`offline-forced` is an instruction, so neither does — and a read-path timeout
+cannot downgrade it into an auto-latch either, which would reintroduce the
+probe. SNOW-742 had two values and routed the user's request into
+`_latchOffline()`; the probe then unlatched them within thirty seconds. Each
+comparison in `sw.js` and `pwa_offline.js` carries a comment saying which sense
+it is in.
+
+**Where the control lives.** `[data-network-toggle]` in
+`templates/includes/nav.html`, beside the sync badge, on every page for every
+viewer including anonymous ones (basemap downloads are not auth-gated either).
+It is rendered `hidden` and revealed by `pwa_offline.js`, the same contract the
+sync badge has with `mutation_queue.js`. It paints **two** states for the
+worker's three — `aria-pressed` plus a struck-through glyph
+(`includes/_icon_wifi_off.html`) answer "is the network in use", which is one
+bit; which offline mode it is belongs to the banner, which has room for a
+sentence.
+
+SNOW-742 put this control inside `includes/_offline_banner.html`, which
+`pwa_offline.js` reveals only when the connection has already failed — so the
+user it was built for, "I have signal now and am about to lose it", could never
+reach it. The banner keeps the way *back* (labelled "Try reconnecting" under a
+latch, "Use the network again" under a forced mode) and gains a third
+explanation, because the latched copy asserts there is no usable connection and
+that is exactly what is false when the user chose the mode while online.
+
 ## Offline gating of the layers menu
 
 The layers popover (`#basemap-menu`) is a live cache-state dashboard:

@@ -12,8 +12,13 @@ last-reviewed: 2026-08-28
 `_boundedFetch`, which aborts after a fixed budget. Three consecutive budget
 expiries **latch** the worker into an offline mode in which read paths do not
 call the network at all. The latch lifts on a bounded probe to `/livez`, on the
-`online` event, or on the user's own control in the offline banner.
-`_warmCache` is exempt from both.
+`online` event, or on the user's own control — the network toggle in the nav
+header. `_warmCache` is exempt from both.
+
+**Amended by SNOW-748.** The mode has three values, not two: `auto`, `offline`
+(the worker latched itself) and `offline-forced` (the user asked). Everything
+below about bounding applies to `offline`. `offline-forced` is bounded by the
+user alone — see "The one exception".
 
 ## Why
 
@@ -90,6 +95,36 @@ of them should be removed as "noise" without replacing it:
    the case the old banner could not represent — and carries the user's own
    "Try reconnecting" control.
 
+## The one exception: `offline-forced` (SNOW-748)
+
+A user who presses the header toggle gets **none of the three**. No probe is
+scheduled, an `online` event does not lift it, and a read-path timeout cannot
+convert it into an auto-latch. That is a deliberate hole in the rule above, so
+it needs a reason.
+
+**It is not a guess that can be wrong.** The three mechanisms exist because a
+latch is the worker *inferring* there is no route, and an inference can outlive
+the condition that produced it. `offline-forced` infers nothing. The user has a
+route and has decided not to spend it — a metered roam, a battery to nurse, a
+tunnel they are about to enter — so there is no discovery for a probe to make.
+Probing it is not a safety measure but a countermand: SNOW-742 shipped exactly
+that, routing the user's request into `_latchOffline()`, and the probe put them
+back in `auto` within thirty seconds.
+
+**The staleness is on screen the whole time.** The reason to bound a latch is
+that a user may not know they are reading old ratings. Here they cannot not
+know: the toggle is pressed and struck through in the header of every page, the
+banner is up throughout with its own explanation, and its "last synced" phrase
+counts up live on a 30s ticker. The danger the bounding answers — silent
+staleness — is the one state this mode cannot be in.
+
+**Auto-expiry would spend data the user chose not to spend.** Any bound short
+enough to matter (an hour, a day) fires precisely when the user is least able
+to notice, and the cost lands on the connection they were protecting.
+
+The user's way back is present in both places at all times: the header toggle
+and the banner's "Use the network again" button.
+
 ## Why `_warmCache` is exempt
 
 A download is a long operation the user explicitly asked for, on a connection
@@ -104,6 +139,13 @@ worker terminated while idle comes back in `auto` having forgotten the latch;
 re-asserting restores it, at the cost of one message instead of an IndexedDB
 read per navigation. If the re-assertion is lost, the latch simply re-trips
 within about nine seconds.
+
+SNOW-748: the re-assertion carries **which** offline mode, not just that there
+was one. A `offline-forced` row re-asserted as `offline` would hand the worker
+a latch, and the probe that comes with it would end the user's choice on the
+next page load. Durability is also the whole difference between a setting and a
+gesture here — unlike a latch, nothing re-establishes a forced mode if the row
+is lost.
 
 ## Consequences
 
