@@ -22,8 +22,13 @@
                   the CTA and "×" sit under the body rather than beside
                   it, and height-bounded with ``max-h-[60dvh]`` +
                   ``overflow-y-auto`` — the house rule for anything fixed
-                  over the map, and ``dvh`` rather than ``vh`` because
-                  ``vh`` ignores mobile browser chrome. ``flex`` IS baked
+                  over the map, and ``dvh``/``dvw`` rather than ``vh``/``vw``
+                  because the viewport units ignore mobile browser chrome
+                  (and ``vw`` counts the scrollbar). It is also WIDTH-set
+                  (``w-[calc(100dvw-2rem)]`` under the existing
+                  ``max-w-md``): a ``fixed`` flex box with no width shrinks
+                  to fit its content, which for a wrapped paragraph
+                  collapses to a ~200px column. ``flex`` IS baked
                   in for this variant (unlike the pill — see "Display
                   notes"), which is safe because ``hidden`` is emitted
                   last in Tailwind's display group and so wins while both
@@ -93,7 +98,7 @@
     data-kind="{{ kind }}"
     {% if not static %}data-overlay data-overlay-hide="class"{% endif %}
     {% if timeout %}data-toast-timeout="{{ timeout }}"{% endif %}
-    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% if body_template %} flex{% endif %}{% endif %} {% if body_template %}flex-wrap items-start rounded-card max-h-[60dvh] overflow-y-auto py-3{% else %}items-center rounded-full py-2{% endif %} gap-3 max-w-md bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 text-sm shadow-lg"
+    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% if body_template %} flex{% endif %}{% endif %} {% if body_template %}flex-wrap items-start rounded-card w-[calc(100dvw-2rem)] max-h-[60dvh] overflow-y-auto py-3{% else %}items-center rounded-full py-2{% endif %} gap-3 max-w-md bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 text-sm shadow-lg"
 >
     {# data-toast-body: the hook a JS owner writes through to replace the  #}
     {# message without rebuilding the toast (static/js/map_sheet.js). A    #}
