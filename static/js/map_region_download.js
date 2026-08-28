@@ -820,6 +820,16 @@
         // and map_custom_download.js cannot drift apart on what "done"
         // means — see downloadSucceeded's docstring for why each clause is
         // there.
+        //
+        // SNOW-748: and cancellation is now reachable here. Toggling the
+        // header switch into a forced offline mode aborts an in-flight run,
+        // so `finish` receives a cancelled result with nobody having pressed
+        // anything this control owns. `cancelled` is read into its own local
+        // and branched on BEFORE `ok`, matching map_custom_download.js: the
+        // user asking a run to stop is neither a success nor a failure, and
+        // painting 'error' with the shared toast reported a fault where
+        // there was none.
+        const cancelled = !!(result && result.cancelled);
         const ok = runCore.downloadSucceeded(result);
         // SNOW-570: record what was downloaded before anything is painted.
         // SNOW-583: records the blob's own `z` (the clipped tile set the run
@@ -843,7 +853,18 @@
         // pulse. A failed run clears the fill without pulsing, so the error
         // state and its toast arrive with no delay.
         await progressFill.finish(ok);
-        if (ok) {
+        if (cancelled) {
+          // Back to rest, not to error. This can never paint 'done': tiles
+          // may well have landed before the worker honoured the cancel, but
+          // the region's tile set is incomplete by definition, and the
+          // done-probe checks the whole of it. 'offline' is the resting
+          // state when the abort came from the header toggle — which is the
+          // only way to reach this branch today; `renderControl`'s own
+          // connectivity listener already ran while this control was still
+          // 'busy' (and so early-returned), so the resting paint is this
+          // callback's job.
+          setState(networkInUse() ? 'idle' : 'offline', data.summary.mb);
+        } else if (ok) {
           setState('done', data.summary.mb);
         } else {
           setState('error', data.summary.mb);
