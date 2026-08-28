@@ -608,3 +608,95 @@ describe('failed rows do not starve the queue (SNOW-617)', () => {
     expect(rows[0].status).toBe('failed');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 11. Forced-offline gating (SNOW-748) — the header's network toggle puts the
+// app in an offline mode while the interface stays up, so `navigator.onLine`
+// is true for the whole of the first two cases below. A queued mutation must
+// hold, exactly as it does with the radio down: replaying it spends one of
+// the row's 20 attempts on a connection the user asked the app not to use.
+// The `auto` case is the regression guard — a sweep that stopped the queue
+// draining at all would satisfy the forced cases on its own.
+// ---------------------------------------------------------------------------
+
+describe('forced-offline gating (SNOW-748)', () => {
+  afterEach(() => {
+    delete window.pwaConnectivity;
+  });
+
+  it('holds a row without spending an attempt, with the interface up', async () => {
+    const mutationCalls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (url === MUTATION_URL) {
+          mutationCalls.push(url);
+          return new Response('', { status: 201 });
+        }
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    window.pwaConnectivity = { isOnline: () => false };
+    // The distinguishing fact: nothing about the interface says offline.
+    expect(navigator.onLine).toBe(true);
+
+    await window.pwaMutationQueue.enqueue({ method: 'POST', url: MUTATION_URL });
+    // Three passes stand in for the lifecycle triggers that keep firing
+    // while the tab stays open under the forced mode.
+    await window.pwaMutationQueue.drain();
+    await window.pwaMutationQueue.drain();
+    await window.pwaMutationQueue.drain();
+
+    const rows = await mutationRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('queued');
+    expect(rows[0].attempts).toBe(0);
+    expect(mutationCalls).toEqual([]);
+  });
+
+  it('drains normally under the auto mode', async () => {
+    const mutationCalls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (url === MUTATION_URL) {
+          mutationCalls.push(url);
+          return new Response('', { status: 201 });
+        }
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    window.pwaConnectivity = { isOnline: () => true };
+    await window.pwaMutationQueue.enqueue({ method: 'POST', url: MUTATION_URL });
+
+    await waitFor(async () => (await mutationRows()).length === 0);
+    expect(mutationCalls).toEqual([MUTATION_URL]);
+  });
+
+  it('replays the held row once the toggle goes back to auto', async () => {
+    const mutationCalls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (url === MUTATION_URL) {
+          mutationCalls.push(url);
+          return new Response('', { status: 201 });
+        }
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    window.pwaConnectivity = { isOnline: () => false };
+    await window.pwaMutationQueue.enqueue({ method: 'POST', url: MUTATION_URL });
+    expect((await mutationRows()).length).toBe(1);
+    expect(mutationCalls).toEqual([]);
+
+    window.pwaConnectivity = { isOnline: () => true };
+    await window.pwaMutationQueue.drain();
+
+    await waitFor(async () => (await mutationRows()).length === 0);
+    expect(mutationCalls).toEqual([MUTATION_URL]);
+  });
+});
