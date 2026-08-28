@@ -2016,6 +2016,18 @@ latch, "Use the network again" under a forced mode) and gains a third
 explanation, because the latched copy asserts there is no usable connection and
 that is exactly what is false when the user chose the mode while online.
 
+**Downloads under each mode (SNOW-748).** `_warmCache` ignores the auto-latch
+— see [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)
+— but not a forced mode: it refuses a new run and `_forceOffline()` cancels one
+in flight, both through the existing cancel protocol, so the run reports
+`cancelled: true` with `failed: 0` rather than reading as a failed download.
+The UI matches: `snowdesk:connectivity-changed` carries the **effective**
+connectivity (`navigator.onLine && networkMode === 'auto'`) and fires on every
+mode change, and `window.pwaConnectivity.isOnline()` is the read of that same
+value for the surfaces that re-read state when they repaint — the two download
+roundels, the downloads sheet's add-trigger, and the layers menu's sync dots.
+Those controls are disabled and explained, never hidden.
+
 ## Offline gating of the layers menu
 
 The layers popover (`#basemap-menu`) is a live cache-state dashboard:

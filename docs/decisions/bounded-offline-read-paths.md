@@ -13,7 +13,8 @@ last-reviewed: 2026-08-28
 expiries **latch** the worker into an offline mode in which read paths do not
 call the network at all. The latch lifts on a bounded probe to `/livez`, on the
 `online` event, or on the user's own control — the network toggle in the nav
-header. `_warmCache` is exempt from both.
+header. `_warmCache` is exempt from both — from the **latch**, not from the
+user's own offline mode (see below).
 
 **Amended by SNOW-748.** The mode has three values, not two: `auto`, `offline`
 (the worker latched itself) and `offline-forced` (the user asked). Everything
@@ -125,11 +126,29 @@ to notice, and the cost lands on the connection they were protecting.
 The user's way back is present in both places at all times: the header toggle
 and the banner's "Use the network again" button.
 
-## Why `_warmCache` is exempt
+## Why `_warmCache` is exempt from the latch — and not from a forced mode
 
 A download is a long operation the user explicitly asked for, on a connection
 they believe they have, and its failures already reach them (SNOW-568). Cutting
-tiles off at 3s would turn a slow download into a failed one.
+tiles off at 3s would turn a slow download into a failed one. And the latch is
+a *guess* drawn from three read timeouts: the guess can be wrong, so a download
+the user asked for should still be attempted.
+
+`offline-forced` inverts every clause of that. It is not a guess about the
+network, it is an instruction about it; the connection the user "believes they
+have" is one they have told the app not to spend. So the forced mode is the one
+offline value `_warmCache` honours (SNOW-748): it refuses a new run, and
+`_forceOffline()` cancels one already in flight. Both go through the existing
+cancellation protocol — a refused or cancelled run reports `cancelled: true`
+with `failed: 0`, so no control writes it up as a failed download.
+
+The UI half is the same rule stated once: `snowdesk:connectivity-changed`
+carries `navigator.onLine && networkMode === 'auto'` and fires on every mode
+change, and `window.pwaConnectivity.isOnline()` answers the same question for
+the controls that re-read it when they repaint. Before that the event carried
+`navigator.onLine` alone, which is true throughout a forced mode — so the
+layers menu kept its green dots and the download controls stayed enabled while
+the header said the app was offline.
 
 ## Durability
 
