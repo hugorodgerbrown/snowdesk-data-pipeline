@@ -128,6 +128,16 @@ projects:
                 value: config.settings.staging
               - fromGroup: Staging
 
+          # DISABLED 2026-08-27 — the refresh is run by hand for now. The service
+          # definition is commented out rather than deleted; the rationale below it
+          # still holds and is worth keeping for whenever it goes back on a
+          # schedule. Re-enable by uncommenting the block at the end.
+          #
+          # NOTE: this stops Blueprint *managing* the service. It does not
+          # necessarily remove a cron job Render has already created — suspend or
+          # delete `snowdesk-staging-data-sync` in the dashboard too, or it keeps
+          # firing at 07:20 UTC against whatever is on main.
+          #
           # Nightly refresh of staging's bulletin and weather tables from the
           # production database (SNOW-729). Staging has no scheduler, so
           # without this its data is whatever the last manual `fetch_bulletins`
@@ -161,19 +171,19 @@ projects:
           # 07:20 UTC: after production's 06:00 fetch_weather pass and the
           # hourly fetch_bulletins run that picks up the morning issue
           # (schedule.py), so staging opens the working day already current.
-          - type: cronjob
-            name: snowdesk-staging-data-sync
-            runtime: python
-            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
-            plan: starter
-            region: frankfurt
-            branch: main
-            schedule: "20 7 * * *"
-            buildCommand: ./bin/build_headless.sh
-            startCommand: ./bin/sync-staging-data --commit
-            envVars:
-              - key: DJANGO_SETTINGS_MODULE
-                value: config.settings.staging
-              - key: PRODUCTION_DATABASE_URL
-                sync: false
-              - fromGroup: Staging
+          # - type: cronjob
+          #   name: snowdesk-staging-data-sync
+          #   runtime: python
+          #   repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+          #   plan: starter
+          #   region: frankfurt
+          #   branch: main
+          #   schedule: "20 7 * * *"
+          #   buildCommand: ./bin/build_headless.sh
+          #   startCommand: ./bin/sync-staging-data --commit
+          #   envVars:
+          #     - key: DJANGO_SETTINGS_MODULE
+          #       value: config.settings.staging
+          #     - key: PRODUCTION_DATABASE_URL
+          #       sync: false
+          #     - fromGroup: Staging
