@@ -315,6 +315,20 @@
         requestNetworkMode('offline');
       });
     }
+    // ``navigator.serviceWorker``'s message queue is disabled until something
+    // enables it — setting ``onmessage``, or calling this. An
+    // ``addEventListener`` listener alone does NOT enable it, so a message the
+    // worker posts before the queue opens is simply never delivered. In
+    // practice the queue opens at document load and sw_register.js has always
+    // relied on that, but the latch can trip during the initial tile burst,
+    // which is close enough to that boundary to be worth removing the
+    // question. Idempotent, and a no-op once already enabled.
+    try {
+      navigator.serviceWorker?.startMessages?.();
+    } catch (_err) {
+      // Not available (or no container at all) — fall back to the implicit
+      // load-time enablement, which is what the rest of the app already uses.
+    }
     navigator.serviceWorker?.addEventListener('message', (event) => {
       if (!event.data || event.data.type !== 'network-mode') return;
       networkMode = event.data.mode === 'offline' ? 'offline' : 'auto';
@@ -635,8 +649,12 @@
     bindConnectionEvents();
     wrapFetch();
     wrapHtmx();
-    await hydratePersistedClocks();
+    // SNOW-742: bound BEFORE the IndexedDB read below, not after. The worker
+    // can latch during the page's own initial request burst, and a listener
+    // attached behind an await would miss the announcement — leaving the app
+    // latched with the banner still claiming it is merely struggling.
     bindNetworkModeControls();
+    await hydratePersistedClocks();
     // SNOW-742: re-assert the persisted mode to the worker. A worker
     // terminated while idle comes back in 'auto' having forgotten the latch;
     // this is what restores it, and it is why the worker never has to read
