@@ -67,6 +67,20 @@
  *   fallback timer downgrades to the cache-clearing reload if activation
  *   never fires ``controllerchange``.
  *
+ *   Either way it also takes a moment, so the click is acknowledged on
+ *   screen before any of it starts — see ``showBannerBusy``.
+ *
+ * The build line
+ * --------------
+ * The banner names both builds: the one this shell was delivered on and
+ * the one the reload will land on. Neither side can render that alone —
+ * the shell's build is baked into its own ``<meta>`` tags and the
+ * server's is only in ``/api/version`` — so the partial ships an empty
+ * slot (``detail_id``) and ``fillBuildLine`` composes the line into it.
+ * The version-check path passes the verdict it already has; the SW path
+ * borrows that module's probe. Neither is load-bearing: a line that
+ * cannot be composed stays hidden and the banner works exactly as before.
+ *
  * Because the reload is gated on the user having clicked "Reload"
  * (``userTriggeredUpdate``), a first-install ``clients.claim()`` does not
  * reload the page, and there is no dev reload-loop.
@@ -112,6 +126,10 @@
       'saved data are kept.',
     reload: 'Reload',
     dismiss: 'Dismiss',
+    updating: 'Updating…',
+    'updating-title': 'Updating Snowdesk',
+    'updating-body':
+      'Applying the new version — the page will reload in a moment.',
   });
 
   // Guard on the truthy value, not ``'serviceWorker' in navigator``: the
@@ -553,12 +571,23 @@
     const copy = document.createElement('div');
     copy.style.cssText = 'flex:1;min-width:0;';
     const title = document.createElement('div');
+    title.id = 'sw-update-banner-title';
     title.textContent = STRINGS['update-title'];
     title.style.cssText = 'font-weight:600;font-size:14px;';
     const sub = document.createElement('div');
+    sub.id = 'sw-update-banner-body';
     sub.textContent = STRINGS['update-body'];
     sub.style.cssText = 'color:#475569;font-size:12px;margin-top:2px;';
-    copy.append(title, sub);
+    // The build line, matching the public partial's `detail_id` slot. Same
+    // id on both variants so `fillBuildLine` below is one code path rather
+    // than a third fork of "which banner am I on".
+    const versions = document.createElement('div');
+    versions.id = 'sw-update-banner-versions';
+    versions.hidden = true;
+    versions.style.cssText =
+      'color:#64748b;font:400 11px ui-monospace,SFMono-Regular,monospace;' +
+      'margin-top:2px;';
+    copy.append(title, sub, versions);
     const reload = document.createElement('button');
     reload.type = 'button';
     reload.id = 'sw-update-banner-reload';
@@ -621,9 +650,16 @@
    * CLASS; the admin fallback this file synthesises is inline-styled and
    * uses `display`. One fork, one place — see `window.pwaUpdateBanner`.
    *
+   * @param {{current: string, released_at: string} | undefined} detail
+   *   What the SERVER says it is now serving, when the caller already
+   *   knows: `pwa_version_check.js` reaches this off the back of its own
+   *   `/api/version` round trip and passes the verdict straight through.
+   *   Omitted by the SW-driven path — a waiting worker is a fact about
+   *   this browser and says nothing about the server's build — which is
+   *   why `fillBuildLine` probes when it is not given one.
    * @returns {void}
    */
-  function revealUpdateBanner() {
+  function revealUpdateBanner(detail) {
     if (DEV_SHELL_BYPASS_ACTIVE) return;
     if (!banner) return;
     if (banner.dataset.fallback === '1') {
@@ -631,6 +667,221 @@
     } else {
       banner.classList.remove('hidden');
     }
+    fillBuildLine(detail);
+  }
+
+  // ------------------------------------------------------------------
+  // The build line — "which version am I on, which one is coming"
+  // ------------------------------------------------------------------
+  //
+  // "Update available" answers neither question, and the answer is not
+  // one the server can render: the shell knows the build it was DELIVERED
+  // on (its own <meta>), and only /api/version knows the build the reload
+  // will land on. So the line is assembled here, from both halves, and
+  // the partial ships the slot for it empty (`detail_id`).
+  //
+  // Timestamps are shown as absolute local times rather than ages ("2
+  // hours ago"). `relative_time.js` already owns that arithmetic, but it
+  // is loaded on the three pages that render observation rows, and this
+  // banner is on every page including the admin — so relative ages here
+  // would mean a second copy of its unit ladder. `toLocaleString` needs
+  // no ladder and no module, and for a build stamp the absolute instant
+  // is the more precise answer anyway.
+
+  /** The build this shell was delivered on, and when it was released.
+   * Both from <meta> in public/base.html; both empty on an admin page,
+   * where the line degrades to nothing rather than to half a comparison.
+   * @type {string}
+   */
+  const SHELL_BUILD = readMeta('pwa-app-version');
+  /** @type {string} */
+  const SHELL_RELEASED_AT = readMeta('pwa-app-released-at');
+
+  /** Latch — set only once a line has actually been WRITTEN, so a reveal
+   * that had nothing to say (no verdict yet, or a server serving the build
+   * this shell already has) doesn't block a later one that does.
+   * @type {boolean}
+   */
+  let buildLineFilled = false;
+  /** Separate latch for the probe: one `/api/version` round trip per page,
+   * however many times a replayed cached response re-reveals the banner.
+   * @type {boolean}
+   */
+  let buildLineProbed = false;
+
+  /**
+   * Read a `content` value from a `<meta name="…">` tag, or `""`.
+   *
+   * @param {string} name
+   * @returns {string}
+   */
+  function readMeta(name) {
+    const el = document.querySelector(`meta[name="${name}"]`);
+    return el ? (el.getAttribute('content') || '').trim() : '';
+  }
+
+  /**
+   * Shorten a build identifier for display.
+   *
+   * `APP_VERSION` resolves to a full git SHA on a deployed environment and
+   * to something short and human ("dev") elsewhere. Forty hex characters
+   * in a toast is noise, and the leading seven identify the commit as well
+   * as GitHub's own abbreviation does; anything that is not a SHA is left
+   * exactly as it is, since we have no idea what it means.
+   *
+   * @param {string} value
+   * @returns {string}
+   */
+  function shortBuild(value) {
+    const build = String(value || '').trim();
+    return /^[0-9a-f]{12,40}$/i.test(build) ? build.slice(0, 7) : build;
+  }
+
+  /** @type {Intl.DateTimeFormatOptions} */
+  const DATE_PARTS = { day: 'numeric', month: 'short' };
+  /** @type {Intl.DateTimeFormatOptions} */
+  const TIME_PARTS = { hour: '2-digit', minute: '2-digit' };
+
+  /**
+   * Format an ISO-8601 instant as a short local date and time, or `""`
+   * when it is absent or unparseable — a build stamp we cannot date is
+   * shown without a date rather than with "Invalid Date" beside it.
+   *
+   * @param {string} iso
+   * @returns {string}
+   */
+  function stampTime(iso) {
+    const at = Date.parse(String(iso || '').trim());
+    if (Number.isNaN(at)) return '';
+    const when = new Date(at);
+    // Date and time formatted separately and joined with a space, rather
+    // than one `toLocaleString` call: the combined form inserts the
+    // locale's date/time separator ("27 Aug, 09:12"), and two of those
+    // commas inside a line that already carries brackets and an arrow is
+    // more punctuation than a build stamp can carry. Each half is still
+    // the locale's own — only the joint is ours.
+    return `${localise(when, DATE_PARTS)} ${localise(when, TIME_PARTS)}`;
+  }
+
+  /**
+   * Format one instant in the document's language, falling back to the
+   * platform default — an unparseable `lang` tag is not worth losing the
+   * stamp over.
+   *
+   * @param {Date} when
+   * @param {Intl.DateTimeFormatOptions} parts
+   * @returns {string}
+   */
+  function localise(when, parts) {
+    const lang = document.documentElement.getAttribute('lang') || undefined;
+    try {
+      return when.toLocaleString(lang, parts);
+    } catch (_err) {
+      return when.toLocaleString(undefined, parts);
+    }
+  }
+
+  /**
+   * One side of the comparison: `a1b2c3d` or `a1b2c3d (27 Aug 09:12)`.
+   *
+   * @param {string} build
+   * @param {string} releasedAt
+   * @returns {string}
+   */
+  function stampBuild(build, releasedAt) {
+    const short = shortBuild(build);
+    const when = stampTime(releasedAt);
+    return when ? `${short} (${when})` : short;
+  }
+
+  /**
+   * Compose the whole line, or `""` when there is nothing honest to show.
+   *
+   * Both halves are required: naming the build you are on without naming
+   * the one you are moving to is not a delta, and the reverse is worse —
+   * a lone identifier reads as the version you are about to get and might
+   * equally be the one you already have. Identical builds are the same
+   * case: the banner is up because a WORKER is waiting, the server is
+   * serving what this shell already has, and a line saying "abc1234 →
+   * abc1234" would flatly contradict it.
+   *
+   * @param {string} nextBuild
+   * @param {string} nextReleasedAt
+   * @returns {string}
+   */
+  function composeBuildLine(nextBuild, nextReleasedAt) {
+    const from = shortBuild(SHELL_BUILD);
+    const to = shortBuild(nextBuild);
+    if (!from || !to || from === to) return '';
+    return `${stampBuild(SHELL_BUILD, SHELL_RELEASED_AT)} → ${stampBuild(
+      nextBuild,
+      nextReleasedAt,
+    )}`;
+  }
+
+  /**
+   * Fill and unhide the banner's build line.
+   *
+   * Given a verdict, uses it. Given none — the SW-driven reveal, which
+   * knows a worker is waiting and nothing about the server — it borrows
+   * `pwa_version_check.js`'s probe rather than growing a second copy of
+   * the same `/api/version` round trip. Read lazily off `window` for
+   * exactly that reason: this file loads first, and the global does not
+   * exist yet at IIFE time.
+   *
+   * Every failure is silent and leaves the line hidden. The banner's job
+   * is to offer the update; the build line is an explanation of it, and
+   * an explanation that cannot be produced is not worth a broken one.
+   *
+   * Two latches, not one: `buildLineFilled` is set only when a line was
+   * actually written, so a reveal with nothing to say leaves the next one
+   * free to speak, while `buildLineProbed` caps the round trips at one
+   * per page however often the banner is re-revealed.
+   *
+   * @param {{current: string, released_at: string} | undefined} detail
+   * @returns {void}
+   */
+  function fillBuildLine(detail) {
+    if (buildLineFilled) return;
+    const el = document.getElementById('sw-update-banner-versions');
+    if (!el) return;
+
+    if (detail && detail.current) {
+      writeBuildLine(el, composeBuildLine(detail.current, detail.released_at));
+      return;
+    }
+
+    if (buildLineProbed) return;
+    const probe = window.pwaVersionProbe;
+    if (typeof probe !== 'function') return;
+    buildLineProbed = true;
+    probe()
+      .then((verdict) => {
+        if (!verdict) return;
+        writeBuildLine(el, composeBuildLine(verdict.current, verdict.released_at));
+      })
+      .catch(() => {
+        // Unreachable endpoint — the banner stands without the line.
+      });
+  }
+
+  /**
+   * Write the composed line into the slot, revealing it only if there is
+   * something in it.
+   *
+   * @param {HTMLElement} el
+   * @param {string} text
+   * @returns {void}
+   */
+  function writeBuildLine(el, text) {
+    if (!text) return;
+    // No suppression needed and none wanted: `text` is build identifiers,
+    // an arrow and a timestamp the platform localised — there is no prose
+    // in it. The word that explains what the line IS lives in the
+    // partial's `detail_label`, where the catalogue can see it.
+    el.textContent = text;
+    el.hidden = false;
+    buildLineFilled = true;
   }
 
   // SNOW-623: the banner has one owner. `pwa_version_check.js` reveals the
@@ -717,6 +968,52 @@
   });
 
   /**
+   * Put the banner into its working state, the moment the click lands.
+   *
+   * The click used to change nothing on screen. Both reload paths are
+   * asynchronous — the SW path posts SKIP_WAITING and waits for the new
+   * worker to activate, backstopped by a three-second timer; the
+   * version-header path enumerates and deletes Cache Storage entries
+   * first — so between the press and the reload there was a stretch of
+   * seconds in which the only feedback was a button that had stopped
+   * responding. That reads as a dead control, and the natural response to
+   * a dead control is to press it again.
+   *
+   * Three things change, in the order the eye finds them: the CTA says
+   * what it is doing and is visibly disabled (`disabled:opacity-60`,
+   * `disabled:cursor-not-allowed` — see `_button_chrome_classes` in
+   * apps/public/templatetags/components.py), the banner's refresh icon
+   * spins, and the copy switches from an offer to a progress report.
+   *
+   * No state is restored afterwards, deliberately: every path out of here
+   * ends in `location.reload()`, so the busy banner's successor is a
+   * fresh document. A restore would only ever run if the reload itself
+   * failed, and a banner that quietly went back to "Update available"
+   * would be claiming the update had not started when it had.
+   *
+   * The icon spin is public-page only — the admin fallback banner has no
+   * icon to spin and no Tailwind to spin it with. The label and copy
+   * changes, which are the load-bearing half, land on both.
+   *
+   * @returns {void}
+   */
+  function showBannerBusy() {
+    const btn = document.getElementById('sw-update-banner-reload');
+    if (btn) {
+      btn.setAttribute('aria-busy', 'true');
+      btn.textContent = STRINGS.updating;
+    }
+    const title = document.getElementById('sw-update-banner-title');
+    if (title) title.textContent = STRINGS['updating-title'];
+    const body = document.getElementById('sw-update-banner-body');
+    if (body) body.textContent = STRINGS['updating-body'];
+    const icon = banner && banner.querySelector('[data-overlay-icon]');
+    // `motion-safe:` so the spin honours prefers-reduced-motion; the copy
+    // and the disabled CTA carry the message on their own without it.
+    if (icon) icon.classList.add('motion-safe:animate-spin');
+  }
+
+  /**
    * Reload click handler. Handles both the SW-driven path (a fresh worker
    * is waiting) and the version-header-driven path (the server's
    * ``X-App-Version`` drifted from the shell's ``<meta>`` but ``sw.js`` did
@@ -745,6 +1042,7 @@
       btn.dataset.busy = '1';
       btn.setAttribute('disabled', 'disabled');
     }
+    showBannerBusy();
 
     userTriggeredUpdate = true;
 

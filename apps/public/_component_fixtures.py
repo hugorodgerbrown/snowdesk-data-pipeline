@@ -1332,6 +1332,32 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        # The update banner as it actually ships: the third line naming the
+        # build on either side of the reload. Shown with a value here
+        # because the slot is empty and hidden in the real markup — JS
+        # fills it (static/js/sw_register.js) — and a fixture rendering an
+        # invisible element would show the library nothing.
+        "caption": "Floating — with build line (SW update, filled)",
+        "context": {
+            "variant": "floating",
+            "icon": "refresh",
+            "title": "Update available",
+            "body": (
+                "A newer version of Snowdesk is ready. Your downloaded "
+                "maps and saved data are kept."
+            ),
+            "title_id": "component-library-banner-title-4",
+            "body_id": "component-library-banner-body-4",
+            "cta_id": "component-library-banner-cta-2",
+            "cta_label": "Reload",
+            "detail_id": "component-library-banner-detail",
+            "detail_label": "Build version",
+            "detail": "a1b2c3d (27 Aug 09:12) → e4f5g6h (28 Aug 14:03)",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
         "caption": "Floating — off-map nudge (top, dismissible)",
         "context": {
             "variant": "floating",

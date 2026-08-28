@@ -10,7 +10,10 @@ Covered:
 * ``apps.public.context_processors.pwa_version`` returns the build string
   and passes it through untouched.
 * Every page response bakes the current build into the
-  ``<meta name="pwa-app-version">`` tag.
+  ``<meta name="pwa-app-version">`` tag, and when that build was released
+  into ``<meta name="pwa-app-released-at">`` beside it — the age half of
+  the update banner's build line, which no endpoint can tell a client
+  about its own shell after the fact.
 * The ``<meta name="pwa-app-min-version">`` tag is gone (SNOW-609) — there
   is no client-side floor to compare against any more.
 * The blocking modal partial ships hidden on every page (revealed by JS).
@@ -27,19 +30,25 @@ from apps.public.context_processors import pwa_version
 
 
 def test_context_processor_returns_configured_values() -> None:
-    """The context processor exposes the build setting verbatim as a string."""
-    with override_settings(APP_VERSION="2026.07.15.abcdef"):
+    """The context processor exposes both build settings verbatim as strings."""
+    with override_settings(
+        APP_VERSION="2026.07.15.abcdef",
+        APP_RELEASED_AT="2026-07-15T09:00:00+00:00",
+    ):
         result = pwa_version(HttpRequest())
 
-    assert result == {"APP_VERSION": "2026.07.15.abcdef"}
+    assert result == {
+        "APP_VERSION": "2026.07.15.abcdef",
+        "APP_RELEASED_AT": "2026-07-15T09:00:00+00:00",
+    }
 
 
 def test_context_processor_defaults_to_empty_string() -> None:
     """A missing setting is exposed as an empty string, not raised."""
-    with override_settings(APP_VERSION=""):
+    with override_settings(APP_VERSION="", APP_RELEASED_AT=""):
         result = pwa_version(HttpRequest())
 
-    assert result == {"APP_VERSION": ""}
+    assert result == {"APP_VERSION": "", "APP_RELEASED_AT": ""}
 
 
 @pytest.mark.django_db
@@ -50,6 +59,26 @@ def test_meta_tag_present_on_home_page() -> None:
     body = response.content.decode("utf-8")
 
     assert '<meta name="pwa-app-version" content="2026.07.15.testbuild">' in body
+
+
+@pytest.mark.django_db
+@override_settings(APP_RELEASED_AT="2026-07-15T09:00:00+00:00")
+def test_released_at_meta_tag_present_on_home_page() -> None:
+    """The shell also carries WHEN its build was released.
+
+    The SHA above says which build the page came from and nothing about
+    its age. The update banner shows both builds side by side, and a pair
+    of git SHAs only becomes a delta a person can read once each half
+    carries a date — one the client cannot recover for its own shell after
+    the fact, because ``/api/version`` only ever describes the build the
+    server is serving now.
+    """
+    response = Client().get("/")
+    body = response.content.decode("utf-8")
+
+    assert (
+        '<meta name="pwa-app-released-at" content="2026-07-15T09:00:00+00:00">' in body
+    )
 
 
 @pytest.mark.django_db

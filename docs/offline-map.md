@@ -71,6 +71,54 @@ on an `X-App-Version` drift. The banner offers two actions:
 Contract, end-user-facing: *if there is an update, you see one "Reload"
 message; if there is no message, you are already on the latest version.*
 
+### What the click looks like
+
+Both reload paths take a moment — the SW path waits for the new worker to
+activate, backstopped by a three-second timer; the version-header path
+enumerates and deletes Cache Storage entries first — so the click is
+acknowledged before any of it starts (`showBannerBusy` in
+`sw_register.js`): the CTA reads "Updating…" and is visibly disabled, the
+refresh icon spins (`motion-safe:animate-spin` on the partial's
+`[data-overlay-icon]` roundel), and the copy switches from an offer to a
+progress report. Nothing is restored afterwards, because every path out
+of the handler ends in a reload.
+
+The busy copy lives in a strings `<template>` in
+`includes/_sw_update_banner.html`, read back through
+`window.pwaStrings.read()` — a state that only exists at runtime still
+has to reach the message catalogue (see [`i18n.md`](i18n.md)). The admin
+fallback's copy of that template (`templates/admin/base_site.html`)
+carries the same keys; `tests/templates/includes/test_sw_update_banner.py`
+fails if the two key sets drift.
+
+### The build line
+
+The banner names both builds — the one this shell was delivered on and
+the one the reload will land on — on a third line under the copy:
+
+```
+0123456 (27 Aug 09:12) → fedcba9 (28 Aug 07:31)
+```
+
+Neither side can render that alone. The shell's build and release
+timestamp are baked into `<meta name="pwa-app-version">` /
+`<meta name="pwa-app-released-at">` (`apps.public.context_processors.pwa_version`);
+the build being offered is only in `/api/version`. So the partial ships
+an empty, hidden slot (`detail_id` on `includes/_overlay_banner.html`)
+and `fillBuildLine` in `sw_register.js` composes the line into it —
+taking the verdict `pwa_version_check.js` already fetched, or borrowing
+that module's `window.pwaVersionProbe` on the SW-driven path, which has
+no verdict of its own. SHAs are shortened to seven characters; a build
+we cannot date is shown without a date; identical builds, an unreachable
+endpoint or a missing meta tag all leave the line hidden, since none of
+those can produce an honest delta.
+
+Absolute timestamps rather than relative ages ("2 hours ago") on
+purpose: `relative_time.js` owns that arithmetic but is loaded only on
+the three pages that render observation rows, and this banner is on
+every page including the admin — so relative ages here would mean a
+second copy of its unit ladder.
+
 The banner uses design tokens (`bg-card`, `border-border`, `rounded-card`,
 `shadow-glass`) so it reads as a first-class Snowdesk surface — matching
 the `_pwa_install_prompt.html` shape rather than a raw status pill. It is

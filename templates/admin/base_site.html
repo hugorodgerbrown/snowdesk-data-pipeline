@@ -33,9 +33,11 @@ absent (as it is in admin).
 {% block footer %}
     {{ block.super }}
     {# SNOW-620: the fallback banner's copy. The public partial              #}
-    {# (includes/_sw_update_banner.html) already translates the same three   #}
-    {# strings, but admin pages don't include it — so without this the one   #}
-    {# surface that exists here would be the untranslated one.               #}
+    {# (includes/_sw_update_banner.html) ships the same template under the   #}
+    {# same id, but admin pages don't include it — so without this the one   #}
+    {# surface that exists here would be the untranslated one. Keep the two  #}
+    {# key sets identical: sw_register.js reads whichever one the page has,  #}
+    {# and a key missing here is English on every admin page.                #}
     <template id="sw-update-strings-template">
         <span data-string="update-title">{% trans "Update available" %}</span>
         <span
@@ -43,6 +45,11 @@ absent (as it is in admin).
         >{% trans "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept." %}</span>
         <span data-string="reload">{% trans "Reload" %}</span>
         <span data-string="dismiss">{% trans "Dismiss" %}</span>
+        <span data-string="updating">{% trans "Updating…" %}</span>
+        <span data-string="updating-title">{% trans "Updating Snowdesk" %}</span>
+        <span
+            data-string="updating-body"
+        >{% trans "Applying the new version — the page will reload in a moment." %}</span>
     </template>
     {# Must load BEFORE sw_register.js, which calls window.pwaStrings at     #}
     {# IIFE time — both are defer, so document order is execution order.     #}
