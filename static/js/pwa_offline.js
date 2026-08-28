@@ -77,14 +77,26 @@
  * latch, and re-asserting is what restores it without putting an IndexedDB
  * read on the worker's own fetch path.
  *
- * The header toggle (SNOW-748)
- * -----------------------------
+ * The symbol and the toggle (SNOW-748)
+ * -------------------------------------
  * SNOW-742 put the user's own way into offline mode inside the banner above —
  * which reveals only once the connection has already failed, so the control
  * for "I have signal and am about to lose it" was unreachable in exactly that
- * case. It is now ``[data-network-toggle]`` in ``includes/nav.html``: always
- * present, revealed by this module (as ``mutation_queue.js`` reveals the sync
- * badge beside it), and bound here.
+ * case. It moved to ``includes/nav.html``, and the model it follows there is a
+ * phone's aeroplane mode: a symbol in the status bar, a switch in the
+ * settings. Two elements, both revealed by this module (as
+ * ``mutation_queue.js`` reveals the sync badge beside them):
+ *
+ *   * ``[data-network-indicator]`` — the header symbol. Visibility only,
+ *     shown while ``networkMode !== 'auto'`` and hidden in ``'auto'``, the way
+ *     a phone shows the aeroplane glyph only while the mode is on. Not a
+ *     control: no click handler, no pressed state, not focusable.
+ *   * ``[data-network-toggle]`` — the "Offline mode" row in the subscriber
+ *     menu. Revealed, painted through ``aria-checked`` and bound here.
+ *
+ * The two are found independently, and each is optional: the row renders only
+ * for a signed-in user, so on an anonymous page the symbol must still be
+ * revealed and repainted with no row present.
  *
  * That move needed a third mode. The worker's ``'offline'`` is an auto-latch
  * and is probed back to ``'auto'`` within thirty seconds of a route
@@ -93,11 +105,13 @@
  * ``'offline-forced'``, which the worker never probes. The three values are
  * ``'auto'``, ``'offline'`` (auto-latched) and ``'offline-forced'`` (the
  * user's), and the comparisons below are NOT interchangeable — see the
- * ``online`` listener in particular.
+ * ``online`` listener in particular. The two nav surfaces paint the same one
+ * bit for all three: which offline mode it is belongs to the banner, which has
+ * room for a sentence.
  *
  * One connectivity answer, not two (SNOW-748)
  * -------------------------------------------
- * The toggle shipped with a hole underneath it: ``snowdesk:connectivity-changed``
+ * The control shipped with a hole underneath it: ``snowdesk:connectivity-changed``
  * carried ``navigator.onLine`` alone and fired only on an interface
  * transition, so forcing offline mode changed nothing anybody downstream could
  * see. The map's layers menu kept its green sync dots and the basemap download
@@ -113,11 +127,12 @@
  * which refuses a download the UI somehow still dispatches.
  *
  * Every user-facing string for all three states is rendered by
- * ``includes/_offline_banner.html`` (or, for the toggle's label, the strings
- * ``<template>`` in ``includes/nav.html``, read back through
- * ``window.pwaStrings.read()``) and toggled here by ``hidden``. Setting the
- * text from JavaScript would ship English to every locale — ``makemessages``
- * never scans ``static/js`` — which is what ``bin/i18n-lint`` fails on.
+ * ``includes/_offline_banner.html`` and toggled here by ``hidden``. Setting
+ * the text from JavaScript would ship English to every locale —
+ * ``makemessages`` never scans ``static/js`` — which is what
+ * ``bin/i18n-lint`` fails on. The nav's two surfaces need no strings from here
+ * at all: both labels are fixed ("Offline mode"), so the template carries them
+ * and this module sets only ``hidden`` and ``aria-checked``.
  *
  * Deferred to SNOW-375 / follow-ups:
  *   * Pull-to-refresh explicit-network path.
@@ -152,24 +167,12 @@
   const NETWORK_MODE_KEY = 'network.mode';
   let networkMode = 'auto';
 
-  // SNOW-748: the header toggle in includes/nav.html.
+  // SNOW-748: the two nav surfaces in includes/nav.html — the header symbol
+  // (every viewer) and the "Offline mode" row in the subscriber menu
+  // (signed-in only). Looked up separately on every paint, because whether
+  // either exists depends on the page and on who is reading it.
+  const NETWORK_INDICATOR_SELECTOR = '[data-network-indicator]';
   const NETWORK_TOGGLE_SELECTOR = '[data-network-toggle]';
-
-  // Its two labels, server-translated into the strings ``<template>`` that
-  // nav.html renders and read back here (SNOW-620's pattern — see
-  // static/js/i18n_strings.js). The label names the ACTION rather than the
-  // state, so it has to change with the mode; a label assigned from a JS
-  // literal would ship English to every locale, because ``makemessages``
-  // never scans ``static/js``.
-  //
-  // The literals below are the English fallback for a page that renders no
-  // nav — read at parse time because i18n_strings.js and this file are both
-  // deferred from base.html in that order, so the helper and the template are
-  // both in place by the time this runs.
-  const NETWORK_TOGGLE_STRINGS = self.pwaStrings.read('network-toggle-strings-template', {
-    'go-offline': 'Go offline — stop using the network',
-    'go-online': 'Go back online — start using the network',
-  });
 
   // SNOW-482: the meta:app key the last-sync clock is persisted under.
   // A sibling ``freshness.last_generated_at`` key went with the write-only
@@ -309,10 +312,10 @@
    * @param {boolean} online
    */
   function renderBanner(online) {
-    // SNOW-748: the header toggle is painted whether or not the banner exists
-    // on this page, and before the early return below — it is the one surface
-    // that states the mode on a page that is working perfectly.
-    renderNetworkToggle();
+    // SNOW-748: the nav surfaces are painted whether or not the banner exists
+    // on this page, and before the early return below — the header symbol is
+    // the one thing that states the mode on a page that is working perfectly.
+    renderNetworkUi();
     const banner = document.getElementById(BANNER_ID);
     if (!banner) return;
     // SNOW-742: a latched app keeps the banner up even though
@@ -378,45 +381,44 @@
   }
 
   /**
-   * SNOW-748: reveal and paint the header network toggle
+   * SNOW-748: paint the two nav surfaces this mode owns
    * (``includes/nav.html``).
    *
-   * Revealed here rather than rendered visible, the same contract
-   * ``mutation_queue.js`` has with the sync badge beside it: a control that
-   * only works because a script is running must not be on screen when that
-   * script is not.
+   * The header symbol is shown only while the app is not using the network and
+   * hidden the rest of the time — a phone's aeroplane glyph, which is absent
+   * until the mode is on. The menu row is revealed whenever this module is
+   * running and carries the state in ``aria-checked``; its tick and colour
+   * follow that attribute in CSS, so nothing here writes a class string.
    *
-   * TWO painted states for the worker's three. ``aria-pressed`` is a boolean
-   * and the question it answers — "is the network switched off" — genuinely is
-   * one bit; which offline mode it is belongs to the banner, which has room
-   * for a sentence. The glyph swaps as well as the colour, so the state does
-   * not rest on colour alone.
+   * Both are revealed here rather than rendered visible, the same contract
+   * ``mutation_queue.js`` has with the sync badge beside them: a control that
+   * only works because a script is running must not be on screen when that
+   * script is not, and a symbol that only knows the mode because a script read
+   * it must not claim one before it has.
+   *
+   * ONE painted bit for the worker's three modes. "Is this app using the
+   * network" genuinely is one bit; which offline mode it is belongs to the
+   * banner, which has room for a sentence.
+   *
+   * Each element is guarded on its own, not behind a shared early return: the
+   * row renders only for a signed-in user, so an anonymous page has the symbol
+   * and no row, and the symbol must still be painted.
    *
    * @returns {void}
    */
-  function renderNetworkToggle() {
-    const button = document.querySelector(NETWORK_TOGGLE_SELECTOR);
-    if (!button) return;
+  function renderNetworkUi() {
     const offline = networkMode !== 'auto';
-    button.classList.remove('hidden');
-    button.classList.add('inline-flex');
-    button.setAttribute('aria-pressed', offline ? 'true' : 'false');
-    button.classList.toggle('bg-status-warning-bg', offline);
-    button.classList.toggle('text-status-warning-text', offline);
-    button.classList.toggle('text-text-3', !offline);
-    // The label names the ACTION, not the state — the state is aria-pressed's
-    // job, and a control labelled with its own state reads back ambiguously.
-    const label = offline
-      ? NETWORK_TOGGLE_STRINGS['go-online']
-      : NETWORK_TOGGLE_STRINGS['go-offline'];
-    button.setAttribute('aria-label', label);
-    button.setAttribute('title', label);
-    const glyph = (role, shown) => {
-      const el = button.querySelector(`[data-role="${role}"]`);
-      if (el) el.classList.toggle('hidden', !shown);
-    };
-    glyph('network-on', !offline);
-    glyph('network-off', offline);
+    const indicator = document.querySelector(NETWORK_INDICATOR_SELECTOR);
+    if (indicator) {
+      indicator.classList.toggle('hidden', !offline);
+      indicator.classList.toggle('inline-flex', offline);
+    }
+    const toggle = document.querySelector(NETWORK_TOGGLE_SELECTOR);
+    if (toggle) {
+      toggle.classList.remove('hidden');
+      toggle.classList.add('flex');
+      toggle.setAttribute('aria-checked', offline ? 'true' : 'false');
+    }
   }
 
   /**
@@ -462,9 +464,12 @@
   }
 
   /**
-   * Bind the banner's mode control and the header toggle, and listen for the
-   * worker announcing a mode change it made on its own (the latch tripping, or
-   * a probe finding a route again).
+   * Bind the banner's mode control and the menu's "Offline mode" row, and
+   * listen for the worker announcing a mode change it made on its own (the
+   * latch tripping, or a probe finding a route again).
+   *
+   * The header symbol is deliberately not bound: it is a status element, and
+   * the switch lives in the subscriber menu.
    */
   function bindNetworkModeControls() {
     const banner = document.getElementById(BANNER_ID);
@@ -473,7 +478,8 @@
         requestNetworkMode('auto');
       });
     }
-    // SNOW-748: the header toggle. Its two directions are not symmetrical —
+    // SNOW-748: the menu's "Offline mode" row. Its two directions are not
+    // symmetrical —
     // going offline asks for ``'offline-forced'`` (a choice, never probed),
     // while coming back always asks for plain ``'auto'`` whichever offline
     // mode it is leaving, because "use the network again" means the same thing

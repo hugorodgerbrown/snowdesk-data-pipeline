@@ -10,9 +10,9 @@ Covers:
     to appear and disappear with the ``routes`` waffle flag; SNOW-724
     retired it, so the entry is now asserted unconditionally like its
     siblings.
-  - The SNOW-748 network toggle: present for every viewer including
-    anonymous ones, shipped hidden and unpressed, with both glyphs and its
-    strings template.
+  - The SNOW-748 offline surfaces, which are split the way a phone splits
+    aeroplane mode: a header SYMBOL every viewer gets, and an "Offline
+    mode" switch in the account menu that only a signed-in user gets.
 
 That last group is not decoration. ``docs/decisions/
 account-area-navigation-lives-in-the-nav-menu.md`` makes this menu the
@@ -259,76 +259,187 @@ class TestNavAccountMenuEntries:
             assert f'href="{reverse(url_name)}"' not in html, url_name
 
 
-@pytest.mark.django_db
-class TestNavNetworkToggle:
-    """The SNOW-748 network toggle, beside the sync badge.
+def _opening_tag_around(html: str, marker: str) -> str:
+    """Return the whole opening tag containing ``marker``.
 
-    SNOW-742 built this control and put it inside the offline banner, which
-    ``static/js/pwa_offline.js`` reveals only when the connection has already
-    failed — so the user it was built for ("I have signal now and am about
-    to lose it") could never reach it. Here it renders on every page for
-    every viewer, and these assertions are what stops it drifting back
-    behind a condition.
+    The attribute a test locates an element by is rarely the first one on
+    the tag, so splitting forward from it drops everything written before —
+    which is where ``role`` and ``aria-checked`` live on the offline-mode
+    row. This takes the tag from its own ``<`` to its own ``>``, so an
+    assertion about the element's attributes cannot pass or fail on the
+    order they happen to be written in.
+    """
+    before, _, after = html.partition(marker)
+    return f"<{before.rsplit('<', 1)[1]}{marker}{after.split('>', 1)[0]}>"
+
+
+@pytest.mark.django_db
+class TestNavOfflineSymbol:
+    """The SNOW-748 offline symbol, beside the sync badge.
+
+    A status element, not a control — the header half of the aeroplane-mode
+    model this feature follows. A phone shows the aeroplane glyph only while
+    the mode is on and nothing at all otherwise, and so does this: the nav
+    renders it ``hidden`` and ``static/js/pwa_offline.js`` reveals it only
+    while the app is not using the network.
+
+    It is shown to anonymous viewers as well as signed-in ones, unlike the
+    switch below. The worker latches itself for anybody, so the state the
+    symbol reports is one an anonymous user can be in; only choosing the
+    mode needs an account.
     """
 
-    def test_anonymous_sees_the_toggle(self, rf: RequestFactory) -> None:
-        """Anonymous users get it too.
+    def test_anonymous_sees_the_symbol(self, rf: RequestFactory) -> None:
+        """Anonymous users get it.
 
-        Deliberate, not an oversight: basemap downloads are not auth-gated,
-        so neither is the switch deciding whether the app calls the server.
+        Deliberate, not an oversight: an anonymous user can be latched
+        offline by the worker exactly as a signed-in one can, and a state
+        nothing announces is a state the user has to guess at.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        assert "data-network-toggle" in html
+        assert "data-network-indicator" in html
 
-    def test_authenticated_sees_the_toggle(
+    def test_authenticated_sees_the_symbol(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
         """...and so do signed-in users, in the same place."""
         html = _render_nav_for(rf, regular_user)
-        assert "data-network-toggle" in html
+        assert "data-network-indicator" in html
 
-    def test_toggle_renders_hidden_and_unpressed(self, rf: RequestFactory) -> None:
-        """It ships hidden and in the "using the network" state.
+    def test_symbol_is_not_a_control(self, rf: RequestFactory) -> None:
+        """It is a symbol: no button, no pressed state, no tab stop.
+
+        SNOW-748 shipped this as a ``<button aria-pressed>`` first. Making
+        it a status element is the point of the rework — a control in the
+        status area invites the reading that the symbol IS the switch, and
+        the switch is in the account menu. These assertions are what stops
+        it drifting back into a button.
+        """
+        html = _render_nav_for(rf, AnonymousUser())
+        element = html.split("data-network-indicator", 1)[1]
+        opening_tag = element.split(">", 1)[0]
+        assert "aria-pressed" not in opening_tag
+        # The element itself, up to its closing tag: a <button> anywhere in
+        # here would be a control, whatever the opening tag says.
+        assert "<button" not in element.split("</span>", 1)[0]
+
+    def test_symbol_renders_hidden(self, rf: RequestFactory) -> None:
+        """It ships hidden, and the script reveals it.
 
         Hidden because ``pwa_offline.js`` reveals it, exactly as
-        ``mutation_queue.js`` reveals the sync badge beside it: a control
-        that only works while a script is running must not be on screen when
-        that script is absent (an old cached shell, a JS error). Unpressed
-        because the mode a page boots in is ``'auto'`` — the script repaints
-        it after reading the persisted mode back.
+        ``mutation_queue.js`` reveals the sync badge beside it. Here the
+        reason is not that it would be inert without the script but that it
+        would be WRONG — a symbol claiming the app is offline on a page
+        whose script never ran to find out (an old cached shell, a JS
+        error).
         """
         html = _render_nav_for(rf, AnonymousUser())
-        # The opening tag only — the button's own class list. Searching the
-        # whole element would match the ``hidden`` on the off-state glyph
-        # inside it and pass whatever the button itself carried.
-        opening_tag = html.split("data-network-toggle", 1)[1].split(">", 1)[0]
-        assert 'aria-pressed="false"' in opening_tag
+        # The opening tag only — the whole element also contains the
+        # struck-through glyph, and searching it would match whatever
+        # ``hidden`` that carries rather than the symbol's own.
+        opening_tag = html.split("data-network-indicator", 1)[1].split(">", 1)[0]
         assert "hidden" in opening_tag
 
-    def test_toggle_renders_both_glyphs(self, rf: RequestFactory) -> None:
-        """Both marks are server-rendered; the script swaps ``hidden``.
+    def test_symbol_has_an_accessible_name(self, rf: RequestFactory) -> None:
+        """The glyph is aria-hidden, so sr-only text carries the name.
 
-        The glyph paths stay in ``includes/_icon_wifi.html`` and
-        ``includes/_icon_wifi_off.html`` — a JS-built SVG would put a second
-        copy of the mark somewhere ``bin/ds-lint`` and a reader both have to
-        find.
+        ``includes/_icon_wifi_off.html`` sets ``aria-hidden="true"`` on its
+        own <svg>, which is right for a decorative mark and would leave this
+        one nameless. The sr-only span is the pattern
+        ``includes/_freshness_indicator.html`` and the version row in this
+        same menu already use.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        button = html.split("data-network-toggle", 1)[1].split("</button>", 1)[0]
-        assert 'data-role="network-on"' in button
-        assert 'data-role="network-off"' in button
+        element = html.split("data-network-indicator", 1)[1]
+        assert 'class="sr-only">Offline mode<' in element
 
-    def test_toggle_labels_come_from_a_strings_template(
-        self, rf: RequestFactory
+
+@pytest.mark.django_db
+class TestNavOfflineModeToggle:
+    """The SNOW-748 "Offline mode" switch, in the account menu.
+
+    The settings half of the aeroplane-mode model: turning the mode ON is a
+    device preference, so it sits beside Settings rather than in the header.
+    SNOW-742 built this control inside the offline banner, which
+    ``static/js/pwa_offline.js`` reveals only when the connection has
+    already failed — so the user it was built for ("I have signal now and am
+    about to lose it") could never reach it.
+
+    Signed-in only, and these assertions pin both halves of that: the row is
+    present for a signed-in user and absent for an anonymous one, who still
+    gets the symbol above.
+    """
+
+    def test_anonymous_does_not_see_the_toggle(self, rf: RequestFactory) -> None:
+        """No switch for anonymous viewers — the menu it lives in is theirs."""
+        html = _render_nav_for(rf, AnonymousUser())
+        assert "data-network-toggle" not in html
+
+    def test_authenticated_sees_the_toggle(
+        self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Both labels are rendered server-side for ``pwaStrings.read()``.
+        """Signed-in users get it, in the menu with Settings."""
+        html = _render_nav_for(rf, regular_user)
+        assert "data-network-toggle" in html
 
-        The label names the action, so it changes with the state — and a
-        label assigned from a JavaScript literal ships English to every
-        locale, because ``makemessages`` never scans ``static/js``. This is
-        the template ``bin/i18n-lint`` exists to keep populated.
+    def test_toggle_sits_in_the_settings_group(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """It is grouped with Settings, not with the destinations above it.
+
+        The menu's order is meaning, not decoration (SNOW-705): the rule
+        above Settings separates account machinery from the pages an account
+        is for, and offline mode is device machinery. Asserted by position
+        rather than by eye, because a later entry inserted in the wrong
+        group reads fine in a diff.
         """
-        html = _render_nav_for(rf, AnonymousUser())
-        assert 'id="network-toggle-strings-template"' in html
-        assert 'data-string="go-offline"' in html
-        assert 'data-string="go-online"' in html
+        html = _render_nav_for(rf, regular_user)
+        assert html.index(reverse("accounts:settings")) < html.index(
+            "data-network-toggle"
+        )
+        assert html.index("data-network-toggle") < html.index(
+            reverse("accounts:sign_out")
+        )
+
+    def test_toggle_renders_hidden_and_unchecked(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """It ships hidden and in the "using the network" state.
+
+        Hidden because ``pwa_offline.js`` reveals it: it drives a service
+        worker, so a row that appeared without the script would be a dead
+        control. Unchecked because the mode a page boots in is ``'auto'`` —
+        the script repaints it after reading the persisted mode back.
+        """
+        html = _render_nav_for(rf, regular_user)
+        opening_tag = _opening_tag_around(html, "data-network-toggle")
+        assert 'aria-checked="false"' in opening_tag
+        assert "hidden" in opening_tag
+
+    def test_toggle_is_a_menuitemcheckbox(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """``role="menuitemcheckbox"``, not ``menuitem``.
+
+        The row has an on/off state, and inside a ``role="menu"``
+        ``aria-checked`` on a ``menuitemcheckbox`` is how a menu says so. A
+        plain ``menuitem`` would announce as an action and report nothing
+        about whether the mode is currently on.
+        """
+        html = _render_nav_for(rf, regular_user)
+        opening_tag = _opening_tag_around(html, "data-network-toggle")
+        assert 'role="menuitemcheckbox"' in opening_tag
+
+    def test_toggle_is_labelled_in_the_template(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Its label is server-rendered, so it is translated.
+
+        The label is fixed ("Offline mode" — the phrase the offline banner
+        already uses), so nothing here comes from JavaScript: a label
+        assigned from a JS literal ships English to every locale, because
+        ``makemessages`` never scans ``static/js``.
+        """
+        html = _render_nav_for(rf, regular_user)
+        row = html.split("data-network-toggle", 1)[1].split("</button>", 1)[0]
+        assert "Offline mode" in row

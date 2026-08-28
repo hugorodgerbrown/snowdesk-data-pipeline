@@ -610,7 +610,8 @@ describe('failed rows do not starve the queue (SNOW-617)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 11. Forced-offline gating (SNOW-748) — the header's network toggle puts the
+// 11. Forced-offline gating (SNOW-748) — the account menu's offline-mode
+// toggle puts the
 // app in an offline mode while the interface stays up, so `navigator.onLine`
 // is true for the whole of the first two cases below. A queued mutation must
 // hold, exactly as it does with the radio down: replaying it spends one of

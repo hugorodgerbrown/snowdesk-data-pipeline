@@ -6,7 +6,8 @@
  * `report.js` reveals the confirmation card's "will sync when you're back
  * online" line from whether the app was offline at the moment of the tap. It
  * read `navigator.onLine`, which stays TRUE under a mode the user forced from
- * the header's network toggle — so a report that was in fact sitting in the
+ * the account menu's offline-mode toggle — so a report that was in fact
+ * sitting in the
  * mutation queue told the user it had already been filed. The submission
  * itself was always queued; only the account of it was wrong, which on a
  * safety surface is the part that matters.

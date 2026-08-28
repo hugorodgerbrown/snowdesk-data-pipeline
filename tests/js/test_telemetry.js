@@ -332,7 +332,8 @@ describe('offline gating', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Forced-offline gating (SNOW-748) — the header's network toggle can put the
+// Forced-offline gating (SNOW-748) — the account menu's offline-mode toggle
+// can put the
 // app in an offline mode while the radio is up, so `navigator.onLine` stays
 // true throughout. Telemetry must honour the mode the same way it honours a
 // dead interface: enqueue, hold, and deliver when the app is using the

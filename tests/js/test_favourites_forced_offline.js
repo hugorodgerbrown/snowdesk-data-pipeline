@@ -7,7 +7,8 @@
  * online" line, and stamps its `map.favourite.created` telemetry `offline`
  * property, from whether the app was offline at the moment of the tap. Both
  * read `navigator.onLine`, which stays TRUE under a mode the user forced from
- * the header's network toggle — so a save that was in fact queued told the
+ * the account menu's offline-mode toggle — so a save that was in fact queued
+ * told the
  * user it had already been made, and the telemetry recorded it as an online
  * save. The mutation itself was always queued; only the account of it was
  * wrong.

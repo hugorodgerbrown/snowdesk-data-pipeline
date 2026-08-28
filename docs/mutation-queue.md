@@ -269,8 +269,8 @@ network — ahead of the in-flight guard, so no row is read and no request is
 made. It is the same guard `telemetry.js`'s `flush()` carries.
 
 "Not using the network" is `_networkInUse()`, not `navigator.onLine`
-(SNOW-748). The interface being up is only half the question: the header's
-network toggle can put the app in a forced offline mode while the radio
+(SNOW-748). The interface being up is only half the question: the account
+menu's offline-mode toggle can put the app in a forced offline mode while the radio
 stays up, and replaying a queued mutation under it spends one of the row's
 20 attempts on a connection the user asked the app not to use. Both modules
 consult `window.pwaConnectivity.isOnline()` (`pwa_offline.js`), falling back

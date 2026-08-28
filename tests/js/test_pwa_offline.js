@@ -27,13 +27,16 @@
  * which is about what gets written, and SNOW-748's boot re-assert, whose
  * whole subject is what comes back out of ``meta:app``.
  *
- * SNOW-748 added the header network toggle and a third mode. Its tests are at
- * the foot of the file, and the distinction they turn on is that ``'offline'``
- * is the worker's guess that there is no route while ``'offline-forced'`` is
- * the user's instruction — so an ``online`` event, a probe and a page reload
- * all treat the two differently.
+ * SNOW-748 added a third mode and the two nav surfaces that carry it: a header
+ * SYMBOL shown only while the app is not using the network, and an "Offline
+ * mode" row in the subscriber menu that switches it — a phone's aeroplane
+ * mode, status bar and settings. Their tests are at the foot of the file, and
+ * the distinction they turn on is that ``'offline'`` is the worker's guess
+ * that there is no route while ``'offline-forced'`` is the user's instruction
+ * — so an ``online`` event, a probe and a page reload all treat the two
+ * differently.
  *
- * The last block covers what that mode publishes. The toggle shipped without
+ * The last block covers what that mode publishes. The control shipped without
  * it: ``snowdesk:connectivity-changed`` carried ``navigator.onLine`` alone and
  * fired only on an interface transition, so forcing offline mode changed
  * nothing any consumer could see — the map's layers menu kept its green sync
@@ -42,66 +45,89 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The real strings module, so ``renderNetworkToggle``'s label read goes
-// through the same path it does in the browser rather than falling back to
-// its English literals.
-import '../../static/js/i18n_strings.js';
-
 const BANNER_ID = 'pwa-offline-banner';
 const TOGGLE_SELECTOR = '[data-network-toggle]';
+const INDICATOR_SELECTOR = '[data-network-indicator]';
 
 /**
- * Render the banner markup from templates/includes/_offline_banner.html, plus
- * the header network toggle and its strings template from
- * templates/includes/nav.html.
+ * The banner markup from templates/includes/_offline_banner.html, plus the
+ * header offline SYMBOL from templates/includes/nav.html.
  *
  * SNOW-742 added the latched variants and the mode controls; SNOW-748 added
  * the forced-mode explainer, the second label on the way-back button, and the
- * header toggle. They are mirrored here rather than only in the templates
+ * nav surfaces. They are mirrored here rather than only in the templates
  * because the module toggles them by ``data-role``, so a fixture missing one
- * would silently make those assertions vacuous — the toggle helper skips a
- * role it cannot find, and ``renderNetworkToggle`` returns early on a missing
- * button.
+ * would silently make those assertions vacuous — the role helper skips a role
+ * it cannot find, and ``renderNetworkUi`` skips an element it cannot find.
  *
- * The ``data-network-required`` button is any page's stand-in for a control
- * that cannot work without the network — that attribute is the generic
- * mechanism the whole site gates on, and the last block asserts a forced mode
- * reaches it.
+ * The symbol is what an ANONYMOUS page renders: it is shown to every viewer,
+ * while the "Offline mode" row below is signed-in only. Kept as its own
+ * constant so ``buildAnonymousFixture`` can render exactly this and no row.
+ */
+const BANNER_AND_SYMBOL = `
+  <details id="${BANNER_ID}" data-role="offline-freshness" role="status" class="hidden">
+    <summary>
+      <span data-role="offline-message">Offline — last synced</span>
+      <span data-role="latched-message" class="hidden">Offline mode — last synced</span>
+      <span data-role="synced-at">—</span>
+    </summary>
+    <div>
+      <p data-role="offline-explainer">Lost contact.</p>
+      <p data-role="latched-explainer" class="hidden">Stopped trying.</p>
+      <p data-role="forced-explainer" class="hidden">You asked it to stay offline.</p>
+      <button type="button" data-role="reconnect" class="hidden">
+        <span data-role="reconnect-label">Try reconnecting</span>
+        <span data-role="resume-label" class="hidden">Use the network again</span>
+      </button>
+    </div>
+  </details>
+  <span
+    data-network-indicator
+    class="hidden items-center justify-center w-7 h-7 rounded-full text-status-warning-text"
+  >
+    <svg></svg>
+    <span class="sr-only">Offline mode</span>
+  </span>
+  <button type="button" data-network-required>Sync now</button>
+`;
+
+/**
+ * The "Offline mode" row from the subscriber menu — the control half.
+ *
+ * Rendered only inside nav.html's ``{% if request.user.is_authenticated %}``
+ * branch, hence its own constant: an anonymous page genuinely does not have
+ * this element, and the module has to cope with that rather than skip the
+ * symbol alongside it.
+ */
+const MENU_TOGGLE_ROW = `
+  <button
+    type="button"
+    role="menuitemcheckbox"
+    aria-checked="false"
+    data-network-toggle
+    class="group hidden w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-text-2"
+  >
+    <span class="shrink-0 text-text-3"><svg></svg></span>
+    <span class="grow">Offline mode</span>
+  </button>
+`;
+
+/**
+ * A signed-in page: banner, header symbol, and the menu row that switches the
+ * mode.
+ *
+ * The ``data-network-required`` button inside ``BANNER_AND_SYMBOL`` is any
+ * page's stand-in for a control that cannot work without the network — that
+ * attribute is the generic mechanism the whole site gates on, and the last
+ * block asserts a forced mode reaches it.
  */
 function buildFixture() {
-  document.body.innerHTML = `
-    <details id="${BANNER_ID}" data-role="offline-freshness" role="status" class="hidden">
-      <summary>
-        <span data-role="offline-message">Offline — last synced</span>
-        <span data-role="latched-message" class="hidden">Offline mode — last synced</span>
-        <span data-role="synced-at">—</span>
-      </summary>
-      <div>
-        <p data-role="offline-explainer">Lost contact.</p>
-        <p data-role="latched-explainer" class="hidden">Stopped trying.</p>
-        <p data-role="forced-explainer" class="hidden">You asked it to stay offline.</p>
-        <button type="button" data-role="reconnect" class="hidden">
-          <span data-role="reconnect-label">Try reconnecting</span>
-          <span data-role="resume-label" class="hidden">Use the network again</span>
-        </button>
-      </div>
-    </details>
-    <button
-      type="button"
-      data-network-toggle
-      aria-pressed="false"
-      aria-label="Go offline — stop using the network"
-      class="hidden items-center justify-center w-7 h-7 rounded-full text-text-3"
-    >
-      <span data-role="network-on"><svg></svg></span>
-      <span data-role="network-off" class="hidden"><svg></svg></span>
-    </button>
-    <button type="button" data-network-required>Sync now</button>
-    <template id="network-toggle-strings-template">
-      <span data-string="go-offline">Go offline — stop using the network</span>
-      <span data-string="go-online">Go back online — start using the network</span>
-    </template>
-  `;
+  document.body.innerHTML = BANNER_AND_SYMBOL + MENU_TOGGLE_ROW;
+}
+
+/** An anonymous page: the symbol, and no way to switch the mode. */
+function buildAnonymousFixture() {
+  document.body.innerHTML = BANNER_AND_SYMBOL;
 }
 
 /** Whether the element carrying ``data-role`` is currently visible. */
@@ -110,9 +136,19 @@ function roleShown(role) {
   return !!el && !el.classList.contains('hidden');
 }
 
-/** The header network toggle, for readability at the assertion site. */
+/** The menu's "Offline mode" row, for readability at the assertion site. */
 function toggleButton() {
   return document.querySelector(TOGGLE_SELECTOR);
+}
+
+/** The header offline symbol. */
+function indicator() {
+  return document.querySelector(INDICATOR_SELECTOR);
+}
+
+/** Whether the header offline symbol is currently shown. */
+function indicatorShown() {
+  return !indicator().classList.contains('hidden');
 }
 
 /**
@@ -141,9 +177,9 @@ function networkRequiredButton() {
   return document.querySelector('[data-network-required]');
 }
 
-/** Whether the header toggle is painted in an offline state. */
-function togglePressed() {
-  return toggleButton().getAttribute('aria-pressed') === 'true';
+/** Whether the menu row is painted in an offline state. */
+function toggleChecked() {
+  return toggleButton().getAttribute('aria-checked') === 'true';
 }
 
 /**
@@ -416,19 +452,68 @@ describe('sync-log write filter', () => {
 });
 
 // ---------------------------------------------------------------------------
-// SNOW-748 — the header toggle, and a forced mode that stays forced
+// SNOW-748 — the nav's symbol and switch, and a forced mode that stays forced
 // ---------------------------------------------------------------------------
 //
 // The control SNOW-742 built lived in the banner, which only reveals once the
 // connection has already failed — so the user it was for, "I have signal now
-// and am about to lose it", could never reach it. It is now in the nav header,
-// which exposed the defect these tests pin: a user's request used to be the
-// worker's auto-latch, and an auto-latch is probed back to 'auto' within
-// thirty seconds. Every assertion below is about the difference between the
-// two offline modes; ``'offline'`` is the worker's guess, ``'offline-forced'``
-// is the user's instruction.
+// and am about to lose it", could never reach it. It is now in the nav, split
+// the way a phone splits aeroplane mode: a symbol in the header that appears
+// only while the mode is on, and a switch in the settings menu. That move
+// exposed the defect these tests pin: a user's request used to be the worker's
+// auto-latch, and an auto-latch is probed back to 'auto' within thirty
+// seconds. Every assertion below is about the difference between the two
+// offline modes; ``'offline'`` is the worker's guess, ``'offline-forced'`` is
+// the user's.
 
-describe('the header network toggle (SNOW-748)', () => {
+describe('the header offline symbol (SNOW-748)', () => {
+  it('shows nothing while the app is using the network', async () => {
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    // A phone shows the aeroplane glyph only while aeroplane mode is on. In
+    // 'auto' there is nothing to say, so the header says nothing.
+    expect(indicatorShown()).toBe(false);
+  });
+
+  it('appears under either offline mode, and goes again in auto', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    // The worker latched on its own.
+    sw.emit({ type: 'network-mode', mode: 'offline' });
+    expect(indicatorShown()).toBe(true);
+
+    // The user's own mode shows the same mark — the header answers one
+    // question, and the banner carries which offline it is.
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    expect(indicatorShown()).toBe(true);
+
+    sw.emit({ type: 'network-mode', mode: 'auto' });
+    expect(indicatorShown()).toBe(false);
+  });
+
+  it('is painted on an anonymous page, which has no menu row at all', async () => {
+    // The row lives inside nav.html's authenticated branch; the symbol does
+    // not. The module looks each up separately for exactly this case — a
+    // shared early return on the missing row would leave an anonymous user
+    // with no indication that the app had stopped using the network.
+    buildAnonymousFixture();
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    expect(toggleButton()).toBeNull();
+    expect(indicatorShown()).toBe(false);
+
+    sw.emit({ type: 'network-mode', mode: 'offline' });
+
+    expect(indicatorShown()).toBe(true);
+  });
+});
+
+describe('the menu offline-mode toggle (SNOW-748)', () => {
   it('is revealed by this module, not by the template', async () => {
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     // The nav renders it `hidden` so a page whose script never runs does not
@@ -438,7 +523,7 @@ describe('the header network toggle (SNOW-748)', () => {
     await loadModule();
 
     expect(toggleButton().classList.contains('hidden')).toBe(false);
-    expect(toggleButton().classList.contains('inline-flex')).toBe(true);
+    expect(toggleButton().classList.contains('flex')).toBe(true);
   });
 
   it('asks for a forced mode — never the auto-latch — when pressed while online', async () => {
@@ -458,48 +543,31 @@ describe('the header network toggle (SNOW-748)', () => {
     await loadModule();
 
     toggleButton().click();
-    expect(togglePressed()).toBe(true);
+    expect(toggleChecked()).toBe(true);
+    expect(indicatorShown()).toBe(true);
 
     toggleButton().click();
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'auto' });
-    expect(togglePressed()).toBe(false);
+    expect(toggleChecked()).toBe(false);
+    expect(indicatorShown()).toBe(false);
   });
 
-  it('paints pressed under either offline mode, and swaps the glyph with it', async () => {
+  it('reports checked under either offline mode, including one it did not start', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
-    expect(togglePressed()).toBe(false);
-    expect(roleShown('network-on')).toBe(true);
-    expect(roleShown('network-off')).toBe(false);
+    expect(toggleChecked()).toBe(false);
 
-    // The worker latched on its own.
+    // aria-checked is the row's whole state: a menuitemcheckbox says on/off
+    // and nothing finer, and the worker's latch is as much "not using the
+    // network" as the user's own choice is.
     sw.emit({ type: 'network-mode', mode: 'offline' });
-    expect(togglePressed()).toBe(true);
-    expect(roleShown('network-off')).toBe(true);
-    expect(roleShown('network-on')).toBe(false);
-
-    // The user's own mode paints identically — the header answers one
-    // question, and the banner carries which offline it is.
-    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
-    expect(togglePressed()).toBe(true);
-    expect(roleShown('network-off')).toBe(true);
-  });
-
-  it('labels the action, from the template, and swaps it with the state', async () => {
-    const sw = stubServiceWorker();
-    window.fetch = vi.fn().mockResolvedValue(okResponse());
-    await loadModule();
-
-    expect(toggleButton().getAttribute('aria-label')).toBe('Go offline — stop using the network');
+    expect(toggleChecked()).toBe(true);
 
     sw.emit({ type: 'network-mode', mode: 'offline-forced' });
-
-    expect(toggleButton().getAttribute('aria-label')).toBe(
-      'Go back online — start using the network',
-    );
+    expect(toggleChecked()).toBe(true);
   });
 });
 
@@ -565,7 +633,8 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     // not overrule them.
     expect(sw.posted).not.toContainEqual({ type: 'network-mode', mode: 'auto' });
     expect(bannerShown()).toBe(true);
-    expect(togglePressed()).toBe(true);
+    expect(toggleChecked()).toBe(true);
+    expect(indicatorShown()).toBe(true);
 
     // The contrast: an auto-latch is the worker guessing there is no route,
     // and an online event is better evidence, so that one does lift.
@@ -593,7 +662,8 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'offline-forced' });
     expect(bannerShown()).toBe(true);
-    expect(togglePressed()).toBe(true);
+    expect(toggleChecked()).toBe(true);
+    expect(indicatorShown()).toBe(true);
     delete window.pwaDb;
   });
 });

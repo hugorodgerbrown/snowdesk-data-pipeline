@@ -58,8 +58,9 @@ when the app gave up, "Use the network again" when the user did).
 SNOW-748 removed the "Stay offline" button that used to sit beside it. It
 was the control for a user who has signal and is about to lose it, and it
 lived inside a banner that only appears once the signal has already gone —
-unreachable for its own case. It is now the always-visible network toggle
-in includes/nav.html.
+unreachable for its own case. It is now the "Offline mode" row in the
+account menu in includes/nav.html, with a symbol in the header reporting
+the state — a phone's aeroplane mode, switch and status bar.
 
 Spec §3.5, §10.1, §12.6 — freshness is non-negotiable, and an app that has
 stopped asking the server has to say so.
@@ -79,8 +80,8 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
     class="group hidden w-full bg-status-warning-bg text-status-warning-text border-b border-border text-sm"
 >
     <summary class="max-w-4xl mx-auto flex items-center gap-2 px-4 py-2 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
-        {# SNOW-748: the glyph moved to includes/_icon_wifi.html, which the #}
-        {# header network toggle also renders. One source for one mark.     #}
+        {# SNOW-748: the glyph moved to includes/_icon_wifi.html, the pair  #}
+        {# to _icon_wifi_off.html, which the nav's offline symbol renders.   #}
         {% include "includes/_icon_wifi.html" with size=16 svg_class="w-4 h-4 shrink-0" only %}
         {# SNOW-742: two message variants, both rendered server-side and #}
         {# toggled by ``hidden``. Swapping the text in JavaScript instead #}

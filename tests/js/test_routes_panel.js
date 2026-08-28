@@ -581,7 +581,8 @@ describe('framing a route from its row', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Forced-offline gating (SNOW-748) — the header's network toggle can put the
+// Forced-offline gating (SNOW-748) — the account menu's offline-mode toggle
+// can put the
 // app in an offline mode while the interface stays up. An upload is
 // online-only, and "online" has to mean the mode the user chose, not the
 // state of the radio: `navigator.onLine` is true throughout the first two

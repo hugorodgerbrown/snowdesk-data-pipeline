@@ -28,13 +28,20 @@ Sync badge (SNOW-376):
   colour to the status-error tokens when any queued mutation has
   permanently failed.
 
-Network toggle (SNOW-748):
-  A [data-network-toggle] icon button beside the sync badge, offered to
-  every viewer including anonymous ones. Hidden by default;
-  static/js/pwa_offline.js reveals it, paints its pressed state and binds
-  the click, which asks the service worker for 'offline-forced' or 'auto'.
-  Moved here from the offline banner, which only appears once the network
-  has already failed — see the comment at the button itself.
+Offline symbol (SNOW-748):
+  A [data-network-indicator] glyph beside the sync badge, shown to every
+  viewer including anonymous ones. It is a status symbol, not a control —
+  the phone-status-bar half of the aeroplane-mode model this feature
+  follows. Hidden by default; static/js/pwa_offline.js reveals it only
+  while the app is not using the network (either offline mode), and hides
+  it again in 'auto'.
+
+Offline mode toggle (SNOW-748):
+  A [data-network-toggle] row inside the subscriber menu below, beside
+  Settings — the other half of that model, where turning aeroplane mode on
+  lives. Signed-in only, hidden by default; static/js/pwa_offline.js
+  reveals it, paints aria-checked and binds the click, which asks the
+  service worker for 'offline-forced' or 'auto'.
 
 Parameters
 ----------
@@ -139,64 +146,47 @@ Usage
                 class="hidden items-center rounded-pill border border-border bg-tag px-2 py-0.5 font-mono text-caption text-text-3"
             ></span>
             {% comment %}
-                SNOW-748: the network toggle — "use the network" / "run from
-                downloaded data only".
+                SNOW-748: the offline symbol — the status-bar half of this
+                feature's model, which is a phone's aeroplane mode. A phone
+                shows the aeroplane glyph only while aeroplane mode is on, and
+                shows nothing at all the rest of the time; so does this. It
+                appears while the app is not using the network — whether it
+                latched itself after repeated failures or the user asked for it
+                — and nothing renders here in 'auto'.
 
-                SNOW-742 built this control and put it where it can never be
-                used for the case it was built for: inside the offline banner,
-                which pwa_offline.js only reveals once the connection has
-                already resolved into a definite failure. The user it was for
-                — "I have signal now, and I am about to lose it / not to trust
-                it / not to spend it" — could never reach it. Here it is
-                omnipresent.
+                It is a SYMBOL, not a control: no button, no aria-pressed, no
+                click handler, and not in the tab order. Turning the mode on
+                lives in the subscriber menu below, where the other device
+                settings are; putting a control in the status area invites the
+                reading that the symbol IS the switch, which it is not.
 
-                Anonymous as well as signed-in, deliberately: basemap
-                downloads are not auth-gated, so neither is the switch that
-                decides whether the app calls the server at all. It reads as
-                app state, next to the sync badge, rather than as an account
-                preference buried behind the avatar.
+                Shown to anonymous viewers as well as signed-in ones, and that
+                asymmetry with the toggle is deliberate: the worker latches
+                itself for anybody, so the state it announces is one an
+                anonymous user can be in. Only choosing the mode needs an
+                account.
+
+                One symbol for both offline modes. Which one it is —
+                auto-latched or the user's own — is the banner's job, and the
+                banner has room to say it in a sentence.
 
                 Hidden at rest and revealed by static/js/pwa_offline.js, the
-                same contract the sync badge above has with mutation_queue.js:
-                a control whose driving script is absent (an old cached shell,
-                a JS error, the admin) must not be on screen offering
-                something nothing will honour.
-
-                TWO states painted, not the worker's three. aria-pressed and
-                the struck-through glyph answer "is this app using the
-                network", which is one bit; WHICH offline mode it is —
-                auto-latched or the user's own choice — is the banner's job,
-                and it says so in a sentence rather than a colour.
+                same contract the sync badge above has with mutation_queue.js.
+                Here the reason is not that it would be inert without the
+                script but that it would be WRONG: a symbol claiming the app is
+                offline, on a page whose script never ran to find out.
             {% endcomment %}
-            <button
-                type="button"
-                data-network-toggle
-                data-testid="network-toggle"
-                aria-pressed="false"
-                aria-label='{% trans "Go offline — stop using the network" %}'
-                class="hidden items-center justify-center w-7 h-7 rounded-full text-text-3 hover:text-text-1 hover:bg-text-3/15 transition-colors"
+            <span
+                data-network-indicator
+                data-testid="network-indicator"
+                class="hidden items-center justify-center w-7 h-7 rounded-full text-status-warning-text"
             >
-                {# Both marks rendered, one hidden — pwa_offline.js swaps the #}
-                {# `hidden` class rather than rewriting the SVG, so the glyph #}
-                {# paths stay in the template partials that own them.         #}
-                <span data-role="network-on">{% include "includes/_icon_wifi.html" with size=15 only %}</span>
-                <span
-                    data-role="network-off"
-                    class="hidden"
-                >{% include "includes/_icon_wifi_off.html" with size=15 only %}</span>
-            </button>
-            {% comment %}
-                The toggle's labels, read back by pwa_offline.js through
-                window.pwaStrings.read() (static/js/i18n_strings.js). They
-                cannot be static markup: the label describes what pressing the
-                button will DO, so it changes with the state, and a label set
-                from a JS literal would ship English to every locale —
-                makemessages never scans static/js. See docs/i18n.md.
-            {% endcomment %}
-            <template id="network-toggle-strings-template">
-                <span data-string="go-offline">{% trans "Go offline — stop using the network" %}</span>
-                <span data-string="go-online">{% trans "Go back online — start using the network" %}</span>
-            </template>
+                {% include "includes/_icon_wifi_off.html" with size=15 only %}
+                {# The glyph is aria-hidden in its own partial, so the name is #}
+                {# carried by sr-only text — the pattern the freshness         #}
+                {# indicator and the version row already use.                  #}
+                <span class="sr-only">{% trans "Offline mode" %}</span>
+            </span>
             {% if request.user.is_authenticated %}
                 {# ── Subscriber avatar dropdown ── #}
                 {# SNOW-616: a native <details> disclosure, not a scripted one. #}
@@ -335,6 +325,69 @@ Usage
                         >
                             {% trans "Settings" %}
                         </a>
+                        {% comment %}
+                            SNOW-748: offline mode — the switch half of the
+                            aeroplane-mode model, next to Settings because that
+                            is what it is: device machinery rather than a
+                            destination. It stops the app calling the server at
+                            all, so the page runs from what has already been
+                            downloaded.
+
+                            SNOW-742 built this control inside the offline
+                            banner, which pwa_offline.js reveals only once the
+                            connection has already failed — so the user it was
+                            for, "I have signal now and am about to lose it",
+                            could never reach it. Here it is reachable from
+                            every page.
+
+                            Signed-in only, unlike the symbol in the header:
+                            the symbol reports a state anyone can end up in,
+                            while turning the mode on is a device preference
+                            that belongs with the rest of them.
+
+                            role="menuitemcheckbox", not menuitem: this row
+                            has an on/off state, and aria-checked is how a
+                            menu says so. The visible state is the tick plus
+                            the colour change, driven off that same attribute
+                            by the group-aria-checked variants, so the script
+                            sets one attribute and never a class string.
+
+                            Hidden at rest and revealed by
+                            static/js/pwa_offline.js: it drives a service
+                            worker, so a row that appeared without the script
+                            would be dead.
+                        {% endcomment %}
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked="false"
+                            data-network-toggle
+                            data-testid="network-toggle"
+                            class="group hidden w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-text-2 hover:bg-tag hover:text-text-1 aria-checked:text-text-1"
+                        >
+                            <span class="shrink-0 text-text-3 group-aria-checked:text-status-warning-text">
+                                {% include "includes/_icon_wifi_off.html" with size=13 only %}
+                            </span>
+                            <span class="grow">{% trans "Offline mode" %}</span>
+                            {# The tick a menuitemcheckbox is expected to show. #}
+                            {# Hidden from assistive tech (aria-checked already #}
+                            {# carries the state) and from sighted users until  #}
+                            {# the row is checked.                              #}
+                            <svg
+                                width="13"
+                                height="13"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                                class="shrink-0 opacity-0 group-aria-checked:opacity-100"
+                            >
+                                <path d="M20 6 9 17l-5-5" />
+                            </svg>
+                        </button>
                         {% if APP_RELEASE_LABEL %}
                             {% comment %}
                                 The running release, so "which version are you
