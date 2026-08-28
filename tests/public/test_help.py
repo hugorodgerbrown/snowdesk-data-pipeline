@@ -5,9 +5,13 @@ Covers:
 
   * ``GET /help/`` returns HTTP 200 for an anonymous user; the URL reverses
     to ``/help/``; the heading marker is present.
-  * The ten always-on topic panels render regardless of waffle flag state.
+  * The fifteen always-on topic panels render regardless of waffle flag
+    state.
   * The map panel's favourites-overlay, community-reports, and
     Report-button sentences are always present.
+  * Every control in the map's own control column has a topic here, and the
+    map's coachmark tour has a step for each one. Routes shipped with
+    neither, which is what that pair of tests exists to stop recurring.
   * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
     absent by default, present under ``@override_flag``. It is the only
     gated panel left; SNOW-724 opened the Map-weather (SNOW-573) and
@@ -34,13 +38,29 @@ ALWAYS_ON_TESTIDS = [
     "help-topic-overview",
     "help-topic-bulletins",
     "help-topic-weather",
+    "help-topic-timeline",
     "help-topic-map",
+    "help-topic-layers",
     "help-topic-favourites",
     "help-topic-observations",
-    "help-topic-recent-observations",
-    "help-topic-timeline",
+    "help-topic-routes",
+    "help-topic-downloads",
     "help-topic-accounts",
+    "help-topic-recent-observations",
     "help-topic-install",
+]
+
+# The map's five layers-menu groups, each documented by its own paragraph
+# in ``_topic_layers.html``. Asserted individually rather than as "the
+# layers panel is non-empty": a group added to #basemap-menu with no
+# paragraph here is exactly the drift this list is for.
+LAYERS_GROUP_TESTIDS = [
+    "help-layers-bulletins",
+    "help-layers-boundaries",
+    "help-layers-resorts",
+    "help-layers-weather",
+    "help-layers-slope",
+    "help-layers-basemaps",
 ]
 
 ALWAYS_ON_MAP_SENTENCE_TESTIDS = [
@@ -74,6 +94,39 @@ class TestHelpPage:
     def test_always_on_map_sentences_present(self, client: Client, testid: str) -> None:
         response = client.get(reverse("public:help"))
         assert f'data-testid="{testid}"'.encode() in response.content
+
+    @pytest.mark.parametrize("testid", LAYERS_GROUP_TESTIDS)
+    def test_layers_panel_covers_every_menu_group(
+        self, client: Client, testid: str
+    ) -> None:
+        response = client.get(reverse("public:help"))
+        assert f'data-testid="{testid}"'.encode() in response.content
+
+    def test_layers_panel_explains_the_sync_dots(self, client: Client) -> None:
+        """The dot on each row is the map's offline-availability readout.
+
+        It is the one part of the menu whose meaning cannot be guessed
+        from the row it sits on, and a user checking what will still work
+        without signal is reading it for a safety answer.
+        """
+        content = client.get(reverse("public:help")).content
+        assert b"help-layers-sync-dots" in content
+        assert b"help-layers-disabled-rows" in content
+
+    def test_install_panel_does_not_promise_always_fresh_data(
+        self, client: Client
+    ) -> None:
+        """The cache CAN serve a danger rating, and the page has to say so.
+
+        This copy claimed the opposite ("Snowdesk never shows you a stale
+        danger rating from the cache") for as long as ``static/js/sw.js``
+        had been serving the API feeds stale-while-revalidate. It is the
+        one error on this page with a safety cost, so the correction is
+        pinned rather than left to the next reader's judgement.
+        """
+        content = client.get(reverse("public:help")).content
+        assert b"never shows you a stale danger rating" not in content
+        assert b"help-install-staleness" in content
 
     def test_links_to_bulletin_guide(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
@@ -161,3 +214,42 @@ class TestHelpPageDiscoverability:
         nav_start = content.index(b"<nav")
         nav_end = content.index(b"</nav>", nav_start)
         assert reverse("public:help").encode() not in content[nav_start:nav_end]
+
+
+@pytest.mark.django_db
+class TestHelpCoversTheMapControls:
+    """Every roundel in the map's control column is documented twice over.
+
+    A map control is discoverable through the coachmark tour on the map
+    (``#map-help-steps``) and explained on this page; the routes roundel
+    shipped in SNOW-686/687 with neither, and stayed that way through two
+    more tickets that touched the stack. These two tests fail the moment a
+    sixth control is added to the column without both.
+    """
+
+    #: Control-column button ids, paired with the /help/ topic that
+    #: explains what opening it does.
+    CONTROL_TO_TOPIC = {
+        "basemap-toggle": "help-topic-layers",
+        "map-custom-download-control": "help-topic-downloads",
+        "favourite-add-btn": "help-topic-favourites",
+        "report-btn": "help-topic-observations",
+        "route-add-btn": "help-topic-routes",
+    }
+
+    @pytest.mark.parametrize("control,topic", CONTROL_TO_TOPIC.items())
+    def test_each_control_has_a_help_topic(
+        self, client: Client, control: str, topic: str
+    ) -> None:
+        home = client.get(reverse("public:home")).content
+        assert f'id="{control}"'.encode() in home, control
+
+        help_page = client.get(reverse("public:help")).content
+        assert f'data-testid="{topic}"'.encode() in help_page, topic
+
+    @pytest.mark.parametrize("control", CONTROL_TO_TOPIC)
+    def test_each_control_has_a_coachmark_step(
+        self, client: Client, control: str
+    ) -> None:
+        home = client.get(reverse("public:home")).content
+        assert f'data-help-target="#{control}"'.encode() in home, control

@@ -3,26 +3,50 @@ apps/public/templates/public/help/_topic_map.html — "The map" panel body.
 
 Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
+
+This panel is now the map's ORIENTATION: the danger colours, selecting a
+region, search, locate, the control column and the legend. Everything a
+control opens has a panel of its own further down the page — Layers, Map
+weather, Slope angle, Favourites, Field observations, Routes, Offline
+downloads — so the last three paragraphs are pointers rather than
+descriptions.
+
+The ``help-map-favourites`` / ``-community`` / ``-report`` test ids are
+kept on those pointers: SNOW-456's acceptance criteria asserted this
+panel names all three, and it still does.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            The map colours every region by its current avalanche danger level, from pale green (Low) through to red
-            (Very High). Use the search box to jump straight to a region by name, the locate-me button to centre the map
-            on your position, and pinch or scroll to zoom and pan. The info panel in the corner shows the legend and the
-            current data sources.
+            The map colours every region by its avalanche danger level for the date being shown, from pale green (Low)
+            through to red (Very High). Tap a region to select it: its name and that day's rating appear in the header
+            above the map, along with a link to the full bulletin.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0">
+    <p class="mb-3 last:mb-0" data-testid="help-map-search">
         {% blocktrans trimmed %}
-            A basemap picker lets you switch between the standard map style and each country's national mapping-agency
-            basemap (Swisstopo, IGN, basemap.at) where available.
+            The magnifier searches regions and resorts by name and jumps straight to one. The crosshair centres the map
+            on where you are, if you let your browser share your position.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-controls">
+        {% blocktrans trimmed %}
+            The buttons down the right-hand side are the map's controls: layers, bulletin shading strength, offline
+            downloads, your favourites, your field observations and your routes. The chevron at the foot folds them away
+            when you want a clear map, and the "?" above it replays a short tour that names every one of them.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-map-legend">
+        {% blocktrans trimmed %}
+            The (i) button in the bottom-left corner opens the legend: the danger scale, what each kind of pin means,
+            the slope-angle bands when that layer is on, and the attribution for the map and the avalanche data.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-map-favourites">
         {% blocktrans trimmed %}
-            An overlay toggle shows your saved favourite pins directly on the map, alongside the resorts layer.
+            Your saved favourite pins can be drawn on the map alongside the resorts layer &mdash; see "Favourites"
+            below.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-map-community">
@@ -33,8 +57,8 @@ body_template parameter of includes/_collapsible_panel.html.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-map-report">
         {% blocktrans trimmed %}
-            The Report button lets you submit a quick field observation &mdash; conditions you've seen in person &mdash;
-            for the region you're viewing.
+            The field-observations button lets you submit conditions you have seen in person &mdash; see "Field
+            observations" below.
         {% endblocktrans %}
     </p>
 </div>

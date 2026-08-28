@@ -1,0 +1,74 @@
+{% comment %}
+apps/public/templates/public/help/_topic_downloads.html — "Offline
+downloads" panel body.
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html. Documents the downloads
+roundel and its sheet (public/partials/_map_custom_download_control.html,
+_map_downloads_sheet.html, SNOW-522/588/634/635/645) plus the per-region
+download button in the ribbon header (_map_download_control.html), none
+of which had a help section.
+
+The distinction this panel exists to make is which of the two things a
+download is: it stores BASEMAP TILES for an area. Pages and avalanche
+data are cached separately, by visiting them — that half is the "Install
+& offline" panel's subject, and each panel points at the other rather
+than restating it.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            A download saves the background map for an area onto this device, so the map still draws where there is no
+            signal. The framed-square button on the right of the map opens "Downloads on this device": everything you
+            have stored, what it is costing you, and the way to add more.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-two-kinds">
+        {% blocktrans trimmed %}
+            There are two ways to store an area. Select a region on the map and use the download button beside its name
+            in the header to take the whole region; or use "Download a custom area" inside the sheet, which lets you
+            frame any part of the map yourself &mdash; the right choice for a tour that straddles a boundary. The sheet
+            lists the two kinds separately, and custom areas can be renamed.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-budget">
+        {% blocktrans trimmed %}
+            A budget at the top of the sheet caps how much space downloads may take, and you choose the figure. When a
+            new download would take you past it, the oldest areas are removed to make room and you are asked first.
+            Lowering the budget below what you already hold puts you over it, and the sheet says so rather than deleting
+            anything behind your back.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-device-local">
+        {% blocktrans trimmed %}
+            Downloads live in this browser on this device. They do not follow your account to your phone, they are not
+            part of your favourites or your routes, and clearing the site's data or resetting local data removes them.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-overlay">
+        {% blocktrans trimmed %}
+            The "Display on the map" switch at the foot of the sheet shades the areas you hold, so you can see the edges
+            of your own coverage before you set off. It is the only thing that turns that shading off again.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-basemap-scope">
+        {% blocktrans trimmed %}
+            An area is downloaded for the base map that was showing at the time. Switching to a different base map is
+            switching to a map you have not stored, and the sheet offers to download the same area again for it.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-online-only">
+        {% blocktrans trimmed %}
+            Downloading needs a connection; listing and removing what you already hold works offline, which is when
+            space usually runs short. A download can also fail because the device is out of room or the area is larger
+            than the budget allows &mdash; frame a smaller area and try again.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-not-bulletins">
+        {% blocktrans trimmed %}
+            A download stores the map, not the avalanche bulletins. Bulletin pages and the danger colours are kept for
+            offline use as you visit them &mdash; see "Install &amp; offline" below.
+        {% endblocktrans %}
+    </p>
+</div>

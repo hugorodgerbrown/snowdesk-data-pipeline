@@ -3,6 +3,15 @@ apps/public/templates/public/help/_topic_install.html — "Install & offline" pa
 
 Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
+
+The offline paragraph is corrected here. It used to say "Avalanche data
+itself is always fetched fresh from the network — Snowdesk never shows
+you a stale danger rating from the cache", which stopped being true once
+static/js/sw.js served the API feeds stale-while-revalidate: a rating
+CAN come from the cache, which is the whole point of the offline banner
+and its two clocks. Telling a reader the opposite is the one error on
+this page with a safety cost, so the copy now says what the cache does
+and points at the banner that dates it.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -13,11 +22,25 @@ body_template parameter of includes/_collapsible_panel.html.
             without any browser chrome.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0">
+    <p class="mb-3 last:mb-0" data-testid="help-install-cache">
         {% blocktrans trimmed %}
-            Pages you've already visited load instantly on repeat visits, even with a poor connection, because the app
-            shell is cached on your device. Avalanche data itself is always fetched fresh from the network &mdash;
-            Snowdesk never shows you a stale danger rating from the cache.
+            Pages you have already visited load instantly on repeat visits, and keep working with no connection, because
+            both the app and the data behind those pages are kept on your device. Snowdesk always asks the network first
+            and only falls back to what it holds.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-install-staleness">
+        {% blocktrans trimmed %}
+            That means a rating you see offline is the last one this device fetched, not necessarily the one in force.
+            Whenever the connection is failing &mdash; or has failed often enough that Snowdesk has stopped trying and
+            is serving stored data only &mdash; a banner across the top says so and says how long ago this device last
+            reached the server. Check it before you trust a rating, and reload once you have signal.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-install-downloads-pointer">
+        {% blocktrans trimmed %}
+            The background map is the exception: it is stored only for the areas you download yourself &mdash; see
+            "Offline downloads" above.
         {% endblocktrans %}
     </p>
 </div>

@@ -14,6 +14,18 @@ The Sync-log panel is gated on the per-user ``sync_log_visible`` waffle
 boolean computed by apps.public.views.help_page — a user never sees
 documentation for a feature they cannot use. It is the only gated panel;
 SNOW-724 opened the map-weather and slope-angle topics to everyone.
+
+The panels are grouped under four eyebrow headings rather than running as
+one flat list of sixteen: "The map" alone holds eight, and a reader
+looking for the layers menu should not have to read past the season
+calendar to find it. The headings are includes/_eyebrow.html, the same
+section label the bulletin and account pages use.
+
+EVERY map control has a panel here, and the map's own coachmark tour
+(``#map-help-steps`` in public/partials/_map_embed.html) is the other half
+of the same job: a control added to the map needs a step there and a
+section here, or it ships undocumented in both places, which is how
+Routes and Offline downloads came to have neither.
 {% endcomment %}
 {% load i18n components %}
 
@@ -31,8 +43,14 @@ SNOW-724 opened the map-weather and slope-angle topics to everyone.
             {% trans "A plain-language guide to what Snowdesk does and how to use each part of it." %}
         </p>
 
+        {% translate "Getting started" as t_section_start %}
+        {% include "includes/_eyebrow.html" with text=t_section_start class_extra="mb-2" only %}
+
         {% translate "What Snowdesk is" as t_overview %}
         {% include "includes/_collapsible_panel.html" with title=t_overview data_testid="help-topic-overview" body_template="public/help/_topic_overview.html" %}
+
+        {% translate "Bulletins" as t_section_bulletins %}
+        {% include "includes/_eyebrow.html" with text=t_section_bulletins class_extra="mt-6 mb-2" only %}
 
         {% translate "Reading a bulletin" as t_bulletins %}
         {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" body_template="public/help/_topic_bulletins.html" %}
@@ -40,8 +58,22 @@ SNOW-724 opened the map-weather and slope-angle topics to everyone.
         {% translate "The weather header" as t_weather %}
         {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" body_template="public/help/_topic_weather.html" %}
 
-        {% translate "The map" as t_map %}
+        {% translate "The season timeline & calendar" as t_timeline %}
+        {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
+
+        {# The map's own controls, in the order the control column runs:      #}
+        {# orientation, then layers (and the two layers deep enough to need a #}
+        {# panel of their own), then the three user-data panels, then         #}
+        {# downloads. A reader working down this group is working down the    #}
+        {# right-hand side of the map.                                        #}
+        {% translate "The map" as t_section_map %}
+        {% include "includes/_eyebrow.html" with text=t_section_map class_extra="mt-6 mb-2" only %}
+
+        {% translate "Getting around the map" as t_map %}
         {% include "includes/_collapsible_panel.html" with title=t_map data_testid="help-topic-map" body_template="public/help/_topic_map.html" %}
+
+        {% translate "Layers" as t_layers %}
+        {% include "includes/_collapsible_panel.html" with title=t_layers data_testid="help-topic-layers" body_template="public/help/_topic_layers.html" %}
 
         {% translate "Map weather" as t_weather_layer %}
         {% include "includes/_collapsible_panel.html" with title=t_weather_layer data_testid="help-topic-weather-layer" body_template="public/help/_topic_weather_layer.html" %}
@@ -62,14 +94,20 @@ SNOW-724 opened the map-weather and slope-angle topics to everyone.
         {% translate "Field observations" as t_observations %}
         {% include "includes/_collapsible_panel.html" with title=t_observations data_testid="help-topic-observations" body_template="public/help/_topic_observations.html" %}
 
-        {% translate "Recent observations" as t_recent_observations %}
-        {% include "includes/_collapsible_panel.html" with title=t_recent_observations data_testid="help-topic-recent-observations" body_template="public/help/_topic_recent_observations.html" %}
+        {% translate "Routes" as t_routes %}
+        {% include "includes/_collapsible_panel.html" with title=t_routes data_testid="help-topic-routes" body_template="public/help/_topic_routes.html" %}
 
-        {% translate "The season timeline & calendar" as t_timeline %}
-        {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
+        {% translate "Offline downloads" as t_downloads %}
+        {% include "includes/_collapsible_panel.html" with title=t_downloads data_testid="help-topic-downloads" body_template="public/help/_topic_downloads.html" %}
+
+        {% translate "Your account and this device" as t_section_account %}
+        {% include "includes/_eyebrow.html" with text=t_section_account class_extra="mt-6 mb-2" only %}
 
         {% translate "Accounts & subscriptions" as t_accounts %}
         {% include "includes/_collapsible_panel.html" with title=t_accounts data_testid="help-topic-accounts" body_template="public/help/_topic_accounts.html" %}
+
+        {% translate "The Observations page" as t_recent_observations %}
+        {% include "includes/_collapsible_panel.html" with title=t_recent_observations data_testid="help-topic-recent-observations" body_template="public/help/_topic_recent_observations.html" %}
 
         {% translate "Install & offline" as t_install %}
         {% include "includes/_collapsible_panel.html" with title=t_install data_testid="help-topic-install" body_template="public/help/_topic_install.html" %}

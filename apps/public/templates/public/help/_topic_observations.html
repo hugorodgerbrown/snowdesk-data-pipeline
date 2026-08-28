@@ -3,20 +3,45 @@ apps/public/templates/public/help/_topic_observations.html — "Field observatio
 
 Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
+
+Rewritten to describe the panel the triangle roundel opens (SNOW-658) —
+the user's own reports, the report action, and the community-reports
+switch that used to be a layers-menu row — and to name the five signal
+types the form actually offers (FieldObservation.OBSERVATION_TYPE).
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            Field observations are quick, one-tap reports of what you've actually seen out on the snow &mdash; recent
-            avalanche activity, snowpack signs, or general conditions &mdash; for the region you're viewing.
+            Field observations are quick, one-tap reports of what you have actually seen out on the snow. You pick one
+            signal &mdash; whumpfing, shooting cracks, fractures, wind striations or pinwheels &mdash; and that, with
+            where and when you saw it, is the whole report.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0">
+    <p class="mb-3 last:mb-0" data-testid="help-observations-panel">
         {% blocktrans trimmed %}
-            Sign in, then use the Report button on the map or a bulletin page to submit one. Reports feed into the
-            community-reports overlay so other users can see recent, real-world observations alongside the official
-            bulletin.
+            Sign in with a verified email address, then open the triangle button on the right of the map. The panel
+            lists your own reports and offers "Report an observation"; the "Display on the map" switch at the foot draws
+            the community's reports, which is where that layers-menu row went.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-observations-location">
+        {% blocktrans trimmed %}
+            The report takes your position from your device where it can, and you can nudge the pin before sending. If
+            there is no GPS fix, move the map to set the spot yourself.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-observations-shared">
+        {% blocktrans trimmed %}
+            Unlike your pins and routes, reports are shared. They appear to other users on the community-reports overlay
+            and on the Observations page &mdash; without your name, but with the place and time you recorded. Only
+            report what you are content to make public.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-observations-offline">
+        {% blocktrans trimmed %}
+            A report made with no connection is held on your device and sent as soon as you have one, which is the point
+            &mdash; the ground you are reporting on rarely has signal.
         {% endblocktrans %}
     </p>
 </div>

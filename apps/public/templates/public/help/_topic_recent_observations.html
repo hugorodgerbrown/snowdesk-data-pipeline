@@ -1,22 +1,29 @@
 {% comment %}
-apps/public/templates/public/help/_topic_recent_observations.html — "Recent observations" panel body.
+apps/public/templates/public/help/_topic_recent_observations.html —
+"Recent observations" panel body.
 
-Content partial for the help page (SNOW-476); included via the
+Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
+
+Two claims corrected here against apps.public.views.observations_list:
+the page shows every signed-in viewer other users' reports (there is no
+community-overlay gate on it), and it renders each timestamp as recorded
+(the 15-minute floor on other users' rows was removed — the page names
+nobody, so the floor identified nobody and only made one report read two
+ages across two surfaces).
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            The Observations page lists field reports from the last 48 hours, newest first — a quick way to see what
-            other users have spotted recently without opening the map.
+            The Observations page lists field reports from the last 48 hours, newest first &mdash; a quick way to see
+            what other users have spotted recently without opening the map.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0">
+    <p class="mb-3 last:mb-0" data-testid="help-recent-observations-visibility">
         {% blocktrans trimmed %}
-            Sign in to view it. Your own reports always appear, marked "You". Other users' reports appear only when you
-            have the community-reports overlay enabled, and their times are rounded to the nearest 15 minutes to keep
-            individual reports from being pinpointed.
+            Sign in to view it. You see every recent report, whoever filed it; your own are marked "You". No names are
+            shown, and each report carries the time it was recorded.
         {% endblocktrans %}
     </p>
 </div>
