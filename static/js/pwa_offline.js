@@ -95,6 +95,23 @@
  * user's), and the comparisons below are NOT interchangeable — see the
  * ``online`` listener in particular.
  *
+ * One connectivity answer, not two (SNOW-748)
+ * -------------------------------------------
+ * The toggle shipped with a hole underneath it: ``snowdesk:connectivity-changed``
+ * carried ``navigator.onLine`` alone and fired only on an interface
+ * transition, so forcing offline mode changed nothing anybody downstream could
+ * see. The map's layers menu kept its green sync dots and the basemap download
+ * controls stayed enabled — the app said it was offline in the header while
+ * offering to spend the connection.
+ *
+ * So the broadcast now carries the EFFECTIVE value (``effectiveOnline()`` —
+ * interface up AND ``networkMode === 'auto'``), and it fires on every mode
+ * change as well as every interface event. ``window.pwaConnectivity.isOnline()``
+ * exposes the same value for the consumers that re-read the state when they
+ * repaint, so no surface has to derive it for itself. The worker enforces the
+ * matching half — see ``_warmCache``'s forced-mode guard in ``static/js/sw.js``,
+ * which refuses a download the UI somehow still dispatches.
+ *
  * Every user-facing string for all three states is rendered by
  * ``includes/_offline_banner.html`` (or, for the toggle's label, the strings
  * ``<template>`` in ``includes/nav.html``, read back through
@@ -424,6 +441,12 @@
     networkMode = mode;
     persistMeta(NETWORK_MODE_KEY, mode);
     renderBanner(navigator.onLine);
+    // SNOW-748: the page's own mode changes are broadcast too, not just the
+    // worker's. The toggle's click lands here, and it must not wait for the
+    // worker's echo — that echo needs a controller, and a page loaded before
+    // the worker activated has none.
+    syncNetworkRequired(effectiveOnline());
+    broadcastConnectivity();
     try {
       navigator.serviceWorker?.controller?.postMessage({ type: 'network-mode', mode });
     } catch (_err) {
@@ -476,7 +499,14 @@
       networkMode = coerceNetworkMode(event.data.mode);
       persistMeta(NETWORK_MODE_KEY, networkMode);
       renderBanner(navigator.onLine);
-      syncNetworkRequired(navigator.onLine && networkMode === 'auto');
+      syncNetworkRequired(effectiveOnline());
+      // SNOW-748: a mode change IS a connectivity change for everything that
+      // gates on the broadcast — the worker latching, a probe lifting it, or
+      // the user pressing the toggle all change whether the network is in
+      // use. Without this the event only ever fired on an interface
+      // transition, so a forced mode left every consumer believing the
+      // network was there.
+      broadcastConnectivity();
     });
   }
 
@@ -725,18 +755,45 @@
   }
 
   /**
+   * SNOW-748: whether the app is using the network AT ALL — the interface is
+   * up *and* no offline mode is in force.
+   *
+   * This is the question every consumer of the broadcast below was really
+   * asking, and until this ticket ``navigator.onLine`` was the only answer
+   * available to them. It is the wrong one under a forced mode by
+   * construction: the user presses the toggle precisely when they have a
+   * connection and do not want it spent, so ``onLine`` stays true while the
+   * worker refuses every read. The layers menu went on painting green dots and
+   * the basemap download controls went on offering downloads the worker would
+   * (SNOW-748) refuse.
+   *
+   * @returns {boolean}
+   */
+  function effectiveOnline() {
+    return navigator.onLine !== false && networkMode === 'auto';
+  }
+
+  /**
    * Broadcast the connection state to any listener that needs to react
    * beyond the blunt ``data-network-required`` disable — chiefly the map's
    * layers menu (map_layer_sync_status.js), which gates each row against
    * *cache* state (offline + uncached ⟹ disabled + red dot) rather than
-   * disabling everything wholesale. A single event keeps every consumer off
-   * its own ``navigator.onLine`` poll and in lockstep with the banner.
+   * disabling everything wholesale, and the basemap download controls. A
+   * single event keeps every consumer off its own ``navigator.onLine`` poll
+   * and in lockstep with the banner.
    *
-   * @param {boolean} online
+   * SNOW-748: takes no argument. It carries ``effectiveOnline()``, and the
+   * callers that used to pass a literal ``true``/``false`` were the bug — the
+   * ``online`` listener passing ``true`` re-enabled the whole UI the first
+   * time the radio blinked under a mode the user had chosen. There is one
+   * answer to "is this app using the network", and it is computed here rather
+   * than at four call sites that can each get it wrong.
    */
-  function broadcastConnectivity(online) {
+  function broadcastConnectivity() {
     document.dispatchEvent(
-      new CustomEvent('snowdesk:connectivity-changed', { detail: { online } }),
+      new CustomEvent('snowdesk:connectivity-changed', {
+        detail: { online: effectiveOnline() },
+      }),
     );
   }
 
@@ -762,13 +819,17 @@
       // this ticket exists to fix, moved one file across.
       if (networkMode === 'offline') requestNetworkMode('auto');
       renderBanner(true);
-      syncNetworkRequired(true);
-      broadcastConnectivity(true);
+      // SNOW-748: the effective value, not a literal ``true``. Under a forced
+      // mode (which the branch above deliberately leaves alone) the network is
+      // still not being used, and telling the app otherwise here is what let
+      // the download controls come back to life the moment the radio blinked.
+      syncNetworkRequired(effectiveOnline());
+      broadcastConnectivity();
     });
     window.addEventListener('offline', () => {
       renderBanner(false);
       syncNetworkRequired(false);
-      broadcastConnectivity(false);
+      broadcastConnectivity();
     });
   }
 
@@ -834,12 +895,36 @@
     // schedules the probe that ends it.
     if (networkMode !== 'auto') requestNetworkMode(networkMode);
     renderBanner(navigator.onLine);
-    syncNetworkRequired(navigator.onLine && networkMode === 'auto');
+    syncNetworkRequired(effectiveOnline());
     // Prime consumers with the initial state so a page that loaded offline
-    // (via the SW cache) gets its cache-aware gating applied at boot, not
+    // (via the SW cache), or one that booted straight back into a persisted
+    // forced mode, gets its cache-aware gating applied at boot rather than
     // only on the next transition.
-    broadcastConnectivity(navigator.onLine);
+    broadcastConnectivity();
   }
+
+  // SNOW-748: the READ half of the broadcast above, for the consumers that
+  // re-render on ``snowdesk:connectivity-changed`` but then decide what to
+  // paint by reading ``navigator.onLine`` again — the two basemap download
+  // controls, the downloads sheet and the layers menu's sync dots. The event
+  // is still what tells them to re-render; this is what they ask when they
+  // do, so the answer is the same one the banner and the worker are acting
+  // on. Assigned synchronously at script evaluation, before ``init``'s first
+  // await, so a consumer that runs early gets a real answer rather than the
+  // ``navigator.onLine`` fallback.
+  //
+  // Frozen, like the other ``window.pwa*`` surfaces (docs/offline-map.md): the
+  // mode itself is owned by the service worker, and nothing on the page may
+  // assert connectivity by assignment.
+  window.pwaConnectivity = Object.freeze({
+    /**
+     * True when the app is using the network: the interface is up and no
+     * offline mode — latched or user-forced — is in force.
+     *
+     * @returns {boolean}
+     */
+    isOnline: () => effectiveOnline(),
+  });
 
   init();
 })();

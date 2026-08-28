@@ -32,6 +32,12 @@
  * is the worker's guess that there is no route while ``'offline-forced'`` is
  * the user's instruction — so an ``online`` event, a probe and a page reload
  * all treat the two differently.
+ *
+ * The last block covers what that mode publishes. The toggle shipped without
+ * it: ``snowdesk:connectivity-changed`` carried ``navigator.onLine`` alone and
+ * fired only on an interface transition, so forcing offline mode changed
+ * nothing any consumer could see — the map's layers menu kept its green sync
+ * dots and the basemap download controls went on offering downloads.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,6 +62,11 @@ const TOGGLE_SELECTOR = '[data-network-toggle]';
  * would silently make those assertions vacuous — the toggle helper skips a
  * role it cannot find, and ``renderNetworkToggle`` returns early on a missing
  * button.
+ *
+ * The ``data-network-required`` button is any page's stand-in for a control
+ * that cannot work without the network — that attribute is the generic
+ * mechanism the whole site gates on, and the last block asserts a forced mode
+ * reaches it.
  */
 function buildFixture() {
   document.body.innerHTML = `
@@ -85,6 +96,7 @@ function buildFixture() {
       <span data-role="network-on"><svg></svg></span>
       <span data-role="network-off" class="hidden"><svg></svg></span>
     </button>
+    <button type="button" data-network-required>Sync now</button>
     <template id="network-toggle-strings-template">
       <span data-string="go-offline">Go offline — stop using the network</span>
       <span data-string="go-online">Go back online — start using the network</span>
@@ -101,6 +113,32 @@ function roleShown(role) {
 /** The header network toggle, for readability at the assertion site. */
 function toggleButton() {
   return document.querySelector(TOGGLE_SELECTOR);
+}
+
+/**
+ * Record every ``snowdesk:connectivity-changed`` the module dispatches from
+ * now on, and stop recording when ``stop()`` is called.
+ *
+ * Removed per test rather than left bound: every previous test's module
+ * instance is still attached to the shared document (``vi.resetModules()``
+ * gives a fresh module, it does not unbind the old one's listeners), so a
+ * listener left in place would collect another test's broadcasts too.
+ *
+ * @returns {{online: boolean[], stop: () => void}}
+ */
+function recordConnectivity() {
+  const online = [];
+  const listener = (event) => online.push(event.detail.online);
+  document.addEventListener('snowdesk:connectivity-changed', listener);
+  return {
+    online,
+    stop: () => document.removeEventListener('snowdesk:connectivity-changed', listener),
+  };
+}
+
+/** The fixture's ``data-network-required`` control. */
+function networkRequiredButton() {
+  return document.querySelector('[data-network-required]');
 }
 
 /** Whether the header toggle is painted in an offline state. */
@@ -557,5 +595,128 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     expect(bannerShown()).toBe(true);
     expect(togglePressed()).toBe(true);
     delete window.pwaDb;
+  });
+});
+
+describe('what a forced mode publishes to the rest of the app (SNOW-748)', () => {
+  /*
+   * The toggle shipped without this half. `broadcastConnectivity` carried
+   * `navigator.onLine` alone, and fired only from the `online`/`offline`
+   * listeners and at boot — so pressing the toggle dispatched nothing, and
+   * every consumer (the layers menu's sync dots, both basemap download
+   * controls, the downloads sheet) went on believing the network was
+   * available. Hugo reproduced it live: zero events, and a Download button
+   * still `disabled: false`.
+   */
+
+  it('reports offline the moment the mode goes forced, while onLine is true', async () => {
+    // Installed but not read back: this test drives the mode from the page's
+    // own toggle, and the stub is only here so the post to the worker lands
+    // somewhere fresh rather than on a previous test's stub.
+    stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+    const seen = recordConnectivity();
+
+    try {
+      toggleButton().click();
+
+      // The premise of this whole mode: the interface is up throughout.
+      expect(window.navigator.onLine).toBe(true);
+      expect(seen.online).toEqual([false]);
+    } finally {
+      seen.stop();
+    }
+  });
+
+  it('reports online again when the user returns to auto', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    const seen = recordConnectivity();
+
+    try {
+      toggleButton().click();
+
+      expect(seen.online).toEqual([true]);
+    } finally {
+      seen.stop();
+    }
+  });
+
+  it('reports a latch the worker announced on its own, too', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+    const seen = recordConnectivity();
+
+    try {
+      // Not only the user's mode: a latch also stops the app calling the
+      // server, and the dots and download controls must see that as well.
+      sw.emit({ type: 'network-mode', mode: 'offline' });
+
+      expect(seen.online).toEqual([false]);
+    } finally {
+      seen.stop();
+    }
+  });
+
+  it('does not re-report online on an interface event while forced', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    const seen = recordConnectivity();
+
+    try {
+      fireOnline();
+
+      // The `online` listener used to broadcast a hardcoded `true`, which
+      // handed every consumer the network back the first time the radio
+      // blinked — under a mode the user had chosen and the worker was still
+      // enforcing.
+      expect(seen.online).toEqual([false]);
+    } finally {
+      seen.stop();
+    }
+  });
+
+  it('disables data-network-required controls under a forced mode', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    expect(networkRequiredButton().disabled).toBe(false);
+
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    expect(networkRequiredButton().disabled).toBe(true);
+
+    // And an interface event must not undo it — same trap as the broadcast
+    // above, one mechanism across.
+    fireOnline();
+    expect(networkRequiredButton().disabled).toBe(true);
+
+    sw.emit({ type: 'network-mode', mode: 'auto' });
+    expect(networkRequiredButton().disabled).toBe(false);
+  });
+
+  it('answers the same question through window.pwaConnectivity', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    // The read the map's controls make when they repaint — they re-render on
+    // the event, so the two must agree or the paint contradicts the banner.
+    expect(window.pwaConnectivity.isOnline()).toBe(true);
+
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+    expect(window.pwaConnectivity.isOnline()).toBe(false);
+
+    sw.emit({ type: 'network-mode', mode: 'offline' });
+    expect(window.pwaConnectivity.isOnline()).toBe(false);
+
+    sw.emit({ type: 'network-mode', mode: 'auto' });
+    expect(window.pwaConnectivity.isOnline()).toBe(true);
   });
 });
