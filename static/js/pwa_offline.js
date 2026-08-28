@@ -136,9 +136,14 @@
   // The worker owns the mode; this is a mirror, for two jobs. It decides which
   // banner variant to show, and it is re-asserted to the worker on boot — a
   // worker that was terminated while idle comes back in 'auto' with no memory
-  // of the latch, and re-asserting is what restores it without putting an
-  // IndexedDB read on the worker's fetch path. See sw.js's
-  // ``_publishNetworkMode``.
+  // of the latch, and re-asserting is what restores it.
+  //
+  // SNOW-748: that re-assert is now the FAST path rather than the only one.
+  // The worker recovers a user-FORCED mode from this same row by itself (see
+  // sw.js's ``_hydrateNetworkMode``), because a worker recycled with no page
+  // open had nothing to push it and silently went back on the network. An
+  // auto-latch is still restored from here alone, and deliberately — see that
+  // function for why a stale latch is not worth reinstating.
   //
   // SNOW-748: three values, not two — ``'auto'``, ``'offline'`` (the worker
   // latched itself after three read timeouts) and ``'offline-forced'`` (the
