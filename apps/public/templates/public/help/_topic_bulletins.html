@@ -1,24 +1,44 @@
 {% comment %}
-apps/public/templates/public/help/_topic_bulletins.html — "Reading a bulletin" panel body.
+apps/public/templates/public/help/_topic_bulletins.html — "The day's
+danger rating" panel body.
 
 Content partial for the help page (SNOW-456); included via the
-body_template parameter of includes/_collapsible_panel.html. Deliberately
-brief — the full domain explanation lives on the how-to-read-a-bulletin
-guide, linked below rather than duplicated.
+body_template parameter of includes/_collapsible_panel.html.
+
+Narrowed from the old "Reading a bulletin" topic, which covered the
+danger rating AND the avalanche problems in two paragraphs. Each now has
+a panel and an illustration of its own — a topic can carry one
+illustration, and these are two different components (includes/day_windows.html
+and public/_rating_block.html). The avalanche-problem half moved to
+_topic_problems.html.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            Every bulletin page shows a danger rating on a five-level scale (Low to Very High), and one or more
-            "avalanche problems" &mdash; the specific hazards driving that rating, such as fresh wind slab or a
-            persistent weak layer &mdash; each with the aspects and elevations where it applies.
+            Every bulletin carries a danger rating on the five-level European scale &mdash; Low, Moderate, Considerable,
+            High and Very High. The number and its colour are the headline: they say how likely avalanches are and how
+            serious they would be, for the region as a whole.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-bulletins-windows">
+        {% blocktrans trimmed %}
+            The panel below the header breaks the day into windows. Most days have a single, unlabelled row: that rating
+            holds all day and there is nothing more to say. When a provider expects conditions to change &mdash; a storm
+            arriving, or the sun working on the snow &mdash; a second row appears with its own rating and a "Later" tag,
+            as above. Only a window that departs from the baseline is tagged, so a tag on the panel always means the day
+            is going somewhere.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-bulletins-bands">
+        {% blocktrans trimmed %}
+            Some providers split a window by height instead, giving one rating above a pivot elevation and another below
+            it. Those rows carry a small mountain glyph shaded to show which half of the mountain they describe.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            For a full walkthrough of the danger scale, subdivisions, and how to read the avalanche-problem cards, see
-            the dedicated guide:
+            For a full walkthrough of the scale and its subdivisions, see the dedicated guide:
         {% endblocktrans %}
         <a class="underline" href="{% url 'public:how_to_read_bulletin' %}">{% trans "How to read a bulletin" %}</a>.
     </p>

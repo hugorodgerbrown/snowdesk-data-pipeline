@@ -52,11 +52,20 @@ Routes and Offline downloads came to have neither.
         {% translate "Bulletins" as t_section_bulletins %}
         {% include "includes/_eyebrow.html" with text=t_section_bulletins class_extra="mt-6 mb-2" only %}
 
-        {% translate "Reading a bulletin" as t_bulletins %}
-        {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" body_template="public/help/_topic_bulletins.html" %}
-
+        {# Each of these three illustrates a different component of the      #}
+        {# bulletin page, in the order the page stacks them: the header, the #}
+        {# day-risk panel, then a problem card. "Reading a bulletin" used to #}
+        {# be one topic covering the rating and the problems together; a     #}
+        {# panel carries one illustration and those are two components, so   #}
+        {# the topic split rather than the slot growing a list.              #}
         {% translate "The weather header" as t_weather %}
-        {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" body_template="public/help/_topic_weather.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" illustration="public/help/illustrations/_weather_header.html" body_template="public/help/_topic_weather.html" %}
+
+        {% translate "The day's danger rating" as t_bulletins %}
+        {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" illustration="public/help/illustrations/_day_windows.html" body_template="public/help/_topic_bulletins.html" %}
+
+        {% translate "Avalanche problems" as t_problems %}
+        {% include "includes/_collapsible_panel.html" with title=t_problems data_testid="help-topic-problems" illustration="public/help/illustrations/_rating_block.html" body_template="public/help/_topic_problems.html" %}
 
         {# Split from one "season timeline & calendar" panel: the heatmap is #}
         {# opened from a bulletin page, so it belongs here, while the        #}

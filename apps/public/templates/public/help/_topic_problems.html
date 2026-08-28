@@ -1,0 +1,50 @@
+{% comment %}
+apps/public/templates/public/help/_topic_problems.html — "Avalanche
+problems" panel body.
+
+Content partial for the help page; the second half of the split described
+in _topic_bulletins.html's own comment. It exists as a topic of its own so
+it can carry the problem-card illustration
+(public/help/illustrations/_rating_block.html).
+
+The card above the copy is a wind-slab problem at considerable; the
+paragraphs walk its parts in the order they appear on it — type, danger
+level, aspects and elevation, then the provider's comment.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The danger rating says how dangerous the day is. The avalanche problems say why, and where. Each one is a
+            card like the example above, and a bulletin usually carries one to three of them.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-problems-type">
+        {% blocktrans trimmed %}
+            The icon and title name the problem &mdash; fresh wind slab, a persistent weak layer buried in the snowpack,
+            wet snow, gliding snow, new snow or cornices. Each behaves differently and asks for a different response,
+            which is why the bulletin names them rather than giving you a number alone.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-problems-scope">
+        {% blocktrans trimmed %}
+            Below the title, the compass rose and the elevation glyph say where the problem lives: which slope aspects
+            it has formed on, and above or below which height. A problem on north-through-south-east aspects above 2200
+            metres is not a problem on a sunny south-west slope at the valley floor, and the card is telling you where
+            to expect it.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-problems-comment">
+        {% blocktrans trimmed %}
+            The comment underneath is the forecaster's own words, shown as they wrote them. It is the part that says
+            what will release the problem and how it will behave, and it is worth reading in full &mdash; Snowdesk never
+            summarises it away.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            For what each problem type means in the snowpack, and how to read the cards in detail, see:
+        {% endblocktrans %}
+        <a class="underline" href="{% url 'public:how_to_read_bulletin' %}">{% trans "How to read a bulletin" %}</a>.
+    </p>
+</div>

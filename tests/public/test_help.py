@@ -43,6 +43,7 @@ ALWAYS_ON_TESTIDS = [
     "help-topic-overview",
     "help-topic-bulletins",
     "help-topic-weather",
+    "help-topic-problems",
     "help-topic-calendar",
     "help-topic-map",
     "help-topic-timeline",
@@ -291,6 +292,9 @@ class TestHelpIllustrations:
     #: Topics that carry an illustration, and a marker proving the right
     #: component rendered inside it rather than merely a wrapper.
     ILLUSTRATED = {
+        "help-topic-weather": b'data-testid="bulletin-header"',
+        "help-topic-bulletins": b'data-testid="day-windows-panel"',
+        "help-topic-problems": b"Wind slab",
         "help-topic-calendar": b"calendar-cell",
         "help-topic-favourites": b"help-illustration-toggle-favourites",
         "help-topic-observations": b"help-illustration-toggle-observations",
@@ -360,3 +364,35 @@ class TestHelpIllustrations:
         """
         with django_assert_num_queries(0):
             client.get(reverse("public:help"))
+
+
+@pytest.mark.django_db
+class TestBulletinIllustrationsMatchTheirCopy:
+    """The bulletin illustrations and the prose beside them must agree.
+
+    Both of these caught a real mismatch while the illustrations were
+    being built: the copy claimed the all-day row is labelled "All day"
+    when day_windows.html deliberately tags only earlier/later windows,
+    and the problem card carried a scattered aspect set the prose then
+    described as contiguous. An illustration that contradicts the
+    sentence under it is worse than no illustration.
+    """
+
+    def test_day_risk_panel_tags_only_the_later_window(self, client: Client) -> None:
+        content = client.get(reverse("public:help")).content.decode()
+        start = content.index('data-testid="help-topic-bulletins-illustration"')
+        end = content.index("</details>", start)
+        panel = content[start:end]
+
+        # Two rows, one tag: the all-day baseline is untagged by design.
+        assert panel.count('data-testid="day-window-row"') == 2
+        assert panel.count('data-testid="day-window-pill"') == 1
+
+    def test_problem_card_aspects_are_contiguous(self, client: Client) -> None:
+        """A scattered set is a shape no real bulletin publishes."""
+        from apps.public.component_previews import help_illustrations
+
+        compass = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        aspects = help_illustrations()["card"]["aspects"]
+        positions = [compass.index(a) for a in aspects]
+        assert positions == list(range(positions[0], positions[0] + len(positions)))
