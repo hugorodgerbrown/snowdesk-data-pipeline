@@ -8,23 +8,19 @@ because the two must say the same thing: the clause was duplicated verbatim
 in both until SNOW-721, and a second edit to one of them was exactly the
 drift the design system's reuse-first rule exists to stop.
 
-WHY IT NAMES A PLANNER. "You have no saved routes yet." states a fact and
+WHY IT NAMES DEVICES. "You have no saved routes yet." states a fact and
 stops. A user who has never exported a GPX cannot act on it: the panel's CTA
 opens a native file picker onto a folder holding no .gpx, and nothing on the
-surface says where one comes from. So the copy names the two real sources — a
-watch app's export, or a route planner — and links one planner that needs no
-account and no purchase to produce a file this uploader accepts. One link,
-not a directory: Suunto's Routeplanner already ingests komoot, Wikiloc,
-FATMAP, TwoNav Land and Openrunner routes, so it is a door rather than an
-endorsement of one ecosystem.
+surface says where one comes from. So the copy says what to upload and names
+the class of device that produces one, with two vendors as examples rather
+than as an endorsement or a supported-hardware list.
 
-The sentence is ONE msgid, anchor included — the shape
-public/partials/_resort_why_it_matters.html already uses — so a translator
-can move the link within the sentence instead of reassembling three
-fragments. The URL is a context variable and NOT part of the msgid: changing
-where we point must not invalidate every translation of the sentence.
+Two sentences, two msgids. They are independent statements — what to upload,
+and where such a file comes from — so a locale can render either without
+reassembling the other, and a later edit to one does not invalidate the
+translation of both.
 
-The string belongs here and not in static/js/routes.js. The panel's
+The strings belong here and not in static/js/routes.js. The panel's
 failed-load line is deliberately a separate string (see the note in
 public/partials/_routes_surface.html) because "you have no routes" and "your
 routes couldn't be loaded" are different claims about a user's own data. This
@@ -37,15 +33,7 @@ on, unchanged from when the clause was inline in each.
 Context:
     none — the caller's ``{% if not routes %}`` decides whether this renders.
 {% endcomment %}
-{% with planner_url="https://routeplanner.suunto.com/" %}
-    <p class="py-2 text-sm text-text-2" data-testid="route-list-empty">
-        {% blocktrans trimmed %}
-            You have no saved routes yet. Upload a .gpx file exported from your watch app, or plan one at <a
-                href="{{ planner_url }}"
-                target="_blank"
-                rel="noopener"
-                class="text-status-info-text underline"
-            >Suunto Routeplanner ↗</a> (free, no account needed).
-        {% endblocktrans %}
-    </p>
-{% endwith %}
+<p class="py-2 text-sm text-text-2" data-testid="route-list-empty">
+    {% trans "Upload routes as GPX files." %}
+    {% trans "Routes can be recorded with smart devices from e.g. Garmin, Suunto." %}
+</p>

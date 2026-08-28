@@ -36,10 +36,6 @@ from tests.factories import RouteFactory, UserFactory
 
 PAGE_URL = "/account/routes/"
 
-# The planner the empty clause links (SNOW-721). Asserted rather than
-# spelled out per test, so a change of destination touches one line.
-PLANNER_URL = "https://routeplanner.suunto.com/"
-
 
 # ---------------------------------------------------------------------------
 # Routing
@@ -194,35 +190,33 @@ class TestMyRoutesEmptyState:
         client.force_login(UserFactory.create())
         html = client.get(PAGE_URL).content.decode()
         assert 'data-testid="route-list-empty"' in html
-        assert "no saved routes yet" in html
+        assert "Upload routes as GPX files." in html
 
-    def test_empty_clause_links_a_route_planner(self, client: Client) -> None:
-        """The clause says where a .gpx comes from, and links one planner.
+    def test_empty_clause_names_where_a_gpx_comes_from(self, client: Client) -> None:
+        """The clause says what to upload and what records one.
 
-        SNOW-721. "You have no saved routes yet." states a fact a newcomer
-        cannot act on: the CTA opens a file picker onto a folder with no
-        .gpx in it. The link is the actionable half, so it is asserted
-        rather than left to the copy.
+        SNOW-721. A bare "you have none" states a fact a newcomer cannot act
+        on: the CTA opens a file picker onto a folder with no .gpx in it. The
+        second sentence is the actionable half, so it is asserted rather than
+        left to the copy.
         """
         client.force_login(UserFactory.create())
         html = client.get(PAGE_URL).content.decode()
-        assert PLANNER_URL in html
-        assert 'rel="noopener"' in html
+        assert "Routes can be recorded with smart devices" in html
 
     def test_empty_clause_is_absent_once_a_route_exists(self, client: Client) -> None:
-        """A user WITH a route gets neither the clause nor the outbound link.
+        """A user WITH a route gets no empty clause at all.
 
         The regression that matters if the include ever lands outside the
-        ``{% if not routes %}`` guard: an owner of routes being told they
-        have none, and shown a competitor's planner while looking at their
-        own tracks.
+        ``{% if not routes %}`` guard: an owner of routes being told how to
+        get started while looking at their own tracks.
         """
         user = UserFactory.create()
         RouteFactory.create(user=user, name="Mine")
         client.force_login(user)
         html = client.get(PAGE_URL).content.decode()
         assert 'data-testid="route-list-empty"' not in html
-        assert PLANNER_URL not in html
+        assert "Upload routes as GPX files." not in html
 
 
 @pytest.mark.django_db
