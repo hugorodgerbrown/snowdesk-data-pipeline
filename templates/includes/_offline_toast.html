@@ -1,0 +1,46 @@
+{% comment %}
+templates/includes/_offline_toast.html — the connection-status toast
+(SNOW-748), rendered on every public page by public/base.html.
+
+Replaces ``includes/_offline_banner.html``, which SNOW-748 deleted. The
+banner was a full-width strip that pushed the nav down whenever the app
+was not reaching the server; now that the header carries a PERMANENT
+connectivity symbol (``includes/nav.html``), a strip announcing the same
+one bit is redundant chrome on the page a user is trying to read.
+
+What the banner said is not lost — it moved in here, behind a press on
+that symbol:
+
+  * the "last synced" summary line, with its live relative phrase;
+  * the rubric: one explanation per state (online, struggling, latched,
+    forced), all four rendered server-side and toggled by ``hidden``;
+  * the way back to the network, as this toast's CTA.
+
+Both slots are templates rather than strings, via ``_toast.html``'s
+``body_template`` / ``cta_label_template`` parameters — see
+``includes/_offline_toast_body.html`` and
+``includes/_offline_toast_cta.html``, and that partial's docstring for what
+supplying ``body_template`` does to the toast's shape.
+
+NO ``timeout``. This is reference information the user asked to see, not a
+transient notification, so it stays until they dismiss it or press the
+symbol again. Everything else here is the shared toast's default behaviour:
+``data-overlay data-overlay-hide="class"`` means the "×" is handled by
+static/js/overlays.js's delegated listener for free, and
+``static/js/pwa_offline.js`` listens for the resulting
+``overlay:dismissed`` so the symbol's ``aria-expanded`` and the freshness
+ticker follow a dismiss it did not initiate.
+
+``kind="info"``, not ``warning``: the toast now describes a healthy
+connection as often as a broken one, and ``warning`` would give it
+``role="alert" aria-live="assertive"`` — an interruption, for a panel the
+user opened deliberately. The warning colour that used to carry the
+"something is wrong" signal is now on the header symbol, which is where the
+signal belongs.
+
+``cta_href="#"`` is the sentinel that gates CTA emission in ``_toast.html``
+— it is never navigated to. The button carries ``data-action="reload"``
+(the partial's generic JS hook, which nothing global listens for), and
+``pwa_offline.js`` binds it by id.
+{% endcomment %}
+{% include "includes/_toast.html" with id="pwa-offline-toast" kind="info" body_template="includes/_offline_toast_body.html" cta_href="#" cta_label_template="includes/_offline_toast_cta.html" dismissible=True only %}

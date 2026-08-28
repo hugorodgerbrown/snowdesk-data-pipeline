@@ -1,0 +1,95 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_offline_toast_body.html — the body slot of the
+connection-status toast (SNOW-748).
+
+Rendered into ``includes/_toast.html``'s ``data-toast-body`` span via that
+partial's ``body_template`` parameter; see ``includes/_offline_toast.html``
+for the caller and the reasoning behind the surface as a whole.
+
+This file carries what ``includes/_offline_banner.html`` carried before
+SNOW-748 removed it:
+
+  * the summary line — "<state> — last synced <relative>", where
+    ``static/js/pwa_offline.js`` fills the ``data-role="synced-at"`` span
+    with a relative phrase ("6 minutes ago") derived from ``sync.last_at``,
+    the wall-clock time this device last reached the server, persisted to
+    IndexedDB ``meta:app``. It falls back to an em dash until the first sync
+    is known, and re-renders on a 30s timer while the toast is OPEN so the
+    phrase counts up rather than freezing at the value it had when the user
+    pressed the symbol.
+  * the rubric — one explanation per state, all rendered here and toggled by
+    ``hidden``.
+
+Four states, not three. The banner only ever appeared when something was
+wrong, so it had nothing to say about a working connection; the header
+symbol this toast hangs off is permanent and clickable at any moment, so
+"everything is fine, and here is when you last synced" is now an answer the
+user can ask for. The other three are carried over unchanged:
+
+  * online (``online-message`` / ``online-explainer``) — the app is using
+    the network normally.
+  * struggling (``offline-message`` / ``offline-explainer``) — requests are
+    still being attempted, and the app will update as soon as one lands.
+  * latched (``latched-message`` / ``latched-explainer``) — the service
+    worker has stopped calling the network entirely after three consecutive
+    read timeouts, and is serving downloaded data only. This state can be
+    reached while ``navigator.onLine`` is still TRUE (a radio that is
+    attached but has no route — the Underground), which is why nothing here
+    keys off ``onLine`` alone.
+  * forced (``latched-message`` / ``forced-explainer``) — the same
+    behaviour, asked for by the user from the "Offline mode" switch in the
+    account menu (``includes/nav.html``). It shares the summary line,
+    because the summary answers "is this app contacting the server" and the
+    answer is the same; it does NOT share the explanation, because the
+    latched one asserts there is no usable connection and here there may
+    well be one. Nothing probes this state, so nothing will end it but the
+    user.
+
+Every variant is rendered server-side and toggled by ``hidden`` in
+static/js/pwa_offline.js rather than having its text set from JavaScript:
+``makemessages`` never scans ``static/js``, so a string built there ships as
+English to every locale. ``bin/i18n-lint`` enforces this. See docs/i18n.md.
+
+Spec §3.5, §10.1, §12.6 — freshness is non-negotiable, and an app that has
+stopped asking the server has to say so.
+{% endcomment %}
+<span class="block font-medium">
+    <span data-role="online-message">{% trans "Online — last synced" %}</span>
+    <span data-role="offline-message" class="hidden">{% trans "Offline — last synced" %}</span>
+    <span data-role="latched-message" class="hidden">{% trans "Offline mode — last synced" %}</span>
+    <span data-role="synced-at">—</span>
+</span>
+<span class="mt-1 block text-xs opacity-90">
+    <span data-role="online-explainer" class="block">
+        {% blocktrans %}
+            The app is using the network, and will pick up new bulletins and weather as they are published.
+        {% endblocktrans %}
+    </span>
+    <span data-role="offline-explainer" class="hidden">
+        {% blocktrans %}
+            The app has lost contact with the server, and is displaying the latest cached data. It will update as soon
+            as the connection is restored.
+        {% endblocktrans %}
+    </span>
+    {# The latched explanation. The app has stopped trying the network      #}
+    {# entirely, which is a different promise from "it will update as soon  #}
+    {# as the connection is restored" above — so it says so, and the CTA    #}
+    {# offers the way back.                                                 #}
+    <span data-role="latched-explainer" class="hidden">
+        {% blocktrans %}
+            There is no usable connection, so the app has stopped trying and is running from downloaded data only. It
+            will check again periodically, and reconnect on its own once there is signal.
+        {% endblocktrans %}
+    </span>
+    {# The explanation for the mode the USER chose in the account menu. The #}
+    {# latched copy above is false here — there may well be a usable        #}
+    {# connection, and nothing will check for one, because being left alone #}
+    {# is the point of asking.                                              #}
+    <span data-role="forced-explainer" class="hidden">
+        {% blocktrans %}
+            You asked the app to stay offline, so it is running from downloaded data only and is not contacting the
+            server. It will stay that way until you turn the network back on.
+        {% endblocktrans %}
+    </span>
+</span>
