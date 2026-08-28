@@ -148,6 +148,8 @@ function buildFixture() {
       <span data-string="remove-failed">That download couldn't be removed. Try again.</span>
       <span data-string="add-offline">You're offline — connect to download a new area.</span>
       <span data-string="add-disabled">Downloading needs a connection</span>
+      <span data-string="add-signin">Sign in to download a new area.</span>
+      <span data-string="add-signin-disabled">Downloading needs an account</span>
       <span data-string="rename-prompt">Name this area</span>
       <span data-string="rename-failed">That name couldn't be saved. Try again.</span>
       <span data-string="row-menu-label">More actions for %(name)s</span>
@@ -356,6 +358,30 @@ function openSheet() {
 
 function setOnline(value) {
   Object.defineProperty(window.navigator, 'onLine', { value, configurable: true });
+}
+
+const SIGNIN_URL = '/accounts/sign-in/';
+
+/**
+ * SNOW-749: add the element the sign-in gate reads its configuration off.
+ *
+ * ``#map-custom-download-control`` is the roundel that opens this sheet,
+ * and the config carrier for every download surface (see its own template
+ * comment). It is deliberately ABSENT from the default fixture — a page
+ * without it is the ungated pre-SNOW-749 state, which is what every other
+ * test in this file exercises — so a gate test adds it, and has to do so
+ * BEFORE ``loadModule()``: the flag and the session are fixed for the life
+ * of a document, so the module reads them once at parse time.
+ *
+ * @param {{gated: boolean, eligible: boolean}} options
+ */
+function installDownloadsGate(options) {
+  const el = document.createElement('button');
+  el.id = 'map-custom-download-control';
+  el.dataset.downloadsSync = String(options.gated);
+  el.dataset.downloadsEligible = String(options.eligible);
+  el.dataset.signinUrl = SIGNIN_URL;
+  document.body.appendChild(el);
 }
 
 /** Let the module's async render settle. */
@@ -876,6 +902,114 @@ describe('the budget readout', () => {
     const track = document.querySelector('[data-downloads-track]');
     expect(track.classList.contains('ring-2')).toBe(false);
     expect(track.classList.contains('ring-status-error-text')).toBe(false);
+  });
+});
+
+describe('the sign-in gate (SNOW-749)', () => {
+  // Starting a download needs an account once the `download_sync` flag is
+  // on. What the gate must NOT do is take anything away from a signed-out
+  // visitor: the list is what THIS device holds, reading it needs no
+  // connection and no account, and it stays exactly as it was. Only the
+  // add-trigger changes.
+
+  let realLocation;
+  let assign;
+
+  beforeEach(() => {
+    realLocation = window.location;
+    assign = vi.fn();
+    // jsdom refuses a real navigation and will not let a spy take over
+    // `assign` alone, so the whole object is replaced for these tests.
+    Object.defineProperty(window, 'location', {
+      value: { assign: assign, href: realLocation.href, origin: realLocation.origin },
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      value: realLocation,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it('relabels the trigger but leaves it live for a signed-out visitor', async () => {
+    // Live, not disabled: the visitor CAN act on this — one tap to sign in
+    // — so disabling it would be the same mistake as hiding it. That is
+    // the difference from the offline branch, which is genuinely inert.
+    seed({});
+    installDownloadsGate({ gated: true, eligible: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const add = document.querySelector('[data-panel-add]');
+    expect(add.textContent).toBe('Downloading needs an account');
+    expect(add.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('toasts and goes to sign-in instead of opening framing', async () => {
+    seed({});
+    installDownloadsGate({ gated: true, eligible: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-panel-add]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith('Sign in to download a new area.');
+    expect(assign).toHaveBeenCalledWith(SIGNIN_URL);
+    expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
+  });
+
+  it('still lists what this device holds, signed out', async () => {
+    // The gate is on STARTING a download. Everything already on the
+    // device is still there, still sized, still deletable — reading it
+    // needs no signal, which is the whole point of having downloaded it.
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    installDownloadsGate({ gated: true, eligible: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    // Grouped by kind — regions first, then custom areas — exactly as an
+    // eligible visitor sees them.
+    expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
+  });
+
+  it('leaves a signed-in visitor exactly as before', async () => {
+    seed({});
+    installDownloadsGate({ gated: true, eligible: true });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('[data-panel-add]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.openFraming).toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('applies no gate at all with the flag off', async () => {
+    // Flag off is the pre-SNOW-749 path, and it is the one every visitor
+    // takes until the rollout opens — signed out, and downloading freely.
+    seed({});
+    installDownloadsGate({ gated: false, eligible: false });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const add = document.querySelector('[data-panel-add]');
+    expect(add.textContent).toBe('Download a custom area');
+
+    add.click();
+    await settle();
+    expect(window.pwaCustomAreaDownload.openFraming).toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 });
 

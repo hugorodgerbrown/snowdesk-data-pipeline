@@ -257,6 +257,12 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
     "This region's basemap is downloaded for %(basemap)s — tap to download it for this basemap too",
   'download-other-basemap-unnamed':
     "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
+  // SNOW-749: the roundel's ninth state. Downloading is gated on an
+  // account once the `download_sync` flag is on, and the control stays
+  // VISIBLE and tappable while the visitor is signed out — a hidden
+  // control reads as a missing feature. Tapping it goes to sign-in, so
+  // the label has to promise that and nothing more.
+  'download-signin': "Sign in to download this region's basemap",
   // SNOW-573: the Weather overlay's layers-menu row disable reason —
   // point weather is forecast-only and can run short (the backing model
   // may cover fewer days than requested), so a scrubbed date outside the

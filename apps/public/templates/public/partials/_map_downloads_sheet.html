@@ -144,6 +144,14 @@ the row's own label, so home.html loads that module once for both.
     {# which reads wrong sitting on a control nobody has touched yet, so the #}
     {# disabled state gets its own wording naming the missing precondition.  #}
     <span data-string="add-disabled">{% trans "Downloading needs a connection" %}</span>
+    {# SNOW-749: the same pair again for the account gate. Two more strings  #}
+    {# rather than reuse of the offline pair: the reason differs and so does #}
+    {# the remedy — one waits for a signal, the other is one tap away — and  #}
+    {# a control that misstates why it will not run is worse than one that   #}
+    {# says nothing. Unlike the offline case the trigger stays LIVE, so this #}
+    {# label sits on a control that still does something.                    #}
+    <span data-string="add-signin">{% trans "Sign in to download a new area." %}</span>
+    <span data-string="add-signin-disabled">{% trans "Downloading needs an account" %}</span>
     {# SNOW-635: an unrenamed custom area's default "Custom area N" label   #}
     {# is filled in by static/js/map.js's basemapDownloadedAreas() itself, #}
     {# reading `default-custom-name` off _map_embed.html's                 #}

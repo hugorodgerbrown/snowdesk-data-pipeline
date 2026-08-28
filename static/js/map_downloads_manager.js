@@ -247,6 +247,13 @@
     // toast above is phrased as a reply to a tap, which reads wrong on a
     // control nobody has touched yet.
     'add-disabled': 'Downloading needs a connection',
+    // SNOW-749: the same pair again for the signed-out refusal. Two more
+    // strings rather than reusing the offline pair, because the reason is
+    // different and the remedy is different — one waits for a signal, the
+    // other is one tap away — and a control that says the wrong thing about
+    // why it will not run is worse than one that says nothing.
+    'add-signin': 'Sign in to download a new area.',
+    'add-signin-disabled': 'Downloading needs an account',
     // SNOW-658: the rename PROMPT's copy is gone with the prompt — the
     // inline editor's aria-label is server-rendered on the row itself.
     // Only the failure line is still written from here. The default
@@ -264,6 +271,37 @@
   });
 
   var interpolate = self.pwaStrings.interpolate;
+
+  // SNOW-749: the sign-in gate's configuration, read off the roundel that
+  // opens this sheet (#map-custom-download-control — see its own template
+  // comment for why that one element carries the wiring for every download
+  // surface). Read once at parse time: the flag and the session are both
+  // fixed for the life of the document, unlike `navigator.onLine`, which
+  // is why the offline branch below is re-evaluated on every render and
+  // this is not. With the element absent every constant is falsy, which is
+  // the ungated pre-SNOW-749 behaviour — the safe direction for a rollout
+  // gate that has not been wired up.
+  var DOWNLOADS_CONFIG_EL = document.getElementById('map-custom-download-control');
+  var DOWNLOADS_CONFIG = DOWNLOADS_CONFIG_EL ? DOWNLOADS_CONFIG_EL.dataset : {};
+  var DOWNLOADS_GATED = DOWNLOADS_CONFIG.downloadsSync === 'true';
+  var DOWNLOADS_ELIGIBLE = DOWNLOADS_CONFIG.downloadsEligible === 'true';
+  var DOWNLOADS_SIGNIN_URL = DOWNLOADS_CONFIG.signinUrl || '';
+  var NEEDS_SIGNIN = DOWNLOADS_GATED && !DOWNLOADS_ELIGIBLE;
+
+  /**
+   * Send the visitor to sign in.
+   *
+   * A navigation rather than an in-sheet CTA panel: this sheet's list is
+   * still true and still useful for a signed-out visitor — everything on
+   * it is on THIS device and reading it is never gated — so replacing the
+   * body with a gate would take away something that works to explain
+   * something that does not. Only the add-trigger changes.
+   *
+   * @returns {void}
+   */
+  function goToSignIn() {
+    if (DOWNLOADS_SIGNIN_URL) window.location.assign(DOWNLOADS_SIGNIN_URL);
+  }
 
   /** @returns {Object|null} The pure core, once it has loaded. */
   function manageCore() {
@@ -580,8 +618,17 @@
     // offline branch needs writing for the same reason: the next render
     // starts from a pristine clone, so coming back online restores the
     // enabled control and its original label without an else.
+    //
+    // SNOW-749 adds the signed-out branch alongside it, and puts it FIRST:
+    // a signed-out visitor with no connection cannot download for two
+    // reasons, and the account is the one they can act on now. Unlike the
+    // offline branch this one is NOT disabled — the control stays live and
+    // its tap goes to sign-in, because a gate the visitor can pass is an
+    // affordance, not a dead end. Only the label changes.
     const addButton = sheet.querySelector('[data-panel-add]');
-    if (addButton && !navigator.onLine) {
+    if (addButton && NEEDS_SIGNIN) {
+      addButton.textContent = STRINGS['add-signin-disabled'] || '';
+    } else if (addButton && !navigator.onLine) {
       addButton.setAttribute('disabled', '');
       // Alongside the native property, not instead of it: `disabled` is
       // what stops the click, `aria-disabled` is what a screen reader
@@ -872,6 +919,14 @@
     if (!target || !target.closest) return;
     const addButton = target.closest('[data-panel-add]');
     if (addButton) {
+      // SNOW-749: the account gate, before the connection one. Both are
+      // reasons a download cannot start; this is the one the visitor can
+      // do something about, and doing it needs the connection anyway.
+      if (NEEDS_SIGNIN) {
+        window.MapSheet.toast(STRINGS['add-signin']);
+        goToSignIn();
+        return;
+      }
       if (!navigator.onLine) {
         window.MapSheet.toast(STRINGS['add-offline']);
         return;

@@ -2081,7 +2081,8 @@
 .dark .region-readout-action[aria-disabled="true"]:focus-visible,
 .dark .map-download-control[data-download-state="no-region"],
 .dark .map-download-control[data-download-state="disabled"],
-.dark .map-download-control[data-download-state="offline"] {
+.dark .map-download-control[data-download-state="offline"],
+.dark .map-download-control[data-download-state="signin"] {
     color: var(--color-text-2);
 }
 
@@ -2103,9 +2104,21 @@
     cursor: not-allowed;
 }
 
+/* SNOW-749: 'signin' — the download_sync flag is on and the visitor is
+   signed out. It shares the muted treatment of the three above, because it
+   is equally "you cannot download right now", but NOT their not-allowed
+   cursor: this one IS actionable — the tap goes to the sign-in page. A
+   barred cursor on a control that does something is the same lie as hiding
+   it, read the other way round. */
+.map-download-control[data-download-state="signin"] {
+    color: var(--muted);
+    cursor: pointer;
+}
+
 .map-download-control[data-download-state="no-region"] .map-download-control-icon,
 .map-download-control[data-download-state="disabled"] .map-download-control-icon,
-.map-download-control[data-download-state="offline"] .map-download-control-icon {
+.map-download-control[data-download-state="offline"] .map-download-control-icon,
+.map-download-control[data-download-state="signin"] .map-download-control-icon {
     opacity: 0.45;
 }
 
@@ -2161,6 +2174,7 @@
 .map-download-control[data-download-state="busy"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="other-basemap"] .map-download-control-icon--idle,
+.map-download-control[data-download-state="signin"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="error"] .map-download-control-icon--error {
     display: block;
 }
