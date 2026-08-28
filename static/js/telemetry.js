@@ -133,6 +133,26 @@
     return value;
   }
 
+  /**
+   * SNOW-748: true when the app is actually using the network — the interface
+   * is up AND no offline mode is in force.
+   *
+   * ``navigator.onLine`` answers only the first half, so a mode the user
+   * forced from the header toggle left this module beaconing and flushing
+   * over a connection the user had just asked the app not to spend.
+   * ``pwa_offline.js`` owns the answer; ``navigator.onLine`` stays the
+   * fallback for a page where that module has not run.
+   *
+   * Nothing is dropped when this is false — events still enqueue, and the
+   * ``online`` lifecycle trigger drains them when the network comes back.
+   *
+   * @returns {boolean}
+   */
+  function _networkInUse() {
+    const connectivity = window.pwaConnectivity;
+    return connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+  }
+
   // Flush-in-progress guard so overlapping triggers don't send the same
   // rows twice.
   let _flushInFlight = null;
@@ -265,7 +285,9 @@
       // so skipping the beacon just defers delivery to the next flush — which
       // the ``online`` lifecycle trigger runs on reconnect — instead of
       // firing a doomed request that surfaces as a console network error.
-      if (navigator.onLine === false) {
+      // SNOW-748: "offline" here means the effective connectivity, so a
+      // user-forced offline mode holds the beacon back too.
+      if (!_networkInUse()) {
         return false;
       }
       const blob = new Blob([JSON.stringify(envelope)], {
@@ -369,7 +391,10 @@
     // on the offline map). Rows stay queued; the ``online`` lifecycle
     // trigger drains them on reconnect. The pagehide keepalive path is
     // included: a keepalive fetch offline can't deliver either.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    // SNOW-748: a user-forced offline mode counts as offline here — the
+    // POST would succeed, and spending the connection is exactly what the
+    // user asked the app not to do.
+    if (!_networkInUse()) {
       return Promise.resolve();
     }
     if (_flushInFlight) return _flushInFlight;
