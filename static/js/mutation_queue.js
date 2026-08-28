@@ -47,11 +47,19 @@
  *
  * Drain triggers (mirrors static/js/telemetry.js's ``_wireLifecycle``):
  * ``online``, ``visibilitychange`` → visible, a periodic timer,
- * ``pagehide``, and immediately after ``enqueue`` when ``navigator.onLine``.
- * All of them funnel through one in-flight guard (``_drainInFlight``) so
- * concurrent triggers never double-POST the same row, and through one
- * ``navigator.onLine`` guard in ``drain()`` so an offline trigger cannot
- * spend a row's retry budget on a POST that can only fail.
+ * ``pagehide``, and immediately after ``enqueue`` when the app is using the
+ * network. All of them funnel through one in-flight guard
+ * (``_drainInFlight``) so concurrent triggers never double-POST the same
+ * row, and through one connectivity guard in ``drain()`` so an offline
+ * trigger cannot spend a row's retry budget on a POST that can only fail.
+ *
+ * SNOW-748: that guard asks ``_networkInUse()``, not ``navigator.onLine``.
+ * The interface being up is only half the question — a mode the user forced
+ * from the account menu's "Offline mode" row leaves ``onLine`` true, and
+ * replaying a queued
+ * mutation over a connection they asked the app not to spend is the same
+ * defect as downloading tiles under it. A forced mode leaves the row
+ * queued, which is the state the queue is built around.
  *
  * Public API — attached to ``window.pwaMutationQueue``:
  *
@@ -177,6 +185,21 @@
     } catch (_err) {
       // Ignore — telemetry must never break a mutation call site.
     }
+  }
+
+  /**
+   * SNOW-748: true when the app is actually using the network — the interface
+   * is up AND no offline mode is in force.
+   *
+   * ``pwa_offline.js`` owns the answer; ``navigator.onLine`` stays the
+   * fallback for a page where that module has not run (this file loads on
+   * admin pages too).
+   *
+   * @returns {boolean}
+   */
+  function _networkInUse() {
+    var connectivity = window.pwaConnectivity;
+    return connectivity ? connectivity.isOnline() : navigator.onLine !== false;
   }
 
   /**
@@ -567,7 +590,7 @@
       };
       await window.pwaDb.put(STORE, row);
       await _updateBadge();
-      if (navigator.onLine) {
+      if (_networkInUse()) {
         drain().catch(function () {});
       }
       _registerBackgroundSync();
@@ -588,9 +611,9 @@
     // POST can only fail, and each failure classifies as 'retry', spends one
     // of the row's MAX_ATTEMPTS and lengthens its backoff. Rows stay queued;
     // the ``online`` lifecycle trigger drains them on reconnect. Mirrors
-    // telemetry.js's flush() guard and the navigator.onLine check enqueue()
+    // telemetry.js's flush() guard and the connectivity check enqueue()
     // already makes before its own drain.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (!_networkInUse()) {
       return Promise.resolve();
     }
     if (_drainInFlight) return _drainInFlight;

@@ -631,22 +631,36 @@ once online since `Clear site data`.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Load http://localhost:8000/ online; scrub the timeline so the URL becomes `/?d=2026-02-17` (any date the fixture covers) | Map renders and paints the choropleth for the selected date |
-| 2 | DevTools → Network → set throttling to **Offline** | The `#pwa-offline-banner` slides in from the top with "No connection — showing cached data." and a freshness stamp (see P8) |
+| 2 | DevTools → Network → set throttling to **Offline** | The header's connectivity symbol (`[data-network-indicator]`) switches to the struck-through mark and `data-network-state="offline"`; nothing else moves on the page (see P8) |
 | 3 | Reload the page (Cmd+R) | The map shell renders from cache; the URL is preserved at `/?d=2026-02-17`; the choropleth paints from `/api/ratings/` (which is stale-while-revalidate cached — see the STATIC_PATHS list in `sw.js`); no "You're offline" page appears |
 | 4 | Also try reloading with a `?d=` value you did **not** visit online (e.g. `/?d=2026-03-01`) | Same behaviour — the `ignoreSearch: true` cache-match fallback in `_networkFirst` finds the cached `/` shell; the JS reinitialises to 1 March |
 
-### Scenario P8: Offline banner + freshness + network-required controls
+### Scenario P8: Connectivity symbol + freshness toast + network-required controls
 
-> Automated: [test_pwa_lifecycle_offline.py::test_offline_banner_and_network_required_controls](../tests/e2e/test_pwa_lifecycle_offline.py)
-> — correction from implementation: `data-network-required` sits on the
+> Automated: [tests/js/test_pwa_offline.js](../tests/js/test_pwa_offline.js)
+> — the symbol's two appearances, the panel's four states, the switch,
+> and the `data-network-required` gating are all jsdom-observable, so
+> they are covered in Vitest rather than in a browser (SNOW-649 removed
+> the e2e test that used to sit here). What remains manual is the visual
+> one: that the panel is legible and stays inside the viewport.
+>
+> Correction from implementation: `data-network-required` sits on the
 > `<form>` element (`aria-disabled` lands there, not on the email
 > `<input>` itself); `pwa_offline.js`'s `syncNetworkRequired()` also
 > directly `disabled`s any `<button>` descendant, which is what actually
 > stops the Subscribe click.
 
-**Goal**: Verify the persistent offline banner (SNOW-377) tracks the
-connection state, surfaces the last `X-Data-Generated-At` timestamp,
-and disables any form or button carrying `data-network-required`.
+**Goal**: Verify the permanent connectivity symbol (SNOW-377 / SNOW-748)
+tracks the connection state, that the panel behind it surfaces the last
+sync timestamp and explains the state, and that any form or button
+carrying `data-network-required` is disabled.
+
+SNOW-748 removed the `#pwa-offline-banner` strip this scenario used to
+describe. The symbol in the header is now permanent — it is on screen in
+every state rather than only in the failure case — and the freshness
+stamp and the explanation moved into `#pwa-connection-panel`, one press
+away, anchored under the symbol rather than fixed to the bottom of the
+viewport.
 
 **Preconditions**: Scenario P1 completed. A bulletin URL such as
 http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ visited
@@ -654,10 +668,13 @@ online at least once so the timestamp is primed.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Load the bulletin page online; observe the freshness indicator embedded in the page (dot + "Updated HH:MM DD/MM") | Dot is green ("fresh"); the same stamp appears in the offline banner as soon as it opens (banner is `hidden` while online) |
-| 2 | DevTools → Network → **Offline** | `#pwa-offline-banner` reveals with "No connection — showing cached data." on the left and the freshness stamp on the right |
+| 1 | Load the bulletin page online; press the connectivity symbol in the header | Symbol shows the plain arcs and `data-network-state="online"`; the panel opens directly beneath it, on the card surface (not a status colour), reading "Online — last synced <relative>" with the "using the network" explanation and no reconnect button. Press again to close, or press Escape, or click the map behind it |
+| 2 | DevTools → Network → **Offline**, then trigger any request | The symbol switches to the struck-through mark; NO panel appears on its own. Press it: the panel reads "Offline — last synced <relative>" with the "lost contact" explanation |
 | 3 | Scroll to the bulletin's "Get avalanche alerts" subscribe form | The Subscribe button is disabled (grey / no-hover); the enclosing `<form>` carries `aria-disabled="true"` and `pointer-events: none`, so the email input is unreachable too. This is `data-network-required` in action |
-| 4 | Network → **No throttling** (back online) | `#pwa-offline-banner` hides again; subscribe form re-enables; no page reload needed |
+| 4 | Network → **No throttling** (back online), and trigger any request | The symbol returns to the plain arcs; an open panel repaints to the online copy live; subscribe form re-enables; no page reload needed |
+| 5 | Sign in, open the account menu and switch **Offline mode** on | The switch is the first row, above "Subscriptions"; the symbol goes struck-through while `navigator.onLine` is still true, and the panel now reads "Offline mode — last synced …" with "You asked the app to stay offline" and a **Use the network again** button |
+| 6 | Sign out and repeat step 5's state via the worker's own latch (three failed reads) | The switch is absent — it is signed-in only — but the panel still offers **Try reconnecting**, which is an anonymous reader's only way back |
+| 7 | With the panel open, press its "×" (top-right), then reopen it and press Escape | Each closes the panel and returns focus to the symbol; the "×" is a full 44×44 target, not a hairline glyph |
 
 ### Scenario P9: Offline navigation to a URL never visited
 
@@ -669,7 +686,7 @@ when both the network and the cache miss.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Reset state, load `/` online once so the SW is controlling | SW `activated`; only `/` is in the navigation cache |
-| 2 | DevTools → Network → **Offline** | Offline banner reveals |
+| 2 | DevTools → Network → **Offline** | The connectivity symbol goes struck-through |
 | 3 | Navigate to http://localhost:8000/some-page-never-visited/ (address bar) | The branded "You're offline" page renders — Snowdesk wordmark, "Snowdesk needs a network connection to fetch the latest bulletin.", and a "Retry" button. No stack trace, no Chrome error page |
 | 4 | Network → back online, click "Retry" | Navigation proceeds normally |
 

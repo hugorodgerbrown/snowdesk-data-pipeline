@@ -320,10 +320,10 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
        every page load of this fixture; ``telemetry.js``'s 5xx branch
        leaves the rows in place for the next (equally stubbed) retry. A
        resolved 503 rather than a rejection because ``pwa_offline.js``
-       wraps ``window.fetch`` too and reveals the offline banner whenever
-       a fetch REJECTS — a rejecting stub re-shows the banner the moment
-       telemetry.js's ``online``-event flush fires, breaking the offline
-       tests. The stub is JS-level, so it also covers the ``pagehide``
+       wraps ``window.fetch`` too and repaints the header connectivity
+       symbol as OFFLINE whenever a fetch REJECTS — a rejecting stub would
+       strike the symbol through the moment telemetry.js's ``online``-event
+       flush fires, breaking the offline tests that wait on its state. The stub is JS-level, so it also covers the ``pagehide``
        flush's ``keepalive`` fetch, which Playwright's ``page.route``
        cannot see. ``navigator.sendBeacon`` (the critical-event fast
        path) is not ``fetch`` and is unaffected.

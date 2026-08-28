@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-08-24
+last-reviewed: 2026-08-28
 ---
 
 # PWA shell
@@ -2140,6 +2140,124 @@ written as a JS literal. The reader collapses internal whitespace,
 because `djangofmt` reflows a long `{% blocktrans %}` across lines and
 would otherwise put source indentation into the middle of a
 `window.confirm` dialog.
+
+## Network mode (SNOW-742, SNOW-748)
+
+The worker holds one value, `_networkMode` in `static/js/sw.js`, which decides
+whether **read** paths call the network at all. `static/js/pwa_offline.js`
+mirrors it, persists it to IndexedDB `meta:app` under `network.mode`, and
+re-asserts it to the worker on boot (a worker terminated while idle comes back
+in `auto` having forgotten). Since SNOW-748 the worker also reads that row for
+itself on startup (`_hydrateNetworkMode`), recovering a user-FORCED mode with
+no page to push it — a recycled worker was otherwise back on the network with
+the header symbol still showing offline. A persisted auto-latch is deliberately
+not recovered that way. Why the read paths latch at all, and why the two modes
+part company here:
+[`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md).
+
+| Mode | Set by | Read paths | Probed? | Ends when |
+|---|---|---|---|---|
+| `auto` | the default | bounded network fetch, cache fallback | n/a | three consecutive budget expiries latch it |
+| `offline` | the worker, after `OFFLINE_LATCH_THRESHOLD` read timeouts | never touch the network; a miss 504s at once | yes — `/livez` on a 30s → 60s → 300s backoff | the probe finds a route, an `online` event, or the user |
+| `offline-forced` | the user, from the account menu's "Offline mode" row | as `offline` | **no** | the user, and nothing else |
+
+**The two offline values are not interchangeable, and half the comparisons in
+each file turn on which one is meant.** `offline` is the worker inferring there
+is no route, so an `online` event and a successful probe both end it.
+`offline-forced` is an instruction, so neither does — and a read-path timeout
+cannot downgrade it into an auto-latch either, which would reintroduce the
+probe. SNOW-742 had two values and routed the user's request into
+`_latchOffline()`; the probe then unlatched them within thirty seconds. Each
+comparison in `sw.js` and `pwa_offline.js` carries a comment saying which sense
+it is in.
+
+**Where the symbol and the switch live.** Both are in
+`templates/includes/nav.html`, split the way a phone splits aeroplane mode.
+
+* `[data-network-indicator]` — the **symbol**, beside the sync badge, on every
+  page for every viewer including anonymous ones, and **never hidden**. It
+  carries both glyphs: the plain arcs (`includes/_icon_wifi.html`) while the
+  app is reaching the server, the struck-through pair
+  (`includes/_icon_wifi_off.html`) while it is not — a dead interface, an
+  auto-latch, or the user's own mode. `pwa_offline.js` toggles which glyph,
+  which colour and which of the two `sr-only` names is shown, and writes the
+  same bit to `data-network-state`. It is a **disclosure**, not a switch:
+  `aria-expanded` + `aria-controls` on the toast, never `aria-pressed`, and
+  pressing it cannot change the network mode. Anonymous viewers get it because
+  the worker latches itself for anybody, so the state it reports is one they
+  can be in.
+* `[data-network-toggle]` — the **switch**, an "Offline mode" row at the top
+  of the account menu's `<details>` dropdown, between the subscribed regions
+  and "Subscriptions". Signed-in only: turning the mode on is a device
+  preference. It is an `includes/_switch.html` checkbox — a real
+  `<input type="checkbox" role="switch">` — so keyboard activation, focus and
+  `aria-checked` come from the platform. Its wrapper carries `role="none"`,
+  because a `role="switch"` is not a valid child of `role="menu"` and marking
+  the wrapper presentational is the conformant way to seat one there; the
+  alternative, `role="menuitemcheckbox"`, would mean reimplementing by hand
+  everything the input already does.
+
+The row is rendered `hidden` and revealed by `pwa_offline.js`, the same
+contract the sync badge has with `mutation_queue.js`: it drives a service
+worker, so a row that appeared without the script would be dead. The symbol is
+**not** — it is server-rendered visible in the "using the network" state, and
+the script only ever repaints it. `pwa_offline.js` looks the two up
+independently: an anonymous page has the symbol and no row.
+
+The two do not paint the same predicate. The symbol answers "is this app
+reaching the server", so a dead interface strikes it through even in `auto`.
+The switch answers "did you ask for offline mode", so a merely-struggling
+connection leaves it off — a switch that flicks itself on when the lift crosses
+a ridge reports the worker's decision as the user's. Which offline mode it is
+belongs to the panel, which has room for a sentence.
+
+SNOW-742 put this control inside `includes/_offline_banner.html`, which
+`pwa_offline.js` revealed only when the connection had already failed — so the
+user it was built for, "I have signal now and am about to lose it", could never
+reach it. SNOW-748 first moved it to the header as a toggle, then split it into
+the symbol and the switch above (a control in the status area invites the
+reading that the symbol *is* the switch), and finally deleted the banner
+outright: with a permanent symbol in the header, a strip announcing the same
+one bit is redundant chrome. The banner's content moved into
+`includes/_connection_panel.html`, a popover anchored under the symbol that
+discloses it — the "last synced" phrase, four explanations (one per state, the
+fourth for the healthy case the banner never had to describe), and the way
+*back*, labelled "Try reconnecting" under a latch and "Use the network again"
+under a forced mode. That button is an anonymous reader's only exit from an
+auto-latch, since the switch is signed-in only.
+
+That panel was briefly a toast (`includes/_toast.html`), which put a
+persistent, user-invoked, neutral-surface panel through a primitive that is
+transient, system-initiated, bottom-centred and status-coloured. It is now a
+third `<details>` in the header, built like the account and admin dropdowns
+beside it — see [`decisions/overlay-primitives.md`](decisions/overlay-primitives.md).
+
+**Downloads under each mode (SNOW-748).** `_warmCache` ignores the auto-latch
+— see [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)
+— but not a forced mode: it refuses a new run and `_forceOffline()` cancels one
+in flight, both through the existing cancel protocol, so the run reports
+`cancelled: true` with `failed: 0` rather than reading as a failed download.
+The UI matches: `snowdesk:connectivity-changed` carries the **effective**
+connectivity (`navigator.onLine && networkMode === 'auto'`) and fires on every
+mode change, and `window.pwaConnectivity.isOnline()` is the read of that same
+value for the surfaces that re-read state when they repaint — the two download
+roundels, the downloads sheet's add-trigger, and the layers menu's sync dots.
+Those controls are disabled and explained, never hidden. A cancelled run rests
+the roundel rather than erroring it in either control: the user stopping a
+download is not a fault, and `finish` reads `cancelled` before it reads the
+failure count, which a cancelled run always reports as 0.
+
+`isOnline()` is the read for **every** module that decides whether to talk to
+the server, not just the download surfaces. `telemetry.js` (`flush` and the
+critical-event `sendBeacon`), `mutation_queue.js` (`drain`, and the inline
+drain `enqueue` makes), `favourites.js`, `report.js` and `routes.js` all
+consult it, falling back to `navigator.onLine` on a page where
+`pwa_offline.js` has not run. Nothing is dropped under a forced mode: a
+telemetry event stays in `queue:events`, a queued mutation stays in
+`queue:mutations` without spending an attempt, and both go out when the
+mode returns to `auto` — the states those subsystems are already built
+around. The one refusal is a GPX upload, which is online-only by design and
+says so.
 
 ## Offline gating of the layers menu
 

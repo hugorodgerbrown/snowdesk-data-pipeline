@@ -33,7 +33,9 @@ def test_offline_reload_of_visited_date_url(pwa_page: PwaPage) -> None:
 
     page.context.set_offline(True)
     try:
-        page.wait_for_selector("#pwa-offline-banner:not(.hidden)", timeout=5000)
+        page.wait_for_selector(
+            '[data-network-indicator][data-network-state="offline"]', timeout=5000
+        )
         page.reload()
         page.wait_for_load_state("load")
     finally:
@@ -45,7 +47,7 @@ def test_offline_reload_of_visited_date_url(pwa_page: PwaPage) -> None:
 
 
 # ---------------------------------------------------------------------------
-# P8 — offline banner, freshness, and network-required controls
+# P8 — connectivity symbol, freshness toast, and network-required controls
 # ---------------------------------------------------------------------------
 
 

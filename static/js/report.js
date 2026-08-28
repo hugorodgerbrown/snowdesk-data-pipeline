@@ -163,6 +163,25 @@
   const closeSheet = controller.close;
   const showToast = window.MapSheet.toast;
 
+
+  /**
+   * SNOW-748: true when the app is actually using the network — the interface
+   * is up AND no offline mode is in force.
+   *
+   * A report submitted under a user-forced offline mode is queued exactly
+   * like one submitted with the radio down, so the confirmation card's
+   * "will sync" hint has to read the effective connectivity — the interface
+   * flag stays true under a forced mode and the card claimed the report had
+   * already been sent. ``pwa_offline.js`` owns the answer, and the interface
+   * flag stays the fallback for a page where that module has not run.
+   *
+   * @returns {boolean}
+   */
+  function networkInUse() {
+    const connectivity = window.pwaConnectivity;
+    return connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+  }
+
   // ---------------------------------------------------------------------------
   // Form-coord helpers — written by the place-picker's onChange (SNOW-475).
   // ---------------------------------------------------------------------------
@@ -303,7 +322,7 @@
     if (template) {
       sheet.innerHTML = '';
       sheet.appendChild(template.content.cloneNode(true));
-      if (!navigator.onLine) {
+      if (!networkInUse()) {
         const pending = sheet.querySelector('[data-report-pending]');
         if (pending) pending.removeAttribute('hidden');
       }

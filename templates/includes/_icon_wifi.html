@@ -1,0 +1,40 @@
+{% comment %}
+templates/includes/_icon_wifi.html — the connectivity glyph: three
+broadcast arcs over a dot (SNOW-742; extracted here by SNOW-748).
+
+One source for one mark, like the eight glyphs beside it. The mark was
+inlined in the old ``includes/_offline_banner.html`` for its whole life;
+SNOW-748 extracted it here alongside ``_icon_wifi_off.html``, its
+struck-through sibling, so the pair cannot drift apart in two files, and
+then deleted that banner.
+
+``includes/nav.html``'s connectivity symbol renders BOTH marks and
+toggles between them: this one while the app is reaching the server, the
+struck-through one while it is not. That is why the pair has to stay a
+pair — a user reads the change as one mark being negated, and any
+difference in the arcs would be seen as meaning something.
+
+The dot is drawn as a zero-length ``round``-capped segment (``M12 20h.01``)
+rather than a ``<circle>``: it inherits the stroke width the arcs use, so
+the mark scales as a unit.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 16; the nav
+            passes 15.
+  svg_class (string, optional) — classes on the <svg>, for a caller that
+            needs its own layout classes on the mark itself.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:16 }}"
+    height="{{ size|default:16 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 20h.01M2.42 8.577a13 13 0 0119.16 0M5.879 11.879a8 8 0 0112.242 0M9.172 14.828a4 4 0 015.656 0" />
+</svg>

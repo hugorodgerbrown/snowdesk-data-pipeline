@@ -330,3 +330,86 @@ describe('offline gating', () => {
     expect(await window.pwaDb.count('queue:events')).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Forced-offline gating (SNOW-748) — the account menu's offline-mode toggle
+// can put the
+// app in an offline mode while the radio is up, so `navigator.onLine` stays
+// true throughout. Telemetry must honour the mode the same way it honours a
+// dead interface: enqueue, hold, and deliver when the app is using the
+// network again. The `auto` cases are the regression guard — a sweep that
+// silenced telemetry outright would pass the forced half on its own.
+// ---------------------------------------------------------------------------
+
+describe('forced-offline gating (SNOW-748)', () => {
+  afterEach(() => {
+    delete window.pwaConnectivity;
+  });
+
+  it('flush() makes no fetch under a forced mode, with the interface up', async () => {
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await window.pwaTelemetry.setOptIn(true);
+    await window.pwaTelemetry.emit('pwa.install.prompted');
+
+    // Exactly the state the offline-mode switch produces: the radio is up and
+    // `navigator.onLine` says so; only the mode says no.
+    expect(navigator.onLine).toBe(true);
+    window.pwaConnectivity = { isOnline: () => false };
+    await window.pwaTelemetry.flush();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await window.pwaDb.count('queue:events')).toBe(1);
+  });
+
+  it('a critical event under a forced mode skips sendBeacon but still enqueues', async () => {
+    window.pwaConnectivity = { isOnline: () => false };
+    await window.pwaTelemetry.setOptIn(true);
+
+    await window.pwaTelemetry.emit('pwa.kill_switch.activated', { reason: 'test' });
+
+    expect(navigator.sendBeacon).not.toHaveBeenCalled();
+    const rows = await queueEvents();
+    expect(rows.length).toBe(1);
+    expect(rows[0].event).toBe('pwa.kill_switch.activated');
+  });
+
+  it('flush() still drains under the auto mode', async () => {
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    window.pwaConnectivity = { isOnline: () => true };
+    await window.pwaTelemetry.setOptIn(true);
+    await window.pwaTelemetry.emit('pwa.install.prompted');
+    await window.pwaTelemetry.flush();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(await window.pwaDb.count('queue:events')).toBe(0);
+  });
+
+  it('holds the backlog under a forced mode and delivers it on release', async () => {
+    const captured = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init) => {
+        captured.push(JSON.parse(init.body));
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    await window.pwaTelemetry.setOptIn(true);
+    window.pwaConnectivity = { isOnline: () => false };
+    await window.pwaTelemetry.emit('pwa.install.prompted');
+    await window.pwaTelemetry.flush();
+    expect(captured.length).toBe(0);
+    expect(await window.pwaDb.count('queue:events')).toBe(1);
+
+    // The user puts the toggle back to auto — nothing was dropped.
+    window.pwaConnectivity = { isOnline: () => true };
+    await window.pwaTelemetry.flush();
+
+    expect(captured.length).toBe(1);
+    expect(await window.pwaDb.count('queue:events')).toBe(0);
+  });
+});

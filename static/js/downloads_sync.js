@@ -367,9 +367,18 @@
     if (!isEnabled()) return [];
     var url = config().downloadAreasUrl;
     if (!url) return [];
-    // Skipped outright while the platform already knows the interface is
-    // down — that needs no budget to discover, and the sheet opens sooner.
-    if (navigator.onLine === false) return [];
+    // Skipped outright while the app is not using the network — that needs
+    // no budget to discover, and the sheet opens sooner.
+    //
+    // SNOW-748: this asks the effective connectivity, not ``navigator.onLine``
+    // alone. Under an offline mode — the worker's own latch, or the one the
+    // user set from the account menu — the interface is up and no request
+    // may leave the app, so the radio answers only half the question. The
+    // raw read stays as the fallback for a page where ``pwa_offline.js``
+    // has not run.
+    var connectivity = window.pwaConnectivity;
+    var online = connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+    if (!online) return [];
     try {
       var response = await _boundedFetch(url, READ_BUDGET_MS);
       if (!response.ok) return [];

@@ -45,9 +45,10 @@ Optional context:
     {# chip: same honesty guarantee (the danger shown is archive, not live)     #}
     {# but far more legible. Server-rendered whenever today is past the season  #}
     {# end, so a returning off-season visitor always sees it. Mirrors the       #}
-    {# offline banner's status-warning treatment                               #}
-    {# (templates/includes/_offline_banner.html), rendered in flow so it pushes #}
-    {# the map down rather than overlaying it.                                  #}
+    {# status-warning treatment the offline banner used to share (SNOW-748     #}
+    {# deleted that banner; its state now lives on the header's connectivity    #}
+    {# symbol), rendered in flow so it pushes the map down rather than          #}
+    {# overlaying it.                                                           #}
     {# SNOW-486: markup delegated to the shared banner primitive               #}
     {# (includes/_overlay_banner.html, "strip" variant).                        #}
     {# SNOW-639: dismissable, and deliberately NOT persisted — overlays.js      #}

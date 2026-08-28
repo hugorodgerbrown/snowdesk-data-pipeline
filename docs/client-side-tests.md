@@ -382,8 +382,8 @@ from tests using these fixtures:
    the `pagehide` `keepalive` flush, which `page.route` cannot
    intercept), so `telemetry.js` takes its 5xx branch and leaves rows
    in place. A resolved 503 rather than a rejection because
-   `pwa_offline.js`'s own fetch wrapper reveals the offline banner on
-   any rejected fetch. `navigator.sendBeacon` is unaffected, so
+   `pwa_offline.js`'s own fetch wrapper repaints the header connectivity
+   symbol as offline on any rejected fetch. `navigator.sendBeacon` is unaffected, so
    client-side `page.route` captures of critical events still work.
 2. The `pwa.sw.installed` / `pwa.sw.activated` rows are **already in
    `queue:events`** when the fixture yields — it waits for both before

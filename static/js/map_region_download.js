@@ -195,6 +195,27 @@
   const DOWNLOADED_REGIONS_KEY = 'basemap.regions';
 
   /**
+   * SNOW-748: true when the app is actually using the network — the interface
+   * is up AND no offline mode is in force.
+   *
+   * Reading ``navigator.onLine`` alone is what let this control offer (and
+   * start) a download while the header symbol said the app was offline: the
+   * user forces that mode precisely when they have a connection and do not
+   * want it spent, so ``onLine`` stays true throughout. ``pwa_offline.js``
+   * owns the answer and broadcasts a change as
+   * ``snowdesk:connectivity-changed``, which is what re-renders this control.
+   *
+   * ``navigator.onLine`` remains the fallback for a page where that module
+   * has not run — the same value this control read before.
+   *
+   * @returns {boolean}
+   */
+  function networkInUse() {
+    const connectivity = window.pwaConnectivity;
+    return connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+  }
+
+  /**
    * Record `regionId` as downloaded, replacing any earlier entry for it.
    *
    * Best-effort throughout: this runs inside a download's finish handler,
@@ -504,7 +525,7 @@
    * template isn't resolvable (see `_retryWhenStyleSettles`), or there is
    * no stored record AND the fallback fetch failed (typically: offline,
    * with nothing recorded for this region yet — `renderControl` reads
-   * `navigator.onLine` to choose `idle` vs `offline` in that case). Both
+   * `networkInUse()` to choose `idle` vs `offline` in that case). Both
    * are deliberately distinct from `false` ("looked, not there").
    *
    * SNOW-645: also distinguishes "never downloaded" from "downloaded, but
@@ -746,14 +767,14 @@
     // `done` painted on screen for the whole of that round trip — this
     // region hasn't been checked yet, so it must not borrow the last
     // region's answer.
-    setState(navigator.onLine ? gateState('idle') : 'offline', data.summary.mb);
+    setState(networkInUse() ? gateState('idle') : 'offline', data.summary.mb);
     const probe = await _probeDone(data);
     if (regionData !== data || btn.dataset.downloadState === 'busy') return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
     // settled — the region may well already be downloaded.
     if (probe === null) {
-      setState(navigator.onLine ? gateState('idle') : 'offline', data.summary.mb);
+      setState(networkInUse() ? gateState('idle') : 'offline', data.summary.mb);
       _retryWhenStyleSettles();
       return;
     }
@@ -763,7 +784,7 @@
     // shows the offline-disabled state instead of an actionable idle —
     // including SNOW-645's 'other-basemap', which is just as much "start a
     // new download" as 'idle' is, and so just as unavailable offline.
-    if (!navigator.onLine && !done) {
+    if (!networkInUse() && !done) {
       setState('offline', data.summary.mb);
       return;
     }
@@ -842,8 +863,11 @@
     }
     if (!data || (state !== 'idle' && state !== 'error' && state !== 'other-basemap')) return;
     // Offline-integrity: never start a download offline, even if a race left
-    // the icon on 'idle' at the moment of the click.
-    if (!navigator.onLine) {
+    // the icon on 'idle' at the moment of the click. SNOW-748: "offline"
+    // includes a mode the user forced while the radio was up — the worker
+    // refuses such a run anyway, and a control that dispatches one and paints
+    // busy until the refusal comes back is a worse way to say no.
+    if (!networkInUse()) {
       setState('offline', data.summary.mb);
       return;
     }
@@ -917,6 +941,16 @@
         // and map_custom_download.js cannot drift apart on what "done"
         // means — see downloadSucceeded's docstring for why each clause is
         // there.
+        //
+        // SNOW-748: and cancellation is now reachable here. Toggling the
+        // header switch into a forced offline mode aborts an in-flight run,
+        // so `finish` receives a cancelled result with nobody having pressed
+        // anything this control owns. `cancelled` is read into its own local
+        // and branched on BEFORE `ok`, matching map_custom_download.js: the
+        // user asking a run to stop is neither a success nor a failure, and
+        // painting 'error' with the shared toast reported a fault where
+        // there was none.
+        const cancelled = !!(result && result.cancelled);
         const ok = runCore.downloadSucceeded(result);
         // SNOW-570: record what was downloaded before anything is painted.
         // SNOW-583: records the blob's own `z` (the clipped tile set the run
@@ -940,7 +974,19 @@
         // pulse. A failed run clears the fill without pulsing, so the error
         // state and its toast arrive with no delay.
         await progressFill.finish(ok);
-        if (ok) {
+        if (cancelled) {
+          // Back to rest, not to error. This can never paint 'done': tiles
+          // may well have landed before the worker honoured the cancel, but
+          // the region's tile set is incomplete by definition, and the
+          // done-probe checks the whole of it. 'offline' is the resting
+          // state when the abort came from the account menu's "Offline
+          // mode" row — which is the only way to reach this branch today;
+          // `renderControl`'s own
+          // connectivity listener already ran while this control was still
+          // 'busy' (and so early-returned), so the resting paint is this
+          // callback's job.
+          setState(networkInUse() ? 'idle' : 'offline', data.summary.mb);
+        } else if (ok) {
           setState('done', data.summary.mb);
         } else {
           setState('error', data.summary.mb);

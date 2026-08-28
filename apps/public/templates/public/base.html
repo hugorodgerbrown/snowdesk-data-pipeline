@@ -184,9 +184,6 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block extra_head %}{% endblock %}
     </head>
     <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
-        {# SNOW-377: persistent offline banner. Hidden by default; revealed by #}
-        {# pwa_offline.js when the browser reports offline or a request fails. #}
-        {% include "includes/_offline_banner.html" %}
         {% block nav %}
             {% include "includes/nav.html" %}
         {% endblock %}

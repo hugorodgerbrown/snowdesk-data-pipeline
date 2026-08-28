@@ -216,6 +216,7 @@ afterEach(() => {
   setOnline(true);
   delete window.pwaDb;
   delete window.pwaBasemapDownloads;
+  delete window.pwaConnectivity;
 });
 
 describe('GeoJSON overlay rows (l1/l2/l4/resorts) — online', () => {
@@ -324,6 +325,24 @@ describe('country rows (SNOW-524)', () => {
     // Switzerland is cached, so it stays available and interactive.
     expect(dotState('country.ch')).toBe('cached');
     expect(rowDisabled('country.ch')).toBe(false);
+  });
+
+  it('offline mode: an uncached country is red AND disabled with the radio up', async () => {
+    buildFixture({ countries: CH_AT });
+    setOnline(true);
+    // SNOW-748: the user forced offline mode from the account menu. The
+    // interface is up throughout — that is the normal case for this mode —
+    // and the service worker is refusing every read, so a green dot beside an
+    // uncached country would promise data that cannot arrive.
+    window.pwaConnectivity = { isOnline: () => false };
+    vi.stubGlobal('caches', fakeCaches({ hitQueries: countryFeeds('ch') }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(window.navigator.onLine).toBe(true);
+    expect(dotState('country.at')).toBe('unavailable-offline');
+    expect(rowDisabled('country.at')).toBe(true);
+    expect(dotState('country.ch')).toBe('cached');
   });
 
   it('probes country feeds exactly, without ignoreSearch', async () => {

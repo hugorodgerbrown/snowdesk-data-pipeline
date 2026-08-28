@@ -12,8 +12,14 @@ last-reviewed: 2026-08-28
 `_boundedFetch`, which aborts after a fixed budget. Three consecutive budget
 expiries **latch** the worker into an offline mode in which read paths do not
 call the network at all. The latch lifts on a bounded probe to `/livez`, on the
-`online` event, or on the user's own control in the offline banner.
-`_warmCache` is exempt from both.
+`online` event, or on the user's own control — the "Offline mode" row in the
+account menu. `_warmCache` is exempt from both — from the **latch**, not from the
+user's own offline mode (see below).
+
+**Amended by SNOW-748.** The mode has three values, not two: `auto`, `offline`
+(the worker latched itself) and `offline-forced` (the user asked). Everything
+below about bounding applies to `offline`. `offline-forced` is bounded by the
+user alone — see "The one exception".
 
 ## Why
 
@@ -85,25 +91,126 @@ of them should be removed as "noise" without replacing it:
    five minutes.
 2. The page's `online` listener, which asks for an immediate unlatch rather
    than waiting out the backoff.
-3. The offline banner, which shows a distinct "Offline mode" state whenever the
+3. The header connectivity symbol, which goes struck-through whenever the
    worker is latched — including while `navigator.onLine` is `true`, which is
-   the case the old banner could not represent — and carries the user's own
-   "Try reconnecting" control.
+   the case an `onLine`-only indicator cannot represent — and the toast behind
+   it, which names the state and carries the user's own "Try reconnecting"
+   control. (SNOW-748: this was the offline banner until that ticket replaced
+   it with a permanent symbol plus a toast one press away.)
 
-## Why `_warmCache` is exempt
+## The one exception: `offline-forced` (SNOW-748)
+
+A user who switches "Offline mode" on gets **none of the three**. No probe is
+scheduled, an `online` event does not lift it, and a read-path timeout cannot
+convert it into an auto-latch. That is a deliberate hole in the rule above, so
+it needs a reason.
+
+**It is not a guess that can be wrong.** The three mechanisms exist because a
+latch is the worker *inferring* there is no route, and an inference can outlive
+the condition that produced it. `offline-forced` infers nothing. The user has a
+route and has decided not to spend it — a metered roam, a battery to nurse, a
+tunnel they are about to enter — so there is no discovery for a probe to make.
+Probing it is not a safety measure but a countermand: SNOW-742 shipped exactly
+that, routing the user's request into `_latchOffline()`, and the probe put them
+back in `auto` within thirty seconds.
+
+**The staleness is on screen the whole time.** The reason to bound a latch is
+that a user may not know they are reading old ratings. Here they cannot not
+know: the struck-through offline symbol is in the header of every page — the
+model is a phone's aeroplane mode, where the status bar carries the glyph for
+as long as the mode is on — the banner is up throughout with its own
+explanation, and its "last synced" phrase counts up live on a 30s ticker. The danger the bounding answers — silent
+staleness — is the one state this mode cannot be in.
+
+**Auto-expiry would spend data the user chose not to spend.** Any bound short
+enough to matter (an hour, a day) fires precisely when the user is least able
+to notice, and the cost lands on the connection they were protecting.
+
+The user's way back is present in both places at all times: the account menu's
+"Offline mode" row and the banner's "Use the network again" button.
+
+## Why `_warmCache` is exempt from the latch — and not from a forced mode
 
 A download is a long operation the user explicitly asked for, on a connection
 they believe they have, and its failures already reach them (SNOW-568). Cutting
-tiles off at 3s would turn a slow download into a failed one.
+tiles off at 3s would turn a slow download into a failed one. And the latch is
+a *guess* drawn from three read timeouts: the guess can be wrong, so a download
+the user asked for should still be attempted.
+
+`offline-forced` inverts every clause of that. It is not a guess about the
+network, it is an instruction about it; the connection the user "believes they
+have" is one they have told the app not to spend. So the forced mode is the one
+offline value `_warmCache` honours (SNOW-748): it refuses a new run, and
+`_forceOffline()` cancels one already in flight. Both go through the existing
+cancellation protocol — a refused or cancelled run reports `cancelled: true`
+with `failed: 0`, so no control writes it up as a failed download.
+
+The UI half is the same rule stated once: `snowdesk:connectivity-changed`
+carries `navigator.onLine && networkMode === 'auto'` and fires on every mode
+change, and `window.pwaConnectivity.isOnline()` answers the same question for
+the controls that re-read it when they repaint. Before that the event carried
+`navigator.onLine` alone, which is true throughout a forced mode — so the
+layers menu kept its green dots and the download controls stayed enabled while
+the header symbol said the app was offline.
 
 ## Durability
 
-The mode is mirrored to `meta:app` under `network.mode` and **re-asserted by
-the page on boot**, rather than read by the worker on its own fetch path. A
-worker terminated while idle comes back in `auto` having forgotten the latch;
-re-asserting restores it, at the cost of one message instead of an IndexedDB
-read per navigation. If the re-assertion is lost, the latch simply re-trips
-within about nine seconds.
+The mode is mirrored to `meta:app` under `network.mode`, and it is restored by
+**two** paths — which one applies depends on which mode it is.
+
+**The page re-asserts on boot.** `pwa_offline.js` reads the row and posts it to
+the worker, carrying *which* offline mode it was: an `offline-forced` row
+re-asserted as `offline` would hand the worker a latch, and the probe that
+comes with it would end the user's choice on the next page load. This is the
+fast path, and the only one that restores an auto-latch.
+
+**The worker re-reads the row itself** (`_hydrateNetworkMode`, SNOW-748),
+started at **script evaluation** and memoised in a single promise that every
+consumer of the mode awaits: `_shouldUseNetwork()`, `_warmCache`'s refusal, and
+the `network-mode` message handler's reply. The earlier
+version of this document said the worker never read the row on its own, and
+that was the bug: `_networkMode` is module scope, Chrome terminates an idle
+worker after about thirty seconds, and a **user-forced** mode was therefore
+silently lost. The restarted worker came back in `auto`, resumed using the
+network, and fired no `online`/`offline` event at all — so nothing corrected
+the header symbol, which went on showing the app offline over one that was back
+on the wire. Reproduced twice in a browser and confirmed with an
+instrumented run: `workerMode: "auto"`, `persistedUserChoice: "offline-forced"`,
+`pageIsOnline: true`, no interface events. It survived review because polling
+the worker to check on it is exactly what keeps it from being recycled.
+
+Recovery cannot depend on a page being there to push the mode, so the worker
+recovers it — and it must start that read at evaluation rather than on the
+first read path. A worker wakes for four reasons (`fetch`, `message`, `push`,
+`sync`) and only the first consults a read path, so a lazily-hydrating worker
+asked for its mode by a bare `postMessage({type: 'network-mode'})` still
+answered `'auto'` — and that answer is acted on, not merely observed:
+`pwa_offline.js` treats any `network-mode` announcement as authoritative and
+repainted the user's mode off. Hence also the handler awaiting hydration
+before it replies. `activate` is not the hook for any of this: it fires on
+install and update, not on the idle restart that loses the mode. This is the same worker-side IndexedDB read `_currentPrincipal()`
+has always done on the navigation path, with the same shape: `try`/`finally`
+`db.close()`, and fail-safe to `auto` on any error, so a DB the worker cannot
+read never wedges it offline. Once hydration resolves, the recovered mode is
+published to every client, so a page that was open across the restart resyncs
+its symbol and its menu row rather than continuing to show a stale mode.
+
+**Only `offline-forced` is recovered this way.** A persisted `offline` is the
+worker's own inference from three read-path timeouts, and by the time a
+recycled worker reads it back, the radio it was inferred from may have been
+alive for hours. Restoring it would strand the user offline on expired
+evidence, with nothing to clear it but a probe on a backoff that reaches five
+minutes; declining to restore it costs a re-latch within about nine seconds if
+the radio really is still dead. Detection is cheap and self-correcting here,
+and restoration is not. A forced mode has no evidence to expire — it is the
+user's standing instruction, and only the user ends it. Durability is also the
+whole difference between a setting and a gesture: unlike a latch, nothing
+re-establishes a forced mode if the row is lost.
+
+A live page's `network-mode` message outranks the row, exactly as an explicit
+`register-basemap-origins` message outranks `_hydrateBasemapOrigins`. The row
+is only as fresh as its last write, so a user pressing "use the network again"
+while the read is in flight must not be forced offline again by it.
 
 ## Consequences
 

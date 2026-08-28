@@ -318,9 +318,23 @@ let _basemapPutsSinceTrim = 0;
 //   otherwise. That steady state is what the ticket is actually about.
 //
 // Both apply to READ paths only. ``_warmCache`` keeps unbounded fetches and
-// ignores the latch — a download is a long operation the user explicitly asked
+// ignores the LATCH — a download is a long operation the user explicitly asked
 // for, on a connection they believe they have, and its failures already reach
 // them (SNOW-568).
+//
+// SNOW-748 added a THIRD way into the same steady state: the user asking for
+// it from the "Offline mode" row in the account menu, with no failure
+// involved at all. See
+// ``_networkMode`` below — that mode is not probed, because there is nothing
+// to discover.
+//
+// And it is the one offline mode ``_warmCache`` does NOT ignore. The bypass
+// above reasons from a connection the user believes they have; under a forced
+// mode the user has told the app not to use the connection they know they
+// have, so downloading tiles down it is the app contradicting its own offline
+// symbol.
+// So a forced mode refuses a new run (``_warmCache``'s first guard) and
+// cancels one in flight (``_forceOffline``), while an auto-latch does neither.
 
 // How long a navigation's network attempt gets before it is aborted. Generous
 // relative to the tile budget because a navigation is one request whose whole
@@ -368,9 +382,52 @@ const OFFLINE_PROBE_BACKOFF_MS = [30000, 60000, 300000];
 // as one of the timeouts that trips the latch.
 const OFFLINE_PROBE_URL = '/livez';
 
-// ``'auto'`` — normal operation: read paths use the network, bounded.
-// ``'offline'`` — latched: read paths do not touch the network at all.
+// Three modes, not two (SNOW-748):
+//
+//   ``'auto'``           — normal operation: read paths use the network,
+//                          bounded.
+//   ``'offline'``        — LATCHED by the worker itself, after
+//                          ``OFFLINE_LATCH_THRESHOLD`` consecutive read-path
+//                          timeouts. Read paths do not touch the network at
+//                          all, and a probe on a backoff schedule looks for a
+//                          route so the app can come back on its own.
+//   ``'offline-forced'`` — the USER asked for offline mode, from the "Offline
+//                          mode" row in the account menu
+//                          (templates/includes/nav.html). Read paths behave
+//                          exactly as they do while latched, but nothing
+//                          probes: a mode the user chose is left alone until
+//                          the user changes it back.
+//
+// The distinction is the SNOW-748 fix. SNOW-742 had two values, so a user's
+// request was routed into ``_latchOffline()``, which schedules the unlatch
+// probe. Pressed while there was a live connection, the probe then succeeded
+// — being online is the premise — and put the user back in ``'auto'`` within
+// thirty seconds. That was invisible while the control lived in the offline
+// banner (which only reveals once the network is already failing, so the probe
+// failed too); it cannot survive a toggle reachable from every page.
+//
+// So the comparisons below are NOT interchangeable. Some mean "any offline
+// mode" (``!== 'auto'``) and some mean "auto-latched only" (``=== 'offline'``);
+// each site says which it means and why.
 let _networkMode = 'auto';
+
+// The ``meta:app`` key ``static/js/pwa_offline.js`` persists the mode under.
+// Same string on both sides; see ``_hydrateNetworkMode`` for why the worker
+// reads it for itself rather than only being told it.
+const NETWORK_MODE_KEY = 'network.mode';
+
+// Memo for that read (SNOW-748), and the flag that makes a live page's
+// ``network-mode`` message authoritative over it.
+//
+// ``_networkMode`` is module scope, so it dies with the worker — and Chrome
+// terminates an idle worker after about thirty seconds. A user-forced offline
+// mode was therefore silently lost: the restarted worker came back in
+// ``'auto'`` and quietly resumed using the network while the header symbol
+// still said "offline", with no event fired and nothing to correct it until
+// the next page load. ``_hydrateNetworkMode`` is the worker recovering the
+// user's standing choice by itself.
+let _networkModeHydration = null;
+let _networkModePushed = false;
 
 // Consecutive read-path timeouts seen while in ``'auto'``. Reset to 0 by any
 // successful read-path response, and by an unlatch.
@@ -1220,7 +1277,7 @@ async function _staleWhileRevalidate(request) {
   // Without this an offline reload still paid a stalled fetch per CSS file, JS
   // module and font — a request each, all of them doomed, all of them holding
   // a connection slot for the OS TCP timeout.
-  if (!_shouldUseNetwork()) {
+  if (!(await _shouldUseNetwork())) {
     return cached ? _stampCacheHit(cached) : _synthesizedGatewayTimeout();
   }
   const fetchPromise = _boundedFetch(request, SHELL_FETCH_BUDGET_MS)
@@ -1349,6 +1406,61 @@ function _markWarmCacheCancelled(requestId) {
  */
 function _clearWarmCacheCancelled(requestId) {
   _warmCacheCancelledIds.delete(requestId);
+}
+
+// SNOW-748: requestIds of warm-cache runs currently in flight. The cancelled
+// set above records what the PAGE asked to stop; this one records what there
+// is to stop, which is the half the worker never had. ``_forceOffline`` needs
+// it: the user switching on "Offline mode" mid-download is a cancel request
+// for whatever is running, and the worker is the only side that knows what
+// that is
+// (the page posts a cancel for one control's own run, not for anyone else's).
+//
+// Entries are added as a run is dispatched and removed as its promise settles,
+// so in normal operation the set holds at most one — but it is capped the same
+// way as the cancelled set, for the same reason: an entry that somehow escapes
+// the settle path must not accumulate for the life of the worker.
+const _warmCacheActiveIds = new Set();
+
+/**
+ * Record that a warm-cache run is in flight under ``requestId``, evicting the
+ * oldest entry first past ``WARM_CACHE_CANCEL_SET_MAX`` — the same discipline
+ * (and the same cap) as ``_markWarmCacheCancelled``.
+ *
+ * @param {*} requestId
+ */
+function _markWarmCacheActive(requestId) {
+  if (requestId === undefined || requestId === null) return;
+  _warmCacheActiveIds.add(requestId);
+  if (_warmCacheActiveIds.size > WARM_CACHE_CANCEL_SET_MAX) {
+    const oldest = _warmCacheActiveIds.values().next().value;
+    _warmCacheActiveIds.delete(oldest);
+  }
+}
+
+/**
+ * Drop ``requestId`` from the in-flight set — called once its run settles,
+ * cancelled or not.
+ *
+ * @param {*} requestId
+ */
+function _clearWarmCacheActive(requestId) {
+  _warmCacheActiveIds.delete(requestId);
+}
+
+/**
+ * SNOW-748: cancel every warm-cache run currently in flight, through the
+ * ordinary cancellation protocol rather than a second abort mechanism — each
+ * run's pool polls ``shouldCancel`` against the cancelled set and stops
+ * dispatching, and the summary it returns carries ``cancelled: true`` with
+ * ``failed: 0``, which is the shape ``basemap_download_runner.js``'s callers
+ * already know how to finish on.
+ *
+ * Called only from ``_forceOffline``. An auto-latch deliberately does NOT call
+ * it — see that function's own note.
+ */
+function _cancelActiveWarmCacheRuns() {
+  _warmCacheActiveIds.forEach((requestId) => _markWarmCacheCancelled(requestId));
 }
 
 /**
@@ -1541,10 +1653,33 @@ async function _warmCacheResponseBytes(response) {
  *   ``pinned`` is true — the caller (the ``message`` handler below)
  *   refuses the run rather than calling this with ``pinned`` and no
  *   ``areaId``, so this function can assume the pair is already valid.
+ * SNOW-748: refused outright while the user has forced offline mode, with the
+ * shape of a cancelled run — ``cancelled: true``, ``failed: 0``, nothing
+ * fetched — because that is what it is: the user has said not to use this
+ * connection, and a run that never starts has no failures to report. The
+ * distinct ``reason`` (``'offline-forced'``) is for a caller that wants to say
+ * why; the callers that only ask "did it succeed" already read ``cancelled``
+ * first (see ``basemap_download_runner.js``). An auto-LATCH is deliberately
+ * not refused here — see the "Both apply to READ paths only" note at the head
+ * of this file for why the two offline modes part company at exactly this
+ * point.
+ *
  * @returns {Promise<{ok: number, failed: number, reason: string|null,
  *   bytes: number, cancelled: boolean}>}
  */
 async function _warmCache(urls, options) {
+  // SNOW-748: the user's own offline mode, refused before a cache is even
+  // opened. Not ``!== 'auto'``: an auto-latch must still let a download
+  // through.
+  //
+  // Hydrated first, for the same reason ``_shouldUseNetwork`` awaits it: on a
+  // restarted worker the mode is not in memory yet, and a run started against
+  // the startup default would pull tiles down a connection the user has told
+  // the app not to spend.
+  await _hydrateNetworkMode();
+  if (_networkMode === 'offline-forced') {
+    return { ok: 0, failed: 0, reason: 'offline-forced', bytes: 0, cancelled: true };
+  }
   const opts = options || {};
   const pinned = !!opts.pinned;
   const areaId = opts.areaId;
@@ -1829,16 +1964,26 @@ async function _boundedFetch(request, ms) {
 /**
  * True when a read path should attempt the network at all.
  *
- * False while latched, and false when the platform already knows the interface
+ * False under either offline mode — latched or user-forced (SNOW-748) — and
+ * false when the platform already knows the interface
  * is down (``navigator.onLine === false``) — that second case never needed a
  * budget to discover, and checking it costs nothing. The Underground case is
  * precisely the one where ``onLine`` stays TRUE, which is why the latch has to
  * exist alongside it rather than instead of it.
  *
- * @returns {boolean}
+ * SNOW-748: ASYNC, because it awaits ``_hydrateNetworkMode()`` first. A
+ * restarted worker holds no mode at all until that read lands, so answering
+ * from ``_networkMode``'s startup default would use the network for every
+ * request that raced the read — which is the bug, merely narrowed. The await
+ * is a settled promise for every call after the first.
+ *
+ * @returns {Promise<boolean>}
  */
-function _shouldUseNetwork() {
-  if (_networkMode === 'offline') return false;
+async function _shouldUseNetwork() {
+  await _hydrateNetworkMode();
+  // ANY offline mode blocks the network — latched or forced, the promise to
+  // the user is the same one: this app is not calling the server.
+  if (_networkMode !== 'auto') return false;
   return !(typeof navigator !== 'undefined' && navigator.onLine === false);
 }
 
@@ -1908,13 +2053,67 @@ function _recordReadPathTimeout() {
  * Idempotent — a second call while already latched neither restarts the
  * backoff nor re-notifies the page, so a burst of timeouts arriving after the
  * third does not reset the probe schedule it just set.
+ *
+ * SNOW-748: the guard is ``!== 'auto'``, not ``=== 'offline'``. Timeouts keep
+ * arriving under ``'offline-forced'`` (an in-flight read can still time out
+ * just after the user forces the mode), and latching there would DOWNGRADE the
+ * user's choice to an auto-latch — which schedules the probe that then
+ * unlatches it. Only a mode nothing has claimed yet can be latched.
+ *
+ * SNOW-748: it deliberately does NOT cancel a warm-cache run in flight, where
+ * ``_forceOffline`` does. The latch is a guess drawn from three read timeouts,
+ * and a download is a long operation the user explicitly asked for on a
+ * connection they believe they have; killing it on a guess would be the
+ * worker overruling the user. See ``_warmCache``'s own guard for the other
+ * half of that distinction.
  */
 function _latchOffline() {
-  if (_networkMode === 'offline') return;
+  if (_networkMode !== 'auto') return;
   _networkMode = 'offline';
   _consecutiveTimeouts = 0;
   _probeBackoffIndex = 0;
   _scheduleProbe();
+  _publishNetworkMode();
+}
+
+/**
+ * SNOW-748: enter offline mode because the USER asked for it, from the
+ * "Offline mode" row in the account menu (templates/includes/nav.html).
+ *
+ * Sibling to ``_latchOffline`` and identical to it in every way but one: it
+ * deliberately does NOT call ``_scheduleProbe()``. That omission IS the fix.
+ * A probe exists to notice that a dead route came back; a forced mode is not
+ * waiting for a route, it is a user who has one and has chosen not to spend it
+ * (a metered roam, a battery to nurse, a tunnel they are about to enter). The
+ * probe would succeed on the first attempt and ``_unlatchOffline`` would undo
+ * the user's choice within thirty seconds.
+ *
+ * Any pending probe from a previous auto-latch is cancelled for the same
+ * reason: it would fire under the forced mode and unlatch it.
+ *
+ * So is any basemap download in flight, and that one is NOT shared with the
+ * latch. ``_warmCache`` bypasses the latch on purpose — a latch is the
+ * worker's guess that there is no route, and a download the user explicitly
+ * asked for should still be attempted in case the guess is wrong. A forced
+ * mode is the opposite kind of fact: the user has said not to spend this
+ * connection, and continuing to pull tiles down it would be the app doing the
+ * one thing its own header says it has stopped doing. Cancelled through the
+ * ordinary protocol (``_cancelActiveWarmCacheRuns``), so a run stops with
+ * ``cancelled: true`` and ``failed: 0`` rather than being written up as a
+ * failed download.
+ *
+ * Idempotent, like its sibling.
+ */
+function _forceOffline() {
+  if (_probeTimer !== null) {
+    clearTimeout(_probeTimer);
+    _probeTimer = null;
+  }
+  if (_networkMode === 'offline-forced') return;
+  _networkMode = 'offline-forced';
+  _consecutiveTimeouts = 0;
+  _probeBackoffIndex = 0;
+  _cancelActiveWarmCacheRuns();
   _publishNetworkMode();
 }
 
@@ -1924,6 +2123,11 @@ function _latchOffline() {
  * Also idempotent, and always cancels a pending probe — a probe firing after
  * an unlatch would be a wasted request whose failure could re-enter the
  * backoff for a mode nothing is in any more.
+ *
+ * SNOW-748: the guard stays ``=== 'auto'``, which already clears EITHER
+ * offline value. Returning to ``'auto'`` is the one transition both offline
+ * modes share, and its only callers are the user and an ``online`` event —
+ * both of which mean the same thing whichever mode they interrupt.
  */
 function _unlatchOffline() {
   if (_probeTimer !== null) {
@@ -1961,6 +2165,12 @@ function _scheduleProbe() {
  *
  * ``cache: 'no-store'`` so an HTTP-cached 200 can never answer for a route
  * that is no longer there.
+ *
+ * SNOW-748: both mode comparisons in here stay ``'offline'`` exactly, and that
+ * is load-bearing rather than incidental. ``'offline-forced'`` is therefore
+ * never probed and never rescheduled — a mode the user chose is theirs to
+ * leave. Widening either to ``!== 'auto'`` would reinstate the bug this ticket
+ * fixed.
  */
 async function _probeNetwork() {
   if (_networkMode !== 'offline' || _probeInFlight) return;
@@ -1986,11 +2196,10 @@ async function _probeNetwork() {
  * Tell every client which mode the worker is in, so ``pwa_offline.js`` can
  * render the banner and persist the mode to ``meta:app``.
  *
- * The worker deliberately does NOT read that row back on the fetch hot path.
- * Durability comes from the page re-asserting the persisted mode on boot (see
- * ``pwa_offline.js``), which costs one message instead of an IndexedDB read
- * per navigation. A restarted worker therefore starts in ``'auto'`` and, if
- * the radio really is dead, re-latches within about nine seconds.
+ * Called on every transition, and once more by ``_hydrateNetworkMode()`` when
+ * a restarted worker recovers a forced mode from that row — a page holding a
+ * stale toggle has no other way to learn the worker came back with the user's
+ * choice intact.
  */
 function _publishNetworkMode() {
   const mode = _networkMode;
@@ -2007,6 +2216,151 @@ function _publishNetworkMode() {
     })
     .catch(() => {});
 }
+
+/**
+ * SNOW-748: recover the USER's offline mode from the durable ``meta:app`` row
+ * (key ``network.mode``) that ``pwa_offline.js`` writes on every mode change.
+ *
+ * ``_networkMode`` is module scope, so it lives exactly as long as the worker
+ * does — and Chrome terminates an idle worker after about thirty seconds. The
+ * restarted worker came back in ``'auto'``, resumed using the network, and
+ * fired no event at all: the page's toggle went on reading "offline" while the
+ * app was back on the wire, and nothing corrected either until the next page
+ * load re-asserted the mode. Recovery cannot depend on a page being there to
+ * push it, so the worker reads the row itself.
+ *
+ * Only ``'offline-forced'`` is restored. A persisted ``'offline'`` is an
+ * auto-LATCH — the worker's own inference, drawn from three read-path timeouts
+ * against a radio that may well have come back since. Restoring it would strand
+ * the user offline on evidence that has already expired, with nothing to clear
+ * it but a probe on a backoff that reaches five minutes; declining to restore
+ * it costs a re-latch within about nine seconds if the radio really is still
+ * dead, which is the cheap direction to be wrong in. A forced mode has no
+ * evidence to expire: it is the user's standing instruction, and only the user
+ * ends it. (A page that is open still re-asserts a persisted latch on boot, as
+ * it always has — that path is unchanged.)
+ *
+ * Memoised in ``_networkModeHydration`` so a burst of requests on a freshly
+ * restarted worker costs one DB read rather than one per request, failures
+ * included: a mode that could not be read is a mode this worker will not learn
+ * by asking again, and the live page's boot re-assert is the recovery path.
+ *
+ * Fails safe to ``'auto'`` on any error — a missing ``meta:app`` store (a
+ * worker-created DB has only ``queue:mutations``; see ``_openMutationsDb()``),
+ * an absent row, a blocked open. Same defensive posture as
+ * ``_currentPrincipal()``: the worker must never wedge itself offline over a
+ * DB it could not read.
+ *
+ * @returns {Promise<void>}
+ */
+function _hydrateNetworkMode() {
+  if (_networkModeHydration) return _networkModeHydration;
+  _networkModeHydration = (async () => {
+    let db;
+    try {
+      db = await _openMutationsDb();
+      const meta = await _idbGetAll(db, 'meta:app');
+      const row = meta.find((r) => r.key === NETWORK_MODE_KEY);
+      // A live page's ``network-mode`` message is always authoritative over
+      // this read, exactly as an explicit ``register-basemap-origins`` message
+      // is over ``_hydrateBasemapOrigins``. The row is only as fresh as the
+      // last write, so a user who pressed the toggle back to online while this
+      // read was in flight must not be forced offline again by it.
+      if (_networkModePushed) return;
+      // ``_forceOffline`` rather than a bare assignment: recovering the mode
+      // has to recover everything the mode means — no probe scheduled, no
+      // download running down a connection the user has said not to spend —
+      // and it publishes to every client, which is how an open page resyncs a
+      // toggle still showing the pre-restart state.
+      if (row && row.value === 'offline-forced') _forceOffline();
+    } catch (_err) {
+      // Unreadable row, missing store, or a transient open failure: stay in
+      // ``'auto'``. Read paths behave as they did before this ticket, and the
+      // next page load re-asserts the persisted mode.
+    } finally {
+      if (db) {
+        try {
+          db.close();
+        } catch (_e) {
+          // Non-fatal.
+        }
+      }
+    }
+  })();
+  return _networkModeHydration;
+}
+
+/**
+ * Apply a ``network-mode`` message from a page, and answer the sender with the
+ * mode the worker is actually in.
+ *
+ * Three sources send one: the user's own control (the account menu's
+ * "Offline mode" row since SNOW-748), the mode persisted in ``meta:app`` being
+ * re-asserted on boot, and
+ * the page's ``online`` listener asking for an immediate probe rather than
+ * waiting out the backoff. A page can also send no mode at all, which is a
+ * pure query.
+ *
+ * ``'auto'`` unlatches directly instead of probing first: the caller is either
+ * a user who can see they have signal or an ``online`` event, and in both
+ * cases the next real read is a better probe than a synthetic one — it is
+ * bounded, and if the route is still dead three of them re-latch within about
+ * nine seconds.
+ *
+ * SNOW-748: three modes rather than two. ``'offline-forced'`` is the user's own
+ * choice and goes to ``_forceOffline()``, which schedules no probe;
+ * ``'offline'`` remains the auto-latch, and is only ever sent back by a page
+ * re-asserting a persisted auto-latch on boot.
+ *
+ * SNOW-748: the reply AWAITS hydration, and that is not a tidiness point. A
+ * message is one of the four reasons a worker wakes, and it touches no read
+ * path — so a recycled worker asked for its mode answered from the unhydrated
+ * ``'auto'`` default while the user's forced mode sat unread on disk. That
+ * answer is acted on: ``pwa_offline.js`` treats any ``network-mode``
+ * announcement as authoritative and repainted the toggle OFF, which is the
+ * original bug arriving down a second route. Answering ``'auto'`` while a
+ * forced mode is persisted and unread is the thing this must never do.
+ *
+ * The transition above still runs SYNCHRONOUSLY, before that await: a mode a
+ * page actively pushed outranks a row read still in flight (see
+ * ``_hydrateNetworkMode``), and the flag has to be set before anything yields
+ * for that precedence to hold.
+ *
+ * @param {string} mode The mode asked for; anything unrecognised is a query.
+ * @param {object|null} source The sending client, when there is one.
+ * @returns {Promise<void>}
+ */
+async function _handleNetworkModeMessage(mode, source) {
+  // Set only for the three known modes: an unrecognised value changes nothing
+  // here, and must not suppress a hydration that would.
+  if (['auto', 'offline', 'offline-forced'].includes(mode)) _networkModePushed = true;
+  if (mode === 'offline') _latchOffline();
+  if (mode === 'offline-forced') _forceOffline();
+  if (mode === 'auto') _unlatchOffline();
+  await _hydrateNetworkMode();
+  // Answer the sender directly as well as broadcasting, so a page that has just
+  // booted learns the mode even when nothing has changed and
+  // ``_publishNetworkMode`` therefore had nothing to announce.
+  source?.postMessage({ type: 'network-mode', mode: _networkMode });
+}
+
+// Started at script evaluation, deliberately, and deliberately NOT awaited
+// here — a top-level await would delay the worker's own listeners registering.
+//
+// SNOW-748: kicking this off lazily from the first read path was not enough,
+// and the gap it left reproduced the original bug exactly. A worker is woken
+// for four reasons — ``fetch``, ``message``, ``push``, ``sync`` — and only the
+// first consults a read path. A recycled worker asked for its mode by a page
+// (a bare ``postMessage({type: 'network-mode'})``) therefore answered from the
+// unhydrated ``'auto'`` default, and that answer is not inert: ``pwa_offline.js``
+// acts on any ``network-mode`` announcement, so the worker's wrong answer
+// repainted the user's toggle OFF. Starting the read at evaluation means every
+// wake reason finds the memo already in flight, and every consumer awaits the
+// same promise.
+//
+// ``activate`` is NOT the hook for this: it fires on install and update, not on
+// the ordinary idle restart — which is the only case that loses the mode.
+_hydrateNetworkMode();
 
 /**
  * SNOW-484: stale-while-revalidate for the active basemap's cross-origin
@@ -2055,19 +2409,19 @@ async function _basemapStaleWhileRevalidate(request) {
     // "sporadic" half of the reported failure was that queue draining as
     // sockets timed out one by one. Unawaited, so a hit still returns at cache
     // speed, and skipped entirely when there is nothing to revalidate against.
-    if (_shouldUseNetwork()) _revalidateBasemap(request, cache);
+    if (await _shouldUseNetwork()) _revalidateBasemap(request, cache);
     return cached;
   }
   // SNOW-586: BASEMAP_CACHE miss — check every live pinned bucket before
   // falling through to the network.
   const pinnedHit = await _searchPinnedBuckets(request);
   if (pinnedHit) {
-    if (_shouldUseNetwork()) _revalidateBasemap(request, cache);
+    if (await _shouldUseNetwork()) _revalidateBasemap(request, cache);
     return pinnedHit;
   }
   // SNOW-742: latched offline — every cache partition has missed and there is
   // no route to try, so answer now rather than burning a budget proving it.
-  if (!_shouldUseNetwork()) return _synthesizedGatewayTimeout();
+  if (!(await _shouldUseNetwork())) return _synthesizedGatewayTimeout();
   const fetchPromise = _boundedFetch(request, BASEMAP_FETCH_BUDGET_MS)
     .then(async (response) => {
       if (response && response.ok && response.type === 'cors') {
@@ -2371,7 +2725,7 @@ async function _networkFirst(request) {
   // spending a 5s budget re-proving there is no route. This is the difference
   // between a day in the backcountry costing five seconds per navigation and
   // costing nothing.
-  if (!_shouldUseNetwork()) {
+  if (!(await _shouldUseNetwork())) {
     const offline = await _networkFirstFallback(request, cache);
     if (offline) return offline;
     return _synthesizedGatewayTimeout();
@@ -2491,25 +2845,15 @@ self.addEventListener('message', (event) => {
   if (event.data === 'version') {
     event.source?.postMessage({ type: 'version', version: CACHE_VERSION });
   }
-  // SNOW-742: the page setting the network mode, from three sources — the
-  // user's own control in the offline banner, the mode persisted in
-  // ``meta:app`` being re-asserted on boot (which is what makes the latch
-  // survive a worker restart without an IndexedDB read on the fetch path),
-  // and the page's ``online`` listener asking for an immediate probe rather
-  // than waiting out the backoff.
-  //
-  // ``'auto'`` unlatches directly instead of probing first: the caller is
-  // either a user who can see they have signal or an ``online`` event, and in
-  // both cases the next real read is a better probe than a synthetic one — it
-  // is bounded, and if the route is still dead three of them re-latch within
-  // about nine seconds.
+  // SNOW-742: the page setting the network mode, or asking what it is. Every
+  // rule about which mode goes where — and why the reply waits for the
+  // persisted row (SNOW-748) — lives in ``_handleNetworkModeMessage``.
   if (event.data && event.data.type === 'network-mode') {
-    if (event.data.mode === 'offline') _latchOffline();
-    if (event.data.mode === 'auto') _unlatchOffline();
-    // Answer the sender directly as well as broadcasting, so a page that has
-    // just booted learns the mode even when nothing has changed and
-    // ``_publishNetworkMode`` therefore had nothing to announce.
-    event.source?.postMessage({ type: 'network-mode', mode: _networkMode });
+    const answered = _handleNetworkModeMessage(event.data.mode, event.source);
+    // The reply now lands after an await, so it needs the same keep-alive the
+    // warm-cache handler below takes. Guarded because not every dispatcher is
+    // an ExtendableMessageEvent.
+    if (typeof event.waitUntil === 'function') event.waitUntil(answered);
   }
   // The page sends this when the user clicks "Reload" on the update
   // banner. Activating the waiting worker triggers ``activate`` (and its
@@ -2624,6 +2968,10 @@ self.addEventListener('message', (event) => {
       // docstring and the 'warm-cache-cancel' handler below, which is the
       // only thing that ever adds to this set.
       const shouldCancel = () => _warmCacheCancelledIds.has(requestId);
+      // SNOW-748: and the other half of that protocol — this run is now
+      // something there is to cancel, which is what ``_forceOffline`` needs to
+      // know when the user switches on "Offline mode" mid-download.
+      _markWarmCacheActive(requestId);
       const onProgress = (done, total, settled, bytes) => {
         event.source?.postMessage({
           type: 'warm-cache-progress',
@@ -2654,6 +3002,10 @@ self.addEventListener('message', (event) => {
         // drop it from the cancelled set now rather than waiting for the
         // cap in _markWarmCacheCancelled to age it out.
         _clearWarmCacheCancelled(requestId);
+        // SNOW-748: and out of the in-flight set, so a later _forceOffline
+        // does not mark a finished run cancelled (which would leave its id
+        // sitting in the cancelled set with nothing to clear it).
+        _clearWarmCacheActive(requestId);
         event.source?.postMessage({
           type: 'warm-cache-done',
           ok: result.ok,

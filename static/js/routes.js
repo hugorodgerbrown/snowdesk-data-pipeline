@@ -154,6 +154,25 @@
     return input ? input.value : '';
   }
 
+  /**
+   * SNOW-748: true when the app is actually using the network — the interface
+   * is up AND no offline mode is in force.
+   *
+   * A GPX upload is online-only (see the header's note), and the question it
+   * has to ask is whether the app is using the network at all, not whether
+   * the interface happens to be up: a mode the user forced from the header
+   * toggle leaves the interface flag true, so the picker opened and the POST
+   * went out under a connection they had asked the app not to spend.
+   * ``pwa_offline.js`` owns the answer, and the interface flag stays the
+   * fallback for a page where that module has not run.
+   *
+   * @returns {boolean}
+   */
+  function networkInUse() {
+    const connectivity = window.pwaConnectivity;
+    return connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+  }
+
   /** Build the anonymous sign-in CTA — a prompt plus a link to the sign-in
    * page. Built with createElement rather than an innerHTML string: the
    * same DOM-not-markup discipline favourites.js uses for anything
@@ -271,7 +290,7 @@
     // Refuse before the picker rather than after the choice: making
     // somebody find a file, then telling them it cannot be sent, wastes
     // the one action they took. See the header's note on online-only.
-    if (!navigator.onLine) {
+    if (!networkInUse()) {
       showToast(STRINGS['upload-offline']);
       return;
     }
@@ -402,7 +421,7 @@
    */
   function upload(file) {
     if (!IS_ELIGIBLE || !CREATE_URL) return;
-    if (!navigator.onLine) {
+    if (!networkInUse()) {
       showToast(STRINGS['upload-offline']);
       return;
     }

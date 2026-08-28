@@ -8,10 +8,14 @@ The offline paragraph is corrected here. It used to say "Avalanche data
 itself is always fetched fresh from the network — Snowdesk never shows
 you a stale danger rating from the cache", which stopped being true once
 static/js/sw.js served the API feeds stale-while-revalidate: a rating
-CAN come from the cache, which is the whole point of the offline banner
-and its two clocks. Telling a reader the opposite is the one error on
-this page with a safety cost, so the copy now says what the cache does
-and points at the banner that dates it.
+CAN come from the cache, which is the whole point of the connectivity
+symbol and the toast behind it. Telling a reader the opposite is the one
+error on this page with a safety cost, so the copy now says what the
+cache does and points at the control that dates it.
+
+SNOW-748 deleted the banner this copy used to name. The symbol in the
+header is permanent, and the timestamp is one press away — see
+docs/offline-first.md for why that exchange was made.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -32,9 +36,23 @@ and points at the banner that dates it.
     <p class="mb-3 last:mb-0" data-testid="help-install-staleness">
         {% blocktrans trimmed %}
             That means a rating you see offline is the last one this device fetched, not necessarily the one in force.
-            Whenever the connection is failing &mdash; or has failed often enough that Snowdesk has stopped trying and
-            is serving stored data only &mdash; a banner across the top says so and says how long ago this device last
-            reached the server. Check it before you trust a rating, and reload once you have signal.
+            The signal symbol at the top of every page tells you which it is: struck through whenever the connection is
+            failing, or has failed often enough that Snowdesk has stopped trying and is serving stored data only. Tap it
+            for how long ago this device last reached the server. Check that before you trust a rating, and reload once
+            you have signal.
+        {% endblocktrans %}
+    </p>
+    {# SNOW-748: offline mode. A paragraph in this topic rather than a topic #}
+    {# of its own — it is the same subject as the paragraph just above. The  #}
+    {# split it describes is the aeroplane-mode one: the switch is in the    #}
+    {# account menu, and the header carries the symbol that reports it.      #}
+    <p class="mb-3 last:mb-0" data-testid="help-install-network-toggle">
+        {% blocktrans trimmed %}
+            You can also stop Snowdesk using the network yourself. If you are signed in, open the account menu and turn
+            on "Offline mode" &mdash; before you lose coverage, or to spare a metered or roaming connection &mdash; and
+            the app runs from what it has already stored. It stays on until you turn it off again: Snowdesk will not
+            quietly reconnect. While it is on, the signal symbol at the top of every page is struck through, much like
+            aeroplane mode on a phone, and tapping it tells you how old the stored data is and offers the way back.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-install-downloads-pointer">
