@@ -274,19 +274,27 @@ def _opening_tag_around(html: str, marker: str) -> str:
 
 
 @pytest.mark.django_db
-class TestNavOfflineSymbol:
-    """The SNOW-748 offline symbol, beside the sync badge.
+class TestNavConnectivitySymbol:
+    """The SNOW-748 connectivity symbol, beside the sync badge.
 
-    A status element, not a control — the header half of the aeroplane-mode
-    model this feature follows. A phone shows the aeroplane glyph only while
-    the mode is on and nothing at all otherwise, and so does this: the nav
-    renders it ``hidden`` and ``static/js/pwa_offline.js`` reveals it only
-    while the app is not using the network.
+    The status-bar half of the aeroplane-mode model this feature follows,
+    and PERMANENT: it renders on every page for every viewer, online or
+    off, signed in or not, and is never ``hidden``. An earlier pass hid it
+    in ``'auto'`` on the phone's-aeroplane-glyph model, which meant the one
+    element telling a user whether their avalanche data was live existed
+    only once it was not. Its permanence is what allowed
+    ``includes/_offline_banner.html`` to be deleted.
+
+    It is a control, but a DISCLOSURE: pressing it opens the
+    connection-status toast (``includes/_offline_toast.html``). It never
+    changes the network mode — that is the switch below, and a control in
+    the status area that changes the thing it reports invites exactly the
+    misread that the symbol IS the switch.
 
     It is shown to anonymous viewers as well as signed-in ones, unlike the
-    switch below. The worker latches itself for anybody, so the state the
-    symbol reports is one an anonymous user can be in; only choosing the
-    mode needs an account.
+    switch. The worker latches itself for anybody, so the state the symbol
+    reports is one an anonymous user can be in, and the toast's CTA is
+    their only way out of it; only CHOOSING the mode needs an account.
     """
 
     def test_anonymous_sees_the_symbol(self, rf: RequestFactory) -> None:
@@ -306,140 +314,182 @@ class TestNavOfflineSymbol:
         html = _render_nav_for(rf, regular_user)
         assert "data-network-indicator" in html
 
-    def test_symbol_is_not_a_control(self, rf: RequestFactory) -> None:
-        """It is a symbol: no button, no pressed state, no tab stop.
+    def test_symbol_is_never_hidden(self, rf: RequestFactory) -> None:
+        """It ships visible, in the "using the network" state.
 
-        SNOW-748 shipped this as a ``<button aria-pressed>`` first. Making
-        it a status element is the point of the rework — a control in the
-        status area invites the reading that the symbol IS the switch, and
-        the switch is in the account menu. These assertions are what stops
-        it drifting back into a button.
+        The assertion that carries the whole rework: the banner this
+        replaced only appeared once something was wrong, so a user learned
+        where to look by losing their connection. A permanent mark that
+        changes appearance is the stronger guarantee, and it is only
+        stronger while it is actually permanent.
         """
-        html = _render_nav_for(rf, AnonymousUser())
-        element = html.split("data-network-indicator", 1)[1]
-        opening_tag = element.split(">", 1)[0]
+        opening_tag = _opening_tag_around(
+            _render_nav_for(rf, AnonymousUser()), "data-network-indicator"
+        )
+        assert "hidden" not in opening_tag
+        assert 'data-network-state="online"' in opening_tag
+
+    def test_symbol_is_a_disclosure_not_a_toggle(self, rf: RequestFactory) -> None:
+        """``aria-expanded`` + ``aria-controls``, never ``aria-pressed``.
+
+        SNOW-748 shipped this as a ``<button aria-pressed>`` that switched
+        the network mode. It is a button again, but for a different job: it
+        discloses the toast and nothing else. These assertions are what
+        stops it drifting back into a mode control.
+        """
+        opening_tag = _opening_tag_around(
+            _render_nav_for(rf, AnonymousUser()), "data-network-indicator"
+        )
+        assert 'aria-expanded="false"' in opening_tag
+        assert 'aria-controls="pwa-offline-toast"' in opening_tag
         assert "aria-pressed" not in opening_tag
-        # The element itself, up to its closing tag: a <button> anywhere in
-        # here would be a control, whatever the opening tag says.
-        assert "<button" not in element.split("</span>", 1)[0]
 
-    def test_symbol_renders_hidden(self, rf: RequestFactory) -> None:
-        """It ships hidden, and the script reveals it.
+    def test_symbol_carries_both_glyphs(self, rf: RequestFactory) -> None:
+        """Both marks are server-rendered; the script only toggles ``hidden``.
 
-        Hidden because ``pwa_offline.js`` reveals it, exactly as
-        ``mutation_queue.js`` reveals the sync badge beside it. Here the
-        reason is not that it would be inert without the script but that it
-        would be WRONG — a symbol claiming the app is offline on a page
-        whose script never ran to find out (an old cached shell, a JS
-        error).
+        Building either glyph in JavaScript would put a mark on the page
+        that no template ever declared, and the struck-through one would
+        arrive a frame after the state it reports.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        # The opening tag only — the whole element also contains the
-        # struck-through glyph, and searching it would match whatever
-        # ``hidden`` that carries rather than the symbol's own.
-        opening_tag = html.split("data-network-indicator", 1)[1].split(">", 1)[0]
-        assert "hidden" in opening_tag
+        element = html.split("data-network-indicator", 1)[1].split("</button>", 1)[0]
+        assert 'data-role="network-online-icon"' in element
+        assert 'data-role="network-offline-icon"' in element
 
-    def test_symbol_has_an_accessible_name(self, rf: RequestFactory) -> None:
-        """The glyph is aria-hidden, so sr-only text carries the name.
+    def test_symbol_has_an_accessible_name_for_each_state(
+        self, rf: RequestFactory
+    ) -> None:
+        """The glyphs are aria-hidden, so sr-only text carries the name.
 
-        ``includes/_icon_wifi_off.html`` sets ``aria-hidden="true"`` on its
-        own <svg>, which is right for a decorative mark and would leave this
-        one nameless. The sr-only span is the pattern
-        ``includes/_freshness_indicator.html`` and the version row in this
-        same menu already use.
+        Both ``includes/_icon_wifi.html`` and ``_icon_wifi_off.html`` set
+        ``aria-hidden="true"`` on their own <svg>, which is right for a
+        decorative mark and would leave this button nameless. Two names,
+        one per state, rendered here and toggled by ``hidden`` — a name
+        assigned from a JS literal ships English to every locale, because
+        ``makemessages`` never scans ``static/js``.
         """
         html = _render_nav_for(rf, AnonymousUser())
-        element = html.split("data-network-indicator", 1)[1]
-        assert 'class="sr-only">Offline mode<' in element
+        element = html.split("data-network-indicator", 1)[1].split("</button>", 1)[0]
+        assert "Connection status: using the network" in element
+        assert "Connection status: offline" in element
 
 
 @pytest.mark.django_db
-class TestNavOfflineModeToggle:
+class TestNavOfflineModeSwitch:
     """The SNOW-748 "Offline mode" switch, in the account menu.
 
     The settings half of the aeroplane-mode model: turning the mode ON is a
-    device preference, so it sits beside Settings rather than in the header.
+    device preference, so it sits in the menu rather than in the header.
     SNOW-742 built this control inside the offline banner, which
-    ``static/js/pwa_offline.js`` reveals only when the connection has
+    ``static/js/pwa_offline.js`` revealed only when the connection had
     already failed — so the user it was built for ("I have signal now and am
     about to lose it") could never reach it.
+
+    It sits FIRST in the menu, in its own section between the subscribed
+    regions and "Subscriptions": everything below it is a destination you
+    browse to, and this is the one row you open the menu to operate.
 
     Signed-in only, and these assertions pin both halves of that: the row is
     present for a signed-in user and absent for an anonymous one, who still
     gets the symbol above.
     """
 
-    def test_anonymous_does_not_see_the_toggle(self, rf: RequestFactory) -> None:
+    def test_anonymous_does_not_see_the_switch(self, rf: RequestFactory) -> None:
         """No switch for anonymous viewers — the menu it lives in is theirs."""
         html = _render_nav_for(rf, AnonymousUser())
         assert "data-network-toggle" not in html
 
-    def test_authenticated_sees_the_toggle(
+    def test_authenticated_sees_the_switch(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Signed-in users get it, in the menu with Settings."""
+        """Signed-in users get it, at the top of their menu."""
         html = _render_nav_for(rf, regular_user)
         assert "data-network-toggle" in html
 
-    def test_toggle_sits_in_the_settings_group(
+    def test_switch_sits_above_every_destination(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """It is grouped with Settings, not with the destinations above it.
+        """It comes before Subscriptions, Settings and Sign out.
 
-        The menu's order is meaning, not decoration (SNOW-705): the rule
-        above Settings separates account machinery from the pages an account
-        is for, and offline mode is device machinery. Asserted by position
-        rather than by eye, because a later entry inserted in the wrong
-        group reads fine in a diff.
+        The menu's order is meaning, not decoration (SNOW-705). Asserted by
+        position rather than by eye, because a later entry inserted in the
+        wrong group reads fine in a diff.
         """
         html = _render_nav_for(rf, regular_user)
-        assert html.index(reverse("accounts:settings")) < html.index(
-            "data-network-toggle"
+        assert html.index("data-network-toggle") < html.index(reverse("accounts:hub"))
+        assert html.index("data-network-toggle") < html.index(
+            reverse("accounts:settings")
         )
         assert html.index("data-network-toggle") < html.index(
             reverse("accounts:sign_out")
         )
 
-    def test_toggle_renders_hidden_and_unchecked(
+    def test_switch_row_renders_hidden(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """It ships hidden and in the "using the network" state.
+        """It ships hidden, and the script reveals it.
 
         Hidden because ``pwa_offline.js`` reveals it: it drives a service
         worker, so a row that appeared without the script would be a dead
-        control. Unchecked because the mode a page boots in is ``'auto'`` —
-        the script repaints it after reading the persisted mode back.
+        control. Unlike the symbol above, which is hidden from nobody —
+        the two have opposite contracts and this is where that is pinned.
         """
         html = _render_nav_for(rf, regular_user)
         opening_tag = _opening_tag_around(html, "data-network-toggle")
-        assert 'aria-checked="false"' in opening_tag
         assert "hidden" in opening_tag
 
-    def test_toggle_is_a_menuitemcheckbox(
+    def test_switch_is_a_real_checkbox_starting_unchecked(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """``role="menuitemcheckbox"``, not ``menuitem``.
+        """``includes/_switch.html``, not a ``role="menuitemcheckbox"`` button.
 
-        The row has an on/off state, and inside a ``role="menu"``
-        ``aria-checked`` on a ``menuitemcheckbox`` is how a menu says so. A
-        plain ``menuitem`` would announce as an action and report nothing
-        about whether the mode is currently on.
+        A real ``<input type="checkbox" role="switch">`` gives keyboard
+        activation, focus and checked-state bookkeeping for free, which the
+        button shape had to reimplement. Unchecked because the mode a page
+        boots in is ``'auto'`` — the script repaints it after reading the
+        persisted mode back.
         """
         html = _render_nav_for(rf, regular_user)
-        opening_tag = _opening_tag_around(html, "data-network-toggle")
-        assert 'role="menuitemcheckbox"' in opening_tag
+        input_tag = _opening_tag_around(html, 'id="nav-offline-mode"')
+        assert 'type="checkbox"' in input_tag
+        assert 'role="switch"' in input_tag
+        # The bare HTML attribute, not the `peer-checked:` utilities the
+        # track and thumb carry — hence the opening tag rather than the row.
+        assert "checked" not in input_tag.replace('id="nav-offline-mode"', "")
 
-    def test_toggle_is_labelled_in_the_template(
+    def test_switch_row_is_removed_from_the_menu_role_model(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Its label is server-rendered, so it is translated.
+        """``role="none"`` on the wrapper.
 
-        The label is fixed ("Offline mode" — the phrase the offline banner
-        already uses), so nothing here comes from JavaScript: a label
-        assigned from a JS literal ships English to every locale, because
+        A ``role="switch"`` checkbox is not a valid child of ``role="menu"``,
+        which admits only menuitem / menuitemcheckbox / menuitemradio (plus
+        group and none). ``role="none"`` takes the wrapper out of the
+        accessibility tree so a bare <div> is not announced as an unexpected
+        menu child, and leaves the switch to announce itself as what it is.
+        Keeping ``menuitemcheckbox`` would have meant re-implementing
+        Space/Enter activation and ``aria-checked`` by hand — the trap
+        ``includes/_switch.html``'s docstring documents.
+        """
+        opening_tag = _opening_tag_around(
+            _render_nav_for(rf, regular_user), "data-network-toggle"
+        )
+        assert 'role="none"' in opening_tag
+        assert "menuitemcheckbox" not in opening_tag
+
+    def test_switch_label_is_a_sibling_pointing_at_the_input(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """A ``<label for>`` beside the include, never wrapping it.
+
+        ``_switch.html``'s own outer element is itself a ``<label>``, and
+        labels must not nest; its track and thumb are both
+        ``pointer-events-none``, so a wrapper that is not a label leaves
+        only the text clickable — silently, with every server-side test
+        still green. The label is server-rendered so it is translated:
         ``makemessages`` never scans ``static/js``.
         """
         html = _render_nav_for(rf, regular_user)
-        row = html.split("data-network-toggle", 1)[1].split("</button>", 1)[0]
+        row = html.split("data-network-toggle", 1)[1].split("</div>", 1)[0]
+        assert 'for="nav-offline-mode"' in row
         assert "Offline mode" in row

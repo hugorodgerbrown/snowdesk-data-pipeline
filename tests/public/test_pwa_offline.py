@@ -7,7 +7,8 @@ Covers the server-rendered half of the contract:
   the client mirrors. Boundary conditions exercised.
 * ``pwa_freshness.freshness_state`` template tag — usable from a
   template, ``None`` / naive datetimes downgrade safely.
-* Offline banner partial ships hidden on every page.
+* Connection-status toast ships closed on every page, carrying every
+  state's copy; the header symbol ships visible (SNOW-748).
 * Freshness indicator partial renders the correct dot colour + label
   for each state.
 * Subscribe form is marked ``data-network-required``.
@@ -170,23 +171,94 @@ def test_freshness_indicator_label_formatted() -> None:
 
 
 # ---------------------------------------------------------------------------
-# End-to-end — banner + script + subscribe form
+# End-to-end — symbol + toast + script + subscribe form
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_offline_banner_ships_hidden_on_home_page() -> None:
-    """The banner renders on every page, hidden by default and in-flow.
+def test_connection_toast_ships_closed_on_home_page() -> None:
+    """The connection-status toast renders on every page, closed by default.
 
-    SNOW-482: the banner is deliberately NOT ``fixed`` — it sits in the
-    normal document flow above ``includes/nav.html`` so a revealed
-    banner pushes the nav down instead of overlapping it.
+    SNOW-748 replaced the offline banner with this. It is fixed over the
+    page rather than in flow — the banner pushed the nav down, which is
+    why it could not be permanent — and it opens only when the user
+    presses the header symbol, so it ships with the ``hidden`` class.
     """
-    response = Client().get("/")
-    body = response.content.decode("utf-8")
-    assert 'id="pwa-offline-banner"' in body
-    assert "hidden w-full" in body
-    assert "fixed top-0" not in body
+    body = Client().get("/").content.decode("utf-8")
+    assert 'id="pwa-offline-toast"' in body
+    assert 'id="pwa-offline-banner"' not in body
+    assert "hidden fixed" in body
+
+
+@pytest.mark.django_db
+def test_connection_toast_is_height_bounded_and_scrolls() -> None:
+    """Fixed over the map, so the house rule applies: bound it and scroll it.
+
+    ``dvh``, not ``vh``: on mobile ``vh`` ignores the browser chrome, so a
+    ``vh``-bounded panel is taller than the visible viewport exactly where
+    the constraint matters.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    toast = body.split('id="pwa-offline-toast"', 1)[1].split(">", 1)[0]
+    assert "max-h-[60dvh]" in toast
+    assert "overflow-y-auto" in toast
+
+
+@pytest.mark.django_db
+def test_connection_toast_carries_every_state_and_the_way_back() -> None:
+    """All four explanations and both CTA labels are server-rendered.
+
+    ``makemessages`` never scans ``static/js``, so a string set from a JS
+    literal ships as English to every locale — ``bin/i18n-lint`` fails on
+    exactly that. Every variant is rendered here and toggled by ``hidden``
+    in ``static/js/pwa_offline.js``.
+
+    The CTA is the way back to the network, and for an anonymous reader
+    latched offline by the service worker it is the ONLY one: the "Offline
+    mode" switch lives in the account menu.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    toast = body.split('id="pwa-offline-toast"', 1)[1].split("</div>", 1)[0]
+    for role in (
+        "online-message",
+        "offline-message",
+        "latched-message",
+        "synced-at",
+        "online-explainer",
+        "offline-explainer",
+        "latched-explainer",
+        "forced-explainer",
+        "reconnect-label",
+        "resume-label",
+    ):
+        assert f'data-role="{role}"' in toast
+
+
+@pytest.mark.django_db
+def test_connection_toast_has_no_auto_dismiss_timeout() -> None:
+    """No ``timeout``: this is reference information, not a notification.
+
+    The user asked to see it by pressing the symbol, so it stays until
+    they dismiss it or press again — unlike the map's offline toasts,
+    which opt into the shared 6s auto-dismiss.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    toast = body.split('id="pwa-offline-toast"', 1)[1].split(">", 1)[0]
+    assert "data-toast-timeout" not in toast
+
+
+@pytest.mark.django_db
+def test_connectivity_symbol_ships_visible_on_home_page() -> None:
+    """The header symbol is permanent — never ``hidden``, on any page.
+
+    This is what made deleting the banner an improvement rather than a
+    subtraction: the banner said nothing at all while the app was healthy,
+    so a user only ever discovered it by losing their connection.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    symbol = body.split("data-network-indicator", 1)[1].split(">", 1)[0]
+    assert "hidden" not in symbol
+    assert 'aria-controls="pwa-offline-toast"' in symbol
 
 
 @pytest.mark.django_db

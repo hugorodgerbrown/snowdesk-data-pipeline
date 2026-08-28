@@ -1,40 +1,44 @@
 /*
  * tests/js/test_pwa_offline.js — Vitest unit tests for
- * static/js/pwa_offline.js's banner reveal/hide rules (C2, 2026-08-03 JS
- * review).
+ * static/js/pwa_offline.js's connection-state UI (C2, 2026-08-03 JS review).
  *
- * Two behaviours are pinned here:
+ * Two behaviours are pinned first:
  *
  *   1. A caller-initiated abort is not a connectivity failure. The sign-in
  *      page starts the WebAuthn conditional ceremony on email-input focus
  *      and aborts it on the first keystroke, so a fully-online user typing
- *      their address used to pin the banner open for the life of the page.
+ *      their address used to have the whole app declaring itself offline
+ *      for the life of the page.
  *   2. A successful same-origin response while ``navigator.onLine`` is true
- *      re-hides a revealed banner. Without it the only hide path is the
+ *      repaints as online. Without it the only recovery path is the
  *      ``online`` event, which never fires when connectivity never changed.
  *
- * ``pwa_offline.js`` is an IIFE that reads ``#pwa-offline-banner`` and wraps
- * ``window.fetch`` at import time, so every test builds its fixture and
- * installs its own ``window.fetch`` mock BEFORE importing the module, then
- * re-imports it fresh via ``vi.resetModules()`` (same pattern as
- * test_home_intro.js). Re-importing per test also stops each run's wrapper
- * stacking on the previous one's.
+ * ``pwa_offline.js`` is an IIFE that reads its DOM and wraps ``window.fetch``
+ * at import time, so every test builds its fixture and installs its own
+ * ``window.fetch`` mock BEFORE importing the module, then re-imports it fresh
+ * via ``vi.resetModules()`` (same pattern as test_home_intro.js). Re-importing
+ * per test also stops each run's wrapper stacking on the previous one's.
  *
- * ``window.pwaDb`` is left undefined for the banner tests: the persistence
- * and sync-log helpers all guard on it and return early, which keeps those
- * tests on the banner behaviour alone. Two blocks stub it, each because
- * what it asserts is what crosses that boundary — the sync-log block,
- * which is about what gets written, and SNOW-748's boot re-assert, whose
- * whole subject is what comes back out of ``meta:app``.
+ * ``window.pwaDb`` is left undefined for most tests: the persistence and
+ * sync-log helpers all guard on it and return early, which keeps those tests
+ * on the UI behaviour alone. Two blocks stub it, each because what it asserts
+ * is what crosses that boundary — the sync-log block, which is about what gets
+ * written, and SNOW-748's boot re-assert, whose whole subject is what comes
+ * back out of ``meta:app``.
  *
- * SNOW-748 added a third mode and the two nav surfaces that carry it: a header
- * SYMBOL shown only while the app is not using the network, and an "Offline
- * mode" row in the subscriber menu that switches it — a phone's aeroplane
- * mode, status bar and settings. Their tests are at the foot of the file, and
- * the distinction they turn on is that ``'offline'`` is the worker's guess
- * that there is no route while ``'offline-forced'`` is the user's instruction
- * — so an ``online`` event, a probe and a page reload all treat the two
- * differently.
+ * SNOW-742 added a third mode; SNOW-748 rebuilt the surfaces that carry it. The
+ * offline BANNER is gone. In its place: a PERMANENT header symbol, painted on
+ * every page for every viewer and never hidden, and a connection-status TOAST
+ * the symbol opens. The distinction the mode tests turn on is that
+ * ``'offline'`` is the worker's guess that there is no route while
+ * ``'offline-forced'`` is the user's instruction — so an ``online`` event, a
+ * probe and a page reload all treat the two differently.
+ *
+ * The symbol and the menu switch paint DIFFERENT predicates, and several tests
+ * exist only to hold that apart: the symbol reports whether the app is
+ * reaching the server (so a dead interface strikes it through in ``'auto'``),
+ * while the switch reports whether the user asked for offline mode (so a
+ * merely-struggling connection must leave it off).
  *
  * The last block covers what that mode publishes. The control shipped without
  * it: ``snowdesk:connectivity-changed`` carried ``navigator.onLine`` alone and
@@ -45,49 +49,63 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const BANNER_ID = 'pwa-offline-banner';
-const TOGGLE_SELECTOR = '[data-network-toggle]';
+const TOAST_ID = 'pwa-offline-toast';
+const SWITCH_ID = 'nav-offline-mode';
 const INDICATOR_SELECTOR = '[data-network-indicator]';
+const TOGGLE_ROW_SELECTOR = '[data-network-toggle]';
+const CTA_SELECTOR = `#${TOAST_ID} [data-action="reload"]`;
 
 /**
- * The banner markup from templates/includes/_offline_banner.html, plus the
- * header offline SYMBOL from templates/includes/nav.html.
+ * The header symbol from templates/includes/nav.html plus the
+ * connection-status toast from templates/includes/_offline_toast.html (which
+ * renders through _toast.html's body_template / cta_label_template slots).
  *
- * SNOW-742 added the latched variants and the mode controls; SNOW-748 added
- * the forced-mode explainer, the second label on the way-back button, and the
- * nav surfaces. They are mirrored here rather than only in the templates
- * because the module toggles them by ``data-role``, so a fixture missing one
- * would silently make those assertions vacuous — the role helper skips a role
- * it cannot find, and ``renderNetworkUi`` skips an element it cannot find.
+ * Mirrored here rather than only in the templates because the module toggles
+ * them by ``data-role``, so a fixture missing one would silently make those
+ * assertions vacuous — the role helper skips a role it cannot find.
  *
- * The symbol is what an ANONYMOUS page renders: it is shown to every viewer,
- * while the "Offline mode" row below is signed-in only. Kept as its own
+ * This is what an ANONYMOUS page renders: the symbol is shown to every viewer,
+ * while the "Offline mode" switch below is signed-in only. Kept as its own
  * constant so ``buildAnonymousFixture`` can render exactly this and no row.
+ *
+ * The toast carries ``hidden flex`` at rest exactly as the real partial does:
+ * ``hidden`` is emitted last in Tailwind's display group and so wins while
+ * both are present, and revealing is removing ``hidden`` alone.
  */
-const BANNER_AND_SYMBOL = `
-  <details id="${BANNER_ID}" data-role="offline-freshness" role="status" class="hidden">
-    <summary>
-      <span data-role="offline-message">Offline — last synced</span>
-      <span data-role="latched-message" class="hidden">Offline mode — last synced</span>
-      <span data-role="synced-at">—</span>
-    </summary>
-    <div>
-      <p data-role="offline-explainer">Lost contact.</p>
-      <p data-role="latched-explainer" class="hidden">Stopped trying.</p>
-      <p data-role="forced-explainer" class="hidden">You asked it to stay offline.</p>
-      <button type="button" data-role="reconnect" class="hidden">
-        <span data-role="reconnect-label">Try reconnecting</span>
-        <span data-role="resume-label" class="hidden">Use the network again</span>
-      </button>
-    </div>
-  </details>
-  <span
+const SYMBOL_AND_TOAST = `
+  <button
+    type="button"
     data-network-indicator
-    class="hidden items-center justify-center w-7 h-7 rounded-full text-status-warning-text"
+    data-network-state="online"
+    aria-expanded="false"
+    aria-controls="${TOAST_ID}"
   >
-    <svg></svg>
-    <span class="sr-only">Offline mode</span>
-  </span>
+    <span data-role="network-online-icon"><svg></svg></span>
+    <span data-role="network-offline-icon" class="hidden"><svg></svg></span>
+    <span data-role="network-name-online" class="sr-only">Connection status: using the network</span>
+    <span data-role="network-name-offline" class="sr-only hidden">Connection status: offline</span>
+  </button>
+  <div id="${TOAST_ID}" role="status" data-overlay data-overlay-hide="class" class="hidden flex">
+    <span data-toast-body>
+      <span>
+        <span data-role="online-message">Online — last synced</span>
+        <span data-role="offline-message" class="hidden">Offline — last synced</span>
+        <span data-role="latched-message" class="hidden">Offline mode — last synced</span>
+        <span data-role="synced-at">—</span>
+      </span>
+      <span>
+        <span data-role="online-explainer">Using the network.</span>
+        <span data-role="offline-explainer" class="hidden">Lost contact.</span>
+        <span data-role="latched-explainer" class="hidden">Stopped trying.</span>
+        <span data-role="forced-explainer" class="hidden">You asked it to stay offline.</span>
+      </span>
+    </span>
+    <button type="button" data-action="reload">
+      <span data-role="reconnect-label">Try reconnecting</span>
+      <span data-role="resume-label" class="hidden">Use the network again</span>
+    </button>
+    <button type="button" data-action="dismiss">×</button>
+  </div>
   <button type="button" data-network-required>Sync now</button>
 `;
 
@@ -98,36 +116,59 @@ const BANNER_AND_SYMBOL = `
  * branch, hence its own constant: an anonymous page genuinely does not have
  * this element, and the module has to cope with that rather than skip the
  * symbol alongside it.
+ *
+ * A real ``includes/_switch.html`` checkbox, not the role="menuitemcheckbox"
+ * button this row shipped as, so the state the module writes is ``checked``
+ * on an input rather than an attribute on a button.
  */
-const MENU_TOGGLE_ROW = `
-  <button
-    type="button"
-    role="menuitemcheckbox"
-    aria-checked="false"
-    data-network-toggle
-    class="group hidden w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-text-2"
-  >
-    <span class="shrink-0 text-text-3"><svg></svg></span>
-    <span class="grow">Offline mode</span>
-  </button>
+const MENU_SWITCH_ROW = `
+  <div role="none" data-network-toggle class="hidden items-center gap-3">
+    <label for="${SWITCH_ID}">Offline mode</label>
+    <label for="${SWITCH_ID}">
+      <input id="${SWITCH_ID}" type="checkbox" role="switch" class="peer sr-only">
+    </label>
+  </div>
 `;
 
 /**
- * A signed-in page: banner, header symbol, and the menu row that switches the
- * mode.
+ * A signed-in page: symbol, toast, and the menu switch that changes the mode.
  *
- * The ``data-network-required`` button inside ``BANNER_AND_SYMBOL`` is any
+ * The ``data-network-required`` button inside ``SYMBOL_AND_TOAST`` is any
  * page's stand-in for a control that cannot work without the network — that
  * attribute is the generic mechanism the whole site gates on, and the last
  * block asserts a forced mode reaches it.
  */
 function buildFixture() {
-  document.body.innerHTML = BANNER_AND_SYMBOL + MENU_TOGGLE_ROW;
+  document.body.innerHTML = SYMBOL_AND_TOAST + MENU_SWITCH_ROW;
 }
 
-/** An anonymous page: the symbol, and no way to switch the mode. */
+/** An anonymous page: the symbol and toast, and no way to switch the mode. */
 function buildAnonymousFixture() {
-  document.body.innerHTML = BANNER_AND_SYMBOL;
+  document.body.innerHTML = SYMBOL_AND_TOAST;
+}
+
+/**
+ * The shared "×" dismiss handler from static/js/overlays.js, in the one form
+ * this module depends on: it adds ``hidden`` and dispatches
+ * ``overlay:dismissed``, and pwa_offline.js listens for the second so a close
+ * it did not perform still lands on ``aria-expanded`` and the ticker.
+ *
+ * Imported rather than reimplemented would drag the whole module's other
+ * listeners into every test in this file; this is the contract, stated once.
+ *
+ * @returns {() => void} a teardown that unbinds it again
+ */
+function installDismissHandler() {
+  const listener = (event) => {
+    const trigger = event.target.closest?.('[data-action="dismiss"]');
+    if (!trigger) return;
+    const overlay = trigger.closest('[data-overlay]');
+    if (!overlay) return;
+    overlay.classList.add('hidden');
+    overlay.dispatchEvent(new CustomEvent('overlay:dismissed', { bubbles: true }));
+  };
+  document.addEventListener('click', listener);
+  return () => document.removeEventListener('click', listener);
 }
 
 /** Whether the element carrying ``data-role`` is currently visible. */
@@ -136,19 +177,39 @@ function roleShown(role) {
   return !!el && !el.classList.contains('hidden');
 }
 
-/** The menu's "Offline mode" row, for readability at the assertion site. */
-function toggleButton() {
-  return document.querySelector(TOGGLE_SELECTOR);
+/** The menu's "Offline mode" switch input, for readability at the call site. */
+function switchInput() {
+  return document.getElementById(SWITCH_ID);
 }
 
-/** The header offline symbol. */
+/** The row the switch sits in — the element the module reveals. */
+function toggleRow() {
+  return document.querySelector(TOGGLE_ROW_SELECTOR);
+}
+
+/** The header symbol. */
 function indicator() {
   return document.querySelector(INDICATOR_SELECTOR);
 }
 
-/** Whether the header offline symbol is currently shown. */
-function indicatorShown() {
-  return !indicator().classList.contains('hidden');
+/** What the header symbol is currently reporting: 'online' or 'offline'. */
+function indicatorState() {
+  return indicator().getAttribute('data-network-state');
+}
+
+/** The connection-status toast. */
+function toast() {
+  return document.getElementById(TOAST_ID);
+}
+
+/** Whether the toast is currently open. */
+function toastShown() {
+  return !toast().classList.contains('hidden');
+}
+
+/** The toast's one CTA — the way back to the network. */
+function reconnectButton() {
+  return document.querySelector(CTA_SELECTOR);
 }
 
 /**
@@ -177,9 +238,9 @@ function networkRequiredButton() {
   return document.querySelector('[data-network-required]');
 }
 
-/** Whether the menu row is painted in an offline state. */
-function toggleChecked() {
-  return toggleButton().getAttribute('aria-checked') === 'true';
+/** Whether the menu switch is painted in an offline state. */
+function switchChecked() {
+  return switchInput().checked;
 }
 
 /**
@@ -204,16 +265,6 @@ function stubServiceWorker() {
     posted,
     emit: (data) => listeners.forEach((handler) => handler({ data })),
   };
-}
-
-/** The banner element, for readability at the assertion site. */
-function banner() {
-  return document.getElementById(BANNER_ID);
-}
-
-/** Whether the banner is currently revealed. */
-function bannerShown() {
-  return !banner().classList.contains('hidden');
 }
 
 // The ``online`` handler the most recent ``loadModule()`` registered — see
@@ -283,30 +334,32 @@ beforeEach(() => {
   buildFixture();
 });
 
-describe('offline banner reveal', () => {
-  it('does not reveal the banner when a fetch is aborted', async () => {
+describe('the header symbol tracks the connection', () => {
+  it('does not report offline when a fetch is aborted', async () => {
     const err = abortError();
     window.fetch = vi.fn().mockRejectedValue(err);
     await loadModule();
 
     await expect(window.fetch('/account/passkey/auth/request/')).rejects.toBe(err);
 
-    expect(bannerShown()).toBe(false);
+    expect(indicatorState()).toBe('online');
+    expect(roleShown('network-online-icon')).toBe(true);
+    expect(roleShown('network-offline-icon')).toBe(false);
   });
 
-  it('still reveals the banner on a genuine network failure', async () => {
+  it('reports offline on a genuine network failure', async () => {
     const err = new TypeError('Failed to fetch');
     window.fetch = vi.fn().mockRejectedValue(err);
     await loadModule();
 
     await expect(window.fetch('/api/ratings/')).rejects.toBe(err);
 
-    expect(bannerShown()).toBe(true);
+    expect(indicatorState()).toBe('offline');
+    expect(roleShown('network-offline-icon')).toBe(true);
+    expect(roleShown('network-online-icon')).toBe(false);
   });
-});
 
-describe('offline banner recovery', () => {
-  it('re-hides a revealed banner on a successful same-origin response while online', async () => {
+  it('recovers on a successful same-origin response while online', async () => {
     const err = new TypeError('Failed to fetch');
     window.fetch = vi
       .fn()
@@ -315,40 +368,177 @@ describe('offline banner recovery', () => {
     await loadModule();
 
     await expect(window.fetch('/api/ratings/')).rejects.toBe(err);
-    expect(bannerShown()).toBe(true);
+    expect(indicatorState()).toBe('offline');
 
     await window.fetch('/api/ratings/');
 
-    expect(bannerShown()).toBe(false);
+    expect(indicatorState()).toBe('online');
+  });
+
+  it('names itself for the state, in text the template rendered', async () => {
+    // Both glyph partials set aria-hidden on their own <svg>, so the sr-only
+    // spans ARE the accessible name. Toggled here, never assigned: a name set
+    // from a JS literal ships English to every locale, because makemessages
+    // never scans static/js.
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    expect(roleShown('network-name-online')).toBe(true);
+    expect(roleShown('network-name-offline')).toBe(false);
+
+    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
+
+    expect(roleShown('network-name-offline')).toBe(true);
+    expect(roleShown('network-name-online')).toBe(false);
+  });
+
+  it('is painted on an anonymous page, which has no menu switch at all', async () => {
+    // The switch lives inside nav.html's authenticated branch; the symbol does
+    // not. The module looks each up separately for exactly this case — a
+    // shared early return on the missing row would leave an anonymous user
+    // with no indication that the app had stopped using the network.
+    buildAnonymousFixture();
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    expect(switchInput()).toBeNull();
+    expect(indicatorState()).toBe('online');
+
+    sw.emit({ type: 'network-mode', mode: 'offline' });
+
+    expect(indicatorState()).toBe('offline');
   });
 });
 
+// ---------------------------------------------------------------------------
+// SNOW-748 — the toast the symbol opens
+// ---------------------------------------------------------------------------
+//
+// The banner this replaces revealed itself whenever the app stopped reaching
+// the server, and hid itself again when it recovered. The toast does neither:
+// it opens and closes on the user's press alone, and the module only ever
+// repaints its copy. These tests are what stops the old reveal-on-failure
+// behaviour creeping back in under a different element id.
+
+describe('the connection-status toast (SNOW-748)', () => {
+  it('stays closed until the symbol is pressed', async () => {
+    window.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    await loadModule();
+
+    await expect(window.fetch('/api/ratings/')).rejects.toThrow();
+
+    // Offline, and still nothing over the page. The header says so; the detail
+    // is one press away.
+    expect(indicatorState()).toBe('offline');
+    expect(toastShown()).toBe(false);
+  });
+
+  it('opens on a press and closes on the next one', async () => {
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    indicator().click();
+    expect(toastShown()).toBe(true);
+    expect(indicator().getAttribute('aria-expanded')).toBe('true');
+
+    indicator().click();
+    expect(toastShown()).toBe(false);
+    expect(indicator().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('never changes the network mode', async () => {
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    indicator().click();
+
+    // A disclosure, not a switch. An earlier pass shipped this element as a
+    // toggle for the mode itself, which is what aria-expanded (rather than
+    // aria-pressed) now promises a screen-reader user it is not.
+    expect(sw.posted).toEqual([]);
+    expect(switchChecked()).toBe(false);
+  });
+
+  it('follows a "×" dismiss it did not perform', async () => {
+    const teardown = installDismissHandler();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    try {
+      indicator().click();
+      expect(indicator().getAttribute('aria-expanded')).toBe('true');
+
+      document.querySelector(`#${TOAST_ID} [data-action="dismiss"]`).click();
+
+      // overlays.js hides it; the module learns via overlay:dismissed. Without
+      // that binding the symbol would claim the toast was still open, and the
+      // next press would close an already-closed panel.
+      expect(toastShown()).toBe(false);
+      expect(indicator().getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      teardown();
+    }
+  });
+
+  it('fills the freshness cell when it opens', async () => {
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+    await window.fetch('/api/ratings/');
+
+    // Em dash until a sync is known; a relative phrase once one is.
+    indicator().click();
+
+    expect(document.querySelector('[data-role="synced-at"]').textContent).not.toBe('—');
+  });
+
+  it('explains a healthy connection, which the banner never had to', async () => {
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    // The banner only existed in the failure case, so it had no copy for this
+    // one. The symbol is pressable at any moment, so the toast needs it.
+    expect(roleShown('online-message')).toBe(true);
+    expect(roleShown('online-explainer')).toBe(true);
+    expect(roleShown('offline-message')).toBe(false);
+    expect(roleShown('latched-message')).toBe(false);
+  });
+
+  it('offers no way back while the network is already in use', async () => {
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    expect(reconnectButton().classList.contains('hidden')).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // SNOW-742 — the offline latch, as the page sees it
 // ---------------------------------------------------------------------------
 //
-// The banner used to key off ``navigator.onLine`` alone. That is exactly the
+// The UI used to key off ``navigator.onLine`` alone. That is exactly the
 // signal which stays TRUE on the Underground — the radio is attached, there is
 // simply no route — so the state these tests cover is one the old banner could
 // not represent at all: latched, and online as far as the platform knows.
 
-describe('offline latch banner (SNOW-742)', () => {
-  it('shows the latched variant when the worker announces a latch, even while onLine', async () => {
+describe('offline latch (SNOW-742)', () => {
+  it('shows the latched copy when the worker announces a latch, even while onLine', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
-    expect(bannerShown()).toBe(false);
+    expect(roleShown('online-message')).toBe(true);
 
     sw.emit({ type: 'network-mode', mode: 'offline' });
 
-    // Revealed despite navigator.onLine being true throughout — the case the
+    // Painted despite navigator.onLine being true throughout — the case the
     // old onLine-only banner was blind to.
     expect(window.navigator.onLine).toBe(true);
-    expect(bannerShown()).toBe(true);
+    expect(indicatorState()).toBe('offline');
     expect(roleShown('latched-message')).toBe(true);
-    expect(roleShown('offline-message')).toBe(false);
+    expect(roleShown('online-message')).toBe(false);
     expect(roleShown('latched-explainer')).toBe(true);
   });
 
@@ -360,12 +550,13 @@ describe('offline latch banner (SNOW-742)', () => {
     // Struggling but not latched: the app is still trying on its own, so
     // "try reconnecting" would do nothing it is not already doing.
     await expect(window.fetch('/api/ratings/')).rejects.toThrow();
-    expect(roleShown('reconnect')).toBe(false);
+    expect(roleShown('offline-message')).toBe(true);
+    expect(reconnectButton().classList.contains('hidden')).toBe(true);
 
     sw.emit({ type: 'network-mode', mode: 'offline' });
 
     // Latched: the app has stopped, so the useful action is the way back.
-    expect(roleShown('reconnect')).toBe(true);
+    expect(reconnectButton().classList.contains('hidden')).toBe(false);
     expect(roleShown('reconnect-label')).toBe(true);
   });
 
@@ -375,27 +566,26 @@ describe('offline latch banner (SNOW-742)', () => {
     await loadModule();
 
     sw.emit({ type: 'network-mode', mode: 'offline' });
-    banner().querySelector('[data-role="reconnect"]').click();
+    reconnectButton().click();
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'auto' });
-    expect(roleShown('offline-message')).toBe(true);
+    expect(roleShown('online-message')).toBe(true);
   });
 
-  it('hides the banner again once the worker reports it has unlatched', async () => {
+  it('clears the symbol once the worker reports it has unlatched', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
     sw.emit({ type: 'network-mode', mode: 'offline' });
-    expect(bannerShown()).toBe(true);
+    expect(indicatorState()).toBe('offline');
 
     // A probe found a route again.
     sw.emit({ type: 'network-mode', mode: 'auto' });
 
-    expect(bannerShown()).toBe(false);
+    expect(indicatorState()).toBe('online');
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // The sync log's write side
@@ -452,127 +642,93 @@ describe('sync-log write filter', () => {
 });
 
 // ---------------------------------------------------------------------------
-// SNOW-748 — the nav's symbol and switch, and a forced mode that stays forced
+// SNOW-748 — the menu switch, and a forced mode that stays forced
 // ---------------------------------------------------------------------------
 //
-// The control SNOW-742 built lived in the banner, which only reveals once the
-// connection has already failed — so the user it was for, "I have signal now
-// and am about to lose it", could never reach it. It is now in the nav, split
-// the way a phone splits aeroplane mode: a symbol in the header that appears
-// only while the mode is on, and a switch in the settings menu. That move
-// exposed the defect these tests pin: a user's request used to be the worker's
-// auto-latch, and an auto-latch is probed back to 'auto' within thirty
-// seconds. Every assertion below is about the difference between the two
-// offline modes; ``'offline'`` is the worker's guess, ``'offline-forced'`` is
-// the user's.
+// The control SNOW-742 built lived in the banner, which only revealed once the
+// connection had already failed — so the user it was for, "I have signal now
+// and am about to lose it", could never reach it. It is now at the top of the
+// account menu, the settings half of the aeroplane-mode model whose status-bar
+// half is the header symbol. That move exposed the defect these tests pin: a
+// user's request used to be the worker's auto-latch, and an auto-latch is
+// probed back to 'auto' within thirty seconds. ``'offline'`` is the worker's
+// guess; ``'offline-forced'`` is the user's.
 
-describe('the header offline symbol (SNOW-748)', () => {
-  it('shows nothing while the app is using the network', async () => {
-    window.fetch = vi.fn().mockResolvedValue(okResponse());
-    await loadModule();
-
-    // A phone shows the aeroplane glyph only while aeroplane mode is on. In
-    // 'auto' there is nothing to say, so the header says nothing.
-    expect(indicatorShown()).toBe(false);
-  });
-
-  it('appears under either offline mode, and goes again in auto', async () => {
-    const sw = stubServiceWorker();
-    window.fetch = vi.fn().mockResolvedValue(okResponse());
-    await loadModule();
-
-    // The worker latched on its own.
-    sw.emit({ type: 'network-mode', mode: 'offline' });
-    expect(indicatorShown()).toBe(true);
-
-    // The user's own mode shows the same mark — the header answers one
-    // question, and the banner carries which offline it is.
-    sw.emit({ type: 'network-mode', mode: 'offline-forced' });
-    expect(indicatorShown()).toBe(true);
-
-    sw.emit({ type: 'network-mode', mode: 'auto' });
-    expect(indicatorShown()).toBe(false);
-  });
-
-  it('is painted on an anonymous page, which has no menu row at all', async () => {
-    // The row lives inside nav.html's authenticated branch; the symbol does
-    // not. The module looks each up separately for exactly this case — a
-    // shared early return on the missing row would leave an anonymous user
-    // with no indication that the app had stopped using the network.
-    buildAnonymousFixture();
-    const sw = stubServiceWorker();
-    window.fetch = vi.fn().mockResolvedValue(okResponse());
-    await loadModule();
-
-    expect(toggleButton()).toBeNull();
-    expect(indicatorShown()).toBe(false);
-
-    sw.emit({ type: 'network-mode', mode: 'offline' });
-
-    expect(indicatorShown()).toBe(true);
-  });
-});
-
-describe('the menu offline-mode toggle (SNOW-748)', () => {
+describe('the menu offline-mode switch (SNOW-748)', () => {
   it('is revealed by this module, not by the template', async () => {
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     // The nav renders it `hidden` so a page whose script never runs does not
     // offer a control nothing will honour.
-    expect(toggleButton().classList.contains('hidden')).toBe(true);
+    expect(toggleRow().classList.contains('hidden')).toBe(true);
 
     await loadModule();
 
-    expect(toggleButton().classList.contains('hidden')).toBe(false);
-    expect(toggleButton().classList.contains('flex')).toBe(true);
+    expect(toggleRow().classList.contains('hidden')).toBe(false);
+    expect(toggleRow().classList.contains('flex')).toBe(true);
   });
 
-  it('asks for a forced mode — never the auto-latch — when pressed while online', async () => {
+  it('asks for a forced mode — never the auto-latch — when switched on while online', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
-    toggleButton().click();
+    switchInput().click();
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'offline-forced' });
     expect(sw.posted).not.toContainEqual({ type: 'network-mode', mode: 'offline' });
   });
 
-  it('round-trips: a second press asks for auto again', async () => {
+  it('round-trips: switching it off asks for auto again', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
-    toggleButton().click();
-    expect(toggleChecked()).toBe(true);
-    expect(indicatorShown()).toBe(true);
+    switchInput().click();
+    expect(switchChecked()).toBe(true);
+    expect(indicatorState()).toBe('offline');
 
-    toggleButton().click();
+    switchInput().click();
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'auto' });
-    expect(toggleChecked()).toBe(false);
-    expect(indicatorShown()).toBe(false);
+    expect(switchChecked()).toBe(false);
+    expect(indicatorState()).toBe('online');
   });
 
-  it('reports checked under either offline mode, including one it did not start', async () => {
+  it('reports on under either offline mode, including one it did not start', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
 
-    expect(toggleChecked()).toBe(false);
+    expect(switchChecked()).toBe(false);
 
-    // aria-checked is the row's whole state: a menuitemcheckbox says on/off
-    // and nothing finer, and the worker's latch is as much "not using the
-    // network" as the user's own choice is.
+    // ``checked`` is the row's whole state: a switch says on/off and nothing
+    // finer, and the worker's latch is as much "not using the network" as the
+    // user's own choice is.
     sw.emit({ type: 'network-mode', mode: 'offline' });
-    expect(toggleChecked()).toBe(true);
+    expect(switchChecked()).toBe(true);
 
     sw.emit({ type: 'network-mode', mode: 'offline-forced' });
-    expect(toggleChecked()).toBe(true);
+    expect(switchChecked()).toBe(true);
+  });
+
+  it('stays off while the app is merely struggling, though the symbol does not', async () => {
+    window.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    await loadModule();
+
+    await expect(window.fetch('/api/ratings/')).rejects.toThrow();
+
+    // The two surfaces answer different questions, and this is the case that
+    // separates them. The symbol reports whether the app is reaching the
+    // server, so it goes struck-through. The switch reports whether the USER
+    // asked for offline mode, and nobody did — a switch that flicks itself on
+    // when the lift crosses a ridge reports the worker's decision as theirs.
+    expect(indicatorState()).toBe('offline');
+    expect(switchChecked()).toBe(false);
   });
 });
 
 describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
-  it('reveals the banner while forced even though navigator.onLine is true', async () => {
+  it('paints the symbol offline while navigator.onLine is true', async () => {
     const sw = stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
     await loadModule();
@@ -580,9 +736,9 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     sw.emit({ type: 'network-mode', mode: 'offline-forced' });
 
     // The normal case for this mode: a working connection the user has asked
-    // the app not to use. Keying the banner off onLine would hide it.
+    // the app not to use. Keying the symbol off onLine would say "online".
     expect(window.navigator.onLine).toBe(true);
-    expect(bannerShown()).toBe(true);
+    expect(indicatorState()).toBe('offline');
   });
 
   it('explains a forced mode differently from a latch, and shares the summary line', async () => {
@@ -602,6 +758,7 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     // The summary line is shared: both modes mean "not contacting the server".
     expect(roleShown('latched-message')).toBe(true);
     expect(roleShown('offline-message')).toBe(false);
+    expect(roleShown('online-message')).toBe(false);
   });
 
   it('offers the way back with the verb that fits, in both modes', async () => {
@@ -610,12 +767,29 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     await loadModule();
 
     sw.emit({ type: 'network-mode', mode: 'offline-forced' });
-    expect(roleShown('reconnect')).toBe(true);
+    expect(reconnectButton().classList.contains('hidden')).toBe(false);
     // "Try reconnecting" reads as a repair, and nothing is broken.
     expect(roleShown('resume-label')).toBe(true);
     expect(roleShown('reconnect-label')).toBe(false);
 
-    banner().querySelector('[data-role="reconnect"]').click();
+    reconnectButton().click();
+
+    expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'auto' });
+  });
+
+  it('gives an anonymous reader the only exit they have', async () => {
+    // The menu switch is signed-in only, so for an anonymous user latched by
+    // the worker this button is the whole way back. It is the reason the
+    // banner's reconnect control had to survive the move into the toast.
+    buildAnonymousFixture();
+    const sw = stubServiceWorker();
+    window.fetch = vi.fn().mockResolvedValue(okResponse());
+    await loadModule();
+
+    sw.emit({ type: 'network-mode', mode: 'offline' });
+    expect(toggleRow()).toBeNull();
+
+    reconnectButton().click();
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'auto' });
   });
@@ -632,9 +806,8 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     // roam, a battery to nurse, a tunnel ahead — so an interface event must
     // not overrule them.
     expect(sw.posted).not.toContainEqual({ type: 'network-mode', mode: 'auto' });
-    expect(bannerShown()).toBe(true);
-    expect(toggleChecked()).toBe(true);
-    expect(indicatorShown()).toBe(true);
+    expect(indicatorState()).toBe('offline');
+    expect(switchChecked()).toBe(true);
 
     // The contrast: an auto-latch is the worker guessing there is no route,
     // and an online event is better evidence, so that one does lift.
@@ -661,9 +834,9 @@ describe('the forced offline mode, as the page renders it (SNOW-748)', () => {
     await loadModule();
 
     expect(sw.posted).toContainEqual({ type: 'network-mode', mode: 'offline-forced' });
-    expect(bannerShown()).toBe(true);
-    expect(toggleChecked()).toBe(true);
-    expect(indicatorShown()).toBe(true);
+    expect(indicatorState()).toBe('offline');
+    expect(switchChecked()).toBe(true);
+    expect(roleShown('forced-explainer')).toBe(true);
     delete window.pwaDb;
   });
 });
@@ -681,7 +854,7 @@ describe('what a forced mode publishes to the rest of the app (SNOW-748)', () =>
 
   it('reports offline the moment the mode goes forced, while onLine is true', async () => {
     // Installed but not read back: this test drives the mode from the page's
-    // own toggle, and the stub is only here so the post to the worker lands
+    // own switch, and the stub is only here so the post to the worker lands
     // somewhere fresh rather than on a previous test's stub.
     stubServiceWorker();
     window.fetch = vi.fn().mockResolvedValue(okResponse());
@@ -689,7 +862,7 @@ describe('what a forced mode publishes to the rest of the app (SNOW-748)', () =>
     const seen = recordConnectivity();
 
     try {
-      toggleButton().click();
+      switchInput().click();
 
       // The premise of this whole mode: the interface is up throughout.
       expect(window.navigator.onLine).toBe(true);
@@ -707,7 +880,7 @@ describe('what a forced mode publishes to the rest of the app (SNOW-748)', () =>
     const seen = recordConnectivity();
 
     try {
-      toggleButton().click();
+      switchInput().click();
 
       expect(seen.online).toEqual([true]);
     } finally {
@@ -777,7 +950,7 @@ describe('what a forced mode publishes to the rest of the app (SNOW-748)', () =>
     await loadModule();
 
     // The read the map's controls make when they repaint — they re-render on
-    // the event, so the two must agree or the paint contradicts the banner.
+    // the event, so the two must agree or the paint contradicts the symbol.
     expect(window.pwaConnectivity.isOnline()).toBe(true);
 
     sw.emit({ type: 'network-mode', mode: 'offline-forced' });
