@@ -330,7 +330,7 @@ describe('country rows (SNOW-524)', () => {
   it('offline mode: an uncached country is red AND disabled with the radio up', async () => {
     buildFixture({ countries: CH_AT });
     setOnline(true);
-    // SNOW-748: the user forced offline mode from the header toggle. The
+    // SNOW-748: the user forced offline mode from the account menu. The
     // interface is up throughout — that is the normal case for this mode —
     // and the service worker is refusing every read, so a green dot beside an
     // uncached country would promise data that cannot arrive.

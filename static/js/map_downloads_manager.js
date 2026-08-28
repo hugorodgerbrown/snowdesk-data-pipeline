@@ -125,8 +125,8 @@
  * control visible rather than hiding it (the treatment
  * map_layer_sync_status.js established for uncached rows offline). SNOW-748:
  * "not using the network" is ``networkInUse()``, not ``navigator.onLine`` —
- * a mode the user forced from the header toggle leaves the interface up and
- * the network out of bounds.
+ * a mode the user forced from the account menu's "Offline mode" row leaves
+ * the interface up and the network out of bounds.
  *
  * That gating lives inside ``render()`` because of the re-clone above: a
  * listener or attribute bound to the trigger at boot is thrown away with
@@ -220,9 +220,9 @@
    * is up AND no offline mode is in force.
    *
    * The gating below used ``navigator.onLine``, which stays true under a mode
-   * the user forced from the header toggle: the sheet went on offering "Add
-   * an area" while the header said the app was offline and the worker refused
-   * the run. ``pwa_offline.js`` owns the answer, and its
+   * the user forced from the account menu's "Offline mode" row: the sheet went
+   * on offering "Add an area" while the header symbol said the app was offline
+   * and the worker refused the run. ``pwa_offline.js`` owns the answer, and its
    * ``snowdesk:connectivity-changed`` broadcast (listened for below) is what
    * re-renders an open sheet when it changes.
    *

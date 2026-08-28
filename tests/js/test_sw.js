@@ -1831,8 +1831,8 @@ describe('the offline latch (SNOW-742)', () => {
 // connection the probe succeeds, being online is the premise, and the user is
 // back in ``'auto'`` within thirty seconds. That was hidden by the control
 // living in a banner which only appears once the network is already failing.
-// The header toggle (SNOW-748) is always reachable, so the third mode is what
-// makes the control mean what it says.
+// The account menu's "Offline mode" row (SNOW-748) is reachable from every
+// page, so the third mode is what makes the control mean what it says.
 //
 // The distinction these tests pin: ``'offline'`` is probed and comes back on
 // its own; ``'offline-forced'`` is not probed at all and is left alone until
@@ -2160,8 +2160,8 @@ describe('warm-cache under the two offline modes (SNOW-748)', () => {
 // terminates an idle one after about thirty seconds. Until this fix nothing
 // restored it but a page's boot re-assert: a worker recycled with no page
 // loading came back in ``'auto'``, quietly resumed using the network, and
-// fired no event — so the header toggle went on reading ``aria-pressed="true"``
-// over an app that was back on the wire. It escaped notice for the reason such
+// fired no event — so the header's offline symbol went on showing an app that
+// was in fact back on the wire. It escaped notice for the reason such
 // bugs do: polling the worker to check on it is exactly what keeps it alive.
 //
 // The reads below all start from a FRESH sandbox with a row already on disk —
@@ -2244,7 +2244,8 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
     );
 
     // Against the unfixed worker this fetch succeeds and the tile comes back
-    // 200 — the app using the network while the header says it is offline,
+    // 200 — the app using the network while the header symbol says it is
+    // offline,
     // which is the whole bug rather than a proxy for it.
     expect(response.status).toBe(504);
     expect(fetchSpy).not.toHaveBeenCalled();

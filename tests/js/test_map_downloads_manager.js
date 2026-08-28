@@ -1019,7 +1019,7 @@ describe('the add-trigger', () => {
 
   // SNOW-748: the interface being up is only half of "can this download
   // happen". The other half is the network mode — the user can force offline
-  // mode from the header toggle while the radio is up, and the service worker
+  // mode from the account menu while the radio is up, and the service worker
   // then refuses the run outright (sw.js's _warmCache guard). A trigger that
   // reads navigator.onLine alone stays enabled and dispatches into that
   // refusal, which is the bug these two pin.

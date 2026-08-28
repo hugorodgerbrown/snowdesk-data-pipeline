@@ -133,7 +133,7 @@
    * is up AND no offline mode is in force.
    *
    * Reading ``navigator.onLine`` alone is what let this control offer (and
-   * start) a download while the header toggle said the app was offline: the
+   * start) a download while the header symbol said the app was offline: the
    * user forces that mode precisely when they have a connection and do not
    * want it spent, so ``onLine`` stays true throughout. ``pwa_offline.js``
    * owns the answer and broadcasts a change as
@@ -858,8 +858,9 @@
           // may well have landed before the worker honoured the cancel, but
           // the region's tile set is incomplete by definition, and the
           // done-probe checks the whole of it. 'offline' is the resting
-          // state when the abort came from the header toggle — which is the
-          // only way to reach this branch today; `renderControl`'s own
+          // state when the abort came from the account menu's "Offline
+          // mode" row — which is the only way to reach this branch today;
+          // `renderControl`'s own
           // connectivity listener already ran while this control was still
           // 'busy' (and so early-returned), so the resting paint is this
           // callback's job.

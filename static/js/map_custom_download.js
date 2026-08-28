@@ -164,8 +164,9 @@
    * is up AND no offline mode is in force.
    *
    * ``navigator.onLine`` answers only the first half, so a mode the user
-   * forced from the header toggle (which they press precisely when they have
-   * a connection and do not want it spent) left this CTA's Download button
+   * forced from the account menu's "Offline mode" row (which they switch on
+   * precisely when they have a connection and do not want it spent) left this
+   * CTA's Download button
    * enabled and dispatching runs the worker now refuses. ``pwa_offline.js``
    * owns the answer and announces a change as
    * ``snowdesk:connectivity-changed``, which is what re-validates the button.

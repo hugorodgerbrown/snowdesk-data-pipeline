@@ -55,7 +55,8 @@
  *
  * SNOW-748: that guard asks ``_networkInUse()``, not ``navigator.onLine``.
  * The interface being up is only half the question — a mode the user forced
- * from the header toggle leaves ``onLine`` true, and replaying a queued
+ * from the account menu's "Offline mode" row leaves ``onLine`` true, and
+ * replaying a queued
  * mutation over a connection they asked the app not to spend is the same
  * defect as downloading tiles under it. A forced mode leaves the row
  * queued, which is the state the queue is built around.

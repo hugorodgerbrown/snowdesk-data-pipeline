@@ -323,14 +323,16 @@ let _basemapPutsSinceTrim = 0;
 // them (SNOW-568).
 //
 // SNOW-748 added a THIRD way into the same steady state: the user asking for
-// it from the header toggle, with no failure involved at all. See
+// it from the "Offline mode" row in the account menu, with no failure
+// involved at all. See
 // ``_networkMode`` below — that mode is not probed, because there is nothing
 // to discover.
 //
 // And it is the one offline mode ``_warmCache`` does NOT ignore. The bypass
 // above reasons from a connection the user believes they have; under a forced
 // mode the user has told the app not to use the connection they know they
-// have, so downloading tiles down it is the app contradicting its own header.
+// have, so downloading tiles down it is the app contradicting its own offline
+// symbol.
 // So a forced mode refuses a new run (``_warmCache``'s first guard) and
 // cancels one in flight (``_forceOffline``), while an auto-latch does neither.
 
@@ -389,11 +391,12 @@ const OFFLINE_PROBE_URL = '/livez';
 //                          timeouts. Read paths do not touch the network at
 //                          all, and a probe on a backoff schedule looks for a
 //                          route so the app can come back on its own.
-//   ``'offline-forced'`` — the USER asked for offline mode, from the header
-//                          toggle in templates/includes/nav.html. Read paths
-//                          behave exactly as they do while latched, but
-//                          nothing probes: a mode the user chose is left alone
-//                          until the user changes it back.
+//   ``'offline-forced'`` — the USER asked for offline mode, from the "Offline
+//                          mode" row in the account menu
+//                          (templates/includes/nav.html). Read paths behave
+//                          exactly as they do while latched, but nothing
+//                          probes: a mode the user chose is left alone until
+//                          the user changes it back.
 //
 // The distinction is the SNOW-748 fix. SNOW-742 had two values, so a user's
 // request was routed into ``_latchOffline()``, which schedules the unlatch
@@ -401,7 +404,7 @@ const OFFLINE_PROBE_URL = '/livez';
 // — being online is the premise — and put the user back in ``'auto'`` within
 // thirty seconds. That was invisible while the control lived in the offline
 // banner (which only reveals once the network is already failing, so the probe
-// failed too); it cannot survive an always-reachable toggle in the header.
+// failed too); it cannot survive a toggle reachable from every page.
 //
 // So the comparisons below are NOT interchangeable. Some mean "any offline
 // mode" (``!== 'auto'``) and some mean "auto-latched only" (``=== 'offline'``);
@@ -419,8 +422,8 @@ const NETWORK_MODE_KEY = 'network.mode';
 // ``_networkMode`` is module scope, so it dies with the worker — and Chrome
 // terminates an idle worker after about thirty seconds. A user-forced offline
 // mode was therefore silently lost: the restarted worker came back in
-// ``'auto'`` and quietly resumed using the network while the header toggle
-// still read "offline", with no event fired and nothing to correct it until
+// ``'auto'`` and quietly resumed using the network while the header symbol
+// still said "offline", with no event fired and nothing to correct it until
 // the next page load. ``_hydrateNetworkMode`` is the worker recovering the
 // user's standing choice by itself.
 let _networkModeHydration = null;
@@ -1408,8 +1411,9 @@ function _clearWarmCacheCancelled(requestId) {
 // SNOW-748: requestIds of warm-cache runs currently in flight. The cancelled
 // set above records what the PAGE asked to stop; this one records what there
 // is to stop, which is the half the worker never had. ``_forceOffline`` needs
-// it: the user pressing the header toggle mid-download is a cancel request for
-// whatever is running, and the worker is the only side that knows what that is
+// it: the user switching on "Offline mode" mid-download is a cancel request
+// for whatever is running, and the worker is the only side that knows what
+// that is
 // (the page posts a cancel for one control's own run, not for anyone else's).
 //
 // Entries are added as a run is dispatched and removed as its promise settles,
@@ -2073,8 +2077,8 @@ function _latchOffline() {
 }
 
 /**
- * SNOW-748: enter offline mode because the USER asked for it, from the header
- * toggle in templates/includes/nav.html.
+ * SNOW-748: enter offline mode because the USER asked for it, from the
+ * "Offline mode" row in the account menu (templates/includes/nav.html).
  *
  * Sibling to ``_latchOffline`` and identical to it in every way but one: it
  * deliberately does NOT call ``_scheduleProbe()``. That omission IS the fix.
@@ -2290,8 +2294,9 @@ function _hydrateNetworkMode() {
  * Apply a ``network-mode`` message from a page, and answer the sender with the
  * mode the worker is actually in.
  *
- * Three sources send one: the user's own control (the header toggle since
- * SNOW-748), the mode persisted in ``meta:app`` being re-asserted on boot, and
+ * Three sources send one: the user's own control (the account menu's
+ * "Offline mode" row since SNOW-748), the mode persisted in ``meta:app`` being
+ * re-asserted on boot, and
  * the page's ``online`` listener asking for an immediate probe rather than
  * waiting out the backoff. A page can also send no mode at all, which is a
  * pure query.
@@ -2965,7 +2970,7 @@ self.addEventListener('message', (event) => {
       const shouldCancel = () => _warmCacheCancelledIds.has(requestId);
       // SNOW-748: and the other half of that protocol — this run is now
       // something there is to cancel, which is what ``_forceOffline`` needs to
-      // know when the user presses the header toggle mid-download.
+      // know when the user switches on "Offline mode" mid-download.
       _markWarmCacheActive(requestId);
       const onProgress = (done, total, settled, bytes) => {
         event.source?.postMessage({

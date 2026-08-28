@@ -138,8 +138,9 @@
    * is up AND no offline mode is in force.
    *
    * ``navigator.onLine`` answers only the first half, so a mode the user
-   * forced from the header toggle left this module beaconing and flushing
-   * over a connection the user had just asked the app not to spend.
+   * forced from the account menu's "Offline mode" row left this module
+   * beaconing and flushing over a connection the user had just asked the app
+   * not to spend.
    * ``pwa_offline.js`` owns the answer; ``navigator.onLine`` stays the
    * fallback for a page where that module has not run.
    *

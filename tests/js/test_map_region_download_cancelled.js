@@ -291,7 +291,7 @@ beforeAll(async () => {
   mapStub = stubMapLibre();
   installCachesStub();
   installDbStub();
-  // The header toggle's answer. Online at boot, so the control is actionable
+  // The network mode's answer. Online at boot, so the control is actionable
   // and `handleClick`'s own pre-flight lets the run start; a test that wants
   // a forced mode flips it from inside the run.
   window.pwaConnectivity = { isOnline: () => true };
@@ -360,7 +360,7 @@ describe('region download — a cancelled run is not a failure (SNOW-748)', () =
     expect(await recordedRegion()).toBeUndefined();
   });
 
-  it('rests on the offline state when the cancel came from the header toggle', async () => {
+  it('rests on the offline state when the cancel came from the mode switch', async () => {
     // The path that made this branch reachable: the user forces offline mode
     // mid-download, the worker abandons the run, and by the time `finish`
     // runs the app is no longer using the network. 'idle' would invite a tap

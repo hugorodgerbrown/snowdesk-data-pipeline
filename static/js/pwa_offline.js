@@ -162,7 +162,8 @@
   //
   // SNOW-748: three values, not two — ``'auto'``, ``'offline'`` (the worker
   // latched itself after three read timeouts) and ``'offline-forced'`` (the
-  // user pressed the header toggle). Only the middle one is ever probed, which
+  // user switched on "Offline mode" in the account menu). Only the middle one
+  // is ever probed, which
   // is why the user's choice survives being online.
   const NETWORK_MODE_KEY = 'network.mode';
   let networkMode = 'auto';

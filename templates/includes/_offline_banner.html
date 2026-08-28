@@ -37,11 +37,11 @@ different promises to the user and only one of them is true at a time:
     attached but has no route — the Underground), which is exactly why the
     banner cannot key off ``onLine`` alone.
   * forced (``latched-message`` / ``forced-explainer``) — SNOW-748: the same
-    behaviour, asked for by the user from the header toggle
-    (``includes/nav.html``). It shares the summary line, because the summary
-    answers "is this app contacting the server" and the answer is the same;
-    it does NOT share the explanation, because the latched one asserts there
-    is no usable connection and here there may well be one. Nothing probes
+    behaviour, asked for by the user from the "Offline mode" row in the
+    account menu (``includes/nav.html``). It shares the summary line, because
+    the summary answers "is this app contacting the server" and the answer is
+    the same; it does NOT share the explanation, because the latched one
+    asserts there is no usable connection and here there may well be one. Nothing probes
     this state, so nothing will end it but the user.
 
 Both variants of the message and the explanation are rendered here and
@@ -131,8 +131,8 @@ Spec §3.5, §10.1, §12.6 — freshness is non-negotiable.
                 It will check again periodically, and reconnect on its own once there is signal.
             {% endblocktrans %}
         </p>
-        {# SNOW-748: the third explanation, for the mode the USER chose from #}
-        {# the header toggle. The latched copy above is false here — there   #}
+        {# SNOW-748: the third explanation, for the mode the USER chose in #}
+        {# the account menu. The latched copy above is false here — there    #}
         {# may well be a usable connection, and nothing will check for one,  #}
         {# because being left alone is the point of asking.                  #}
         <p

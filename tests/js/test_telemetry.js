@@ -353,7 +353,7 @@ describe('forced-offline gating (SNOW-748)', () => {
     await window.pwaTelemetry.setOptIn(true);
     await window.pwaTelemetry.emit('pwa.install.prompted');
 
-    // Exactly the state the header toggle produces: the radio is up and
+    // Exactly the state the offline-mode switch produces: the radio is up and
     // `navigator.onLine` says so; only the mode says no.
     expect(navigator.onLine).toBe(true);
     window.pwaConnectivity = { isOnline: () => false };
