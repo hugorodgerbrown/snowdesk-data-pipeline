@@ -1,0 +1,37 @@
+{% comment %}
+templates/includes/_icon_wifi.html — the connectivity glyph: three
+broadcast arcs over a dot (SNOW-742; extracted here by SNOW-748).
+
+One source for one mark, like the eight glyphs beside it. The mark was
+inlined in ``includes/_offline_banner.html`` for its whole life, and
+SNOW-748 gave it a second caller — the header network toggle in
+``includes/nav.html``, which shows this mark while the app is using the
+network and ``_icon_wifi_off.html`` while it is not. Two copies of a mark
+that has to read as ONE control's two states is exactly the drift a
+partial prevents.
+
+The dot is drawn as a zero-length ``round``-capped segment (``M12 20h.01``)
+rather than a ``<circle>``: it inherits the stroke width the arcs use, so
+the mark scales as a unit.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 16, the
+            banner's size; the nav toggle passes 15 to match the cog
+            beside it.
+  svg_class (string, optional) — classes on the <svg>. The banner passes
+            its own layout classes.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:16 }}"
+    height="{{ size|default:16 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 20h.01M2.42 8.577a13 13 0 0119.16 0M5.879 11.879a8 8 0 0112.242 0M9.172 14.828a4 4 0 015.656 0" />
+</svg>

@@ -1,0 +1,35 @@
+{% comment %}
+templates/includes/_icon_wifi_off.html — the "not using the network" glyph:
+``_icon_wifi.html``'s arcs, struck through (SNOW-748).
+
+Deliberately the SAME arcs as its sibling plus one diagonal, rather than a
+second drawing of the same idea. The two are the two states of ONE control
+— the header network toggle in ``includes/nav.html`` swaps between them in
+place — so a user has to read the change as the same mark being negated,
+not as one icon being replaced by another. Any difference in the arcs
+would be seen as meaning something.
+
+A strike-through rather than a fade or a colour change: the toggle's
+pressed state already carries colour (the status-warning tokens), and
+colour alone cannot say "off" to a user who cannot distinguish it.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 16, matching
+            ``_icon_wifi.html``.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:16 }}"
+    height="{{ size|default:16 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 20h.01M2.42 8.577a13 13 0 0119.16 0M5.879 11.879a8 8 0 0112.242 0M9.172 14.828a4 4 0 015.656 0" />
+    <path d="M3 3l18 18" />
+</svg>

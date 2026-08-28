@@ -77,8 +77,28 @@
  * latch, and re-asserting is what restores it without putting an IndexedDB
  * read on the worker's own fetch path.
  *
- * Every user-facing string for both states is rendered by
- * ``includes/_offline_banner.html`` and toggled here by ``hidden``. Setting the
+ * The header toggle (SNOW-748)
+ * -----------------------------
+ * SNOW-742 put the user's own way into offline mode inside the banner above —
+ * which reveals only once the connection has already failed, so the control
+ * for "I have signal and am about to lose it" was unreachable in exactly that
+ * case. It is now ``[data-network-toggle]`` in ``includes/nav.html``: always
+ * present, revealed by this module (as ``mutation_queue.js`` reveals the sync
+ * badge beside it), and bound here.
+ *
+ * That move needed a third mode. The worker's ``'offline'`` is an auto-latch
+ * and is probed back to ``'auto'`` within thirty seconds of a route
+ * reappearing — correct for a latch, and the exact opposite of what a user who
+ * pressed the toggle while online asked for. So a user's request is
+ * ``'offline-forced'``, which the worker never probes. The three values are
+ * ``'auto'``, ``'offline'`` (auto-latched) and ``'offline-forced'`` (the
+ * user's), and the comparisons below are NOT interchangeable — see the
+ * ``online`` listener in particular.
+ *
+ * Every user-facing string for all three states is rendered by
+ * ``includes/_offline_banner.html`` (or, for the toggle's label, the strings
+ * ``<template>`` in ``includes/nav.html``, read back through
+ * ``window.pwaStrings.read()``) and toggled here by ``hidden``. Setting the
  * text from JavaScript would ship English to every locale — ``makemessages``
  * never scans ``static/js`` — which is what ``bin/i18n-lint`` fails on.
  *
@@ -102,8 +122,24 @@
   // of the latch, and re-asserting is what restores it without putting an
   // IndexedDB read on the worker's fetch path. See sw.js's
   // ``_publishNetworkMode``.
+  //
+  // SNOW-748: three values, not two — ``'auto'``, ``'offline'`` (the worker
+  // latched itself after three read timeouts) and ``'offline-forced'`` (the
+  // user pressed the header toggle). Only the middle one is ever probed, which
+  // is why the user's choice survives being online.
   const NETWORK_MODE_KEY = 'network.mode';
   let networkMode = 'auto';
+
+  // SNOW-748: the header toggle in includes/nav.html, and the ids of the
+  // strings ``<template>`` beside it. English fallbacks are here rather than
+  // only in the template because a page whose nav is absent (or an older
+  // cached shell) must still label the control with words.
+  const NETWORK_TOGGLE_SELECTOR = '[data-network-toggle]';
+  const NETWORK_TOGGLE_STRINGS_ID = 'network-toggle-strings-template';
+  const NETWORK_TOGGLE_FALLBACKS = {
+    'go-offline': 'Go offline — stop using the network',
+    'go-online': 'Go back online — start using the network',
+  };
 
   // SNOW-482: the meta:app key the last-sync clock is persisted under.
   // A sibling ``freshness.last_generated_at`` key went with the write-only
@@ -243,6 +279,10 @@
    * @param {boolean} online
    */
   function renderBanner(online) {
+    // SNOW-748: the header toggle is painted whether or not the banner exists
+    // on this page, and before the early return below — it is the one surface
+    // that states the mode on a page that is working perfectly.
+    renderNetworkToggle();
     const banner = document.getElementById(BANNER_ID);
     if (!banner) return;
     // SNOW-742: a latched app keeps the banner up even though
@@ -255,7 +295,11 @@
     // shows the wrong one for a frame, and the banner is revealed by a network
     // failure at an arbitrary later moment.
     renderNetworkMode(banner);
-    if (online && networkMode !== 'offline') {
+    // SNOW-748: ``=== 'auto'``, not ``!== 'offline'``. A user-forced mode
+    // is normally entered while ``navigator.onLine`` is true, so the old test
+    // would have hidden the banner for the whole time the app was running from
+    // downloaded data — the one state it exists to announce.
+    if (online && networkMode === 'auto') {
       banner.classList.add('hidden');
       stopFreshnessTicker();
       return;
@@ -267,34 +311,106 @@
 
   /**
    * SNOW-742: show the message, explanation and control that match the current
-   * network mode. Both variants of each are rendered server-side by
+   * network mode. Every variant of each is rendered server-side by
    * ``includes/_offline_banner.html`` and toggled here, so no user-facing
    * string is ever built in JavaScript (docs/i18n.md).
+   *
+   * SNOW-748: three modes, and the two offline ones agree on more than they
+   * differ on. They share the summary line — it answers "is this app
+   * contacting the server", and the answer is no either way — and they share
+   * the control, because the way out is the same. They do NOT share the
+   * explanation: the latched copy asserts there is no usable connection, which
+   * is exactly what is false when the user chose the mode while online.
    *
    * @param {HTMLElement} banner
    */
   function renderNetworkMode(banner) {
+    const auto = networkMode === 'auto';
+    const forced = networkMode === 'offline-forced';
     const latched = networkMode === 'offline';
     const toggle = (role, shown) => {
       const el = banner.querySelector(`[data-role="${role}"]`);
       if (el) el.classList.toggle('hidden', !shown);
     };
-    toggle('offline-message', !latched);
-    toggle('latched-message', latched);
-    toggle('offline-explainer', !latched);
+    toggle('offline-message', auto);
+    toggle('latched-message', !auto);
+    toggle('offline-explainer', auto);
     toggle('latched-explainer', latched);
-    // The two controls are mutually exclusive, and each is only offered in the
-    // state where it does something: "try reconnecting" while latched, "stay
-    // offline" while merely struggling.
-    toggle('reconnect', latched);
-    toggle('stay-offline', !latched);
+    toggle('forced-explainer', forced);
+    // The way back to normal operation, offered only where it does something
+    // — under either offline mode, and not while the app is merely
+    // struggling and still trying on its own.
+    toggle('reconnect', !auto);
+    // Same button, two labels: "try reconnecting" reads as a repair, which is
+    // the wrong promise when nothing is broken and the user simply chose this.
+    toggle('reconnect-label', latched);
+    toggle('resume-label', forced);
+  }
+
+  /**
+   * SNOW-748: reveal and paint the header network toggle
+   * (``includes/nav.html``).
+   *
+   * Revealed here rather than rendered visible, the same contract
+   * ``mutation_queue.js`` has with the sync badge beside it: a control that
+   * only works because a script is running must not be on screen when that
+   * script is not.
+   *
+   * TWO painted states for the worker's three. ``aria-pressed`` is a boolean
+   * and the question it answers — "is the network switched off" — genuinely is
+   * one bit; which offline mode it is belongs to the banner, which has room
+   * for a sentence. The glyph swaps as well as the colour, so the state does
+   * not rest on colour alone.
+   *
+   * @returns {void}
+   */
+  function renderNetworkToggle() {
+    const button = document.querySelector(NETWORK_TOGGLE_SELECTOR);
+    if (!button) return;
+    const offline = networkMode !== 'auto';
+    button.classList.remove('hidden');
+    button.classList.add('inline-flex');
+    button.setAttribute('aria-pressed', offline ? 'true' : 'false');
+    button.classList.toggle('bg-status-warning-bg', offline);
+    button.classList.toggle('text-status-warning-text', offline);
+    button.classList.toggle('text-text-3', !offline);
+    const strings = window.pwaStrings
+      ? window.pwaStrings.read(NETWORK_TOGGLE_STRINGS_ID, NETWORK_TOGGLE_FALLBACKS)
+      : NETWORK_TOGGLE_FALLBACKS;
+    // The label names the ACTION, not the state — the state is aria-pressed's
+    // job, and a control labelled with its own state reads back ambiguously.
+    button.setAttribute('aria-label', offline ? strings['go-online'] : strings['go-offline']);
+    button.setAttribute('title', offline ? strings['go-online'] : strings['go-offline']);
+    const glyph = (role, shown) => {
+      const el = button.querySelector(`[data-role="${role}"]`);
+      if (el) el.classList.toggle('hidden', !shown);
+    };
+    glyph('network-on', !offline);
+    glyph('network-off', offline);
+  }
+
+  /**
+   * SNOW-748: narrow an arbitrary value to one of the three known modes.
+   *
+   * Used on both inbound paths — the worker's announcement and the persisted
+   * ``meta:app`` row — because both can carry a value written by a different
+   * version of the code than the one reading it: a shell cached before this
+   * ticket, or a row written by one after it. An unrecognised value becomes
+   * ``'auto'``, which is the only mode that claims nothing.
+   *
+   * @param {*} value
+   * @returns {'auto'|'offline'|'offline-forced'}
+   */
+  function coerceNetworkMode(value) {
+    if (value === 'offline' || value === 'offline-forced') return value;
+    return 'auto';
   }
 
   /**
    * Ask the service worker to change mode, and persist the request so a
    * restarted worker can be told about it again on the next boot.
    *
-   * @param {'auto'|'offline'} mode
+   * @param {'auto'|'offline'|'offline-forced'} mode
    */
   function requestNetworkMode(mode) {
     networkMode = mode;
@@ -310,9 +426,9 @@
   }
 
   /**
-   * Bind the banner's two mode controls, and listen for the worker announcing
-   * a mode change it made on its own (the latch tripping, or a probe finding
-   * a route again).
+   * Bind the banner's mode control and the header toggle, and listen for the
+   * worker announcing a mode change it made on its own (the latch tripping, or
+   * a probe finding a route again).
    */
   function bindNetworkModeControls() {
     const banner = document.getElementById(BANNER_ID);
@@ -320,10 +436,15 @@
       banner.querySelector('[data-role="reconnect"]')?.addEventListener('click', () => {
         requestNetworkMode('auto');
       });
-      banner.querySelector('[data-role="stay-offline"]')?.addEventListener('click', () => {
-        requestNetworkMode('offline');
-      });
     }
+    // SNOW-748: the header toggle. Its two directions are not symmetrical —
+    // going offline asks for ``'offline-forced'`` (a choice, never probed),
+    // while coming back always asks for plain ``'auto'`` whichever offline
+    // mode it is leaving, because "use the network again" means the same thing
+    // either way.
+    document.querySelector(NETWORK_TOGGLE_SELECTOR)?.addEventListener('click', () => {
+      requestNetworkMode(networkMode === 'auto' ? 'offline-forced' : 'auto');
+    });
     // ``navigator.serviceWorker``'s message queue is disabled until something
     // enables it — setting ``onmessage``, or calling this. An
     // ``addEventListener`` listener alone does NOT enable it, so a message the
@@ -340,10 +461,14 @@
     }
     navigator.serviceWorker?.addEventListener('message', (event) => {
       if (!event.data || event.data.type !== 'network-mode') return;
-      networkMode = event.data.mode === 'offline' ? 'offline' : 'auto';
+      // SNOW-748: coerced to the three known values rather than trusted, so a
+      // message from an older or newer worker cannot put an unrenderable
+      // string in the mirror. Anything unrecognised means 'auto' — the mode
+      // that promises least.
+      networkMode = coerceNetworkMode(event.data.mode);
       persistMeta(NETWORK_MODE_KEY, networkMode);
       renderBanner(navigator.onLine);
-      syncNetworkRequired(navigator.onLine && networkMode !== 'offline');
+      syncNetworkRequired(navigator.onLine && networkMode === 'auto');
     });
   }
 
@@ -618,6 +743,15 @@
       // that the latch should lift, and it beats waiting out the worker's own
       // backoff (up to five minutes). If the route is still dead, three
       // bounded reads re-latch within about nine seconds.
+      //
+      // SNOW-748: ``=== 'offline'`` EXACTLY, and this is the single most
+      // important comparison in the file. An auto-latch is the worker's guess
+      // that there is no route, and an ``online`` event is better evidence, so
+      // lifting it is right. A forced mode is not a guess about the network at
+      // all — the user chose it, very often while online — so an interface
+      // event must not overrule it. Widening this to ``!== 'auto'`` would undo
+      // the user's choice the first time the radio blinked, which is the bug
+      // this ticket exists to fix, moved one file across.
       if (networkMode === 'offline') requestNetworkMode('auto');
       renderBanner(true);
       syncNetworkRequired(true);
@@ -652,9 +786,14 @@
     // SNOW-742: and the network mode, which is re-asserted to the worker by
     // ``init`` below. Read separately from the clock above so one failing row
     // can't cost the other.
+    //
+    // SNOW-748: WHICH offline mode is preserved, not just the fact of one. A
+    // forced mode read back as a latch would be probed away within thirty
+    // seconds of the next page load — the user's choice surviving a reload is
+    // most of what makes it a setting rather than a gesture.
     try {
       const modeRow = await window.pwaDb.get('meta:app', NETWORK_MODE_KEY);
-      if (modeRow && modeRow.value === 'offline') networkMode = 'offline';
+      if (modeRow) networkMode = coerceNetworkMode(modeRow.value);
     } catch (_err) {
       // Best-effort — an unread mode simply starts in 'auto', and the latch
       // re-trips within about nine seconds if the radio really is dead.
@@ -681,9 +820,13 @@
     // terminated while idle comes back in 'auto' having forgotten the latch;
     // this is what restores it, and it is why the worker never has to read
     // IndexedDB on its own fetch path.
-    if (networkMode === 'offline') requestNetworkMode('offline');
+    //
+    // SNOW-748: either offline mode is re-asserted, as ITSELF. Sending
+    // 'offline' for a forced mode would hand the worker a latch, which
+    // schedules the probe that ends it.
+    if (networkMode !== 'auto') requestNetworkMode(networkMode);
     renderBanner(navigator.onLine);
-    syncNetworkRequired(navigator.onLine && networkMode !== 'offline');
+    syncNetworkRequired(navigator.onLine && networkMode === 'auto');
     // Prime consumers with the initial state so a page that loaded offline
     // (via the SW cache) gets its cache-aware gating applied at boot, not
     // only on the next transition.

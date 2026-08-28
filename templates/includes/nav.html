@@ -28,6 +28,14 @@ Sync badge (SNOW-376):
   colour to the status-error tokens when any queued mutation has
   permanently failed.
 
+Network toggle (SNOW-748):
+  A [data-network-toggle] icon button beside the sync badge, offered to
+  every viewer including anonymous ones. Hidden by default;
+  static/js/pwa_offline.js reveals it, paints its pressed state and binds
+  the click, which asks the service worker for 'offline-forced' or 'auto'.
+  Moved here from the offline banner, which only appears once the network
+  has already failed — see the comment at the button itself.
+
 Parameters
 ----------
 back_url : str, optional
@@ -130,6 +138,65 @@ Usage
                 data-testid="mutation-queue-badge"
                 class="hidden items-center rounded-pill border border-border bg-tag px-2 py-0.5 font-mono text-caption text-text-3"
             ></span>
+            {% comment %}
+                SNOW-748: the network toggle — "use the network" / "run from
+                downloaded data only".
+
+                SNOW-742 built this control and put it where it can never be
+                used for the case it was built for: inside the offline banner,
+                which pwa_offline.js only reveals once the connection has
+                already resolved into a definite failure. The user it was for
+                — "I have signal now, and I am about to lose it / not to trust
+                it / not to spend it" — could never reach it. Here it is
+                omnipresent.
+
+                Anonymous as well as signed-in, deliberately: basemap
+                downloads are not auth-gated, so neither is the switch that
+                decides whether the app calls the server at all. It reads as
+                app state, next to the sync badge, rather than as an account
+                preference buried behind the avatar.
+
+                Hidden at rest and revealed by static/js/pwa_offline.js, the
+                same contract the sync badge above has with mutation_queue.js:
+                a control whose driving script is absent (an old cached shell,
+                a JS error, the admin) must not be on screen offering
+                something nothing will honour.
+
+                TWO states painted, not the worker's three. aria-pressed and
+                the struck-through glyph answer "is this app using the
+                network", which is one bit; WHICH offline mode it is —
+                auto-latched or the user's own choice — is the banner's job,
+                and it says so in a sentence rather than a colour.
+            {% endcomment %}
+            <button
+                type="button"
+                data-network-toggle
+                data-testid="network-toggle"
+                aria-pressed="false"
+                aria-label='{% trans "Go offline — stop using the network" %}'
+                class="hidden items-center justify-center w-7 h-7 rounded-full text-text-3 hover:text-text-1 hover:bg-text-3/15 transition-colors"
+            >
+                {# Both marks rendered, one hidden — pwa_offline.js swaps the #}
+                {# `hidden` class rather than rewriting the SVG, so the glyph #}
+                {# paths stay in the template partials that own them.         #}
+                <span data-role="network-on">{% include "includes/_icon_wifi.html" with size=15 only %}</span>
+                <span
+                    data-role="network-off"
+                    class="hidden"
+                >{% include "includes/_icon_wifi_off.html" with size=15 only %}</span>
+            </button>
+            {% comment %}
+                The toggle's labels, read back by pwa_offline.js through
+                window.pwaStrings.read() (static/js/i18n_strings.js). They
+                cannot be static markup: the label describes what pressing the
+                button will DO, so it changes with the state, and a label set
+                from a JS literal would ship English to every locale —
+                makemessages never scans static/js. See docs/i18n.md.
+            {% endcomment %}
+            <template id="network-toggle-strings-template">
+                <span data-string="go-offline">{% trans "Go offline — stop using the network" %}</span>
+                <span data-string="go-online">{% trans "Go back online — start using the network" %}</span>
+            </template>
             {% if request.user.is_authenticated %}
                 {# ── Subscriber avatar dropdown ── #}
                 {# SNOW-616: a native <details> disclosure, not a scripted one. #}
