@@ -129,6 +129,7 @@ from apps.weather.services.weather_fetcher import (
     fetch_weather_for_region,
 )
 
+from .component_previews import help_illustrations
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
 from .headlines import headline_for
@@ -1188,10 +1189,16 @@ def help_page(request: HttpRequest) -> HttpResponse:
     Returns:
         The rendered help page.
 
+    SNOW-744: six topics illustrate themselves by rendering the real
+    partial for the surface they describe, fed by the synthetic contexts
+    in ``apps.public.component_previews``. Those are built in memory, so
+    this view still issues no queries — a property its own test pins.
+
     """
-    context = {
+    context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
     }
+    context.update(help_illustrations())
     return render(request, "public/help.html", context)
 
 

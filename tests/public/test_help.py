@@ -12,6 +12,9 @@ Covers:
   * Every control in the map's own control column has a topic here, and the
     map's coachmark tour has a step for each one. Routes shipped with
     neither, which is what that pair of tests exists to stop recurring.
+  * The SNOW-744 illustrations: each illustrated topic renders one, every
+    illustration is inert, the four panel illustrations carry namespaced
+    switch ids, and the page still issues no queries.
   * The Sync-log panel is gated on the ``sync_log`` per-user waffle flag —
     absent by default, present under ``@override_flag``. It is the only
     gated panel left; SNOW-724 opened the Map-weather (SNOW-573) and
@@ -25,6 +28,8 @@ static and carries no model queries.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 from django.test import Client
@@ -270,3 +275,88 @@ class TestHelpCoversTheMapControls:
     ) -> None:
         home = client.get(reverse("public:home")).content
         assert f'data-help-target="#{control}"'.encode() in home, control
+
+
+@pytest.mark.django_db
+class TestHelpIllustrations:
+    """Six topics render the real component they describe (SNOW-744).
+
+    The illustrations are live mocks rather than screenshots — see
+    docs/decisions/help-illustrations-are-live-mocks.md — so what these
+    tests protect is the wiring and the two properties a decoration made
+    of real components has to hold: it must not be reachable, and it must
+    not answer to the ids the real components answer to.
+    """
+
+    #: Topics that carry an illustration, and a marker proving the right
+    #: component rendered inside it rather than merely a wrapper.
+    ILLUSTRATED = {
+        "help-topic-calendar": b"calendar-cell",
+        "help-topic-favourites": b"help-illustration-toggle-favourites",
+        "help-topic-observations": b"help-illustration-toggle-observations",
+        "help-topic-routes": b"help-illustration-toggle-routes",
+        "help-topic-downloads": b"help-illustration-toggle-downloads",
+    }
+
+    @pytest.mark.parametrize("testid,marker", ILLUSTRATED.items())
+    def test_illustrated_topics_render_their_component(
+        self, client: Client, testid: str, marker: bytes
+    ) -> None:
+        content = client.get(reverse("public:help")).content
+        assert f'data-testid="{testid}-illustration"'.encode() in content
+        assert marker in content
+
+    def test_unillustrated_topics_render_no_wrapper(self, client: Client) -> None:
+        """A topic without an illustration is untouched by the new slot.
+
+        The season timeline is the deliberate example: its demo partial
+        exists, but the styles that make it legible live in
+        static/css/map.css, which /help/ does not load.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in ("help-topic-timeline", "help-topic-layers", "help-topic-map"):
+            assert f'data-testid="{testid}-illustration"'.encode() not in content
+
+    def test_every_illustration_is_inert(self, client: Client) -> None:
+        """Illustrations hold real, focusable, dead controls.
+
+        aria-hidden alone would leave a switch and a close button in the
+        tab order while telling a screen reader they are not there.
+        """
+        content = client.get(reverse("public:help")).content.decode()
+        for testid in self.ILLUSTRATED:
+            start = content.index(f'data-testid="{testid}-illustration"')
+            # The attributes sit on the same element, just before the testid.
+            opening = content.rfind("<div", 0, start)
+            wrapper = content[opening:start]
+            assert "inert" in wrapper, testid
+            assert 'aria-hidden="true"' in wrapper, testid
+
+    def test_illustration_switch_ids_never_shadow_the_real_ones(
+        self, client: Client
+    ) -> None:
+        """map.js finds the switch it drives by id; a decoration must not answer.
+
+        The real ids are asserted absent from /help/ rather than merely
+        different from the illustrations', because that is the failure
+        that would matter: a page where the wrong element responds.
+        """
+        content = client.get(reverse("public:help")).content
+        for real_id in (
+            b"map-favourites-overlay-toggle",
+            b"map-community-reports-overlay-toggle",
+            b"map-downloads-overlay-toggle",
+        ):
+            assert real_id not in content, real_id
+
+    def test_help_page_issues_no_queries(
+        self, client: Client, django_assert_num_queries: Any
+    ) -> None:
+        """The illustrations are built in memory, and must stay that way.
+
+        The season grid is the one that could regress: the real builder
+        reads RegionDayRating, and a future edit that reached for it
+        instead of the synthetic cells would put a query on a static page.
+        """
+        with django_assert_num_queries(0):
+            client.get(reverse("public:help"))

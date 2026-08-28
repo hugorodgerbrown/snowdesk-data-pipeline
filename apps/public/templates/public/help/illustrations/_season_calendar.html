@@ -1,0 +1,15 @@
+{% comment %}
+public/help/illustrations/_season_calendar.html — the season-heatmap
+illustration for /help/ (SNOW-744).
+
+Delegates to public/partials/_season_calendar_demo.html, the component
+library's chrome-free view of the real grid (no sheet, no backdrop, no
+JS), fed by the six-week synthetic grid from
+apps.public.component_previews.synthetic_season_grid.
+
+The demo partial stamps data-testid="season-calendar", the same value the
+real grid carries on a bulletin page. That is harmless — the two never
+appear on the same page — but it is why the /help/ tests select this
+illustration by its panel's own testid rather than by that one.
+{% endcomment %}
+{% include "public/partials/_season_calendar_demo.html" %}

@@ -19,6 +19,14 @@ Parameters (passed via ``{% include … with … %}``):
                            Context inheritance carries ``prose`` and all
                            other parent-context variables into the
                            sub-template automatically.
+  illustration (string)  — Optional Django template path rendered ABOVE the
+                           body copy, inside the same body wrapper (SNOW-744).
+                           The help page uses it to show the real component a
+                           topic describes, fed by a synthetic context from
+                           apps.public.component_previews. It is decoration:
+                           the wrapper carries ``aria-hidden`` so a screen
+                           reader gets the prose alone, which therefore has to
+                           stand on its own without it.
   is_open      (bool)    — When truthy, renders the ``open`` attribute on
                            ``<details>`` so the panel starts expanded.
                            Used by the component library to demonstrate
@@ -53,6 +61,30 @@ Parameters (passed via ``{% include … with … %}``):
         <span class="snowdesk-panel-chevron text-text-3 text-sm" aria-hidden="true">&#x25BE;</span>
     </summary>
     <div class="{% if bare %}pt-2{% else %}px-4 pb-4 pt-3 border-t border-border{% endif %}">
+        {% if illustration %}
+            {# `inert` is doing the load-bearing work here, not aria-hidden.  #}
+            {# These illustrations render REAL components, so each contains    #}
+            {# real switches, buttons and a close X — all focusable, and all   #}
+            {# of them dead, because nothing binds a listener to them on this  #}
+            {# page. aria-hidden alone would leave them in the tab order,      #}
+            {# which is the classic focusable-inside-aria-hidden fault: a      #}
+            {# keyboard user tabs into a control a screen reader has just been #}
+            {# told is not there. `inert` takes them out of the tab order,     #}
+            {# drops them from the accessibility tree and swallows clicks, so  #}
+            {# the X cannot be pressed either. aria-hidden stays beside it for #}
+            {# anything that does not honour inert.                            #}
+            {#                                                                 #}
+            {# `overflow-x-auto` because the heatmap is wider than a phone and #}
+            {# must scroll inside its own box rather than widening the page.   #}
+            <div
+                class="mb-4 overflow-x-auto rounded-sm bg-bg p-3"
+                inert
+                aria-hidden="true"
+                data-testid="{{ data_testid }}-illustration"
+            >
+                {% include illustration %}
+            </div>
+        {% endif %}
         {% if body_template %}
             {% include body_template %}
         {% else %}
