@@ -1174,6 +1174,13 @@ Optional context:
         <li data-help-target="#report-btn" data-help-title='{% trans "Field observations" %}'>
             {% trans "See your reports, share a new field observation, and show or hide the community's on the map." %}
         </li>
+        {# SNOW-686/687 added the routes roundel to the stack without a step  #}
+        {# here, so the one control in the column the tour never named was    #}
+        {# also the one with no section on /help/. Sits between the field-    #}
+        {# observation roundel and the help "?", which is its DOM order.      #}
+        <li data-help-target="#route-add-btn" data-help-title='{% trans "Your routes" %}'>
+            {% trans "Upload a GPX track, see the ones you've saved, and show or hide them on the map." %}
+        </li>
         {# The tour explains its own trigger. It was the only control in the   #}
         {# stack with no step, which read as an oversight once every           #}
         {# neighbour had one — and this is where a user who has just been      #}

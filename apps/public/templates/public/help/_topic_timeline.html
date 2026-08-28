@@ -1,21 +1,36 @@
 {% comment %}
-apps/public/templates/public/help/_topic_timeline.html — "The season timeline & calendar" panel body.
+apps/public/templates/public/help/_topic_timeline.html — "The season
+timeline" panel body.
 
 Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
+
+Split from the old combined "season timeline & calendar" topic: the
+scrubber is a MAP control and belongs in the map group, while the season
+heatmap is opened from a bulletin page and now has its own
+_topic_calendar.html under Bulletins. One panel covering both meant a
+reader on the map was reading about a surface they could not reach from
+where they were standing.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            The scrubber along the bottom of the map lets you drag through the whole avalanche season, day by day, to
-            see how conditions have changed for a region over time.
+            The scrubber along the bottom of the map moves it through the season, a day at a time. Drag the thumb, and
+            every region's colour changes to its danger rating for the date you land on.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0">
+    <p class="mb-3 last:mb-0" data-testid="help-timeline-transport">
         {% blocktrans trimmed %}
-            The calendar glyph on a bulletin page opens a month grid instead, colour-coded by that day's danger rating,
-            so you can jump straight to a specific date without scrubbing through every day in between.
+            The buttons either side of the track work like a media player: skip to the start or the end of the season,
+            or play the whole thing as a timelapse, forwards or backwards. A second press stops it.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-timeline-date-pill">
+        {% blocktrans trimmed %}
+            The date sits in a pill above the track, and everything else on the map follows it &mdash; the danger
+            colours, the weather overlay, and the region readout in the header. Scrubbing to a date the weather layer
+            has no forecast for switches that layer's row off until you come back into range.
         {% endblocktrans %}
     </p>
 </div>

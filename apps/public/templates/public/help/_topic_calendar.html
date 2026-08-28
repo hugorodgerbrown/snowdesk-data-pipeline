@@ -1,0 +1,40 @@
+{% comment %}
+apps/public/templates/public/help/_topic_calendar.html — "The season
+calendar" panel body.
+
+Content partial for the help page; the second half of the split described
+in _topic_timeline.html's own comment. It sits under Bulletins because
+the surface it documents is opened from a bulletin page, not from the map.
+
+The copy it replaces was wrong about the surface twice over: it called it
+"a month grid" opened from "the calendar glyph". apps/public/season_calendar.py
+builds a season-long heatmap — one tile per day from settings.SEASON_START_DATE
+through today + 1, weeks as columns — and templates/includes/nav.html opens
+it from a button labelled "<NN/NN> Season". (season_calendar.py's own
+docstring still refers in passing to a "month-grid nav-glyph calendar";
+there is no such surface in nav.html, so do not restore that description
+from it.)
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Every bulletin page has a "Season" button in its header, marked with the season's years. It opens a heatmap
+            of the whole season for that region: one tile per day from the season's start through to tomorrow, laid out
+            as weeks running down the columns.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-calendar-tiles">
+        {% blocktrans trimmed %}
+            Each tile carries that day's danger rating in its colour, so a season's worth of conditions reads at a
+            glance &mdash; the settled spells, and the weeks that ran high. A day whose rating varied across the region
+            is split diagonally between the lowest and the highest it reached.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-calendar-navigation">
+        {% blocktrans trimmed %}
+            Tap any day that has a bulletin to jump straight to it. Days with no bulletin &mdash; before the season
+            began, or a gap in what the provider published &mdash; are drawn flat and do nothing.
+        {% endblocktrans %}
+    </p>
+</div>

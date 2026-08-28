@@ -1,0 +1,56 @@
+{% comment %}
+apps/public/templates/public/help/_topic_routes.html — "Routes" panel body.
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html. Documents the fourth UGC
+surface (public/partials/_routes_surface.html, SNOW-686/687), which had
+no help section of its own.
+
+The two caps (settings.ROUTES_MAX_PER_USER, ROUTE_UPLOAD_MAX_BYTES) are
+described without their numbers on purpose: both are env-overridable, so
+a figure written here would be a claim this page cannot keep true.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Routes are your own tracks, drawn on the map beside the avalanche picture. Sign in, open the routes button
+            on the right of the map, and upload a .gpx file containing a track or a route &mdash; the kind of file a GPS
+            watch, a planning tool or a touring app exports.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-routes-panel">
+        {% blocktrans trimmed %}
+            The panel lists everything you have uploaded, each row with its distance and, where the file recorded
+            heights, its ascent and descent. You can rename a route in place or remove it, and the "Display on the map"
+            switch at the foot draws them all as lines.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-routes-popup">
+        {% blocktrans trimmed %}
+            Tapping a line on the map opens the route's own popup: its name, the same figures, and an elevation profile
+            of the whole track. The profile is drawn from the heights in your file, so a track recorded without them
+            shows none rather than a flat line.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-routes-private">
+        {% blocktrans trimmed %}
+            Routes are private. They are visible only to you, they are never shown to other users, and they play no part
+            in the community-reports overlay.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-routes-limits">
+        {% blocktrans trimmed %}
+            Uploading needs a connection, as do renaming and removing &mdash; those actions are not queued for later the
+            way a field observation is. There is a limit on the size of a single file and on how many routes one account
+            can keep; the panel says so when you reach either. A very long track is thinned before it is stored, which
+            keeps it quick to draw and leaves its shape, distance and profile intact.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-routes-offline">
+        {% blocktrans trimmed %}
+            Once your routes have loaded on a device, the lines stay on the map with no connection. The list inside the
+            panel needs one, and says so instead of pretending you have no routes.
+        {% endblocktrans %}
+    </p>
+</div>

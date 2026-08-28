@@ -1,0 +1,103 @@
+{% comment %}
+apps/public/templates/public/help/_topic_layers.html — "Layers" panel body.
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html.
+
+Documents the layers menu (#basemap-menu in
+public/partials/_map_embed.html) group by group, in the order the menu
+itself renders them: Bulletins, Boundaries, Locations, Conditions,
+Terrain, Base map. Two of those groups have a panel of their own on this
+page — Map weather and Slope angle — so the rows here get a sentence and
+a pointer rather than a second copy of the detail.
+
+The user-generated overlays (favourites, field observations, routes) are
+deliberately NOT described here: SNOW-658 moved each one's toggle out of
+this menu and into the panel its own roundel opens, and the last
+paragraph says so, because a reader who remembers the old menu rows will
+otherwise go looking for them.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The stacked-squares button on the right of the map opens the layers menu &mdash; one list controlling
+            everything the map draws, grouped by what each row is. A row you switch on stays on the next time you open
+            Snowdesk on this device.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Bulletins" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-bulletins">
+        {% blocktrans trimmed %}
+            One row per provider &mdash; SLF (CH), Météo-France (FR) and ALBINA (AT, IT) &mdash; each covering the
+            countries that provider publishes for. Switching one off takes its bulletins off the map, which is the way
+            to look at one country's picture on its own. Switzerland is on to start with.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-fill">
+        {% blocktrans trimmed %}
+            How strongly the danger colour paints is a separate control: the half-filled square below the layers button
+            steps the shading from off to full, so you can read the terrain underneath without losing the bulletin
+            altogether.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Boundaries" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-boundaries">
+        {% blocktrans trimmed %}
+            Outlines of the European avalanche regions at three scales: Major (EAWS Level 1), Minor (EAWS L2) and Micro
+            (EAWS L4). Micro is the level bulletins are issued at and is drawn by default; the two coarser outlines help
+            you place a small region inside the wider area it belongs to.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Locations" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-resorts">
+        {% blocktrans trimmed %}
+            Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
+            resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
+            favourites.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Conditions" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
+        {% blocktrans trimmed %}
+            Weather puts a condition symbol and the day's high temperature at each resort. See "Map weather" below for
+            what it covers and when it switches itself off.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Terrain" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
+        {% blocktrans trimmed %}
+            Slope angle shades the ground by steepness. It is the one layer with real limits on what it can tell you, so
+            read "Slope angle" below before you rely on a shading.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Base map" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-basemaps">
+        {% blocktrans trimmed %}
+            The map underneath everything else. Standard covers the whole area; the national mapping-agency maps &mdash;
+            Swisstopo (CH), IGN (FR) and basemap.at (AT) &mdash; carry far more detail for their own country and are
+            blank outside it, so switching to one is a choice to look closely at one place.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "The dot on each row" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-sync-dots">
+        {% blocktrans trimmed %}
+            Every row carries a small dot saying whether that layer is held on this device: green for available offline,
+            grey for not stored yet, and a pulse while it is being fetched. It is there so you can check what will still
+            work before you lose signal.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-disabled-rows">
+        {% blocktrans trimmed %}
+            A row is sometimes switched off with a reason attached &mdash; the weather layer on a date outside the
+            forecast window, the slope layer outside the area it covers, or any layer that has never been loaded while
+            you were online. The note on the row says which.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-ugc-elsewhere">
+        {% blocktrans trimmed %}
+            Your own pins, reports and routes are not in this menu. Each has its own button on the right of the map, and
+            the "Display on the map" switch inside that button's panel is what puts it on the map.
+        {% endblocktrans %}
+    </p>
+</div>

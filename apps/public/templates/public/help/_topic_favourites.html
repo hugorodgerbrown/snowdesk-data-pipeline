@@ -3,13 +3,25 @@ apps/public/templates/public/help/_topic_favourites.html — "Favourites" panel 
 
 Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
+
+Rewritten to describe the panel the star roundel opens (SNOW-658) rather
+than the pin-placement flow it used to start directly, and to name the
+"Display on the map" switch that used to be a layers-menu row — a reader
+looking for it in the layers menu will not find it.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
             Favourites let you pin specific spots &mdash; a resort, a trailhead, a favourite line &mdash; directly on
-            the map. Sign in, then use "Add a favourite pin" to drop a pin at any point.
+            the map. Sign in, open the star button on the right of the map, and use "Add a favourite": the map moves
+            under a fixed pin, so you place it with one hand. You can also save a resort straight from its pin's popup.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-favourites-panel">
+        {% blocktrans trimmed %}
+            That same panel lists everything you have saved. Rename a pin in place, remove one, and use the "Display on
+            the map" switch at the foot to draw them all &mdash; the switch lives here rather than in the layers menu.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">
@@ -22,6 +34,12 @@ body_template parameter of includes/_collapsible_panel.html.
         {% blocktrans trimmed %}
             Every favourite also has its own page you can bookmark or share &mdash; open it from "My favourites" or from
             "Your favourites here" on that favourite's region bulletin page.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-favourites-private">
+        {% blocktrans trimmed %}
+            Favourites are private: they are yours alone and are never shown to other users. A pin dropped with no
+            connection is saved on the device and sent when you are back online.
         {% endblocktrans %}
     </p>
 </div>
