@@ -52,17 +52,26 @@ Routes and Offline downloads came to have neither.
         {% translate "Bulletins" as t_section_bulletins %}
         {% include "includes/_eyebrow.html" with text=t_section_bulletins class_extra="mt-6 mb-2" only %}
 
-        {% translate "Reading a bulletin" as t_bulletins %}
-        {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" body_template="public/help/_topic_bulletins.html" %}
-
+        {# Each of these three illustrates a different component of the      #}
+        {# bulletin page, in the order the page stacks them: the header, the #}
+        {# day-risk panel, then a problem card. "Reading a bulletin" used to #}
+        {# be one topic covering the rating and the problems together; a     #}
+        {# panel carries one illustration and those are two components, so   #}
+        {# the topic split rather than the slot growing a list.              #}
         {% translate "The weather header" as t_weather %}
-        {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" body_template="public/help/_topic_weather.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" illustration="public/help/illustrations/_weather_header.html" body_template="public/help/_topic_weather.html" %}
+
+        {% translate "The day's danger rating" as t_bulletins %}
+        {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" illustration="public/help/illustrations/_day_windows.html" body_template="public/help/_topic_bulletins.html" %}
+
+        {% translate "Avalanche problems" as t_problems %}
+        {% include "includes/_collapsible_panel.html" with title=t_problems data_testid="help-topic-problems" illustration="public/help/illustrations/_rating_block.html" body_template="public/help/_topic_problems.html" %}
 
         {# Split from one "season timeline & calendar" panel: the heatmap is #}
         {# opened from a bulletin page, so it belongs here, while the        #}
         {# scrubber is a map control and sits in the map group below.        #}
         {% translate "The season calendar" as t_calendar %}
-        {% include "includes/_collapsible_panel.html" with title=t_calendar data_testid="help-topic-calendar" body_template="public/help/_topic_calendar.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_calendar data_testid="help-topic-calendar" illustration="public/help/illustrations/_season_calendar.html" body_template="public/help/_topic_calendar.html" %}
 
         {# The map's own controls, in the order the control column runs:      #}
         {# orientation, then layers (and the two layers deep enough to need a #}
@@ -75,6 +84,15 @@ Routes and Offline downloads came to have neither.
         {% translate "Getting around the map" as t_map %}
         {% include "includes/_collapsible_panel.html" with title=t_map data_testid="help-topic-map" body_template="public/help/_topic_map.html" %}
 
+        {# SNOW-744 deliberately leaves this topic UNILLUSTRATED. The       #}
+        {# scrubber's demo form exists (public/partials/_season_scrubber_demo #}
+        {# .html) but every rule that gives it a track, a thumb and a date    #}
+        {# pill lives in static/css/map.css, and /help/ loads output.css      #}
+        {# alone — rendered here it collapses to a row of loose buttons over  #}
+        {# a 0px track. Pulling the map's stylesheet onto a text page to      #}
+        {# decorate one panel is the wrong trade against the Lighthouse       #}
+        {# budget, so the scrubber moves to SNOW-745 with the other surfaces  #}
+        {# that need a demo form of their own.                                #}
         {% translate "The season timeline" as t_timeline %}
         {% include "includes/_collapsible_panel.html" with title=t_timeline data_testid="help-topic-timeline" body_template="public/help/_topic_timeline.html" %}
 
@@ -101,17 +119,22 @@ Routes and Offline downloads came to have neither.
             {% include "includes/_collapsible_panel.html" with title=t_slope data_testid="help-topic-slope" body_template="public/help/_topic_slope.html" %}
         </div>
 
+        {# SNOW-744: these four topics illustrate themselves with the SAME    #}
+        {# component (includes/_ugc_panel.html), each passing its own entry   #}
+        {# from apps.public.component_previews. The repetition is the point:  #}
+        {# the copy says the four panels share one shape, and four renders of #}
+        {# one partial show it rather than asserting it.                      #}
         {% translate "Favourites" as t_favourites %}
-        {% include "includes/_collapsible_panel.html" with title=t_favourites data_testid="help-topic-favourites" body_template="public/help/_topic_favourites.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_favourites data_testid="help-topic-favourites" illustration="public/help/illustrations/_panel.html" panel=panels.favourites body_template="public/help/_topic_favourites.html" %}
 
         {% translate "Field observations" as t_observations %}
-        {% include "includes/_collapsible_panel.html" with title=t_observations data_testid="help-topic-observations" body_template="public/help/_topic_observations.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_observations data_testid="help-topic-observations" illustration="public/help/illustrations/_panel.html" panel=panels.observations body_template="public/help/_topic_observations.html" %}
 
         {% translate "Routes" as t_routes %}
-        {% include "includes/_collapsible_panel.html" with title=t_routes data_testid="help-topic-routes" body_template="public/help/_topic_routes.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_routes data_testid="help-topic-routes" illustration="public/help/illustrations/_panel.html" panel=panels.routes body_template="public/help/_topic_routes.html" %}
 
         {% translate "Offline downloads" as t_downloads %}
-        {% include "includes/_collapsible_panel.html" with title=t_downloads data_testid="help-topic-downloads" body_template="public/help/_topic_downloads.html" %}
+        {% include "includes/_collapsible_panel.html" with title=t_downloads data_testid="help-topic-downloads" illustration="public/help/illustrations/_panel.html" panel=panels.downloads body_template="public/help/_topic_downloads.html" %}
 
         {% translate "Your account and this device" as t_section_account %}
         {% include "includes/_eyebrow.html" with text=t_section_account class_extra="mt-6 mb-2" only %}

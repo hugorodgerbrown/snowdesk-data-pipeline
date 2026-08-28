@@ -1,0 +1,14 @@
+{% comment %}
+public/help/illustrations/_day_windows.html — the day-risk panel
+illustration for /help/.
+
+Renders includes/day_windows.html — the "Day Risk Profile" panel that sits
+between the bulletin masthead and the first problem card — from the
+synthetic two-row context in apps.public.component_previews.
+
+Two rows rather than one on purpose: about 95% of real bulletins are a
+single all-day window, but a reader who only ever sees that shape has no
+idea why the panel exists. The rising "later" row is what the copy has to
+explain.
+{% endcomment %}
+{% include "includes/day_windows.html" %}

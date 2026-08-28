@@ -1,0 +1,20 @@
+{% comment %}
+public/help/illustrations/_panel.html — a /help/ topic's UGC-panel
+illustration (SNOW-744).
+
+Renders includes/_ugc_panel.html — the real shell behind the favourites,
+field-observation, routes and downloads panels — from the synthetic context
+in apps.public.component_previews. Four topics include this file with a
+different ``panel``, which is the point: the help copy says those panels
+share one shape, and rendering the same component four times shows it
+rather than asserting it.
+
+The panel is a plain flex column, so it needs no map and no sheet chrome to
+sit in a document flow. Nothing here binds a listener: the switch at its
+foot carries a namespaced id from the previews module precisely so that
+map.js, which finds the real switch by id, can never find this one.
+
+Context expected:
+  panel — one entry from component_previews._PANELS.
+{% endcomment %}
+{% include "includes/_ugc_panel.html" with title=panel.title icon_template=panel.icon_template context_line=panel.context_line section_label=panel.section_label rows_template="public/help/illustrations/_panel_rows.html" cta_label=panel.cta_label toggle_id=panel.toggle_id %}
