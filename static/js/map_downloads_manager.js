@@ -121,15 +121,18 @@
  * renaming, deleting — works offline, and must: storage pressure is felt
  * exactly when there is no connection to relieve it. Starting a NEW
  * download is the one thing that cannot, so ``[data-panel-add]`` is
- * disabled and relabelled while ``navigator.onLine`` is false, keeping the
+ * disabled and relabelled while the app is not using the network, keeping the
  * control visible rather than hiding it (the treatment
- * map_layer_sync_status.js established for uncached rows offline).
+ * map_layer_sync_status.js established for uncached rows offline). SNOW-748:
+ * "not using the network" is ``networkInUse()``, not ``navigator.onLine`` —
+ * a mode the user forced from the header toggle leaves the interface up and
+ * the network out of bounds.
  *
  * That gating lives inside ``render()`` because of the re-clone above: a
  * listener or attribute bound to the trigger at boot is thrown away with
  * the previous body on the next open. A ``snowdesk:connectivity-changed``
  * listener re-renders an OPEN sheet so a connection dropped mid-use lands
- * immediately, and the click handler keeps its own ``navigator.onLine``
+ * immediately, and the click handler keeps its own ``networkInUse()``
  * check as the race guard for the gap between paint and tap.
  *
  * ## Its map.js dependencies are four narrow bridges
@@ -211,6 +214,24 @@
   var bodyTemplate = document.getElementById(BODY_TEMPLATE_ID);
   var rowTemplate = document.getElementById(ROW_TEMPLATE_ID);
   if (!sheet || !bodyTemplate || !rowTemplate) return;
+
+  /**
+   * SNOW-748: true when the app is actually using the network — the interface
+   * is up AND no offline mode is in force.
+   *
+   * The gating below used ``navigator.onLine``, which stays true under a mode
+   * the user forced from the header toggle: the sheet went on offering "Add
+   * an area" while the header said the app was offline and the worker refused
+   * the run. ``pwa_offline.js`` owns the answer, and its
+   * ``snowdesk:connectivity-changed`` broadcast (listened for below) is what
+   * re-renders an open sheet when it changes.
+   *
+   * @returns {boolean}
+   */
+  function networkInUse() {
+    var connectivity = window.pwaConnectivity;
+    return connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+  }
 
   /**
    * Translated strings, lifted out of the strings template.
@@ -581,7 +602,7 @@
     // starts from a pristine clone, so coming back online restores the
     // enabled control and its original label without an else.
     const addButton = sheet.querySelector('[data-panel-add]');
-    if (addButton && !navigator.onLine) {
+    if (addButton && !networkInUse()) {
       addButton.setAttribute('disabled', '');
       // Alongside the native property, not instead of it: `disabled` is
       // what stops the click, `aria-disabled` is what a screen reader
@@ -872,7 +893,7 @@
     if (!target || !target.closest) return;
     const addButton = target.closest('[data-panel-add]');
     if (addButton) {
-      if (!navigator.onLine) {
+      if (!networkInUse()) {
         window.MapSheet.toast(STRINGS['add-offline']);
         return;
       }

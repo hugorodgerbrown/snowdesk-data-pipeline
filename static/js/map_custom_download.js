@@ -159,6 +159,24 @@
   // reset.
   const CANCEL_LABEL_DEFAULT = cancelBtn.textContent;
 
+  /**
+   * SNOW-748: true when the app is actually using the network — the interface
+   * is up AND no offline mode is in force.
+   *
+   * ``navigator.onLine`` answers only the first half, so a mode the user
+   * forced from the header toggle (which they press precisely when they have
+   * a connection and do not want it spent) left this CTA's Download button
+   * enabled and dispatching runs the worker now refuses. ``pwa_offline.js``
+   * owns the answer and announces a change as
+   * ``snowdesk:connectivity-changed``, which is what re-validates the button.
+   *
+   * @returns {boolean}
+   */
+  function networkInUse() {
+    const connectivity = window.pwaConnectivity;
+    return connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+  }
+
   // SNOW-635: the id `handleConfirm` mints for the run currently in
   // flight, or null between runs — see `_refreshBudgetBanner`'s own
   // comment for why this replaces a `CUSTOM_AREA_ID` lookup there.
@@ -757,7 +775,7 @@
     // Offline-integrity: never let the CTA's own Download button start a
     // run while offline, even if the roundel that opened framing read
     // idle at the time (a connectivity change mid-session).
-    confirmBtn.disabled = overCeiling || !navigator.onLine;
+    confirmBtn.disabled = overCeiling || !networkInUse();
   }
 
   /**
@@ -1155,8 +1173,11 @@
     // own re-entrancy guard.
     if (runState === 'busy') return;
     // Offline-integrity: never start a download offline, even if a race
-    // left the button enabled at the moment of the click.
-    if (!navigator.onLine) {
+    // left the button enabled at the moment of the click. SNOW-748: a
+    // user-forced offline mode counts — the worker refuses the run either
+    // way, and this is the version of "no" that arrives before the roundel
+    // paints busy.
+    if (!networkInUse()) {
       paintRun('offline');
       return;
     }
@@ -1209,7 +1230,7 @@
           // claim 'done': the probe checks the WHOLE saved area's tile
           // set, and painting done here would claim more than is true.
           await progressFill.finish(false);
-          paintRun(navigator.onLine ? 'idle' : 'offline');
+          paintRun(networkInUse() ? 'idle' : 'offline');
         } else if (ok) {
           // SNOW-632: `bytes` is this run's OWN reported total, recorded
           // outright — never accumulated onto anything, and never

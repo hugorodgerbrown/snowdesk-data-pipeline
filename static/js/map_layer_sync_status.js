@@ -21,7 +21,7 @@
  *
  * Offline gating (offline-integrity)
  * ----------------------------------
- * The dots don't just advise — while ``navigator.onLine === false`` they
+ * The dots don't just advise — while the app is not using the network they
  * GATE interaction. A resource that isn't cached can't be loaded offline,
  * so its row gets the red
  * ``unavailable-offline`` dot AND is disabled (``aria-disabled``, honoured
@@ -404,13 +404,23 @@
   }
 
   /**
-   * True when the app is offline. Read live from ``navigator.onLine`` on
-   * every ``refresh()`` (and every ``snowdesk:connectivity-changed``), so
-   * the gating reflects the connection state at paint time.
+   * True when the app is not using the network. Read live on every
+   * ``refresh()`` (and every ``snowdesk:connectivity-changed``), so the gating
+   * reflects the state at paint time.
+   *
+   * SNOW-748: read through ``window.pwaConnectivity``, not from
+   * ``navigator.onLine`` directly. The interface being up is only half the
+   * question — under an offline mode (the worker's latch, or the one the user
+   * forced from the header toggle) no request leaves the app at all, and a
+   * green dot beside an uncached layer would promise data that cannot arrive.
+   * ``navigator.onLine`` stays the fallback for a page where
+   * ``pwa_offline.js`` has not run.
    *
    * @returns {boolean}
    */
   function _offline() {
+    const connectivity = window.pwaConnectivity;
+    if (connectivity) return !connectivity.isOnline();
     return typeof navigator !== 'undefined' && navigator.onLine === false;
   }
 

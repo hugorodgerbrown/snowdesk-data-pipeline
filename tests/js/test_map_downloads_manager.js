@@ -412,6 +412,7 @@ afterEach(() => {
   delete window.pwaCustomAreaDownload;
   delete window.pwaOverlayBounds;
   delete window.MapSheet;
+  delete window.pwaConnectivity;
 });
 
 describe('opening the sheet', () => {
@@ -1014,6 +1015,46 @@ describe('the add-trigger', () => {
     const sheet = document.getElementById('map-downloads-sheet');
     expect(sheet.hidden).toBe(true);
     expect(sheet.children.length).toBe(0);
+  });
+
+  // SNOW-748: the interface being up is only half of "can this download
+  // happen". The other half is the network mode — the user can force offline
+  // mode from the header toggle while the radio is up, and the service worker
+  // then refuses the run outright (sw.js's _warmCache guard). A trigger that
+  // reads navigator.onLine alone stays enabled and dispatches into that
+  // refusal, which is the bug these two pin.
+
+  it('disables the trigger under a forced offline mode, with the radio up', async () => {
+    seed({});
+    setOnline(true);
+    window.pwaConnectivity = { isOnline: () => false };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const add = document.querySelector('[data-panel-add]');
+    expect(window.navigator.onLine).toBe(true);
+    expect(add.hasAttribute('disabled')).toBe(true);
+    // Disabled and explained, never hidden — a missing control reads as a
+    // bug, a disabled one reads as "not right now".
+    expect(add.textContent).toBe('Downloading needs a connection');
+  });
+
+  it('cannot reach framing under a forced offline mode, even if the click lands', async () => {
+    seed({});
+    setOnline(true);
+    await loadModule();
+    openSheet();
+    await settle();
+    // The mode is forced AFTER the paint, so the trigger is still enabled —
+    // the click handler's own guard is what has to catch this one.
+    window.pwaConnectivity = { isOnline: () => false };
+
+    document.querySelector('[data-panel-add]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalled();
   });
 
   it('does nothing when the custom-area bridge has not loaded', async () => {

@@ -1727,7 +1727,15 @@ const PINNED_DOWNLOAD_DEPS = {
   progressGrid: (plan, offset) => createDownloadProgressGrid(plan, offset),
   warmCache: (urls, opts) =>
     typeof window.pwaWarmCache === 'function' ? window.pwaWarmCache(urls, opts) : null,
-  isOnline: () => navigator.onLine,
+  // SNOW-748: the effective state, not the interface's. The runner uses this
+  // to repaint the roundel after a declined eviction, and painting 'idle'
+  // there would offer a retry the worker would refuse under a user-forced
+  // offline mode. ``window.pwaConnectivity`` is pwa_offline.js's read of the
+  // same value its ``snowdesk:connectivity-changed`` broadcast carries;
+  // ``navigator.onLine`` is the fallback for a page where that module has not
+  // run.
+  isOnline: () =>
+    window.pwaConnectivity ? window.pwaConnectivity.isOnline() : navigator.onLine !== false,
 };
 
 /**
