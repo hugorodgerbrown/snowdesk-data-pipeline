@@ -560,6 +560,26 @@ async function _appendCustomArea(area) {
   const next = existing.filter((entry) => !entry || entry.id !== area.id);
   next.push(area);
   await _writeCustomAreas(next);
+  // SNOW-749: and record the DEFINITION against the account, from the same
+  // moment the device record is written so the two cannot disagree about
+  // what was downloaded. Enqueued through the mutation queue, so an area
+  // framed and downloaded with no signal is recorded when the device
+  // surfaces; a no-op with the `download_sync` flag off or the visitor
+  // signed out. Never awaited for its outcome and never able to fail the
+  // download: the tiles are what the user asked for, and they are already
+  // on disk by the time this runs.
+  //
+  // The name is the STORED one only. An unrenamed area's "Custom area N"
+  // default is filled in at read time from `ordinal` (see
+  // `basemapDownloadedAreas`), in the language active then — persisting it
+  // to the account would freeze one device's language into a row every
+  // other device reads.
+  await window.pwaDownloadsSync?.push({
+    areaId: area.id,
+    bbox: area.bbox,
+    basemapKey: area.basemapKey,
+    name: area.name || '',
+  });
 }
 
 /**
@@ -584,7 +604,14 @@ async function renameCustomArea(areaId, name) {
   const next = existing.map((entry) =>
     entry && entry.id === areaId ? { ...entry, name: name } : entry,
   );
-  return _writeCustomAreas(next);
+  const ok = await _writeCustomAreas(next);
+  // SNOW-749: carry the new name to the account row too, so the area reads
+  // the same on every device. Only after the local write landed — the
+  // sheet renders from the local record, so a name that did not stick here
+  // must not be claimed anywhere else. A no-op with the flag off or the
+  // visitor signed out.
+  if (ok) await window.pwaDownloadsSync?.rename(areaId, name);
+  return ok;
 }
 
 // SNOW-586: every area currently recorded as downloaded, normalised into
@@ -626,6 +653,12 @@ async function basemapDownloadedAreas() {
         // SNOW-645: absent on a record written before this ticket shipped
         // — reads as "downloaded, basemap unknown" rather than a wrong one.
         basemapKey: entry.basemapKey || null,
+        // SNOW-749: the region id, carried so `reconcileAreas` can compare
+        // and `downloads_sync.js` can describe this area to the account
+        // without re-parsing it back out of the bucket id — that format
+        // belongs to `areaIdForRegion` and is deliberately never
+        // reverse-engineered elsewhere.
+        regionId: entry.region_id,
       });
     }
   } catch (_e) {
@@ -660,6 +693,10 @@ async function basemapDownloadedAreas() {
         savedAt: entry.savedAt,
         // SNOW-645: see the region branch above for the "unknown" fallback.
         basemapKey: entry.basemapKey || null,
+        // SNOW-749: a custom area IS its box — it is the only thing that
+        // lets another device (or this one after an eviction) fetch the
+        // same ground again, so it travels with the area.
+        bbox: entry.bbox,
       });
     }
   } catch (_e) {
@@ -684,7 +721,20 @@ async function basemapDownloadedAreas() {
   for (const id of orphanIds) {
     bytesById[id] = await measurePinnedBucketBytes(id);
   }
-  return manage.reconcileAreas(areas, storedIds, bytesById);
+  // SNOW-749: and union in the areas on the ACCOUNT, in this same one
+  // normalising layer — exactly where SNOW-612's orphans already join,
+  // and for the same reason: a second reader somewhere else would be free
+  // to disagree with this one about what exists.
+  //
+  // `accountAreas()` resolves `[]` for an anonymous visitor, a flag-off
+  // page, an offline device and any failure alike, so this never waits on
+  // a network it cannot reach and never turns a read of local storage
+  // into a rejection. With `[]` the reconciliation output is what it was
+  // before this ticket, which is the path every existing caller takes.
+  const accountAreas = window.pwaDownloadsSync
+    ? await window.pwaDownloadsSync.accountAreas()
+    : [];
+  return manage.reconcileAreas(areas, storedIds, bytesById, accountAreas);
 }
 
 /**
@@ -850,8 +900,17 @@ async function planBasemapDownloadBudget(areaId, mb) {
     basemapDownloadBudgetBytes(),
   ]);
   const incomingBytes = Math.max(0, Number(mb) || 0) * 1024 * 1024;
-  const plan = core.planEviction(areas, { id: areaId, bytes: incomingBytes }, budgetBytes);
-  const areasById = new Map(areas.map((a) => [a.id, a]));
+  // SNOW-749: the budget is what THIS DEVICE is holding, so an area that
+  // exists only on the account is not a candidate for eviction — it costs
+  // nothing here, and "evicting" it would name an area the user cannot
+  // see in a confirm banner and free no bytes at all.
+  const onDevice = areas.filter((area) => area.onDevice !== false);
+  const plan = core.planEviction(
+    onDevice,
+    { id: areaId, bytes: incomingBytes },
+    budgetBytes,
+  );
+  const areasById = new Map(onDevice.map((a) => [a.id, a]));
   return { fits: plan.fits, impossible: plan.impossible, evict: plan.evict, projectedBytes: plan.projectedBytes, areasById };
 }
 

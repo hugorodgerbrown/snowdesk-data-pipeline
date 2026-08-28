@@ -177,6 +177,16 @@ in addition to the shared map assets.
     {# here, ahead of them, for the same reason as relative_time.js — one   #}
     {# owner for the treatment rather than a copy in each module.           #}
     <script defer src="{% static 'js/signin_cta.js' %}"></script>
+    {# SNOW-749: the account half of offline downloads — pushes each        #}
+    {# completed download's DEFINITION to the account and reads back the    #}
+    {# areas already there. Loaded ahead of the map bundle so                #}
+    {# window.pwaDownloadsSync exists by the time map_basemap_downloads.js  #}
+    {# and map_region_download.js reach for it; both read it lazily, from   #}
+    {# inside async functions, so this is belt-and-braces rather than a     #}
+    {# load-order contract. Entirely inert with the download_sync flag off  #}
+    {# or the visitor signed out — it reads both off                        #}
+    {# #map-custom-download-control.                                         #}
+    <script defer src="{% static 'js/downloads_sync.js' %}"></script>
     {# The one toast instance MapSheet.toast() reveals — server-rendered   #}
     {# and hidden, so the markup, tokens and ARIA roles have a single      #}
     {# owner and the "×" is handled by overlays.js like every other toast. #}

@@ -268,6 +268,25 @@
     // from a <template> has no name at render time, so it is done here.
     'rename-row-label': 'Rename %(name)s',
     'remove-row-label': 'Remove %(name)s',
+    // SNOW-749: an area on the account that this device does not hold.
+    // The subtitle replaces the basemap name for such a row — which
+    // basemap it was fetched under elsewhere is a fact about a device the
+    // reader is not looking at, while "not here" is the reason the row
+    // looks different.
+    'not-on-device': 'On your account — not downloaded here',
+    'download-here-row-label': 'Download %(name)s to this device',
+    'free-space-row-label': 'Free up the space %(name)s uses on this device',
+    // The two destructive verbs' confirmations. They differ in exactly the
+    // clause that differs in effect, so the choice can be judged before it
+    // is made rather than after.
+    'confirm-free-space':
+      'Remove the offline map for %(name)s from this device? This frees ' +
+      '%(size)s and keeps %(name)s on your account, so you can download it ' +
+      'again in one tap.',
+    'confirm-forget':
+      'Remove %(name)s from your account and from this device? This frees ' +
+      '%(size)s here and removes it from your other devices too.',
+    'download-here-failed': "That download couldn't be started here. Try again.",
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -381,8 +400,20 @@
     }
   }
 
+  // SNOW-749: area ids forgotten from the ACCOUNT during this session.
+  //
+  // The forget is a queued mutation, so the account row survives the
+  // re-render that follows the tap — sometimes by milliseconds, sometimes
+  // (offline) until the device next has signal. Without this the row the
+  // user just removed reappears immediately, which reads as the removal
+  // having failed. The set is the optimistic half of the same shape the
+  // favourites panel's pending pin uses, and it is deliberately
+  // session-scoped: the next page load re-reads the truth, by which point
+  // the queue has drained.
+  const FORGOTTEN = new Set();
+
   /**
-   * Delete one area — bucket and record entry both.
+   * Evict one area from THIS DEVICE — its pinned bucket and its record.
    *
    * Delegates to map.js's ``evictBasemapAreas``, which already knows how
    * to take an area id back to the right half of the right record (the
@@ -391,10 +422,16 @@
    * re-reading the area list — verifying the state rather than trusting
    * the attempt.
    *
+   * SNOW-749: this is the "free up space" half. It leaves the account row
+   * alone, which is what lets the area come back in one tap — and it is
+   * the same call SNOW-586's automatic budget eviction makes, so an
+   * evicted area survives there too.
+   *
    * @param {string} areaId
-   * @returns {Promise<boolean>} Whether the area is now genuinely gone.
+   * @returns {Promise<boolean>} Whether the area's local copy is now
+   *   genuinely gone.
    */
-  async function deleteArea(areaId) {
+  async function evictArea(areaId) {
     if (!window.pwaBasemapDownloads) return false;
     try {
       await window.pwaBasemapDownloads.evict([areaId]);
@@ -403,7 +440,12 @@
     }
 
     const remaining = await readAreas();
-    if (remaining.some((area) => area && area.id === areaId)) return false;
+    // An area still listed as ON THIS DEVICE means the eviction did not
+    // land. One listed as account-only did land — that is the row this
+    // verb is meant to leave behind, not a failure.
+    if (remaining.some((area) => area && area.id === areaId && area.onDevice !== false)) {
+      return false;
+    }
 
     // evictBasemapAreas already refreshes the downloaded-areas overlay.
     // The layers-menu dots are this module's to refresh: they claim the
@@ -416,6 +458,35 @@
     // says whether its overlay is on the map, not what is on disk), and
     // this sheet's own re-render is what reports the delete.
     return true;
+  }
+
+  /**
+   * Remove one area EVERYWHERE — this device's copy and the account row.
+   *
+   * The trash's verb. The account half is queued (so it survives a tap
+   * made with no signal) and the local half is immediate, which is why the
+   * id is remembered in ``FORGOTTEN`` rather than the row being trusted to
+   * disappear from the next read.
+   *
+   * Ordered account-first so that a row which is ONLY on the account —
+   * nothing here to evict — still has its trash do something. The local
+   * eviction is skipped entirely for such a row: there is no bucket, and
+   * ``evictArea``'s verification would have nothing to verify.
+   *
+   * @param {string} areaId
+   * @param {boolean} onDevice Whether this device holds the area's tiles.
+   * @returns {Promise<boolean>} Whether the removal is complete as far as
+   *   this device can tell.
+   */
+  async function forgetArea(areaId, onDevice) {
+    FORGOTTEN.add(areaId);
+    await window.pwaDownloadsSync?.forget(areaId);
+    if (!onDevice) {
+      // Nothing local to remove, so nothing local to verify.
+      window.pwaLayerSyncStatus?.refresh();
+      return true;
+    }
+    return evictArea(areaId);
   }
 
   /**
@@ -451,10 +522,18 @@
     const core = manageCore();
     if (!core) return;
 
-    const [list, budgetMb] = await Promise.all([
+    const [allAreas, budgetMb] = await Promise.all([
       readAreas(),
       readMeta(BUDGET_KEY),
     ]);
+    // SNOW-749: drop anything the user has forgotten this session whose
+    // queued mutation has not drained yet — see FORGOTTEN's own comment.
+    // An area forgotten and then RE-DOWNLOADED here is back on the device,
+    // so it is listed again: the local record is newer than the pending
+    // forget, and the user is looking at the thing they just made.
+    const list = allAreas.filter(
+      (area) => !FORGOTTEN.has(area.id) || area.onDevice !== false,
+    );
     const chosenMb = core.clampBudgetMb(budgetMb);
     const summary = core.budgetSummary(list, core.megabytesToBytes(chosenMb));
     const rows = core.manageRows(list, {
@@ -676,7 +755,11 @@
     const label = fragment.querySelector('[data-row-label]');
     if (label) {
       label.textContent = row.label;
-      if (row.orphaned) {
+      // SNOW-749: an account-only row dims exactly as an orphan does. Both
+      // are "listed, but not offline here", which is what the dimming has
+      // always meant on this sheet — the difference between them is the
+      // subtitle and the controls, not the weight.
+      if (row.orphaned || row.onDevice === false) {
         label.classList.remove('text-text-1');
         label.classList.add('text-text-2');
       }
@@ -698,6 +781,13 @@
     if (subtitle) {
       if (row.orphaned) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
+      } else if (row.onDevice === false) {
+        // SNOW-749: an account-only row says what it IS, in the same slot
+        // an on-device row uses for its basemap. Which basemap it was
+        // fetched under elsewhere is a fact about a device the reader is
+        // not looking at; "not here" is the reason this row looks
+        // different and the reason it has a Download control.
+        subtitle.textContent = STRINGS['not-on-device'] || '';
       } else {
         const basemapName = row.basemapKey
           ? window.pwaBasemapDownloads?.basemapLabel?.(row.basemapKey) || ''
@@ -734,7 +824,17 @@
     //     "not actually downloaded" reason above.
     const rule = fragment.querySelector('[data-row-rule]');
     if (rule) {
-      if (row.orphaned) {
+      if (row.onDevice === false) {
+        // SNOW-749: pale, and never the shared keyless GREEN fallback.
+        // That green means "downloaded, basemap unknown", and this row is
+        // not downloaded here — the sheet is a live cache-state surface,
+        // so nothing about an account-only row may read as available
+        // offline. `bg-sync-off` is the same neutral an orphan falls back
+        // to, for the same reason: absent, not an error.
+        rule.classList.add('opacity-35');
+        rule.classList.remove('basemap-identity-fill');
+        rule.classList.add('bg-sync-off');
+      } else if (row.orphaned) {
         rule.classList.add('opacity-35');
         if (row.recoveredBasemapKey) {
           rule.dataset.basemapKey = row.recoveredBasemapKey;
@@ -756,10 +856,18 @@
     // for why the whole row dims together, not just the rule.
     const size = fragment.querySelector('[data-row-value]');
     if (size) {
-      size.textContent = row.size;
-      if (row.orphaned) {
-        size.classList.remove('text-text-2');
-        size.classList.add('text-text-3');
+      if (row.onDevice === false) {
+        // SNOW-749: no figure at all. The value column is for a MEASURED
+        // quantity (includes/_ugc_panel_row.html's own rule), and this row
+        // costs this device nothing — "0.0 MB" would read as a download
+        // that somehow takes no space rather than as one that is not here.
+        size.remove();
+      } else {
+        size.textContent = row.size;
+        if (row.orphaned) {
+          size.classList.remove('text-text-2');
+          size.classList.add('text-text-3');
+        }
       }
     }
 
@@ -770,6 +878,10 @@
       // in its confirmation without re-reading the record.
       button.setAttribute('data-downloads-label', row.label);
       button.setAttribute('data-downloads-size', row.size);
+      // SNOW-749: and whether this device holds it, so the handler knows
+      // whether there is anything local to evict alongside the account
+      // row — and so its confirmation says the right thing.
+      button.setAttribute('data-downloads-on-device', String(row.onDevice !== false));
       // SNOW-658: and the control names the row it acts on. A server-
       // rendered panel interpolates this in its own template; a row cloned
       // from a <template> has no name until here.
@@ -777,6 +889,53 @@
         'aria-label',
         interpolate(STRINGS['remove-row-label'], { name: row.label }),
       );
+    }
+
+    // SNOW-749: "Free up space" — the device-only removal. Offered ONLY
+    // when the area is on this device AND on the account: with no account
+    // row behind it the two verbs would do exactly the same thing, and a
+    // second control that is indistinguishable in effect from the trash is
+    // worse than one control.
+    const evictBtn = fragment.querySelector('[data-downloads-evict]');
+    if (evictBtn) {
+      if (row.onDevice !== false && row.synced) {
+        evictBtn.setAttribute('data-downloads-evict', row.id);
+        evictBtn.setAttribute('data-downloads-label', row.label);
+        evictBtn.setAttribute('data-downloads-size', row.size);
+        evictBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['free-space-row-label'], { name: row.label }),
+        );
+      } else {
+        evictBtn.remove();
+      }
+    }
+
+    // SNOW-749: "Download here" — the only constructive action a row has,
+    // and the reason an account-only row is listed at all. Stripped from
+    // every row already on this device (nothing to fetch) and from an
+    // account-only row carrying too little to act on — `redownloadable`
+    // is false without a region id or a bbox, and a control that silently
+    // does nothing is worse than no control.
+    const hereBtn = fragment.querySelector('[data-downloads-here]');
+    if (hereBtn) {
+      if (row.redownloadable) {
+        hereBtn.setAttribute('data-downloads-here', row.id);
+        hereBtn.setAttribute('data-downloads-region', row.regionId || '');
+        // The box travels as JSON on the element rather than through a
+        // closure, for the same reason every other value here does: the
+        // handler is delegated on the sheet and the row is a clone.
+        hereBtn.setAttribute(
+          'data-downloads-bbox',
+          Array.isArray(row.bbox) ? JSON.stringify(row.bbox) : '',
+        );
+        hereBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['download-here-row-label'], { name: row.label }),
+        );
+      } else {
+        hereBtn.remove();
+      }
     }
 
     // SNOW-635: only a renameable row (a custom area with a real record
@@ -939,9 +1098,72 @@
       window.pwaCustomAreaDownload?.openFraming();
       return;
     }
+    if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
     _handleDeleteClick(event);
   });
+
+  /**
+   * SNOW-749: "Download here" — fetch an account-only area onto this
+   * device.
+   *
+   * Hands off to whichever start control owns the kind of area it is,
+   * rather than reimplementing a run: a region goes to
+   * ``window.pwaRegionDownload.start`` (map_region_download.js), a custom
+   * area to ``window.pwaCustomAreaDownload.openFramingAt``
+   * (map_custom_download.js). Both are the same code path the roundel and
+   * the add-trigger already use, so the pre-flight, the budget check, the
+   * eviction confirm and the recording cannot drift from them.
+   *
+   * The sheet hides on the way out, mirroring the add-trigger: framing
+   * needs the map, and a region run paints its progress on the ribbon
+   * roundel behind this sheet.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a "Download here".
+   */
+  function _handleDownloadHereClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return false;
+    const button = target.closest('[data-downloads-here]');
+    if (!button) return false;
+
+    const areaId = button.getAttribute('data-downloads-here');
+    if (!areaId) return true;
+
+    // Offline-integrity, same as the add-trigger: listing costs nothing,
+    // starting a download needs a connection.
+    if (!navigator.onLine) {
+      window.MapSheet?.toast(STRINGS['add-offline']);
+      return true;
+    }
+
+    const regionId = button.getAttribute('data-downloads-region') || '';
+    let bbox = null;
+    try {
+      const raw = button.getAttribute('data-downloads-bbox');
+      bbox = raw ? JSON.parse(raw) : null;
+    } catch (_err) {
+      bbox = null;
+    }
+
+    sheet.hidden = true;
+    if (regionId && window.pwaRegionDownload) {
+      window.pwaRegionDownload.start(regionId).then(function (started) {
+        // A refusal is silent on the roundel — it settles into whatever
+        // state it settled into — so say so here rather than leaving the
+        // tap unanswered.
+        if (!started) window.MapSheet?.toast(STRINGS['download-here-failed']);
+      });
+      return true;
+    }
+    if (Array.isArray(bbox) && window.pwaCustomAreaDownload?.openFramingAt) {
+      window.pwaCustomAreaDownload.openFramingAt(bbox);
+      return true;
+    }
+    window.MapSheet?.toast(STRINGS['download-here-failed']);
+    return true;
+  }
 
   /**
    * The rename half of the sheet's delegated click handler (SNOW-635;
@@ -993,16 +1215,37 @@
   function _handleDeleteClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
-    const button = target.closest('[data-downloads-delete]');
+    // SNOW-749: two destructive verbs, one handler. They differ in what
+    // they remove and in what they say, and in nothing else — the confirm,
+    // the failure treatment and the re-render are shared, which is what
+    // keeps them from drifting into two different-feeling controls.
+    const evictButton = target.closest('[data-downloads-evict]');
+    const button = evictButton || target.closest('[data-downloads-delete]');
     if (!button) return;
 
-    const areaId = button.getAttribute('data-downloads-delete');
+    const areaId = button.getAttribute(
+      evictButton ? 'data-downloads-evict' : 'data-downloads-delete',
+    );
     if (!areaId) return;
 
-    const message = interpolate(STRINGS['confirm-remove'], {
-      name: button.getAttribute('data-downloads-label') || areaId,
-      size: button.getAttribute('data-downloads-size') || '',
-    });
+    const name = button.getAttribute('data-downloads-label') || areaId;
+    const size = button.getAttribute('data-downloads-size') || '';
+    const onDevice = button.getAttribute('data-downloads-on-device') !== 'false';
+    // Three confirmations, because there are three outcomes and the user
+    // is choosing between them:
+    //   free up space — gone from here, one tap to bring back;
+    //   remove (synced) — gone from here AND from the other devices;
+    //   remove (not synced) — the pre-SNOW-749 wording, unchanged for a
+    //     device with no account behind it, which is the flag-off and
+    //     signed-out case.
+    let message;
+    if (evictButton) {
+      message = interpolate(STRINGS['confirm-free-space'], { name: name, size: size });
+    } else if (window.pwaDownloadsSync?.isEnabled()) {
+      message = interpolate(STRINGS['confirm-forget'], { name: name, size: size });
+    } else {
+      message = interpolate(STRINGS['confirm-remove'], { name: name, size: size });
+    }
     // window.confirm, matching pwa_reset.js's destructive-action idiom —
     // the copy names what goes and what it frees, so the choice can be
     // judged before it is made.
@@ -1010,7 +1253,10 @@
       return;
     }
 
-    deleteArea(areaId).then(function (ok) {
+    const removal = evictButton
+      ? evictArea(areaId)
+      : forgetArea(areaId, onDevice);
+    removal.then(function (ok) {
       if (ok) {
         render();
         return;

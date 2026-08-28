@@ -1,0 +1,35 @@
+{% comment %}
+templates/includes/_icon_download_arrow.html — the "pull this down" glyph:
+an arrow onto a line (SNOW-749).
+
+One source for one mark. The paths are the per-region download control's
+own idle glyph (public/partials/_map_download_control.html), extracted here
+because the Manage downloads sheet now renders it too — an account-only
+row's "Download here" control, which starts exactly the same kind of run.
+
+Deliberately NOT includes/_icon_downloads.html, the viewfinder. That mark
+means "frame an area"; this one means "fetch it". The two controls sit
+within a few pixels of each other in the sheet, so telling them apart
+matters.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17, the
+            design's row-action glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 3v12" />
+    <path d="m7 10 5 5 5-5" />
+    <path d="M5 21h14" />
+</svg>

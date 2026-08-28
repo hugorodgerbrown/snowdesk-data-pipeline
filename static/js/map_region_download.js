@@ -264,6 +264,28 @@
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
+      // SNOW-749: and record the DEFINITION against the account, from the
+      // same moment the device record is written so the two cannot
+      // disagree about what was downloaded. Enqueued through the mutation
+      // queue, so a region downloaded with no signal is recorded when the
+      // device surfaces; a no-op with the `download_sync` flag off or the
+      // visitor signed out.
+      //
+      // No bbox: a region's tiles are computed server-side from its real
+      // boundary (SNOW-583 clipped them to it), so a box would be a
+      // second, coarser answer to a question already answered — the region
+      // id is the whole definition.
+      // The bucket id, minted by the core's own `areaIdForRegion` — the
+      // `region-<id>` format is deliberately never assembled by hand
+      // anywhere outside that function, and it is the key the account row
+      // is stored under.
+      const core = self.pwaBasemapDownloadCore;
+      await window.pwaDownloadsSync?.push({
+        areaId: core ? core.areaIdForRegion(regionId) : '',
+        regionId: regionId,
+        basemapKey: basemapKey,
+        name: name,
+      });
     } catch (err) {
       // Still non-fatal — see the docstring — but no longer silent
       // (SNOW-612). This is the write whose absence leaves a completed
@@ -972,4 +994,45 @@
   });
 
   if (currentRegionId) applyRegion(currentRegionId);
+
+  /**
+   * SNOW-749: focus `regionId` and start its download.
+   *
+   * The "Download here" path for a region that exists on the user's
+   * ACCOUNT but not on this device — the Manage downloads sheet
+   * (map_downloads_manager.js) has an area id and a region id, and this
+   * control has everything else. Exposed as a bridge rather than
+   * reimplemented there for the same reason `window.pwaBasemapDownloads`
+   * exists: a second copy of the pre-flight, the eviction and the
+   * recording would be free to drift from this one.
+   *
+   * Awaits a fresh probe before acting: the caller has just come from a
+   * list, so this control is very likely still painted for whatever region
+   * was last focused, and `handleClick` reads the painted state to decide
+   * whether a run is allowed at all.
+   *
+   * @param {string} regionId
+   * @returns {Promise<boolean>} Whether a run was started. False when the
+   *   region is unknown to this page, when the control settled on a state
+   *   that cannot run (offline, over the ceiling, already downloaded), or
+   *   when the visitor needs to sign in — in which case they have been
+   *   sent there.
+   */
+  async function startRegionDownload(regionId) {
+    if (NEEDS_SIGNIN) {
+      goToSignIn();
+      return false;
+    }
+    if (!regionId || !FEATURE_BY_REGION_ID[regionId]) return false;
+    applyRegion(regionId);
+    await renderControl();
+    const state = btn.dataset.downloadState;
+    if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') return false;
+    await handleClick();
+    return true;
+  }
+
+  window.pwaRegionDownload = Object.freeze({
+    start: startRegionDownload,
+  });
 })();
