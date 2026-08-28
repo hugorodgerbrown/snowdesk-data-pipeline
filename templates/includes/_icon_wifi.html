@@ -3,25 +3,26 @@ templates/includes/_icon_wifi.html — the connectivity glyph: three
 broadcast arcs over a dot (SNOW-742; extracted here by SNOW-748).
 
 One source for one mark, like the eight glyphs beside it. The mark was
-inlined in ``includes/_offline_banner.html`` for its whole life; SNOW-748
-extracted it here alongside ``_icon_wifi_off.html``, its struck-through
-sibling, so the pair cannot drift apart in two files.
+inlined in the old ``includes/_offline_banner.html`` for its whole life;
+SNOW-748 extracted it here alongside ``_icon_wifi_off.html``, its
+struck-through sibling, so the pair cannot drift apart in two files, and
+then deleted that banner.
 
-The banner is currently this partial's only caller — SNOW-748's later
-revision made the header a symbol shown ONLY while the app is offline, so
-the nav renders the struck-through mark and never this one. Kept as a
-partial rather than folded back into the banner because the two marks are
-one pair and only make sense read together.
+``includes/nav.html``'s connectivity symbol renders BOTH marks and
+toggles between them: this one while the app is reaching the server, the
+struck-through one while it is not. That is why the pair has to stay a
+pair — a user reads the change as one mark being negated, and any
+difference in the arcs would be seen as meaning something.
 
 The dot is drawn as a zero-length ``round``-capped segment (``M12 20h.01``)
 rather than a ``<circle>``: it inherits the stroke width the arcs use, so
 the mark scales as a unit.
 
 Parameters (passed via {% include … with … %}):
-  size      (int, optional) — rendered px, both axes. Default 16, the
-            banner's size.
-  svg_class (string, optional) — classes on the <svg>. The banner passes
-            its own layout classes.
+  size      (int, optional) — rendered px, both axes. Default 16; the nav
+            passes 15.
+  svg_class (string, optional) — classes on the <svg>, for a caller that
+            needs its own layout classes on the mark itself.
 {% endcomment %}
 <svg
     {% if svg_class %}class="{{ svg_class }}"{% endif %}

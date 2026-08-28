@@ -91,10 +91,12 @@ of them should be removed as "noise" without replacing it:
    five minutes.
 2. The page's `online` listener, which asks for an immediate unlatch rather
    than waiting out the backoff.
-3. The offline banner, which shows a distinct "Offline mode" state whenever the
+3. The header connectivity symbol, which goes struck-through whenever the
    worker is latched — including while `navigator.onLine` is `true`, which is
-   the case the old banner could not represent — and carries the user's own
-   "Try reconnecting" control.
+   the case an `onLine`-only indicator cannot represent — and the toast behind
+   it, which names the state and carries the user's own "Try reconnecting"
+   control. (SNOW-748: this was the offline banner until that ticket replaced
+   it with a permanent symbol plus a toast one press away.)
 
 ## The one exception: `offline-forced` (SNOW-748)
 

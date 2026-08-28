@@ -2007,39 +2007,56 @@ it is in.
 `templates/includes/nav.html`, split the way a phone splits aeroplane mode.
 
 * `[data-network-indicator]` — the **symbol**, beside the sync badge, on every
-  page for every viewer including anonymous ones. A status element, not a
-  control: no button, no pressed state, no tab stop. It is shown only while
-  the app is not using the network — either offline mode — and nothing renders
-  there in `auto`, as a phone shows the aeroplane glyph only while the mode is
-  on. Anonymous viewers get it because the worker latches itself for anybody,
-  so the state it reports is one they can be in.
-* `[data-network-toggle]` — the **switch**, an "Offline mode" row in the
-  account menu's `<details>` dropdown, in the group with Settings. Signed-in
-  only: turning the mode on is a device preference, and it belongs with the
-  other preferences. `role="menuitemcheckbox"` with `aria-checked`, because
-  the row has an on/off state and that is how a menu says so; its tick and
-  colour follow that attribute in CSS.
+  page for every viewer including anonymous ones, and **never hidden**. It
+  carries both glyphs: the plain arcs (`includes/_icon_wifi.html`) while the
+  app is reaching the server, the struck-through pair
+  (`includes/_icon_wifi_off.html`) while it is not — a dead interface, an
+  auto-latch, or the user's own mode. `pwa_offline.js` toggles which glyph,
+  which colour and which of the two `sr-only` names is shown, and writes the
+  same bit to `data-network-state`. It is a **disclosure**, not a switch:
+  `aria-expanded` + `aria-controls` on the toast, never `aria-pressed`, and
+  pressing it cannot change the network mode. Anonymous viewers get it because
+  the worker latches itself for anybody, so the state it reports is one they
+  can be in.
+* `[data-network-toggle]` — the **switch**, an "Offline mode" row at the top
+  of the account menu's `<details>` dropdown, between the subscribed regions
+  and "Subscriptions". Signed-in only: turning the mode on is a device
+  preference. It is an `includes/_switch.html` checkbox — a real
+  `<input type="checkbox" role="switch">` — so keyboard activation, focus and
+  `aria-checked` come from the platform. Its wrapper carries `role="none"`,
+  because a `role="switch"` is not a valid child of `role="menu"` and marking
+  the wrapper presentational is the conformant way to seat one there; the
+  alternative, `role="menuitemcheckbox"`, would mean reimplementing by hand
+  everything the input already does.
 
-Both are rendered `hidden` and revealed by `pwa_offline.js`, the same contract
-the sync badge has with `mutation_queue.js` — for the row because it drives a
-service worker and would otherwise be dead, and for the symbol because it would
-be *wrong*, claiming a mode on a page whose script never ran to read one.
-`pwa_offline.js` looks the two up independently: an anonymous page has the
-symbol and no row, and the symbol must still be painted. Both carry **one** bit
-for the worker's three modes — "is the network in use"; which offline mode it
-is belongs to the banner, which has room for a sentence. The struck-through
-glyph (`includes/_icon_wifi_off.html`) is the mark in both places.
+The row is rendered `hidden` and revealed by `pwa_offline.js`, the same
+contract the sync badge has with `mutation_queue.js`: it drives a service
+worker, so a row that appeared without the script would be dead. The symbol is
+**not** — it is server-rendered visible in the "using the network" state, and
+the script only ever repaints it. `pwa_offline.js` looks the two up
+independently: an anonymous page has the symbol and no row.
+
+The two do not paint the same predicate. The symbol answers "is this app
+reaching the server", so a dead interface strikes it through even in `auto`.
+The switch answers "did you ask for offline mode", so a merely-struggling
+connection leaves it off — a switch that flicks itself on when the lift crosses
+a ridge reports the worker's decision as the user's. Which offline mode it is
+belongs to the toast, which has room for a sentence.
 
 SNOW-742 put this control inside `includes/_offline_banner.html`, which
-`pwa_offline.js` reveals only when the connection has already failed — so the
+`pwa_offline.js` revealed only when the connection had already failed — so the
 user it was built for, "I have signal now and am about to lose it", could never
 reach it. SNOW-748 first moved it to the header as a toggle, then split it into
-the symbol and the switch above: a control in the status area invites the
-reading that the symbol *is* the switch. The banner keeps the way *back*
-(labelled "Try reconnecting" under a latch, "Use the network again" under a
-forced mode) and gains a third explanation, because the latched copy asserts
-there is no usable connection and that is exactly what is false when the user
-chose the mode while online.
+the symbol and the switch above (a control in the status area invites the
+reading that the symbol *is* the switch), and finally deleted the banner
+outright: with a permanent symbol in the header, a strip announcing the same
+one bit is redundant chrome. The banner's content moved into
+`includes/_offline_toast.html`, which the symbol opens — the "last synced"
+phrase, four explanations (one per state, the fourth for the healthy case the
+banner never had to describe), and the way *back*, labelled "Try reconnecting"
+under a latch and "Use the network again" under a forced mode. That button is
+an anonymous reader's only exit from an auto-latch, since the switch is
+signed-in only.
 
 **Downloads under each mode (SNOW-748).** `_warmCache` ignores the auto-latch
 — see [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)

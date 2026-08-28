@@ -119,9 +119,8 @@ server-side so a page's first paint carries the correct verdict:
 `fresh` (green), `stale` (yellow), or `unsafe` (red).
 `templates/includes/_freshness_indicator.html` renders the dot +
 timestamp. `pwa_offline.js` absorbs the same headers on every JS-
-issued response so the persistent `#pwa-offline-banner` shows an
-accurate "last updated" suffix even when the connection has since
-dropped.
+issued response so the connection-status toast shows an accurate
+"last synced" phrase even when the connection has since dropped.
 
 Defaults for safety-critical data: 24h `max_age`, 48h `unsafe_after`.
 
@@ -172,16 +171,50 @@ can retry after connectivity blips without duplicating side effects.
 The cache table (`core.IdempotencyRecord`) is a plain Django model
 with an admin surface for operator inspection / manual purge.
 
-## Offline UX (SNOW-377 / SNOW-482)
+## Offline UX (SNOW-377 / SNOW-482 / SNOW-748)
+
+### The banner became a symbol plus a toast (SNOW-748)
+
+§12's freshness posture is that an app serving cached safety data must
+say so. Until SNOW-748 this doc recorded a **persistent offline banner**
+as the discharge of that: `includes/_offline_banner.html`, a full-width
+strip above the nav carrying the "last synced" phrase, an explanation of
+the state, and the way back to the network. That file is deleted. Two
+things replace it, and the exchange is not neutral in both directions —
+so it is stated here rather than quietly dropped:
+
+- **Stronger.** The state indicator is now PERMANENT. The banner existed
+  only in the failure case, so a healthy app said nothing and a user
+  learned where to look by losing their connection. The connectivity
+  symbol in the header is on screen in every state, for every viewer
+  including anonymous ones, and changes glyph, colour and accessible
+  name between "using the network" and "not".
+- **Weaker.** The freshness TIMESTAMP is one interaction further away.
+  It used to be on screen unbidden whenever the app was offline; it now
+  lives in `#pwa-offline-toast`, which opens on a press of the symbol
+  and never opens itself. So does the per-state explanation and the
+  reconnect button.
+
+The trade was made deliberately: an indicator that is always present and
+always accurate is worth more than a timestamp that is only ever shown
+in the one case, and the timestamp is one press away from every page
+rather than nowhere at all. Anything that needs the timestamp to be
+unprompted — a "your data is now unsafe" escalation, say — is a new
+requirement and needs its own ticket, not a revival of the strip.
 
 `static/js/pwa_offline.js` runs alongside `pwa_version_check.js` on
 every public page. Its responsibilities:
 
-- Watch `navigator.onLine` — reveal the persistent
-  `#pwa-offline-banner` on `offline` / hide on `online`.
-- Reveal the banner on any fetch network failure or HTMX `sendError`
-  event, so slow / patchy connections show the banner even when the
-  browser still reports `onLine === true`.
+- Watch `navigator.onLine` — repaint the permanent connectivity symbol
+  (`[data-network-indicator]`, `includes/nav.html`) on `offline` /
+  `online`.
+- Repaint it on any fetch network failure or HTMX `sendError` event, so
+  slow / patchy connections are reported even when the browser still
+  says `onLine === true`.
+- Own the connection-status toast (`#pwa-offline-toast`,
+  `includes/_offline_toast.html`): the symbol's press opens and closes
+  it, and this module repaints its copy on every state change. It never
+  opens itself.
 - Track **two distinct clocks** and persist both to IndexedDB
   `meta:app` (SNOW-482), read back on init so a cold offline launch
   shows real values instead of resetting to blank:
@@ -190,15 +223,15 @@ every public page. Its responsibilities:
     is not a synthesized service-worker fallback (SNOW-490: a non-empty
     resolved URL — a synthesized `Response` has `url === ''`, which
     must not be resolved against the page's own URL and mistaken for a
-    same-origin round-trip). The banner summary
-    surfaces this as a relative phrase — "Offline — last synced
+    same-origin round-trip). The toast's summary line
+    surfaces this as a relative phrase — "Offline mode — last synced
     6 minutes ago" — rendered with `Intl.RelativeTimeFormat` and
-    re-rendered on a 30s timer while the banner is shown, so it counts
+    re-rendered on a 30s timer while the toast is OPEN, so it counts
     up rather than freezing.
   - SNOW-482 added a second clock alongside it,
     `freshness.last_generated_at` — the newest `X-Data-Generated-At`
     header seen — persisted "for the ledger" but never surfaced. Nothing
-    read it in the three tickets of banner work that followed, so
+    read it in the three tickets of work that followed, so
     SNOW-615 removed it. Rows already written under that key on devices
     in the field are simply never read again.
 - Toggle the `disabled` state of any element carrying
@@ -207,7 +240,7 @@ every public page. Its responsibilities:
 - Broadcast a `snowdesk:connectivity-changed` `{ online }` CustomEvent on
   every transition (and once at init), so consumers that need
   **cache-aware** gating — not the blunt `data-network-required` all-or-
-  nothing disable — can react in lockstep with the banner without polling
+  nothing disable — can react in lockstep with the symbol without polling
   `navigator.onLine` themselves.
 - (offline-integrity) **Layers-menu cache-aware gating.** The map's layers
   popover (`static/js/map_layer_sync_status.js`) already probed per-row

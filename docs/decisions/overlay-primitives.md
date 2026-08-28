@@ -28,7 +28,21 @@ control, and z-index literal.
    one nudge shape).
 2. **Toast** — `templates/includes/_toast.html`. Transient, bottom-centred
    pill. Extended with an opt-in `timeout` attribute (auto-dismiss via the
-   shared controller in `static/js/overlays.js`).
+   shared controller in `static/js/overlays.js`), and with an opt-in
+   `body_template` / `cta_label_template` pair (SNOW-748) for a caller whose
+   slot content is richer than one escaped string. Supplying `body_template`
+   also switches the pill into a **panel**: `rounded-card`, wrapped so the CTA
+   and the "×" sit under the body, and height-bounded with `max-h-[60dvh]` +
+   `overflow-y-auto`.
+
+   `_offline_banner.html` was a documented exception below until SNOW-748
+   deleted it. Its content — the "last synced" phrase, the per-state
+   explanation, the reconnect button — now renders through this primitive as
+   `includes/_offline_toast.html`, opened by the permanent connectivity symbol
+   in `includes/nav.html`. That absorption is what the `body_template` slot
+   was added for: the exception was never about the shape, only about the four
+   mutually-exclusive server-rendered strings the one-line `body` parameter
+   could not hold.
 3. **Sheet** — `templates/includes/_overlay_sheet.html`. Fly-out panel
    shared by the favourite and report map surfaces; content is injected by
    the owning JS module at open time.
@@ -43,14 +57,9 @@ z-index band described below.
 
 ## Documented exceptions
 
-Three surfaces stay on their own templates rather than being forced through
+Two surfaces stay on their own templates rather than being forced through
 a primitive, because doing so would change behaviour, not just markup:
 
-- **`_offline_banner.html`** — a `<details>` disclosure with spec-mandated
-  (`docs/offline-first.md`) freshness internals that must paint from
-  IndexedDB on a cold offline launch. In-flow (not `fixed`), so it carries
-  no z-index token at all — it pushes page content down rather than
-  overlapping it.
 - **`_pwa_install_prompt.html`'s iOS variant** — a 3-icon instructional
   diagram with no CTA, structurally unlike the banner's icon+title+body+CTA
   shape. Adopts the shared `--z-banner` token and the `data-overlay` /

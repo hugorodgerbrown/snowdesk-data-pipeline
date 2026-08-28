@@ -783,9 +783,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "'strip' variant is a full-width in-flow edge bar (off-season "
             "notice); the 'floating' variant is a fixed bottom-centre card "
             "with an optional icon, CTA and dismiss. Migrated the sw-update "
-            "banner and the install prompts; the offline banner and the "
-            "mutation-queue toast keep their own templates (documented "
-            "exceptions — see docs/decisions/overlay-primitives.md)."
+            "banner and the install prompts; the mutation-queue toast keeps "
+            "its own template (a documented exception — see "
+            "docs/decisions/overlay-primitives.md)."
         ),
         kind="components",
         partial="includes/_overlay_banner.html",
