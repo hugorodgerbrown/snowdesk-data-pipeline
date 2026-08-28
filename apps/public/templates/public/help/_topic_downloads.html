@@ -14,14 +14,28 @@ download is: it stores BASEMAP TILES for an area. Pages and avalanche
 data are cached separately, by visiting them — that half is the "Install
 & offline" panel's subject, and each panel points at the other rather
 than restating it.
+
+SNOW-749 adds a second distinction: the AREA (which region, or which
+framed box) follows the account, while the MAP DATA stays on the device
+that fetched it. The three paragraphs below exist to keep those apart,
+because the failure they prevent is a user seeing an area listed on a new
+phone and assuming the map is there too. They also carry the sign-in
+requirement, which is the one thing about downloads that changed for a
+signed-out reader.
+
+These were briefly gated on a `download_sync` waffle flag, alongside the
+feature itself. The flag was dropped before merge on query cost (see
+apps.public.views._downloads_context), so there is no longer a state in
+which the superseded "they do not follow your account to your phone"
+paragraph is true, and it is gone rather than kept in an else branch.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
             A download saves the background map for an area onto this device, so the map still draws where there is no
-            signal. The framed-square button on the right of the map opens "Downloads on this device": everything you
-            have stored, what it is costing you, and the way to add more.
+            signal. The framed-square button on the right of the map opens "Your downloads": everything you have stored,
+            what it is costing you, and the way to add more.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-two-kinds">
@@ -40,10 +54,26 @@ than restating it.
             anything behind your back.
         {% endblocktrans %}
     </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-signin">
+        {% blocktrans trimmed %}
+            Starting a download needs an account. The controls stay where they are when you are signed out and take you
+            to the sign-in page instead; anything you have already downloaded keeps working exactly as before, signed in
+            or not, because reading a stored map needs no connection and no account.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-cross-device">
+        {% blocktrans trimmed %}
+            Your areas follow your account, but the map data does not. An area you save on a laptop is listed on your
+            phone with a "Download here" button, and the space it takes is counted only on the device that actually
+            holds it &mdash; so a listed area is not the same thing as an available one. The sheet dims the ones that
+            are not on this device and shows no size for them.
+        {% endblocktrans %}
+    </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-device-local">
         {% blocktrans trimmed %}
-            Downloads live in this browser on this device. They do not follow your account to your phone, they are not
-            part of your favourites or your routes, and clearing the site's data or resetting local data removes them.
+            The map data itself lives in this browser on this device. Clearing the site's data or resetting local data
+            removes it, and the sheet gives you two ways to remove one yourself: "free up space" takes an area off this
+            device and leaves it on your account, so it is one tap to bring back, while the bin removes it everywhere.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-overlay">

@@ -57,7 +57,7 @@
 // of a focused region with no computed download summary
 // (properties.download is null).
 //
-// State (no-region/idle/busy/done/disabled/offline/other-basemap,
+// State (no-region/idle/busy/done/disabled/offline/other-basemap/signin,
 // data-download-state) — idle/done/other-basemap are
 // derived from a real pinned-cache probe (every per-area bucket, unioned
 // — SNOW-586) every time the icon is (re)shown, never a stored flag (the
@@ -84,6 +84,14 @@
 // downloads the region under the ACTIVE basemap, and the existing
 // `beforeWarm` eviction (below) already handles the mismatched bucket.
 //
+// SNOW-749: 'signin' — the visitor is signed out, so no download can
+// START. It replaces every ACTIONABLE state
+// ('idle', and 'other-basemap' with its "download it for this basemap too"
+// invitation) and no other: 'done' still paints its green circle, because
+// reading a region already on this device is not gated and never will be —
+// working with no signal is the whole point of having downloaded it. The
+// control stays visible and tappable, and the tap goes to sign-in.
+//
 // Click (idle/error/other-basemap) — fetches the region's full blob (incl. z tile
 // ranges) from /api/region-basemap-tiles/, assembles the URL list
 // (rangesToTileURLs + same-origin data feeds + active basemap style +
@@ -97,6 +105,64 @@
   if (!btn) return;
 
   const ribbonEl = document.getElementById('season-ribbon');
+
+  // SNOW-749: the sign-in gate's configuration, read off
+  // #map-custom-download-control — the downloads roundel in the
+  // bottom-right stack, NOT this control's own button. The two controls
+  // start the same kind of work under the same gate, so one element
+  // carries the wiring for both rather than the same six attributes being
+  // rendered twice; both partials live inside
+  // public/partials/_map_embed.html, so it is on the page whenever this
+  // button is. A page missing it leaves every constant below falsy, which
+  // is the ungated pre-SNOW-749 behaviour — the safe direction for a
+  // rollout gate that has not been wired up.
+  const DOWNLOADS_CONFIG_EL = document.getElementById('map-custom-download-control');
+  const DOWNLOADS_CONFIG = DOWNLOADS_CONFIG_EL ? DOWNLOADS_CONFIG_EL.dataset : {};
+  // Authentication is the whole gate. SNOW-749 briefly paired this with a
+  // `downloadsSync` rollout-flag attribute, so the client could tell "the
+  // gate is switched off" from "this visitor passes it"; the flag was
+  // dropped before merge on query cost, and with it the only state that
+  // made those two distinguishable.
+  const DOWNLOADS_ELIGIBLE = DOWNLOADS_CONFIG.downloadsEligible === 'true';
+  const DOWNLOADS_SIGNIN_URL = DOWNLOADS_CONFIG.signinUrl || '';
+  // A page with no downloads surface leaves this false, which reads as
+  // eligible and applies no gate. That is the safe direction: the gate is
+  // a product decision belonging to the map, and a page that does not
+  // render the map has no download for it to stop.
+  const NEEDS_SIGNIN = !!DOWNLOADS_CONFIG_EL && !DOWNLOADS_ELIGIBLE;
+
+  /**
+   * SNOW-749: the state to paint where the control would otherwise be
+   * ACTIONABLE — 'signin' for a gated, signed-out visitor, and the state
+   * itself for everybody else.
+   *
+   * Only the actionable states are substituted. 'done', 'no-region',
+   * 'disabled' and 'offline' pass through untouched, because reading what
+   * is already downloaded is never gated: a signed-out user on a device
+   * holding this region's tiles must still see the green circle that says
+   * so. The gate is on STARTING a download, and nothing else.
+   *
+   * @param {string} state The state the probe arrived at.
+   * @returns {string}
+   */
+  function gateState(state) {
+    return NEEDS_SIGNIN ? 'signin' : state;
+  }
+
+  /**
+   * Send the visitor to sign in.
+   *
+   * A plain navigation rather than a modal or an in-place panel: this
+   * control lives in the ribbon header with no surface of its own to put
+   * a CTA in, and the sign-in page returns the user to where they were.
+   * With no URL configured this does nothing, which leaves the tap inert
+   * rather than sending the visitor somewhere wrong.
+   *
+   * @returns {void}
+   */
+  function goToSignIn() {
+    if (DOWNLOADS_SIGNIN_URL) window.location.assign(DOWNLOADS_SIGNIN_URL);
+  }
 
   // SNOW-570: the regions the user has downloaded, in meta:app under
   // 'basemap.regions' as [{region_id, band, z, savedAt}] — SNOW-632 added
@@ -224,6 +290,27 @@
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
+      // SNOW-749: and record the DEFINITION against the account, from the
+      // same moment the device record is written so the two cannot
+      // disagree about what was downloaded. Enqueued through the mutation
+      // queue, so a region downloaded with no signal is recorded when the
+      // device surfaces; a no-op for a signed-out visitor.
+      //
+      // No bbox: a region's tiles are computed server-side from its real
+      // boundary (SNOW-583 clipped them to it), so a box would be a
+      // second, coarser answer to a question already answered — the region
+      // id is the whole definition.
+      // The bucket id, minted by the core's own `areaIdForRegion` — the
+      // `region-<id>` format is deliberately never assembled by hand
+      // anywhere outside that function, and it is the key the account row
+      // is stored under.
+      const core = self.pwaBasemapDownloadCore;
+      await window.pwaDownloadsSync?.push({
+        areaId: core ? core.areaIdForRegion(regionId) : '',
+        regionId: regionId,
+        basemapKey: basemapKey,
+        name: name,
+      });
     } catch (err) {
       // Still non-fatal — see the docstring — but no longer silent
       // (SNOW-612). This is the write whose absence leaves a completed
@@ -532,7 +619,8 @@
    * aria-label/title carrying the region's size.
    *
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
-   *   'error' | 'disabled' | 'offline' | 'other-basemap'.
+   *   'error' | 'disabled' | 'offline' | 'other-basemap' | (SNOW-749)
+   *   'signin'.
    * @param {number} mb
    * @param {number} [pct] - Only meaningful for state 'busy'.
    * @param {string} [basemapKeyOverride] - SNOW-645: overrides the
@@ -568,9 +656,19 @@
     // states — handleClick returns immediately for every other one,
     // including 'busy' (a run is already going) and 'done' (an
     // informational success state), so those are announced as disabled too.
+    //
+    // SNOW-749: 'signin' is actionable too — the tap navigates to the
+    // sign-in page. Announcing it as disabled would be the same mistake as
+    // hiding the control: the visitor CAN act on it, they just get a
+    // different outcome than a signed-in one does.
     btn.setAttribute(
       'aria-disabled',
-      state === 'idle' || state === 'error' || state === 'other-basemap' ? 'false' : 'true',
+      state === 'idle' ||
+        state === 'error' ||
+        state === 'other-basemap' ||
+        state === 'signin'
+        ? 'false'
+        : 'true',
     );
     // Busy progress renders as a bottom-up fill of the roundel (map.css),
     // driven by --download-progress rather than a numeric readout.
@@ -621,6 +719,10 @@
             basemap: otherBasemapName,
           })
         : MAP_STRINGS['download-other-basemap-unnamed'],
+      // SNOW-749: carries no size. The figure answers "is this worth
+      // downloading", which is not the question in front of a visitor who
+      // cannot start a download at all yet.
+      signin: MAP_STRINGS['download-signin'],
     }[state];
     btn.setAttribute('aria-label', text);
     btn.title = text;
@@ -665,14 +767,14 @@
     // `done` painted on screen for the whole of that round trip — this
     // region hasn't been checked yet, so it must not borrow the last
     // region's answer.
-    setState(networkInUse() ? 'idle' : 'offline', data.summary.mb);
+    setState(networkInUse() ? gateState('idle') : 'offline', data.summary.mb);
     const probe = await _probeDone(data);
     if (regionData !== data || btn.dataset.downloadState === 'busy') return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
     // settled — the region may well already be downloaded.
     if (probe === null) {
-      setState(networkInUse() ? 'idle' : 'offline', data.summary.mb);
+      setState(networkInUse() ? gateState('idle') : 'offline', data.summary.mb);
       _retryWhenStyleSettles();
       return;
     }
@@ -691,13 +793,23 @@
       return;
     }
     if (otherBasemapKey !== null) {
+      // SNOW-749: 'other-basemap' is an INVITATION to start a second
+      // download ("tap to download it for this basemap too"), so a gated
+      // signed-out visitor gets 'signin' instead — the label would
+      // otherwise promise an action the tap cannot perform. What is
+      // already on disk for the other basemap is unaffected and still
+      // reads offline; only the invitation goes.
+      if (NEEDS_SIGNIN) {
+        setState('signin', data.summary.mb);
+        return;
+      }
       // SNOW-645: the whole point of this state is showing the OTHER
       // basemap's colour, not the active one — setState's 4th argument
       // overrides its usual activeBasemapKey() inference.
       setState('other-basemap', data.summary.mb, undefined, otherBasemapKey);
       return;
     }
-    setState('idle', data.summary.mb);
+    setState(gateState('idle'), data.summary.mb);
   }
 
   // SNOW-613: overlapping renders coalesce onto one trailing pass — see
@@ -740,6 +852,15 @@
     // when the template it reads has changed), so no new eviction logic
     // is needed for this state.
     const state = btn.dataset.downloadState;
+    // SNOW-749: the gate, before anything else. Checked twice on purpose —
+    // once on the painted state (the visitor tapped what the label said)
+    // and once on NEEDS_SIGNIN itself, which covers a race where a repaint
+    // has not landed yet. Neither starts a run; both send the visitor
+    // somewhere they can do something about it.
+    if (state === 'signin' || NEEDS_SIGNIN) {
+      goToSignIn();
+      return;
+    }
     if (!data || (state !== 'idle' && state !== 'error' && state !== 'other-basemap')) return;
     // Offline-integrity: never start a download offline, even if a race left
     // the icon on 'idle' at the moment of the click. SNOW-748: "offline"
@@ -923,4 +1044,45 @@
   });
 
   if (currentRegionId) applyRegion(currentRegionId);
+
+  /**
+   * SNOW-749: focus `regionId` and start its download.
+   *
+   * The "Download here" path for a region that exists on the user's
+   * ACCOUNT but not on this device — the Manage downloads sheet
+   * (map_downloads_manager.js) has an area id and a region id, and this
+   * control has everything else. Exposed as a bridge rather than
+   * reimplemented there for the same reason `window.pwaBasemapDownloads`
+   * exists: a second copy of the pre-flight, the eviction and the
+   * recording would be free to drift from this one.
+   *
+   * Awaits a fresh probe before acting: the caller has just come from a
+   * list, so this control is very likely still painted for whatever region
+   * was last focused, and `handleClick` reads the painted state to decide
+   * whether a run is allowed at all.
+   *
+   * @param {string} regionId
+   * @returns {Promise<boolean>} Whether a run was started. False when the
+   *   region is unknown to this page, when the control settled on a state
+   *   that cannot run (offline, over the ceiling, already downloaded), or
+   *   when the visitor needs to sign in — in which case they have been
+   *   sent there.
+   */
+  async function startRegionDownload(regionId) {
+    if (NEEDS_SIGNIN) {
+      goToSignIn();
+      return false;
+    }
+    if (!regionId || !FEATURE_BY_REGION_ID[regionId]) return false;
+    applyRegion(regionId);
+    await renderControl();
+    const state = btn.dataset.downloadState;
+    if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') return false;
+    await handleClick();
+    return true;
+  }
+
+  window.pwaRegionDownload = Object.freeze({
+    start: startRegionDownload,
+  });
 })();

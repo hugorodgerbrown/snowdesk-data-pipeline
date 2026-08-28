@@ -725,6 +725,11 @@
    * carrying the ``basemapKey`` it was fetched under. An area counts as
    * coverage for exactly that basemap.
    *
+   * SNOW-749: an area with ``onDevice: false`` — one on the user's
+   * account that this device has never downloaded, or has evicted — is
+   * skipped outright. This dot means "available offline"; "in your
+   * account" is a different claim, and the sheet makes it separately.
+   *
    * ``basemapKey`` is null on a record written before SNOW-645 (and on an
    * orphaned bucket, which has no record at all), meaning "downloaded,
    * basemap unknown". Such an area is attributed to the ACTIVE basemap
@@ -756,6 +761,12 @@
       const keys = new Set();
       for (const area of areas) {
         if (!area) continue;
+        // SNOW-749: an area that exists only on the user's ACCOUNT is not
+        // coverage. This dot claims "available offline", and a definition
+        // synced from another device is not tiles on this one — greening
+        // it would be the single worst thing this ticket could do to a
+        // surface whose whole job is reporting real cache state.
+        if (area.onDevice === false) continue;
         const key = area.basemapKey || activeKey;
         if (key) keys.add(key);
       }

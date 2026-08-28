@@ -42,10 +42,24 @@ Downloading happens here, so managing downloads belongs here; and the list
 has to name each area, which on the map is free — ``FEATURE_BY_REGION_ID``
 already holds every region's name from the SW-cached ``regions.geojson``,
 so the names resolve offline, which is exactly when storage pressure is
-felt. An account page would also imply the list follows the user between
-devices, and it emphatically does not: Cache Storage is per-browser, so
-both the downloads and the budget are **device-local**. Every string below
-is written to say so.
+felt.
+
+SNOW-749 changed what this list means, and the paragraph that used to
+stand here said the opposite. It read: an account page "would also imply
+the list follows the user between devices, and it emphatically does not".
+It does now. The DEFINITION of each area — which region, or which framed
+box, under which basemap, called what — is a row on the user's account
+(apps/downloads/), so an area saved on a laptop is listed on a phone with
+a one-tap "Download here".
+
+What did NOT change is the part that made the old claim worth making.
+Cache Storage is per-browser, so the BYTES and the BUDGET are still
+device-local, and a row can be on this list and not be available offline
+here. Every string below is written to hold that line: an account-only row
+is dimmed, carries no size, says "not downloaded here", and never paints
+anything that reads as cached. The panel still lives on the map for the
+two reasons above — where the download happens, and where the names
+resolve offline.
 
 Structure mirrors _favourites_surface.html: the shared sheet primitive
 (includes/_overlay_sheet.html) as an empty container, plus server-rendered
@@ -67,7 +81,7 @@ repeated here, and neither is inline_rename.js (SNOW-658): both this
 panel's custom areas and the favourites panel's pins rename in place on
 the row's own label, so home.html loads that module once for both.
 {% endcomment %}
-{% trans "Downloads on this device" as downloads_sheet_aria_label %}
+{% trans "Your downloads" as downloads_sheet_aria_label %}
 {# SNOW-645 review: scroll_body=True — this sheet's own header (title,   #}
 {# budget) and foot (CTA, toggle) stay pinned while only the row groups   #}
 {# between them scroll; see includes/_overlay_sheet.html's own docstring  #}
@@ -86,13 +100,19 @@ the row's own label, so home.html loads that module once for both.
 {# positional as far as the JS is concerned: every element is addressed by   #}
 {# data-attribute, never by index or sibling relationship.                   #}
 <template id="map-downloads-body-template">
-    {% trans "Downloads on this device" as downloads_sheet_title %}
+    {% trans "Your downloads" as downloads_sheet_title %}
     {% trans "Download a custom area" as downloads_add_label %}
     {# The context strip: where this panel's data lives, in one line. It    #}
     {# was a paragraph inside the budget block; the shared skeleton renders #}
     {# it for every panel now, directly under the title, with the budget    #}
     {# meter below it — the one place a panel may extend the strip.         #}
-    {% trans "Downloads and budget stay on this device." as downloads_context_line %}
+    {#                                                                      #}
+    {# SNOW-749 rewrote it, because "Downloads and budget stay on this      #}
+    {# device." had become half false: the AREAS follow the account now.    #}
+    {# The other half still holds and is the more useful half to say —      #}
+    {# it is what explains how a row can be listed here and still not be    #}
+    {# available offline.                                                   #}
+    {% trans "Your areas follow your account. The map data and the budget stay on this device." as downloads_context_line %}
     {# No `section_label`: this panel has TWO groups (Regions, Custom       #}
     {# areas) and renders both headings itself, through the same partial.   #}
     {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" context_line=downloads_context_line header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
@@ -144,6 +164,14 @@ the row's own label, so home.html loads that module once for both.
     {# which reads wrong sitting on a control nobody has touched yet, so the #}
     {# disabled state gets its own wording naming the missing precondition.  #}
     <span data-string="add-disabled">{% trans "Downloading needs a connection" %}</span>
+    {# SNOW-749: the same pair again for the account gate. Two more strings  #}
+    {# rather than reuse of the offline pair: the reason differs and so does #}
+    {# the remedy — one waits for a signal, the other is one tap away — and  #}
+    {# a control that misstates why it will not run is worse than one that   #}
+    {# says nothing. Unlike the offline case the trigger stays LIVE, so this #}
+    {# label sits on a control that still does something.                    #}
+    <span data-string="add-signin">{% trans "Sign in to download a new area." %}</span>
+    <span data-string="add-signin-disabled">{% trans "Downloading needs an account" %}</span>
     {# SNOW-635: an unrenamed custom area's default "Custom area N" label   #}
     {# is filled in by static/js/map.js's basemapDownloadedAreas() itself, #}
     {# reading `default-custom-name` off _map_embed.html's                 #}
@@ -160,6 +188,31 @@ the row's own label, so home.html loads that module once for both.
     {# row cloned from a <template> has no name until buildRow fills it.    #}
     <span data-string="rename-row-label">{% blocktrans %}Rename %(name)s{% endblocktrans %}</span>
     <span data-string="remove-row-label">{% blocktrans %}Remove %(name)s{% endblocktrans %}</span>
+    {# SNOW-749: an area on the ACCOUNT that this device has not          #}
+    {# downloaded — saved on another device, or evicted here to make      #}
+    {# room. The subtitle replaces the basemap name on such a row: which  #}
+    {# basemap it was fetched under elsewhere is a fact about a device    #}
+    {# the reader is not looking at, while "not here" is the reason the   #}
+    {# row is dimmed and carries a Download control. The em dash is a     #}
+    {# clause break, not a range.                                          #}
+    <span data-string="not-on-device">{% trans "On your account — not downloaded here" %}</span>
+    <span data-string="download-here-row-label">{% blocktrans %}Download %(name)s to this
+            device{% endblocktrans %}</span>
+    <span data-string="free-space-row-label">{% blocktrans %}Free up the space %(name)s uses on this
+            device{% endblocktrans %}</span>
+    {# The two destructive verbs' confirmations. They differ in exactly   #}
+    {# the clause that differs in effect — "keeps it on your account" vs  #}
+    {# "removes it from your other devices too" — so the choice can be    #}
+    {# judged before it is made rather than discovered afterwards. The    #}
+    {# pre-SNOW-749 "confirm-remove" above is still used verbatim on a    #}
+    {# device with no account behind it (flag off, or signed out), where  #}
+    {# there is only one outcome and the older wording is exactly right.  #}
+    <span data-string="confirm-free-space">{% blocktrans %}Remove the offline map for %(name)s from this device? This
+            frees %(size)s and keeps %(name)s on your account, so you can download it again in one
+            tap.{% endblocktrans %}</span>
+    <span data-string="confirm-forget">{% blocktrans %}Remove %(name)s from your account and from this device? This
+            frees %(size)s here and removes it from your other devices too.{% endblocktrans %}</span>
+    <span data-string="download-here-failed">{% trans "That download couldn't be started here. Try again." %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}

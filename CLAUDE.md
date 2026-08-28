@@ -19,7 +19,7 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the twelve Django apps (SNOW-557 — moved
+apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel; abstract, no concrete tables),
@@ -63,6 +63,11 @@ apps/            Parent package for the twelve Django apps (SNOW-557 — moved
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
                  (FK to auth.User), surfaced in the map's routes panel
+  downloads/     Offline basemap areas synced to an account (SNOW-749) — the
+                 ``DownloadArea`` model (FK to auth.User) and its sync API.
+                 The DEFINITION of an area only: the tiles stay in each
+                 device's own pinned Cache Storage bucket and are never
+                 uploaded, so a row carries no byte count and no tile indices
   analytics/     PostHog wiring and the /api/telemetry receiver (see
                  docs/telemetry-pipeline.md). NOTE: signals.py here means
                  *telemetry* signals, not django.db.models.signals — it does

@@ -212,6 +212,7 @@ INSTALLED_APPS = [
     "apps.observations",
     "apps.favourites",
     "apps.routes",
+    "apps.downloads",
     "apps.mcp_server",
 ]
 
@@ -983,6 +984,24 @@ ROUTES_MAX_PER_USER = config("ROUTES_MAX_PER_USER", default=25, cast=int)
 
 ROUTE_UPLOAD_MAX_BYTES = config(
     "ROUTE_UPLOAD_MAX_BYTES", default=5 * 1024 * 1024, cast=int
+)
+
+
+# ---------------------------------------------------------------------------
+# Offline download areas (SNOW-749)
+# ---------------------------------------------------------------------------
+# Maximum number of DownloadArea rows a single user may hold at once,
+# enforced by apps.downloads.views.area_sync.
+#
+# Comfortably above what a device could hold: the per-run download ceiling is
+# 200 MB (basemap_download_core.js's DOWNLOAD_CEILING_MB) and the largest
+# offerable standing budget is a few times that, so a real user runs out of
+# disk long before they run out of rows. The cap is here to bound a scripted
+# client, not to ration a legitimate one — a user who has genuinely
+# downloaded areas across several devices should never meet it.
+
+DOWNLOAD_AREAS_MAX_PER_USER = config(
+    "DOWNLOAD_AREAS_MAX_PER_USER", default=100, cast=int
 )
 
 

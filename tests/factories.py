@@ -37,6 +37,7 @@ from apps.bulletins.services.day_rating import (
     target_day_for_valid_from,
 )
 from apps.core.models import RequestLog
+from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
@@ -776,3 +777,39 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     descent_m = 0.0
     point_count = 3
     bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])
+
+
+class DownloadAreaFactory(factory.django.DjangoModelFactory[DownloadArea]):
+    """Factory for DownloadArea instances (SNOW-749).
+
+    Defaults to a REGION area, which is the common case and the one with
+    the simpler shape: ``area_id`` and ``region_id`` agree, and ``bbox``
+    stays null because a region's tiles are computed from its own
+    boundary rather than a box.
+
+    A custom area needs both halves overridden together — the ``custom-``
+    prefix is what ``apps.downloads.views`` and
+    ``basemap_download_core.js``'s ``isCustomAreaId`` each read to decide
+    what an id is, so an ``area_id`` and a ``kind`` that disagree would
+    describe a row neither side could act on:
+
+        DownloadAreaFactory.create(
+            area_id="custom-abc",
+            kind=DownloadArea.KIND.CUSTOM,
+            region_id="",
+            bbox=[7.0, 45.9, 7.3, 46.1],
+        )
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = DownloadArea
+
+    user = factory.SubFactory(UserFactory)
+    region_id = factory.Sequence(lambda n: f"ch-{4000 + n}")
+    area_id = factory.LazyAttribute(lambda o: f"region-{o.region_id}")
+    kind = DownloadArea.KIND.REGION
+    bbox = None
+    basemap_key = "outdoor"
+    name = ""

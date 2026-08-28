@@ -1371,5 +1371,36 @@
     // the sheet settle the roundel's idle/done state immediately. There is
     // no such state now, and the sheet's own list is what reports a delete.
     openFraming: openFraming,
+
+    /**
+     * SNOW-749: open framing over `bbox` — the "Download here" path for an
+     * area that exists on the user's ACCOUNT but not on this device.
+     *
+     * Fits the map to the stored box first, then opens framing from there.
+     * Deliberately NOT a silent re-download of the exact original tile
+     * set: the frame's size is derived from the current zoom (see
+     * `_updateReadout`), so a different device at a different viewport
+     * would fetch a different set anyway — and the user gets to see and
+     * confirm what they are about to spend their budget on, which is the
+     * same contract every other custom download has.
+     *
+     * @param {number[]} bbox `[west, south, east, north]` in (lon, lat)
+     *   order — the account row's own, in the order the server stores it.
+     *   Anything else opens framing where the map already is, which is
+     *   what `openFraming` does on its own.
+     * @returns {void}
+     */
+    openFramingAt: function (bbox) {
+      if (MAP && Array.isArray(bbox) && bbox.length === 4) {
+        MAP.fitBounds(
+          [
+            [bbox[0], bbox[1]],
+            [bbox[2], bbox[3]],
+          ],
+          { animate: false },
+        );
+      }
+      openFraming();
+    },
   });
 })();
