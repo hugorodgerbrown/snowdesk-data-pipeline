@@ -19,6 +19,13 @@ the favourites and downloads panels) and the committed name is posted by
 static/js/row_rename_commit.js. The uuid rides on the button so the
 delegated handler needs no closure over the rendered row.
 
+``data-row-remove`` (SNOW-752) is how the surface owning the list knows
+the removal happened, so it can re-read the list — the swap empties one
+<li>, and routes:list's empty state is a server-side clause only a fresh
+response carries — and take the line off the map. The hook is on the FORM,
+not the row: see favourites/partials/_favourite_row_actions.html and
+static/js/row_removed.js for the request it has to be told apart from.
+
 Remove stays a plain HTMX form — route_delete returns an empty 200, so
 ``hx-target``/``hx-swap`` on this row's own id removes exactly this row
 with no JS involved.
@@ -57,7 +64,7 @@ Context:
 >
     {% include "includes/_icon_pencil.html" only %}
 </button>
-<form hx-post="{% url 'routes:delete' route.uuid %}" hx-target="{{ row_target }}" hx-swap="outerHTML">
+<form data-row-remove hx-post="{% url 'routes:delete' route.uuid %}" hx-target="{{ row_target }}" hx-swap="outerHTML">
     {% csrf_token %}
     <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
         {% include "includes/_icon_trash.html" only %}

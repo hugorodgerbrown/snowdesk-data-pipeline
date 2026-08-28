@@ -53,9 +53,9 @@ is not getting one.
 
 {% block extra_head %}
     {% comment %}
-        Three modules, in document order, which is execution order for
+        Four modules, in document order, which is execution order for
         deferred scripts — so each one's window.pwa* global exists before the
-        next reads it. The same trio accounts/favourites.html loads for
+        next reads it. The same set accounts/favourites.html loads for
         its own list, with this page's own half swapped in at the end.
 
           htmx.min.js          parser-blocking, so it has run before any row
@@ -67,12 +67,18 @@ is not getting one.
           inline_rename.js     the pencil's in-place label edit, shared
                                unchanged with the map's four panels.
           row_rename_commit.js the POST that commits it, likewise shared.
+          row_removed.js       SNOW-752: recognises that trash's request
+                               landing, so this page can re-read the list —
+                               its empty state is a server-side clause the
+                               row's own swap cannot produce.
           account_routes.js    this page's own half — swapping the renamed
-                               row back in.
+                               row back in, and announcing a removal so the
+                               wrapper below re-reads.
     {% endcomment %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
     <script defer src="{% static 'js/inline_rename.js' %}"></script>
     <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
+    <script defer src="{% static 'js/row_removed.js' %}"></script>
     <script defer src="{% static 'js/account_routes.js' %}"></script>
 {% endblock %}
 
@@ -109,7 +115,26 @@ is not getting one.
                 own element, and a page should not push its wiring into a
                 partial two surfaces render.
             {% endcomment %}
-            <div data-route-list data-rename-url-template="{{ rename_url_template }}">
+            {# SNOW-752: the hx-get is a RE-READ only — no `load` trigger,  #}
+            {# because the view already rendered the list below. The row's   #}
+            {# own Remove empties one <li> and nothing else, so a page that  #}
+            {# has just lost its last route keeps rendering as a list of     #}
+            {# none; routes:list's empty state is a server-side clause and   #}
+            {# only a fresh response carries it.                             #}
+            {#                                                               #}
+            {# No `?variant=map`, so this gets _route_list.html — the shape   #}
+            {# already on the page. static/js/account_routes.js only         #}
+            {# dispatches the event; `from:document` is where it goes.       #}
+            {# `hx-swap="innerHTML"` keeps this wrapper, and with it the     #}
+            {# rename template that module reads off it.                     #}
+            <div
+                data-route-list
+                data-rename-url-template="{{ rename_url_template }}"
+                hx-get="{% url 'routes:list' %}"
+                hx-trigger="snowdesk:routes-changed from:document"
+                hx-target="this"
+                hx-swap="innerHTML"
+            >
                 {% include "routes/partials/_route_list.html" %}
             </div>
         </div>

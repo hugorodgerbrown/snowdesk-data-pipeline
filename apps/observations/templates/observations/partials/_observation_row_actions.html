@@ -12,6 +12,13 @@ observation records what was seen and where, and none of that is editable
 after the fact — which is why the always-visible name field the
 favourites row used to carry never existed here.
 
+``data-row-remove`` (SNOW-752) is how the surface owning the list knows
+the removal happened, so it can re-read the list — the swap empties one
+<li>, and observations:list's empty state is a server-side clause only a
+fresh response carries — and take the flag off the community-reports
+layer. The hook is on the FORM, not the row: see
+static/js/row_removed.js.
+
 Still a plain HTMX form, not a JS-driven action — the delete endpoint
 returns an empty 200, so ``hx-target``/``hx-swap`` on this row's own id
 removes exactly this row and nothing on the page has to know which one
@@ -29,6 +36,7 @@ Context:
 {% endcomment %}
 {% blocktrans trimmed with kind=label asvar remove_aria_label %}Remove {{ kind }}{% endblocktrans %}
 <form
+    data-row-remove
     hx-post="{% url 'observations:delete' observation.uuid %}"
     hx-target="#observation-{{ observation.uuid }}"
     hx-swap="outerHTML"

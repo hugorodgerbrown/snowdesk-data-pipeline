@@ -2,8 +2,10 @@
  * tests/js/test_account_routes.js — the account page's routes list (SNOW-713).
  *
  * /account/routes/ renders the shared UGC row that every route surface
- * renders, so the trash needs no JS here (it is a plain HTMX form) and the
- * pencil does. static/js/account_routes.js is that one behaviour.
+ * renders. The trash needs no JS to DELETE (it is a plain HTMX form) and the
+ * pencil does; SNOW-752 added a second behaviour to the trash all the same,
+ * because the removal it produces empties one <li> and nothing else.
+ * static/js/account_routes.js is those two behaviours.
  *
  * The interaction is inline_rename.js's and the POST is
  * row_rename_commit.js's, both covered where they live
@@ -20,7 +22,11 @@
  *   - the swapped-in row is handed to htmx.process, or its Remove form —
  *     markup HTMX has never seen — silently stops working;
  *   - a failure reveals the page's shared error banner rather than writing a
- *     string from JS, which could not be translated (docs/i18n.md).
+ *     string from JS, which could not be translated (docs/i18n.md);
+ *   - a removal announces `snowdesk:routes-changed` on the document, which
+ *     is what the page's own list wrapper re-reads on (SNOW-752). The empty
+ *     state is a server-side clause, so a page that has just lost its last
+ *     route can only get one from a fresh response.
  *
  * The sibling of test_account_favourites.js, and shorter by everything that
  * suite spends on the disclosure chevron: a route has no detail page, so its
@@ -31,6 +37,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/inline_rename.js';
 import '../../static/js/row_rename_commit.js';
+import '../../static/js/row_removed.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 const RENAME_URL = `/routes/partials/${UUID}/rename/`;
@@ -56,7 +63,7 @@ function rowMarkup(name) {
         <input type="text" data-row-rename-input hidden aria-label="Route name">
         <button type="button" data-row-rename data-route-rename="${UUID}"
                 aria-label="Rename ${name}">edit</button>
-        <form hx-post="/routes/partials/${UUID}/delete/">
+        <form data-row-remove hx-post="/routes/partials/${UUID}/delete/">
           <input type="hidden" name="csrfmiddlewaretoken" value="tok">
           <button type="submit" aria-label="Remove ${name}">bin</button>
         </form>
@@ -185,5 +192,50 @@ describe('when the rename fails', () => {
     expect(document.querySelector('[data-row-label]').textContent).toBe(
       'Haute Route',
     );
+  });
+});
+
+describe('a row removed from the list', () => {
+  beforeEach(() => {
+    renderPage('Haute Route');
+  });
+
+  it('announces the change, so the page re-reads its own list', () => {
+    // The list wrapper carries the hx-get and re-reads on this event (see
+    // my_routes.html) — the URL is written once, in the template. The row's
+    // own swap empties one <li>, so a page that has just lost its last
+    // route keeps rendering as a list of none: routes:list's empty state is
+    // a server-side clause and only a fresh response can carry it.
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:routes-changed', changed);
+
+    const xhr = {};
+    const form = document.querySelector('[data-row-remove]');
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', { detail: { xhr, elt: form } }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: true } }),
+    );
+
+    expect(changed).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:routes-changed', changed);
+  });
+
+  it('stays quiet when the delete failed', () => {
+    const changed = vi.fn();
+    document.addEventListener('snowdesk:routes-changed', changed);
+
+    const xhr = {};
+    const form = document.querySelector('[data-row-remove]');
+    document.dispatchEvent(
+      new CustomEvent('htmx:beforeRequest', { detail: { xhr, elt: form } }),
+    );
+    document.dispatchEvent(
+      new CustomEvent('htmx:afterRequest', { detail: { xhr, successful: false } }),
+    );
+
+    expect(changed).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:routes-changed', changed);
   });
 });

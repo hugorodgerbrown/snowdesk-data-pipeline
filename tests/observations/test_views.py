@@ -56,6 +56,10 @@ from tests.factories import (
 FORM_URL = "/partials/report/form/"
 SUBMIT_URL = "/partials/report/"
 LIST_URL = "/partials/report/list/"
+# SNOW-752: the map panel asks for map-focus rows by the same ``?variant=map``
+# convention the routes and favourites lists use.  /account/observations/ reads
+# the bare URL above, and must not get them — there is no map on that page.
+LIST_URL_MAP = f"{LIST_URL}?variant=map"
 
 
 def _delete_url(observation: FieldObservation) -> str:
@@ -1149,10 +1153,41 @@ class TestObservationList:
         )
         client.force_login(user)
 
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        content = client.get(LIST_URL_MAP, **HTMX_HEADERS).content.decode()
 
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert 'aria-label="Zoom to Whumpfing"' in content
+
+    def test_the_default_variant_renders_no_focus_control(self, client: Client) -> None:
+        """Without ``?variant=map`` the label is inert text (SNOW-752).
+
+        /account/observations/ re-reads this endpoint to bring its empty
+        state back when the last row is removed, and it has no map to fly.
+        A focus button there would be a control that looks live and does
+        nothing — ``static/js/row_focus.js`` is not even loaded on that
+        page.
+
+        The flag was set unconditionally until this ticket, on the
+        reasoning that this endpoint *is* the map variant; that stopped
+        being true the moment a second surface called it.
+        """
+        user = _verified_user()
+        FieldObservationFactory.create(
+            user=user,
+            latitude=46.1,
+            longitude=7.5,
+            observation_type=FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+        )
+        client.force_login(user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "data-row-focus" not in content
+        assert "Zoom to" not in content
+        # Still the same rows, and still removable — the variant changes
+        # what the label IS, not what the list holds.
+        assert "Whumpfing" in content
+        assert "data-row-remove" in content
 
     def test_remove_is_a_trash_control_on_the_row(self, client: Client) -> None:
         """Remove is a visible icon control, not a menu item (SNOW-658).

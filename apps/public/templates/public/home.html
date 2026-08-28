@@ -166,6 +166,15 @@ in addition to the shared map assets.
     {# places, but there is no map on those pages to fly, so those rows      #}
     {# render no focus button at all.                                        #}
     <script defer src="{% static 'js/row_focus.js' %}"></script>
+    {# SNOW-752: the third shared row module — recognise a row's own Remove #}
+    {# landing, so the surface that owns the list can re-read it and tell   #}
+    {# the map. Loaded here, ahead of the three panel modules below, for    #}
+    {# the same reason as the two above: each calls window.pwaRowRemoved    #}
+    {# .watch() as its IIFE runs, and deferred classic scripts run in       #}
+    {# document order. Unlike row_focus.js this one IS also loaded on the   #}
+    {# account pages — their rows carry the same trash, and a list there    #}
+    {# goes just as stale.                                                  #}
+    <script defer src="{% static 'js/row_removed.js' %}"></script>
     {# Keeps every `<time data-relative-time>` on this page true for as     #}
     {# long as the page is open — the field-observation rows' "reported 2   #}
     {# hours ago". This is the map: it is opened at the car park and read   #}
