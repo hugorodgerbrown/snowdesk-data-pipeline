@@ -29,7 +29,7 @@ it, and what may I safely conclude from it?**
 
 | Model · field | Shape | Exact? | Derived by |
 |---|---|---|---|
-| `Location.latitude/longitude` | **The primitive** | Exact, immovable | Whoever curated or minted the row |
+| `Location.latitude/longitude` | **The primitive** | Exact; immovable but correctable | Whoever curated or minted the row |
 | `Location.elevation_m` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
 | `Favourite.latitude/longitude` | Precise, user-supplied | Exact | The user, dropping a pin |
 | `Favourite.elevation` | Derived | Approximate | Copied from the resolved `ForecastCell` |
@@ -48,9 +48,21 @@ it, and what may I safely conclude from it?**
 ### The primitive — `Location`
 
 Since SNOW-700, everything below that is a **place** feeds a `Location`
-(`apps/locations/`). Its `latitude`/`longitude` are exact and immovable: a
-place at a different coordinate is a different location, and nothing rounds
-them.
+(`apps/locations/`). Its `latitude`/`longitude` are exact and immovable in
+normal operation: a place at a different coordinate is a different location,
+and nothing in the request path moves one.
+
+Two paths do write them, and both are corrections rather than movement —
+the admin, and the in-map curation editor (`?edit=locations`, SNOW-755).
+Correcting a mis-placed pin re-places the same row: the resorts linked to it
+were never wrong, only the coordinate was, so the links stay and the derived
+`elevation_m` / `forecast_cell` are cleared for re-resolution. **The editor
+rounds what it writes to five decimals** (~1 m), because that is what
+`apps/locations/data/locations.tsv` carries and a database value finer than
+the sheet would make every `import_locations` run report a phantom update.
+The admin does not round, so a coordinate set there keeps its full
+precision — and a rename in the editor leaves it alone rather than
+truncating it.
 
 A **curated place is a `Location` that has a `name`**. There is no separate
 model for one, which is the whole point — Mont Fort is a single row that

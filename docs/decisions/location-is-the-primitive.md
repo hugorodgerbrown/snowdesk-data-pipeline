@@ -23,12 +23,18 @@ centroid. One table:
 
 ```
 Location                          apps/locations/
-  latitude, longitude   exact WGS-84 — immovable
+  latitude, longitude   exact WGS-84 — immovable but correctable
   elevation_m           looked up once via fetch_elevation
   name                  nullable; a curated place has one
   kind                  nullable; VILLAGE | MID | PEAK
   forecast_cell → weather.ForecastCell (PROTECT)
 ```
+
+"Immovable" means a location does not drift and nothing in the request path
+moves one — not that the row is frozen. A mis-placed pin is corrected in the
+admin or in the in-map curation editor (`?edit=locations`, SNOW-755), which
+is a re-placement of the same row rather than a new place: the links
+pointing at it were never wrong, only the coordinate was.
 
 There is no separate "curated place" model. A curated place is a `Location`
 that has a `name`, so Mont Fort is one row referenced by Verbier, Nendaz,
