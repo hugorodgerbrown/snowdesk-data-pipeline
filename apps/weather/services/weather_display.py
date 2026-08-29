@@ -46,6 +46,7 @@ resort page when the resort's linked ``ForecastCell`` has rows.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
@@ -449,20 +450,32 @@ class PointWeatherDay(TypedDict):
 
 
 def build_point_weather_days(
-    rows: list["ForecastCellWeather"], now: datetime.datetime
+    rows: Sequence["ForecastCellWeather | WeatherSnapshot"],
+    now: datetime.datetime,
 ) -> dict[str, PointWeatherDay]:
     """
-    Project a forecast window into the map weather layer's ``days`` dict.
+    Project a weather window into the map weather layer's ``days`` dict.
 
-    The single place both ``forecast_weather_geojson`` (public,
-    resort-anchored points) and ``favourites_geojson`` (private,
-    favourite-anchored points) turn ``ForecastCellWeather`` rows into
-    the payload shape, so the two endpoints cannot drift on icon or
-    label derivation.
+    The single place all three map weather payloads —
+    ``forecast_weather_geojson`` (public, resort-anchored points),
+    ``favourites_geojson`` (private, favourite-anchored points) and
+    ``region_weather_geojson`` (public, micro-region centroids, SNOW-698)
+    — turn weather rows into the payload shape, so the endpoints cannot
+    drift on icon or label derivation.
+
+    Accepts ``WeatherSnapshot`` rows as well as ``ForecastCellWeather``
+    ones with no wrapper and no branch: it reads ``valid_for_date``,
+    ``temperature_2m_max``, ``temperature_2m_min`` and ``snowfall_sum``
+    directly, and ``weather_code``/``sunrise``/``sunset`` through
+    ``build_weather_display`` (already typed for the union) — every one
+    of them present on both models under the same name and type.
 
     Args:
-        rows: The forecast window for one point, in any order — the
-            result is keyed by date, so row order does not matter.
+        rows: The weather window for one point or region, in any order —
+            the result is keyed by date, so row order does not matter.
+            ``Sequence`` rather than ``list`` because ``list`` is
+            invariant: a caller holding a ``list[WeatherSnapshot]`` could
+            not pass it to a ``list[A | B]`` parameter at all.
         now: The reference instant for each day's day/night icon decision.
 
     Returns:

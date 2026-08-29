@@ -52,6 +52,14 @@ urlpatterns = [
         api.forecast_weather_geojson,
         name="forecast_weather_geojson",
     ),
+    # SNOW-698: the map weather layer's coarse tier — micro-region-centroid
+    # WeatherSnapshot weather, drawn below the zoom at which the resort
+    # symbols above appear. Public, same caching posture as its sibling.
+    path(
+        "region-weather.geojson",
+        api.region_weather_geojson,
+        name="region_weather_geojson",
+    ),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
     path(
         "major-regions.geojson",

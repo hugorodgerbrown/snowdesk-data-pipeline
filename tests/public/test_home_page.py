@@ -936,11 +936,16 @@ class TestWeatherContext:
         request.user = AnonymousUser()
         return request
 
-    def test_carries_the_endpoint_url(self) -> None:
-        """The context is the overlay's data URL and nothing else."""
+    def test_carries_both_tier_endpoint_urls(self) -> None:
+        """The context is the overlay's two tier URLs and nothing else.
+
+        SNOW-698 added the second: one toggle, two tiers — resort symbols
+        above zoom 8, micro-region-centroid symbols below it.
+        """
         ctx = _weather_context(self._request())
         assert ctx == {
-            "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson")
+            "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson"),
+            "region_weather_geojson_url": reverse("api:region_weather_geojson"),
         }
 
 

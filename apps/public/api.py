@@ -10,10 +10,14 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
 * ``/api/resorts.geojson``                 — FeatureCollection of geocoded resorts.
 * ``/api/forecast-weather.geojson``        — SNOW-573: FeatureCollection of
-  resort-anchored ``ForecastCell`` weather, keyed by ISO date. Flag-gated
-  on ``weather_layer``; resort-anchored only — a ``Favourite``-only point
-  never appears here (see ``apps.favourites.views.favourites_geojson`` for
-  the private half).
+  resort-anchored ``ForecastCell`` weather, keyed by ISO date. Public since
+  SNOW-724 retired the ``weather_layer`` flag; resort-anchored only — a
+  ``Favourite``-only point never appears here (see
+  ``apps.favourites.views.favourites_geojson`` for the private half).
+* ``/api/region-weather.geojson``          — SNOW-698: FeatureCollection of
+  micro-region-centroid ``WeatherSnapshot`` weather, keyed by ISO date. The
+  map's coarse weather tier below zoom 8, where the resort-anchored layer
+  above draws nothing at all.
 * ``/api/regions.geojson``                 — FeatureCollection of L4 region polygons.
   Each feature carries ``properties.download`` (SNOW-521) when the region
   has a precomputed offline-basemap size summary — see ``regions_geojson``'s
@@ -112,7 +116,7 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import blob_summary
-from apps.weather.models import ForecastCellWeather
+from apps.weather.models import ForecastCellWeather, WeatherSnapshot
 from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
@@ -656,6 +660,212 @@ def _build_forecast_weather_payload(
                     "resort_id": resort.pk,
                     "name": resort.name,
                     "region_id": resort.region.region_id,
+                    "days": build_point_weather_days(rows, now),
+                },
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}, oldest_fetched_at
+
+
+# SNOW-698: how far back the region tier's default (no ``?d=``) window
+# reaches, counting today. Mirrors ``POINT_FORECAST_DAYS`` forward: the
+# point tier ships today plus six days ahead, the region tier today plus
+# six days behind, so the two payloads stay comparable in size and the
+# layers-menu row disables symmetrically at either end.
+REGION_WEATHER_DAYS_BACK = 7
+
+
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
+def region_weather_geojson(request: HttpRequest) -> JsonResponse:
+    """
+    Return a FeatureCollection of micro-region-centroid weather.
+
+    Powers the map's coarse Weather tier below zoom 8 (SNOW-698), where
+    ``forecast_weather_geojson``'s resort-anchored symbols are suppressed
+    by their layer's ``minzoom`` and the overlay would otherwise read as
+    broken rather than as absent. One Meteocons condition symbol at each
+    micro-region's centroid, icon only — the client sets no ``text-field``
+    for this tier, because a centroid is an honestly poor proxy for a
+    region tens of kilometres across and a precise-looking temperature
+    beside it would overstate what the datum knows.
+
+    Source is ``WeatherSnapshot`` — the per-region, per-day row
+    ``fetch_weather``'s region pass already writes at ``region.centre`` —
+    not a region-anchored ``ForecastCell``. That keeps the tier free of
+    ~461 new points and ~461 extra Open-Meteo calls per cycle for data
+    already on disk, at the cost of a different date coverage from the
+    point tier: ``fetch_weather`` writes region snapshots for today only
+    and ``backfill_weather`` fills past days from the archive, so the
+    region tier covers **today and history** where the point tier covers
+    today and the forecast. That asymmetry is designed, not incidental.
+
+    ``properties.region_id`` is the region's own ``MicroRegion.region_id``.
+    Unlike a station or point feature — where an id would claim an
+    association the geometry does not support — a region feature *is* a
+    region row, so ``region_id`` is its identity rather than a claimed
+    link to something nearby.
+
+    Response shape::
+
+        {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "geometry": {"type": "Point", "coordinates": [7.5, 46.8]},
+              "properties": {
+                "region_id": "CH-4115",
+                "name": "Martigny / Verbier",
+                "days": {
+                  "2026-08-07": {
+                    "icon": "light_snow-day.svg",
+                    "label": "Light snow",
+                    "tmax": 4.0,
+                    "tmin": -3.0,
+                    "snow": 2.0
+                  },
+                  ...
+                }
+              }
+            },
+            ...
+          ]
+        }
+
+    ``days`` defaults to the ``REGION_WEATHER_DAYS_BACK``-day window ending
+    today, mirroring ``/api/ratings/``'s date-keyed shape so the scrubber
+    re-paints from the already-fetched payload with no per-date round trip.
+    Pass ``?d=YYYY-MM-DD`` to narrow ``days`` to a single date, which may
+    be any date at all — the window bound applies to the default only.
+
+    Server-side ``cache.get_or_set`` keyed ``region-weather:v1:<d|all>``
+    bounds DB hits to one per cache window, mirroring
+    ``forecast_weather_geojson``. As there, the
+    ``@vary_on_headers("Accept-Encoding")`` decorator is necessary but not
+    sufficient: this path must also be listed in ``_POSTHOG_EXEMPT_PATHS``
+    (``config/settings/base.py``) or ``PosthogContextMiddleware`` reading
+    ``request.user`` causes ``SessionMiddleware`` to append
+    ``Vary: Cookie`` and defeat the public caching.
+
+    ``generated_at`` (for the freshness headers) is the OLDEST
+    ``fetched_at`` across the payload's ``WeatherSnapshot`` rows, following
+    ``_card_freshness``'s rule that a record mixing several constituents is
+    only as fresh as its stalest one. ``unsafe_after`` is ``None`` —
+    weather is not safety-critical, so the freshness state saturates at
+    "stale" and never escalates to "unsafe".
+
+    Errors:
+        400 — malformed ``?d=`` date string.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with a FeatureCollection payload, or 400.
+
+    """
+    date_param = request.GET.get("d")
+    parsed_date: date | None = None
+    if date_param:
+        # Enforce the strict YYYY-MM-DD wire format — mirrors the
+        # ``forecast_weather_geojson`` idiom verbatim.
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_param):
+            return JsonResponse({"error": "malformed date"}, status=400)
+        try:
+            parsed_date = date.fromisoformat(date_param)
+        except ValueError:
+            return JsonResponse({"error": "malformed date"}, status=400)
+
+    cache_key = f"region-weather:v1:{parsed_date.isoformat() if parsed_date else 'all'}"
+    cached = cast(
+        "tuple[dict[str, Any], datetime | None]",
+        cache.get_or_set(
+            cache_key,
+            lambda: _build_region_weather_payload(parsed_date),
+            timeout=_DYNAMIC_CACHE_MAX_AGE,
+        ),
+    )
+    payload, generated_at = cached
+    response = JsonResponse(payload)
+    apply_freshness_headers(
+        response,
+        generated_at=generated_at or timezone.now(),
+        unsafe_after=None,
+    )
+    return response
+
+
+def _build_region_weather_payload(
+    target_date: date | None,
+) -> tuple[dict[str, Any], datetime | None]:
+    """
+    Build the region-weather FeatureCollection from the DB.
+
+    Two queries regardless of region count (SNOW-698), matching
+    ``_build_forecast_weather_payload``'s flat-query property: one over
+    ``MicroRegion`` rows carrying a ``centre``, then one bulk
+    ``WeatherSnapshot`` fetch keyed by ``region_id`` and grouped into a
+    dict in Python.
+
+    A region with a ``centre`` but no snapshot in the window is left out
+    of the payload entirely rather than emitted with an empty ``days``:
+    at 461 regions, carrying a feature per snapshot-less region would be
+    payload spent on nothing the client can ever draw.
+
+    Args:
+        target_date: Narrow every feature's ``days`` to this one date, or
+            ``None`` for the default ``REGION_WEATHER_DAYS_BACK``-day
+            window ending today.
+
+    Returns:
+        A ``(payload, generated_at)`` pair — ``payload`` is a GeoJSON
+        FeatureCollection dict; ``generated_at`` is the OLDEST
+        ``fetched_at`` across the payload's ``WeatherSnapshot`` rows, or
+        ``None`` when the payload carries no weather rows at all.
+
+    """
+    regions = list(
+        MicroRegion.objects.filter(centre__isnull=False).order_by("region_id")
+    )
+    region_pks = [region.pk for region in regions]
+    rows_by_region: dict[int, list[WeatherSnapshot]] = defaultdict(list)
+    snapshot_qs = WeatherSnapshot.objects.filter(region_id__in=region_pks)
+    if target_date is not None:
+        snapshot_qs = snapshot_qs.filter(valid_for_date=target_date)
+    else:
+        today = timezone.localdate()
+        snapshot_qs = snapshot_qs.filter(
+            valid_for_date__gte=today - timedelta(days=REGION_WEATHER_DAYS_BACK - 1),
+            valid_for_date__lte=today,
+        )
+    for row in snapshot_qs.iterator():
+        rows_by_region[row.region_id].append(row)
+
+    now = timezone.now()
+    oldest_fetched_at: datetime | None = None
+    features: list[dict[str, Any]] = []
+    for region in regions:
+        rows = rows_by_region.get(region.pk, [])
+        if not rows:
+            continue
+        for row in rows:
+            if oldest_fetched_at is None or row.fetched_at < oldest_fetched_at:
+                oldest_fetched_at = row.fetched_at
+        centre = region.centre or {}
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    # ``MicroRegion.centre`` is a flat {"lon", "lat"} dict,
+                    # not a GeoJSON geometry — reorder it into GeoJSON's
+                    # [longitude, latitude] pair per RFC 7946.
+                    "coordinates": [centre.get("lon"), centre.get("lat")],
+                },
+                "properties": {
+                    "region_id": region.region_id,
+                    "name": region.name,
                     "days": build_point_weather_days(rows, now),
                 },
             }

@@ -464,6 +464,11 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         # flag-gated until SNOW-724; the exemption never depended on
         # that, only on the response being publicly cacheable.)
         "/api/forecast-weather.geojson",
+        # SNOW-698: the Weather overlay's coarse region tier — same public,
+        # publicly-cacheable posture as its resort-anchored sibling above.
+        # Matching here is an EXACT string compare, so this must be spelled
+        # exactly as apps/public/api_urls.py routes it.
+        "/api/region-weather.geojson",
         "/api/regions.geojson",
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",

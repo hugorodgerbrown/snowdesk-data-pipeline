@@ -838,7 +838,10 @@ def home(request: HttpRequest) -> HttpResponse:
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
       ``forecast_weather_geojson_url`` — URL for the map Weather overlay's
-                                GeoJSON endpoint (SNOW-573).
+                                resort-anchored GeoJSON endpoint (SNOW-573).
+      ``region_weather_geojson_url`` — URL for the map Weather overlay's
+                                micro-region-centroid GeoJSON endpoint, the
+                                coarse tier drawn below zoom 8 (SNOW-698).
       ``slope_layer_eligible`` — True when ``settings.SLOPE_TILE_URL`` is
                                 configured (SNOW-691, SNOW-724).
       ``slope_tile_url``      — XYZ tile template for the slope-angle raster,
@@ -1753,11 +1756,20 @@ def _weather_context(request: HttpRequest) -> dict[str, Any]:
     Args:
         request: The current HTTP request.
 
+    SNOW-698 added the second URL: the overlay is one toggle over two
+    tiers — resort symbols above zoom 8, micro-region-centroid symbols
+    below it — and each tier has its own endpoint. Both are bare
+    ``reverse()`` calls, so this builder still issues no query.
+
     Returns:
-        Dict with ``forecast_weather_geojson_url``.
+        Dict with ``forecast_weather_geojson_url`` and
+        ``region_weather_geojson_url``.
 
     """
-    return {"forecast_weather_geojson_url": reverse("api:forecast_weather_geojson")}
+    return {
+        "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson"),
+        "region_weather_geojson_url": reverse("api:region_weather_geojson"),
+    }
 
 
 def _slope_context(request: HttpRequest) -> dict[str, Any]:
