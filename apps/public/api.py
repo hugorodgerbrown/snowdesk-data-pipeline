@@ -2653,12 +2653,12 @@ def edit_location_create(request: HttpRequest) -> JsonResponse:
             transaction.set_rollback(True)
             return link
 
+    # By row id, not coordinates — see the note in edit_location_save.
     logger.info(
-        "edit_location_create: created %s for %s at (%s, %s)",
+        "edit_location_create: created location id=%s (%s) for %s",
+        location.pk,
         location.name,
         resort.name,
-        lat,
-        lon,
     )
     return JsonResponse(_location_payload(_reload_with_links(location)), status=201)
 
@@ -2747,11 +2747,14 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
         update_fields += ["latitude", "longitude", "elevation_m", "forecast_cell"]
     location.save(update_fields=update_fields)
 
+    # Logged by row id, never by raw coordinates — the same rule SNOW-718
+    # applied to resolve_forecast_cell. A coordinate is a precise location
+    # and the id identifies the row anyway, so this is both safer and more
+    # useful; whether the pin moved is the fact worth having in the log.
     logger.info(
-        "edit_location_save: saved %s at (%s, %s), moved=%s",
+        "edit_location_save: saved location id=%s (%s), moved=%s",
+        location.pk,
         location.name,
-        location.latitude,
-        location.longitude,
         moved,
     )
     return JsonResponse(_location_payload(_reload_with_links(location)))
