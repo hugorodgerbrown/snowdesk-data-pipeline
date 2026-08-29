@@ -103,6 +103,8 @@ in addition to the shared map assets.
     {% include "public/partials/_map_embed.html" with show_intro=True map_help_autostart=False %}
     {# SNOW-344: edit-resorts panel (moved from map.html).               #}
     {% if edit_target == "resorts" %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
+    {# SNOW-755: edit-locations panel — the same surface for the curated Location estate. #}
+    {% if edit_target == "locations" %}{% include "public/partials/edit_locations_panel.html" %}{% endif %}
     {# htmx.min.js is shared by both sheet surfaces below (field-report   #}
     {# and favourites) — loaded once here, ahead of both surface partials. #}
     <script defer src="{% static 'js/htmx.min.js' %}"></script>
@@ -350,4 +352,11 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_help.js' %}"></script>
     {# SNOW-344: edit-resorts JS (moved from map.html). #}
     {% if edit_target == "resorts" %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
+    {# SNOW-755: edit-locations JS. The core module carries the logic and #}
+    {# must load first — map_edit_locations.js reads its frozen export at    #}
+    {# parse time, and both are deferred, so document order is the order.    #}
+    {% if edit_target == "locations" %}
+        <script defer src="{% static 'js/map_edit_locations_core.js' %}"></script>
+        <script defer src="{% static 'js/map_edit_locations.js' %}"></script>
+    {% endif %}
 {% endblock %}

@@ -740,6 +740,32 @@ def _get_name_slug(region: MicroRegion) -> str:
     return name_slug
 
 
+def _edit_locations_context() -> dict[str, str]:
+    """Return the URL context the location editor's panel is wired with.
+
+    Three of the five endpoints take a row id, so they are reversed with a
+    dummy and string-replaced at runtime in the JS — the same
+    ``__ID__`` placeholder trick ``edit_save_url_template`` above uses, and
+    the same one ``static/js/map.js`` uses for the region-summary URL.
+
+    Returns:
+        The five URLs the panel's data attributes carry.
+
+    """
+
+    def _templated(name: str) -> str:
+        """Reverse ``name`` with a dummy id and swap in the placeholder."""
+        return reverse(name, args=[0]).replace("/0/", "/__ID__/")
+
+    return {
+        "edit_locations_queue_url": reverse("api:edit_locations_queue"),
+        "edit_location_create_url": reverse("api:edit_location_create"),
+        "edit_location_save_url_template": _templated("api:edit_location_save"),
+        "edit_location_link_url_template": _templated("api:edit_location_link"),
+        "edit_location_unlink_url_template": _templated("api:edit_location_unlink"),
+    }
+
+
 # The estates the in-map editors can curate. ``?edit=`` names one of these
 # or the page is the ordinary map — an unrecognised value is not an error,
 # it is simply not an editor, so the URL stays safe to bookmark and safe to
@@ -806,6 +832,9 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (resorts).
       ``edit_create_url``     — URL for the resort-create API (resorts only).
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (resorts).
+      ``edit_locations_*``     — the five location-editor URLs, present only
+                                when ``edit_target == "locations"``
+                                (see ``_edit_locations_context``).
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
       ``forecast_weather_geojson_url`` — URL for the map Weather overlay's
@@ -874,6 +903,8 @@ def home(request: HttpRequest) -> HttpResponse:
                 "edit_resorts_geojson_url": reverse("api:resorts_geojson"),
             }
         )
+    elif edit_target == "locations":
+        edit_context.update(_edit_locations_context())
 
     report_ctx = _report_context(request)
     favourites_ctx = _favourites_context(request)

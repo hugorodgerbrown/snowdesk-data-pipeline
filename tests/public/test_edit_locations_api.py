@@ -788,6 +788,80 @@ class TestUnlink:
         assert resp.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# The page gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestEditLocationsPageGate:
+    """``?edit=locations`` renders the panel only for a superuser."""
+
+    def test_superuser_sees_the_panel(self) -> None:
+        """The querystring and the superuser bit both agree."""
+        resp = _superuser_client().get(reverse("public:home") + "?edit=locations")
+        assert resp.status_code == 200
+        assert b"edit-locations-panel" in resp.content
+
+    @pytest.mark.parametrize("client_factory", [Client, _ordinary_client])
+    def test_everyone_else_gets_the_normal_map(self, client_factory: Any) -> None:
+        """The URL stays safe to bookmark and safe to paste into a chat."""
+        resp = client_factory().get(reverse("public:home") + "?edit=locations")
+        assert resp.status_code == 200
+        assert b"edit-locations-panel" not in resp.content
+
+    def test_the_panel_carries_all_five_endpoint_urls(self) -> None:
+        """The JS reads every URL off the panel's data attributes.
+
+        Three of them are ``__ID__`` templates the panel string-replaces
+        at runtime; a missing one is a button that silently POSTs to the
+        page it is on.
+        """
+        content = (
+            _superuser_client()
+            .get(reverse("public:home") + "?edit=locations")
+            .content.decode()
+        )
+
+        for attribute in (
+            f'data-queue-url="{reverse("api:edit_locations_queue")}"',
+            f'data-create-url="{reverse("api:edit_location_create")}"',
+            'data-save-url-template="/api/edit/locations/__ID__/save/"',
+            'data-link-url-template="/api/edit/locations/__ID__/link/"',
+            'data-unlink-url-template="/api/edit/locations/links/__ID__/unlink/"',
+        ):
+            assert attribute in content
+
+    def test_the_core_module_loads_before_the_wiring(self) -> None:
+        """``map_edit_locations.js`` reads the frozen export at parse time.
+
+        Both tags are deferred, so document order is execution order and
+        the wrong order is a TypeError on the first line of the IIFE.
+        """
+        content = (
+            _superuser_client()
+            .get(reverse("public:home") + "?edit=locations")
+            .content.decode()
+        )
+
+        assert content.index("map_edit_locations_core.js") < content.index(
+            "js/map_edit_locations.js"
+        )
+
+    def test_the_normal_map_loads_neither_script(self) -> None:
+        """A page nobody is editing is exactly the page it was before."""
+        content = Client().get(reverse("public:home")).content.decode()
+
+        assert "map_edit_locations" not in content
+
+    def test_an_unknown_edit_target_is_ignored(self) -> None:
+        """Not an error — simply not an editor."""
+        resp = _superuser_client().get(reverse("public:home") + "?edit=wombats")
+        assert resp.status_code == 200
+        assert b"edit-locations-panel" not in resp.content
+        assert b"edit-resorts-panel" not in resp.content
+
+
 @pytest.mark.django_db
 def test_the_resort_catalogue_carries_its_coordinates() -> None:
     """The panel frames the map on a resort before the pin is placed."""
