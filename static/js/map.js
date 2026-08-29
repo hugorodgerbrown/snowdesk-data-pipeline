@@ -2367,18 +2367,13 @@
     _setWeatherRowDisabled(!inWindow, MAP_STRINGS['weather-out-of-window']);
   };
 
-  // Recompute the merged, date-projected FeatureCollection from whatever is
-  // currently cached and push it into the source — no fetch. The payload
-  // carries the whole forecast window, so every scrubbed date (via the
-  // snowdesk:date-changed listener below) and every favourites update
-  // (snowdesk:favourites-changed) re-projects in memory rather than
-  // re-fetching. No-op before the layer has been installed.
   // Re-project one weather source's cached payload for `dateKey` and push it
   // in. Registers whatever icons that payload needs first — a scrubbed date
   // can be the first to reference an icon filename nothing has decoded yet.
   // Re-reads the source after the decode: the style may have swapped
   // mid-flight, in which case the install path has already re-added it with
-  // its own data and this write must not land.
+  // its own data and this write must not land. No-op before the layer has
+  // been installed, or before its payload has been fetched.
   const _setWeatherSourceData = (sourceId, payload, dateKey) => {
     if (!map.getSource(sourceId) || !payload) return;
     ensureWeatherIconsRegistered(window.pwaWeatherCore.iconFilenamesForPayload(payload))
@@ -2391,6 +2386,12 @@
       });
   };
 
+  // Recompute both tiers' date-projected FeatureCollections from whatever is
+  // currently cached and push them into their sources — no fetch. Each
+  // payload carries its whole window, so every scrubbed date (via the
+  // snowdesk:date-changed listener below) and every favourites update
+  // (snowdesk:favourites-changed) re-projects in memory rather than
+  // re-fetching.
   const refreshWeatherSourceData = () => {
     // SNOW-660: the displayed date, with no substitute behind it. With no day
     // asked for this is null, every feature projects to `icon: ''`, and the
