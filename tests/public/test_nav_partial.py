@@ -93,7 +93,12 @@ class TestNavAdminMenu:
     """Tests for the staff-only Admin dropdown rendered inside nav.html."""
 
     def test_staff_sees_admin_links(self, rf: RequestFactory, staff_user: User) -> None:
-        """Staff users see the admin menu and all four destination links."""
+        """Staff users see the admin menu and all five destination links.
+
+        SNOW-755 made it five: the single "Edit map" item pointed only at
+        ``?edit=resorts``, so the location editor had no entry point at
+        all and could only be reached by typing the querystring.
+        """
         request = rf.get("/")
         request.user = staff_user
         html = render_to_string("includes/nav.html", {}, request=request)
@@ -101,7 +106,22 @@ class TestNavAdminMenu:
         assert reverse("public:components_index") in html
         assert reverse("public:push_demo") in html
         assert reverse("public:home") + "?edit=resorts" in html
+        assert reverse("public:home") + "?edit=locations" in html
         assert reverse("admin:index") in html
+
+    def test_both_editors_are_named_in_the_menu(
+        self, rf: RequestFactory, staff_user: User
+    ) -> None:
+        """The label says which estate, because two items now share a shape.
+
+        "Edit map" was unambiguous while there was one editor. With two it
+        would say nothing about which one the item opens.
+        """
+        request = rf.get("/")
+        request.user = staff_user
+        html = render_to_string("includes/nav.html", {}, request=request)
+        assert "Edit resorts" in html
+        assert "Edit locations" in html
 
     def test_non_staff_sees_no_admin_menu(
         self, rf: RequestFactory, regular_user: User
