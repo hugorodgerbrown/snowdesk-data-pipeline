@@ -192,6 +192,14 @@ The commands above backfill an environment onto the model. Growing the
 curated estate afterwards — the ~93 summits SNOW-732 needs — is a
 different loop, and it does **not** run against production directly.
 
+0. **Start from the sheets.** `import_locations --commit` locally, before
+   opening the editor, so the database already holds every row the sheets
+   carry. `dump_locations_sheets` renders each sheet **whole** from the
+   database — it is a replacement, not a merge — so a database missing
+   rows the sheet lists will delete them at step 2. A local database
+   seeded from fixtures or by `seed_test_data` does *not* hold the curated
+   estate: it can carry its own unrelated `Location` rows, which is the
+   case that bites, because the dump then looks like it worked.
 1. **Curate locally.** `/?edit=locations` as a superuser (SNOW-755): click
    the map to place a summit, name it, classify it, and link it to every
    resort that reaches it. The editor writes to the local database only.
@@ -210,6 +218,15 @@ different loop, and it does **not** run against production directly.
 5. **Resolve the new rows.** `link_location_forecast_cells --commit` —
    one Open-Meteo call per new location, and the check on the curation
    (step 4 above).
+
+**The dry run is the guard on step 0.** `dump_locations_sheets` with no
+`--commit` reports each sheet's change as `+added/-removed` lines. A
+removed count you cannot account for means the database is behind the
+sheets — stop and run step 0, rather than committing the diff. Observed
+on 2026-08-29 against a worktree database holding two unrelated locations
+where the sheet held four curated villages: the dry run read
+`locations.tsv would change (+2/-4 lines)`, which is the whole warning
+you get.
 
 The editor is superuser-gated and could in principle be driven against
 production, but curating there skips steps 2 and 3 entirely: the estate
