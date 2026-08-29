@@ -119,6 +119,38 @@ urlpatterns = [
         api.edit_resort_save,
         name="edit_resort_save",
     ),
+    # SNOW-755 — edit-locations mode endpoints, gated the same way. The
+    # literal segments ("create", "links") are declared before the
+    # ``<int:...>`` patterns for the same reason the resort routes above
+    # are, and ``links/`` is its own prefix because unlink names the LINK,
+    # not the location: a location reached by four resorts has four links
+    # to choose between, and the pair of ids that would otherwise be
+    # needed is exactly what the link row's own id already is.
+    path(
+        "edit/locations/queue/",
+        api.edit_locations_queue,
+        name="edit_locations_queue",
+    ),
+    path(
+        "edit/locations/create/",
+        api.edit_location_create,
+        name="edit_location_create",
+    ),
+    path(
+        "edit/locations/links/<int:link_id>/unlink/",
+        api.edit_location_unlink,
+        name="edit_location_unlink",
+    ),
+    path(
+        "edit/locations/<int:location_id>/save/",
+        api.edit_location_save,
+        name="edit_location_save",
+    ),
+    path(
+        "edit/locations/<int:location_id>/link/",
+        api.edit_location_link,
+        name="edit_location_link",
+    ),
     # SNOW-391: hosted MCP (Model Context Protocol) JSON-RPC endpoint.
     # Final URLs: POST /api/mcp/ (canonical, reverses as api:mcp:endpoint)
     # and POST /api/mcp (slash-less alias). Mounted at "" so apps.mcp_server.urls

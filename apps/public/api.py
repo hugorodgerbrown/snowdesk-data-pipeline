@@ -45,6 +45,22 @@ Superuser-only endpoints powering the in-map resort editor (SNOW-74,
 * ``POST /api/edit/resorts/create/``              — create a resort from a
   placed pin, deriving its parent region from that pin.
 
+The same again for the curated ``Location`` estate (SNOW-755,
+``?edit=locations``), with one endpoint the resort editor has no
+equivalent of — ``link``, which attaches an existing location to a second
+resort so Mont Fort stays one row that four resorts share:
+
+* ``GET  /api/edit/locations/queue/``                 — the estate, each
+  location's links, and the resort catalogue to link against.
+* ``POST /api/edit/locations/create/``                — mint a location
+  from a placed pin and link it to one resort.
+* ``POST /api/edit/locations/<int:location_id>/save/`` — move, rename or
+  re-classify an existing location.
+* ``POST /api/edit/locations/<int:location_id>/link/`` — attach it to
+  another resort.
+* ``POST /api/edit/locations/links/<int:link_id>/unlink/`` — drop one
+  link, keeping the location.
+
 Plain Django ``JsonResponse`` views — no DRF. The choropleth fetches its
 three data endpoints in parallel at load time; the per-region summary
 endpoint is hit on demand when the user taps a region.
@@ -62,7 +78,7 @@ from typing import Any, cast
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -86,6 +102,7 @@ from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
 from apps.favourites.models import Favourite
+from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.forms import RESORT_DETAIL_FIELDS, ResortDetailsForm
 from apps.regions.models import (
@@ -2221,6 +2238,578 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
     )
 
     return JsonResponse(_resort_save_payload(resort), status=201)
+
+
+# ---------------------------------------------------------------------------
+# Edit-locations mode (SNOW-755) — superuser-only
+# ---------------------------------------------------------------------------
+#
+# The same shape as the resort editor above — superuser gate, JSON bodies,
+# a placed pin inside the Swiss bbox — over ``Location`` /
+# ``ResortLocation`` instead of ``Resort``. Two things genuinely differ.
+#
+# **A location is shared, a resort is not.** Mont Fort is one row that
+# Verbier, Nendaz, Veysonnaz and Thyon all reference, which is the whole
+# reason the model exists. So there is a ``link`` endpoint with no
+# resort-editor equivalent: it attaches an EXISTING location to another
+# resort without minting a second copy of the summit.
+#
+# **``kind`` and ``role`` are independent.** ``Location.kind`` describes
+# the place (Mont Fort is a peak whoever is looking at it);
+# ``ResortLocation.role`` describes one resort's relationship to it. A
+# point can be one resort's top and another's mid-station, so neither is
+# ever derived from the other — every payload below carries both.
+
+# Decimal places a placed pin is stored to. Five is ~1 m in Switzerland:
+# the precision the editor reads out, and the precision
+# ``apps/locations/data/locations.tsv`` is written to. Storing more than
+# the sheet can carry would make ``import_locations`` report an update on
+# every run — a permanent diff of trailing digits that teaches an operator
+# to ignore the one signal that says whether the estate matches git.
+_LOCATION_COORD_DECIMALS = 5
+
+
+def _location_link_payload(link: ResortLocation) -> dict[str, Any]:
+    """Return one resort-to-location link as the panel reads it.
+
+    Args:
+        link: The link, with ``resort`` and ``resort.region`` already
+            selected (the queue endpoint prefetches both).
+
+    Returns:
+        The link's JSON shape — its own id, so unlink can name it, plus
+        enough of the resort to render a row without a second request.
+
+    """
+    return {
+        "id": link.pk,
+        "resort_id": link.resort_id,
+        "resort_name": link.resort.name,
+        "region_id": link.resort.region.region_id,
+        "role": link.role,
+        "is_primary": link.is_primary,
+    }
+
+
+def _location_payload(location: Location) -> dict[str, Any]:
+    """Return one location and its links as the panel reads it.
+
+    The single shape every endpoint below answers with, so the panel can
+    splice a created location and patch a saved one from the same keys.
+    ``elevation_m`` is included but read-only — it is resolved from the
+    coordinate by ``link_location_forecast_cells``, never supplied — and
+    is shown because a resolved height nowhere near the expected one is
+    how a mis-placed pin announces itself.
+
+    Args:
+        location: The location, with its links prefetched or selected.
+
+    Returns:
+        The location's JSON shape.
+
+    """
+    return {
+        "id": location.pk,
+        "uuid": str(location.uuid),
+        "name": location.name,
+        "kind": location.kind,
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+        "elevation_m": location.elevation_m,
+        "links": [
+            _location_link_payload(link) for link in location.resort_locations.all()
+        ],
+    }
+
+
+def _locations_with_links() -> LocationQuerySet:
+    """Return a Location queryset carrying each row's links in one query.
+
+    The prefetch is not an optimisation, it is the difference between one
+    query and one per row: every payload above renders a location's resort
+    links inline, so a bare queryset would go back to the database once per
+    location in a list meant to grow to hundreds — and again per link for
+    the resort and its region.
+
+    Returns:
+        An unfiltered ``Location`` queryset with ``resort_locations``,
+        their resorts and those resorts' regions prefetched.
+
+    """
+    return Location.objects.prefetch_related(
+        Prefetch(
+            "resort_locations",
+            queryset=ResortLocation.objects.select_related(
+                "resort", "resort__region"
+            ).order_by("resort__name", "pk"),
+        )
+    )
+
+
+def _reload_with_links(location: Location) -> Location:
+    """Re-read one location with its links, for a write endpoint's response.
+
+    A location fetched by pk (or just created) has no prefetch behind it,
+    so building its payload straight off the instance would walk the links
+    one query at a time. One re-read is cheaper and, after a create or an
+    unlink, is also the only way the response reflects the write.
+
+    Args:
+        location: The instance just written.
+
+    Returns:
+        The same row, re-read with its links.
+
+    """
+    return _locations_with_links().get(pk=location.pk)
+
+
+def _curated_locations() -> LocationQuerySet:
+    """Return the curated estate, in the order the panel lists it.
+
+    Returns:
+        Named locations only, name-ordered, links prefetched.
+
+    """
+    return _locations_with_links().named().order_by("name", "pk")
+
+
+@require_GET
+def edit_locations_queue(request: HttpRequest) -> JsonResponse:
+    """Return the curated location estate plus everything to link against.
+
+    Response shape::
+
+        {
+          "locations": [{location-payload}, ...],
+          "resorts":   [{"id", "name", "region_id", "region_name",
+                         "latitude", "longitude"}, ...],
+          "kinds":     [{"value": "PEAK", "label": "Peak"}, ...],
+          "roles":     [{"value": "TOP",  "label": "Top"}, ...]
+        }
+
+    One request, because the panel needs all four to render at all: the
+    estate is the list, the resorts are what a location is attached to,
+    and the two vocabularies fill the selects. Serving the choices rather
+    than hard-coding them in the panel keeps ``Location.KIND`` and
+    ``ResortLocation.ROLE`` as the single source of both.
+
+    Only named locations are listed. The anonymous rows minted from
+    favourites and field observations live in the same table but are user
+    data, not the curated estate — the same boundary
+    ``import_locations`` draws.
+
+    Returns 404 unless the request user is a superuser.
+    """
+    _require_edit_map_admin(request)
+    return JsonResponse(
+        {
+            "locations": [
+                _location_payload(location) for location in _curated_locations()
+            ],
+            "resorts": [
+                {
+                    "id": row["pk"],
+                    "name": row["name"],
+                    "region_id": row["region__region_id"],
+                    "region_name": row["region__name"],
+                    "latitude": row["latitude"],
+                    "longitude": row["longitude"],
+                }
+                for row in Resort.objects.order_by("name", "pk").values(
+                    "pk",
+                    "name",
+                    "region__region_id",
+                    "region__name",
+                    "latitude",
+                    "longitude",
+                )
+            ],
+            "kinds": [
+                {"value": value, "label": label}
+                for value, label in Location.KIND.choices
+            ],
+            "roles": [
+                {"value": value, "label": label}
+                for value, label in ResortLocation.ROLE.choices
+            ],
+        }
+    )
+
+
+def _parse_location_identity(
+    payload: dict[str, Any],
+) -> JsonResponse | tuple[str, str]:
+    """Validate the ``name``/``kind`` pair of a location write.
+
+    ``name`` is required for both write endpoints, because naming a
+    location is what makes it curated — a nameless row is the anonymous
+    kind this editor does not manage. ``kind`` is optional and may be
+    blank, matching the model and the sheet, but a value that is not a
+    ``Location.KIND`` is rejected rather than silently blanked: a typo
+    resolving to "" would strip a summit of its classification with no
+    signal.
+
+    Returns either the 400 response to send or the parsed
+    ``(name, kind)``; the caller discriminates with ``isinstance``.
+    """
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return JsonResponse(
+            {"error": "invalid_identity", "detail": "name is required"},
+            status=400,
+        )
+    kind = str(payload.get("kind") or "").strip().upper()
+    if kind and kind not in Location.KIND.values:
+        return JsonResponse(
+            {
+                "error": "invalid_kind",
+                "detail": (
+                    f"{kind!r} is not a location kind "
+                    f"(expected one of: {', '.join(Location.KIND.values)}, "
+                    "or blank)"
+                ),
+            },
+            status=400,
+        )
+    return name, kind
+
+
+def _coerce_row_id(value: Any) -> int:
+    """Return ``value`` as a positive row id, or 0 when it is not one.
+
+    The panel's resort picker is a ``<select>``, whose value reaches the
+    wire as a string, so an id arrives as either ``12`` or ``"12"`` and
+    both are the same request. Anything else — null, a name, a float — is
+    0, which no row has, so the caller's ordinary "no such resort" 400
+    covers a malformed id without a second error path for it.
+
+    Args:
+        value: The raw JSON value.
+
+    Returns:
+        The parsed id, or 0.
+
+    """
+    try:
+        parsed = int(str(value))
+    except ValueError, TypeError:
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _parse_link_fields(
+    payload: dict[str, Any],
+) -> JsonResponse | tuple[Resort, str, bool]:
+    """Validate the ``resort_id``/``role``/``is_primary`` trio of a link.
+
+    Unlike ``kind``, ``role`` is required: a link that does not say what
+    the location is to the resort carries nothing the two foreign keys do
+    not already say.
+
+    Returns either the 400 response to send or the parsed
+    ``(resort, role, is_primary)``; the caller discriminates with
+    ``isinstance``.
+    """
+    raw_resort_id = payload.get("resort_id")
+    resort_id = _coerce_row_id(raw_resort_id)
+    resort = Resort.objects.filter(pk=resort_id).first() if resort_id else None
+    if resort is None:
+        return JsonResponse(
+            {
+                "error": "unknown_resort",
+                "detail": f"No resort with id {raw_resort_id!r}.",
+            },
+            status=400,
+        )
+    role = str(payload.get("role") or "").strip().upper()
+    if role not in ResortLocation.ROLE.values:
+        return JsonResponse(
+            {
+                "error": "invalid_role",
+                "detail": (
+                    f"{role!r} is not a link role "
+                    f"(expected one of: {', '.join(ResortLocation.ROLE.values)})"
+                ),
+            },
+            status=400,
+        )
+    return resort, role, bool(payload.get("is_primary"))
+
+
+def _link_or_error(
+    location: Location, resort: Resort, role: str, is_primary: bool
+) -> JsonResponse | ResortLocation:
+    """Create one link, turning the uniqueness clash into a readable 400.
+
+    ``ResortLocation`` is unique on ``(resort, location)``, so linking a
+    location to a resort it already reaches is an ``IntegrityError`` —
+    which would surface as a 500 and read as a broken editor rather than
+    as "you already did that". It is a routine thing for an operator to
+    try, because from the panel the link they are about to add and the
+    one already listed look the same until they read the row.
+
+    Returns either the 400 response to send or the saved link; the caller
+    discriminates with ``isinstance``.
+    """
+    try:
+        # The INSERT takes its own savepoint: a caught IntegrityError
+        # leaves the surrounding transaction unusable otherwise, so
+        # without this the 400 below could not be built — every query
+        # after it, including the one rendering the error, would fail.
+        with transaction.atomic():
+            return ResortLocation.objects.create(
+                resort=resort,
+                location=location,
+                role=role,
+                is_primary=is_primary,
+            )
+    except IntegrityError:
+        return JsonResponse(
+            {
+                "error": "duplicate_link",
+                "detail": (
+                    f"{resort.name} is already linked to {location.name} — "
+                    "change the existing link's role rather than adding a "
+                    "second one."
+                ),
+            },
+            status=400,
+        )
+
+
+@require_POST
+def edit_location_create(request: HttpRequest) -> JsonResponse:
+    """Mint a location from a placed pin and link it to one resort.
+
+    Request body (JSON)::
+
+        {
+          "name": "Mont Fort",
+          "kind": "PEAK",            # optional, may be blank
+          "latitude": <float>,
+          "longitude": <float>,
+          "resort_id": <int>,
+          "role": "TOP",
+          "is_primary": false        # optional, defaults false
+        }
+
+    A location and its first link are created together, in one
+    transaction. Curating a summit nobody's resort reaches is not a thing
+    the estate is for, and a location with no links is invisible to every
+    surface that reads it — so the endpoint asks for the resort up front
+    rather than leaving an orphan behind on a half-finished session.
+
+    Subsequent resorts are attached with :func:`edit_location_link`,
+    which is what keeps Mont Fort one row rather than four.
+
+    The row lives only in this environment's database until
+    ``manage.py dump_locations_sheets --commit`` writes it back to
+    ``apps/locations/data/``; until then the next ``import_locations``
+    reconciliation would delete it.
+
+    Errors:
+        404 — request user is not a superuser.
+        400 — invalid JSON; a blank ``name`` (``invalid_identity``); an
+              unrecognised ``kind``; missing or non-float lat/lon;
+              coordinates outside the Swiss bounding box; an unknown
+              ``resort_id``; a missing or unrecognised ``role``.
+    """
+    _require_edit_map_admin(request)
+
+    body_error, payload = _parse_edit_body(request)
+    if body_error is not None:
+        return body_error
+
+    identity = _parse_location_identity(payload)
+    if isinstance(identity, JsonResponse):
+        return identity
+    name, kind = identity
+
+    coords = _parse_edit_coords(payload)
+    if isinstance(coords, JsonResponse):
+        return coords
+    lat, lon = coords
+
+    link_fields = _parse_link_fields(payload)
+    if isinstance(link_fields, JsonResponse):
+        return link_fields
+    resort, role, is_primary = link_fields
+
+    with transaction.atomic():
+        location = Location.objects.create(
+            name=name,
+            kind=kind,
+            latitude=round(lat, _LOCATION_COORD_DECIMALS),
+            longitude=round(lon, _LOCATION_COORD_DECIMALS),
+        )
+        link = _link_or_error(location, resort, role, is_primary)
+        if isinstance(link, JsonResponse):
+            # Unreachable in practice — the location was created a line
+            # ago, so nothing can already be linked to it — but rolling
+            # back is the only correct answer if it ever is, and a bare
+            # location with no link is exactly the orphan this endpoint
+            # exists to avoid.
+            transaction.set_rollback(True)
+            return link
+
+    logger.info(
+        "edit_location_create: created %s for %s at (%s, %s)",
+        location.name,
+        resort.name,
+        lat,
+        lon,
+    )
+    return JsonResponse(_location_payload(_reload_with_links(location)), status=201)
+
+
+@require_POST
+def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
+    """Move, rename or re-classify an existing location.
+
+    Request body (JSON)::
+
+        {"name": "Mont Fort", "kind": "PEAK",
+         "latitude": <float>, "longitude": <float>}
+
+    Editing the location edits it for **every** resort linked to it —
+    that is what sharing one row means, and it is the point: a summit
+    re-pinned once is re-pinned for all four resorts that reach it. The
+    links themselves are untouched here; each resort's ``role`` is its
+    own and is changed by unlinking and re-linking.
+
+    Moving the pin clears ``elevation_m`` and ``forecast_cell``. Both are
+    resolved from the *old* coordinate, so leaving them would leave the
+    location claiming a height from where it used to be — and it is a
+    stale elevation that makes a mis-pinned summit look plausible. The
+    next ``link_location_forecast_cells`` run resolves them again.
+
+    Errors:
+        404 — request user is not a superuser, or no such location.
+        400 — invalid JSON; a blank ``name``; an unrecognised ``kind``;
+              missing, non-float or out-of-bbox coordinates.
+    """
+    _require_edit_map_admin(request)
+    location = get_object_or_404(Location, pk=location_id)
+
+    body_error, payload = _parse_edit_body(request)
+    if body_error is not None:
+        return body_error
+
+    identity = _parse_location_identity(payload)
+    if isinstance(identity, JsonResponse):
+        return identity
+    name, kind = identity
+
+    coords = _parse_edit_coords(payload)
+    if isinstance(coords, JsonResponse):
+        return coords
+    lat, lon = coords
+
+    lat = round(lat, _LOCATION_COORD_DECIMALS)
+    lon = round(lon, _LOCATION_COORD_DECIMALS)
+    moved = (lat, lon) != (location.latitude, location.longitude)
+
+    location.name = name
+    location.kind = kind
+    location.latitude = lat
+    location.longitude = lon
+    update_fields = ["name", "kind", "latitude", "longitude", "updated_at"]
+    if moved:
+        location.elevation_m = None
+        location.forecast_cell = None
+        update_fields += ["elevation_m", "forecast_cell"]
+    location.save(update_fields=update_fields)
+
+    logger.info(
+        "edit_location_save: saved %s at (%s, %s), moved=%s",
+        location.name,
+        lat,
+        lon,
+        moved,
+    )
+    return JsonResponse(_location_payload(_reload_with_links(location)))
+
+
+@require_POST
+def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
+    """Attach an existing location to another resort.
+
+    Request body (JSON)::
+
+        {"resort_id": <int>, "role": "TOP", "is_primary": false}
+
+    The endpoint the estate is worth having for. Mont Fort is one row
+    that four resorts reference; without this the operator's only way to
+    give Nendaz its top station would be to place a second pin on the
+    same summit, and the duplication the model was built to remove would
+    come back through the editor that was meant to curate it.
+
+    No coordinate is sent, and none is accepted: the location already
+    knows where it is, and this endpoint says only that another resort
+    reaches it. ``role`` is per-link, so the same point can be one
+    resort's top and another's mid-station.
+
+    Errors:
+        404 — request user is not a superuser, or no such location.
+        400 — invalid JSON; an unknown ``resort_id``; a missing or
+              unrecognised ``role``; a resort already linked to this
+              location (``duplicate_link``).
+    """
+    _require_edit_map_admin(request)
+    location = get_object_or_404(Location, pk=location_id)
+
+    body_error, payload = _parse_edit_body(request)
+    if body_error is not None:
+        return body_error
+
+    link_fields = _parse_link_fields(payload)
+    if isinstance(link_fields, JsonResponse):
+        return link_fields
+    resort, role, is_primary = link_fields
+
+    link = _link_or_error(location, resort, role, is_primary)
+    if isinstance(link, JsonResponse):
+        return link
+
+    logger.info(
+        "edit_location_link: linked %s to %s as %s",
+        location.name,
+        resort.name,
+        role,
+    )
+    return JsonResponse(_location_payload(_reload_with_links(location)), status=201)
+
+
+@require_POST
+def edit_location_unlink(request: HttpRequest, link_id: int) -> JsonResponse:
+    """Remove one resort's link to a location, keeping the location.
+
+    The inverse of :func:`edit_location_link`, and deliberately not a
+    delete: Mont Fort outlives Nendaz's interest in it, and the model
+    says so — ``ResortLocation.location`` is ``PROTECT``, so the row
+    could not be removed here even if this endpoint tried.
+
+    A location whose last link goes is left in place rather than swept
+    up. It is still a curated place, it is still in the sheet, and
+    deleting the operator's work as a side effect of correcting one
+    resort's links is not a thing a staff tool should do quietly.
+
+    Errors:
+        404 — request user is not a superuser, or no such link.
+    """
+    _require_edit_map_admin(request)
+    link = get_object_or_404(
+        ResortLocation.objects.select_related("resort", "location"), pk=link_id
+    )
+    location = link.location
+    logger.info(
+        "edit_location_unlink: unlinked %s from %s",
+        location.name,
+        link.resort.name,
+    )
+    link.delete()
+    return JsonResponse(_location_payload(_reload_with_links(location)))
 
 
 # SNOW-79 retired the ``offline_manifest_map`` endpoint. The PWA shell
