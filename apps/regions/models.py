@@ -590,8 +590,8 @@ class Resort(BaseModel):
     ``docs/decisions/resorts-are-editable-data.md``). Three write paths:
 
     * the admin, for one-off corrections;
-    * the edit-resorts mode on the public map (``?edit=resorts``, DEBUG
-      only), which is what populates the geocoding fields;
+    * the edit-resorts mode on the public map (``?edit=resorts``,
+      superuser-only since SNOW-724), which populates the geocoding fields;
     * ``manage.py import_resorts --commit``, which reconciles the table
       against the curated sheet at ``apps/regions/data/resorts.tsv``.
 

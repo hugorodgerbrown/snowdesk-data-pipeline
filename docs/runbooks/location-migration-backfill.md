@@ -2,7 +2,7 @@
 name: location-migration-backfill
 description: Backfill an environment onto the Location model — the five --commit commands, their Open-Meteo cost, and the per-environment progress log
 status: current
-last-reviewed: 2026-08-24
+last-reviewed: 2026-08-29
 ---
 
 # Runbook — bring an environment onto the Location model
@@ -185,6 +185,36 @@ Confirm production's own `OPEN_METEO_API_BASE_URL` before step 5; the
 | 5. link_region_centroid_locations | ⬜ not started |
 | 6. fetch_weather | ⬜ optional — the scheduler picks new cells up |
 | verification | ⬜ not started |
+
+## How a curated edit reaches an environment
+
+The commands above backfill an environment onto the model. Growing the
+curated estate afterwards — the ~93 summits SNOW-732 needs — is a
+different loop, and it does **not** run against production directly.
+
+1. **Curate locally.** `/?edit=locations` as a superuser (SNOW-755): click
+   the map to place a summit, name it, classify it, and link it to every
+   resort that reaches it. The editor writes to the local database only.
+2. **Write it back to git.** `dump_locations_sheets --commit`, then
+   `git diff apps/locations/data/` and commit. Until this runs, the edit
+   exists in one database and nowhere else.
+3. **Prove the loop closed.** `import_locations` must report **no
+   changes** against the sheets just written. If it does not, the dump and
+   the database disagree and the difference is what would be silently
+   reverted on the next reconciliation.
+4. **Apply it to each environment.** `import_locations --commit` by hand
+   on staging, then production, after the branch has deployed. It is not
+   in `build.sh`, for the same reason `import_resorts` is not: these rows
+   are editable data owned by each environment's database, and a deploy
+   that re-imported them would discard admin edits.
+5. **Resolve the new rows.** `link_location_forecast_cells --commit` —
+   one Open-Meteo call per new location, and the check on the curation
+   (step 4 above).
+
+The editor is superuser-gated and could in principle be driven against
+production, but curating there skips steps 2 and 3 entirely: the estate
+would drift from the sheets, and the next `import_locations --commit`
+would delete every location the sheets do not list. Curate locally.
 
 ## Not part of this runbook
 

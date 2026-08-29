@@ -1,7 +1,7 @@
 """dump_resorts_fixture — export the Resort table to its fixture file.
 
 After a session of placing resort coordinates via the in-map editor
-(``/map/?edit=resorts`` in DEBUG mode — SNOW-74), or a local
+(``/?edit=resorts``, superuser-only — SNOW-74/SNOW-724), or a local
 ``import_resorts --commit`` run, edits live only in the local SQLite. This
 command re-emits ``apps/regions/fixtures/resorts.json`` from the current DB rows
 so the operator can ``git diff`` and commit the change.

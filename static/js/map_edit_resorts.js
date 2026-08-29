@@ -1,10 +1,14 @@
 /*
  * static/js/map_edit_resorts.js — SNOW-74 in-map resort editor.
  *
- * Loaded only when the page is rendered with ?edit=resorts AND
- * settings.DEBUG is True (the template guards both the panel include
- * and the <script> tag). The DEBUG guard at the API layer hard-refuses
- * any write attempt — this file is a UI tool, not the trust boundary.
+ * Loaded only when the page is rendered with ?edit=resorts AND the
+ * request user is a superuser (the template guards both the panel
+ * include and the <script> tag). The API endpoints re-check the same
+ * thing and hard-refuse any write attempt — this file is a UI tool, not
+ * the trust boundary. SNOW-724 moved that gate off settings.DEBUG, which
+ * this comment claimed for the rest of its life; a stale description of
+ * the trust boundary is worse than none, because it is the thing a
+ * reader checks a change against.
  *
  * Hooks into the global ``MAP`` and ``MAP_READY_PROMISE`` declared at
  * the top of ``static/js/map.js`` (top-level let/const in classic
