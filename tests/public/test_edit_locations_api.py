@@ -953,6 +953,48 @@ class TestEditLocationsPageGate:
 
         assert "map_edit_locations" not in content
 
+    def test_the_panel_offers_a_way_out_and_a_way_across(self) -> None:
+        """SNOW-755: the shared bar is what makes edit mode escapable.
+
+        Both are plain links: edit mode is query-string state, so closing
+        is a navigation to the bare home URL and switching is a link to
+        the other ``?edit=`` value. Neither needs the panel's JS to have
+        loaded, or to have survived a half-finished placement.
+        """
+        content = (
+            _superuser_client()
+            .get(reverse("public:home") + "?edit=locations")
+            .content.decode()
+        )
+
+        assert 'aria-label="Close editor"' in content
+        assert f'href="{reverse("public:home")}"' in content
+        assert f'href="{reverse("public:home")}?edit=resorts"' in content
+
+    def test_the_bar_marks_locations_as_the_open_editor(self) -> None:
+        """``aria-current`` follows the panel, not the markup order."""
+        content = (
+            _superuser_client()
+            .get(reverse("public:home") + "?edit=locations")
+            .content.decode()
+        )
+        marked = content.split('aria-current="page"')[0]
+
+        assert marked.rstrip().endswith('?edit=locations"')
+
+    @pytest.mark.parametrize("client_factory", [Client, _ordinary_client])
+    def test_the_bar_is_behind_the_same_gate_as_the_panel(
+        self, client_factory: Any
+    ) -> None:
+        """A close control on the public map would advertise the editor."""
+        content = (
+            client_factory()
+            .get(reverse("public:home") + "?edit=locations")
+            .content.decode()
+        )
+
+        assert "Close editor" not in content
+
     def test_an_unknown_edit_target_is_ignored(self) -> None:
         """Not an error — simply not an editor."""
         resp = _superuser_client().get(reverse("public:home") + "?edit=wombats")

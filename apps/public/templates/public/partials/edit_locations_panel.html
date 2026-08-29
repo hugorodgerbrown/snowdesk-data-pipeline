@@ -53,6 +53,8 @@
 >
     {% csrf_token %}
     <header class="border-b border-border px-4 py-3">
+        {# SNOW-755: switch to the other editor, or leave edit mode. #}
+        {% include "public/partials/_edit_mode_bar.html" with active="locations" only %}
         <div class="flex items-baseline justify-between">
             <h2 class="text-lg font-semibold text-text-1">{% trans "Edit locations" %}</h2>
             <span
