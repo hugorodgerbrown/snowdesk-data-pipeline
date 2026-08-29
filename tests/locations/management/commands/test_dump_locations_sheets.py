@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from apps.locations.management.commands.dump_locations_sheets import (
     LINK_COLUMNS,
@@ -312,6 +313,69 @@ class TestEmittedRows:
 
         assert rows_of(paths["links_file"]) == []
 
+    def test_a_dropped_link_is_named_on_stdout(self, tmp_path: Path) -> None:
+        """The drop is legitimate; doing it silently is not.
+
+        The editor's write paths refuse to create such a link, but the
+        admin's ResortLocation inline does not — so it can still happen,
+        and the failure mode is an operator committing a diff that is
+        missing a link nothing told them about.
+        """
+        anonymous = LocationFactory.create(anonymous=True)
+        resort = ResortFactory.create(name="Verbier")
+        ResortLocationFactory.create(resort=resort, location=anonymous, role="BASE")
+        paths = sheet_paths(tmp_path)
+
+        out = dump(paths, "--commit")
+
+        assert "Verbier" in out
+        assert str(anonymous.uuid) in out
+        assert "not part of the curated estate" in out
+
+    def test_the_warning_fires_on_a_dry_run_too(self, tmp_path: Path) -> None:
+        """A preview that hid it would send the operator into --commit blind."""
+        anonymous = LocationFactory.create(anonymous=True)
+        ResortLocationFactory.create(location=anonymous, role="BASE")
+        paths = sheet_paths(tmp_path)
+
+        out = dump(paths)
+
+        assert str(anonymous.uuid) in out
+
+    def test_a_fully_curated_estate_warns_about_nothing(self, tmp_path: Path) -> None:
+        """The warning must mean something when it does appear."""
+        ResortLocationFactory.create(
+            location=LocationFactory.create(name="Mont Fort"), role="TOP"
+        )
+        paths = sheet_paths(tmp_path)
+
+        assert "not part of the curated estate" not in dump(paths, "--commit")
+
+    def test_an_orphaned_note_is_dropped(self, tmp_path: Path) -> None:
+        """A note whose location the DB no longer holds goes with it.
+
+        The note is carried forward by uuid, so a row deleted from the
+        database must not leave its note behind — the sheet would then
+        carry a comment about a place it no longer lists.
+        """
+        kept = LocationFactory.create(name="Mont Fort")
+        paths = sheet_paths(tmp_path)
+        write_sheets(
+            paths,
+            [
+                f"{kept.uuid}\tMont Fort\tPEAK\t46.10361\t7.29889\tKept.",
+                f"{MONT_FORT}\tGone\tPEAK\t46.20000\t7.40000\tOrphaned note.",
+            ],
+            [],
+        )
+
+        dump(paths, "--commit")
+
+        text = paths["file"].read_text(encoding="utf-8")
+        assert "Kept." in text
+        assert "Orphaned note." not in text
+        assert MONT_FORT not in text
+
     def test_rows_are_ordered_by_uuid(self, tmp_path: Path) -> None:
         """Stable order is what makes a git diff mean something."""
         for name in ("C", "A", "B"):
@@ -322,6 +386,34 @@ class TestEmittedRows:
 
         uuids = [row.split("\t")[0] for row in rows_of(paths["file"])]
         assert uuids == sorted(uuids)
+
+
+# ---------------------------------------------------------------------------
+# Unreadable input
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUnreadableSheet:
+    """The notes are read back off disk, so that read can fail."""
+
+    def test_an_unreadable_sheet_fails_the_run(self, tmp_path: Path) -> None:
+        """A CommandError, not a traceback — and nothing is written.
+
+        The failure matters because the notes are the one column with no
+        database column behind it: carrying on past an unreadable sheet
+        would write every note away. A directory standing in for the file
+        is the deterministic way to get an OSError out of ``read_text``,
+        with no dependence on file permissions or the running uid.
+        """
+        LocationFactory.create(name="Mont Fort")
+        paths = sheet_paths(tmp_path)
+        paths["file"].mkdir()
+
+        with pytest.raises(CommandError, match="Failed to read"):
+            dump(paths, "--commit")
+
+        assert not paths["links_file"].exists()
 
 
 # ---------------------------------------------------------------------------

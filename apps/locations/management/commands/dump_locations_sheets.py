@@ -34,6 +34,18 @@ anonymous rows minted from favourites and field observations are user data
 that happens to live in the same table, and they are not the sheet's to
 own.
 
+That scope carries an invariant with it: **no anonymous location may hold
+a resort link.** The links sheet can only reference locations the
+locations sheet lists, so a link hung on an anonymous row cannot be
+written, and re-importing what was written would not restore it. The
+editor's write paths uphold the invariant — ``edit_location_create``
+requires a name, and ``edit_location_save`` / ``edit_location_link`` are
+both scoped to ``named()`` — but the admin's ``ResortLocation`` inline is
+not, so an admin can still create one by hand. When that has happened,
+this command names each dropped link on stdout and in the log rather than
+writing a quietly incomplete sheet: the operator would otherwise commit a
+diff missing a link nothing told them about.
+
 Rows are ordered by uuid — locations by their own, links by the location's
 then the resort's — so consecutive runs produce identical files and a
 ``git diff`` shows only what actually changed. Ordering links by location
@@ -153,6 +165,8 @@ class Command(BaseCommand):
             .order_by("location__uuid", "resort__uuid")
         )
 
+        self._warn_about_dropped_links(verbosity)
+
         new_sheet = render_locations_sheet(locations, notes_from(sheet_path))
         new_links = render_links_sheet(links)
 
@@ -187,6 +201,52 @@ class Command(BaseCommand):
                     "commit when satisfied."
                 )
             )
+
+    def _warn_about_dropped_links(self, verbosity: int) -> None:
+        """Name every link this dump silently cannot carry.
+
+        A link whose location is anonymous is dropped, because the
+        locations sheet emits only ``named()`` rows and a links row
+        pointing at a location neither the sheet nor the database holds
+        fails the next ``import_locations``. The editor's write paths
+        refuse to create one, but the admin's ``ResortLocation`` inline
+        does not — so this can still happen, and the failure mode is the
+        bad one: the operator commits a diff that is missing a link
+        nothing told them about.
+
+        A warning rather than an error. The rows are legitimate database
+        state, the dump of everything else is still correct, and blocking
+        a whole curation session on one stray inline edit would be a
+        worse trade than naming it.
+
+        Args:
+            verbosity: The run's ``--verbosity``; the warning is stdout
+                noise below 1 but is always logged.
+
+        """
+        dropped = (
+            ResortLocation.objects.filter(location__in=Location.objects.anonymous())
+            .select_related("resort", "location")
+            .order_by("resort__name", "pk")
+        )
+        for link in dropped:
+            logger.warning(
+                "dump_locations_sheets: dropping link %s -> %s (%s): the "
+                "location is anonymous, so the sheets cannot carry it",
+                link.resort.name,
+                link.location.uuid,
+                link.location.to_string(),
+            )
+            if verbosity >= 1:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Not dumping the link {link.resort.name} -> "
+                        f"{link.location.uuid} ({link.location.to_string()}): "
+                        "the location has no name, so it is not part of the "
+                        "curated estate and neither sheet can carry it. Name "
+                        "it in the admin, or remove the link."
+                    )
+                )
 
     def _report(
         self,
