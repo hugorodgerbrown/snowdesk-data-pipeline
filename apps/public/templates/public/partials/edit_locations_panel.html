@@ -1,0 +1,263 @@
+{% load i18n components %}
+{% comment %}
+    public/partials/edit_locations_panel.html — edit-locations mode side panel.
+
+    Rendered from public/home.html when the request hits /?edit=locations
+    AND the request user is a superuser. The gate is the view's
+    (``_edit_target``) and the API's (``_require_edit_map_admin``); the
+    panel is only the UI affordance.
+
+    Hydrated by static/js/map_edit_locations.js, whose logic lives in
+    static/js/map_edit_locations_core.js. The catalogue, the resort list
+    and both vocabularies (Location.KIND, ResortLocation.ROLE) arrive in
+    one fetch of ``api:edit_locations_queue``.
+
+    THREE MUTUALLY-EXCLUSIVE MODES, one panel:
+
+      create — "New location": name it, classify it, drop a pin, and name
+               the first resort it belongs to. A location with no resort
+               is invisible to every surface that reads one, so the first
+               link is part of creating it rather than a second step.
+      edit   — a catalogue row is selected: move the pin, rename, re-kind.
+               The edit reaches EVERY resort linked to it, because they
+               share one row — which is the point.
+      link   — the same selected row, attached to ANOTHER resort. The mode
+               the resort editor has no equivalent of, and the reason the
+               estate exists: Mont Fort is one row that Verbier, Nendaz,
+               Veysonnaz and Thyon reference, not four pins on one summit.
+
+    Exclusivity is enforced in ``map_edit_locations_core.js``'s
+    ``reduceMode`` / ``visibleSections``, not by three independent
+    booleans here — two forms on screen would mean two Save buttons
+    writing to two endpoints.
+
+    kind vs role: ``Location.kind`` describes the place, and lives in the
+    create/edit block. ``ResortLocation.role`` describes one resort's
+    relationship to it, and lives in the create and link blocks. They are
+    never derived from one another — a point can be one resort's top and
+    another's mid-station.
+
+    An edit lives only in this environment's database until
+    ``manage.py dump_locations_sheets --commit`` writes it back to
+    apps/locations/data/, which the header says out loud.
+{% endcomment %}
+<aside
+    id="edit-locations-panel"
+    class="fixed right-0 top-0 z-30 flex h-full w-[360px] flex-col border-l border-border bg-card [box-shadow:var(--shadow-glass)]"
+    aria-label='{% trans "Edit locations panel" %}'
+    data-queue-url="{{ edit_locations_queue_url }}"
+    data-create-url="{{ edit_location_create_url }}"
+    data-save-url-template="{{ edit_location_save_url_template }}"
+    data-link-url-template="{{ edit_location_link_url_template }}"
+    data-unlink-url-template="{{ edit_location_unlink_url_template }}"
+>
+    {% csrf_token %}
+    <header class="border-b border-border px-4 py-3">
+        {# SNOW-755: switch to the other editor, or leave edit mode. #}
+        {% include "public/partials/_edit_mode_bar.html" with active="locations" only %}
+        <div class="flex items-baseline justify-between">
+            <h2 class="text-lg font-semibold text-text-1">{% trans "Edit locations" %}</h2>
+            <span
+                id="edit-locations-count"
+                class="rounded-full bg-status-warning-bg px-2 py-0.5 text-xs font-medium text-status-warning-text"
+            >—</span>
+        </div>
+        <p class="mt-1 text-xs text-text-3">
+            {% blocktrans trimmed %}
+                Pick a place to move it — or "New location" to add one. One location can belong to several resorts:
+                select it, then "Link to another resort". Run
+                <code>manage.py dump_locations_sheets --commit</code> to persist to git.
+            {% endblocktrans %}
+        </p>
+    </header>
+
+    <div class="border-b border-border px-4 py-2">
+        <input
+            id="edit-locations-search"
+            type="search"
+            class="{% input_classes size='compact' %}"
+            placeholder='{% trans "Filter by place or resort…" %}'
+            autocomplete="off"
+            spellcheck="false"
+        >
+    </div>
+
+    {# Capped at half the panel so the form scrolls inside this block   #}
+    {# rather than squeezing the locations list out of view — the same  #}
+    {# shape edit_resorts_panel.html uses.                              #}
+    <div class="flex max-h-[60%] min-h-0 shrink flex-col border-b border-border">
+        <div class="overflow-y-auto px-4 py-3">
+            <div class="mb-1 flex items-baseline justify-between gap-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-text-3">
+                    {% trans "Current target" %}
+                </h3>
+                {# Enters create mode; the JS flips aria-pressed so the #}
+                {# button reads as a toggle, not a one-shot action.     #}
+                <button
+                    type="button"
+                    id="edit-locations-new"
+                    aria-pressed="false"
+                    class="shrink-0 rounded-sm border border-border px-2 py-0.5 text-xs text-text-2 hover:bg-card-subtle aria-pressed:border-text-1 aria-pressed:bg-text-1 aria-pressed:text-card"
+                >
+                    {% trans "New location" %}
+                </button>
+            </div>
+            <div id="edit-locations-target" class="text-sm text-text-1">
+                <p class="italic text-text-3">{% trans "No location selected." %}</p>
+            </div>
+
+            {# ---------------------------------------------------------- #}
+            {# The place itself — shown in create and edit modes.          #}
+            {# ---------------------------------------------------------- #}
+            {#                                                             #}
+            {# Name is required (naming is the curation act — an unnamed   #}
+            {# row is the anonymous kind this editor does not manage), and #}
+            {# is marked three ways because a disabled Save button never   #}
+            {# says what is missing: a marked asterisk, aria-required, and #}
+            {# the hint line under the buttons naming what is outstanding. #}
+            {#                                                             #}
+            {# Kind may be blank: an unclassified place is a legitimate    #}
+            {# row, in the model and in the sheet.                         #}
+            <div id="edit-locations-place-fields" class="mt-2 hidden grid-cols-2 gap-2">
+                <label class="col-span-2 block text-xs text-text-3">
+                    {% trans "Name" %}
+                    <abbr title='{% trans "Required" %}' class="text-form-error no-underline">*</abbr>
+                    <input
+                        id="edit-locations-name"
+                        type="text"
+                        maxlength="120"
+                        autocomplete="off"
+                        aria-required="true"
+                        class="{% input_classes size='compact' extra='mt-0.5' %}"
+                    >
+                </label>
+                <label class="col-span-2 block text-xs text-text-3">
+                    {% trans "Kind" %}
+                    {# Options past the blank are appended by the JS from  #}
+                    {# the queue endpoint's ``kinds``, so Location.KIND    #}
+                    {# stays the single source of the vocabulary.          #}
+                    <select id="edit-locations-kind" class="{% input_classes size='compact' extra='mt-0.5' %}">
+                        <option value="">{% trans "Unclassified" %}</option>
+                    </select>
+                </label>
+            </div>
+
+            {# ---------------------------------------------------------- #}
+            {# The resort link — shown in create mode (the first link)     #}
+            {# and in link mode (every subsequent one).                    #}
+            {# ---------------------------------------------------------- #}
+            {#                                                             #}
+            {# In link mode the resort picker lists only resorts this      #}
+            {# location is NOT already linked to: offering the rest would  #}
+            {# put the duplicate-link error one click away from an         #}
+            {# operator who cannot see what is already attached.           #}
+            <div id="edit-locations-link-fields" class="mt-2 hidden grid-cols-2 gap-2">
+                <label class="col-span-2 block text-xs text-text-3">
+                    {% trans "Resort" %}
+                    <abbr title='{% trans "Required" %}' class="text-form-error no-underline">*</abbr>
+                    <select id="edit-locations-resort" class="{% input_classes size='compact' extra='mt-0.5' %}">
+                        <option value="">{% trans "Choose a resort…" %}</option>
+                    </select>
+                </label>
+                <label class="block text-xs text-text-3">
+                    {% trans "Role here" %}
+                    <abbr title='{% trans "Required" %}' class="text-form-error no-underline">*</abbr>
+                    <select id="edit-locations-role" class="{% input_classes size='compact' extra='mt-0.5' %}">
+                        <option value="">{% trans "Choose…" %}</option>
+                    </select>
+                </label>
+                <label class="flex cursor-pointer items-end gap-2 pb-1.5 text-xs text-text-2">
+                    <input
+                        id="edit-locations-primary"
+                        type="checkbox"
+                        class="h-3.5 w-3.5 rounded border-border text-text-1 focus:ring-text-2"
+                    >
+                    <span>{% trans "Lead with this" %}</span>
+                </label>
+            </div>
+
+            {# Placement by paste, for a coordinate copied out of a map or #}
+            {# a summit list. The pin itself is placed by clicking.        #}
+            <div id="edit-locations-paste-row" class="mt-2 hidden items-center gap-2">
+                <label for="edit-locations-paste" class="shrink-0 text-xs text-text-3">{% trans "Paste:" %}</label>
+                <input
+                    id="edit-locations-paste"
+                    type="text"
+                    class="{% input_classes size='compact' extra='font-mono text-xs' %}"
+                    placeholder="46.103610, 7.298890"
+                    spellcheck="false"
+                    autocomplete="off"
+                >
+            </div>
+        </div>
+
+        {# Outside the scroll area above so Save stays reachable however #}
+        {# tall the form grows.                                          #}
+        <div class="px-4 pb-3">
+            <div class="flex gap-2">
+                <button
+                    type="button"
+                    id="edit-locations-save"
+                    class="flex-1 rounded-sm bg-text-1 px-3 py-1.5 text-sm font-medium text-card hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled
+                >
+                    {% trans "Save" %}
+                </button>
+                <button
+                    type="button"
+                    id="edit-locations-cancel"
+                    class="rounded-sm border border-border px-3 py-1.5 text-sm text-text-2 hover:bg-card-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled
+                >
+                    {% trans "Cancel" %}
+                </button>
+            </div>
+            <p
+                id="edit-locations-error"
+                class="mt-2 hidden text-xs text-form-error"
+                role="alert"
+            >
+            </p>
+            {# Save confirmation. Separate from the error line above so the #}
+            {# two can never fight over one slot, and aria-live so the      #}
+            {# outcome is announced — the button label reverts silently.    #}
+            <p
+                id="edit-locations-status"
+                class="mt-2 hidden text-xs text-status-low-text"
+                role="status"
+                aria-live="polite"
+            >
+            </p>
+        </div>
+
+        {# The selected location's resorts, each with an unlink control.   #}
+        {# This is the sharing made visible: four rows here is Mont Fort   #}
+        {# doing its job, and it is also the only place from which a wrong #}
+        {# link can be taken back.                                         #}
+        <div id="edit-locations-links-block" class="hidden border-t border-border px-4 py-3">
+            <div class="mb-1 flex items-baseline justify-between gap-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-text-3">
+                    {% trans "Resorts using this location" %}
+                </h3>
+                <button
+                    type="button"
+                    id="edit-locations-link"
+                    aria-pressed="false"
+                    class="shrink-0 rounded-sm border border-border px-2 py-0.5 text-xs text-text-2 hover:bg-card-subtle aria-pressed:border-text-1 aria-pressed:bg-text-1 aria-pressed:text-card"
+                >
+                    {% trans "Link a resort" %}
+                </button>
+            </div>
+            <ul id="edit-locations-links" class="space-y-1 text-sm"></ul>
+        </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto px-4 py-3">
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-3">
+            {% trans "Locations" %}
+        </h3>
+        <ul id="edit-locations-list" class="space-y-1 text-sm">
+            <li class="italic text-text-3">{% trans "Loading…" %}</li>
+        </ul>
+    </div>
+</aside>

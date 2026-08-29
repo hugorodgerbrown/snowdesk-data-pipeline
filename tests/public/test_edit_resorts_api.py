@@ -1373,6 +1373,34 @@ class TestMapViewEditMode:
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content
 
+    def test_the_panel_offers_a_way_out_and_a_way_across(self) -> None:
+        """SNOW-755: the panel had no close control and no sibling link.
+
+        The only ways out of edit mode were hand-editing the URL or
+        clicking the wordmark, neither of which is an affordance, and
+        reaching the other editor meant going back to the staff menu.
+        """
+        content = (
+            _superuser_client()
+            .get(reverse("public:home") + "?edit=resorts")
+            .content.decode()
+        )
+
+        assert 'aria-label="Close editor"' in content
+        assert f'href="{reverse("public:home")}"' in content
+        assert f'href="{reverse("public:home")}?edit=locations"' in content
+
+    def test_the_bar_marks_resorts_as_the_open_editor(self) -> None:
+        """``aria-current`` says which of the two the reader is in."""
+        content = (
+            _superuser_client()
+            .get(reverse("public:home") + "?edit=resorts")
+            .content.decode()
+        )
+        marked = content.split('aria-current="page"')[0]
+
+        assert marked.rstrip().endswith('?edit=resorts"')
+
     def test_no_query_string_does_not_render_panel(self) -> None:
         """Without the querystring the panel is absent, even for a superuser."""
         resp = _superuser_client().get(reverse("public:home"))

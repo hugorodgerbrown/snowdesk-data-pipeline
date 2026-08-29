@@ -1,7 +1,7 @@
 """dump_resorts_fixture — export the Resort table to its fixture file.
 
 After a session of placing resort coordinates via the in-map editor
-(``/map/?edit=resorts`` in DEBUG mode — SNOW-74), or a local
+(``/?edit=resorts``, superuser-only — SNOW-74/SNOW-724), or a local
 ``import_resorts --commit`` run, edits live only in the local SQLite. This
 command re-emits ``apps/regions/fixtures/resorts.json`` from the current DB rows
 so the operator can ``git diff`` and commit the change.
@@ -38,6 +38,7 @@ from typing import Any
 from django.core import serializers
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.core.command_output import diff_line_counts, display_path
 from apps.regions.models import Resort
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ class Command(BaseCommand):
                 self.stdout.write("No changes — fixture matches the current DB.")
             return
 
-        added, removed = _diff_line_counts(old_text, new_text)
+        added, removed = diff_line_counts(old_text, new_text)
         if verbosity >= 1:
             self.stdout.write(
                 f"resorts.json would change ({queryset.count()} rows; "
@@ -103,32 +104,10 @@ class Command(BaseCommand):
         if verbosity >= 1:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Wrote {_display_path(_FIXTURE_PATH)} — review "
+                    f"Wrote {display_path(_FIXTURE_PATH)} — review "
                     "the diff and commit when satisfied."
                 )
             )
-
-
-def _display_path(path: Path) -> str:
-    """Return ``path`` relative to the cwd, or absolute if it isn't below it.
-
-    ``Path.relative_to`` raises ``ValueError`` rather than falling back, so
-    calling it unguarded made this message crash for any destination outside
-    the working directory — and it runs *after* the write, so the fixture was
-    already on disk and only the confirmation was lost (SNOW-659).
-
-    Args:
-        path: The destination the fixture was written to.
-
-    Returns:
-        The repo-relative path for the normal case of a run from the project
-        root, else the absolute path.
-
-    """
-    try:
-        return str(path.relative_to(Path.cwd()))
-    except ValueError:
-        return str(path)
 
 
 def _write_resorts_fixture(
@@ -179,14 +158,3 @@ def _serialise_with_natural_keys(queryset: Any) -> str:
     # whereas the existing fixture uses literal UTF-8 — keep parity).
     parsed = json.loads(raw)
     return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
-
-
-def _diff_line_counts(old: str, new: str) -> tuple[int, int]:
-    """Return ``(added, removed)`` line counts between two text blobs."""
-    old_lines = old.splitlines()
-    new_lines = new.splitlines()
-    old_set = set(old_lines)
-    new_set = set(new_lines)
-    added = sum(1 for line in new_lines if line not in old_set)
-    removed = sum(1 for line in old_lines if line not in new_set)
-    return added, removed

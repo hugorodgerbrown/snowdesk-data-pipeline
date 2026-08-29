@@ -3,8 +3,9 @@
     public/partials/edit_resorts_panel.html — edit-resorts mode side panel.
 
     Rendered conditionally from public/home.html when the request hits
-    /?edit=resorts AND settings.DEBUG is True. The DEBUG guard lives
-    at the API endpoints; the panel just provides the UI affordance.
+    /?edit=resorts AND the request user is a superuser (SNOW-724 — the
+    gate was settings.DEBUG until then). The same check lives at the API
+    endpoints; the panel just provides the UI affordance.
 
     Hydrated by static/js/map_edit_resorts.js — the catalogue is fetched
     once and rendered as a flat alphabetical list with Set/Unset/Review
@@ -45,6 +46,8 @@
 >
     {% csrf_token %}
     <header class="border-b border-border px-4 py-3">
+        {# SNOW-755: switch to the other editor, or leave edit mode. #}
+        {% include "public/partials/_edit_mode_bar.html" with active="resorts" only %}
         <div class="flex items-baseline justify-between">
             <h2 class="text-lg font-semibold text-text-1">{% trans "Edit resort coordinates" %}</h2>
             <span

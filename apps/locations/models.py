@@ -54,6 +54,14 @@ class LocationQuerySet(models.QuerySet["Location"]):
         boundary between the curated estate and the anonymous points that
         exist because a user put something somewhere.
 
+        The boundary is load-bearing for the sheets. ``import_locations``
+        deletes within it, ``dump_locations_sheets`` emits within it, and
+        the in-map editor writes within it — so a ``ResortLocation``
+        pointing at a location *outside* it cannot be written to the
+        links sheet and will not survive a round trip. The admin's
+        inline can still create one; ``dump_locations_sheets`` warns
+        rather than dropping it in silence.
+
         Returns:
             Filtered queryset of locations with a non-empty name.
 
@@ -95,8 +103,20 @@ class Location(BaseModel):
     """A point on the map that Snowdesk keeps.
 
     The locus of the model: everything that is *somewhere* reaches one of
-    these. Coordinates are exact WGS-84 and immovable — a location does not
-    move, and a place at a different coordinate is a different location.
+    these. Coordinates are exact WGS-84 and, in normal operation,
+    immovable — a location does not drift, nothing in the request path
+    moves one, and a place at a different coordinate is a different
+    location rather than the same one relocated.
+
+    **Correction is the exception, and it is deliberate.** A mis-placed
+    pin is fixed either in the admin, which has always allowed it, or in
+    the in-map curation editor (``?edit=locations``, SNOW-755). Both are
+    a re-placement of the same row — the place was always where it now
+    says it is, and the old coordinate was simply wrong — not a new
+    place, so the links pointing at it are still correct and stay.
+    ``edit_location_save`` clears ``elevation_m`` and ``forecast_cell``
+    when the pin actually moves, because both were resolved from where
+    the row used to claim to be.
 
     A curated place has a ``name`` and usually a ``kind``; a location minted
     from a favourite or an observation has neither, and is an anonymous
@@ -144,10 +164,18 @@ class Location(BaseModel):
         help_text="What sort of place this is. Empty alongside an empty name.",
     )
     latitude = models.FloatField(
-        help_text="Exact WGS-84 latitude. Immovable.",
+        help_text=(
+            "Exact WGS-84 latitude. Corrected only here or in the location "
+            "editor — a correction re-places the same row, it does not "
+            "make a new place."
+        ),
     )
     longitude = models.FloatField(
-        help_text="Exact WGS-84 longitude. Immovable.",
+        help_text=(
+            "Exact WGS-84 longitude. Corrected only here or in the location "
+            "editor — a correction re-places the same row, it does not "
+            "make a new place."
+        ),
     )
     elevation_m = models.FloatField(
         null=True,

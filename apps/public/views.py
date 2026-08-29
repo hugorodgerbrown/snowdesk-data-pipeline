@@ -740,6 +740,60 @@ def _get_name_slug(region: MicroRegion) -> str:
     return name_slug
 
 
+def _edit_locations_context() -> dict[str, str]:
+    """Return the URL context the location editor's panel is wired with.
+
+    Three of the five endpoints take a row id, so they are reversed with a
+    dummy and string-replaced at runtime in the JS — the same
+    ``__ID__`` placeholder trick ``edit_save_url_template`` above uses, and
+    the same one ``static/js/map.js`` uses for the region-summary URL.
+
+    Returns:
+        The five URLs the panel's data attributes carry.
+
+    """
+
+    def _templated(name: str) -> str:
+        """Reverse ``name`` with a dummy id and swap in the placeholder."""
+        return reverse(name, args=[0]).replace("/0/", "/__ID__/")
+
+    return {
+        "edit_locations_queue_url": reverse("api:edit_locations_queue"),
+        "edit_location_create_url": reverse("api:edit_location_create"),
+        "edit_location_save_url_template": _templated("api:edit_location_save"),
+        "edit_location_link_url_template": _templated("api:edit_location_link"),
+        "edit_location_unlink_url_template": _templated("api:edit_location_unlink"),
+    }
+
+
+# The estates the in-map editors can curate. ``?edit=`` names one of these
+# or the page is the ordinary map — an unrecognised value is not an error,
+# it is simply not an editor, so the URL stays safe to bookmark and safe to
+# share (SNOW-755).
+_EDIT_TARGETS: frozenset[str] = frozenset({"resorts", "locations"})
+
+
+def _edit_target(request: HttpRequest) -> str:
+    """Return the estate ``?edit=`` selects for this request, or "".
+
+    Both halves have to agree: the querystring names a known estate **and**
+    the request user is a superuser (SNOW-724). For everyone else the
+    parameter is silently ignored rather than refused, because the whole
+    point is that an editor URL pasted into a chat renders the normal map.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        ``"resorts"``, ``"locations"``, or ``""`` for the normal map.
+
+    """
+    target = request.GET.get("edit", "")
+    if target in _EDIT_TARGETS and request.user.is_superuser:
+        return target
+    return ""
+
+
 def home(request: HttpRequest) -> HttpResponse:
     """
     Render the canonical interactive map page.
@@ -748,10 +802,12 @@ def home(request: HttpRequest) -> HttpResponse:
     overlay (``#home-intro``). SNOW-344: ``/map/`` now permanently redirects
     here, so this view handles all map-page traffic.
 
-    Edit mode: when ``?edit=resorts`` is in the query string **and** the
-    request user is a superuser, the page renders the
-    resort-coordinate-edit panel (SNOW-74 / SNOW-86; superuser check since
-    SNOW-724). For everyone else the query string is silently ignored.
+    Edit mode: when ``?edit=`` names an editable estate **and** the request
+    user is a superuser, the page renders that estate's edit panel —
+    ``resorts`` for the resort-coordinate editor (SNOW-74 / SNOW-86;
+    superuser check since SNOW-724), ``locations`` for the curated
+    location estate (SNOW-755). For everyone else the query string is
+    silently ignored.
 
     CH-4115 (Martigny / Verbier) is pre-selected so the readout chip and
     breadcrumb are correct on first paint (SNOW-342); the scrubber paints that
@@ -770,11 +826,15 @@ def home(request: HttpRequest) -> HttpResponse:
       ``default_major_name``  — str: L1 major-region name for the breadcrumb.
       ``show_intro``          — True (the overlay renders on the homepage).
       ``is_offseason``        — True when today is past the active season end.
-      ``edit_mode``           — True when resort-edit mode is active.
-      ``edit_queue_url``      — URL for the edit queue API (only when edit_mode).
-      ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (edit_mode).
-      ``edit_create_url``     — URL for the resort-create API (only when edit_mode).
-      ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (edit_mode).
+      ``edit_target``         — "resorts" when resort-edit mode is active,
+                                else "". The empty string is the normal map.
+      ``edit_queue_url``      — URL for the edit queue API (resorts only).
+      ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (resorts).
+      ``edit_create_url``     — URL for the resort-create API (resorts only).
+      ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (resorts).
+      ``edit_locations_*``     — the five location-editor URLs, present only
+                                when ``edit_target == "locations"``
+                                (see ``_edit_locations_context``).
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
       ``forecast_weather_geojson_url`` — URL for the map Weather overlay's
@@ -818,12 +878,17 @@ def home(request: HttpRequest) -> HttpResponse:
         f"{archived_season_start.year}/{(archived_season_start.year + 1) % 100:02d}"
     )
 
-    # SNOW-344 (merged from map_view): resort-edit mode when the querystring
-    # and the request user's superuser bit both agree. Silently ignored for
+    # SNOW-344 (merged from map_view): edit mode when the querystring and
+    # the request user's superuser bit both agree. Silently ignored for
     # everyone else so the URL is safe to bookmark.
-    edit_mode = request.GET.get("edit") == "resorts" and request.user.is_superuser
-    edit_context: dict[str, Any] = {"edit_mode": edit_mode}
-    if edit_mode:
+    #
+    # SNOW-755: ``edit_target`` names WHICH estate is being edited rather
+    # than carrying a boolean that only ever meant "resorts" — there is now
+    # a second editor (``?edit=locations``) alongside it, and a flag whose
+    # name no longer says what it gates is how the two get confused.
+    edit_target = _edit_target(request)
+    edit_context: dict[str, Any] = {"edit_target": edit_target}
+    if edit_target == "resorts":
         # The save URL contains an :resort_id placeholder — same trick as
         # the region_summary URL in static/js/map.js: reverse with a
         # dummy id, then string-replace at runtime in the JS.
@@ -838,6 +903,8 @@ def home(request: HttpRequest) -> HttpResponse:
                 "edit_resorts_geojson_url": reverse("api:resorts_geojson"),
             }
         )
+    elif edit_target == "locations":
+        edit_context.update(_edit_locations_context())
 
     report_ctx = _report_context(request)
     favourites_ctx = _favourites_context(request)

@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, backfill_weather, import_resorts, import_locations, prune_forecast_points, fixture builders
+description: Commands — fetch_bulletins, fetch_weather, backfill_weather, import_resorts, import_locations, dump_locations_sheets, fixture builders
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -351,6 +351,41 @@ uv run python manage.py import_locations                    # preview everything
 uv run python manage.py import_locations -v2                # row-level diff
 uv run python manage.py import_locations --commit           # apply
 uv run python manage.py import_locations --mode update --commit  # fields only
+```
+
+### `dump_locations_sheets` — write the location estate back to its sheets
+
+The other half of `import_locations`, and what makes an edit durable. The
+in-map location editor (`/?edit=locations` — SNOW-755) and any hand edit
+write to **this environment's database only**; until the sheets under
+`apps/locations/data/` carry the change, the next `import_locations`
+reconciliation would delete it. This command renders both sheets from the
+current rows, prints a per-file `+added/-removed` summary, and writes only
+under `--commit`.
+
+Three things about the emitted shape matter:
+
+- **`note` is carried forward, not derived.** It is a sheet column with no
+  database column behind it — a curator's working note, which
+  `import_locations` reads and discards. The dump reads the notes off the
+  sheet already on disk, keyed by uuid, and writes them back. A location
+  the sheet has never seen gets an empty note.
+- **`elevation_m` is never written**, for the reason `import_locations`
+  never reads one: it is derived.
+- **Only `named()` locations are dumped** — the same boundary
+  `import_locations`'s `delete` mode respects.
+
+Rows are ordered by uuid (links by the location's, then the resort's), so
+two consecutive runs produce identical files and a `git diff` shows only
+what actually changed. The round trip is the property to check after a
+curation session: `dump_locations_sheets --commit`, then
+`import_locations` must report **no changes**.
+
+```bash
+uv run python manage.py dump_locations_sheets            # preview diff only
+uv run python manage.py dump_locations_sheets --commit   # write both sheets
+uv run python manage.py dump_locations_sheets --commit \
+    --file /tmp/locations.tsv --links-file /tmp/resort_locations.tsv
 ```
 
 ### `link_location_forecast_cells` — resolve each Location's height and cell

@@ -1,0 +1,92 @@
+{% load i18n components %}
+{% comment %}
+    public/partials/_edit_mode_bar.html — switch and close for the in-map
+    editors (SNOW-755).
+
+    Both editor panels (edit_resorts_panel.html, edit_locations_panel.html)
+    render this immediately above their own heading. It answers the two
+    questions neither panel could: how do I get to the other editor, and
+    how do I get out of edit mode at all. Before this, the only ways out
+    were hand-editing the URL or clicking the wordmark — neither of which
+    is an affordance, because neither is visible.
+
+    Extracted rather than inlined twice: both headers already had the
+    identical shape, and two panels needing the same new control is the
+    case the design system's "reuse first, extract second" rule names.
+
+    Parameters (passed via {% include … with … %}):
+      active (string) — "resorts" or "locations": which editor is open.
+                        Marks that item aria-current="page" and gives it
+                        the filled state; the other becomes the link out.
+
+    PLAIN LINKS, NOT JS — deliberately. Edit mode is query-string state
+    (apps/public/views.py::_edit_target), so switching editors is a link
+    to ?edit=<the other one> and closing is a link to the bare home URL.
+    A fetch or a handler would have to reason about the panel's own JS
+    state — a half-placed pin, a request in flight — where a navigation
+    simply discards it, which is what "close" means. It also works before
+    the panel's script has loaded, and with it broken.
+
+    Close goes to "/" rather than stripping only the ``edit`` parameter.
+    That is exactly what clicking the wordmark already does; the point of
+    this control is that it is discoverable, not that it is different.
+
+    The active item is distinguished by fill, border AND weight, never by
+    colour alone — the two items sit side by side and differ by one word,
+    so a reader who cannot separate the two colours needs another signal.
+{% endcomment %}
+{# The two states, named once. Inline they made each <a> a 200-char  #}
+{# line whose only difference was one word, which is how the pair    #}
+{# drifts apart. Fill, border AND weight all change — the items sit  #}
+{# side by side and differ by one word, so a reader who cannot       #}
+{# separate the two colours needs another signal.                    #}
+{% with on='border border-text-1 bg-text-1 font-semibold text-card' off='border border-border font-normal text-text-2 hover:bg-card-subtle' %}
+    <div class="mb-2 flex items-center justify-between gap-2">
+        <nav class="flex items-center gap-1" aria-label="{% trans 'Editors' %}">
+            {# One <a> per estate. The active one still renders as a link to  #}
+            {# itself rather than a disabled span: re-selecting the editor you #}
+            {# are in is a harmless reload, and a control that vanishes when   #}
+            {# active is a worse affordance than one that no-ops.              #}
+            <a
+                href="{% url 'public:home' %}?edit=resorts"
+                {% if active == "resorts" %}aria-current="page"{% endif %}
+                class="rounded-pill px-2 py-0.5 text-xs {% if active == 'resorts' %}{{ on }}{% else %}{{ off }}{% endif %}"
+            >
+                {% trans "Resorts" %}
+            </a>
+            <a
+                href="{% url 'public:home' %}?edit=locations"
+                {% if active == "locations" %}aria-current="page"{% endif %}
+                class="rounded-pill px-2 py-0.5 text-xs {% if active == 'locations' %}{{ on }}{% else %}{{ off }}{% endif %}"
+            >
+                {% trans "Locations" %}
+            </a>
+        </nav>
+        {# The stroke-based cross the map sheets already close with            #}
+        {# (includes/_sheet_header.html), in an <a> rather than a <button>     #}
+        {# because this one navigates. The glyph is aria-hidden and the name   #}
+        {# lives on the link — a bare × has no accessible name at all, and     #}
+        {# "Close editor" says what closes, since the panel is not the page.   #}
+        <a
+            href="{% url 'public:home' %}"
+            aria-label="{% trans 'Close editor' %}"
+            title="{% trans 'Close editor' %}"
+            class="{% icon_button_classes extra='-mt-2 -mr-2' %}"
+        >
+            <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+            </svg>
+        </a>
+    </div>
+{% endwith %}

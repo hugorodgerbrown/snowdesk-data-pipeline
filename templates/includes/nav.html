@@ -574,13 +574,25 @@ Usage
                                 {% trans "Push demo" %}
                             </a>
                         </li>
+                        {# SNOW-755: one item per editable estate. "Edit map" #}
+                        {# was a single hardcoded ?edit=resorts link, which    #}
+                        {# left the locations editor with no way in at all.    #}
                         <li role="none">
                             <a
                                 role="menuitem"
                                 href="{% url 'public:home' %}?edit=resorts"
                                 class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
                             >
-                                {% trans "Edit map" %}
+                                {% trans "Edit resorts" %}
+                            </a>
+                        </li>
+                        <li role="none">
+                            <a
+                                role="menuitem"
+                                href="{% url 'public:home' %}?edit=locations"
+                                class="block px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
+                            >
+                                {% trans "Edit locations" %}
                             </a>
                         </li>
                         <li role="none">
