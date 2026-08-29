@@ -20,6 +20,15 @@ gate both this topic and the map's Weather overlay.
             that window disables the overlay's menu row until you scrub back to a date it has data for.
         {% endblocktrans %}
     </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-layer-regions">
+        {% blocktrans trimmed %}
+            Zoomed out, there are no resort symbols to draw &mdash; so the overlay switches to a coarser view instead:
+            one symbol at the centre of each avalanche region. A region can be tens of kilometres across, and that one
+            symbol stands for the whole of it, so read it as the region's general picture rather than as the weather at
+            any particular spot. This coarser view covers today and recent days rather than the days ahead. Zoom in past
+            the point where resort symbols appear and you are back to per-resort weather, with temperatures.
+        {% endblocktrans %}
+    </p>
     <p class="mb-3 last:mb-0" data-testid="help-weather-layer-favourites">
         {% blocktrans trimmed %}
             If you're signed in, your own favourite pins get a weather symbol too &mdash; visible only to you, never to

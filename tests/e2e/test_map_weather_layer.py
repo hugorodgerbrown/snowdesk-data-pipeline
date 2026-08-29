@@ -79,6 +79,13 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     asked for — every feature projects to ``icon: ''``, the layer's filter
     drops the lot and the row disables itself with a "choose a date" reason.
     The seeded forecast is for today, so today is the day to ask for.
+
+    SNOW-698: the zoom is load-bearing too. The default camera lands below
+    the Weather overlay's z8 seam, where the visible tier is the coarse
+    micro-region one — and these three tests seed a ``ForecastCellWeather``
+    row and no ``WeatherSnapshot``, so they would be asserting point-tier
+    behaviour against the region tier's empty payload. Pin the camera above
+    the seam so the point tier is the one on screen.
     """
     page.add_init_script(
         "Object.defineProperty(navigator, 'onLine', "
@@ -90,6 +97,8 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     page.wait_for_function(
         "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()"
     )
+    page.evaluate("() => MAP.jumpTo({ zoom: 9 })")
+    page.wait_for_function("() => MAP.getZoom() >= 8")
 
 
 def _toggle_weather_on(page: Page) -> Any:
