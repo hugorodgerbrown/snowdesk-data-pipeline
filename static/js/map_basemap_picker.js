@@ -225,7 +225,11 @@
     // SNOW-573: one symbol layer carries both the icon and the temp label
     // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
     // separate pin+label layers.
-    weather: ['weather-point'],
+    // SNOW-698: and a second layer for the coarse micro-region tier drawn
+    // below WEATHER_MIN_ZOOM. One row, one toggle, both tiers — the loop
+    // below is what actually runs on a menu click, so a tier missing from
+    // this list would keep drawing after the visitor switched Weather off.
+    weather: ['weather-point', 'weather-region-point'],
     // SNOW-691: the slope raster. Deliberately NOT in the lazy-load branch
     // below: the source is installed eagerly with its layer hidden, and
     // MapLibre requests no tiles for a source whose layers are all
