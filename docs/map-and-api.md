@@ -1,8 +1,8 @@
 ---
 name: map-and-api
-description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, summary, groupings, weather), routes.geojson
+description: / (public:home) MapLibre choropleth, scrubber, overlays, /api/ endpoints (ratings, geojson, groupings, weather, region-weather), routes
 status: current
-last-reviewed: 2026-08-19
+last-reviewed: 2026-08-29
 ---
 
 # Map page and JSON API
@@ -251,12 +251,16 @@ knowing here:
   when `ascent_m` is null**, since a GPX with no elevation data means "we
   don't know", not "flat".
 
-**Weather overlay (SNOW-573)**: a Meteocons condition symbol plus the
+**Weather overlay (SNOW-573, SNOW-698)**: one toggle over **two tiers**.
+Above zoom 8 (`WEATHER_MIN_ZOOM`), a Meteocons condition symbol plus the
 day's max temperature at each resort-anchored (and, for a signed-in
-visitor, favourite-anchored) `ForecastCell`. Ungated since SNOW-724
+visitor, favourite-anchored) `ForecastCell` (`weather` source,
+`weather-point` layer). Below it, one condition symbol — **icon only, no
+temperature** — at each micro-region's centroid (`weather-region` source,
+`weather-region-point` layer). Ungated since SNOW-724
 retired the `weather_layer` flag; `#map` emits `data-forecast-weather-url`
-with no eligibility attribute beside it, exactly like
-`data-community-reports-url` rather than the eligible-gated
+and `data-region-weather-url` with no eligibility attribute beside either,
+exactly like `data-community-reports-url` rather than the eligible-gated
 `data-favourites-url`. Default **off**, like community reports. The public payload (`/api/forecast-weather.geojson`,
 below) carries resort-anchored points only — a `Favourite`-only
 `ForecastCell` never appears there; a signed-in visitor's own pins are
@@ -266,18 +270,45 @@ this endpoint is), which
 `apps.weather.services.weather_display.build_point_weather_days` builds
 identically for both endpoints so the two can't drift.
 
-Point weather is forecast-only (`POINT_FORECAST_DAYS = 7` days from today,
-sometimes fewer, when the backing model runs short of the request) and
-every date's data ships in
-one payload, so the client never re-fetches on a scrubbed date: it
-re-projects the already-fetched FeatureCollection in memory
+**The z8 seam (SNOW-698).** The region layer's `maxzoom` and the point
+layer's `minzoom` are the SAME constant, `WEATHER_MIN_ZOOM`. MapLibre's
+`maxzoom` is exclusive and its `minzoom` inclusive, so the handoff is
+gap-free and overlap-free with no second constant to keep in sync;
+`window.pwaWeatherCore.weatherTierForZoom(zoom, minZoom)` reports the same
+boundary the map draws and is what the layers-menu row consults. A literal
+`8` in either place would be a silent regression at exactly one zoom level,
+which is why that function is extracted and unit-tested rather than left
+inline. The tier exists because the homepage's default camera fits
+`DEFAULT_BOUNDS` and lands at roughly z7.5 on desktop and z5.7 on mobile —
+below the seam on essentially every real viewport, so before SNOW-698 a
+first-time visitor switching Weather on at the default view saw nothing at
+all.
+
+The two tiers have **different date coverage, by design**. Point weather is
+forecast-only (`POINT_FORECAST_DAYS = 7` days from today, sometimes fewer,
+when the backing model runs short of the request); region weather is
+`WeatherSnapshot`-backed, which `fetch_weather` writes for today only and
+`backfill_weather` fills backwards from the archive, so the region payload
+covers today and the preceding six days (`REGION_WEATHER_DAYS_BACK`) and
+never the forecast. Today and history below the seam; today and the
+forecast above it.
+
+Every date's data ships in one payload per tier, so the client never
+re-fetches on a scrubbed date: `refreshWeatherSourceData` re-projects both
+already-fetched FeatureCollections in memory
 (`window.pwaWeatherCore.projectFeatureCollectionForDate`, `static/js/
-map_weather_core.js`) and calls `source.setData()`. A scrubbed date outside
-the payload's stored window (`isDateInForecastWindow`) disables the
-layers-menu row with a reason, via a namespaced marker
-(`data-weather-disabled-out-of-window`) distinct from
-`map_layer_sync_status.js`'s own offline-gating marker, so the two
-disable reasons never clobber each other's re-enable.
+map_weather_core.js`) and calls `source.setData()` on each. A scrubbed date
+outside the stored window of the tier **currently visible at this zoom**
+(`isDateInForecastWindow`) disables the layers-menu row with a reason, via a
+namespaced marker (`data-weather-disabled-out-of-window`) distinct from
+`map_layer_sync_status.js`'s own offline-gating marker, so the two disable
+reasons never clobber each other's re-enable. Because the answer depends on
+the zoom as well as the date, that check is bound to `map.on('moveend')` —
+MapLibre fires `moveend` for zoom gestures too. The row also carries a
+sub-label ("Regions only — zoom in for resorts"), server-rendered in
+`_map_embed.html` and revealed by JS toggling its `hidden` attribute while
+the region tier is the visible one — never written from JS, since
+`makemessages` does not scan `static/js`.
 
 The Meteocons icons are the one layer on this map that can't use the
 single-colour SDF `Path2D`-fill technique the favourite star / community-
@@ -291,12 +322,18 @@ same "image id exists before `addLayer` references it" invariant every
 other icon on this map relies on.
 
 Offline caching: `OVERLAY_RESOURCES.weather` in `map_layer_sync_status.js`
-is `kind: 'idb'` (not `'geojson'`) — the payload is a mutable forecast, not
-static reference data suited to `sw.js`'s never-expiring `STATIC_PATHS`
-shell cache. It write-through-caches to IndexedDB
-(`window.pwaMapOverlayCache`, same posture as `community_reports`) and
-self-corrects on read-back: a stale cached payload simply stops drawing
-anything as scrubbed dates roll past its forecast window.
+is a **list** of two `kind: 'idb'` resources — one per tier, keyed
+`weather` and `weather_region` (the overlay store holds one row per key, so
+a shared key would have the two payloads overwrite each other). `idb` not
+`'geojson'` because the payload is mutable weather, not static reference
+data suited to `sw.js`'s never-expiring `STATIC_PATHS` shell cache. Both
+write-through-cache to IndexedDB (`window.pwaMapOverlayCache`, same posture
+as `community_reports`) and self-correct on read-back: a stale cached
+payload simply stops drawing anything as scrubbed dates roll past its
+window. The row's sync dot resolves green only when **both** rows are
+present — this menu is a cache-state dashboard (SNOW-518), and a dot that
+greened on the first would promise an overlay that comes up half-drawn
+offline.
 
 **Slope-angle overlay (SNOW-691)**: the map's only `raster` source, and its
 only layer whose data is fetched straight from a third party rather than
@@ -406,8 +443,12 @@ re-lifts the favourite, community-observation, and weather layers to the
 top and is called at the end of **every** layer-install path
 (`installRegionsLayers`, `installOverlayLayers`, `installResortsLayer`,
 `installFavouritesLayer`, `installCommunityReportsLayer`,
-`installBulletinGroupingsLayer`, `installWeatherLayer`) — so any new
-install must keep that call, or a later overlay will paint over the pins.
+`installBulletinGroupingsLayer`, `installWeatherLayer`,
+`installRegionWeatherLayer`) — so any new install must keep that call, or a
+later overlay will paint over the pins. `weather-region-point` sits at the
+bottom of `ALWAYS_ON_TOP_MARKER_LAYERS`, immediately below `weather-point`:
+it is the coarser of the two answers to the same question, and the two never
+paint together anyway (their zoom ranges are disjoint).
 
 **Placement focus (`static/js/map_placement_focus.js`)**: while a pin is
 being positioned — a favourite, a field observation, or a resort in the
@@ -499,6 +540,7 @@ appeared first.
 | `GET /api/bulletin-groupings.geojson` | `api:bulletin_groupings_geojson` | `{"type":"FeatureCollection","features":[…]}` — a **single day's** dissolved bulletin boundaries. `?d=YYYY-MM-DD` is **required** (400 `date_required` if absent, 400 `malformed date` on a bad value). Each feature's geometry is the dissolved outer boundary of all L4 micro-regions sharing that bulletin; `properties` carries `bulletin_id`, `date`, and `countries` (sorted ISO-2 list). Accepts optional `?country=ch\|fr\|at\|it`; filters by membership in the `countries` list (a cross-border bulletin with `["AT","IT"]` appears for both `?country=at` and `?country=it`). Server-side `cache.get_or_set` keyed on `(country, date)` (5 min). **`Cache-Control` is date-aware (SNOW-526):** `apps.bulletins.services.settled.earliest_mutable_date()` derives a settled/unsettled threshold from the fetcher registry (`apps.bulletins.services.slf_fetcher.get_sources()`), memoised at the call site (`apps.public.api._cached_earliest_mutable_date()`, 60s) to avoid a per-`BulletinSource` DB query on every request; a settled `?d=` gets `public, max-age=604800, immutable`, otherwise `public, max-age=300` (unchanged). The `immutable` token is also `sw.js`'s signal to persist the response for offline use — see `docs/decisions/date-aware-cache-policy.md`. **Why single-date:** the endpoint previously returned the whole season keyed by date in one payload; once the historical backfill landed, serialising every day's dissolved geometry at once pushed the web worker past its 512 MB limit (SNOW-323 follow-up). The JS overlay ("Bulletin groupings" — the boundary now draws alongside the choropleth, SNOW-506; SNOW-521 removed the standalone `data-overlay-key="l3"` layers-menu row, and SNOW-656 moved what governs it from the `l4` row to the bulletin-fill step, since the boundary is a bulletin concept and, like the choropleth, is date-bound — at step 0 it is hidden and a scrubbed date does not refetch it) fetches one day at a time via `fetchBulletinGroupingsForDate(dateKey)` (no `?country=` filter, so cross-border rows are present), memoising each date for the session. It draws the boundary only once the scrubber **settles** (`GROUPINGS_SETTLE_MS = 250`), blanking the layer during active drag/playback so it neither thrashes the network nor lags a frame behind the choropleth. The MapLibre layer uses an array-membership filter (`['in', c, ['get','countries']]`) instead of the scalar `match` filter used by L1/L2, because `countries` is a JSON list not a string. |
 | `GET /api/community-reports.geojson` | `api:community_reports_geojson` | `{"type":"FeatureCollection","features":[…]}` — anonymised, clustered "Community reports" overlay (SNOW-419). Covers `FieldObservation` rows from the last 48 hours. Each feature's `coordinates` are `[lon, lat]` rounded to 3 dp (~80–110 m); `properties` carries `type` (`OBSERVATION_TYPE` value), `type_label` (display label), `observed_at` (ISO, the instant as recorded — it was floored to the nearest 15 min until that floor was found to protect nothing and to make the map disagree with the reporter's own panel), and `region_name` (or `null`). Never serialises `latitude`/`longitude` at full precision, `gps_*`, `accuracy_radius_km`, `user`, or the row's pk. `Cache-Control: private, no-store` — unlike the other geojson endpoints it is **not** publicly cacheable and **not** in `_POSTHOG_EXEMPT_PATHS` (SNOW-459); public caching is tracked separately (SNOW-469). It carries a 120s client-side freshness window via `X-Data-Max-Age`. The JS overlay (`data-overlay-key="community_reports"`, default **off**) clusters the source client-side (`cluster: true`) and fades pins by age via a client-computed `_ageOpacity` feature property (no MapLibre "now" expression exists). |
 | `GET /api/forecast-weather.geojson` | `api:forecast_weather_geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-573 map Weather overlay: one Point feature per geocoded `Resort` with a linked `ForecastCell` (never a `Favourite`-only point — see the privacy note above). Geometry is the *resort's* coordinates, not the quantised point's. `properties` carries `resort_id`, `name`, `region_id`, and `days` — a dict keyed by ISO date (`{"2026-08-07": {"icon": "light_snow-day.svg", "label": "Light snow", "tmax": 4.0, "tmin": -3.0, "snow": 2.0}}`), defaulting to the **whole stored forecast window** (mirrors `/api/ratings/`'s date-keyed shape); `?d=YYYY-MM-DD` narrows to one date, 400 `malformed date` on a bad value. Public — SNOW-724 retired the `weather_layer` flag that used to 404 an ineligible caller. Server-side `cache.get_or_set` keyed `forecast-weather:v1:<d\|all>` (5 min). `generated_at` is the OLDEST `fetched_at` across the payload's `ForecastCellWeather` rows (a record mixing several points' data is only as fresh as its stalest one); `X-Data-Unsafe-After` is never set (non-safety data). Two queries regardless of resort count: `Resort.objects.resorts().geocoded()` with `select_related("forecast_point")`, then one bulk `ForecastCellWeather.objects.filter(forecast_cell_id__in=…)` grouped in Python. |
+| `GET /api/region-weather.geojson` | `api:region_weather_geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-698 map Weather overlay's coarse tier: one Point feature per `MicroRegion` with a non-null `centre` **and** at least one `WeatherSnapshot` in the window. A region with a `centre` but no snapshot is **absent**, not present with an empty `days` — at 461 regions a feature the client can never draw is payload spent on nothing; a region with `centre = None` is skipped outright. Geometry is `MicroRegion.centre` reordered to `[lon, lat]` (the field is a flat `{"lon", "lat"}` dict, **not** a GeoJSON geometry). `properties` carries `region_id`, `name` and `days` — the same `days` shape `forecast-weather.geojson` uses, built by the same `build_point_weather_days`, which takes a `Sequence` of either `ForecastCellWeather` or `WeatherSnapshot`. `region_id` is present here where a station feature would carry none: a region feature *is* a region row, so the id is its identity rather than a claimed association. `days` defaults to the `REGION_WEATHER_DAYS_BACK = 7`-day window **ending today** (today and history, never the forecast — see the tier note above); `?d=YYYY-MM-DD` narrows to one date and is not window-bound, 400 `malformed date` on a bad value. Public, no flag. Server-side `cache.get_or_set` keyed `region-weather:v1:<d\|all>` (5 min). `generated_at` is the OLDEST `fetched_at` across the payload's `WeatherSnapshot` rows; `X-Data-Unsafe-After` is never set (non-safety data). Two queries regardless of region count: `MicroRegion.objects.filter(centre__isnull=False)`, then one bulk `WeatherSnapshot.objects.filter(region_id__in=…)` grouped in Python. |
 | `GET /routes/routes.geojson` | `routes:geojson` | `{"type":"FeatureCollection","features":[…]}` — SNOW-687's routes line layer: one **LineString** feature per `Route` the **requesting user** owns. `coordinates` are `Route.points` verbatim — `[lon, lat, ele]` in GeoJSON axis order (RFC 7946), already simplified at ingest by SNOW-685, so there is no per-render transform and no axis swap can creep in between the stored and served shapes. `ele` is metres, or `null` for a point whose source `<ele>` was absent. `properties` carries `uuid`, `name`, `distance_m`, `ascent_m` and `bounds`. **`ascent_m` is served as stored, `null` included** — null means "the GPX carried no elevation data", NOT "flat", and the client omits the ascent line entirely rather than rendering a zero for an unknown (`Route`'s docstring is explicit that the substitution would be a safety-relevant lie). `bounds` is the flat `[min_lon, min_lat, max_lon, max_lat]` bbox, on the feature so a tap can fit the viewport from the payload the map already holds, offline included. **403** for anonymous callers; owner-scoped via `Route.objects.for_user()` in **one** query however many routes the user has. Not `@require_htmx` — a JS `fetch()` consumes it, not an HTMX swap. `Cache-Control: private, no-store`. Freshness headers follow `community-reports.geojson` rather than `favourites.geojson` (which carries none): `generated_at` is the newest route's `updated_at`, and **`unsafe_after` is omitted** — a user's own uploaded track is not safety-critical data, so the client's freshness state saturates at "stale" and never escalates to "unsafe". Note the path: mounted under `/routes/`, not `/api/`, alongside the panel's HTMX endpoints. |
 
 **Per-region offline-basemap sizing (SNOW-521)**: `properties.download` on
