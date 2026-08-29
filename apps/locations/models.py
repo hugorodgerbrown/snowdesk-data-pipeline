@@ -164,10 +164,18 @@ class Location(BaseModel):
         help_text="What sort of place this is. Empty alongside an empty name.",
     )
     latitude = models.FloatField(
-        help_text="Exact WGS-84 latitude. Immovable.",
+        help_text=(
+            "Exact WGS-84 latitude. Corrected only here or in the location "
+            "editor — a correction re-places the same row, it does not "
+            "make a new place."
+        ),
     )
     longitude = models.FloatField(
-        help_text="Exact WGS-84 longitude. Immovable.",
+        help_text=(
+            "Exact WGS-84 longitude. Corrected only here or in the location "
+            "editor — a correction re-places the same row, it does not "
+            "make a new place."
+        ),
     )
     elevation_m = models.FloatField(
         null=True,
