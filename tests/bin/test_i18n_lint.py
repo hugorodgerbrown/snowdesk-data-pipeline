@@ -325,15 +325,21 @@ class TestShippedTree:
     def test_the_shipped_tree_is_clean(self) -> None:
         """Every first-party module passes today.
 
-        SNOW-620 converted eight of them; the two that remain are staff-only
-        surfaces carrying an explicit `i18n-allow`.
+        SNOW-620 converted eight of them; the three that remain are
+        staff-only surfaces carrying an explicit `i18n-allow`.
         """
         result = _run()
 
         assert result.returncode == 0, result.stdout
 
-    def test_only_the_two_staff_only_files_are_suppressed(self) -> None:
-        """A hatch is cheap to add — this is what keeps it from spreading."""
+    def test_only_the_staff_only_files_are_suppressed(self) -> None:
+        """A hatch is cheap to add — this is what keeps it from spreading.
+
+        The list grows only for a surface that is genuinely superuser-gated
+        at the view, the template and every endpoint it calls, which is the
+        documented legitimate use. SNOW-755 added the third: the in-map
+        location editor, a sibling of the resort editor already here.
+        """
         result = _run("--show-allows")
         suppressed = {
             line.split(":")[0].strip()
@@ -342,6 +348,7 @@ class TestShippedTree:
         }
 
         assert suppressed == {
+            "static/js/map_edit_locations.js",
             "static/js/map_edit_resorts.js",
             "static/js/push_demo.js",
         }
