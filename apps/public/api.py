@@ -2678,19 +2678,31 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
     links themselves are untouched here; each resort's ``role`` is its
     own and is changed by unlinking and re-linking.
 
-    Moving the pin clears ``elevation_m`` and ``forecast_cell``. Both are
-    resolved from the *old* coordinate, so leaving them would leave the
-    location claiming a height from where it used to be — and it is a
+    **Moving the pin** clears ``elevation_m`` and ``forecast_cell``. Both
+    are resolved from the *old* coordinate, so leaving them would leave
+    the location claiming a height from where it used to be — and it is a
     stale elevation that makes a mis-pinned summit look plausible. The
     next ``link_location_forecast_cells`` run resolves them again.
 
+    **Not** moving it leaves all three columns exactly as they were, and
+    that distinction is load-bearing rather than an optimisation: a
+    rename is not a re-placement, and treating it as one would both
+    discard a resolved height and rewrite a coordinate the admin may have
+    set at full precision (see the comparison below).
+
+    Scoped to ``Location.objects.named()``. The anonymous rows minted
+    from favourites and observations live in the same table but are user
+    data, and this editor curates the estate the sheets own — giving one
+    a name here would silently move it across that boundary.
+
     Errors:
-        404 — request user is not a superuser, or no such location.
+        404 — request user is not a superuser, or no such *curated*
+              location.
         400 — invalid JSON; a blank ``name``; an unrecognised ``kind``;
               missing, non-float or out-of-bbox coordinates.
     """
     _require_edit_map_admin(request)
-    location = get_object_or_404(Location, pk=location_id)
+    location = get_object_or_404(Location.objects.named(), pk=location_id)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:
@@ -2708,24 +2720,38 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
 
     lat = round(lat, _LOCATION_COORD_DECIMALS)
     lon = round(lon, _LOCATION_COORD_DECIMALS)
-    moved = (lat, lon) != (location.latitude, location.longitude)
+    # Compare like with like. ``latitude`` is a plain FloatField and the
+    # admin — a live write path this editor does not own — imposes no
+    # rounding, so a stored coordinate may carry more decimals than the
+    # panel can send back. Comparing the rounded incoming value against
+    # the raw stored one made ``moved`` true for every such row, and a
+    # save that only renamed it then wiped an elevation the pin had not
+    # moved away from.
+    moved = (lat, lon) != (
+        round(location.latitude, _LOCATION_COORD_DECIMALS),
+        round(location.longitude, _LOCATION_COORD_DECIMALS),
+    )
 
     location.name = name
     location.kind = kind
-    location.latitude = lat
-    location.longitude = lon
-    update_fields = ["name", "kind", "latitude", "longitude", "updated_at"]
+    update_fields = ["name", "kind", "updated_at"]
     if moved:
+        # The coordinate is written only when it actually changed. A
+        # rename must not rewrite it: doing so would silently truncate a
+        # full-precision coordinate set in the admin to the five decimals
+        # the sheet carries, which is a data edit nobody asked for.
+        location.latitude = lat
+        location.longitude = lon
         location.elevation_m = None
         location.forecast_cell = None
-        update_fields += ["elevation_m", "forecast_cell"]
+        update_fields += ["latitude", "longitude", "elevation_m", "forecast_cell"]
     location.save(update_fields=update_fields)
 
     logger.info(
         "edit_location_save: saved %s at (%s, %s), moved=%s",
         location.name,
-        lat,
-        lon,
+        location.latitude,
+        location.longitude,
         moved,
     )
     return JsonResponse(_location_payload(_reload_with_links(location)))
@@ -2750,14 +2776,22 @@ def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
     reaches it. ``role`` is per-link, so the same point can be one
     resort's top and another's mid-station.
 
+    Scoped to ``Location.objects.named()``, and that scope is an
+    invariant rather than a convenience: ``dump_locations_sheets`` emits
+    only curated locations, so a link hung on an anonymous row is dropped
+    from the links sheet and cannot survive a round trip. Refusing to
+    create one here is how this editor keeps that from happening — see
+    the note in ``dump_locations_sheets``'s module docstring.
+
     Errors:
-        404 — request user is not a superuser, or no such location.
+        404 — request user is not a superuser, or no such *curated*
+              location.
         400 — invalid JSON; an unknown ``resort_id``; a missing or
               unrecognised ``role``; a resort already linked to this
               location (``duplicate_link``).
     """
     _require_edit_map_admin(request)
-    location = get_object_or_404(Location, pk=location_id)
+    location = get_object_or_404(Location.objects.named(), pk=location_id)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:

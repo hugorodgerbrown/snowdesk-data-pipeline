@@ -602,6 +602,85 @@ class TestSave:
         }
         assert Location.objects.count() == 1
 
+    def test_a_rename_leaves_a_full_precision_coordinate_alone(self) -> None:
+        """A rename is not a re-placement, at any stored precision.
+
+        ``latitude`` is a plain FloatField and the admin — a live write
+        path this editor does not own — imposes no rounding, so a stored
+        coordinate routinely carries more than the five decimals the
+        panel round-trips. Comparing the rounded incoming value against
+        the raw stored one made every such row look moved, so a save that
+        only renamed it wiped the resolved elevation AND truncated the
+        coordinate to 5dp. Both are silent, and neither was asked for.
+        """
+        location = LocationFactory.create(
+            name="Mont Fort",
+            resolved=True,
+            latitude=46.1036123456,
+            longitude=7.2988987654,
+        )
+        cell = location.forecast_cell
+
+        resp = _post(
+            _superuser_client(),
+            _save_url(location),
+            {
+                "name": "Mont Fort (summit)",
+                "kind": "PEAK",
+                # What the panel sends back for an untouched pin: the
+                # stored coordinate, rendered to five decimals.
+                "latitude": 46.10361,
+                "longitude": 7.2989,
+            },
+        )
+
+        assert resp.status_code == 200
+        location.refresh_from_db()
+        assert location.name == "Mont Fort (summit)"
+        assert location.latitude == 46.1036123456
+        assert location.longitude == 7.2988987654
+        assert location.elevation_m == pytest.approx(1500.0)
+        assert location.forecast_cell == cell
+
+    def test_a_genuine_move_from_full_precision_still_clears(self) -> None:
+        """The fix above must not turn the clear-on-move into a no-op."""
+        location = LocationFactory.create(
+            name="Mont Fort",
+            resolved=True,
+            latitude=46.1036123456,
+            longitude=7.2988987654,
+        )
+
+        _post(
+            _superuser_client(),
+            _save_url(location),
+            {"name": "Mont Fort", "kind": "PEAK", "latitude": 46.2, "longitude": 7.4},
+        )
+
+        location.refresh_from_db()
+        assert location.latitude == pytest.approx(46.2)
+        assert location.elevation_m is None
+        assert location.forecast_cell is None
+
+    def test_an_anonymous_location_cannot_be_named_here(self) -> None:
+        """The editor curates the estate the sheets own, and nothing else.
+
+        A location minted from a favourite is user data. Naming it here
+        would move it across that boundary silently, and its links would
+        then be the sheets' to carry — see ``dump_locations_sheets``.
+        """
+        location = LocationFactory.create(anonymous=True)
+
+        resp = _post(
+            _superuser_client(),
+            _save_url(location),
+            {"name": "Poached", "latitude": MONT_FORT_LAT, "longitude": MONT_FORT_LON},
+        )
+
+        assert resp.status_code == 404
+        location.refresh_from_db()
+        assert location.name == ""
+
     def test_an_unknown_location_is_a_404(self) -> None:
         """No row, no edit."""
         resp = _post(
@@ -729,6 +808,26 @@ class TestLink:
 
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_role"
+        assert ResortLocation.objects.count() == 0
+
+    def test_an_anonymous_location_cannot_be_linked(self) -> None:
+        """The invariant ``dump_locations_sheets``'s round trip rests on.
+
+        The dump emits only curated locations, so a link hung on an
+        anonymous row is dropped from the links sheet and cannot survive
+        a round trip. This endpoint is one of the paths that must not
+        create one.
+        """
+        location = LocationFactory.create(anonymous=True)
+        resort = ResortFactory.create(name="Verbier")
+
+        resp = _post(
+            _superuser_client(),
+            _link_url(location),
+            {"resort_id": resort.pk, "role": "TOP"},
+        )
+
+        assert resp.status_code == 404
         assert ResortLocation.objects.count() == 0
 
     def test_an_unknown_location_is_a_404(self) -> None:
