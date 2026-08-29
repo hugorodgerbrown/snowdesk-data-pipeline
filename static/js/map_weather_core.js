@@ -21,6 +21,17 @@
  * actually need decoded" set are all pure functions of the payload, so they
  * live here rather than inline in map.js.
  *
+ * SNOW-698: every helper here is generic over ANY `days`-keyed
+ * FeatureCollection, not just the resort-anchored one. The Weather overlay
+ * now has two tiers — resort symbols above zoom 8, micro-region-centroid
+ * symbols below it (`/api/region-weather.geojson`) — and the region payload
+ * needs no projection code of its own; it goes through the same functions.
+ * `weatherTierForZoom` is the one addition the second tier required, and it
+ * exists so the zoom seam between the two is decided in ONE place: the
+ * point layer's `minzoom` and the region layer's `maxzoom` are the same
+ * constant, and a literal `8` in either would be a silent regression at
+ * exactly one zoom level.
+ *
  * Deliberately dependency-free: every export is a pure function of its
  * arguments, no module-scope state, no MapLibre/DOM reference.
  *
@@ -70,6 +81,13 @@
  *     Concatenates two FeatureCollections' feature arrays into one new
  *     FeatureCollection — the public resort-anchored payload plus the
  *     signed-in visitor's own favourite-anchored features.
+ *   weatherTierForZoom(zoom, minZoom)
+ *     Which of the overlay's two tiers is the visible one at `zoom` —
+ *     `'point'` at or above `minZoom`, `'region'` below it. The single
+ *     definition of the z8 seam: MapLibre's `minzoom` is inclusive and its
+ *     `maxzoom` exclusive, so the point layer's `minzoom: minZoom` and the
+ *     region layer's `maxzoom: minZoom` hand over with no gap and no
+ *     overlap, and this function reports the same boundary the map draws.
  */
 
 (function () {
@@ -208,6 +226,24 @@
     return { type: 'FeatureCollection', features: featuresA.concat(featuresB) };
   }
 
+  /**
+   * Which weather tier is the visible one at `zoom`.
+   *
+   * Non-finite input (an uninitialised map, a `getZoom()` that has not
+   * settled) resolves to `'region'`: the coarse tier is the safe default
+   * because it is what the default camera actually shows, so a row's
+   * availability is judged against the payload the visitor can see.
+   *
+   * @param {number} zoom The map's current zoom level.
+   * @param {number} minZoom The point tier's `minzoom` — the seam.
+   * @returns {'region'|'point'}
+   */
+  function weatherTierForZoom(zoom, minZoom) {
+    if (typeof zoom !== 'number' || !Number.isFinite(zoom)) return 'region';
+    if (typeof minZoom !== 'number' || !Number.isFinite(minZoom)) return 'region';
+    return zoom >= minZoom ? 'point' : 'region';
+  }
+
   window.pwaWeatherCore = Object.freeze({
     formatTempLabel: formatTempLabel,
     projectFeatureForDate: projectFeatureForDate,
@@ -217,5 +253,6 @@
     iconFilenamesForPayload: iconFilenamesForPayload,
     extractWeatherFeatures: extractWeatherFeatures,
     mergeFeatureCollections: mergeFeatureCollections,
+    weatherTierForZoom: weatherTierForZoom,
   });
 })();

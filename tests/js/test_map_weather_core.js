@@ -260,3 +260,42 @@ describe('mergeFeatureCollections', () => {
     expect(b.features).toHaveLength(1);
   });
 });
+
+describe('weatherTierForZoom', () => {
+  // The seam the whole two-tier overlay rests on. MapLibre's `minzoom` is
+  // inclusive and its `maxzoom` exclusive, so at exactly the boundary the
+  // point layer draws and the region layer does not — this function has to
+  // agree, or the layers-menu row judges availability against a payload the
+  // map is not showing.
+  it('reports the point tier at exactly the boundary zoom', () => {
+    expect(core.weatherTierForZoom(8, 8)).toBe('point');
+  });
+
+  it('reports the region tier just below the boundary', () => {
+    expect(core.weatherTierForZoom(7.99, 8)).toBe('region');
+  });
+
+  it('reports the point tier above the boundary', () => {
+    expect(core.weatherTierForZoom(11.5, 8)).toBe('point');
+  });
+
+  it('reports the region tier at the default homepage cameras', () => {
+    // ~z7.5 desktop, ~z5.7 mobile — both below z8, which is the bug this
+    // tier was added to fix.
+    expect(core.weatherTierForZoom(7.5, 8)).toBe('region');
+    expect(core.weatherTierForZoom(5.7, 8)).toBe('region');
+  });
+
+  it('falls back to the region tier for non-finite input', () => {
+    expect(core.weatherTierForZoom(undefined, 8)).toBe('region');
+    expect(core.weatherTierForZoom(null, 8)).toBe('region');
+    expect(core.weatherTierForZoom(NaN, 8)).toBe('region');
+    expect(core.weatherTierForZoom(Infinity, 8)).toBe('region');
+    expect(core.weatherTierForZoom('8', 8)).toBe('region');
+  });
+
+  it('falls back to the region tier for a non-finite boundary', () => {
+    expect(core.weatherTierForZoom(11, undefined)).toBe('region');
+    expect(core.weatherTierForZoom(11, NaN)).toBe('region');
+  });
+});
