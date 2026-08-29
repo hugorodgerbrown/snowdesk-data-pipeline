@@ -93,6 +93,11 @@ Optional context:
     {# community-reports above — there is no eligibility attribute to      #}
     {# pair with it.                                                        #}
     data-forecast-weather-url="{{ forecast_weather_geojson_url }}"
+    {# SNOW-698: the Weather overlay's coarse tier — micro-region-centroid  #}
+    {# symbols drawn below the zoom at which the resort symbols above       #}
+    {# appear. One toggle, two payloads, so this sits beside its sibling    #}
+    {# with no eligibility attribute of its own either.                     #}
+    data-region-weather-url="{{ region_weather_geojson_url }}"
     {# SNOW-691: the slope-angle raster's tile template. Emitted only for an  #}
     {# eligible request — i.e. only while settings.SLOPE_TILE_URL is set       #}
     {# (SNOW-724 moved the gate off a waffle flag and onto the setting, which  #}
@@ -665,7 +670,18 @@ Optional context:
                     aria-checked="false"
                 >
                     <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                    {% trans "Weather" %}
+                    {# SNOW-698: the sub-label is server-rendered and simply #}
+                    {# revealed by map.js toggling `hidden` while the coarse #}
+                    {# region tier is the visible one. Deliberately NOT      #}
+                    {# written from JS: makemessages never scans             #}
+                    {# static/js, so a string set from there would ship as   #}
+                    {# English to every locale (see bin/i18n-lint).          #}
+                    <span class="basemap-menu-item-text">
+                        {% trans "Weather" %}
+                        <span class="basemap-menu-item-sub" data-weather-tier-note hidden>
+                            {% trans "Regions only — zoom in for resorts" %}
+                        </span>
+                    </span>
                 </button>
             </li>
             {# SNOW-691: Terrain — the swisstopo slope-angle raster        #}

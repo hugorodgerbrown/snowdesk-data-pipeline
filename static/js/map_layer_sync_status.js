@@ -124,6 +124,13 @@
  * ``cache.put`` didn't land. ``markCached`` no-ops for any key absent from
  * ``OVERLAY_RESOURCES``.
  *
+ * SNOW-698: an ``OVERLAY_RESOURCES`` entry may be a LIST of resources
+ * rather than a single one — the Weather row's two payloads (the
+ * resort-anchored tier and the micro-region-centroid tier below it) are
+ * cached under two IDB keys, and its dot resolves green only when BOTH are
+ * present. ``markCached`` is unchanged and stays optimistic for such a row:
+ * as above, ``refresh()`` re-verifies and self-corrects.
+ *
  * Not listed: the bulletin-boundary layer (internal key ``l3``). It has no
  * layers-menu row — SNOW-521 removed it, and since PR #506 the boundary
  * simply follows L4's visibility rather than carrying a toggle of its own —
@@ -254,7 +261,16 @@
     // community_reports) is self-correcting on read-back: a stale cached
     // payload simply stops drawing anything as scrubbed dates roll past
     // its forecast window, rather than needing an explicit staleness check.
-    weather: Object.freeze({ kind: 'idb', key: 'weather' }),
+    // SNOW-698: a LIST, and the only entry that is one. The Weather row is
+    // one toggle over two payloads — the resort-anchored tier and the
+    // micro-region-centroid tier below it — cached under two IDB keys, and
+    // this menu is a cache-state dashboard: a dot that greened on the first
+    // of them would promise an overlay that comes up half-drawn offline.
+    // Every listed resource must be present for the dot to resolve green.
+    weather: Object.freeze([
+      Object.freeze({ kind: 'idb', key: 'weather' }),
+      Object.freeze({ kind: 'idb', key: 'weather_region' }),
+    ]),
     // SNOW-645: the "Available offline" row that lived here (``downloaded:
     // {kind: 'pinned-tiles'}``, probed by the now-deleted
     // ``_probeAnyPinnedTile``) is gone — its dot went permanently grey and
@@ -794,6 +810,23 @@
     return !!key && keys.has(key);
   }
 
+  /**
+   * Probe ONE resource descriptor — the ``{kind, key}`` / ``{path}`` shape
+   * an ``OVERLAY_RESOURCES`` entry holds (or one element of such an entry's
+   * list). Never throws; a rejecting probe is the caller's to catch.
+   *
+   * @param {{kind?: string, key?: string, path?: string, countryScoped?: boolean}} resource
+   * @param {string[]} enabledCountries - the country codes currently switched on.
+   * @returns {Promise<boolean>} True when the resource is cached.
+   */
+  function _probeResource(resource, enabledCountries) {
+    if (resource.kind === 'idb') return _probeIdbRow(resource.key);
+    if (resource.countryScoped && enabledCountries.length > 0) {
+      return _probeEveryCountry(resource.path, enabledCountries);
+    }
+    return _probeGeoJson(resource.path);
+  }
+
   // SNOW-613: the pass currently running, and the single trailing pass
   // queued behind it. See ``refresh``.
   /** @type {Promise<void>|null} */
@@ -871,14 +904,12 @@
       const dot = _overlayDot(key);
       if (!dot) continue;
 
-      let probe;
-      if (resource.kind === 'idb') {
-        probe = _probeIdbRow(resource.key);
-      } else if (resource.countryScoped && enabledCountries.length > 0) {
-        probe = _probeEveryCountry(resource.path, enabledCountries);
-      } else {
-        probe = _probeGeoJson(resource.path);
-      }
+      // SNOW-698: an entry may be a single resource or a LIST of them, in
+      // which case the row's dot greens only when every one is present.
+      const resources = Array.isArray(resource) ? resource : [resource];
+      const probe = Promise.all(
+        resources.map((one) => _probeResource(one, enabledCountries)),
+      ).then((results) => results.every(Boolean));
       tasks.push(
         probe
           .then((cached) =>

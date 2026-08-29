@@ -83,6 +83,11 @@
   // and ungated since SNOW-724 retired the weather_layer flag, so there is
   // no eligibility constant to pair with the URL.
   const WEATHER_URL = mapEl.dataset.forecastWeatherUrl || null;
+  // SNOW-698: the same overlay's coarse tier — micro-region-centroid
+  // symbols for the zooms below WEATHER_MIN_ZOOM, where the resort layer
+  // above draws nothing at all. One toggle, two payloads; ungated for the
+  // same reason its sibling is.
+  const REGION_WEATHER_URL = mapEl.dataset.regionWeatherUrl || null;
   // SNOW-687: per-user saved-routes GeoJSON — eligibility is an
   // authenticated user (the endpoint 403s for anyone else, and there is
   // nothing to draw), so this is gated the same way as favourites rather
@@ -793,6 +798,11 @@
     // the more "personal" pin layers below, so a favourite star or
     // community-report flag at the same point is never hidden by a
     // weather icon.
+    // SNOW-698: the region tier below the point tier — lowest of the
+    // always-on-top set, since it is the coarser of the two answers to the
+    // same question. The two never paint together (their zoom ranges are
+    // disjoint), so the ordering matters only against the layers below.
+    'weather-region-point',
     'weather-point',
     'community-reports-clusters',
     'community-reports-cluster-count',
@@ -2191,6 +2201,13 @@
   // can never drift out of sync with each other.
   let weatherResortGeojsonCache = null;
 
+  // SNOW-698: the same, for the region tier's payload. Separate variable
+  // and separate IndexedDB key — window.pwaMapOverlayCache stores one row
+  // per key, so a shared key would have the two payloads overwrite each
+  // other. There is no per-user variant to merge in: the region tier is
+  // the same for every visitor.
+  let weatherRegionGeojsonCache = null;
+
   // SNOW-573: Meteocons are multi-path, gradient-filled SVGs — unlike the
   // favourite star / community-report flag (single-colour Path2D fills,
   // registered sdf: true), SDF discards colour and keeps only the alpha
@@ -2289,26 +2306,64 @@
     }
   };
 
+  // SNOW-698: show or hide the Weather row's sub-label — the qualifier
+  // naming the coarse tier ("Regions only — zoom in for resorts"). The
+  // string itself is server-rendered in _map_embed.html and only revealed
+  // here, so no user-facing text is written from this file (bin/i18n-lint).
+  const _setWeatherTierNote = (tier) => {
+    const note = document.querySelector(
+      '#basemap-menu [data-overlay-key="weather"] [data-weather-tier-note]',
+    );
+    if (!note) return;
+    note.hidden = tier !== 'region';
+  };
+
+  // The payload behind whichever tier is visible at the current zoom, or
+  // null before it has been fetched. The point tier's answer is the public
+  // resort payload merged with the signed-in visitor's own favourite pins;
+  // the region tier has no per-user variant to merge.
+  const _visibleWeatherPayload = (tier) => {
+    if (tier === 'region') return weatherRegionGeojsonCache;
+    if (!weatherResortGeojsonCache) return null;
+    return window.pwaWeatherCore.mergeFeatureCollections(
+      weatherResortGeojsonCache,
+      window.pwaWeatherCore.extractWeatherFeatures(favouritesGeojsonCache),
+    );
+  };
+
   // Re-derive the row's disabled state for `dateKey` against the stored
-  // forecast window. No-op before the payload has ever been fetched —
-  // there is nothing yet to judge the date against, so the row's normal
-  // (possibly offline-gated) state stands.
+  // window of the tier CURRENTLY VISIBLE at this zoom. No-op before that
+  // tier's payload has ever been fetched — there is nothing yet to judge
+  // the date against, so the row's normal (possibly offline-gated) state
+  // stands.
+  //
+  // SNOW-698: the tier matters because the two have different date
+  // coverage by design — the region tier carries today and recent days
+  // (WeatherSnapshot, backfillable from the archive), the point tier today
+  // and the forecast. Judging a low-zoom view against the point tier's
+  // window would disable the row for a day the region symbols can draw
+  // perfectly well, and vice versa. Both reasons reuse the existing
+  // `weather-out-of-window` string and the existing
+  // WEATHER_ROW_DISABLED_MARKER — a third marker would need a third check
+  // in both _setWeatherRowDisabled and map_layer_sync_status.js.
   //
   // SNOW-660: a null `dateKey` — no day asked for — disables the row with a
   // reason of its own. It is not "no forecast for this date": there is no
   // date, and telling the visitor the forecast is missing would blame the
   // data for a choice they have not made yet.
   const updateWeatherRowAvailability = (dateKey) => {
-    if (!weatherResortGeojsonCache) return;
+    const tier = window.pwaWeatherCore.weatherTierForZoom(
+      map.getZoom(),
+      WEATHER_MIN_ZOOM,
+    );
+    _setWeatherTierNote(tier);
+    const payload = _visibleWeatherPayload(tier);
+    if (!payload) return;
     if (!dateKey) {
       _setWeatherRowDisabled(true, MAP_STRINGS['weather-no-date']);
       return;
     }
-    const merged = window.pwaWeatherCore.mergeFeatureCollections(
-      weatherResortGeojsonCache,
-      window.pwaWeatherCore.extractWeatherFeatures(favouritesGeojsonCache),
-    );
-    const inWindow = window.pwaWeatherCore.isDateInForecastWindow(dateKey, merged);
+    const inWindow = window.pwaWeatherCore.isDateInForecastWindow(dateKey, payload);
     _setWeatherRowDisabled(!inWindow, MAP_STRINGS['weather-out-of-window']);
   };
 
@@ -2318,24 +2373,35 @@
   // snowdesk:date-changed listener below) and every favourites update
   // (snowdesk:favourites-changed) re-projects in memory rather than
   // re-fetching. No-op before the layer has been installed.
+  // Re-project one weather source's cached payload for `dateKey` and push it
+  // in. Registers whatever icons that payload needs first — a scrubbed date
+  // can be the first to reference an icon filename nothing has decoded yet.
+  // Re-reads the source after the decode: the style may have swapped
+  // mid-flight, in which case the install path has already re-added it with
+  // its own data and this write must not land.
+  const _setWeatherSourceData = (sourceId, payload, dateKey) => {
+    if (!map.getSource(sourceId) || !payload) return;
+    ensureWeatherIconsRegistered(window.pwaWeatherCore.iconFilenamesForPayload(payload))
+      .then(() => {
+        const src = map.getSource(sourceId);
+        if (!src) return; // style may have swapped mid-decode
+        src.setData(
+          window.pwaWeatherCore.projectFeatureCollectionForDate(payload, dateKey),
+        );
+      });
+  };
+
   const refreshWeatherSourceData = () => {
-    const source = map.getSource('weather');
-    if (!source) return;
-    const merged = window.pwaWeatherCore.mergeFeatureCollections(
-      weatherResortGeojsonCache,
-      window.pwaWeatherCore.extractWeatherFeatures(favouritesGeojsonCache),
-    );
     // SNOW-660: the displayed date, with no substitute behind it. With no day
     // asked for this is null, every feature projects to `icon: ''`, and the
     // layer's own filter drops the lot — so the map carries no weather pins
     // for a day the visitor never chose.
     const dateKey = currentDisplayedDate;
-    ensureWeatherIconsRegistered(window.pwaWeatherCore.iconFilenamesForPayload(merged))
-      .then(() => {
-        const src = map.getSource('weather');
-        if (!src) return; // style may have swapped mid-decode
-        src.setData(window.pwaWeatherCore.projectFeatureCollectionForDate(merged, dateKey));
-      });
+    // SNOW-698: BOTH tiers. This is what runs on snowdesk:date-changed, and
+    // it was hard-coded to the point source — leaving the region tier frozen
+    // on whatever day it happened to be installed with.
+    _setWeatherSourceData('weather', _visibleWeatherPayload('point'), dateKey);
+    _setWeatherSourceData('weather-region', weatherRegionGeojsonCache, dateKey);
     updateWeatherRowAvailability(dateKey);
   };
 
@@ -2411,6 +2477,75 @@
       });
     updateWeatherRowAvailability(dateKey);
   };
+
+  // SNOW-698: install the Weather overlay's COARSE tier — one condition
+  // symbol at each micro-region's centroid, for the zooms below
+  // WEATHER_MIN_ZOOM where `weather-point` above draws nothing at all.
+  //
+  // A wholly separate source and layer rather than more features in the
+  // `weather` source: the two tiers have different geometry, different date
+  // coverage and different zoom ranges, and SNOW-756 turns that source into
+  // a clustered one, so the seam has to stay clean. Idempotent on its OWN
+  // source id — installWeatherLayer's guard reads `weather`, which says
+  // nothing about this one.
+  //
+  // `maxzoom: WEATHER_MIN_ZOOM` against the same constant the point layer
+  // uses as `minzoom`: MapLibre's maxzoom is exclusive and its minzoom
+  // inclusive, so the handoff has no gap and no overlap, with no second
+  // constant to keep in sync.
+  //
+  // Simpler than its sibling in one way: no favourites merge, because the
+  // region tier has no per-user variant. And it sets NO `text-field` — that,
+  // not a difference in the data, is what makes this tier icon-only. A
+  // centroid is an honestly poor proxy for a region tens of kilometres
+  // across, and a precise-looking temperature beside it would overstate what
+  // the symbol knows.
+  const installRegionWeatherLayer = (regionFC) => {
+    if (!regionFC || map.getSource('weather-region')) return;
+    weatherRegionGeojsonCache = regionFC;
+    const dateKey = currentDisplayedDate;
+    const projected = window.pwaWeatherCore.projectFeatureCollectionForDate(
+      regionFC,
+      dateKey,
+    );
+    map.addSource('weather-region', { type: 'geojson', data: projected });
+    map.addLayer({
+      id: 'weather-region-point',
+      type: 'symbol',
+      source: 'weather-region',
+      maxzoom: WEATHER_MIN_ZOOM,
+      // As in installWeatherLayer: a feature with no entry for the current
+      // date projects to icon: '' and is filtered out entirely rather than
+      // drawing an empty symbol, so it also never reserves a collision box.
+      filter: ['!=', ['get', 'icon'], ''],
+      layout: {
+        visibility: overlayState.weather ? 'visible' : 'none',
+        'icon-image': ['get', 'icon'],
+        'icon-size': 0.85,
+        'icon-anchor': 'center',
+        'icon-allow-overlap': false,
+      },
+    });
+    raiseMarkerLayers();
+    // Same "decode then set" dance as installWeatherLayer — see its comment.
+    ensureWeatherIconsRegistered(
+      window.pwaWeatherCore.iconFilenamesForPayload(regionFC),
+    ).then(() => {
+      const src = map.getSource('weather-region');
+      if (src) src.setData(projected);
+    });
+    updateWeatherRowAvailability(dateKey);
+  };
+
+  // SNOW-698: crossing WEATHER_MIN_ZOOM swaps which tier is drawn, and the
+  // two have different date coverage — so the row's reason and its
+  // sub-label have to be re-derived on a zoom change, not only on a date
+  // change. `moveend` rather than `zoomend`: MapLibre fires moveend for
+  // zoom gestures too, nothing else in this file binds zoomend, and — as
+  // for updateSlopeRowAvailability below — this only touches the menu,
+  // which nobody can read mid-gesture, so one DOM write per gesture is the
+  // right budget.
+  map.on('moveend', () => updateWeatherRowAvailability(currentDisplayedDate));
 
   // ==== SNOW-691: the slope-angle overlay ====
   //
@@ -3300,20 +3435,42 @@
       // guard the fetch on the URL alone in case this is ever reached
       // some other way.
       if (!WEATHER_URL) return;
-      const data = await fetch(WEATHER_URL).then(r => r.json()).catch(() => null);
-      if (data) {
+      // SNOW-698: one toggle, two payloads — the resort-anchored tier drawn
+      // at zoom >= WEATHER_MIN_ZOOM and the micro-region-centroid tier drawn
+      // below it. Fetched in parallel and cached under DISTINCT
+      // pwaMapOverlayCache keys: that store holds one row per key
+      // (map_overlay_offline_cache.js), so a shared key would have the two
+      // payloads overwrite each other. Each tier installs independently, so
+      // one failing endpoint costs only its own half of the overlay.
+      const [pointData, regionData] = await Promise.all([
+        fetch(WEATHER_URL).then(r => r.json()).catch(() => null),
+        REGION_WEATHER_URL
+          ? fetch(REGION_WEATHER_URL).then(r => r.json()).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      if (pointData) {
         // SNOW-492: write-through — the raw resort-anchored payload, before
         // the client-side favourites merge, mirroring the community-reports
         // "cache before mutation" rule.
-        window.pwaMapOverlayCache?.putOverlay('weather', data);
-        installWeatherLayer(data);
+        window.pwaMapOverlayCache?.putOverlay('weather', pointData);
+        installWeatherLayer(pointData);
       } else {
-        const cached = await window.pwaMapOverlayCache?.getOverlay('weather');
-        if (!cached) {
-          revealOfflineToast('map-offline-toast-weather');
-          return;
-        }
-        installWeatherLayer(cached);
+        installWeatherLayer(await window.pwaMapOverlayCache?.getOverlay('weather'));
+      }
+      if (regionData) {
+        window.pwaMapOverlayCache?.putOverlay('weather_region', regionData);
+        installRegionWeatherLayer(regionData);
+      } else {
+        installRegionWeatherLayer(
+          await window.pwaMapOverlayCache?.getOverlay('weather_region'),
+        );
+      }
+      // SNOW-493 finding 8: only a total miss — neither tier fetched and
+      // neither cached — is genuinely unavailable offline. One tier alone
+      // still draws weather at its own zooms, so it is not a failure.
+      if (!map.getSource('weather') && !map.getSource('weather-region')) {
+        revealOfflineToast('map-offline-toast-weather');
+        return;
       }
     } else if (key === 'routes') {
       // SNOW-687: eligible-gated like favourites (flag + authenticated) —
@@ -3388,7 +3545,11 @@
     // SNOW-573: one symbol layer carries both the icon and the temp label
     // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
     // separate pin+label layers.
-    weather: ['weather-point'],
+    // SNOW-698: the region tier is the same overlay at a coarser zoom, so
+    // the single Weather toggle switches both. 'weather-point' stays at
+    // index [0] — that is the principal layer panelOverlayPainted reads to
+    // answer for the whole group.
+    weather: ['weather-point', 'weather-region-point'],
     // SNOW-687: the coloured line FIRST and the casing second — deliberately
     // the inverse of the order installRoutesLayer adds them in, where the
     // casing has to be added first to paint underneath. This list's order is
@@ -6499,6 +6660,12 @@
       // everything else).
       if (overlayLoaded.weather) {
         installWeatherLayer(weatherResortGeojsonCache);
+        // SNOW-698: and its region tier, from its own cache. Omitting this
+        // is the SNOW-493 finding-2 bug the favourites block above
+        // documents — the data is still in hand, but the source went with
+        // the old style and nothing re-adds it, so the tier silently
+        // vanishes on every basemap swap.
+        installRegionWeatherLayer(weatherRegionGeojsonCache);
       }
       // SNOW-687: same story for the route lines — re-install from the
       // last-fetched cache rather than re-requesting an endpoint whose

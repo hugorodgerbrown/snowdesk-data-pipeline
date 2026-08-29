@@ -469,6 +469,27 @@
     white-space: nowrap;
 }
 
+/* SNOW-698: a column wrapper for a menu row's label plus an optional
+   sub-label. The Weather row is the only user today — its sub-label names
+   the coarse region tier while that tier is the visible one. The row itself
+   stays `white-space: nowrap` (a shrink-to-fit menu grows to its longest
+   label rather than wrapping), so the two lines are stacked by this wrapper
+   rather than by wrapping. */
+.basemap-menu-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+/* Deliberately sets no `display`: the sub-label is shown and hidden by
+   map.js toggling the `hidden` attribute, and a `display` rule here would
+   beat `[hidden]`'s `display: none` and leave it permanently visible. */
+.basemap-menu-item-sub {
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--color-text-3);
+}
+
 .basemap-menu-item::before {
     content: "";
     display: inline-block;

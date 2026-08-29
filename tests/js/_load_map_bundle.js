@@ -83,6 +83,14 @@ const PARSE_TIME_CORES = [
   // options, so a bundle booted without it throws before any test has run —
   // the same reason `layer_visibility_core.js` is here.
   'map_viewport_core.js',
+  // SNOW-698: `map.js` now binds `updateWeatherRowAvailability` to
+  // `moveend` — the Weather row's disabled reason and sub-label depend on
+  // which of the overlay's two tiers the current zoom shows, so a zoom
+  // crossing has to re-derive them. That puts `pwaWeatherCore` on the path
+  // of every suite that fires a move, which is the `hatch_core.js` case
+  // above rather than a parse-time one, and it belongs here for the same
+  // reason: it is a property of the bundle, not of any one suite.
+  'map_weather_core.js',
 ];
 
 /** home.html's script order for the map bundle. */

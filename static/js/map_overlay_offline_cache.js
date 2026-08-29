@@ -91,7 +91,9 @@
    * fetch it rides on.
    *
    * @param {string} resource - ``'favourites'``, ``'community_reports'``,
-   *   ``'weather'`` or ``'routes'``
+   *   ``'weather'``, ``'weather_region'`` (SNOW-698 — the Weather overlay's
+   *   two tiers are one row each, since this store holds one row per key)
+   *   or ``'routes'``
    * @param {object} geojson - the fetched FeatureCollection
    * @returns {Promise<void>}
    */
@@ -127,7 +129,9 @@
    * any session.
    *
    * @param {string} resource - ``'favourites'``, ``'community_reports'``,
-   *   ``'weather'`` or ``'routes'``
+   *   ``'weather'``, ``'weather_region'`` (SNOW-698 — the Weather overlay's
+   *   two tiers are one row each, since this store holds one row per key)
+   *   or ``'routes'``
    * @returns {Promise<object | null>}
    */
   async function getOverlay(resource) {

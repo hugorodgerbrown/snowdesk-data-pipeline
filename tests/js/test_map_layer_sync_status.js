@@ -533,20 +533,50 @@ describe('country rows (SNOW-524)', () => {
 });
 
 describe('IndexedDB overlay rows (weather)', () => {
-  it('resolves cached when window.pwaDb holds a row with .geojson, uncached when absent', async () => {
+  // SNOW-698: the Weather row is one toggle over TWO cached payloads — the
+  // resort-anchored tier ('weather') and the micro-region-centroid tier
+  // below it ('weather_region'). This menu is a cache-state dashboard, so
+  // its dot may only go green when both are actually in hand.
+  function stubIdb(presentKeys) {
+    window.pwaDb = {
+      get: vi.fn(async (_store, key) =>
+        presentKeys.includes(key)
+          ? { key: key, geojson: { type: 'FeatureCollection' } }
+          : undefined,
+      ),
+    };
+  }
+
+  it('resolves cached when window.pwaDb holds a row for BOTH weather tiers', async () => {
     buildFixture({ includeWeather: true });
     vi.stubGlobal('caches', fakeCaches());
-    window.pwaDb = {
-      get: vi.fn(async (_store, key) => {
-        if (key === 'weather') return { key: 'weather', geojson: { type: 'FeatureCollection' } };
-        return undefined;
-      }),
-    };
+    stubIdb(['weather', 'weather_region']);
 
     await window.pwaLayerSyncStatus.refresh();
 
     expect(dotState('weather')).toBe('cached');
     expect(window.pwaDb.get).toHaveBeenCalledWith('data:map_overlays', 'weather');
+    expect(window.pwaDb.get).toHaveBeenCalledWith('data:map_overlays', 'weather_region');
+  });
+
+  it('stays uncached when only the point tier is cached', async () => {
+    buildFixture({ includeWeather: true });
+    vi.stubGlobal('caches', fakeCaches());
+    stubIdb(['weather']);
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('weather')).toBe('uncached');
+  });
+
+  it('stays uncached when only the region tier is cached', async () => {
+    buildFixture({ includeWeather: true });
+    vi.stubGlobal('caches', fakeCaches());
+    stubIdb(['weather_region']);
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(dotState('weather')).toBe('uncached');
   });
 
   it('resolves uncached, not throw, when window.pwaDb is unavailable', async () => {
