@@ -21,6 +21,10 @@ people most likely to be asked which version they are on. It is a value
 rather than copy, so it sits outside the blocktrans, and it is guarded:
 an unnumbered build renders no label and no trailing separator.
 
+The legal link points straight at /terms-of-service/, not at /terms/,
+which SNOW-770 turned into a redirect to it. Its label matches that
+page's own heading, which is the rule SNOW-769 set for this line.
+
 Kept deliberately minimal: one line. Visual weight should not compete
 with page content.
 {% endcomment %}
@@ -31,13 +35,13 @@ with page content.
 >
     <p>
         {% url 'public:help' as help_url %}
-        {% url 'public:terms' as terms_url %}
+        {% url 'public:terms_of_service' as terms_url %}
         {% url 'public:privacy' as privacy_url %}
         {% url 'public:colophon' as colophon_url %}
         {% blocktrans trimmed %}
             <a class="underline hover:text-text-2" href="{{ help_url }}">Help</a>
             &middot;
-            <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Use</a>
+            <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Service</a>
             &middot;
             <a class="underline hover:text-text-2" href="{{ privacy_url }}">Privacy Policy</a>
             &middot;

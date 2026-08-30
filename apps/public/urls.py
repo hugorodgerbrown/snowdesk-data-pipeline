@@ -4,8 +4,8 @@ apps/public/urls.py — URL routing for the public bulletin site.
 URL structure:
   /                                            Interactive map homepage (canonical).
   /map/                                        Permanent 301 redirect to /.
-  /terms/                                      SLF data-licence acknowledgement
-                                               + Snowdesk liability disclaimer.
+  /terms/                                      Permanent 301 redirect to
+                                               /terms-of-service/ (SNOW-770).
   /help/                                        Plain-language "how it works"
                                                help page (SNOW-456).
   /observations/                                Signed-in stream of recent
@@ -60,9 +60,16 @@ urlpatterns = [
         RedirectView.as_view(url="/", permanent=True, query_string=True),
         name="map",
     ),
-    # SLF data-licence acknowledgement page — registered before generic
-    # <str:region_id>/ patterns so "terms" never resolves as a region_id.
-    path("terms/", views.terms, name="terms"),
+    # SNOW-770 merged the old /terms/ page into /terms-of-service/. The URL
+    # stays registered — and stays HERE, ahead of the generic
+    # <str:region_id>/ patterns, or "terms" starts resolving as a region_id
+    # — so inbound links and anything indexed keep working. The name is kept
+    # so existing reverse() calls still resolve.
+    path(
+        "terms/",
+        RedirectView.as_view(pattern_name="public:terms_of_service", permanent=True),
+        name="terms",
+    ),
     # Technology credits and attribution page (SNOW-122).
     path("colophon/", views.colophon, name="colophon"),
     # Legal pages — registered before generic <str:region_id>/ patterns

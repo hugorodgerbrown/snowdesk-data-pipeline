@@ -78,7 +78,10 @@ def sharing_pages(db: None) -> dict[str, str]:
         "observations": reverse("public:observations"),
         "colophon": reverse("public:colophon"),
         "privacy": reverse("public:privacy"),
-        "terms": reverse("public:terms"),
+        # ``public:terms`` is deliberately absent: SNOW-770 merged its page
+        # into the Terms of Service and left the URL as a permanent
+        # redirect. A redirect renders no metadata of its own, and the page
+        # it lands on is the next entry.
         "terms_of_service": reverse("public:terms_of_service"),
         "how_to_read_bulletin": reverse("public:how_to_read_bulletin"),
         "resort": resort.get_absolute_url(),
