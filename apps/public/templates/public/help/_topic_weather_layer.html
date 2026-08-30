@@ -1,0 +1,51 @@
+{% comment %}
+apps/public/templates/public/help/_topic_weather_layer.html — "Weather on the map".
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html.
+
+Rewritten for SNOW-761, not restored. Three things the pre-SNOW-762 copy
+said are no longer true and would send a reader looking for controls that
+do not exist: the overlay is no longer resort-anchored (it is anchored on
+every curated location, region centroids included), a signed-in visitor's
+own favourites are no longer merged into it (the feed is public data only),
+and the menu row is no longer disabled for a date outside the forecast
+window (the symbols simply do not draw).
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            The Weather row under "Conditions" in the layers menu puts a condition symbol on the map at every place
+            Snowdesk holds &mdash; resort villages, mid-stations and summits, plus a point at the centre of each
+            avalanche region. Under each symbol is the day's high temperature and the height that reading is for.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-layer-altitude">
+        {% blocktrans trimmed %}
+            The height is there because the temperature means little without it. Two degrees at 1500 m and two degrees
+            at 3000 m describe different weeks, and on a map that shows both at once the number alone would be
+            misleading.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-layer-clustering">
+        {% blocktrans trimmed %}
+            Zoomed out, places close together collapse to one symbol, and it is always the lowest of them. A valley
+            reading is the one you can place, and its freezing level is what tells you whether it is raining where you
+            would park. Zoom in and the higher stations separate out again.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-layer-window">
+        {% blocktrans trimmed %}
+            The overlay is a forecast, so it covers today and the week ahead and nothing before that. Scrubbing the
+            timeline back past today leaves the map with no weather symbols; scrubbing forward changes them without
+            fetching anything, because the whole week arrives in one go.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-layer-privacy">
+        {% blocktrans trimmed %}
+            Only curated places appear here. Your own saved pins are never added to this layer, even for you &mdash;
+            their weather lives on the pin's own card, where nobody else can reach it.
+        {% endblocktrans %}
+    </p>
+</div>

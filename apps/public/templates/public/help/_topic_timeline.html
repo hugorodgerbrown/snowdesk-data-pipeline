@@ -29,7 +29,13 @@ where they were standing.
     <p class="mb-3 last:mb-0" data-testid="help-timeline-date-pill">
         {% blocktrans trimmed %}
             The date sits in a pill above the track, and everything else on the map follows it &mdash; the danger
-            colours and the region readout in the header.
+            colours, the region readout in the header, and the weather symbols when that layer is on.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-timeline-weather-window">
+        {% blocktrans trimmed %}
+            The weather layer is the one thing that does not follow the whole season. It is a forecast, so it covers
+            today and the week ahead: scrub back past today and the symbols go, while the danger colours stay.
         {% endblocktrans %}
     </p>
 </div>

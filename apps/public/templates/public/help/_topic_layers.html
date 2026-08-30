@@ -8,8 +8,8 @@ Documents the layers menu (#basemap-menu in
 public/partials/_map_embed.html) group by group, in the order the menu
 itself renders them: Bulletins, Boundaries, Locations, Conditions,
 Terrain, Base map. Two of those groups have a panel of their own on this
-page — Slope angle — so the rows here get a sentence and
-a pointer rather than a second copy of the detail.
+page — Weather and Slope angle — so the rows here get a
+sentence and a pointer rather than a second copy of the detail.
 
 The user-generated overlays (favourites, field observations, routes) are
 deliberately NOT described here: SNOW-658 moved each one's toggle out of
@@ -55,6 +55,14 @@ otherwise go looking for them.
             Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
             resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
             favourites.
+        {% endblocktrans %}
+    </p>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Conditions" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
+        {% blocktrans trimmed %}
+            Weather draws a condition symbol and the day's high temperature at every place Snowdesk holds, with the
+            height that reading is for beneath it. It follows the timeline like everything else on the map, and it has
+            rules of its own worth knowing about &mdash; read "Weather on the map" below.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Terrain" %}</h3>

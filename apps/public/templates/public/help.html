@@ -71,6 +71,13 @@ Routes and Offline downloads came to have neither.
         {% translate "The season calendar" as t_calendar %}
         {% include "includes/_collapsible_panel.html" with title=t_calendar data_testid="help-topic-calendar" illustration="public/help/illustrations/_season_calendar.html" body_template="public/help/_topic_calendar.html" %}
 
+        {# SNOW-761: weather is not a bulletin, but it is read on the same    #}
+        {# three pages a bulletin is, so it sits in this group rather than    #}
+        {# in the map group. The map's OWN weather overlay is a separate      #}
+        {# surface with different rules and gets its own panel down there.    #}
+        {% translate "The day's weather" as t_weather %}
+        {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" illustration="public/help/illustrations/_weather_panel.html" body_template="public/help/_topic_weather.html" %}
+
         {# The map's own controls, in the order the control column runs:      #}
         {# orientation, then layers (and the two layers deep enough to need a #}
         {# panel of their own), then the three user-data panels, then         #}
@@ -96,6 +103,13 @@ Routes and Offline downloads came to have neither.
 
         {% translate "Layers" as t_layers %}
         {% include "includes/_collapsible_panel.html" with title=t_layers data_testid="help-topic-layers" body_template="public/help/_topic_layers.html" %}
+
+        {# SNOW-761: the map's Weather overlay. Deep enough to need a panel  #}
+        {# of its own — clustering to the lowest station, the forecast-only #}
+        {# window, and what is deliberately NOT on it — so the Layers panel #}
+        {# above gives the row a sentence and points here.                  #}
+        {% translate "Weather on the map" as t_weather_layer %}
+        {% include "includes/_collapsible_panel.html" with title=t_weather_layer data_testid="help-topic-weather-layer" body_template="public/help/_topic_weather_layer.html" %}
 
         {# SNOW-691: the map legend's "Slope angle" heading is a link to     #}
         {# #help-topic-slope, so this panel is a navigation target and not   #}

@@ -1,0 +1,57 @@
+{% comment %}
+apps/public/templates/public/help/_topic_weather.html — "Weather" panel body.
+
+Content partial for the help page; included via the body_template
+parameter of includes/_collapsible_panel.html.
+
+Covers the SERVER-RENDERED weather — the row on a bulletin masthead, the
+per-location blocks on a resort page, the section on a saved pin's card.
+The map's Weather overlay is a different surface with different rules and
+has its own topic below (_topic_weather_layer.html).
+
+Rewritten for SNOW-761 rather than restored. The pre-SNOW-762 version of
+this topic described a coloured band whose hue and icon shifted between a
+day and a night palette; that band is gone, so a reader would have gone
+looking for something that is not there.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0">
+        {% blocktrans trimmed %}
+            Bulletin, resort and saved-pin pages carry the day's weather: a condition icon and label, the high and low
+            temperature, any new snow, the freezing level, and when the sun rises and sets. It comes from Open-Meteo,
+            not from the avalanche service &mdash; the bulletin's own weather description, written by the forecaster, is
+            further down the bulletin page under "Snowpack & Weather".
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-elevation">
+        {% blocktrans trimmed %}
+            A resort page shows one block per place we hold for it &mdash; typically the village, a mid-mountain station
+            and the top &mdash; each labelled with its height. That is the point of showing more than one: rain in the
+            village and snow on the summit are the same forecast read at two altitudes, and the difference is usually
+            what decides the day.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-outlook">
+        {% blocktrans trimmed %}
+            Below the day itself is the week ahead: one column per day with its icon, temperatures and freezing level.
+            The first few days open into an hour-by-hour breakdown &mdash; temperature, wind, gusts, precipitation and
+            freezing level &mdash; and the later ones do not, because the forecast is not published at that resolution
+            that far out.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-historical">
+        {% blocktrans trimmed %}
+            Past dates show no weather at all. We record what the forecast said on each day going forward, so there is
+            nothing on file for days before we started keeping it. A bulletin page for last winter shows the bulletin
+            and no weather panel, rather than guessing.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-weather-day-night">
+        {% blocktrans trimmed %}
+            The icon takes its day or night form from the time you are reading at, matched against sunrise and sunset
+            where the place actually is &mdash; so a page read at midday looks like daytime whichever date you have
+            navigated to.
+        {% endblocktrans %}
+    </p>
+</div>

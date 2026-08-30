@@ -1,0 +1,15 @@
+{% comment %}
+public/help/illustrations/_weather_panel.html — the weather panel
+illustration for /help/.
+
+Renders includes/_weather_panel.html, the real partial from the top of
+every bulletin, resort and saved-pin page, from the synthetic context in
+apps.public.component_previews. Styled entirely from output.css, which is
+the only stylesheet /help/ loads — which is what makes this illustratable
+where the season scrubber is not.
+
+Passed a location label, so the illustration shows the resort-page form
+(the one that carries a height) rather than the masthead's bare row: the
+height is the thing the topic spends a paragraph on.
+{% endcomment %}
+{% include "includes/_weather_panel.html" with weather_display=weather_panel.weather_display location_label=weather_panel.location_label testid_prefix="help-weather-illustration" only %}
