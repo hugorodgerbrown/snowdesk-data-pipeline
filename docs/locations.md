@@ -161,16 +161,19 @@ That command derives the point from `boundary` rather than reading the
 same value, but it leaves `centre` with no readers that the estate depends
 on. This is what lets SNOW-766 drop the column.
 
-**`centroid_location` is derived, not durable.** `bin/build.sh` reloads the
-EAWS fixtures on every deploy, and `loaddata` resets every column those
-fixtures do not carry — so this FK is NULL on all 461 regions at the start
-of every deploy, and the orphaned `Location` rows behind it accumulate.
-Both build scripts re-link immediately afterwards, which is affordable
-because the whole derivation is offline: coordinate from `boundary`,
-elevation from `MicroRegion.centroid_elevation_m`, both in the fixture
-(SNOW-771). Never write code that assumes a value here survives a deploy —
-read [`runbooks/region-centroid-backfill.md`](runbooks/region-centroid-backfill.md)
-before changing anything in that path.
+**`centroid_location` is durable, but only since the deploy stopped
+reloading fixtures.** `bin/build.sh` used to run `loaddata` over the EAWS
+fixtures on every deploy, and `loaddata` resets every column those fixtures
+do not carry — so this FK was NULLed on all 461 regions on every deploy and
+the orphaned `Location` rows accumulated (SNOW-771). The reload is gone, so
+the link now persists.
+
+Re-linking is `link_region_centroid_locations`, run by an operator after
+seeding or a fixture change. It is offline — coordinate from `boundary`,
+elevation from `MicroRegion.centroid_elevation_m`, both in the fixture — and
+reuses the existing anonymous `Location` at the coordinate rather than
+minting a new one, so re-running it never orphans weather. See
+[`runbooks/region-centroid-backfill.md`](runbooks/region-centroid-backfill.md).
 
 Region *membership* is a separate question, answered by ray-casting in
 `apps/regions/services/point_match.py::region_for_point`. See below.

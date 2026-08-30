@@ -544,8 +544,18 @@ job; this is the floor, not a replacement.
 *is*, and a hand-placed pin is only "where this resort is" — `is_primary`
 already carries that.
 
-Offline (no Open-Meteo call) and idempotent, so `build.sh` and
-`build_headless.sh` both run it on every deploy. It reuses an existing
+**Run by an operator, not by a deploy.** It first shipped wired into
+`build.sh`, which was wrong: it writes up to 115 rows, and a deploy that
+times out mid-run leaves the estate half linked — on three services that
+deploy concurrently against one database. Bulk data writes are management
+commands for the same reason they are not data migrations. Nothing wipes
+`ResortLocation` on deploy either (`resorts.json` is excluded from the
+deploy-time `loaddata`), so there was never a reason for it to run there.
+
+Run it after geocoding resorts in the map editor, or after an
+`import_resorts` that adds coordinates.
+
+Offline (no Open-Meteo call) and idempotent. It reuses an existing
 anonymous `Location` at the coordinate rather than minting a new one, for
 the reason SNOW-771 records — a fresh row each deploy would orphan the
 previous one and every `Weather` row hanging off it.
