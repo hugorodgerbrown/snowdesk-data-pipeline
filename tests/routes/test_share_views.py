@@ -24,6 +24,10 @@ route_share_claim:
   at ROUTES_MAX_PER_USER → 409 with _route_limit.html, and the token
     stays pending because the claim can still be retried after a delete.
 
+TestAnonymousRecipientJourney walks the three endpoints end to end with
+the sharer and the recipient as SEPARATE principals — the shape every
+class above misses, each of which exercises one endpoint from one seat.
+
 The widened endpoints (route_list, routes_geojson) live in
 tests/routes/test_views.py beside their own unwidened cases.
 
@@ -466,3 +470,90 @@ class TestShareControlRendering:
         response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
 
         assert "data-route-share" not in response.content.decode()
+
+
+# ---------------------------------------------------------------------------
+# The whole journey, with the sharer and the recipient as two principals
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAnonymousRecipientJourney:
+    """User A shares; a stranger follows, sees, signs in as B and claims.
+
+    THE END-TO-END PATH THE ROLLOUT FLAG USED TO BREAK. Route sharing
+    shipped behind a ``route_sharing`` waffle flag targeted at
+    ``superusers=True``, read on the recipient's endpoints as well as the
+    sharer's. A recipient is by definition somebody else — and usually
+    anonymous — so ``flag_is_active`` answered False for them and
+    ``route_share_redirect`` raised ``Http404``: a link a superuser had
+    just minted 404'd for everyone it was sent to. The feature could not
+    work under its own targeting.
+
+    Every test above this one uses ONE client and ONE seat, which is why
+    none of them caught it, and the flag-scoped ones could not have: the
+    ``override_flag`` context manager flips a flag globally for the whole
+    test, seating the sharer and the recipient on the SAME side of a gate
+    whose entire defect was that they sit on opposite sides of it. A
+    same-flag-for-both test can express asymmetry between two principals
+    only by never having any.
+
+    So the fix is not the assertion here — the fix was deleting the flag —
+    but this shape is: two ``Client`` objects, two sessions, and the
+    recipient's one never told anything the sharer's knew.
+    """
+
+    def test_a_stranger_can_follow_see_and_claim_a_shared_route(self) -> None:
+        """The four steps of the journey, each from the correct seat."""
+        # 1. User A owns a route and mints a share through the endpoint,
+        #    rather than through the factory, so the recipient is handed a
+        #    token that the real minting path produced.
+        sharer = UserFactory.create()
+        route = RouteFactory.create(user=sharer, name="Vallée Blanche")
+        sharer_client = Client()
+        sharer_client.force_login(sharer)
+
+        url = sharer_client.post(_share_url(route.uuid)).json()["url"]
+        token = url.rstrip("/").rsplit("/", 1)[-1]
+
+        # 2. A SEPARATE client — a different browser, nobody signed in,
+        #    and no cookie in common with the sharer's — follows the link.
+        recipient = Client()
+
+        followed = recipient.get(_redirect_url(token))
+
+        assert followed.status_code == 302
+        assert followed["Location"] == f"/?route_share={token}"
+        assert recipient.session[PENDING_SESSION_KEY] == [token]
+
+        # 3. The map panel answers that anonymous session, and the row it
+        #    draws carries the TOKEN and never the route's uuid — the
+        #    rename and delete endpoints are addressed by uuid, and a
+        #    non-owner must not be handed one.
+        listing = recipient.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+        content = listing.content.decode()
+
+        assert listing.status_code == 200
+        assert "Vallée Blanche" in content
+        assert f"route-share-{token}" in content
+        assert str(route.uuid) not in content
+
+        # 4. The same browser signs in — as user B, who is neither the
+        #    sharer nor a superuser — and claims. The session carried the
+        #    pending token across the sign-in, which is the whole reason
+        #    it lives there (see the decision record).
+        claimer = UserFactory.create()
+        recipient.force_login(claimer)
+
+        claimed = recipient.post(_claim_url(token), **HTMX_HEADERS)
+
+        assert claimed.status_code == 200
+
+        copy = Route.objects.for_user(claimer).get()
+        assert copy.name == "Vallée Blanche"
+        assert copy.uuid != route.uuid
+
+        # A's original is untouched: a claim COPIES, it never transfers.
+        route.refresh_from_db()
+        assert route.user == sharer
+        assert Route.objects.for_user(sharer).count() == 1
