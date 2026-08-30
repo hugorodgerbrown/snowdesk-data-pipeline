@@ -46,15 +46,17 @@ Every routine scan (whoever or whatever runs it) must, in the PR it opens:
    explicitly in the PR description why it's staying a one-liner. Don't
    let a row accumulate scan passes indefinitely without that call being
    made.
-2. **List blocked URLs for an allowlist request.** Any domain a direct
-   fetch was attempted against and blocked by the session's network
-   egress policy (`EGRESS_BLOCKED`, not a site's own bot-protection 403 —
-   the two look similar but only the former is fixable by a policy
-   change) belongs in a **"Domains requesting allowlist"** section of the
-   PR description, deduplicated, so the environment owner can review and
-   add them via the environment's network-policy settings without having
-   to dig through scan output. Don't silently keep re-attempting the same
-   blocked domains scan after scan without surfacing the list.
+2. **Record blocked domains in the allow-list doc.** Any domain a direct
+   fetch was attempted against and returned `EGRESS_BLOCKED` (not a
+   site's own bot-protection 403 — the two look similar but only the
+   former is fixable by a policy change; see
+   [`environment-network-allowlist.md`](environment-network-allowlist.md#diagnosing-a-block))
+   belongs in that doc's "Requested" table, not just this pass's PR
+   description — check it first so an already-listed domain isn't
+   re-requested, add any new ones under a dated heading, and mention the
+   update in the PR description. That file is the durable record the
+   environment owner works from; don't let blocked domains live only in
+   scan output that gets buried by the next pass.
 
 | Product | Built by | Scope | Our overlap |
 |---|---|---|---|
