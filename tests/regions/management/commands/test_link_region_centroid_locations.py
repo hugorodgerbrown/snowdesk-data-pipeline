@@ -34,11 +34,13 @@ from unittest.mock import patch
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from apps.locations.models import Location
 from apps.regions.fixture_utils import centre_from_bbox
 from apps.regions.models import MicroRegion
-from tests.factories import MicroRegionFactory
+from apps.weather.models import Weather
+from tests.factories import LocationFactory, MicroRegionFactory, WeatherFactory
 
 COMMAND = "link_region_centroid_locations"
 
@@ -286,6 +288,78 @@ class TestSurvivesALoaddata:
             MicroRegion.objects.filter(centroid_location__isnull=False).count()
             == expected
         )
+
+    def test_relinking_reuses_the_same_location_rows(self) -> None:
+        """The deploy cycle must not mint a new generation each time.
+
+        Minting fresh rows orphans the previous ones AND the Weather
+        hanging off them, so the map goes blank after every deploy and both
+        tables grow by 461 rows per deploy. Staging reproduced exactly that
+        on 2026-08-30 — 467 locations with weather before a deploy, 6
+        after.
+        """
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+        call_command(COMMAND, "--commit", stdout=StringIO())
+        first_ids = set(
+            MicroRegion.objects.filter(centroid_location__isnull=False).values_list(
+                "centroid_location_id", flat=True
+            )
+        )
+        first_count = Location.objects.count()
+        assert first_ids
+
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+        call_command(COMMAND, "--commit", stdout=StringIO())
+
+        second_ids = set(
+            MicroRegion.objects.filter(centroid_location__isnull=False).values_list(
+                "centroid_location_id", flat=True
+            )
+        )
+        assert second_ids == first_ids
+        assert Location.objects.count() == first_count
+
+    def test_weather_survives_a_deploy(self) -> None:
+        """The reason reuse matters: a row's Weather stays reachable.
+
+        Asserted through ``public()`` because that is what the map feed
+        reads — a Weather row on an orphaned location is invisible even
+        though it still exists.
+        """
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+        call_command(COMMAND, "--commit", stdout=StringIO())
+        region = MicroRegion.objects.filter(centroid_location__isnull=False).first()
+        assert region is not None
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=timezone.localdate()
+        )
+
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+        call_command(COMMAND, "--commit", stdout=StringIO())
+
+        visible = Weather.objects.filter(location__in=Location.objects.public())
+        assert visible.count() == 1
+
+    def test_a_named_location_at_the_same_coordinate_is_not_reused(self) -> None:
+        """Reuse is anonymous-only.
+
+        A curated place may sit exactly on a region's centroid. Rebinding
+        the centroid onto it would put that name on the map where a
+        centroid belongs, and would hand a curated row a second owner.
+        """
+        region = MicroRegionFactory.create(
+            boundary=BOUNDARY, centroid_elevation_m=2100.0
+        )
+        curated = LocationFactory.create(
+            name="Mont Fort", latitude=46.1, longitude=7.4, elevation_m=2100.0
+        )
+
+        call_command(COMMAND, "--commit", stdout=StringIO())
+
+        region.refresh_from_db()
+        assert region.centroid_location is not None
+        assert region.centroid_location.pk != curated.pk
+        assert region.centroid_location.name == ""
 
     def test_the_fixture_carries_an_elevation_for_every_region(self) -> None:
         """Without this the re-link is offline but produces heightless rows.
