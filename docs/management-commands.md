@@ -421,9 +421,17 @@ uv run python manage.py fetch_weather --commit  # persist
 
 ### `link_region_centroid_locations` — anchor each region to a Location
 
-Backfill for SNOW-696. Gives every `MicroRegion` with a `centre` a
-`Location` at that centroid, with its elevation resolved — which is what
-anchors the region in the location estate.
+Backfill for SNOW-696. Gives every `MicroRegion` with a `boundary` a
+`Location` at that region's centroid, with its elevation resolved — which is
+what anchors the region in the location estate.
+
+The centroid is derived from `boundary` with `centre_from_bbox`, not read
+from the `centre` column (SNOW-765). `centre` is computed from the same
+polygon by the fixture builders, so the two agree value-for-value across all
+461 L4 regions — a property `tests/regions/management/commands/test_link_region_centroid_locations.py`
+asserts against the committed fixtures. Reading `centre` here would make the
+column an input to the thing that replaces it, which is what blocked
+SNOW-766 from dropping it.
 
 One Open-Meteo elevation call per region, up to 461 across AT (153), CH
 (149), IT (124) and FR (35). The `--delay` default (1.0s) paces the run

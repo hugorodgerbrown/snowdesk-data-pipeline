@@ -1,9 +1,16 @@
 """link_region_centroid_locations — anchor each MicroRegion to a Location.
 
-Backfill for SNOW-696. Gives every ``MicroRegion`` with a ``centre`` a
-``Location`` at that centroid, with its elevation resolved — which is what
-anchors the region in the location estate, so any surface wanting to say
-something about the region has a place to hang it on.
+Backfill for SNOW-696. Gives every ``MicroRegion`` with a ``boundary`` a
+``Location`` at that region's centroid, with its elevation resolved — which
+is what anchors the region in the location estate, so any surface wanting to
+say something about the region has a place to hang it on.
+
+The centroid is derived here from ``boundary`` rather than read from the
+``centre`` column (SNOW-765). ``centre`` was itself computed from the same
+polygon at fixture-build time, so this reproduces the stored value rather
+than approximating it — verified across all 461 L4 regions in the four EAWS
+fixtures. Reading ``centre`` instead would make the column an input to the
+thing that replaces it, and nothing could then drop it; see SNOW-766.
 
 **One Open-Meteo elevation call per region**, up to 461 of them across AT
 (153), CH (149), IT (124) and FR (35). The ``--delay`` default paces the
@@ -56,44 +63,54 @@ from apps.core.command_iteration import (
 )
 from apps.locations.models import Location
 from apps.locations.services.elevation import fetch_elevation
+from apps.regions.fixture_utils import centre_from_bbox
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
 
 def _centre_of(region: MicroRegion) -> tuple[float, float] | None:
-    """Read a region's centroid as a ``(latitude, longitude)`` pair.
+    """Derive a region's centroid as a ``(latitude, longitude)`` pair.
 
-    ``MicroRegion.centre`` is a JSONField written by
-    ``refresh_eaws_fixtures`` as ``{"lon": float, "lat": float}``, so it is
-    not schema-guaranteed — a region whose fixture predates the field, or
-    whose polygon could not be reduced, holds null or something else.
+    Computed from ``MicroRegion.boundary`` with ``centre_from_bbox`` — the
+    same function the four ``build_*_fixture`` commands use to compute the
+    ``centre`` column, so this returns the stored value rather than an
+    approximation of it.
+
+    ``boundary`` is a JSONField, so its shape is not schema-guaranteed and
+    ``centre_from_bbox`` raises on a geometry it cannot read. Those raises
+    are converted to ``None`` here, which the caller reports as a skip: a
+    malformed fixture row is a problem to surface, not a reason to fail the
+    whole batch.
 
     Args:
         region: The region to read.
 
     Returns:
-        The ``(latitude, longitude)`` pair, or ``None`` when the region has
-        no usable centre.
+        The ``(latitude, longitude)`` pair, or ``None`` when the region's
+        boundary cannot be read.
 
     """
-    centre = region.centre
-    if not isinstance(centre, dict):
+    boundary = region.boundary
+    if not isinstance(boundary, dict):
         return None
-    latitude = centre.get("lat")
-    longitude = centre.get("lon")
-    if not isinstance(latitude, int | float) or not isinstance(longitude, int | float):
+    try:
+        centre = centre_from_bbox(boundary)
+    except KeyError, TypeError, ValueError, IndexError:
+        # Every way a malformed geometry can fail: no "type" key, a type
+        # centre_from_bbox does not support, non-numeric or short
+        # coordinate pairs, or an empty coordinate list.
         return None
-    return float(latitude), float(longitude)
+    return float(centre["lat"]), float(centre["lon"])
 
 
 class Command(BaseCommand):
-    """Give every MicroRegion with a centre a resolved centroid Location.
+    """Give every MicroRegion with a boundary a resolved centroid Location.
 
     Read-only by default; pass --commit to persist. Regions already linked,
-    and regions with no usable ``centre``, are excluded from the candidate
-    set. Per-region failures are caught, logged and counted — they never
-    abort the batch — and the command exits non-zero when any failed.
+    and regions with no ``boundary``, are excluded from the candidate set.
+    Per-region failures are caught, logged and counted — they never abort
+    the batch — and the command exits non-zero when any failed.
     """
 
     help = (
@@ -135,7 +152,7 @@ class Command(BaseCommand):
         # streamed anyway — the fixture is ~1,500 rows and growing as EAWS
         # adds countries.
         candidates = MicroRegion.objects.filter(
-            centroid_location__isnull=True, centre__isnull=False
+            centroid_location__isnull=True, boundary__isnull=False
         )
         total = candidates.count()
 
@@ -189,14 +206,14 @@ class Command(BaseCommand):
         """
         centre = _centre_of(region)
         if centre is None:
-            # The queryset excludes a null ``centre``, but not one holding
-            # a shape this cannot read — that is a fixture problem to
-            # surface rather than a failure to exit non-zero on.
+            # The queryset excludes a null ``boundary``, but not one
+            # holding a shape this cannot read — that is a fixture problem
+            # to surface rather than a failure to exit non-zero on.
             logger.warning(
                 "link_region_centroid_locations: region %s has an unreadable "
-                "centre %r; skipped.",
+                "boundary %r; skipped.",
                 region.region_id,
-                region.centre,
+                region.boundary,
             )
             counts["skipped"] += 1
             return

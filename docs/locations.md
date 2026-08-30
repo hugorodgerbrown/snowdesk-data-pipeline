@@ -156,6 +156,11 @@ Since SNOW-696 the centroid also reaches a `Location`
 would put it in the curated estate `import_locations` owns, and ask a
 curator to maintain a point nobody goes to.
 
+That command derives the point from `boundary` rather than reading the
+`centre` column (SNOW-765) — same polygon, same `centre_from_bbox`, so the
+same value, but it leaves `centre` with no readers that the estate depends
+on. This is what lets SNOW-766 drop the column.
+
 Region *membership* is a separate question, answered by ray-casting in
 `apps/regions/services/point_match.py::region_for_point`. See below.
 
