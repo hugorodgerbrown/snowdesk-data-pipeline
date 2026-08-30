@@ -2,21 +2,25 @@
 tests/regions/management/commands/test_link_region_centroid_locations.py
 
 Covers ``link_region_centroid_locations`` (SNOW-696):
-  - Mints a centroid Location with its elevation resolved.
+  - Mints a centroid Location at the region's derived coordinate.
   - The location is anonymous — a centroid is not a place anyone goes.
   - Regions with no usable ``boundary`` are skipped, not failed.
   - A dry run writes nothing (SNOW-719).
-  - Idempotent; one failing region does not abort the batch.
+  - Idempotent; one bad region does not abort the batch.
 
-SNOW-762 removed this command's forecast-cell half with the weather app;
-what is left is the Location and its elevation.
+SNOW-765 repointed the coordinate from the ``centre`` column onto
+``boundary``; ``TestCentroidDerivationIsLossless`` guards that being
+value-for-value identical to what ``centre`` held.
 
-SNOW-765 repointed the centroid derivation from the ``centre`` column onto
-``boundary``, so a region needs a boundary — not a centre — to be a
-candidate. ``TestCentroidDerivationIsLossless`` is the guard on that
-repoint being value-for-value identical to what ``centre`` holds.
+SNOW-771 then took the last network call out: the elevation is read from
+``MicroRegion.centroid_elevation_m``, which the fixtures now carry, so the
+command is wholly offline and ``bin/build.sh`` runs it on every deploy.
 
-Every Open-Meteo call is patched out.
+``TestSurvivesALoaddata`` is why that matters, and is the regression guard
+for the bug it fixes: ``loaddata`` resets every column its fixtures do not
+carry, so each deploy NULLed all 461 ``centroid_location`` FKs and orphaned
+the Location rows behind them. It was silent — the command had reported
+"461 linked, 0 failed" hours earlier.
 """
 
 from __future__ import annotations
@@ -29,7 +33,6 @@ from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
-from django.core.management.base import CommandError
 
 from apps.locations.models import Location
 from apps.regions.fixture_utils import centre_from_bbox
@@ -37,12 +40,15 @@ from apps.regions.models import MicroRegion
 from tests.factories import MicroRegionFactory
 
 COMMAND = "link_region_centroid_locations"
-_BASE = "apps.regions.management.commands.link_region_centroid_locations"
-_ELEVATION = f"{_BASE}.fetch_elevation"
+
+# Patched at its source module, not at the command's import site — the point
+# of the assertion below is that the command does not import it at all.
+_ELEVATION = "apps.locations.services.elevation.fetch_elevation"
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FIXTURES_DIR = REPO_ROOT / "apps" / "regions" / "fixtures"
 _EAWS_FIXTURE_NAMES = ["eaws_CH.json", "eaws_FR.json", "eaws_AT.json", "eaws_IT.json"]
+CH_FIXTURE = "apps/regions/fixtures/eaws_CH.json"
 
 
 def _square(x0: float, y0: float, x1: float, y1: float) -> dict[str, Any]:
@@ -53,8 +59,7 @@ def _square(x0: float, y0: float, x1: float, y1: float) -> dict[str, Any]:
     }
 
 
-# Bbox midpoint (lat 46.1, lon 7.4) — the coordinates every assertion below
-# expects the command to resolve to.
+# Bbox midpoint (lat 46.1, lon 7.4).
 BOUNDARY = _square(7.3, 46.0, 7.5, 46.2)
 
 # Bbox midpoint (lat 47.9, lon 8.9).
@@ -65,12 +70,13 @@ OTHER_BOUNDARY = _square(8.8, 47.8, 9.0, 48.0)
 class TestLinkRegionCentroidLocations:
     """--commit anchors each region to a centroid Location."""
 
-    def test_mints_a_resolved_centroid_location(self) -> None:
+    def test_mints_a_location_at_the_derived_coordinate(self) -> None:
         """The region ends up anchored to a location with a height."""
-        region = MicroRegionFactory.create(boundary=BOUNDARY)
+        region = MicroRegionFactory.create(
+            boundary=BOUNDARY, centroid_elevation_m=2100.0
+        )
 
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
+        call_command(COMMAND, "--commit", stdout=StringIO())
 
         region.refresh_from_db()
         assert region.centroid_location is not None
@@ -78,17 +84,41 @@ class TestLinkRegionCentroidLocations:
         assert region.centroid_location.longitude == 7.4
         assert region.centroid_location.elevation_m == 2100.0
 
-    def test_the_centroid_location_is_anonymous(self) -> None:
-        """No name, no kind — a centroid represents the region, not a place.
+    def test_makes_no_network_call(self) -> None:
+        """SNOW-771: the elevation is read, not fetched.
 
-        Naming it would put it in the curated estate ``import_locations``
-        owns, where a curator would then be asked to maintain a point
-        nobody goes to.
+        This is what makes a per-deploy run affordable, so it is asserted
+        rather than left to the docstring. Patched at the source module, so
+        the assertion holds however the command might reach it.
         """
-        MicroRegionFactory.create(boundary=BOUNDARY)
+        MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
 
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
+        with patch(_ELEVATION) as lookup:
+            call_command(COMMAND, "--commit", stdout=StringIO())
+
+        lookup.assert_not_called()
+
+    def test_a_region_with_no_stored_elevation_still_links(self) -> None:
+        """A missing elevation is not a reason to leave a region unanchored.
+
+        Weather needs a coordinate, not a height; the map label already
+        omits a null elevation, and ``Location.objects.unresolved()`` is how
+        one gets filled in later.
+        """
+        region = MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=None)
+
+        call_command(COMMAND, "--commit", stdout=StringIO())
+
+        region.refresh_from_db()
+        assert region.centroid_location is not None
+        assert region.centroid_location.elevation_m is None
+        assert region.centroid_location in Location.objects.unresolved()
+
+    def test_the_centroid_location_is_anonymous(self) -> None:
+        """No name, no kind — a centroid represents the region, not a place."""
+        MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
+
+        call_command(COMMAND, "--commit", stdout=StringIO())
 
         location = Location.objects.get()
         assert location.name == ""
@@ -98,77 +128,47 @@ class TestLinkRegionCentroidLocations:
         """A null ``boundary`` is excluded by the queryset."""
         region = MicroRegionFactory.create(boundary=None)
 
-        with patch(_ELEVATION) as lookup:
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
+        call_command(COMMAND, "--commit", stdout=StringIO())
 
-        lookup.assert_not_called()
         region.refresh_from_db()
         assert region.centroid_location is None
-
-    def test_a_boundary_with_no_centre_still_resolves(self) -> None:
-        """The point of SNOW-765 — the ``centre`` column is not consulted.
-
-        An environment whose fixture rows predate ``centre``, or whose
-        column has been dropped, still gets its centroid. On the pre-SNOW-765
-        code this region was not a candidate at all.
-        """
-        region = MicroRegionFactory.create(boundary=BOUNDARY, centre=None)
-
-        with patch(_ELEVATION, return_value=2100.0) as lookup:
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
-
-        lookup.assert_called_once_with(46.1, 7.4)
-        region.refresh_from_db()
-        assert region.centroid_location is not None
+        assert not Location.objects.exists()
 
     def test_an_unreadable_boundary_is_skipped_not_failed(self) -> None:
         """A malformed ``boundary`` is a fixture problem, not a run failure.
 
-        ``boundary`` is a JSONField, so its shape is not schema-guaranteed,
-        and ``centre_from_bbox`` raises rather than returning None on a
-        geometry it cannot read. Exiting non-zero would make one bad fixture
-        row fail every scheduled run.
+        Exiting non-zero would fail every deploy on one bad fixture row,
+        now that build.sh runs this command.
         """
         MicroRegionFactory.create(
             boundary={"type": "Point", "coordinates": [7.4, 46.1]}
         )
 
         out = StringIO()
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=out)
+        call_command(COMMAND, "--commit", stdout=out)
 
         assert "1 skipped" in out.getvalue()
         assert not Location.objects.exists()
 
     def test_a_boundary_with_no_coordinates_is_skipped_not_failed(self) -> None:
-        """An empty coordinate list degrades the same way.
-
-        Distinct from the unsupported-type case above: this one reaches
-        ``min()`` on an empty sequence rather than the type guard.
-        """
+        """An empty coordinate list degrades the same way."""
         MicroRegionFactory.create(boundary={"type": "Polygon", "coordinates": []})
 
         out = StringIO()
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=out)
+        call_command(COMMAND, "--commit", stdout=out)
 
         assert "1 skipped" in out.getvalue()
         assert not Location.objects.exists()
 
     def test_dry_run_writes_nothing(self) -> None:
-        """SNOW-719: the preview reports without persisting anything.
-
-        The elevation call still happens on this path — it is what proves
-        the region can resolve, and what the report counts — but neither
-        the Location nor the FK is written.
-        """
-        region = MicroRegionFactory.create(boundary=BOUNDARY)
+        """SNOW-719: the preview reports without persisting anything."""
+        region = MicroRegionFactory.create(
+            boundary=BOUNDARY, centroid_elevation_m=2100.0
+        )
 
         out = StringIO()
-        with patch(_ELEVATION, return_value=2100.0) as lookup:
-            call_command(COMMAND, "--delay", "0", stdout=out)
+        call_command(COMMAND, stdout=out)
 
-        lookup.assert_called_once_with(46.1, 7.4)
         assert not Location.objects.exists()
         region.refresh_from_db()
         assert region.centroid_location is None
@@ -177,32 +177,92 @@ class TestLinkRegionCentroidLocations:
 
     def test_second_run_selects_nothing(self) -> None:
         """Idempotent — a linked region is out of the candidate set."""
-        MicroRegionFactory.create(boundary=BOUNDARY)
+        MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
 
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
-            with patch(_ELEVATION) as second:
-                call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
+        call_command(COMMAND, "--commit", stdout=StringIO())
+        out = StringIO()
+        call_command(COMMAND, "--commit", stdout=out)
 
-        second.assert_not_called()
+        assert Location.objects.count() == 1
+        assert "0 region(s) linked" in out.getvalue()
 
-    def test_one_failure_does_not_stop_the_batch(self) -> None:
-        """A failing region is counted; the rest still link."""
-        MicroRegionFactory.create(boundary=BOUNDARY)
-        MicroRegionFactory.create(boundary=OTHER_BOUNDARY)
+    def test_one_unreadable_region_does_not_stop_the_batch(self) -> None:
+        """A skipped region is counted; the rest still link."""
+        MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
+        MicroRegionFactory.create(boundary=OTHER_BOUNDARY, centroid_elevation_m=1800.0)
+        MicroRegionFactory.create(boundary={"type": "Point", "coordinates": [1, 2]})
 
-        with (
-            patch(_ELEVATION, side_effect=[RuntimeError("boom"), 2100.0]),
-            pytest.raises(CommandError, match="1 region failure"),
-        ):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
+        call_command(COMMAND, "--commit", stdout=StringIO())
 
-        assert MicroRegion.objects.filter(centroid_location__isnull=False).count() == 1
+        assert MicroRegion.objects.filter(centroid_location__isnull=False).count() == 2
 
-    def test_negative_delay_is_rejected(self) -> None:
-        """--delay validates as non-negative."""
-        with pytest.raises(CommandError):
-            call_command(COMMAND, "--delay", "-1", stdout=StringIO())
+
+@pytest.mark.django_db
+class TestSurvivesALoaddata:
+    """SNOW-771 — the regression guard for the deploy-time data loss.
+
+    ``bin/build.sh`` runs ``loaddata`` on every deploy, and ``loaddata``
+    builds each instance from the fixture's fields alone and saves the whole
+    row — so a column no fixture carries (``centroid_location``) is reset to
+    its default every time. On staging that silently unlinked all 461
+    regions and orphaned their Location rows, hours after the command had
+    reported success.
+
+    These use the real committed fixture rather than factories, because the
+    bug is a property of what the fixture does and does not carry.
+    """
+
+    def test_loaddata_nulls_the_link(self) -> None:
+        """The mechanism itself, asserted so it cannot be forgotten.
+
+        If this starts failing, a fixture has gained the column and the
+        re-link step in build.sh may no longer be load-bearing — a change to
+        make deliberately, not to discover.
+        """
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+        call_command(COMMAND, "--commit", stdout=StringIO())
+        assert MicroRegion.objects.filter(centroid_location__isnull=False).exists()
+
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+
+        assert MicroRegion.objects.filter(centroid_location__isnull=False).count() == 0
+
+    def test_relinking_after_a_loaddata_restores_every_region(self) -> None:
+        """The deploy sequence: loaddata, then re-link. This is build.sh.
+
+        The second link must restore every region the first one had, which
+        is what makes the wipe harmless rather than merely detected.
+        """
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+        call_command(COMMAND, "--commit", stdout=StringIO())
+        expected = MicroRegion.objects.filter(centroid_location__isnull=False).count()
+        assert expected > 0
+
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+        call_command(COMMAND, "--commit", stdout=StringIO())
+
+        assert (
+            MicroRegion.objects.filter(centroid_location__isnull=False).count()
+            == expected
+        )
+
+    def test_the_fixture_carries_an_elevation_for_every_region(self) -> None:
+        """Without this the re-link is offline but produces heightless rows.
+
+        Guards the committed data, not the code: a newly added region whose
+        elevation was never resolved would link with a null elevation, and
+        nothing else would say so.
+        """
+        call_command("loaddata", CH_FIXTURE, verbosity=0)
+
+        missing = MicroRegion.objects.filter(
+            boundary__isnull=False, centroid_elevation_m__isnull=True
+        )
+        assert not missing.exists(), (
+            "regions with no centroid_elevation_m: "
+            f"{sorted(missing.values_list('region_id', flat=True))[:10]} — "
+            "run refresh_centroid_elevations --commit"
+        )
 
 
 class TestCentroidDerivationIsLossless:
@@ -237,3 +297,27 @@ class TestCentroidDerivationIsLossless:
             derived = centre_from_bbox(boundary)
             assert derived["lat"] == pytest.approx(centre["lat"]), region_id
             assert derived["lon"] == pytest.approx(centre["lon"]), region_id
+
+    @pytest.mark.parametrize("fixture_name", _EAWS_FIXTURE_NAMES)
+    def test_every_region_carries_a_centroid_elevation(self, fixture_name: str) -> None:
+        """SNOW-771: the committed elevations are what keep the re-link offline.
+
+        A region missing one still links, but with no height — so this
+        guards the data across all four fixtures rather than only the CH one
+        the DB-backed test above loads.
+        """
+        rows: list[dict[str, Any]] = json.loads(
+            (FIXTURES_DIR / fixture_name).read_text(encoding="utf-8")
+        )
+        missing = [
+            r["fields"]["region_id"]
+            for r in rows
+            if r["model"] == "regions.microregion"
+            and r["fields"].get("boundary")
+            and r["fields"].get("centroid_elevation_m") is None
+        ]
+        assert not missing, (
+            f"{fixture_name}: {len(missing)} region(s) with no "
+            f"centroid_elevation_m, e.g. {missing[:5]} — "
+            "run refresh_centroid_elevations --commit"
+        )

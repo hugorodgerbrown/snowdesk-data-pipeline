@@ -22,6 +22,18 @@ uv run --no-sync python manage.py loaddata \
     apps/regions/fixtures/eaws_AT.json \
     apps/regions/fixtures/eaws_IT.json
 
+# Re-link every micro-region to its centroid Location (SNOW-771). Mirrors
+# build.sh, and is load-bearing here for the same reason it is there: the
+# loaddata above resets `centroid_location` to NULL on all 461 regions,
+# because no fixture carries that column.
+#
+# It matters especially on this path. Production's three services share ONE
+# database, so a scheduler or task-worker deploy running this script would
+# otherwise undo the links the web service's build.sh had just restored —
+# the estate would come back or not depending purely on which dyno finished
+# last. Offline and idempotent, so running it on every path is free.
+uv run --no-sync python manage.py link_region_centroid_locations --commit
+
 # Sync waffle.Flag rows to apps/core/fixtures/waffle_flags.json — create + delete
 # only, never edit-in-place, so an operator's live admin-tuned targeting on
 # an existing flag survives every deploy. Idempotent (a no-op once the DB

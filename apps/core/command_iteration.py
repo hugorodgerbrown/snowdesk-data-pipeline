@@ -74,7 +74,7 @@ def announce_link_run(
     banner: str,
     candidate_count: int,
     commit: bool,
-    delay: float,
+    delay: float | None = None,
 ) -> None:
     """
     Write the shared start-of-run banner and log line for a ``link_*`` command.
@@ -96,18 +96,31 @@ def announce_link_run(
             this appends it.
         candidate_count: How many candidates were found.
         commit: Whether ``--commit`` was passed.
-        delay: The resolved ``--delay`` value.
+        delay: The resolved ``--delay`` value, for a command that paces
+            itself against an upstream. Omit it for one that makes no
+            external calls — ``delay=`` is then left out of the log line
+            rather than logged as a misleading ``0`` or ``None``
+            (SNOW-771 took the last upstream call out of
+            ``link_region_centroid_locations``).
 
     """
     flag_label = "" if commit else " [READ-ONLY]"
     cmd.stdout.write(cmd.style.MIGRATE_HEADING(f"{banner}{flag_label}"))
-    logger.info(
-        "%s started: candidates=%d commit=%s delay=%s",
-        command_name,
-        candidate_count,
-        commit,
-        delay,
-    )
+    if delay is None:
+        logger.info(
+            "%s started: candidates=%d commit=%s",
+            command_name,
+            candidate_count,
+            commit,
+        )
+    else:
+        logger.info(
+            "%s started: candidates=%d commit=%s delay=%s",
+            command_name,
+            candidate_count,
+            commit,
+            delay,
+        )
 
 
 def iterate_rows(

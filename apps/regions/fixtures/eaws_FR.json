@@ -13155,7 +13155,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1503.0
     }
   },
   {
@@ -13246,7 +13247,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1497.0
     }
   },
   {
@@ -13525,7 +13527,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1062.0
     }
   },
   {
@@ -13600,7 +13603,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1439.0
     }
   },
   {
@@ -13683,7 +13687,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1633.0
     }
   },
   {
@@ -13902,7 +13907,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1654.0
     }
   },
   {
@@ -13977,7 +13983,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1452.0
     }
   },
   {
@@ -14080,7 +14087,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 788.0
     }
   },
   {
@@ -14179,7 +14187,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 2693.0
     }
   },
   {
@@ -14274,7 +14283,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1229.0
     }
   },
   {
@@ -14765,7 +14775,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1549.0
     }
   },
   {
@@ -14852,7 +14863,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 2632.0
     }
   },
   {
@@ -15051,7 +15063,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1777.0
     }
   },
   {
@@ -15158,7 +15171,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1489.0
     }
   },
   {
@@ -15257,7 +15271,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1803.0
     }
   },
   {
@@ -15316,7 +15331,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1672.0
     }
   },
   {
@@ -15607,7 +15623,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 2218.0
     }
   },
   {
@@ -15690,7 +15707,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1452.0
     }
   },
   {
@@ -15761,7 +15779,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1761.0
     }
   },
   {
@@ -15836,7 +15855,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 888.0
     }
   },
   {
@@ -16135,7 +16155,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 2004.0
     }
   },
   {
@@ -16222,7 +16243,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1429.0
     }
   },
   {
@@ -16773,7 +16795,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 2712.0
     }
   },
   {
@@ -16872,7 +16895,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 892.0
     }
   },
   {
@@ -16975,7 +16999,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 668.0
     }
   },
   {
@@ -17126,7 +17151,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 896.0
     }
   },
   {
@@ -17693,7 +17719,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1549.0
     }
   },
   {
@@ -18356,7 +18383,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1400.0
     }
   },
   {
@@ -18795,7 +18823,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1157.0
     }
   },
   {
@@ -19802,7 +19831,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 608.0
     }
   },
   {
@@ -20829,7 +20859,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1370.0
     }
   },
   {
@@ -20948,7 +20979,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 2058.0
     }
   },
   {
@@ -21047,7 +21079,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1358.0
     }
   },
   {
@@ -21198,7 +21231,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1663.0
     }
   },
   {
@@ -21353,7 +21387,8 @@
       },
       "neighbours": [],
       "created_at": "2026-01-01T00:00:00Z",
-      "updated_at": "2026-01-01T00:00:00Z"
+      "updated_at": "2026-01-01T00:00:00Z",
+      "centroid_elevation_m": 1983.0
     }
   }
 ]

@@ -327,6 +327,18 @@ class MicroRegion(BaseModel):
             "Stored as JSON; uses WGS 84 coordinates."
         ),
     )
+    centroid_elevation_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Ground elevation in metres at this region's centroid — the "
+            "point centre_from_bbox(boundary) resolves to. Fixture data "
+            "(SNOW-771), resolved once against Open-Meteo by "
+            "refresh_eaws_fixtures rather than per environment. It is the "
+            "only part of a centroid that cannot be derived offline, which "
+            "is why it is stored while the coordinate is not."
+        ),
+    )
     centroid_location = models.ForeignKey(
         "locations.Location",
         null=True,
@@ -335,9 +347,13 @@ class MicroRegion(BaseModel):
         related_name="micro_regions",
         help_text=(
             "The Location at this region's centroid, which the bulletin "
-            "page reads its forecast through (SNOW-696). Resolved by "
-            "link_region_centroid_locations from ``boundary`` (SNOW-765). "
-            "Null until that has run."
+            "page reads its forecast through (SNOW-696). Derived, NOT "
+            "durable: bin/build.sh reloads the EAWS fixtures on every "
+            "deploy, and a fixture carries no value for this column, so "
+            "loaddata resets it to NULL every time (SNOW-771). "
+            "link_region_centroid_locations re-derives it immediately "
+            "afterwards from ``boundary`` and ``centroid_elevation_m``. "
+            "Never treat a value here as surviving a deploy."
         ),
     )
     boundary = models.JSONField(

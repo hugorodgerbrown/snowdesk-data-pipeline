@@ -155723,7 +155723,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-CN"
-      ]
+      ],
+      "centroid_elevation_m": 2459.0
     }
   },
   {
@@ -156090,7 +156091,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-CN"
-      ]
+      ],
+      "centroid_elevation_m": 2278.0
     }
   },
   {
@@ -157193,7 +157195,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-CN"
-      ]
+      ],
+      "centroid_elevation_m": 1093.0
     }
   },
   {
@@ -157964,7 +157967,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-CN"
-      ]
+      ],
+      "centroid_elevation_m": 1039.0
     }
   },
   {
@@ -159867,7 +159871,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-CN"
-      ]
+      ],
+      "centroid_elevation_m": 1493.0
     }
   },
   {
@@ -160442,7 +160447,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-TO"
-      ]
+      ],
+      "centroid_elevation_m": 2049.0
     }
   },
   {
@@ -161169,7 +161175,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-TO"
-      ]
+      ],
+      "centroid_elevation_m": 2141.0
     }
   },
   {
@@ -162532,7 +162539,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-TO"
-      ]
+      ],
+      "centroid_elevation_m": 2015.0
     }
   },
   {
@@ -164259,7 +164267,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-TO"
-      ]
+      ],
+      "centroid_elevation_m": 939.0
     }
   },
   {
@@ -165710,7 +165719,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-TO"
-      ]
+      ],
+      "centroid_elevation_m": 1760.0
     }
   },
   {
@@ -166333,7 +166343,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-VB"
-      ]
+      ],
+      "centroid_elevation_m": 2530.0
     }
   },
   {
@@ -166900,7 +166911,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-VB"
-      ]
+      ],
+      "centroid_elevation_m": 1746.0
     }
   },
   {
@@ -168147,7 +168159,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-VB"
-      ]
+      ],
+      "centroid_elevation_m": 1452.0
     }
   },
   {
@@ -171020,7 +171033,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-21-VC"
-      ]
+      ],
+      "centroid_elevation_m": 1492.0
     }
   },
   {
@@ -171119,7 +171133,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2084.0
     }
   },
   {
@@ -171254,7 +171269,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 921.0
     }
   },
   {
@@ -171333,7 +171349,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1896.0
     }
   },
   {
@@ -171428,7 +171445,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1389.0
     }
   },
   {
@@ -171535,7 +171553,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1985.0
     }
   },
   {
@@ -171694,7 +171713,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 3116.0
     }
   },
   {
@@ -171789,7 +171809,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2692.0
     }
   },
   {
@@ -171988,7 +172009,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2316.0
     }
   },
   {
@@ -172235,7 +172257,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2206.0
     }
   },
   {
@@ -172330,7 +172353,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1182.0
     }
   },
   {
@@ -172521,7 +172545,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1378.0
     }
   },
   {
@@ -172764,7 +172789,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1913.0
     }
   },
   {
@@ -172971,7 +172997,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1750.0
     }
   },
   {
@@ -173118,7 +173145,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2138.0
     }
   },
   {
@@ -173281,7 +173309,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1547.0
     }
   },
   {
@@ -173440,7 +173469,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2117.0
     }
   },
   {
@@ -173539,7 +173569,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2442.0
     }
   },
   {
@@ -173742,7 +173773,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2187.0
     }
   },
   {
@@ -173853,7 +173885,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1620.0
     }
   },
   {
@@ -174036,7 +174069,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2574.0
     }
   },
   {
@@ -174179,7 +174213,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1924.0
     }
   },
   {
@@ -174294,7 +174329,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2324.0
     }
   },
   {
@@ -174361,7 +174397,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2673.0
     }
   },
   {
@@ -174456,7 +174493,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1718.0
     }
   },
   {
@@ -174519,7 +174557,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 2299.0
     }
   },
   {
@@ -174626,7 +174665,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-23-AO"
-      ]
+      ],
+      "centroid_elevation_m": 1980.0
     }
   },
   {
@@ -177829,7 +177869,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-BG"
-      ]
+      ],
+      "centroid_elevation_m": 1059.0
     }
   },
   {
@@ -182516,7 +182557,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-BG"
-      ]
+      ],
+      "centroid_elevation_m": 981.0
     }
   },
   {
@@ -184562,7 +184604,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-BS"
-      ]
+      ],
+      "centroid_elevation_m": 1528.0
     }
   },
   {
@@ -191897,7 +191940,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-BS"
-      ]
+      ],
+      "centroid_elevation_m": 787.0
     }
   },
   {
@@ -195532,7 +195576,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-CO"
-      ]
+      ],
+      "centroid_elevation_m": 1265.0
     }
   },
   {
@@ -197526,7 +197571,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-LC"
-      ]
+      ],
+      "centroid_elevation_m": 1144.0
     }
   },
   {
@@ -198183,7 +198229,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-PV"
-      ]
+      ],
+      "centroid_elevation_m": 1273.0
     }
   },
   {
@@ -200409,7 +200456,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-SO"
-      ]
+      ],
+      "centroid_elevation_m": 601.0
     }
   },
   {
@@ -202055,7 +202103,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-SO"
-      ]
+      ],
+      "centroid_elevation_m": 2768.0
     }
   },
   {
@@ -203690,7 +203739,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-SO"
-      ]
+      ],
+      "centroid_elevation_m": 1827.0
     }
   },
   {
@@ -205731,7 +205781,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-SO"
-      ]
+      ],
+      "centroid_elevation_m": 1793.0
     }
   },
   {
@@ -207344,7 +207395,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-25-VA"
-      ]
+      ],
+      "centroid_elevation_m": 341.0
     }
   },
   {
@@ -207751,7 +207803,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-01"
-      ]
+      ],
+      "centroid_elevation_m": 2428.0
     }
   },
   {
@@ -208030,7 +208083,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-01"
-      ]
+      ],
+      "centroid_elevation_m": 1980.0
     }
   },
   {
@@ -208369,7 +208423,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-01"
-      ]
+      ],
+      "centroid_elevation_m": 2236.0
     }
   },
   {
@@ -208848,7 +208903,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-02"
-      ]
+      ],
+      "centroid_elevation_m": 2396.0
     }
   },
   {
@@ -209275,7 +209331,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-02"
-      ]
+      ],
+      "centroid_elevation_m": 2919.0
     }
   },
   {
@@ -209734,7 +209791,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-02"
-      ]
+      ],
+      "centroid_elevation_m": 2170.0
     }
   },
   {
@@ -210109,7 +210167,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-03"
-      ]
+      ],
+      "centroid_elevation_m": 2361.0
     }
   },
   {
@@ -210848,7 +210907,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-04"
-      ]
+      ],
+      "centroid_elevation_m": 1342.0
     }
   },
   {
@@ -211663,7 +211723,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-04"
-      ]
+      ],
+      "centroid_elevation_m": 1472.0
     }
   },
   {
@@ -212138,7 +212199,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-04"
-      ]
+      ],
+      "centroid_elevation_m": 1381.0
     }
   },
   {
@@ -213117,7 +213179,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-05"
-      ]
+      ],
+      "centroid_elevation_m": 2880.0
     }
   },
   {
@@ -213660,7 +213723,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-05"
-      ]
+      ],
+      "centroid_elevation_m": 1966.0
     }
   },
   {
@@ -214207,7 +214271,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-05"
-      ]
+      ],
+      "centroid_elevation_m": 2256.0
     }
   },
   {
@@ -214470,7 +214535,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-05"
-      ]
+      ],
+      "centroid_elevation_m": 1705.0
     }
   },
   {
@@ -215085,7 +215151,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-06"
-      ]
+      ],
+      "centroid_elevation_m": 1873.0
     }
   },
   {
@@ -216116,7 +216183,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-07"
-      ]
+      ],
+      "centroid_elevation_m": 2148.0
     }
   },
   {
@@ -216747,7 +216815,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-07"
-      ]
+      ],
+      "centroid_elevation_m": 3365.0
     }
   },
   {
@@ -217762,7 +217831,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-07"
-      ]
+      ],
+      "centroid_elevation_m": 2528.0
     }
   },
   {
@@ -219713,7 +219783,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-08"
-      ]
+      ],
+      "centroid_elevation_m": 1504.0
     }
   },
   {
@@ -220760,7 +220831,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-08"
-      ]
+      ],
+      "centroid_elevation_m": 2400.0
     }
   },
   {
@@ -222335,7 +222407,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-08"
-      ]
+      ],
+      "centroid_elevation_m": 2246.0
     }
   },
   {
@@ -223914,7 +223987,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-08"
-      ]
+      ],
+      "centroid_elevation_m": 1423.0
     }
   },
   {
@@ -224541,7 +224615,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-09"
-      ]
+      ],
+      "centroid_elevation_m": 2425.0
     }
   },
   {
@@ -225380,7 +225455,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-10"
-      ]
+      ],
+      "centroid_elevation_m": 2270.0
     }
   },
   {
@@ -225795,7 +225871,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-11"
-      ]
+      ],
+      "centroid_elevation_m": 2115.0
     }
   },
   {
@@ -226522,7 +226599,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-12"
-      ]
+      ],
+      "centroid_elevation_m": 2528.0
     }
   },
   {
@@ -227013,7 +227091,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-13"
-      ]
+      ],
+      "centroid_elevation_m": 1729.0
     }
   },
   {
@@ -227572,7 +227651,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-14"
-      ]
+      ],
+      "centroid_elevation_m": 2791.0
     }
   },
   {
@@ -228383,7 +228463,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-15"
-      ]
+      ],
+      "centroid_elevation_m": 2350.0
     }
   },
   {
@@ -229118,7 +229199,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-16"
-      ]
+      ],
+      "centroid_elevation_m": 1324.0
     }
   },
   {
@@ -230021,7 +230103,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-17"
-      ]
+      ],
+      "centroid_elevation_m": 1011.0
     }
   },
   {
@@ -231864,7 +231947,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-18"
-      ]
+      ],
+      "centroid_elevation_m": 1913.0
     }
   },
   {
@@ -232947,7 +233031,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-18"
-      ]
+      ],
+      "centroid_elevation_m": 1797.0
     }
   },
   {
@@ -234358,7 +234443,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-18"
-      ]
+      ],
+      "centroid_elevation_m": 1947.0
     }
   },
   {
@@ -235673,7 +235759,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-19"
-      ]
+      ],
+      "centroid_elevation_m": 2252.0
     }
   },
   {
@@ -236076,7 +236163,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-BZ-20"
-      ]
+      ],
+      "centroid_elevation_m": 1973.0
     }
   },
   {
@@ -236483,7 +236571,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-01"
-      ]
+      ],
+      "centroid_elevation_m": 1178.0
     }
   },
   {
@@ -237086,7 +237175,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-02"
-      ]
+      ],
+      "centroid_elevation_m": 1959.0
     }
   },
   {
@@ -238081,7 +238171,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-03"
-      ]
+      ],
+      "centroid_elevation_m": 1948.0
     }
   },
   {
@@ -239100,7 +239191,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-04"
-      ]
+      ],
+      "centroid_elevation_m": 2411.0
     }
   },
   {
@@ -240015,7 +240107,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-05"
-      ]
+      ],
+      "centroid_elevation_m": 2351.0
     }
   },
   {
@@ -240582,7 +240675,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-06"
-      ]
+      ],
+      "centroid_elevation_m": 1291.0
     }
   },
   {
@@ -241193,7 +241287,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-07"
-      ]
+      ],
+      "centroid_elevation_m": 2007.0
     }
   },
   {
@@ -241992,7 +242087,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-08"
-      ]
+      ],
+      "centroid_elevation_m": 1091.0
     }
   },
   {
@@ -242707,7 +242803,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-09"
-      ]
+      ],
+      "centroid_elevation_m": 2280.0
     }
   },
   {
@@ -243654,7 +243751,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-10"
-      ]
+      ],
+      "centroid_elevation_m": 934.0
     }
   },
   {
@@ -244161,7 +244259,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-11"
-      ]
+      ],
+      "centroid_elevation_m": 1719.0
     }
   },
   {
@@ -244568,7 +244667,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-12"
-      ]
+      ],
+      "centroid_elevation_m": 1433.0
     }
   },
   {
@@ -244995,7 +245095,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-13"
-      ]
+      ],
+      "centroid_elevation_m": 1816.0
     }
   },
   {
@@ -245466,7 +245567,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-14"
-      ]
+      ],
+      "centroid_elevation_m": 875.0
     }
   },
   {
@@ -246121,7 +246223,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-15"
-      ]
+      ],
+      "centroid_elevation_m": 973.0
     }
   },
   {
@@ -246636,7 +246739,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-16"
-      ]
+      ],
+      "centroid_elevation_m": 1894.0
     }
   },
   {
@@ -247427,7 +247531,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-17"
-      ]
+      ],
+      "centroid_elevation_m": 851.0
     }
   },
   {
@@ -249042,7 +249147,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-18"
-      ]
+      ],
+      "centroid_elevation_m": 1030.0
     }
   },
   {
@@ -249497,7 +249603,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-19"
-      ]
+      ],
+      "centroid_elevation_m": 2162.0
     }
   },
   {
@@ -249860,7 +249967,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-20"
-      ]
+      ],
+      "centroid_elevation_m": 1612.0
     }
   },
   {
@@ -250127,7 +250235,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-32-TN-21"
-      ]
+      ],
+      "centroid_elevation_m": 992.0
     }
   },
   {
@@ -250806,7 +250915,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-BL"
-      ]
+      ],
+      "centroid_elevation_m": 1750.0
     }
   },
   {
@@ -251193,7 +251303,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-BL"
-      ]
+      ],
+      "centroid_elevation_m": 1237.0
     }
   },
   {
@@ -251620,7 +251731,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-BL"
-      ]
+      ],
+      "centroid_elevation_m": 1616.0
     }
   },
   {
@@ -252431,7 +252543,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-BL"
-      ]
+      ],
+      "centroid_elevation_m": 1376.0
     }
   },
   {
@@ -252794,7 +252907,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-BL"
-      ]
+      ],
+      "centroid_elevation_m": 816.0
     }
   },
   {
@@ -254057,7 +254171,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-BL"
-      ]
+      ],
+      "centroid_elevation_m": 319.0
     }
   },
   {
@@ -254984,7 +255099,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-VI"
-      ]
+      ],
+      "centroid_elevation_m": 1338.0
     }
   },
   {
@@ -255915,7 +256031,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-34-VR"
-      ]
+      ],
+      "centroid_elevation_m": 1456.0
     }
   },
   {
@@ -256794,7 +256911,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-36-PN"
-      ]
+      ],
+      "centroid_elevation_m": 517.0
     }
   },
   {
@@ -257137,7 +257255,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-36-PN"
-      ]
+      ],
+      "centroid_elevation_m": 690.0
     }
   },
   {
@@ -258064,7 +258183,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-36-UD"
-      ]
+      ],
+      "centroid_elevation_m": 1502.0
     }
   },
   {
@@ -258507,7 +258627,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-36-UD"
-      ]
+      ],
+      "centroid_elevation_m": 900.0
     }
   },
   {
@@ -259078,7 +259199,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-36-UD"
-      ]
+      ],
+      "centroid_elevation_m": 1531.0
     }
   },
   {
@@ -259349,7 +259471,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-36-UD"
-      ]
+      ],
+      "centroid_elevation_m": 1500.0
     }
   },
   {
@@ -260536,7 +260659,8 @@
       "updated_at": "2026-05-14T00:00:00Z",
       "subregion": [
         "IT-36-UD"
-      ]
+      ],
+      "centroid_elevation_m": 616.0
     }
   }
 ]

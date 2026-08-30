@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, import_resorts, import_locations, link_region_centroid_locations, fixture builders
+description: Commands — fetch_bulletins, fetch_weather, import_resorts, import_locations, link_region_centroid_locations, refresh_centroid_elevations
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -421,42 +421,73 @@ uv run python manage.py fetch_weather --commit  # persist
 
 ### `link_region_centroid_locations` — anchor each region to a Location
 
-Backfill for SNOW-696. Gives every `MicroRegion` with a `boundary` a
-`Location` at that region's centroid, with its elevation resolved — which is
-what anchors the region in the location estate.
+Gives every `MicroRegion` with a `boundary` a `Location` at that region's
+centroid, which anchors the region in the location estate (SNOW-696).
 
-The centroid is derived from `boundary` with `centre_from_bbox`, not read
-from the `centre` column (SNOW-765). `centre` is computed from the same
-polygon by the fixture builders, so the two agree value-for-value across all
-461 L4 regions — a property `tests/regions/management/commands/test_link_region_centroid_locations.py`
-asserts against the committed fixtures. Reading `centre` here would make the
-column an input to the thing that replaces it, which is what blocked
-SNOW-766 from dropping it.
+**This runs on every deploy, from `build.sh` and `build_headless.sh`, and it
+must.** `loaddata` resets every column the EAWS fixtures do not carry, and
+none of them carries `centroid_location` — so each deploy NULLs all 461
+links and orphans the `Location` rows behind them. That was silent data loss
+until SNOW-771: the command reported success, and a deploy hours later undid
+it with nothing in any log to say so. Re-running it immediately after
+`loaddata` is what makes the wipe harmless.
 
-One Open-Meteo elevation call per region, up to 461 across AT (153), CH
-(149), IT (124) and FR (35). The `--delay` default (1.0s) paces the run
-inside the free-tier rate limit.
+**Wholly offline — no network at all.** The coordinate is
+`centre_from_bbox(boundary)`, and the boundary is in the fixture; the
+elevation is `MicroRegion.centroid_elevation_m`, resolved once by
+`refresh_centroid_elevations` and committed. That is what makes a per-deploy
+run affordable, and it removes the per-environment backfill entirely — no
+environment pays for elevation lookups.
 
-The call is made on the dry-run path too, so the reported outcome is real —
-but nothing is written (SNOW-719). A per-region failure is logged and
-counted, never aborts the batch, and makes the command exit non-zero.
+SNOW-765 established the coordinate half: `centre` was computed from the
+same polygon by the fixture builders, so the two agree value-for-value
+across all 461 L4 regions, a property
+`tests/regions/management/commands/test_link_region_centroid_locations.py`
+asserts against the committed fixtures.
+
+A region whose fixture carries no elevation still links, with a null
+`elevation_m` — weather needs a coordinate, not a height. A region whose
+boundary cannot be read is logged, counted and skipped; it never aborts the
+batch, and the command exits non-zero only on a genuine failure.
 
 **A centroid is not a place anyone goes.** The minted location carries no
 name and no kind: it represents the region and sits at whatever elevation
 the polygon's middle happens to fall at. Any surface showing it must say
 which elevation it represents.
 
-SNOW-762 removed this command's forecast-cell half with the weather app.
-What remains is the Location and its elevation — but that is now what makes
-a region eligible for weather: SNOW-759's `fetch_weather` walks
-`Location.objects.active()`, which includes every `centroid_location`. So
-running this command has a **recurring** cost as well as a one-off one; the
-sizing is in
+Linking a region *does* have a recurring cost, just not here:
+`fetch_weather` walks `Location.objects.active()`, which includes every
+`centroid_location`, four times a day. Sizing is in
 [`runbooks/region-centroid-backfill.md`](runbooks/region-centroid-backfill.md).
 
 ```bash
 uv run python manage.py link_region_centroid_locations           # preview
 uv run python manage.py link_region_centroid_locations --commit  # apply
+```
+
+### `refresh_centroid_elevations` — resolve centroid heights into the fixtures
+
+The one manual half of the above, and the only part of a centroid that
+cannot be derived offline. Fills `centroid_elevation_m` on every L4 entry in
+the four committed EAWS fixtures, one Open-Meteo elevation call per
+unresolved region.
+
+Run by a **developer against the committed fixtures**, not per environment —
+that is the whole point. Every environment then gets the elevations from the
+fixture for nothing. Commit the changed files.
+
+Re-runnable: an entry that already has a value is skipped, so an interrupted
+run costs only what it had not reached. Pass `--force` after a fixture
+rebuild moves a boundary — a moved centroid leaves a stale elevation behind
+and nothing else would notice.
+
+The test suite fails if any region with a boundary is left without an
+elevation, so a half-finished run cannot ship.
+
+```bash
+uv run python manage.py refresh_centroid_elevations                    # preview
+uv run python manage.py refresh_centroid_elevations --commit           # resolve missing
+uv run python manage.py refresh_centroid_elevations --commit --force   # re-resolve all
 ```
 
 ### `backfill_observation_locations` — mint a Location per field report
