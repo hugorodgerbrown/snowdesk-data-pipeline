@@ -113,6 +113,7 @@ from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
+from apps.routes.services.shares import pending_tokens
 
 from .component_previews import help_illustrations
 from .decorators import lowercase_region_id
@@ -1247,6 +1248,13 @@ def help_page(request: HttpRequest) -> HttpResponse:
     """
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
+        # SNOW-764: the Routes topic's sharing subsection, behind the same
+        # flag as the surface it describes. A help section for a feature
+        # the reader cannot reach is worse than no section — the flag name
+        # is a literal here, as sync_log's is, so
+        # tests/core/services/test_waffle_manifest_call_sites.py can see
+        # it.
+        "routes_sharing_visible": waffle.flag_is_active(request, "route_sharing"),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)
@@ -1587,12 +1595,30 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 def _routes_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the map's saved-routes panel (SNOW-686).
 
-    ONE gate, since SNOW-724 retired the ``routes`` rollout flag that used
-    to sit in front of it: ``routes_eligible`` is authentication, mirroring
+    ``routes_eligible`` was authentication alone until SNOW-764, mirroring
     ``favourites_eligible``. routes.js branches on it to show the real list
     and upload control versus an anonymous sign-in CTA
     (tests/js/test_routes_panel_anonymous.js covers that branch), and the
     panel itself is now in the DOM for every visitor.
+
+    SNOW-764 ADDS A SECOND WAY TO BE ELIGIBLE: an anonymous visitor whose
+    SESSION holds a pending share token. They were sent a route and have
+    followed the link, so the panel and the map layer both have something
+    of theirs to draw — and ``routes:list`` / ``routes:geojson`` answer for
+    exactly that request (see ``apps.routes.views``'s header). Without this
+    the deep link would land on a map whose routes endpoint the page never
+    even asks for.
+
+    THE WAFFLE FLAG IS DELIBERATELY NOT READ HERE. This helper runs on the
+    homepage, and ``docs/feature-flags.md`` records what a flag read costs
+    there — SNOW-749 measured it at three extra queries on the site's
+    most-requested page and deleted the flag rather than pay them. The
+    check below is a session-dictionary lookup on an object the auth
+    middleware has already loaded: no query, flagged or not. The flag is
+    read by the endpoints this eligibility merely POINTS AT, which is
+    where it has to hold anyway — an eligible-looking panel whose list
+    endpoint 403s is a worse failure than nothing, and cannot happen,
+    because a token only reaches a session through the flagged redirect.
 
     No ``__UUID__``-templated delete URL, unlike ``_favourites_context``. A
     route row's Remove is a plain HTMX form rendered server-side into the
@@ -1611,7 +1637,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
     Returns:
         Dict with ``routes_eligible``, ``route_create_url``,
         ``route_list_url``,
-        ``route_rename_url_template``, ``routes_geojson_url`` and
+        ``route_rename_url_template``, ``route_share_url_template``,
+        ``route_claim_url_template``, ``routes_geojson_url`` and
         ``routes_signin_url``.
 
     """
@@ -1620,7 +1647,9 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
     # actually being renamed.
     dummy_uuid = uuid.UUID(int=0)
     return {
-        "routes_eligible": request.user.is_authenticated,
+        "routes_eligible": (
+            request.user.is_authenticated or bool(pending_tokens(request.session))
+        ),
         "route_create_url": reverse("routes:create"),
         # ``?variant=map`` asks for the sheet's lean row template — the
         # shared includes/_ugc_panel_row.html shape, rather than
@@ -1629,6 +1658,21 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         "route_rename_url_template": reverse(
             "routes:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
+        # SNOW-764: the owner's Share button and the recipient's Save. Both
+        # are templated the same way the rename above is, on the same rule
+        # — static/js must not know how this project spells its URLs — but
+        # on different placeholders, because they are addressed by
+        # different things. Share names a route the caller OWNS, so it
+        # takes a uuid; Save names a share the caller does not own, so it
+        # takes the token and never a uuid (see apps.routes.views).
+        #
+        # ``__TOKEN__`` survives ``<str:token>``'s converter, which accepts
+        # any non-empty run without a slash — the same reason
+        # _downloads_context spells its placeholder ``AREAID``.
+        "route_share_url_template": reverse(
+            "routes:share_create", args=[dummy_uuid]
+        ).replace(str(dummy_uuid), "__UUID__"),
+        "route_claim_url_template": reverse("routes:share_claim", args=["__TOKEN__"]),
         # SNOW-687: the map layer's data. Emitted only for an eligible user
         # (see the template) — the endpoint 403s for anyone else, and there
         # is nothing to draw.
