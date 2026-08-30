@@ -215,7 +215,21 @@ reachable via the SNOW-81 deep-link in the masthead.
         {% include "includes/_toast.html" with id="share-toast" kind="success" body="Link copied" %}
     {% endif %}
     {# ── Share script (SNOW-217) ─────────────────────────────────────── #}
+    {% comment %}
+        SNOW-764 moved the native-share/clipboard helper out of the inline
+        block below and into static/js/share.js, which the route row's own
+        Share control also uses. The three branches it owns — the platform
+        took it, the user cancelled, the platform refused — are fiddly
+        enough that a second copy would have drifted; see that file's
+        header for what each one is for.
+
+        What stayed inline is this page's own half: which button, which
+        endpoint, and which toast. Not deferred, and loaded before the
+        block that reads it, because a classic script's window property has
+        to exist by the time the DOMContentLoaded handler below runs.
+    {% endcomment %}
     {% if bulletin %}
+        <script src="{% static 'js/share.js' %}"></script>
         <script nonce="{{ request.csp_nonce }}">
             document.addEventListener('DOMContentLoaded', function () {
                 // The share button is rendered later in the body via the
@@ -243,30 +257,16 @@ reachable via the SNOW-81 deep-link in the masthead.
                     }, 4000);
                 }
 
-                function copy(url) {
-                    if (window.navigator && window.navigator.clipboard) {
-                        window.navigator.clipboard.writeText(url).then(showToast).catch(function () {});
-                    }
-                }
-
-                // Chrome on desktop exposes ``navigator.share`` but may reject
-                // silently if the platform can't show a share sheet (e.g. when
-                // the page isn't an installed PWA). Treat ``navigator.share``
-                // as best-effort: AbortError means the user cancelled (no
-                // fallback); any other rejection falls back to clipboard so
-                // the share never silently no-ops.
+                // The share itself is window.pwaShare's (static/js/share.js).
+                // Only the toast is this page's: it says "Link copied", which
+                // is true of exactly one of the four outcomes — the platform
+                // took the share (nothing to announce, the sheet is on
+                // screen), the user cancelled (announcing anything would
+                // contradict them), or nothing worked at all.
                 function shareOrCopy(url) {
-                    var nav = window.navigator;
-                    var payload = { url: url, title: document.title };
-                    var canShare = nav && nav.share && (typeof nav.canShare !== 'function' || nav.canShare(payload));
-                    if (canShare) {
-                        nav.share(payload).catch(function (err) {
-                            if (err && err.name === 'AbortError') return;
-                            copy(url);
-                        });
-                    } else {
-                        copy(url);
-                    }
+                    window.pwaShare.shareOrCopy(url, document.title).then(function (outcome) {
+                        if (outcome === 'copied') showToast();
+                    });
                 }
 
                 btn.addEventListener('click', function () {

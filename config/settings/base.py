@@ -937,6 +937,29 @@ ROUTE_UPLOAD_MAX_BYTES = config(
     "ROUTE_UPLOAD_MAX_BYTES", default=5 * 1024 * 1024, cast=int
 )
 
+# SNOW-764 — route sharing.
+#
+# How long a RouteShare link stays claimable, in days. A share link is
+# reusable (a group chat is the ordinary case, and a single-use token would
+# work for the first person to tap it and nobody else), so the window is
+# the only thing that ever revokes it — an unbounded token would leave a
+# standing grant on the user's own data alive forever. 30 days is longer
+# than a trip is planned and shorter than a season, so a link shared in
+# March cannot still be claimed the following winter.
+
+ROUTE_SHARE_MAX_AGE_DAYS = config("ROUTE_SHARE_MAX_AGE_DAYS", default=30, cast=int)
+
+# How many pending (followed-but-unclaimed) share tokens one session may
+# hold. The list lives in request.session, which is a signed cookie, so it
+# is bounded for the same reason any cookie-backed list is: an unbounded
+# one grows the cookie on every share link a visitor follows and eventually
+# breaks the request. Five is more pending shares than anyone accumulates
+# in one browsing session — the ordinary count is one, followed and claimed
+# in the same minute — and the oldest is dropped rather than the newest
+# refused, because the link just followed is the one the visitor means.
+
+ROUTE_SHARE_MAX_PENDING = config("ROUTE_SHARE_MAX_PENDING", default=5, cast=int)
+
 
 # ---------------------------------------------------------------------------
 # Offline download areas (SNOW-749)

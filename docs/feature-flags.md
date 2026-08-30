@@ -78,6 +78,24 @@ The general form: **a flag on a hot path is not free, and "we can always
 turn it off" is worth costing before it is assumed.** Reverting an
 un-flagged feature is a deploy, which this project can do in minutes.
 
+**A flag can also be the wrong SHAPE for a feature, not just the wrong
+price.** SNOW-764 shipped route sharing behind a `route_sharing` flag
+targeted at `superusers=True`, and the feature could not work under its own
+targeting. The flag was read on the RECIPIENT's path as well as the
+sharer's, and a recipient is by definition somebody else — usually
+anonymous — so following a link a superuser had just minted raised
+`Http404`. The tests missed it because `override_flag` flips a flag
+globally for the whole test, which puts the sharer and the recipient on the
+same side of a gate whose entire problem was that they are on opposite
+sides of it. The flag was removed and sharing ships on.
+
+The rule that came out of it: **a flag targeted at an audience cannot gate
+a surface whose whole purpose is to be reached from outside that
+audience.** Where a feature's value passes between two principals, either
+both are inside the rollout or the flag sits on the minting half alone —
+and a test that flips one flag for both principals can never tell you which
+of those you built.
+
 The saved-map-pin favourites feature (SNOW-413), the field-report button
 and submission endpoints (SNOW-324), the "Community reports" read overlay
 (SNOW-419), and the `/observations/` page (SNOW-476) were all pre-launch

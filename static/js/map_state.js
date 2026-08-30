@@ -300,6 +300,19 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // The popup's payload carries no ``source_filename`` (the row's middle
   // fallback), so a nameless route lands straight here.
   'route-untitled': 'Untitled route',
+  // SNOW-764: the shared-route popup's Save control — its label and its
+  // three outcomes. No 'route-shared-with-you' qualifier: both labels
+  // below already say the route is somebody else's being offered, so the
+  // line only repeated them. The pending PANEL ROW keeps its own prefix,
+  // because a row sits in a list beside owned ones and a popup does not.
+  //
+  // The at-cap line names the remedy, because the remedy is the only thing
+  // that distinguishes it from the generic failure — a user at the cap who
+  // is only told "that couldn't be saved" will retry the identical action.
+  'route-save': 'Save route',
+  'route-save-signin': 'Sign in to save this route',
+  'route-save-failed': "That couldn't be saved. Try again.",
+  'route-save-limit': "You've reached your saved-route limit. Remove one to save this.",
   // SNOW-691: the Terrain row's disable reason — the viewport centre has
   // left the slope raster's declared coverage rectangle, so there is
   // nothing for the layer to draw here. One string, not two: the row is

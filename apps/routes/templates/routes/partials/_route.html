@@ -38,6 +38,28 @@ nothing would be worse than no button.
 The row's id is ``route-<uuid>``, which is what its own Remove form
 addresses.
 
+A PENDING SHARE RENDERS THROUGH THIS SAME ROW (SNOW-764). Passing
+``pending_share`` — a RouteShare the visitor has followed but not claimed
+— changes three things and nothing else:
+
+  * the row's id and target become ``route-share-<token>``, so the claim's
+    swap replaces exactly this row and cannot collide with an owned row
+    for the same underlying route (a user who already holds a copy CAN be
+    sent the link again);
+  * the actions become a single Save (_route_row_actions.html);
+  * the meta line is prefixed "Shared with you · ", so the row is visibly
+    not yet the user's before they read the button.
+
+THE ORIGINAL ROUTE'S UUID IS NEVER RENDERED for a pending row. The rename
+and delete endpoints are addressed by uuid and owner-scoped, so putting
+one in a non-owner's DOM would hand them an identifier they have no
+business holding; the token addresses the one endpoint they may call. See
+apps/routes/views.py's header for the whole rule.
+
+Everything else — the label, the three figures, the name-frames-the-route
+button — is identical, because it is the same route and it should read the
+same whether the viewer owns it yet or not.
+
 META LINE — the three figures a route is read by: its length, how much
 climbing it carries, and how much dropping. "12.4 km · 850 m ascent ·
 1100 m descent".
@@ -72,10 +94,13 @@ column mean "size" on one panel and "distance" on another. Same reasoning
 as the favourite row's own note.
 
 Context:
-    route     : Route — the saved route to render.
-    map_focus : bool, optional — render the name as a control that frames
-                this route on the map. Passed by _route_list_map.html; see
-                above.
+    route         : Route — the saved route to render.
+    pending_share : RouteShare, optional — set when this row is a followed
+                    but unclaimed share. See above for the three things it
+                    changes.
+    map_focus     : bool, optional — render the name as a control that
+                    frames this route on the map. Passed by
+                    _route_list_map.html; see above.
 {% endcomment %}
 {% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=route.ascent_m|floatformat:0 descent=route.descent_m|floatformat:0 %}
     {% trans "Untitled route" as untitled_route %}
@@ -103,5 +128,23 @@ Context:
         {% focus_target route.bounds.0 route.bounds.1 route.bounds.2 route.bounds.3 as row_focus_target %}
         {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
     {% endif %}
-    {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
+    {% comment %}
+        The row's identity, and the two things that follow from it.
+
+        A pending row is keyed on the SHARE's token, not the route's uuid —
+        see the note at the top of this file. It is also not renameable:
+        the pencil's commit posts to routes:rename, which is owner-scoped
+        and would 404, and there is nothing yet to rename anyway.
+
+        The "Shared with you" prefix is one msgid with the meta line
+        interpolated into it rather than two strings joined with " · " in
+        the template, so a locale can put the qualifier wherever its own
+        grammar wants it — including after the figures.
+    {% endcomment %}
+    {% if pending_share %}
+        {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared with you · {{ meta }}{% endblocktrans %}
+        {% include "includes/_ugc_panel_row.html" with row_id="route-share-"|add:pending_share.token row_target="#route-share-"|add:pending_share.token label=row_label label_testid="route-list-row-label" meta=shared_meta focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
+    {% else %}
+        {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
+    {% endif %}
 {% endwith %}

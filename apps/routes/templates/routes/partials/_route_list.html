@@ -20,16 +20,39 @@ rather than sitting in a bordered box of its own. It was a ``<div>`` stack
 with ``gap-2`` while _route.html was a ``<div>``.
 
 Context:
-    routes : list[Route] — the requesting user's own routes
-             (Route.objects.for_user()).
+    routes         : list[Route] — the requesting user's own routes
+                     (Route.objects.for_user()).
+    pending_shares : list[RouteShare], optional — SNOW-764: shares this
+                     session has followed but not claimed. Rendered above
+                     the owned rows; see the note beside the loop.
 {% endcomment %}
 <div data-testid="route-list-default">
     <ul class="flex flex-col">
+        {% comment %}
+    SNOW-764: pending shares first — routes the visitor has been SENT and
+    has not claimed. They lead the list because they are why the panel was
+    opened, and because they carry the only action on the surface the user
+    has not already taken; a claim arriving below twenty-four owned routes
+    would be out of sight.
+
+    They are the same row (_route.html), given ``pending_share``, which
+    switches its id, its actions and its meta prefix. See that file.
+{% endcomment %}
+        {% for share in pending_shares %}
+            {% include "routes/partials/_route.html" with route=share.route pending_share=share %}
+        {% endfor %}
         {% for route in routes %}
             {% include "routes/partials/_route.html" with route=route %}
         {% endfor %}
     </ul>
-    {% if not routes %}
+    {% comment %}
+        The empty clause asks about BOTH lists (SNOW-764). A visitor
+        holding a pending share and no routes of their own has something
+        on screen, and telling them "you have no saved routes" underneath
+        a row they can see would be a wrong statement about what the panel
+        is showing.
+    {% endcomment %}
+    {% if not routes and not pending_shares %}
         {# SNOW-721: the clause is shared with the other variant — it was #}
         {# duplicated verbatim in both until it was extracted.            #}
         {% include "routes/partials/_route_list_empty.html" %}

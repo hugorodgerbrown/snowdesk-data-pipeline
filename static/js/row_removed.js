@@ -35,6 +35,15 @@
  * shared row modules now, beside static/js/row_focus.js,
  * static/js/inline_rename.js and static/js/row_rename_commit.js.
  *
+ * A SECOND ACTION USES THE SAME MACHINERY (SNOW-764). Claiming a shared
+ * route is a plain HTMX form on the row, posting to the claim endpoint and
+ * swapping the response over the row's own id — the same shape as Remove,
+ * with the same detached-element problem and the same thing needed
+ * afterwards (re-read the list, tell the map). So `watch` takes an optional
+ * third argument naming the hook, defaulting to the delete form's. What it
+ * recognises is "a row-scoped action landed inside this list"; removal was
+ * simply the only such action until there were two.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO. It never re-reads a list, never
  * dispatches an event and never touches the map. Which list to re-read,
  * from which URL, and which overlay to announce are the caller's business
@@ -93,12 +102,20 @@
    * @param {string} listSelector CSS selector for the list container whose
    *   removals this caller wants — the scoping half of the test.
    * @param {Function} handler Called with no arguments, once per successful
-   *   removal. Never called for a failed one: a delete that did not land
+   *   action. Never called for a failed one: a delete that did not land
    *   left the row where it was, and re-reading would say otherwise.
+   * @param {string} [actionSelector] The row-scoped hook whose requests
+   *   count, defaulting to the delete form's `[data-row-remove]`. SNOW-764
+   *   passes `[data-row-claimed]` for the shared-route Save, which is the
+   *   same shape of request needing the same thing afterwards.
    * @returns {void}
    */
-  function watch(listSelector, handler) {
+  function watch(listSelector, handler, actionSelector) {
     if (typeof listSelector !== 'string' || typeof handler !== 'function') return;
+    const action =
+      typeof actionSelector === 'string' && actionSelector
+        ? actionSelector
+        : REMOVE_SELECTOR;
 
     watchCount += 1;
     const mark = 'snowdeskRowRemoved' + watchCount;
@@ -108,9 +125,7 @@
       if (!detail.xhr) return;
       const elt = detail.elt;
       if (!elt || !elt.closest) return;
-      detail.xhr[mark] = !!(
-        elt.closest(REMOVE_SELECTOR) && elt.closest(listSelector)
-      );
+      detail.xhr[mark] = !!(elt.closest(action) && elt.closest(listSelector));
     });
 
     document.addEventListener('htmx:afterRequest', function (event) {

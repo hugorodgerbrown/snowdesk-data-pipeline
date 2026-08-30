@@ -9,9 +9,38 @@ routes/partials/_route.html — which passes its own full context on, so
 `_route_row_map_actions.html` until SNOW-711 retired the map's fork of
 that row; there was never anything map-shaped about either control.
 
-Rename then Remove, the design's order: trash is always last, on every
-panel, so the destructive control is in the same place wherever a user
-meets it.
+TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
+
+  An OWNED row gets Share, Rename, Remove — Share only when
+  ``sharing_enabled`` says so, which is a surface check and nothing else:
+  which listing asked, and therefore whether a handler is wired for the
+  click (see apps/routes/views.py's route_list). Trash
+  stays last, on the design's rule that the destructive control is in the
+  same place on every panel; Share goes FIRST rather than beside the
+  trash, because it is the only one of the three that involves anybody
+  else and putting it next to Remove would seat "give this away" beside
+  "destroy this".
+
+  A PENDING row — one the visitor was sent and has not claimed — gets a
+  single Save. It is not an icon: the other three name actions a user
+  already understands from every other panel, while this one is the whole
+  point of the row and the only thing on the surface asking to be
+  pressed. A 17px glyph for the row's primary action would be a puzzle.
+
+  The two never both render. A pending row's route is not the viewer's, so
+  Rename and Remove have nothing to address — and they are owner-scoped
+  server-side anyway, so a rendered pencil would be a control that 404s.
+
+WHY THE PENDING BRANCH CARRIES A TOKEN AND NEVER A UUID. The rename and
+delete endpoints are addressed by ``route.uuid`` and owner-scoped, so a
+uuid rendered for a non-owner would hand them an identifier they have no
+business holding — see apps/routes/views.py's header. ``pending_share`` is
+what _route.html passes instead, and the claim endpoint is addressed by
+its token.
+
+Rename then Remove within the owned cluster, the design's order: trash is
+always last, on every panel, so the destructive control is in the same
+place wherever a user meets it.
 
 Rename is a `data-route-rename` button, not a form: the row's own label
 becomes an inline edit (static/js/inline_rename.js, shared unchanged with
@@ -42,31 +71,97 @@ directly would go on addressing the default one whatever the row was
 given. Same contract as the favourite row's actions.
 
 Context:
-    route      : Route — the saved route this row describes.
-    label      : str — the row's display name (the shared row's own
-                 parameter): the route's name, its source filename, or
-                 "Untitled route".
-    row_target : str — CSS selector for the row this Remove empties,
-                 supplied by _route.html as ``#<the row's id>``.
+    route           : Route — the saved route this row describes.
+    sharing_enabled : bool, optional — draw the Share control. False on a
+                      surface with no handler wired for it, which today
+                      means everywhere except the map panel.
+    pending_share : RouteShare, optional — set when this row is a share
+                    the visitor has followed but not claimed. Its presence
+                    selects the Save branch; its ``token`` addresses the
+                    claim endpoint.
+    label         : str — the row's display name (the shared row's own
+                    parameter): the route's name, its source filename, or
+                    "Untitled route".
+    row_target    : str — CSS selector for the row this Remove empties (or
+                    the Save replaces), supplied by _route.html as
+                    ``#<the row's id>``.
 {% endcomment %}
-{% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
-{% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
-{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
-{# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
-{# recognise a rename click without knowing which panel it is on;          #}
-{# `data-route-rename` carries this row's uuid for the commit.             #}
-<button
-    type="button"
-    data-row-rename
-    data-route-rename="{{ route.uuid }}"
-    aria-label="{{ rename_aria_label }}"
-    class="{% icon_button_classes %}"
->
-    {% include "includes/_icon_pencil.html" only %}
-</button>
-<form data-row-remove hx-post="{% url 'routes:delete' route.uuid %}" hx-target="{{ row_target }}" hx-swap="outerHTML">
-    {% csrf_token %}
-    <button type="submit" aria-label="{{ remove_aria_label }}" class="{% icon_button_classes variant='destructive' %}">
-        {% include "includes/_icon_trash.html" only %}
+{% if pending_share %}
+    {% comment %}
+        The pending row's one control. A plain HTMX form, exactly the shape
+        Remove already uses below — routes:share_claim answers with the
+        claimed row (routes/partials/_route.html), so `hx-target` on this
+        row's own id and `outerHTML` replace the pending row with the owned
+        one in a single swap, with no JS involved and nothing to keep in
+        step.
+
+        `data-row-claimed` is how the surface owning the list knows the
+        claim landed, so it can re-read the list and repaint the map — the
+        routes twin of `data-row-remove`, and on the FORM for the same
+        reason (see static/js/row_removed.js for the request it has to be
+        told apart from). The map has to hear it because the claimed copy
+        is a NEW owned route the layer has never seen, and the pending line
+        it replaces has to come off.
+
+        The label says "Save route" rather than "Claim" or "Add": what the
+        visitor is doing is keeping something they were sent, and "save" is
+        the word every other surface on this site uses for that.
+    {% endcomment %}
+    {% trans "Save route" as claim_label %}
+    <form
+        data-row-claimed
+        hx-post="{% url 'routes:share_claim' pending_share.token %}"
+        hx-target="{{ row_target }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        {% include "includes/_button.html" with label=claim_label variant="primary" size="compact" %}
+    </form>
+{% else %}
+    {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
+    {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
+    {% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+    {# SNOW-764: Share is a button and not a form because there is nothing #}
+    {# to swap — routes:share_create answers JSON, and static/js/share.js  #}
+    {# hands the URL it carries to the native share sheet. The uuid rides  #}
+    {# on the button so the delegated handler needs no closure over the    #}
+    {# rendered row, exactly as the rename pencil's does.                  #}
+    {% if sharing_enabled %}
+        <button
+            type="button"
+            data-route-share="{{ route.uuid }}"
+            aria-label="{{ share_aria_label }}"
+            class="{% icon_button_classes %}"
+        >
+            {% include "includes/_icon_share.html" only %}
+        </button>
+    {% endif %}
+    {# Two hooks, two readers: `data-row-rename` is the shared one every       #}
+    {# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
+    {# recognise a rename click without knowing which panel it is on;          #}
+    {# `data-route-rename` carries this row's uuid for the commit.             #}
+    <button
+        type="button"
+        data-row-rename
+        data-route-rename="{{ route.uuid }}"
+        aria-label="{{ rename_aria_label }}"
+        class="{% icon_button_classes %}"
+    >
+        {% include "includes/_icon_pencil.html" only %}
     </button>
-</form>
+    <form
+        data-row-remove
+        hx-post="{% url 'routes:delete' route.uuid %}"
+        hx-target="{{ row_target }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            aria-label="{{ remove_aria_label }}"
+            class="{% icon_button_classes variant='destructive' %}"
+        >
+            {% include "includes/_icon_trash.html" only %}
+        </button>
+    </form>
+{% endif %}

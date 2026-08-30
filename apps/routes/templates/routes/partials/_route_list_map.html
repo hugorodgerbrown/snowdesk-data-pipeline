@@ -30,11 +30,27 @@ offline reader could do with one, and the panel's own failed-load line
 (routes.js) covers the offline case honestly in the meantime.
 
 Context:
-    routes : list[Route] — the requesting user's own routes
-             (Route.objects.for_user()).
+    routes         : list[Route] — the requesting user's own routes
+                     (Route.objects.for_user()).
+    pending_shares : list[RouteShare], optional — SNOW-764: shares this
+                     session has followed but not claimed. Rendered above
+                     the owned rows; see the note beside the loop.
 {% endcomment %}
 <div data-testid="route-list">
     <ul class="flex flex-col">
+        {% comment %}
+    SNOW-764: pending shares first — routes the visitor has been SENT and
+    has not claimed. They lead the list because they are why the panel was
+    opened, and because they carry the only action on the surface the user
+    has not already taken; a claim arriving below twenty-four owned routes
+    would be out of sight.
+
+    They are the same row (_route.html), given ``pending_share``, which
+    switches its id, its actions and its meta prefix. See that file.
+{% endcomment %}
+        {% for share in pending_shares %}
+            {% include "routes/partials/_route.html" with route=share.route pending_share=share map_focus=True %}
+        {% endfor %}
         {% for route in routes %}
             {# map_focus: this list is read over a map, so a row's name is a #}
             {# control that frames its track. The account variant passes    #}
@@ -42,7 +58,12 @@ Context:
             {% include "routes/partials/_route.html" with route=route map_focus=True %}
         {% endfor %}
     </ul>
-    {% if not routes %}
+    {% comment %}
+        The empty clause asks about BOTH lists (SNOW-764) — see
+        _route_list.html's own note for why a pending row has to silence
+        it.
+    {% endcomment %}
+    {% if not routes and not pending_shares %}
         {# SNOW-721: the clause is shared with the other variant — it was #}
         {# duplicated verbatim in both until it was extracted.            #}
         {% include "routes/partials/_route_list_empty.html" %}

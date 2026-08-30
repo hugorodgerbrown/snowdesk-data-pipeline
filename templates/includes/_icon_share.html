@@ -1,0 +1,46 @@
+{% comment %}
+templates/includes/_icon_share.html — the share glyph: a node passing to two
+others (SNOW-764).
+
+One source for one mark, the same reason _icon_pencil.html and
+_icon_trash.html beside it are partials. Its caller is the route row's
+action cluster (routes/partials/_route_row_actions.html), where it sits
+first, before Rename and the always-last trash.
+
+WHY THE THREE-NODE GRAPH rather than the iOS box-and-arrow. The box-and-up-arrow
+is a platform mark, and on Android it reads as "upload" or "open in"; the
+three linked nodes is the mark Android itself uses and is the one a
+cross-platform web surface can carry without claiming to be either
+platform. What the control does is hand this route to another PERSON, and
+a graph of people is closer to that than an arrow leaving a box.
+
+STYLE — a 24-grid 2px stroke, matching _icon_pencil.html's pencil and
+_icon_route.html's track. The three nodes are filled circles rather than
+outlines because at 17px an outlined 2.5px circle is a smudge; the two
+connecting strokes carry the stroke width instead.
+
+Drawn for this ticket, so there is no third-party attribution to carry.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17, the
+            design's row-action glyph size, matching _icon_pencil.html.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="6" cy="12" r="2.5" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="5.5" r="2.5" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="18.5" r="2.5" fill="currentColor" stroke="none" />
+    <path d="m8.2 10.8 7.6-4.1" />
+    <path d="m8.2 13.2 7.6 4.1" />
+</svg>

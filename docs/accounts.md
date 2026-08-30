@@ -100,6 +100,11 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 - Signed account-access tokens remain the fallback (and bootstrap) path: an account registers a passkey only after first authenticating via an emailed account link, and unsubscribe tokens are unaffected.
 - Server config: `WEBAUTHN_RP_ID` / `WEBAUTHN_RP_NAME` / `WEBAUTHN_ORIGIN` env vars (see `render.yaml`).
 
+**What the session carries** — beyond Django's own auth keys, two values are written into `request.session` by name and read elsewhere, so both are listed here rather than discovered by grep:
+
+- `analytics_utm` — the `utm_source` / `utm_medium` / `utm_campaign` trio captured on first arrival (`apps/public/views.py`) and read back at sign-up (`apps/accounts/views.py`) so an account can be attributed to the campaign that brought the visitor, several pages later.
+- `route_shares` — a list of `RouteShare` tokens this browser has **followed but not claimed** (SNOW-764). Written by `routes:share_redirect`, dropped by `routes:share_claim`, and read by the routes panel, the routes map layer and the map page's context. It lives in the session precisely because the recipient of a share link is usually signed out when they tap it, and the pending claim has to survive the sign-in round trip — [`docs/decisions/route-share-pending-claim-in-session.md`](decisions/route-share-pending-claim-in-session.md). Bounded by `ROUTE_SHARE_MAX_PENDING`; the helpers are in `apps/routes/services/shares.py`.
+
 **Email** — Django's standard SMTP backend. No custom backend.
 
 - **Development**: Mailpit on `localhost:1025` (no auth, no TLS). Web inbox at `http://localhost:8025`.

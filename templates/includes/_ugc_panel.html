@@ -168,7 +168,14 @@ state should not have to remember to bring its own.
             {% include rows_template %}
         {% endif %}
     </div>
-    <div class="border-t border-border pt-3">
+    {# `data-panel-foot` (SNOW-764) marks the CTA's own strip so a panel   #}
+    {# that has removed the add button can put something else there. The    #}
+    {# routes panel does, for an anonymous visitor holding a followed share #}
+    {# link: the rows are theirs to read, but saving one needs an account,  #}
+    {# so the sign-in prompt goes where the next action lives rather than   #}
+    {# over the list. It has to be OUTSIDE the rows container, which every  #}
+    {# list load replaces wholesale.                                        #}
+    <div data-panel-foot class="border-t border-border pt-3">
         <button
             type="button"
             data-panel-add

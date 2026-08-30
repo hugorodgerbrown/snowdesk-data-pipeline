@@ -10,12 +10,24 @@ URL structure:
   routes/partials/<uuid>/rename/     POST — rename a route
   routes/partials/<uuid>/delete/     POST — delete a route
   routes/partials/list/              GET  — owner's routes list (SNOW-686)
+  routes/partials/share/<token>/claim/
+                                     POST — claim a copy (SNOW-764)
   routes/routes.geojson              GET  — owner's routes as GeoJSON (SNOW-687)
+  routes/<uuid>/share/               POST — mint a share link (SNOW-764)
+  routes/s/<token>/                  GET  — follow a share link (SNOW-764)
 
 ``routes.geojson`` sits OUTSIDE the ``partials/`` prefix on purpose: that
 prefix marks the HTMX fragment endpoints (``@require_htmx``), and this one
 is a plain-JSON layer consumed by a ``fetch()`` from static/js/map.js.
 Mirrors ``favourites/favourites.geojson``.
+
+The two SNOW-764 endpoints outside that prefix are outside it for the same
+rule, each for its own reason. ``<uuid>/share/`` answers JSON to a plain
+``fetch()`` — its body goes to the native share sheet, not into the page.
+``s/<token>/`` is a NAVIGATION: it is the URL a person is sent in a
+message and opens in a browser, so it is short (``/routes/s/…``, the shape
+``/s/…`` already set for bulletin shares) and it is emphatically not a
+fragment. Only the claim is, and it sits under ``partials/`` with the rest.
 """
 
 from django.urls import path
@@ -46,8 +58,23 @@ urlpatterns = [
         name="list",
     ),
     path(
+        "partials/share/<str:token>/claim/",
+        views.route_share_claim,
+        name="share_claim",
+    ),
+    path(
         "routes.geojson",
         views.routes_geojson,
         name="geojson",
+    ),
+    path(
+        "<uuid:uuid>/share/",
+        views.route_share_create,
+        name="share_create",
+    ),
+    path(
+        "s/<str:token>/",
+        views.route_share_redirect,
+        name="share_redirect",
     ),
 ]

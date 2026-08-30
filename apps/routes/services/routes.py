@@ -8,6 +8,16 @@ used by ``apps/routes/views.py``. Parsing itself lives next door in
 The uploaded bytes reach ``create_route``, are handed to ``parse_gpx``, and
 go out of scope. Nothing is written to disk at any point — see
 ``docs/decisions/gpx-uploads-are-parsed-not-stored.md``.
+
+The cap itself is two functions — ``_assert_under_cap`` and
+``_locked_cap_recheck`` — rather than the pair of inline blocks
+``create_route`` carried until SNOW-764. There is now a SECOND way a Route
+row is written (claiming a share, in ``shares.py``), and a cap enforced by
+copy-pasted arithmetic is a cap that eventually differs between the two
+paths. Both are private to this package and imported by ``shares.py``: the
+lock and the re-check are the whole reason concurrent creators cannot
+exceed the cap, and a second writer that skipped them would reopen the
+race for both.
 """
 
 from __future__ import annotations
@@ -39,6 +49,59 @@ class RouteLimitReached(Exception):
     """Raised when a user has reached ``settings.ROUTES_MAX_PER_USER``."""
 
 
+def _assert_under_cap(user: "User") -> None:
+    """Raise ``RouteLimitReached`` when the user is already at the cap.
+
+    The cheap, unlocked check: it takes no lock and is therefore racy on
+    its own, which is fine because it is not the enforcement — it is the
+    early exit that keeps expensive work (parsing a multi-megabyte GPX,
+    copying a shared route's geometry) from happening for a row that
+    cannot be stored. ``_locked_cap_recheck`` below is what actually
+    enforces the cap.
+
+    Args:
+        user: The user about to gain a route.
+
+    Raises:
+        RouteLimitReached: When the user already holds
+            ``settings.ROUTES_MAX_PER_USER`` routes.
+
+    """
+    if Route.objects.for_user(user).count() >= settings.ROUTES_MAX_PER_USER:
+        raise RouteLimitReached(
+            f"User {user.pk} has reached the "
+            f"{settings.ROUTES_MAX_PER_USER}-route limit."
+        )
+
+
+def _locked_cap_recheck(user: "User") -> None:
+    """Lock the user row, then re-check the cap. Call inside ``atomic()``.
+
+    Locking first is what makes the cap hold under concurrency (SNOW-465's
+    ``create_favourite`` is the precedent). A bare ``count()`` takes no
+    lock, so under PostgreSQL READ COMMITTED two requests could both read
+    below the cap and both insert, exceeding it. ``select_for_update()``
+    makes the second transaction block until the first commits, so its
+    count reflects the first insert. On SQLite (tests) ``FOR UPDATE`` is a
+    silent no-op, which is why this is argued rather than demonstrated
+    here.
+
+    The lock is taken on the USER row rather than on the routes: the thing
+    being serialised is "how many routes does this user have", and there is
+    no row to lock for a route that does not exist yet.
+
+    Args:
+        user: The user about to gain a route.
+
+    Raises:
+        RouteLimitReached: When the user already holds
+            ``settings.ROUTES_MAX_PER_USER`` routes.
+
+    """
+    get_user_model().objects.select_for_update().get(pk=user.pk)
+    _assert_under_cap(user)
+
+
 def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
     """Parse GPX bytes and store the result as a Route for the given user.
 
@@ -64,29 +127,14 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
             GPX file we can import.
 
     """
-    if Route.objects.for_user(user).count() >= settings.ROUTES_MAX_PER_USER:
-        raise RouteLimitReached(
-            f"User {user.pk} has reached the "
-            f"{settings.ROUTES_MAX_PER_USER}-route limit."
-        )
+    _assert_under_cap(user)
 
     # CPU-bound and potentially slow on a large track — kept outside the
     # transaction so parsing never holds a row lock.
     parsed = parse_gpx(raw)
 
     with transaction.atomic():
-        # Lock the user row before the cap re-check so concurrent creators
-        # serialise here. A bare count() takes no lock, so under PostgreSQL
-        # READ COMMITTED two requests could both read below the cap and both
-        # insert, exceeding it. select_for_update() makes the second
-        # transaction block until the first commits, so its count reflects
-        # the first insert. On SQLite (tests) FOR UPDATE is a silent no-op.
-        get_user_model().objects.select_for_update().get(pk=user.pk)
-        if Route.objects.for_user(user).count() >= settings.ROUTES_MAX_PER_USER:
-            raise RouteLimitReached(
-                f"User {user.pk} has reached the "
-                f"{settings.ROUTES_MAX_PER_USER}-route limit."
-            )
+        _locked_cap_recheck(user)
         route = Route.objects.create(
             user=user,
             name=parsed.name[:_NAME_MAX_LENGTH],

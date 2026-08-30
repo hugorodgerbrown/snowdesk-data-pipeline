@@ -68,6 +68,29 @@ changing where we point must not invalidate every translation.
             in the community-reports overlay.
         {% endblocktrans %}
     </p>
+    {% comment %}
+        SNOW-764. This sits AFTER the privacy paragraph deliberately, and
+        repeats that paragraph's claim in its first sentence rather than
+        contradicting it. "Routes are private" stays true with sharing on:
+        nothing is published, nothing appears on anyone else's map, and the
+        only way another person sees one is that its owner sent them a
+        link. Saying so immediately is what stops the two paragraphs
+        reading as a promise and its retraction.
+    {% endcomment %}
+    <p class="mb-3 last:mb-0" data-testid="help-routes-sharing">
+        {% blocktrans trimmed %}
+            Nothing is published, but you can hand one route to someone else. The Share control on a route&apos;s row
+            gives you a link to send them; whoever opens it sees that route drawn on their map with a Save button. They
+            can open the link before they have signed in, and it will still be waiting once they have.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-routes-sharing-copy">
+        {% blocktrans trimmed %}
+            Saving takes a copy. Their copy is theirs to rename or remove and yours is untouched, so the two never
+            affect each other afterwards. The link keeps working for anyone you send it to for a few weeks, and it stops
+            working straight away if you remove the route it points at.
+        {% endblocktrans %}
+    </p>
     <p class="mb-3 last:mb-0" data-testid="help-routes-limits">
         {% blocktrans trimmed %}
             Uploading needs a connection, as do renaming and removing &mdash; those actions are not queued for later the

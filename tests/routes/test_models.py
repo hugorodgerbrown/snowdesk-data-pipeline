@@ -10,6 +10,12 @@ Covers:
   ascent_m is nullable — a route from a file with no <ele> stores null,
     not zero.
   user FK is CASCADE — deleting the owner removes their routes.
+
+  RouteShare (SNOW-764) to_string / __str__, including the deleted-route
+    form; Meta.ordering; RouteShareQuerySet.active() against the two ways
+    a link dies (expiry, and the owner deleting the route); is_claimable
+    agreeing with active() row for row; the FK rules — SET_NULL on the
+    route, CASCADE on the sharer.
 """
 
 from __future__ import annotations
@@ -20,8 +26,8 @@ from datetime import UTC, timedelta
 import pytest
 from django.utils import timezone
 
-from apps.routes.models import Route
-from tests.factories import RouteFactory, UserFactory
+from apps.routes.models import Route, RouteShare
+from tests.factories import RouteFactory, RouteShareFactory, UserFactory
 
 
 class TestRouteToString:
@@ -182,3 +188,134 @@ class TestRouteUserCascade:
         user.delete()
 
         assert not Route.objects.filter(pk=route.pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# RouteShare (SNOW-764)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRouteShareToString:
+    """to_string and __str__ coverage, including the routeless form."""
+
+    def test_to_string_names_the_token_and_the_route(self) -> None:
+        """A live share identifies itself by token and by what it hands out."""
+        share = RouteShareFactory.create(
+            token="abc123", route=RouteFactory.create(name="Col de Balme")
+        )
+        assert "abc123" in share.to_string()
+        assert "Col de Balme" in share.to_string()
+
+    def test_to_string_says_deleted_when_the_route_is_gone(self) -> None:
+        """The row outlives its route, so to_string must not dereference a null."""
+        route = RouteFactory.create()
+        share = RouteShareFactory.create(token="gone123", route=route)
+        route.delete()
+        share.refresh_from_db()
+
+        assert share.to_string() == "RouteShare(gone123, deleted)"
+
+    def test_str_delegates_to_to_string(self) -> None:
+        """__str__ is to_string, as on every model here."""
+        share = RouteShareFactory.create()
+        assert str(share) == share.to_string()
+
+
+@pytest.mark.django_db
+class TestRouteShareOrdering:
+    """Meta.ordering is newest-first."""
+
+    def test_shares_are_ordered_newest_first(self) -> None:
+        """The default queryset order is -created_at."""
+        first = RouteShareFactory.create()
+        second = RouteShareFactory.create()
+
+        assert list(RouteShare.objects.all()) == [second, first]
+
+
+@pytest.mark.django_db
+class TestRouteShareActive:
+    """RouteShareQuerySet.active() — the one definition of "claimable"."""
+
+    def test_a_live_share_is_active(self) -> None:
+        """A route that exists and a window still open."""
+        share = RouteShareFactory.create()
+        assert list(RouteShare.objects.active()) == [share]
+
+    def test_an_expired_share_is_not_active(self) -> None:
+        """Past expires_at, the link stops working."""
+        RouteShareFactory.create(
+            expires_at=timezone.now() - datetime.timedelta(seconds=1)
+        )
+        assert not RouteShare.objects.active().exists()
+
+    def test_a_share_expiring_exactly_now_is_not_active(self) -> None:
+        """The bound is strict — ``expires_at`` is the first moment it is dead."""
+        RouteShareFactory.create(expires_at=timezone.now())
+        assert not RouteShare.objects.active().exists()
+
+    def test_a_share_whose_route_was_deleted_is_not_active(self) -> None:
+        """Deleting the route revokes the link immediately, not at expiry."""
+        route = RouteFactory.create()
+        share = RouteShareFactory.create(route=route)
+        route.delete()
+
+        assert not RouteShare.objects.active().exists()
+        # The row itself survives — SET_NULL, not CASCADE.
+        assert RouteShare.objects.filter(pk=share.pk).exists()
+
+    def test_is_claimable_agrees_with_active_row_for_row(self) -> None:
+        """The Python predicate and the SQL one answer the same question.
+
+        They are written twice because Django cannot share a predicate
+        between the two; this is what keeps them from drifting apart.
+        """
+        live = RouteShareFactory.create()
+        expired = RouteShareFactory.create(
+            expires_at=timezone.now() - datetime.timedelta(days=1)
+        )
+        revoked_route = RouteFactory.create()
+        revoked = RouteShareFactory.create(route=revoked_route)
+        revoked_route.delete()
+        revoked.refresh_from_db()
+
+        active_ids = set(RouteShare.objects.active().values_list("pk", flat=True))
+        for share in (live, expired, revoked):
+            assert share.is_claimable == (share.pk in active_ids)
+
+
+@pytest.mark.django_db
+class TestRouteShareForeignKeys:
+    """SET_NULL on the route, CASCADE on the sharer."""
+
+    def test_deleting_the_route_nulls_the_fk_and_keeps_the_row(self) -> None:
+        """The audit of who a route was shared with outlives the route."""
+        route = RouteFactory.create()
+        share = RouteShareFactory.create(route=route)
+
+        route.delete()
+        share.refresh_from_db()
+
+        assert share.route is None
+
+    def test_deleting_the_sharer_deletes_their_shares(self) -> None:
+        """A deleted account's grants have nobody to account to."""
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user)
+        share = RouteShareFactory.create(route=route, created_by=user)
+
+        user.delete()
+
+        assert not RouteShare.objects.filter(pk=share.pk).exists()
+
+
+@pytest.mark.django_db
+class TestRouteShareDefaults:
+    """The claim counters start at "never claimed"."""
+
+    def test_a_new_share_has_no_claims(self) -> None:
+        """claim_count starts at zero and last_claimed_at at null."""
+        share = RouteShareFactory.create()
+        assert share.claim_count == 0
+        assert share.last_claimed_at is None

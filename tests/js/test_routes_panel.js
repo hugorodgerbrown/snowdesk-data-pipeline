@@ -60,6 +60,7 @@ import '../../static/js/row_rename_commit.js';
 import '../../static/js/row_focus.js';
 import '../../static/js/row_removed.js';
 import '../../static/js/map_sheet.js';
+import '../../static/js/share.js';
 
 // As apps.public.views._routes_context builds it — the map sheet asks for the
 // lean row variant.
@@ -69,6 +70,8 @@ const CREATE_URL = '/routes/partials/create/';
 document.body.innerHTML = `
   <button id="route-add-btn"
           data-routes-eligible="true"
+          data-routes-upload-eligible="true"
+          data-route-share-url-template="/routes/__UUID__/share/"
           data-signin-url="/sign-in/"
           data-route-create-url="${CREATE_URL}"
           data-route-list-url="${LIST_URL}"
@@ -699,5 +702,146 @@ describe('forced-offline gating (SNOW-748)', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch.mock.calls[0][0]).toBe(CREATE_URL);
+  });
+});
+
+describe('sharing a row (SNOW-764)', () => {
+  // window.pwaShare is frozen, so its functions cannot be spied on (the
+  // same property every window.pwa* bridge has). The platform APIs
+  // underneath it are stubbed instead, which has the better property of
+  // exercising the real helper — the branch that must NOT copy after a
+  // cancelled sheet is the one worth testing end to end.
+  const realNavigator = window.navigator;
+
+  /** Install a navigator with the given share/clipboard behaviour.
+   *
+   * @param {object} parts Partial navigator — `share` and/or `clipboard`.
+   * @returns {void}
+   */
+  function stubNavigator(parts) {
+    window.navigator = Object.assign({ onLine: true }, parts);
+  }
+
+  afterEach(() => {
+    window.navigator = realNavigator;
+  });
+
+  /** Put one owned row, carrying a Share control, into the open panel.
+   *
+   * The row is the shape routes:list renders for the map variant — only
+   * the hook the delegated handler reads matters here, since the button is
+   * server-rendered and this module never builds one.
+   *
+   * @param {string} uuid The route's uuid, as the server writes it.
+   * @returns {HTMLElement} The Share button.
+   */
+  function renderShareRow(uuid) {
+    const rows = sheet.querySelector('[data-routes-rows]');
+    rows.innerHTML = `<ul><li><button type="button"
+      data-route-share="${uuid}" aria-label="Share it"></button></li></ul>`;
+    return rows.querySelector('[data-route-share]');
+  }
+
+  /** Answer the mint endpoint with a share URL.
+   *
+   * @returns {void}
+   */
+  function mintSucceeds() {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ url: 'https://snowdesk.app/routes/s/tok/' }),
+      }),
+    );
+  }
+
+  it('mints a link from the uuid on the button, then shares it', async () => {
+    mintSucceeds();
+    const share = vi.fn(() => Promise.resolve());
+    stubNavigator({ share: share });
+    btn.click();
+
+    renderShareRow('abc-123').click();
+    await vi.waitFor(() => expect(share).toHaveBeenCalled());
+
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('/routes/abc-123/share/');
+    expect(share.mock.calls[0][0].url).toBe('https://snowdesk.app/routes/s/tok/');
+  });
+
+  it('says nothing when the native sheet took it', async () => {
+    mintSucceeds();
+    const share = vi.fn(() => Promise.resolve());
+    stubNavigator({ share: share });
+    btn.click();
+
+    renderShareRow('abc-123').click();
+    await vi.waitFor(() => expect(share).toHaveBeenCalled());
+
+    expect(toastText()).not.toContain('Link copied');
+  });
+
+  it('neither copies nor announces when the user cancels the sheet', async () => {
+    // Announcing a copy here would contradict the user's own decision, and
+    // performing one would do the thing they just declined.
+    mintSucceeds();
+    const abort = new Error('cancelled');
+    abort.name = 'AbortError';
+    const writeText = vi.fn(() => Promise.resolve());
+    const share = vi.fn(() => Promise.reject(abort));
+    stubNavigator({ share: share, clipboard: { writeText: writeText } });
+    btn.click();
+
+    renderShareRow('abc-123').click();
+    await vi.waitFor(() => expect(share).toHaveBeenCalled());
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(toastText()).not.toContain('Link copied');
+  });
+
+  it('confirms a clipboard copy, which has no other visible sign', async () => {
+    mintSucceeds();
+    stubNavigator({ clipboard: { writeText: vi.fn(() => Promise.resolve()) } });
+    btn.click();
+
+    renderShareRow('abc-123').click();
+
+    await vi.waitFor(() => expect(toastText()).toContain('Link copied'));
+  });
+
+  it('reports a failed mint', async () => {
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 404 }));
+    stubNavigator({ share: vi.fn(() => Promise.resolve()) });
+    btn.click();
+
+    renderShareRow('abc-123').click();
+
+    await vi.waitFor(() => expect(toastText()).toContain("couldn't be created"));
+  });
+
+  it('emits the share telemetry only once a link exists', async () => {
+    // A tap that failed to mint has shared nothing.
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 500 }));
+    stubNavigator({ share: vi.fn(() => Promise.resolve()) });
+    btn.click();
+
+    renderShareRow('abc-123').click();
+    await vi.waitFor(() => expect(toastText()).toContain("couldn't be created"));
+
+    expect(window.pwaTelemetry.emit).not.toHaveBeenCalledWith(
+      'map.route.shared',
+      expect.anything(),
+    );
+  });
+
+  it('emits it when the link is minted', async () => {
+    mintSucceeds();
+    const share = vi.fn(() => Promise.resolve());
+    stubNavigator({ share: share });
+    btn.click();
+
+    renderShareRow('abc-123').click();
+    await vi.waitFor(() => expect(share).toHaveBeenCalled());
+
+    expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.route.shared', {});
   });
 });

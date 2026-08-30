@@ -27,6 +27,11 @@ Covers:
                  (and a zero staying a zero); owner scoping; freshness
                  headers WITHOUT X-Data-Unsafe-After; and a query count that
                  does not grow with the number of routes.
+  SNOW-764's widening of the last two — route_list and routes_geojson
+                 answering for an anonymous session that holds a pending
+                 share; the pending rows sorting above the owned ones; a
+                 pending FEATURE carrying token + pending and NO uuid; and
+                 the headers unchanged.
 
 Scoped to the Django test client throughout — per CLAUDE.md's layer rules
 there is nothing browser-shaped in this ticket, and a 404 needs no browser.
@@ -34,7 +39,7 @@ there is nothing browser-shaped in this ticket, and a 404 needs no browser.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -44,11 +49,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 
 from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route
-from tests.factories import RouteFactory, UserFactory
+from tests.factories import RouteFactory, RouteShareFactory, UserFactory
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -1112,3 +1118,248 @@ class TestRoutesGeojsonQueryCount:
 
         assert len(response.json()["features"]) == 5
         assert len(five_routes) == len(one_route)
+
+
+# ---------------------------------------------------------------------------
+# SNOW-764 — the two widened endpoints
+# ---------------------------------------------------------------------------
+
+
+def _follow(client: Client, token: str) -> None:
+    """Follow a share link so the client's session holds its token.
+
+    Through the real redirect rather than by writing the session by hand:
+    the whole point of the widening is that a token can only arrive this
+    way, and a test that planted one directly would pass even if that
+    stopped being true.
+    """
+    response = client.get(f"/routes/s/{token}/")
+    assert response.status_code == 302
+
+
+@pytest.mark.django_db
+class TestRouteListPendingShares:
+    """route_list answers for a session holding a followed share."""
+
+    def test_an_anonymous_session_with_nothing_pending_still_gets_403(
+        self, client: Client
+    ) -> None:
+        """The widening is not a general opening — this is every visitor."""
+        assert client.get(LIST_URL, **HTMX_HEADERS).status_code == 403
+
+    def test_an_anonymous_session_with_a_pending_share_gets_the_list(
+        self, client: Client
+    ) -> None:
+        """They were sent a route; the panel is where a route is read."""
+        share = RouteShareFactory.create(route=RouteFactory.create(name="Col Ferret"))
+        _follow(client, share.token)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert "Col Ferret" in response.content.decode()
+
+    def test_a_pending_row_is_marked_as_shared_with_you(self, client: Client) -> None:
+        """The row says it is not yet theirs before the button does."""
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert "Shared with you" in response.content.decode()
+
+    def test_a_pending_row_is_keyed_on_the_token_not_the_uuid(
+        self, client: Client
+    ) -> None:
+        """A non-owner is never handed the identifier the owner's endpoints use."""
+        route = RouteFactory.create()
+        share = RouteShareFactory.create(route=route)
+        _follow(client, share.token)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert f"route-share-{share.token}" in content
+        assert str(route.uuid) not in content
+
+    def test_a_pending_row_offers_save_and_not_rename_or_remove(
+        self, client: Client
+    ) -> None:
+        """Its one control is the claim; the owner's three would all 404."""
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert f"/routes/partials/share/{share.token}/claim/" in content
+        assert "data-row-rename" not in content
+        assert "data-row-remove" not in content
+
+    def test_pending_rows_sort_above_owned_ones(self, client: Client) -> None:
+        """The claim is the reason the panel was opened."""
+        user = UserFactory.create()
+        RouteFactory.create(user=user, name="My own route")
+        share = RouteShareFactory.create(route=RouteFactory.create(name="Sent to me"))
+        client.force_login(user)
+        _follow(client, share.token)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert content.index("Sent to me") < content.index("My own route")
+
+    def test_an_expired_pending_share_drops_out(self, client: Client) -> None:
+        """A token that dies between the follow and the read is pruned."""
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+        share.expires_at = timezone.now() - timedelta(days=1)
+        share.save(update_fields=["expires_at", "updated_at"])
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        # Nothing pending and nobody signed in — back to the plain 403.
+        assert response.status_code == 403
+
+    def test_the_empty_clause_is_silenced_by_a_pending_row(
+        self, client: Client
+    ) -> None:
+        """Saying they have no routes beneath a visible row is a wrong claim."""
+        user = UserFactory.create()
+        share = RouteShareFactory.create()
+        client.force_login(user)
+        _follow(client, share.token)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="route-list-empty"' not in content
+
+    def test_an_owned_row_keeps_its_own_controls_beside_a_pending_one(
+        self, client: Client
+    ) -> None:
+        """The pending row's context must not leak into the owned loop.
+
+        Both rows render through the same partial, and ``pending_share``
+        is what switches it. Set once for the pending loop and left in
+        scope, it would turn every owned row into a Save button too.
+        """
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user)
+        share = RouteShareFactory.create()
+        client.force_login(user)
+        _follow(client, share.token)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert f'id="route-{route.uuid}"' in content
+        assert "data-row-rename" in content
+        assert "data-row-remove" in content
+
+    def test_the_map_variant_renders_pending_rows_too(self, client: Client) -> None:
+        """Both surfaces list the same thing; the deep link lands on the map."""
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        response = client.get(
+            f"{LIST_URL}?variant={ROUTE_LIST_MAP_VARIANT}", **HTMX_HEADERS
+        )
+
+        assert response.status_code == 200
+        assert f"route-share-{share.token}" in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonPendingShares:
+    """routes_geojson draws a followed share's line."""
+
+    def test_an_anonymous_session_with_nothing_pending_still_gets_403(
+        self, client: Client
+    ) -> None:
+        """Unchanged for every visitor who has not followed a link."""
+        assert client.get(GEOJSON_URL).status_code == 403
+
+    def test_a_pending_share_is_drawn(self, client: Client) -> None:
+        """The deep link has to land on a map that can show the route."""
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        response = client.get(GEOJSON_URL)
+
+        assert response.status_code == 200
+        features = response.json()["features"]
+        assert len(features) == 1
+        assert features[0]["geometry"]["type"] == "LineString"
+
+    def test_a_pending_feature_carries_the_token_and_the_flag(
+        self, client: Client
+    ) -> None:
+        """map.js keys the pending line and its Save CTA off these two."""
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        props = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert props["token"] == share.token
+        assert props["pending"] is True
+
+    def test_a_pending_feature_carries_no_uuid(self, client: Client) -> None:
+        """The owner-scoped endpoints are addressed by uuid; a guest gets none."""
+        route = RouteFactory.create()
+        share = RouteShareFactory.create(route=route)
+        _follow(client, share.token)
+
+        body = client.get(GEOJSON_URL)
+        props = body.json()["features"][0]["properties"]
+
+        assert "uuid" not in props
+        assert str(route.uuid) not in body.content.decode()
+
+    def test_a_pending_feature_carries_the_same_display_fields(
+        self, client: Client
+    ) -> None:
+        """One route reads the same whoever is looking at it."""
+        route = RouteFactory.create(name="Col Ferret", distance_m=8200.0)
+        share = RouteShareFactory.create(route=route)
+        _follow(client, share.token)
+
+        props = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert props["name"] == "Col Ferret"
+        assert props["distance_m"] == 8200.0
+        assert props["ascent_m"] == route.ascent_m
+        assert props["descent_m"] == route.descent_m
+        assert props["bounds"] == route.bounds
+        assert props["duration_s"] is not None
+
+    def test_owned_features_still_carry_a_uuid_and_no_flag(
+        self, client: Client
+    ) -> None:
+        """The owned branch is untouched by the widening."""
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user)
+        client.force_login(user)
+
+        props = client.get(GEOJSON_URL).json()["features"][0]["properties"]
+
+        assert props["uuid"] == str(route.uuid)
+        assert "token" not in props
+        assert "pending" not in props
+
+    def test_owned_and_pending_features_arrive_together(self, client: Client) -> None:
+        """A signed-in recipient sees both their own lines and the sent one."""
+        user = UserFactory.create()
+        RouteFactory.create(user=user)
+        share = RouteShareFactory.create()
+        client.force_login(user)
+        _follow(client, share.token)
+
+        features = client.get(GEOJSON_URL).json()["features"]
+
+        assert len(features) == 2
+
+    def test_the_payload_is_still_private_and_not_stored(self, client: Client) -> None:
+        """It varied per user; it now varies per session too, needing the same."""
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        response = client.get(GEOJSON_URL)
+
+        assert "private" in response["Cache-Control"]
+        assert "no-store" in response["Cache-Control"]

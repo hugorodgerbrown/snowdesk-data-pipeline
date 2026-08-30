@@ -130,6 +130,20 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "map.route.created",
         "map.route.deleted",
         "map.route.overlay_toggled",
+        # Sharing (SNOW-764) — the two ends of one exchange. `shared` fires
+        # when a link is successfully MINTED, not when it is sent: what
+        # happens after the payload reaches the platform's share sheet is
+        # not observable from the page, and treating "the sheet opened" as
+        # "a route was shared" would over-count every cancelled share.
+        # `claimed` fires when a recipient's Save comes back 2xx.
+        #
+        # Neither carries a token, a uuid or any geometry, on the same rule
+        # as `created` above: the events say that a share was offered and
+        # that one was taken, and a share token is a capability — putting
+        # one in an analytics payload would put a grant on somebody's route
+        # into a third-party system.
+        "map.route.shared",
+        "map.route.claimed",
     }
 )
 

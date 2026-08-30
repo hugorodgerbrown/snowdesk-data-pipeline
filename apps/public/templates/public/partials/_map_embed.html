@@ -103,8 +103,23 @@ Optional context:
     {#                                                                      #}
     {# ONE gate since SNOW-724 retired the ``routes`` rollout flag:          #}
     {# authentication, exactly as favourites has.                            #}
+    {# SNOW-764 widened ``routes_eligible`` — see _routes_context. It now  #}
+    {# also covers an anonymous visitor holding a followed share link,      #}
+    {# which is exactly the request routes:geojson answers with the shared  #}
+    {# line, and the one the ?route_share deep link arrives on. The layer   #}
+    {# gate is unchanged in shape: emit the URL only when there is          #}
+    {# something behind it.                                                 #}
+    {#                                                                      #}
+    {# The three attributes after it are the pending route's Save CTA in    #}
+    {# the map popup (map.js's activateRoute): where to post the claim,     #}
+    {# whether the viewer has an account to claim onto, and where to send   #}
+    {# them if not. A signed-out viewer gets the sign-in link rather than   #}
+    {# no control at all.                                                   #}
     {% if routes_eligible %}data-routes-url="{{ routes_geojson_url }}"{% endif %}
     data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
+    data-route-claim-url-template="{{ route_claim_url_template }}"
+    data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
+    data-routes-signin-url="{{ routes_signin_url }}"
 >
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
@@ -425,7 +440,19 @@ Optional context:
                         data-route-create-url="{{ route_create_url }}"
                         data-route-list-url="{{ route_list_url }}"
                         data-route-rename-url-template="{{ route_rename_url_template }}"
+                        {# SNOW-764. Two eligibility attributes now, because #}
+                        {# they answer two questions that used to be one:     #}
+                        {# `routes-eligible` is "is there a routes list for   #}
+                        {# this request", which an anonymous visitor holding  #}
+                        {# a followed share link now satisfies, and           #}
+                        {# `routes-upload-eligible` is "may this request      #}
+                        {# upload", which stays authentication. routes.js     #}
+                        {# reads both: the first decides whether to load rows #}
+                        {# at all, the second the add CTA and the sign-in     #}
+                        {# prompt.                                            #}
                         data-routes-eligible="{{ routes_eligible|yesno:'true,false' }}"
+                        data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
+                        data-route-share-url-template="{{ route_share_url_template }}"
                         data-signin-url="{{ routes_signin_url }}"
                         aria-label='{% trans "Your routes" %}'
                         {# SNOW-687: see #favourite-add-btn above — same          #}
@@ -1678,6 +1705,22 @@ Optional context:
     <span data-string="route-duration-hours">{% blocktrans %}%(hours)sh%(minutes)sm{% endblocktrans %}</span>
     <span data-string="route-duration-minutes">{% blocktrans %}%(minutes)sm{% endblocktrans %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
+    {# SNOW-764: the shared-route popup — the Save control's label and its   #}
+    {# three outcomes. There is deliberately no "Shared with you" qualifier  #}
+    {# here: both labels below already say the route is somebody else's      #}
+    {# being offered, so the line only repeated them. The pending PANEL ROW  #}
+    {# keeps its own prefix (routes/partials/_route.html), because a row     #}
+    {# sits in a list beside owned ones and a popup has no such neighbour.   #}
+    {#                                                                       #}
+    {# The at-cap line names the remedy, because that is the only thing      #}
+    {# separating it from the generic failure: a user at the cap who is told #}
+    {# only "that couldn't be saved" will retry the identical action.        #}
+    <span data-string="route-save">{% trans "Save route" %}</span>
+    <span data-string="route-save-signin">{% trans "Sign in to save this route" %}</span>
+    <span data-string="route-save-failed">{% trans "That couldn't be saved. Try again." %}</span>
+    <span
+        data-string="route-save-limit"
+    >{% trans "You've reached your saved-route limit. Remove one to save this." %}</span>
     {# SNOW-691: the Terrain row's one disable reason (title attribute), set  #}
     {# by updateSlopeRowAvailability in map.js when the viewport centre       #}
     {# leaves the raster's declared coverage rectangle. Deliberately says     #}

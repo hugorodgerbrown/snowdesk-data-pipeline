@@ -1,12 +1,16 @@
 """
 apps/routes/models.py — Database models for the routes application.
 
-Defines ``Route``: a polyline an authenticated user imported from a GPX
-file. The row stores the coordinate list itself (``points``) plus the
-derived figures the list rows and the later fit-to-bounds need
-(``distance_m``, ``ascent_m``, ``point_count``, ``bounds``) plus the
-recording's two ends (``started_at``, ``finished_at``), so neither
-surface ever has to re-walk the geometry.
+Defines two models:
+
+- ``Route``: a polyline an authenticated user imported from a GPX file.
+  The row stores the coordinate list itself (``points``) plus the derived
+  figures the list rows and the later fit-to-bounds need (``distance_m``,
+  ``ascent_m``, ``point_count``, ``bounds``) plus the recording's two ends
+  (``started_at``, ``finished_at``), so neither surface ever has to
+  re-walk the geometry.
+- ``RouteShare`` (SNOW-764): a tokenised link that lets the owner hand one
+  of their routes to another account, which claims a COPY of it.
 
 The uploaded ``.gpx`` is parsed and discarded — there is no ``FileField``
 here and no copy of the original on disk. See
@@ -14,7 +18,8 @@ here and no copy of the original on disk. See
 
 Parsing, simplification and the derived figures live in
 ``apps/routes/services/gpx.py``; the mutating entry points (per-user cap,
-create, delete) live in ``apps/routes/services/routes.py``.
+create, delete) live in ``apps/routes/services/routes.py``, and the
+sharing half in ``apps/routes/services/shares.py``.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from apps.core.models import BaseModel
 
@@ -226,6 +232,171 @@ class Route(BaseModel):
         """
         label = self.name or self.source_filename or "Untitled route"
         return f"{self.user} — {label} ({self.distance_km:.1f} km)"
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# RouteShare
+# ---------------------------------------------------------------------------
+
+
+class RouteShareQuerySet(models.QuerySet["RouteShare"]):
+    """Custom queryset for RouteShare."""
+
+    def active(self) -> "RouteShareQuerySet":
+        """Return shares that can still be claimed right now.
+
+        Two conditions, and both are the same kind of fact — the link has
+        stopped pointing at something claimable:
+
+        * ``route`` is still set. The FK is ``SET_NULL``, so an owner
+          deleting the route leaves the share row behind with a null; a
+          link to a route that no longer exists must stop working the
+          moment it is deleted, not when it expires.
+        * ``expires_at`` is still in the future. A share link is a
+          reusable, time-bounded grant (see the class docstring), so the
+          window is what bounds it rather than a claim count.
+
+        Every read path goes through here — the redirect, the pending-list
+        resolution and the claim itself — so "expired" and "revoked by
+        deletion" are decided in exactly one place and can never disagree
+        between the surface that lists a pending share and the endpoint
+        that claims it.
+
+        Returns:
+            Filtered queryset of claimable shares.
+
+        """
+        return self.filter(route__isnull=False, expires_at__gt=timezone.now())
+
+
+class RouteShare(BaseModel):
+    """A tokenised link handing one Route to another account (SNOW-764).
+
+    A ``Route`` is otherwise reachable by exactly one account: ``user`` is
+    a plain FK and every endpoint in ``apps/routes/views.py`` is
+    owner-scoped through ``Route.objects.for_user()``. This row is the one
+    way a second account gets at one, and it is deliberately the smallest
+    thing that does the job.
+
+    **A claim COPIES, it never transfers.** ``claim_route_share`` writes a
+    new ``Route`` owned by the claimer with the geometry and derived
+    figures copied across; the sharer keeps theirs untouched. Two people
+    who ski a tour together then each own their own row, and neither can
+    rename or delete the other's. A transfer would make one person's
+    Remove take a route off somebody else's map, which is not what handing
+    a friend a track means.
+
+    **The link is reusable and time-bounded.** The owner shares once and
+    the link works for everyone they send it to until ``expires_at``, which
+    is set ``settings.ROUTE_SHARE_MAX_AGE_DAYS`` ahead at creation. A
+    single-use token would break the ordinary case (a group chat, three
+    people tapping the same message), and an unbounded one would leave a
+    grant on the user's own data alive forever with nothing that ever
+    revokes it. ``claim_count`` and ``last_claimed_at`` record the use
+    without gating it — they are what an owner or a staff member reads to
+    see whether a link went further than intended.
+
+    ``token`` follows ``apps.bulletins.models.BulletinShare`` exactly:
+    ``secrets.token_urlsafe(8)``, 11 URL-safe characters, ~66 bits of
+    entropy. This grant is bigger than that one's (it writes a row on the
+    claimer's account rather than opening a public page), and the bound
+    that makes 66 bits enough is that guessing gains an attacker a copy of
+    a stranger's ski track and nothing else: there is no account access
+    behind it, the claim is cap-checked and rate-limited, and the window
+    closes.
+
+    ``route`` is nullable (``SET_NULL``) so deleting a route does not
+    delete the audit of who it was shared with; ``created_by`` is
+    ``CASCADE``, because a deleted account's shares have no owner to
+    account to and nothing left to grant.
+
+    There is no click-tracking sidecar (``BulletinShareClick``'s twin).
+    That table exists to measure the reach of a public marketing link;
+    this token grants a copy of one user's own data and is not a surface
+    whose reach anyone is trying to grow.
+    """
+
+    token = models.CharField(
+        max_length=32,
+        unique=True,
+        db_index=True,
+        help_text="URL-safe random token used in the /routes/s/<token>/ short URL.",
+    )
+    route = models.ForeignKey(
+        Route,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="shares",
+        help_text=(
+            "The route this link hands out. Nulled when the owner deletes "
+            "the route, which stops the link working; the share row is kept."
+        ),
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="route_shares",
+        help_text="The user who created this share link.",
+    )
+    expires_at = models.DateTimeField(
+        help_text=(
+            "When the link stops being claimable. Set "
+            "settings.ROUTE_SHARE_MAX_AGE_DAYS ahead at creation."
+        ),
+    )
+    claim_count = models.PositiveIntegerField(
+        default=0,
+        help_text=(
+            "How many copies have been claimed through this link. Recorded, "
+            "never enforced — the link is deliberately reusable."
+        ),
+    )
+    last_claimed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the most recent copy was claimed. Null until the first.",
+    )
+
+    objects = RouteShareQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+
+    @property
+    def is_claimable(self) -> bool:
+        """Whether this share can be claimed right now.
+
+        The row-level twin of ``RouteShareQuerySet.active()``, for a share
+        already in hand — the redirect has one and would otherwise have to
+        re-query to ask the same question. The two conditions are stated
+        once each here and once each there because Django has no way to
+        share a predicate between Python and SQL; the pair is asserted
+        equivalent by ``tests/routes/test_models.py``.
+
+        Returns:
+            True when the route still exists and the window is still open.
+
+        """
+        return self.route_id is not None and self.expires_at > timezone.now()
+
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this share.
+
+        Format: ``RouteShare(<token>, <route label or "deleted">)``
+        """
+        # Bound to a local rather than tested through ``route_id``: the FK
+        # is nullable, so the attribute is ``Route | None`` and only a test
+        # on the object itself narrows it.
+        route = self.route
+        label = route.to_string() if route is not None else "deleted"
+        return f"RouteShare({self.token}, {label})"
 
     def __str__(self) -> str:
         """Return a human-readable representation."""

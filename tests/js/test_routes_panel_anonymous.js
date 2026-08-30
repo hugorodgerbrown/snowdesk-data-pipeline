@@ -2,11 +2,18 @@
  * tests/js/test_routes_panel_anonymous.js — the routes panel's signed-out
  * branch (SNOW-686).
  *
- * Its own file because `IS_ELIGIBLE` is captured once, when routes.js's IIFE
- * runs, from #route-add-btn's data-routes-eligible — so the eligible and
- * anonymous branches cannot be exercised from one module instance. Same
- * per-module-instance-state split as test_favourites_panel_anonymous.js and
- * the test_report_gate_*.js pair.
+ * Its own file because the eligibility constants are captured once, when
+ * routes.js's IIFE runs, from #route-add-btn's data attributes — so the
+ * eligible and anonymous branches cannot be exercised from one module
+ * instance. Same per-module-instance-state split as
+ * test_favourites_panel_anonymous.js and the test_report_gate_*.js pair.
+ *
+ * SNOW-764 split those attributes in two. This file covers the visitor with
+ * NOTHING pending — both false — which is every signed-out visitor who has
+ * not followed a share link, and whose treatment is unchanged: the CTA
+ * replaces the rows. The third combination (eligible, cannot upload: a
+ * signed-out share recipient) is a third module instance, so it lives in
+ * tests/js/test_routes_panel_pending_share.js.
  *
  * The roundel is rendered for signed-out visitors too, so the affordance is
  * discoverable rather than appearing on sign-in — the shape
@@ -29,6 +36,7 @@ import '../../static/js/map_sheet.js';
 document.body.innerHTML = `
   <button id="route-add-btn"
           data-routes-eligible="false"
+          data-routes-upload-eligible="false"
           data-signin-url="/sign-in/"
           data-route-create-url="/routes/partials/create/"
           data-route-list-url="/routes/partials/list/?variant=map"
