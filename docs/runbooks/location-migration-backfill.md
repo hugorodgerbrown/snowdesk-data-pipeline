@@ -115,6 +115,16 @@ longer exist; the location rows they were run alongside do.*
 | 6. fetch_weather | ✅ `--date` pinned to today; 4290 created, 0 failed |
 | verification | ✅ both surfaces render |
 
+**The step-5 row above did not hold, and nobody noticed for six days.**
+`bin/build.sh` reloads the EAWS fixtures on every deploy, and `loaddata`
+resets every column they do not carry — so all 461 `centroid_location`
+links were NULLed by the next deploy, leaving 461 orphaned `Location` rows.
+The table records what the command reported, not what survived. Diagnosed
+2026-08-30 as SNOW-771 and fixed by making `build.sh` re-link after every
+`loaddata`; see
+[`region-centroid-backfill.md`](region-centroid-backfill.md). Read every
+"linked N regions" record in this file with that in mind.
+
 Verified on staging 2026-08-24: Thyon's resort page shows the labelled
 per-location panel (`THYON 2000 · 2144 M`) where uncurated Nendaz still
 shows the unlabelled legacy panel, and `/ch-4115/` shows

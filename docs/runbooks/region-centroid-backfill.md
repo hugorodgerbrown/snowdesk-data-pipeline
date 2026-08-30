@@ -1,114 +1,123 @@
 ---
 name: region-centroid-backfill
-description: link_region_centroid_locations --commit — give every micro-region a centroid Location; Open-Meteo cost and the fetch_weather bill
+description: Region centroid Locations — build.sh re-links every deploy because loaddata NULLs the FK; refresh_centroid_elevations is the manual step
 status: current
 last-reviewed: 2026-08-30
 ---
 
-# Runbook — give every micro-region a centroid Location
+# Runbook — region centroid Locations
 
-## When this applies
+## There is no per-environment backfill any more
 
-After SNOW-759 deploys to an environment. The migration adds the `Weather`
-table, but **no region gets weather until it has a `centroid_location`**,
-and that FK is filled by a `--commit`-gated command an operator runs by
-hand, per
-[`dry-run-default-commands`](../decisions/dry-run-default-commands.md).
+This document used to describe an operator running
+`link_region_centroid_locations --commit` against staging and production,
+paying ~461 Open-Meteo elevation calls each time. **That procedure is
+gone.** SNOW-771 replaced it: `bin/build.sh` and `bin/build_headless.sh`
+run the link step on every deploy, and it is wholly offline.
 
-Until it is run, an environment degrades rather than breaking:
-`MicroRegion.centre_point()` falls back to the legacy `centre` column, so
-the bulletin page's JSON-LD geo and the MCP nearby-region search keep
-working. What is missing is weather — a region with no centroid `Location`
-is not in `Location.objects.active()` and so is never fetched.
+If you are here because region weather is missing in an environment, the
+answer is almost certainly not "run the backfill" — see
+[Diagnosing](#diagnosing-a-region-with-no-weather) below.
 
-## Read this before you run it
+## Why it works this way
 
-**This step costs money twice, and the second cost is recurring.**
+`build.sh` reloads the four EAWS fixtures on every deploy. `loaddata`
+builds each instance from the fixture's fields alone and saves the whole
+row, so any column the fixtures do not carry is reset to its model default.
+`MicroRegion.centroid_location` is one of those, so **every deploy NULLs all
+461 links** and orphans the `Location` rows behind them.
 
-| | Calls | When |
+That was a silent data-loss bug for as long as the link was treated as
+durable: `link_region_centroid_locations` would report "461 linked, 0
+failed", and hours later a deploy would undo it with nothing in any log to
+say so. Staging lost 461 links this way on 2026-08-30, and the symptom was
+a weather map empty for every region.
+
+The fix is not to defend the FK but to make rebuilding it free:
+
+| Half of a centroid | Where it comes from | Needs network? |
 |---|---|---|
-| The backfill itself | up to **461** Open-Meteo elevation calls — AT 153, CH 149, IT 124, FR 35 | once |
-| The fetch it enables | ~**1,800** additional forecast calls **per day** (461 locations × 4 runs) | for ever |
+| Coordinate | `centre_from_bbox(boundary)` — the boundary is in the fixture | No |
+| Elevation | `MicroRegion.centroid_elevation_m` — also in the fixture | No |
 
-The recurring figure is the one that matters. **Confirm the Open-Meteo plan
-has headroom for it before running this in production.** The free tier is
-10,000 calls/day shared per IP; 1,800 is a large fraction of it on top of
-the existing resort estate.
+So the link step costs nothing but a query, and runs on every deploy of
+every service. The estate heals itself.
 
-The command paces itself with `--delay` (default 1.0s) to stay inside the
-free-tier rate limit, so a full run takes roughly eight minutes.
+## The one manual step — and it is not per environment
 
-**Do not shorten the delay to save time.** Measured 2026-08-30 on the CH
-fixture: `--delay 0.3` linked 144 of 149 regions and lost 5 to rate-limit
-rejections. Because the command is idempotent that cost nothing but a
-second run — but on a bigger estate it is a slower path to the same place,
-not a faster one.
+`centroid_elevation_m` has to be resolved once, against the **committed
+fixtures**, by a developer. Every environment then gets it for free.
 
-## Steps
-
-### 1. Preview
-
-Read-only. It still makes every elevation call — that is what proves a
-region can resolve — but writes nothing.
+Run it after adding regions to a fixture, or after a fixture rebuild moves
+a boundary:
 
 ```bash
-uv run python manage.py link_region_centroid_locations
+# Preview.
+uv run python manage.py refresh_centroid_elevations
+
+# Resolve the missing ones and write the fixtures.
+uv run python manage.py refresh_centroid_elevations --commit
+
+# After a rebuild moved boundaries — re-resolve every entry, since a moved
+# centroid leaves a stale elevation behind and nothing else would notice.
+uv run python manage.py refresh_centroid_elevations --commit --force
 ```
 
-Expect `N region(s) would be linked, 0 skipped, 0 failed`. A non-zero
-`skipped` is a region whose `boundary` holds a geometry the centroid
-derivation cannot read, which is a fixture problem to fix rather than a
-reason to stop — every committed L4 region has a readable one, so a skip
-here means something upstream changed. A non-zero `failed` exits non-zero —
-check the logs before continuing.
+Commit the changed fixtures.
+`tests/regions/management/commands/test_link_region_centroid_locations.py`
+fails if any region with a boundary is left without an elevation, so a
+half-finished run cannot ship.
 
-### 2. Commit
+## What still costs money
+
+Nothing here does, any more. The **recurring** cost is `fetch_weather`, and
+it is unchanged by this document: one Open-Meteo forecast call per active
+location, four times a day. Giving all 461 micro-regions a centroid takes
+that to roughly **1,800 additional calls per day**, for ever.
+
+**Confirm the Open-Meteo plan has headroom before a deploy first puts
+centroids into an environment.** The free tier is 10,000 calls/day shared
+per IP. Staging is on the paid tier (`customer-api.open-meteo.com`), so it
+is not constrained; production's `OPEN_METEO_API_BASE_URL` is set
+independently and must be checked on its own.
+
+## Diagnosing a region with no weather
+
+Work down this list; the first miss is the cause.
 
 ```bash
-uv run python manage.py link_region_centroid_locations --commit
-```
-
-Idempotent: regions that already have a `centroid_location` are excluded
-from the candidate set, so a second run selects zero and costs nothing. A
-partial run that died halfway can simply be re-run.
-
-### 3. Confirm the estate grew as expected
-
-```bash
-uv run python manage.py shell -c "
+uv run --no-sync python manage.py shell -c "
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion
-print('linked  :', MicroRegion.objects.filter(centroid_location__isnull=False).count())
-print('unlinked:', MicroRegion.objects.filter(centroid_location__isnull=True).count())
-print('active  :', Location.objects.active().count())
+from apps.weather.models import Weather
+print('regions            :', MicroRegion.objects.count())
+print('regions w/ centroid:', MicroRegion.objects.filter(centroid_location__isnull=False).count())
+print('public locations   :', Location.objects.public().count())
+print('weather rows       :', Weather.objects.count())
 "
 ```
 
-The `active` count is the number of Open-Meteo calls each `fetch_weather`
-run will now make. Multiply by four for the daily bill.
-
-### 4. Fetch once by hand before the scheduler does
-
-```bash
-uv run python manage.py fetch_weather            # read-only probe
-uv run python manage.py fetch_weather --commit
-```
-
-Running it by hand once surfaces a rate-limit rejection or a bad
-coordinate while someone is watching, rather than at 00:00 UTC in the
-scheduler's log.
+- **`regions w/ centroid` is 0** — the deploy's link step did not run or
+  failed. Check the build log for `link_region_centroid_locations`. Running
+  it by hand is safe and offline.
+- **Linked, but `public locations` is small** — `public()` is
+  `resort_locations OR micro_regions`; a centroid reaches it only through
+  the FK above.
+- **Public, but no `weather rows`** — `fetch_weather` has not run for those
+  locations yet. It is scheduled 4×/day; run it by hand to fill today.
 
 ## Rolling back
 
 There is no un-link command, and adding one would be the wrong shape: the
 centroid `Location` rows are real places in the estate and other things may
-already reference them. To stop the cost without unpicking the data, take
-the `fetch_weather` job out of `schedule.py` and redeploy — the rows stay,
-they simply stop being refreshed.
+reference them. To stop the recurring cost without unpicking data, take the
+`fetch_weather` job out of `schedule.py` and redeploy — the rows stay, they
+simply stop being refreshed.
 
-## Progress log
+## History
 
-| Environment | Date | Regions linked | Active locations after |
-|---|---|---|---|
-| Local worktree (CH fixture only) | 2026-08-30 | 149 / 149 | 154 |
-| _(record production and staging runs here)_ | | | |
+| Date | Environment | What happened |
+|---|---|---|
+| 2026-08-24 | Staging | Linked 461 by hand. Undone by a later deploy; not understood at the time. |
+| 2026-08-30 | Staging | Linked 461 by hand again, fetched 470 weather rows, then a deploy NULLed every link. Diagnosed as SNOW-771. |
+| 2026-08-30 | Local | 149 / 149 linked from the CH fixture, offline. |

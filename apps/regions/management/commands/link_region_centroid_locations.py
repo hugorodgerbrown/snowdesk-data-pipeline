@@ -1,22 +1,32 @@
 """link_region_centroid_locations — anchor each MicroRegion to a Location.
 
-Backfill for SNOW-696. Gives every ``MicroRegion`` with a ``boundary`` a
-``Location`` at that region's centroid, with its elevation resolved — which
-is what anchors the region in the location estate, so any surface wanting to
-say something about the region has a place to hang it on.
+Gives every ``MicroRegion`` with a ``boundary`` a ``Location`` at that
+region's centroid — which is what anchors the region in the location estate,
+so any surface wanting to say something about the region has a place to hang
+it on (SNOW-696).
 
-The centroid is derived here from ``boundary`` rather than read from the
-``centre`` column (SNOW-765). ``centre`` was itself computed from the same
-polygon at fixture-build time, so this reproduces the stored value rather
-than approximating it — verified across all 461 L4 regions in the four EAWS
-fixtures. Reading ``centre`` instead would make the column an input to the
-thing that replaces it, and nothing could then drop it; see SNOW-766.
+**This runs on every deploy, and it must.** ``bin/build.sh`` reloads the EAWS
+fixtures on every deploy; ``loaddata`` writes back every field a fixture
+carries and resets the ones it does not to their model default. No fixture
+carries ``centroid_location``, so every deploy sets all 461 of them to NULL
+and orphans the ``Location`` rows behind them — silently, because nothing
+reads the column at deploy time. SNOW-771 made that harmless by making this
+command cheap enough to re-run immediately afterwards: ``build.sh`` calls it
+right after ``loaddata``, and the estate heals itself.
 
-**One Open-Meteo elevation call per region**, up to 461 of them across AT
-(153), CH (149), IT (124) and FR (35). The ``--delay`` default paces the
-run inside the free-tier rate limit. The call is made on the dry-run path
-too — it is what proves the region *can* resolve — but nothing is written
-(SNOW-719).
+**Wholly offline — no network at all.** Both halves of a centroid are known
+without asking anyone:
+
+* the coordinate is ``centre_from_bbox(boundary)``, and the boundary is in
+  the fixture (SNOW-765 verified this reproduces the old ``centre`` column
+  exactly, across all 461 regions);
+* the elevation is ``MicroRegion.centroid_elevation_m``, resolved once
+  against Open-Meteo by ``refresh_centroid_elevations`` and committed to the
+  fixtures (SNOW-771).
+
+That is what makes a per-deploy run affordable. It also removes the
+per-environment backfill entirely: no environment pays for elevation
+lookups, because the fixture already carries them.
 
 **A centroid is not a place anyone goes.** The minted location carries no
 ``name`` and no ``kind``: it represents the region, and it sits at whatever
@@ -24,32 +34,25 @@ elevation the polygon's centre happens to fall at rather than at a
 meaningful one. Any surface showing it must say which elevation it
 represents — see ``docs/locations.md``.
 
-SNOW-762 stripped the weather app, and with it this command's forecast-cell
-resolution half. What remains is location work: the centroid ``Location``
-and its elevation. The weather rebuild (SNOW-757) decides for itself which
-locations it polls.
-
-A region that fails to resolve is logged and counted; it never aborts the
-batch, and the command exits non-zero when any failed.
+A region whose fixture carries no elevation still gets its centroid, with a
+null ``elevation_m``: weather does not need a height, and
+``Location.objects.unresolved()`` exists to fill it in later. A region whose
+boundary cannot be read is logged and counted, never fatal.
 
 Idempotent — regions that already have a ``centroid_location`` are excluded,
-so a second run selects zero.
+so a second run in the same deploy selects zero.
 
 Usage:
-    # Preview — resolves and reports, writes nothing.
+    # Preview — reports what it would link, writes nothing.
     uv run python manage.py link_region_centroid_locations
 
-    # Persist.
+    # Persist. This is what build.sh runs on every deploy.
     uv run python manage.py link_region_centroid_locations --commit
-
-    # Loosen pacing between the per-region lookups (default 1.0s).
-    uv run python manage.py link_region_centroid_locations --commit --delay 2
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from argparse import ArgumentParser
 from typing import Any
 
@@ -59,10 +62,8 @@ from django.db import transaction
 from apps.core.command_iteration import (
     announce_link_run,
     iterate_rows,
-    non_negative_float,
 )
 from apps.locations.models import Location
-from apps.locations.services.elevation import fetch_elevation
 from apps.regions.fixture_utils import centre_from_bbox
 from apps.regions.models import MicroRegion
 
@@ -105,18 +106,22 @@ def _centre_of(region: MicroRegion) -> tuple[float, float] | None:
 
 
 class Command(BaseCommand):
-    """Give every MicroRegion with a boundary a resolved centroid Location.
+    """Give every MicroRegion with a boundary a centroid Location.
 
     Read-only by default; pass --commit to persist. Regions already linked,
     and regions with no ``boundary``, are excluded from the candidate set.
     Per-region failures are caught, logged and counted — they never abort
     the batch — and the command exits non-zero when any failed.
+
+    Offline: the coordinate comes from ``boundary`` and the elevation from
+    ``centroid_elevation_m``, so this makes no network calls and is safe to
+    run on every deploy.
     """
 
     help = (
-        "Mint a Location at each MicroRegion's centroid and resolve its "
-        "elevation, anchoring the region in the location estate. "
-        "Read-only unless --commit is passed."
+        "Mint a Location at each MicroRegion's centroid, anchoring the "
+        "region in the location estate. Offline — derived from the region's "
+        "own boundary and fixture elevation. Read-only unless --commit."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -130,22 +135,10 @@ class Command(BaseCommand):
                 "but writes nothing."
             ),
         )
-        parser.add_argument(
-            "--delay",
-            type=non_negative_float,
-            default=1.0,
-            metavar="SECONDS",
-            help=(
-                "Sleep this many seconds between successive regions. "
-                "Default 1.0 — paces the run inside Open-Meteo's free-tier "
-                "rate limit. Pass 0 to disable pacing for a tiny count."
-            ),
-        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Resolve a centroid location for every candidate region."""
         commit: bool = options["commit"]
-        delay: float = options["delay"]
         verbosity: int = options["verbosity"]
 
         # Bounded by the region fixture rather than by user activity, but
@@ -163,21 +156,16 @@ class Command(BaseCommand):
             banner=f"Resolving a centroid Location for {total} region(s)",
             candidate_count=total,
             commit=commit,
-            delay=delay,
         )
 
         counts = {"linked": 0, "skipped": 0, "failed": 0}
-        for index, region in enumerate(
-            iterate_rows(
-                self,
-                candidates,
-                verbosity=verbosity,
-                describe=lambda row: f"{row.pk} {row.region_id}",
-            )
+        for region in iterate_rows(
+            self,
+            candidates,
+            verbosity=verbosity,
+            describe=lambda row: f"{row.pk} {row.region_id}",
         ):
             self._resolve_one(region, counts, commit=commit, verbosity=verbosity)
-            if delay > 0 and index < total - 1:
-                time.sleep(delay)
 
         self._report_outcome(counts, commit=commit, verbosity=verbosity)
 
@@ -219,18 +207,13 @@ class Command(BaseCommand):
             return
 
         latitude, longitude = centre
-        try:
-            # One external HTTP call — kept outside any transaction so a
-            # slow or failing request never holds a DB lock. Made on the
-            # dry-run path too: it is what proves the region can resolve.
-            elevation = fetch_elevation(latitude, longitude)
-        except Exception:  # noqa: BLE001 — broad catch intentional: one region must not abort the batch
-            logger.exception(
-                "link_region_centroid_locations: failed to resolve region %s",
-                region.region_id,
-            )
-            counts["failed"] += 1
-            return
+        # Read, not fetched. ``refresh_centroid_elevations`` resolved this
+        # once against Open-Meteo and committed it to the fixture, so every
+        # environment gets it for free and this command stays offline.
+        # A null is not a failure: weather needs a coordinate, not a height,
+        # and ``Location.objects.unresolved()`` is how a missing one is
+        # filled in later.
+        elevation = region.centroid_elevation_m
 
         if commit:
             with transaction.atomic():
@@ -246,11 +229,8 @@ class Command(BaseCommand):
                 region.save(update_fields=["centroid_location", "updated_at"])
         counts["linked"] += 1
         if verbosity >= 2:
-            logger.info(
-                "Resolved region %s -> %.0fm",
-                region.region_id,
-                elevation,
-            )
+            height = "unknown" if elevation is None else f"{elevation:.0f}m"
+            logger.info("Linked region %s -> %s", region.region_id, height)
 
     def _report_outcome(
         self,
