@@ -233,6 +233,37 @@ class TestLinkRegionCentroidLocations:
         ):
             call_command(COMMAND, "--commit", stdout=StringIO())
 
+    def test_a_moved_elevation_is_corrected_in_place(self) -> None:
+        """A fixture rebuild that changes a height must not orphan the row.
+
+        Replacing the Location would strand its Weather, which is the bug
+        the reuse fix exists to prevent — so the height is written onto the
+        existing row instead.
+        """
+        region = MicroRegionFactory.create(
+            boundary=BOUNDARY, centroid_elevation_m=2100.0
+        )
+        call_command(COMMAND, "--commit", stdout=StringIO())
+        region.refresh_from_db()
+        original_pk = region.centroid_location_id
+        WeatherFactory.create(
+            location=region.centroid_location, observed_on=timezone.localdate()
+        )
+
+        # A rebuild moved the centroid's height, and a deploy unlinked it.
+        MicroRegion.objects.filter(pk=region.pk).update(
+            centroid_location=None, centroid_elevation_m=2450.0
+        )
+        call_command(COMMAND, "--commit", stdout=StringIO())
+
+        region.refresh_from_db()
+        assert original_pk is not None
+        assert region.centroid_location_id == original_pk
+        assert region.centroid_location is not None
+        assert region.centroid_location.elevation_m == 2450.0
+        assert Location.objects.count() == 1
+        assert Weather.objects.filter(location_id=original_pk).count() == 1
+
     def test_a_region_linked_by_a_concurrent_build_is_not_duplicated(self) -> None:
         """A build that loses the race adopts the winner's row, not a new one.
 
