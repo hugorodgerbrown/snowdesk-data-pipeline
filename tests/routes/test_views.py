@@ -1239,6 +1239,27 @@ class TestRouteListPendingShares:
 
         assert 'data-testid="route-list-empty"' not in content
 
+    def test_an_owned_row_keeps_its_own_controls_beside_a_pending_one(
+        self, client: Client
+    ) -> None:
+        """The pending row's context must not leak into the owned loop.
+
+        Both rows render through the same partial, and ``pending_share``
+        is what switches it. Set once for the pending loop and left in
+        scope, it would turn every owned row into a Save button too.
+        """
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user)
+        share = RouteShareFactory.create()
+        client.force_login(user)
+        _follow(client, share.token)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert f'id="route-{route.uuid}"' in content
+        assert "data-row-rename" in content
+        assert "data-row-remove" in content
+
     def test_the_map_variant_renders_pending_rows_too(self, client: Client) -> None:
         """Both surfaces list the same thing; the deep link lands on the map."""
         share = RouteShareFactory.create()
