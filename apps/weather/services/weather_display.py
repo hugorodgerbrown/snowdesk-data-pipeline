@@ -525,6 +525,7 @@ class HourlyChart(TypedDict):
     view_box: str
     width: float
     height: float
+    label_y: float  # Baseline the hour ticks sit on, under the wind band.
     temperature: TemperatureBand
     precipitation: PrecipitationBand
     wind: WindBand
@@ -825,6 +826,7 @@ def build_hourly_chart(hourly: list[HourlyRow]) -> HourlyChart | None:
         view_box=f"0 0 {CHART_WIDTH:.0f} {CHART_HEIGHT:.0f}",
         width=CHART_WIDTH,
         height=CHART_HEIGHT,
+        label_y=AXIS_LABEL_Y,
         temperature=_temperature_band(by_hour),
         precipitation=_precipitation_band(by_hour),
         wind=_wind_band(by_hour),

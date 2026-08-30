@@ -371,6 +371,55 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="chart",
+        label="Hourly chart",
+        description=(
+            "Inks for the forecast panel's meteogram (SNOW-776) — "
+            "temperature either side of the zero isotherm, the "
+            "freezing-level overlay, precipitation as rain or as snow, and "
+            "wind with its gust line and the shaded gap between the two. "
+            "Registered as tokens because the chart is inline SVG: Tailwind "
+            "turns each one into a ``fill-chart-*`` / ``stroke-chart-*`` "
+            "utility, so the drawing carries class names and no hex, and "
+            "follows the theme rather than staying light-mode ink on a dark "
+            "card. Each dark value is the lighter counterpart of its light "
+            "one in the same hue family."
+        ),
+        kind="swatches",
+        tokens=(
+            Token(
+                "--color-chart-temp-warm",
+                "Temperature · at or above 0°",
+                "#c2410c",
+                "#fb923c",
+            ),
+            Token(
+                "--color-chart-temp-cold",
+                "Temperature · below 0°",
+                "#1d4ed8",
+                "#60a5fa",
+            ),
+            Token("--color-chart-freezing", "Freezing level", "#7c3aed", "#c4b5fd"),
+            Token("--color-chart-rain", "Precipitation · rain", "#0369a1", "#38bdf8"),
+            Token("--color-chart-snow", "Precipitation · snow", "#64748b", "#cbd5e1"),
+            Token("--color-chart-wind", "Wind speed", "#0f766e", "#5eead4"),
+            Token("--color-chart-gust", "Gusts", "#14b8a6", "#99f6e4"),
+            Token(
+                "--color-chart-gust-fill",
+                "Gust gap",
+                "rgba(20, 184, 166, 0.18)",
+                "rgba(153, 246, 228, 0.16)",
+            ),
+            Token(
+                "--color-chart-axis",
+                "Baselines",
+                "rgba(0, 0, 0, 0.18)",
+                "rgba(255, 255, 255, 0.20)",
+            ),
+            Token("--color-chart-label", "Hour labels", "#78716c", "#9a968e"),
+        ),
+    ),
+    FoundationCategory(
         slug="radius",
         label="Radius",
         description="Corner-radius scale for cards, tags and pills.",
@@ -1345,12 +1394,18 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="forecast-panel",
         label="Forecast panel",
         description=(
-            "The multi-day outlook for one location (SNOW-761): a scrolling "
-            "day strip, then one collapsible hourly panel per day that "
-            "carries an hourly series. Only the first few days do — the "
-            "stored ``forecast[]`` entries beyond that horizon have no "
-            "``hourly`` key at all — so the second variant is the sparse "
-            "shape rather than a degraded version of the first."
+            "The multi-day outlook for one location (SNOW-761), where the "
+            "day strip is the control (SNOW-776): one day is focused and "
+            "its hourly chart renders directly beneath it. A day that "
+            "carries an hourly series is a ``<label>`` around its own "
+            "hidden radio, so the whole card selects it with no "
+            "JavaScript; a day past the horizon has no ``hourly`` key at "
+            "all in the stored ``forecast[]`` entry, so it renders inert — "
+            "no radio, no label, ``aria-disabled`` — rather than as a "
+            "control that ignores presses. The variants are the states "
+            "that split it: a normal strip, one where every day is past "
+            "the horizon, a series full of holes, and the sparse "
+            "single-day shape."
         ),
         kind="components",
         partial="includes/_forecast_panel.html",

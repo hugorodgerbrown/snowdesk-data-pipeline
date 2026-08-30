@@ -1,0 +1,43 @@
+{% load i18n static %}
+{% comment %}
+templates/includes/_forecast_day_card_body.html — one day column's contents.
+
+The inside of a day card in ``_forecast_panel.html``'s strip: weekday label,
+condition icon, hi/lo, that day's freezing level, and a snowfall chip when
+``snowfall_sum`` is non-zero.
+
+It is a partial because the strip renders the same contents in two shells: a
+``<label>`` for a day that carries an hourly series (it selects that day's
+chart) and a plain ``<div>`` for a day past the horizon, which is inert. The
+shells differ; what they hold does not, and two copies would drift.
+
+Context:
+    day : ForecastPanelDay.
+    testid_prefix : str — prefix for every ``data-testid`` here.
+{% endcomment %}
+<span class="text-xs font-mono uppercase tracking-widest text-text-3">{{ day.weekday_label }}</span>
+<img src="{% static 'icons/weather/'|add:day.icon_filename %}" class="w-8 h-8" alt="{{ day.condition_label }}">
+<span class="text-sm text-text-1 whitespace-nowrap">
+    {% if day.temp_max is not None %}{{ day.temp_max|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}<span
+        class="text-text-3"
+    >/{% if day.temp_min is not None %}{{ day.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
+</span>
+{# ``is not None`` rather than truthiness: 0 m means freezing at the valley #}
+{# floor, which is worth showing, not a blank to hide.                      #}
+{% if day.freezing_level_height is not None %}
+    <span
+        class="text-xs text-text-3 whitespace-nowrap"
+        data-testid="{{ testid_prefix|default:'forecast' }}-freezing-level"
+    >
+        <span class="sr-only">{% trans "Freezing level" %}</span>
+        {% blocktrans with m=day.freezing_level_height|floatformat:0 trimmed %}
+            {{ m }} m
+        {% endblocktrans %}
+    </span>
+{% endif %}
+{% if day.snowfall_sum %}
+    {% blocktrans with cm=day.snowfall_sum|floatformat:0 trimmed asvar snowfall_chip_text %}
+        {{ cm }} cm
+    {% endblocktrans %}
+    {% include "includes/_chip.html" with text=snowfall_chip_text data_testid=testid_prefix|default:'forecast'|add:'-snowfall' %}
+{% endif %}

@@ -1,0 +1,194 @@
+{% load i18n l10n %}
+{% comment %}
+templates/includes/_forecast_hourly_chart.html — one day's meteogram.
+
+Rendered by ``_forecast_panel.html`` for each day that carries an hourly
+series, beneath the day strip that selects it. Replaces the six-column hour
+table (``_forecast_hourly_body.html``, SNOW-776): twenty-four rows of
+numbers is a data dump, and the shape of the day — when it warms, when it
+snows, when it blows — is what a reader is actually after.
+
+Three bands on one 24-hour x axis:
+
+  A  temperature bars drawn from the ZERO ISOTHERM, so a below-zero day
+     reads as below zero, with the freezing-level height laid over them on
+     its own scale (metres, not °C).
+  B  precipitation hanging from the top of its band — rain falls. An hour
+     that is snowing takes the snow token instead of the rain one.
+  C  wind speed with gusts above it and the gap between them shaded. The
+     gap is the gustiness, which is the point of drawing both.
+
+**No JavaScript.** Every coordinate is computed by
+``apps.weather.services.weather_display.build_hourly_chart`` and arrives
+here as SVG user units, so the chart draws under the service worker
+offline and its arithmetic is covered by pytest.
+
+``{% templatetag openblock %} localize off {% templatetag closeblock %}``
+wraps the whole drawing and is load-bearing: coordinates are floats, and an
+active locale that formats decimals with a comma would otherwise render
+``x="12,5"`` and take every band out.
+
+Colours are ``--color-chart-*`` design tokens surfaced as ``fill-*`` /
+``stroke-*`` utilities, so the SVG follows the theme and carries no hex.
+
+Context:
+    chart : HourlyChart — from ``build_hourly_chart``.
+    day   : ForecastPanelDay — for the heading naming the day drawn.
+    testid_prefix : str — prefix for every ``data-testid`` here.
+{% endcomment %}
+{% localize off %}
+    <figure class="mt-2 bg-card border border-border rounded-card px-3 py-3">
+        <figcaption class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
+            <span class="text-summary font-semibold text-text-1">
+                {% blocktrans with weekday=day.weekday_label trimmed %}
+                    Hour by hour — {{ weekday }}
+                {% endblocktrans %}
+            </span>
+            {% if chart.temperature.temp_max is not None %}
+                <span class="text-caption text-text-3 whitespace-nowrap">
+                    {% blocktrans with high=chart.temperature.temp_max|floatformat:0 low=chart.temperature.temp_min|floatformat:0 trimmed %}
+                        {{ low }}&deg; to {{ high }}&deg;
+                    {% endblocktrans %}
+                </span>
+            {% endif %}
+            {% if chart.precipitation.total %}
+                <span class="text-caption text-text-3 whitespace-nowrap">
+                    {% blocktrans with mm=chart.precipitation.total|floatformat:1 trimmed %}
+                        {{ mm }} mm
+                    {% endblocktrans %}
+                </span>
+            {% endif %}
+            {% if chart.wind.max_value is not None %}
+                <span class="text-caption text-text-3 whitespace-nowrap">
+                    {% blocktrans with kmh=chart.wind.max_value|floatformat:0 trimmed %}
+                        gusting {{ kmh }} km/h
+                    {% endblocktrans %}
+                </span>
+            {% endif %}
+        </figcaption>
+
+        {% blocktrans with weekday=day.weekday_label trimmed asvar chart_label %}
+            Hourly temperature, precipitation and wind for {{ weekday }}
+        {% endblocktrans %}
+        <svg
+            viewBox="{{ chart.view_box }}"
+            class="w-full h-auto"
+            role="img"
+            aria-label="{{ chart_label }}"
+            data-testid="{{ testid_prefix|default:'forecast' }}-chart-svg"
+        >
+            {# Band A — temperature from the zero isotherm, freezing level over. #}
+            {% for bar in chart.temperature.bars %}
+                <rect
+                    x="{{ bar.x }}"
+                    y="{{ bar.y }}"
+                    width="{{ bar.width }}"
+                    height="{{ bar.height }}"
+                    rx="1"
+                    class="{% if bar.is_warm %}fill-chart-temp-warm{% else %}fill-chart-temp-cold{% endif %}"
+                />
+            {% endfor %}
+            <line
+                x1="0"
+                y1="{{ chart.temperature.zero_y }}"
+                x2="{{ chart.width }}"
+                y2="{{ chart.temperature.zero_y }}"
+                stroke-width="0.75"
+                class="stroke-chart-axis"
+            />
+            {% for segment in chart.temperature.freezing_level %}
+                <polyline
+                    points="{{ segment }}"
+                    fill="none"
+                    stroke-width="1.25"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-dasharray="3 2"
+                    class="stroke-chart-freezing"
+                />
+            {% endfor %}
+
+            {# Band B — precipitation, hanging from the top of the band. #}
+            {% for bar in chart.precipitation.bars %}
+                <rect
+                    x="{{ bar.x }}"
+                    y="{{ bar.y }}"
+                    width="{{ bar.width }}"
+                    height="{{ bar.height }}"
+                    rx="1"
+                    class="{% if bar.is_snow %}fill-chart-snow{% else %}fill-chart-rain{% endif %}"
+                />
+            {% endfor %}
+            <line
+                x1="0"
+                y1="{{ chart.precipitation.top }}"
+                x2="{{ chart.width }}"
+                y2="{{ chart.precipitation.top }}"
+                stroke-width="0.75"
+                class="stroke-chart-axis"
+            />
+
+            {# Band C — wind speed, gusts, and the gap between them shaded. #}
+            {% for polygon in chart.wind.gust_gap %}
+                <polygon points="{{ polygon }}" class="fill-chart-gust-fill" />
+            {% endfor %}
+            {% for segment in chart.wind.gusts %}
+                <polyline
+                    points="{{ segment }}"
+                    fill="none"
+                    stroke-width="1"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="stroke-chart-gust"
+                />
+            {% endfor %}
+            {% for segment in chart.wind.speed %}
+                <polyline
+                    points="{{ segment }}"
+                    fill="none"
+                    stroke-width="1.25"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="stroke-chart-wind"
+                />
+            {% endfor %}
+
+            {# X axis — one tick every three hours, shared by all three bands. #}
+            {% for tick in chart.hour_labels %}
+                <text
+                    x="{{ tick.x }}"
+                    y="{{ chart.label_y }}"
+                    font-size="9"
+                    text-anchor="middle"
+                    class="fill-chart-label"
+                >
+                    {{ tick.label }}
+                </text>
+            {% endfor %}
+        </svg>
+
+        {# Legend. The bands carry no axis titles, so this is what says which #}
+        {# ink is which — and it is text, so a screen reader gets it too.     #}
+        <ul
+            class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-caption text-text-3"
+            data-testid="{{ testid_prefix|default:'forecast' }}-chart-legend"
+        >
+            <li class="flex items-center gap-1">
+                <span class="inline-block w-2 h-2 rounded-pill bg-chart-temp-warm" aria-hidden="true"></span>
+                {% trans "Temperature" %}
+            </li>
+            <li class="flex items-center gap-1">
+                <span class="inline-block w-2 h-2 rounded-pill bg-chart-freezing" aria-hidden="true"></span>
+                {% trans "Freezing level" %}
+            </li>
+            <li class="flex items-center gap-1">
+                <span class="inline-block w-2 h-2 rounded-pill bg-chart-rain" aria-hidden="true"></span>
+                {% trans "Precipitation" %}
+            </li>
+            <li class="flex items-center gap-1">
+                <span class="inline-block w-2 h-2 rounded-pill bg-chart-wind" aria-hidden="true"></span>
+                {% trans "Wind and gusts" %}
+            </li>
+        </ul>
+    </figure>
+{% endlocalize %}

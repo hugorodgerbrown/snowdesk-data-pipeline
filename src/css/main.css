@@ -458,6 +458,26 @@
   --color-weather-thunder-night:       #101220;
   --color-weather-fallback:            #3a3733;   /* no-snapshot neutral (theme-invariant) */
 
+  /* —— Hourly chart (SNOW-776) ————————————————————
+     The forecast panel's meteogram is inline SVG with
+     its geometry computed in Python. Every colour it
+     draws with is a token here, so the SVG carries
+     `fill-chart-*` / `stroke-chart-*` class names and
+     no hex at all — which is what makes it follow the
+     theme (see the .dark overrides below) rather than
+     staying light-mode ink on a dark card.
+     ————————————————————————————————————————— */
+  --color-chart-temp-warm:  #c2410c;   /* bar rising from the isotherm     */
+  --color-chart-temp-cold:  #1d4ed8;   /* bar hanging below it             */
+  --color-chart-freezing:   #7c3aed;   /* freezing-level overlay line      */
+  --color-chart-rain:       #0369a1;   /* precipitation bar, liquid        */
+  --color-chart-snow:       #64748b;   /* precipitation bar, snowing hour  */
+  --color-chart-wind:       #0f766e;   /* wind speed line                  */
+  --color-chart-gust:       #14b8a6;   /* gust line, above the speed       */
+  --color-chart-gust-fill:  rgba(20, 184, 166, 0.18);  /* the gap between  */
+  --color-chart-axis:       rgba(0, 0, 0, 0.18);       /* baselines, ticks */
+  --color-chart-label:      #78716c;   /* hour labels under the axis       */
+
   /* Border radius */
   --radius-card:   12px;   /* outer card shell                    */
   --radius-tag:    8px;    /* problem tag, inner chips             */
@@ -631,6 +651,21 @@
 
   /* MapLibre Popup glass — see the light-mode definition above. */
   --color-popup-glass:    rgba(20, 22, 26, 0.6);
+
+  /* Hourly chart — see the light-mode definitions above. Each ink is the
+     lighter counterpart of its light value in the same hue family, the
+     pattern this block's basemap and sync-status pairs already follow: a
+     chart drawn in -700s reads as smudges on the dark card. */
+  --color-chart-temp-warm:  #fb923c;
+  --color-chart-temp-cold:  #60a5fa;
+  --color-chart-freezing:   #c4b5fd;
+  --color-chart-rain:       #38bdf8;
+  --color-chart-snow:       #cbd5e1;
+  --color-chart-wind:       #5eead4;
+  --color-chart-gust:       #99f6e4;
+  --color-chart-gust-fill:  rgba(153, 246, 228, 0.16);
+  --color-chart-axis:       rgba(255, 255, 255, 0.20);
+  --color-chart-label:      #9a968e;
 }
 
 
@@ -640,6 +675,30 @@
    utilities. Keep this section minimal.
    ——————————————————————————————————————————— */
 
+
+/* —— Forecast panel — day selector (SNOW-776) ————
+   The day strip IS the control. Each live day's card
+   is a <label> wrapping its own hidden radio, so the
+   focused card paints itself with Tailwind's
+   `has-[:checked]:` variants and needs nothing here.
+
+   Revealing that day's chart does need this rule.
+   The chart is the label's NEXT SIBLING, and
+   Tailwind's `peer-*` variants compile to the general
+   sibling combinator (`~`) — which would reveal every
+   LATER day's chart as well, not just the focused
+   one. The adjacent combinator is the whole
+   mechanism, and it is not expressible as a utility.
+
+   DOM adjacency and visual layout disagree on
+   purpose: flex `order` puts every card on the first
+   line(s) and the revealed chart on its own line
+   underneath, so the cards stay together while each
+   chart stays welded to the card that opens it.
+   ————————————————————————————————————————— */
+
+[data-forecast-chart] { display: none; }
+[data-forecast-day]:has(input:checked) + [data-forecast-chart] { display: block; }
 
 /* —— EAWS danger band tints —————————————————
    Applied via data attribute on the band element

@@ -27,6 +27,7 @@ from django import forms
 from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
+from apps.weather.services.weather_display import build_hourly_chart
 
 # String constants for elevation bound type — mirror ``apps.public.views`` so the
 # template filter (``elevation_icon``) sees the same strings without coupling
@@ -2939,8 +2940,14 @@ def _forecast_panel_day(
     snowfall_sum: float | None,
     freezing_level_height: float | None,
     hourly: tuple[dict[str, Any], ...] = (),
+    is_focus: bool = False,
 ) -> dict[str, Any]:
     """Build one ForecastPanelDay-shaped context column.
+
+    ``chart`` is built by the real ``build_hourly_chart``, not hand-written:
+    it is a hundred coordinates, and a hand-built one would be a drawing of
+    a chart rather than the chart. The variants below therefore show the
+    geometry the service actually produces for each hourly series.
 
     Args:
         date: The column's calendar day.
@@ -2952,6 +2959,7 @@ def _forecast_panel_day(
         freezing_level_height: Day's freezing level, m, or None.
         hourly: That day's hourly rows. Empty for a day past the horizon
             that carries no series — which is most of the strip.
+        is_focus: Whether this is the day the panel opens on.
 
     Returns:
         The context dict.
@@ -2968,6 +2976,8 @@ def _forecast_panel_day(
         "snowfall_sum": snowfall_sum,
         "freezing_level_height": freezing_level_height,
         "hourly": list(hourly),
+        "chart": build_hourly_chart(list(hourly)),  # type: ignore[arg-type]
+        "is_focus": is_focus,
     }
 
 
@@ -2983,17 +2993,39 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
 
     """
     anchor = datetime.date(2026, 1, 12)
+    # A full 24 hours, because that is the shape the chart is drawn for: a
+    # four-entry series would show four bars adrift on a day-wide axis and
+    # say nothing about how the bands read.
     hourly = tuple(
         {
             "time": f"2026-01-12T{hour:02d}:00",
-            "temperature_2m": -3.0 + hour * 0.4,
+            "temperature_2m": -6.0 + hour * 0.5,
             "wind_speed_10m": 12.0 + hour,
-            "wind_gusts_10m": 28.0 + hour,
-            "precipitation": 0.4,
-            "freezing_level_height": 1100.0 + hour * 20,
-            "snowfall": 0.6,
+            "wind_gusts_10m": 26.0 + hour * 1.4,
+            "precipitation": 0.9 if 4 <= hour <= 11 else 0.0,
+            "freezing_level_height": 1100.0 + hour * 45,
+            "snowfall": 0.7 if 4 <= hour <= 8 else 0.0,
         }
-        for hour in (6, 9, 12, 15)
+        for hour in range(24)
+    )
+    # The same day with holes in it. Open-Meteo drops variables depending on
+    # which model backs the coordinates, and 09:00–11:00 is missing outright
+    # — the lines must break across both rather than run straight through.
+    gappy = tuple(
+        row
+        for row in (
+            {
+                **entry,
+                "temperature_2m": None
+                if 14 <= index <= 16
+                else entry["temperature_2m"],
+                "freezing_level_height": (
+                    None if 5 <= index <= 7 else entry["freezing_level_height"]
+                ),
+            }
+            for index, entry in enumerate(hourly)
+        )
+        if not 9 <= int(str(row["time"])[11:13]) <= 11
     )
     conditions = (
         ("moderate_snow", "Snow", -1.0, -8.0, 22.0, 1200.0),
@@ -3015,16 +3047,59 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
             # real shape (``ForecastDay.hourly`` is NotRequired), and a
             # library that showed one per column would misrepresent it.
             hourly=hourly if index < 2 else (),
+            is_focus=index == 0,
+        )
+        for index, (bucket, label, tmax, tmin, snow, freezing) in enumerate(conditions)
+    ]
+    inert_days = [
+        _forecast_panel_day(
+            date=anchor + datetime.timedelta(days=index),
+            icon_bucket=bucket,
+            condition_label=label,
+            temp_max=tmax,
+            temp_min=tmin,
+            snowfall_sum=snow,
+            freezing_level_height=freezing,
         )
         for index, (bucket, label, tmax, tmin, snow, freezing) in enumerate(conditions)
     ]
     return (
         {
-            "caption": "Five days, hourly detail on the first two",
+            "caption": "Five days, hourly detail on the first two — day one focused",
             "solo": True,
             "context": {
                 "panel": {"days": full_days},
                 "testid_prefix": "component-library-forecast",
+            },
+        },
+        {
+            "caption": "Every day past the hourly horizon — the whole strip inert",
+            "solo": True,
+            "context": {
+                "panel": {"days": inert_days},
+                "testid_prefix": "component-library-forecast-inert",
+            },
+        },
+        {
+            "caption": "Gaps in the series — missing hours and null values",
+            "solo": True,
+            "context": {
+                "panel": {
+                    "days": [
+                        _forecast_panel_day(
+                            date=anchor,
+                            icon_bucket="cloudy",
+                            condition_label="Overcast",
+                            temp_max=1.0,
+                            temp_min=-6.0,
+                            snowfall_sum=0.0,
+                            freezing_level_height=1400.0,
+                            hourly=gappy,
+                            is_focus=True,
+                        )
+                    ]
+                },
+                "testid_prefix": "component-library-forecast-gappy",
             },
         },
         {

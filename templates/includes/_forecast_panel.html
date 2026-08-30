@@ -1,81 +1,98 @@
-{% load i18n static %}
+{% load i18n %}
 {% comment %}
 templates/includes/_forecast_panel.html — multi-day outlook for one location.
 
-Two parts:
+A strip of day cards, one of which is focused, with that day's hourly chart
+directly beneath it. **The strip is the control** (SNOW-776): before it, the
+strip said nothing and every day with a series stacked a separate
+collapsible table of hour rows underneath, so twenty-four labelled rows
+repeated down the page with nothing saying which day a table belonged to.
 
-  1. A compact day strip — one column per day: weekday label, condition
-     icon, hi/lo temperature, that day's freezing level, and a snowfall chip
-     when the day's ``snowfall_sum`` is non-zero.
-  2. Expandable hourly detail — one ``_collapsible_panel.html`` per day that
-     carries an hourly series, listing it via ``_forecast_hourly_body.html``.
+Three states a card can be in:
+
+  focused  its radio is checked, so its chart is the one on show. The panel
+           opens on ``day.is_focus`` — the first day it can actually draw.
+  live     it carries a chart and can be selected. The card IS the
+           ``<label>``, wrapping its own hidden radio, so the whole card is
+           the hit target and pressing it selects the day. A ``<span>``
+           inside a label would leave the visible card inert.
+  inert    it has no chart, because the stored ``forecast[]`` entry has no
+           ``hourly`` key at all past ``HOURLY_DAYS``
+           (``apps.weather.services.fetch``). It renders as a plain ``<div>``
+           with ``aria-disabled`` — no radio, no label — so it reads as
+           unavailable rather than as a control that ignores presses. The
+           split is on ``day.chart``, never on an index, so the strip follows
+           the horizon wherever that constant moves.
+
+Selection is CSS-only — no JavaScript. Each card is followed in the DOM by
+its own chart, and one adjacent-sibling rule in ``src/css/main.css`` reveals
+the chart whose card holds the checked radio; flex ``order`` then lays the
+cards out along the top with the revealed chart on its own line below. The
+radio group name is derived from ``testid_prefix`` because the resort page
+renders one panel per curated location on a single page: a fixed name would
+fuse every panel into one group, and choosing a day in one would clear the
+rest.
 
 SNOW-761: the days come from ONE ``Weather`` row — its own ``observed_on``
 leads, and the rest are the entries in its ``forecast`` column
 (``build_point_forecast_panel``). Before the rebuild they were N sibling
-rows from a second table. **``hourly`` is present on only the first few
-forward days**, so part 2 tests each day for one rather than assuming; a day
-past that horizon simply contributes no panel.
+rows from a second table.
 
-Consumers: the resort page (one strip per curated location) and the
+Consumers: the resort page (one panel per curated location) and the
 favourite detail card.
 
 Context:
     panel : ForecastPanel — ``{"days": [ForecastPanelDay, ...]}`` from
             ``apps.weather.services.weather_display.build_point_forecast_panel``.
     testid_prefix : str — prefix for every ``data-testid`` in this partial
-            and its included children. Defaults to ``forecast``.
+            and its included children, and for the radio group name.
+            Defaults to ``forecast``.
 {% endcomment %}
-<div class="space-y-3" data-testid="{{ testid_prefix|default:'forecast' }}-panel">
-    {# 1. Compact day strip #}
-    <div class="flex gap-2 overflow-x-auto pb-1">
+{% with prefix=testid_prefix|default:'forecast' %}
+    <div class="flex flex-wrap items-start gap-2" data-testid="{{ prefix }}-panel">
         {% for day in panel.days %}
-            <div
-                class="flex flex-col items-center gap-1 bg-card border border-border rounded-card px-3 py-2 w-20 shrink-0"
-                data-testid="{{ testid_prefix|default:'forecast' }}-day"
-                data-date="{{ day.date|date:'Y-m-d' }}"
-            >
-                <span class="text-xs font-mono uppercase tracking-widest text-text-3">{{ day.weekday_label }}</span>
-                <img
-                    src="{% static 'icons/weather/'|add:day.icon_filename %}"
-                    class="w-8 h-8"
-                    alt="{{ day.condition_label }}"
+            {% if day.chart %}
+                <label
+                    class="order-1 w-20 shrink-0 flex flex-col items-center gap-1 cursor-pointer bg-card border border-border rounded-card px-3 py-2 transition-colors has-[:checked]:border-accent has-[:checked]:bg-card-hover has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring-selected"
+                    data-forecast-day
+                    data-testid="{{ prefix }}-day"
+                    data-date="{{ day.date|date:'Y-m-d' }}"
                 >
-                <span class="text-sm text-text-1 whitespace-nowrap">
-                    {% if day.temp_max is not None %}{{ day.temp_max|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}<span
-                        class="text-text-3"
-                    >/{% if day.temp_min is not None %}{{ day.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
-                </span>
-                {# ``is not None`` rather than truthiness: 0 m means freezing at #}
-                {# the valley floor, which is worth showing, not a blank to hide. #}
-                {% if day.freezing_level_height is not None %}
-                    <span
-                        class="text-xs text-text-3 whitespace-nowrap"
-                        data-testid="{{ testid_prefix|default:'forecast' }}-freezing-level"
+                    {# sr-only, not hidden: it stays focusable, so the strip is #}
+                    {# one arrow-key radio group for a keyboard user.           #}
+                    <input
+                        type="radio"
+                        class="sr-only"
+                        name="{{ prefix }}-days"
+                        value="{{ day.date|date:'Y-m-d' }}"
+                        data-testid="{{ prefix }}-day-input"
+                        {% if day.is_focus %}checked{% endif %}
                     >
-                        <span class="sr-only">{% trans "Freezing level" %}</span>
-                        {% blocktrans with m=day.freezing_level_height|floatformat:0 trimmed %}
-                            {{ m }} m
+                    <span class="sr-only">
+                        {% blocktrans with weekday=day.weekday_label trimmed %}
+                            Show hourly detail for {{ weekday }}
                         {% endblocktrans %}
                     </span>
-                {% endif %}
-                {% if day.snowfall_sum %}
-                    {% blocktrans with cm=day.snowfall_sum|floatformat:0 trimmed asvar snowfall_chip_text %}
-                        {{ cm }} cm
-                    {% endblocktrans %}
-                    {% include "includes/_chip.html" with text=snowfall_chip_text data_testid=testid_prefix|default:'forecast'|add:'-snowfall' %}
-                {% endif %}
-            </div>
+                    {% include "includes/_forecast_day_card_body.html" with day=day testid_prefix=prefix only %}
+                </label>
+                <div
+                    class="order-2 w-full"
+                    data-forecast-chart
+                    data-testid="{{ prefix }}-day-chart"
+                    data-date="{{ day.date|date:'Y-m-d' }}"
+                >
+                    {% include "includes/_forecast_hourly_chart.html" with chart=day.chart day=day testid_prefix=prefix only %}
+                </div>
+            {% else %}
+                <div
+                    class="order-1 w-20 shrink-0 flex flex-col items-center gap-1 bg-card-subtle border border-border rounded-card px-3 py-2 opacity-60"
+                    aria-disabled="true"
+                    data-testid="{{ prefix }}-day"
+                    data-date="{{ day.date|date:'Y-m-d' }}"
+                >
+                    {% include "includes/_forecast_day_card_body.html" with day=day testid_prefix=prefix only %}
+                </div>
+            {% endif %}
         {% endfor %}
     </div>
-
-    {# 2. Expandable hourly detail — only the days that carry a series #}
-    {% for day in panel.days %}
-        {% if day.hourly %}
-            {% blocktrans with weekday=day.weekday_label trimmed asvar hourly_title %}
-                Hourly detail — {{ weekday }}
-            {% endblocktrans %}
-            {% include "includes/_collapsible_panel.html" with title=hourly_title data_testid=testid_prefix|default:'forecast'|add:'-hourly' body_template="includes/_forecast_hourly_body.html" hourly=day.hourly %}
-        {% endif %}
-    {% endfor %}
-</div>
+{% endwith %}
