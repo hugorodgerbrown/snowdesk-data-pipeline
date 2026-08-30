@@ -1753,9 +1753,16 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     # dropped the FKs pointing at them.
     orphan_log_ids = _referenced_request_log_ids(account)
 
-    user.delete()  # CASCADE deletes the Account, Subscriptions and RequestLogs.
-    if orphan_log_ids:
-        RequestLog.objects.filter(pk__in=orphan_log_ids).delete()
+    # Both deletes commit together or neither does. Erasure that half
+    # succeeds is the worst of the three outcomes: the account is gone, so
+    # the person has no way back in to ask again, while the rows carrying
+    # their IP address and coordinates are still there and no longer
+    # attached to anything that would lead you to them.
+    with transaction.atomic():
+        user.delete()  # CASCADE: Account, Subscriptions, RequestLogs, clicks.
+        if orphan_log_ids:
+            RequestLog.objects.filter(pk__in=orphan_log_ids).delete()
+
     logout(request)
     logger.info("Account %s hard-deleted via delete_account", mask_email(email))
     analytics.track(

@@ -24,6 +24,8 @@ account until you follow the FK backwards.
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
@@ -324,3 +326,31 @@ class TestEveryKindOfAttachedDataDeletes:
 
         assert not Account.objects.filter(pk=account.pk).exists()
         assert not User.objects.filter(pk=user.pk).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestErasureIsAllOrNothing:
+    """A half-finished erasure is worse than a failed one.
+
+    The account going while its request rows stay leaves the person with
+    no way back in to ask again, and leaves the rows carrying their IP
+    address and coordinates attached to nothing that would lead you to
+    them. The two deletes are one transaction so that cannot happen.
+    """
+
+    def test_a_failure_in_the_second_delete_rolls_back_the_first(self) -> None:
+        """If the orphan sweep raises, the account must still be there."""
+        signup = RequestLogFactory.create(account=None)
+        account = AccountFactory.create(acquisition_request=signup)
+        user_pk = account.user.pk
+
+        with mock.patch(
+            "apps.accounts.views.RequestLog.objects.filter",
+            side_effect=RuntimeError("database went away"),
+        ):
+            client = _client_for(account)
+            with pytest.raises(RuntimeError):
+                client.post(reverse("accounts:delete_account"), HTTP_HX_REQUEST="true")
+
+        assert User.objects.filter(pk=user_pk).exists()
+        assert RequestLog.objects.filter(pk=signup.pk).exists()
