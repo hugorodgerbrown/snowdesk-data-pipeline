@@ -15,6 +15,12 @@ Three consumers, one derivation:
   ``build_point_weather_days``   the map feed's ``{date: {code, tmax}}``
                                  projection (``apps.public.api``).
 
+``build_hourly_chart`` sits under the outlook: it turns one day's hourly
+series into the SVG geometry ``includes/_forecast_hourly_chart.html`` draws
+(SNOW-776). The arithmetic is here, in Python, because the chart carries no
+JavaScript — it renders under the service worker offline, and its geometry
+is covered by pytest rather than by a browser test.
+
 **One row in, not a list.** The pre-SNOW-762 version of this module took a
 ``WeatherSnapshot | ForecastCellWeather`` and hedged every field read behind
 ``getattr(..., None)`` because the two models did not agree on what they
@@ -386,6 +392,450 @@ def build_weather_display(
 
 
 # ---------------------------------------------------------------------------
+# Hourly chart
+# ---------------------------------------------------------------------------
+
+# Geometry for one day's meteogram, in SVG user units. ONE fixed viewBox for
+# every chart, so the three bands line up from day to day and the drawing
+# scales to whatever width the card gives it.
+#
+# The x axis is always a full 24 hours: an hour's position comes from the
+# hour parsed out of its ``time`` string, never from its index in the list.
+# A series missing 03:00 therefore leaves a gap at 03:00 rather than
+# shifting every later hour an hour to the left.
+CHART_WIDTH = 240.0
+CHART_HEIGHT = 176.0
+HOURS_PER_DAY = 24
+HOUR_WIDTH = CHART_WIDTH / HOURS_PER_DAY
+BAR_WIDTH = 6.0
+
+# Floor for a drawn bar, so an hour that has a value but nearly no magnitude
+# (0 °C against the isotherm, 0.05 mm of drizzle) still marks the axis. It
+# applies only to bars that are drawn at all — a null hour contributes none.
+MIN_BAR_HEIGHT = 1.0
+
+# The three bands, top to bottom: temperature (tall, it carries the
+# freezing-level overlay too), precipitation, wind.
+TEMPERATURE_TOP = 4.0
+TEMPERATURE_HEIGHT = 84.0
+PRECIPITATION_TOP = 96.0
+PRECIPITATION_HEIGHT = 26.0
+WIND_TOP = 130.0
+WIND_HEIGHT = 26.0
+
+# Hour ticks under the wind band, every third hour.
+AXIS_LABEL_Y = 170.0
+AXIS_LABEL_INTERVAL = 3
+
+# The variables a chart can draw. A day whose every hour is null across all
+# five has nothing to show, and produces no chart rather than an empty frame.
+_CHART_VARIABLES: tuple[str, ...] = (
+    "temperature_2m",
+    "precipitation",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "freezing_level_height",
+)
+
+
+class TemperatureBar(TypedDict):
+    """One hour's temperature bar, drawn from the zero isotherm."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+    is_warm: bool  # At or above 0 °C — the bar rises rather than hangs.
+
+
+class PrecipitationBar(TypedDict):
+    """One hour's precipitation bar, hanging from the top of its band."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+    is_snow: bool  # That hour's ``snowfall`` is non-zero.
+
+
+class TemperatureBand(TypedDict):
+    """Band A — temperature bars, with the freezing level laid over them.
+
+    The bars and the line have **different scales**: one is °C and one is
+    metres, and forcing them onto a shared axis would be meaningless. The
+    bar scale always includes 0 °C so ``zero_y`` sits inside the band and a
+    below-zero day reads as below zero rather than as short bars.
+
+    ``freezing_level`` is a list of ``points`` strings — one per unbroken
+    run of hours — rather than a single string, so the line BREAKS across a
+    null hour instead of interpolating straight through it.
+    """
+
+    top: float
+    height: float
+    zero_y: float
+    bars: list[TemperatureBar]
+    freezing_level: list[str]
+    temp_max: float | None
+    temp_min: float | None
+    freezing_max: float | None
+    freezing_min: float | None
+
+
+class PrecipitationBand(TypedDict):
+    """Band B — precipitation bars hanging from the top of the band.
+
+    An hour with no precipitation contributes no bar: a row of zero-height
+    stubs down a dry day is noise, and the empty band already says "dry".
+    """
+
+    top: float
+    height: float
+    bars: list[PrecipitationBar]
+    total: float | None
+    max_value: float | None
+
+
+class WindBand(TypedDict):
+    """Band C — wind speed, gusts above it, and the gap between shaded.
+
+    The gap IS the gustiness, which is the reason the band exists. Every
+    entry in the three lists is a run of unbroken hours, so all three break
+    across a null hour rather than spanning it.
+    """
+
+    top: float
+    height: float
+    speed: list[str]
+    gusts: list[str]
+    gust_gap: list[str]  # Polygon ``points`` strings, gust over speed.
+    max_value: float | None
+
+
+class HourLabel(TypedDict):
+    """One x-axis tick under the wind band."""
+
+    x: float
+    label: str  # "00", "03", … — numeric, so it needs no translation.
+
+
+class HourlyChart(TypedDict):
+    """One day's meteogram: three bands sharing one x axis."""
+
+    view_box: str
+    width: float
+    height: float
+    temperature: TemperatureBand
+    precipitation: PrecipitationBand
+    wind: WindBand
+    hour_labels: list[HourLabel]
+
+
+def _chart_hour(row: HourlyRow) -> int | None:
+    """Return the local hour an hourly row belongs to.
+
+    ``time`` is the provider's own local ISO-8601 string, so the hour it
+    carries is the hour as experienced at the location — which is the hour
+    the chart plots against.
+
+    Args:
+        row: One :class:`apps.weather.types.HourlyRow`.
+
+    Returns:
+        The hour 0–23, or ``None`` when ``time`` is missing or unparseable —
+        one malformed hour drops out of the chart rather than taking it out.
+
+    """
+    try:
+        return datetime.datetime.fromisoformat(row["time"]).hour
+    except KeyError, TypeError, ValueError:
+        return None
+
+
+def _hour_centre(hour: int) -> float:
+    """Return the x centre of one hour's slot, in SVG user units.
+
+    Args:
+        hour: The hour 0–23.
+
+    Returns:
+        The x coordinate.
+
+    """
+    return round(hour * HOUR_WIDTH + HOUR_WIDTH / 2, 1)
+
+
+def _project(value: float, low: float, high: float, top: float, height: float) -> float:
+    """Map one value onto a band's y axis, ``high`` at the top of the band.
+
+    A flat series (``high == low``) is drawn down the middle of its band
+    rather than dividing by zero — a windless day and a day of constant
+    30 km/h both have something true to show, and neither has a range.
+
+    Args:
+        value: The value to place.
+        low: The bottom of the value domain.
+        high: The top of the value domain.
+        top: The band's top edge, in user units.
+        height: The band's height, in user units.
+
+    Returns:
+        The y coordinate, rounded to one decimal place.
+
+    """
+    span = high - low
+    if span <= 0:
+        return round(top + height / 2, 1)
+    return round(top + (high - value) / span * height, 1)
+
+
+def _runs[T](points: list[tuple[float, T | None]]) -> list[list[tuple[float, T]]]:
+    """Split a series into its unbroken runs of present values.
+
+    Generic in the value type so the wind band can run it over a
+    ``(gust, speed)`` pair and get the same break behaviour the two single
+    lines get, without a second copy of this loop.
+
+    Args:
+        points: ``(x, value)`` pairs in x order, ``value`` ``None`` where
+            the hour is missing or its value is null.
+
+    Returns:
+        One list per run of two or more consecutive present values. A lone
+        point cannot draw a line, so it contributes no run.
+
+    """
+    runs: list[list[tuple[float, T]]] = []
+    current: list[tuple[float, T]] = []
+    for x, y in points:
+        if y is None:
+            if len(current) > 1:
+                runs.append(current)
+            current = []
+            continue
+        current.append((x, y))
+    if len(current) > 1:
+        runs.append(current)
+    return runs
+
+
+def _polyline(run: list[tuple[float, float]]) -> str:
+    """Format one run as an SVG ``points`` string.
+
+    Formatted here rather than in the template because ``points`` is a
+    single attribute value, and because a formatted string cannot be
+    localised into ``12,5`` by a non-English active locale.
+
+    Args:
+        run: ``(x, y)`` pairs.
+
+    Returns:
+        ``"x,y x,y …"``.
+
+    """
+    return " ".join(f"{x:.1f},{y:.1f}" for x, y in run)
+
+
+def _temperature_band(by_hour: dict[int, HourlyRow]) -> TemperatureBand:
+    """Build band A from one day's hours.
+
+    Args:
+        by_hour: The day's rows keyed by their local hour.
+
+    Returns:
+        The :class:`TemperatureBand`.
+
+    """
+    temps = {hour: row.get("temperature_2m") for hour, row in by_hour.items()}
+    present = [value for value in temps.values() if value is not None]
+    # 0 °C is always in the domain, so the isotherm is always on the chart.
+    high = max([*present, 0.0])
+    low = min([*present, 0.0])
+    zero_y = _project(0.0, low, high, TEMPERATURE_TOP, TEMPERATURE_HEIGHT)
+    bars: list[TemperatureBar] = []
+    for hour in sorted(temps):
+        value = temps[hour]
+        if value is None:
+            continue
+        value_y = _project(value, low, high, TEMPERATURE_TOP, TEMPERATURE_HEIGHT)
+        bars.append(
+            TemperatureBar(
+                x=round(_hour_centre(hour) - BAR_WIDTH / 2, 1),
+                y=min(value_y, zero_y),
+                width=BAR_WIDTH,
+                height=max(abs(value_y - zero_y), MIN_BAR_HEIGHT),
+                is_warm=value >= 0,
+            )
+        )
+    freezing = {hour: row.get("freezing_level_height") for hour, row in by_hour.items()}
+    freezing_present = [value for value in freezing.values() if value is not None]
+    freezing_high = max(freezing_present) if freezing_present else 0.0
+    freezing_low = min(freezing_present) if freezing_present else 0.0
+
+    def place(value: float | None) -> float | None:
+        """Project one freezing level onto the band, or pass a null through."""
+        if value is None:
+            return None
+        return _project(
+            value, freezing_low, freezing_high, TEMPERATURE_TOP, TEMPERATURE_HEIGHT
+        )
+
+    line: list[tuple[float, float | None]] = [
+        (_hour_centre(hour), place(freezing.get(hour))) for hour in range(HOURS_PER_DAY)
+    ]
+    return TemperatureBand(
+        top=TEMPERATURE_TOP,
+        height=TEMPERATURE_HEIGHT,
+        zero_y=zero_y,
+        bars=bars,
+        freezing_level=[_polyline(run) for run in _runs(line)],
+        temp_max=max(present) if present else None,
+        temp_min=min(present) if present else None,
+        freezing_max=freezing_high if freezing_present else None,
+        freezing_min=freezing_low if freezing_present else None,
+    )
+
+
+def _precipitation_band(by_hour: dict[int, HourlyRow]) -> PrecipitationBand:
+    """Build band B from one day's hours.
+
+    Args:
+        by_hour: The day's rows keyed by their local hour.
+
+    Returns:
+        The :class:`PrecipitationBand`.
+
+    """
+    values = {hour: row.get("precipitation") for hour, row in by_hour.items()}
+    present = [value for value in values.values() if value is not None]
+    high = max(present) if present else 0.0
+    bars: list[PrecipitationBar] = []
+    for hour in sorted(values):
+        value = values[hour]
+        if not value or high <= 0:
+            continue
+        height = max(value / high * PRECIPITATION_HEIGHT, MIN_BAR_HEIGHT)
+        bars.append(
+            PrecipitationBar(
+                x=round(_hour_centre(hour) - BAR_WIDTH / 2, 1),
+                y=PRECIPITATION_TOP,
+                width=BAR_WIDTH,
+                height=round(height, 1),
+                is_snow=bool(by_hour[hour].get("snowfall")),
+            )
+        )
+    return PrecipitationBand(
+        top=PRECIPITATION_TOP,
+        height=PRECIPITATION_HEIGHT,
+        bars=bars,
+        total=round(sum(present), 1) if present else None,
+        max_value=high if present else None,
+    )
+
+
+def _wind_band(by_hour: dict[int, HourlyRow]) -> WindBand:
+    """Build band C from one day's hours.
+
+    Both lines share one scale anchored at 0 km/h, because the vertical
+    distance between them is the reading — a gust line on its own scale
+    would put the same gap above every speed.
+
+    Args:
+        by_hour: The day's rows keyed by their local hour.
+
+    Returns:
+        The :class:`WindBand`.
+
+    """
+    speeds = {hour: row.get("wind_speed_10m") for hour, row in by_hour.items()}
+    gusts = {hour: row.get("wind_gusts_10m") for hour, row in by_hour.items()}
+    present = [
+        value for value in (*speeds.values(), *gusts.values()) if value is not None
+    ]
+    high = max(present) if present else 0.0
+
+    def place(value: float | None) -> float | None:
+        """Project one wind value onto the band, or pass a null through."""
+        if value is None:
+            return None
+        return _project(value, 0.0, high, WIND_TOP, WIND_HEIGHT)
+
+    speed_points: list[tuple[float, float | None]] = [
+        (_hour_centre(hour), place(speeds.get(hour))) for hour in range(HOURS_PER_DAY)
+    ]
+    gust_points: list[tuple[float, float | None]] = [
+        (_hour_centre(hour), place(gusts.get(hour))) for hour in range(HOURS_PER_DAY)
+    ]
+    # The shaded gap needs BOTH values for the same hour, so it breaks
+    # wherever EITHER line does.
+    paired: list[tuple[float, tuple[float, float] | None]] = [
+        (x, None if speed_y is None or gust_y is None else (gust_y, speed_y))
+        for (x, gust_y), (_, speed_y) in zip(gust_points, speed_points, strict=True)
+    ]
+    # Each polygon walks the gust line forwards and the speed line back.
+    gaps = [
+        _polyline(
+            [(x, gust_y) for x, (gust_y, _) in run]
+            + [(x, speed_y) for x, (_, speed_y) in reversed(run)]
+        )
+        for run in _runs(paired)
+    ]
+    return WindBand(
+        top=WIND_TOP,
+        height=WIND_HEIGHT,
+        speed=[_polyline(run) for run in _runs(speed_points)],
+        gusts=[_polyline(run) for run in _runs(gust_points)],
+        gust_gap=gaps,
+        max_value=high if present else None,
+    )
+
+
+def build_hourly_chart(hourly: list[HourlyRow]) -> HourlyChart | None:
+    """Build one day's meteogram from its hourly series.
+
+    Everything is computed here rather than in the browser: the chart is
+    inline SVG with no JavaScript, so it draws under the service worker
+    offline and its arithmetic is covered by pytest rather than by a
+    browser test.
+
+    Args:
+        hourly: The day's :class:`apps.weather.types.HourlyRow` list.
+
+    Returns:
+        An :class:`HourlyChart`, or ``None`` when there is nothing to draw —
+        an empty series, a series whose every ``time`` is unparseable, or a
+        day whose every value is null. An empty frame says less than no
+        frame does.
+
+    """
+    by_hour: dict[int, HourlyRow] = {}
+    for row in hourly:
+        hour = _chart_hour(row)
+        if hour is not None:
+            by_hour[hour] = row
+    if not by_hour:
+        return None
+    if not any(
+        row.get(variable) is not None
+        for row in by_hour.values()
+        for variable in _CHART_VARIABLES
+    ):
+        return None
+    return HourlyChart(
+        view_box=f"0 0 {CHART_WIDTH:.0f} {CHART_HEIGHT:.0f}",
+        width=CHART_WIDTH,
+        height=CHART_HEIGHT,
+        temperature=_temperature_band(by_hour),
+        precipitation=_precipitation_band(by_hour),
+        wind=_wind_band(by_hour),
+        hour_labels=[
+            HourLabel(x=_hour_centre(hour), label=f"{hour:02d}")
+            for hour in range(0, HOURS_PER_DAY, AXIS_LABEL_INTERVAL)
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Multi-day outlook
 # ---------------------------------------------------------------------------
 
@@ -403,6 +853,8 @@ class ForecastPanelDay(TypedDict):
     snowfall_sum: float | None
     freezing_level_height: float | None
     hourly: list[HourlyRow]  # That day's hourly rows, or [].
+    chart: HourlyChart | None  # That day's meteogram, or None past the horizon.
+    is_focus: bool  # The day the panel opens on — the first with a chart.
 
 
 class ForecastPanel(TypedDict):
@@ -438,6 +890,9 @@ def _forecast_day_context(
         return None
     time_of_day = "day" if _is_day_between(sunrise, sunset, now) else "night"
     icon_bucket = weather_code_icon_bucket(entry["weather_code"])
+    # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
+    # 'hourly' key at all, so this is a presence check, not a null check.
+    hourly = list(entry.get("hourly") or [])
     return ForecastPanelDay(
         date=day_date,
         weekday_label=day_date.strftime("%a"),
@@ -448,9 +903,9 @@ def _forecast_day_context(
         temp_min=entry.get("temperature_2m_min"),
         snowfall_sum=entry.get("snowfall_sum"),
         freezing_level_height=entry.get("freezing_level_height"),
-        # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
-        # 'hourly' key at all, so this is a presence check, not a null check.
-        hourly=list(entry.get("hourly") or []),
+        hourly=hourly,
+        chart=build_hourly_chart(hourly),
+        is_focus=False,
     )
 
 
@@ -477,6 +932,7 @@ def build_point_forecast_panel(
         return None
     lead_time_of_day = "day" if is_day(weather, now) else "night"
     lead_bucket = weather_code_icon_bucket(weather.weather_code)
+    lead_hourly = list(weather.hourly or [])
     days: list[ForecastPanelDay] = [
         ForecastPanelDay(
             date=weather.observed_on,
@@ -488,13 +944,22 @@ def build_point_forecast_panel(
             temp_min=weather.temperature_2m_min,
             snowfall_sum=weather.snowfall_sum,
             freezing_level_height=weather.freezing_level_height,
-            hourly=list(weather.hourly or []),
+            hourly=lead_hourly,
+            chart=build_hourly_chart(lead_hourly),
+            is_focus=False,
         )
     ]
     for entry in weather.forecast or []:
         day = _forecast_day_context(entry, now)
         if day is not None:
             days.append(day)
+    # The panel opens on the first day it can actually draw, which is
+    # normally the lead day but need not be: a row whose own hourly column
+    # is empty still has tomorrow's series nested in its forecast.
+    for day in days:
+        if day["chart"] is not None:
+            day["is_focus"] = True
+            break
     return ForecastPanel(days=days)
 
 
