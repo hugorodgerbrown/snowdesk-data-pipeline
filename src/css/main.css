@@ -426,9 +426,20 @@
      the post-overlay appearance, not the raw token.
      White-text contrast lands in the WCAG AA range
      (4.5:1 to 7:1 across day buckets, comfortably
-     AAA on every night bucket). Retained through SNOW-762
-     for the weather rebuild (SNOW-757), which wants the
-     same palette; nothing renders them today.
+     AAA on every night bucket).
+
+     NOTHING RENDERS THESE TODAY, and SNOW-761 decided
+     that deliberately. The rebuilt weather panel
+     (templates/includes/_weather_panel.html) is a
+     compact row on the ordinary card tokens rather than
+     a full-bleed coloured hero: it is included by three
+     surfaces that each own their own chrome, and a band
+     that repainted the masthead, the resort page and the
+     favourite card would be a third colour scheme under
+     the danger ratings. The tokens are kept — the panel
+     still emits data-weather-bucket, so a future ticket
+     that wants the band back has the hook and the palette
+     already in place.
      ————————————————————————————————————————— */
 
   --color-weather-clear-day:           #5fa1d3;   /* vivid sky blue, sun pops      */

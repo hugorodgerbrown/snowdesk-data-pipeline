@@ -1,0 +1,117 @@
+{% load i18n static %}
+{% comment %}
+templates/includes/_weather_panel.html — one day's weather at one location.
+
+The single-day surface, shared by every place weather appears server-side:
+the bulletin masthead (region centroid), the resort page (one panel per
+curated location) and the favourite detail card (the pin's own location).
+
+SNOW-761 rebuilt this as a **compact, fully tokenised row rather than the
+bucket-coloured hero** the pre-SNOW-762 partial carried. The hero was a
+full-bleed ``--color-weather-*`` band with a ``bg-black/50`` overlay and
+white text on top of it, and it owned the masthead's wayfinding as well —
+the ``<h1>``, the eyebrow and the share button all lived inside the weather
+panel. That coupling is what made the strip remove the masthead too. This
+partial now renders weather and nothing else, carries no colour of its own,
+and can be dropped into any card; ``bulletin_header.html`` keeps its own
+heading and share button. The ``--color-weather-*`` tokens stay registered
+in the component library but are rendered by nothing — see the note in
+``src/css/main.css``.
+
+Renders nothing at all when ``weather_display`` is falsy. That is the
+ordinary case for a historical date: ``Weather`` rows begin at the day the
+estate was first fetched, so a page for last February has no row and must
+degrade to no panel rather than to an error or an empty shell.
+
+Context:
+  weather_display : WeatherDisplay | None — from
+        ``apps.weather.services.weather_display.build_weather_display``.
+  location_label  : str — optional eyebrow naming the place this describes,
+        e.g. ``"Mont Fort · 3328 m"``. Omitted on the masthead, where the
+        page's own ``<h1>`` already says where this is.
+  testid_prefix   : str — prefix for every ``data-testid`` here. Defaults
+        to ``weather``.
+{% endcomment %}
+{% if weather_display %}
+    <div
+        class="flex items-start gap-3"
+        data-testid="{{ testid_prefix|default:'weather' }}-panel"
+        data-weather-bucket="{{ weather_display.bucket }}"
+        data-time-of-day="{{ weather_display.time_of_day }}"
+        data-weather-code="{{ weather_display.weather.weather_code }}"
+    >
+        <img
+            src="{% static 'icons/weather/'|add:weather_display.icon_filename %}"
+            class="w-10 h-10 shrink-0"
+            alt=""
+            data-testid="{{ testid_prefix|default:'weather' }}-icon"
+        >
+        <div class="min-w-0">
+            {% if location_label %}
+                {% include "includes/_eyebrow.html" with tag="p" text=location_label data_testid=testid_prefix|default:'weather'|add:'-location' only %}
+            {% endif %}
+            <p
+                class="text-sm font-medium text-text-1"
+                data-testid="{{ testid_prefix|default:'weather' }}-condition"
+            >
+                {{ weather_display.condition_label }}
+            </p>
+            <div
+                class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-2"
+                data-testid="{{ testid_prefix|default:'weather' }}-meta"
+            >
+                {% if weather_display.temp_max is not None or weather_display.temp_min is not None %}
+                    {# One span, not two: the parent's gap-x would otherwise push #}
+                    {# the separator off the hi value and render "4° /-3°".       #}
+                    <span class="whitespace-nowrap">
+                        <span class="sr-only">{% trans "Temperature" %}</span>
+                        {% if weather_display.temp_max is not None %}{{ weather_display.temp_max|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}<span
+                            class="text-text-3"
+                        >/{% if weather_display.temp_min is not None %}{{ weather_display.temp_min|floatformat:0 }}&deg;{% else %}&mdash;{% endif %}</span>
+                    </span>
+                {% endif %}
+                {% if weather_display.snowfall_sum is not None %}
+                    {# Rendered on an explicit 0 cm too. On an avalanche page "no #}
+                    {# new snow" is itself a statement worth making, not noise.   #}
+                    <span
+                        class="whitespace-nowrap"
+                        data-testid="{{ testid_prefix|default:'weather' }}-snowfall"
+                    >
+                        <span class="sr-only">{% trans "Snowfall" %}</span>
+                        {% blocktrans with cm=weather_display.snowfall_sum|floatformat:0 trimmed %}
+                            {{ cm }} cm
+                        {% endblocktrans %}
+                    </span>
+                {% endif %}
+                {% if weather_display.freezing_level_height is not None %}
+                    {# ``is not None``, not truthiness: a freezing level of 0 m    #}
+                    {# means freezing at the valley floor, which is a statement.   #}
+                    <span
+                        class="whitespace-nowrap"
+                        data-testid="{{ testid_prefix|default:'weather' }}-freezing-level"
+                    >
+                        <span class="sr-only">{% trans "Freezing level" %}</span>
+                        {% blocktrans with m=weather_display.freezing_level_height|floatformat:0 trimmed %}
+                            {{ m }} m
+                        {% endblocktrans %}
+                    </span>
+                {% endif %}
+                <span class="inline-flex items-center gap-x-1 whitespace-nowrap">
+                    <img
+                        src="{% static 'icons/weather/sunrise.svg' %}"
+                        class="w-4 h-4"
+                        alt=""
+                        title="{% trans 'Sunrise' %}"
+                    >
+                    {# The sr-only labels carry the meaning; the icons stay #}
+                    {# decorative and the visible strings stay bare times.  #}
+                    <span class="sr-only">{% trans "Sunrise" %}</span>
+                    <span>{{ weather_display.sunrise_local }}</span>
+                    <span aria-hidden="true">&ndash;</span>
+                    <span class="sr-only">{% trans "Sunset" %}</span>
+                    <span>{{ weather_display.sunset_local }}</span>
+                </span>
+            </div>
+        </div>
+    </div>
+{% endif %}

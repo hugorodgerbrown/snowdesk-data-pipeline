@@ -86,6 +86,11 @@ from apps.favourites.services import (
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
 from apps.regions.models import Resort
+from apps.weather.models import Weather
+from apps.weather.services.weather_display import (
+    build_point_forecast_panel,
+    build_weather_display,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -558,6 +563,13 @@ def _favourite_card_context(
     boundary), the card renders a "no bulletin coverage here" note
     instead.
 
+    Also reads the pin's own ``Location`` for today's ``Weather`` row
+    (SNOW-761) and builds both the single-day panel and the multi-day
+    outlook from it. The lookup is on the ``(location, observed_on)``
+    unique constraint; a pre-SNOW-704 row with no location, or a location
+    with no row for today, yields ``None`` and the card's weather section
+    is absent rather than empty.
+
     When a region and today's default bulletin both resolve, also builds
     the avalanche-problems section (SNOW-422): the bulletin's problem cards
     (``apps.public.views.problem_cards_for_bulletin``), each annotated with an
@@ -606,11 +618,23 @@ def _favourite_card_context(
         favourite, day_rating, bulletin_url, generated_at, unsafe_after
     )
 
+    # SNOW-761: weather for the pin's own Location, read for today on the
+    # (location, observed_on) unique constraint. A pre-SNOW-704 row with no
+    # location, or a location with no row for today, yields None and the
+    # card's weather section is simply absent.
+    weather = (
+        Weather.objects.for_location(favourite.location).on_date(today).first()
+        if favourite.location_id
+        else None
+    )
+
     context = {
         "favourite": favourite,
         "day_rating": day_rating,
         "bulletin_url": bulletin_url,
         "problem_cards": problem_cards,
+        "weather_display": build_weather_display(weather, now),
+        "forecast_panel": build_point_forecast_panel(weather, now),
         "cache_payload": cache_payload,
         "freshness_state": state,
         "freshness_generated_at": generated_at,

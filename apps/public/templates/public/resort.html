@@ -21,7 +21,15 @@ Sections, top to bottom:
      parent region's evergreen bulletin page.
   3. The favourite/unfavourite control
      (``favourites/partials/_resort_favourite_button.html``).
-  4. Field-observation counts (SNOW-508) — point-local, scoped to
+  4. Weather (SNOW-761) — one block per curated ``Location`` linked to
+     this resort, in ``ResortLocation`` order (primary first). Each block
+     is labelled with the location's name and elevation, because the
+     elevation is the whole point of showing more than one: village rain
+     and summit snow are the same forecast read at two heights. A block
+     whose location has no ``Weather`` row for today is dropped rather
+     than rendered empty, and the section disappears entirely when none
+     of them has one.
+  5. Field-observation counts (SNOW-508) — point-local, scoped to
      ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
      coordinates, falling back to the region-wide count (the ``bulletin.html``
      pattern) when the resort has no coordinates.
@@ -48,6 +56,9 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    visible / scope ("point"|"region") /
                                    counts (list[(label, count)]).
   observation_has_user_located  — bool.
+  weather_sections              — list[apps.public.views.ResortWeatherSection]:
+                                   one per curated location with a row for
+                                   today. Empty is the normal no-data state.
 {% endcomment %}
 {% load i18n static components snowdesk_time %}
 
@@ -116,6 +127,26 @@ Context expected (built by ``apps.public.views.resort_detail``):
         <div class="mb-6">
             {% include "favourites/partials/_resort_favourite_button.html" %}
         </div>
+
+        {# ── Weather, one block per curated location (SNOW-761) ────────────── #}
+        {% if weather_sections %}
+            <section class="mt-6" aria-labelledby="resort-weather-heading" data-testid="resort-weather">
+                {% translate "Weather" as weather_heading_label %}
+                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-weather-heading" text=weather_heading_label class_extra="mb-2" only %}
+                <div class="space-y-4">
+                    {% for section in weather_sections %}
+                        <div data-testid="{{ section.testid_prefix }}" data-location-id="{{ section.location.pk }}">
+                            {% include "includes/_weather_panel.html" with weather_display=section.weather_display location_label=section.label testid_prefix=section.testid_prefix only %}
+                            {% if section.forecast_panel %}
+                                <div class="mt-2">
+                                    {% include "includes/_forecast_panel.html" with panel=section.forecast_panel testid_prefix=section.testid_prefix only %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </section>
+        {% endif %}
 
         {# ── Field-observation counts (SNOW-324 pattern, point-local per SNOW-508) ── #}
         {% if local_observations.visible %}

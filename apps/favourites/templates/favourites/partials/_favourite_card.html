@@ -30,7 +30,11 @@ Content:
      falls outside every known boundary), a "no bulletin coverage" note
      is shown instead. Copy states plainly the rating is for the whole
      region, not this exact spot.
-  3. Avalanche problems — this location (SNOW-422). Only rendered when
+  3. Weather — this spot (SNOW-761). The pin's own ``Location``, read for
+     today: one condition row plus the multi-day outlook from the same
+     ``Weather`` row's ``forecast`` column. Absent when the pin has no
+     location or no row for today.
+  4. Avalanche problems — this location (SNOW-422). Only rendered when
      problem_cards is non-empty (region + today's default bulletin both
      resolved). One _favourite_problem.html per card, each carrying an
      altitude annotation relative to favourite.elevation — every problem
@@ -184,7 +188,21 @@ has no section heading to rank under either.
         {% endif %}
     </div>
 
-    {# 3. Avalanche problems — this location #}
+    {# 3. Weather — this spot (SNOW-761) #}
+    {% if weather_display %}
+        <div class="mt-4 pt-4 border-t border-border" data-testid="favourite-card-weather">
+            {% translate "Weather — this spot" as weather_eyebrow_label %}
+            {% include "includes/_eyebrow.html" with text=weather_eyebrow_label class_extra="mb-2" only %}
+            {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="favourite-weather" location_label="" only %}
+            {% if forecast_panel %}
+                <div class="mt-3">
+                    {% include "includes/_forecast_panel.html" with panel=forecast_panel testid_prefix="favourite-forecast" only %}
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    {# 4. Avalanche problems — this location #}
     {% if problem_cards %}
         <div class="mt-4 pt-4 border-t border-border">
             {% translate "Avalanche problems — this location" as problems_eyebrow_label %}
