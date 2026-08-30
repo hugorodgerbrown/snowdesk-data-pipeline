@@ -399,21 +399,23 @@ def find_places_near(
     """
     # Small enough (~1500 rows) to hold in memory and iterate — the same
     # rationale as ``_candidate_pool``. Load with the major-region join
-    # for the country → provider derivation.
-    regions = MicroRegion.objects.select_related("subregion__major").all()
+    # for the country → provider derivation, and with centroid_location
+    # because ``centre_point()`` reads it once per region.
+    regions = MicroRegion.objects.select_related(
+        "subregion__major", "centroid_location"
+    ).all()
 
     hits: list[tuple[float, dict[str, Any]]] = []
     for region in regions:
-        centre = region.centre
-        if not isinstance(centre, dict):
+        centre = region.centre_point()
+        if centre is None:
+            # No centroid location and no usable ``centre``: the region has
+            # no point to measure from, so it cannot be ranked by distance.
+            # Skipped rather than raised on — one unseeded region must not
+            # empty the whole result set.
             continue
-        centre_lat = centre.get("lat")
-        centre_lon = centre.get("lon")
-        if not isinstance(centre_lat, int | float) or not isinstance(
-            centre_lon, int | float
-        ):
-            continue
-        distance = haversine_km(lat, lon, float(centre_lat), float(centre_lon))
+        centre_lat, centre_lon = centre
+        distance = haversine_km(lat, lon, centre_lat, centre_lon)
         if distance > radius_km:
             continue
         provider = _PROVIDER_BY_COUNTRY.get(region.subregion.major.country)

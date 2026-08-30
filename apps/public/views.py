@@ -3395,11 +3395,11 @@ def _build_structured_data(
         f"{bulletin.valid_from.isoformat()}/{bulletin.valid_to.isoformat()}"
     )
 
-    # SNOW-394: spatialCoverage.geo from MicroRegion.centre. The field
-    # is populated at fixture-ingest time as {"lon": …, "lat": …} and
-    # covers every real region; guarding the lookup keeps the field
-    # optional so a partially-seeded region (dev-only edge) still
-    # renders.
+    # SNOW-394: spatialCoverage.geo from the region's centre, which
+    # ``centre_point()`` reads off ``centroid_location`` (falling back to the
+    # legacy ``centre`` column). It covers every real region; the None guard
+    # keeps the field optional so a partially-seeded region (dev-only edge)
+    # still renders rather than 500ing on a missing geo.
     spatial_coverage: dict[str, Any] = {
         "@type": "Place",
         "name": region.name,
@@ -3408,15 +3408,13 @@ def _build_structured_data(
             "name": major_name,
         },
     }
-    if isinstance(region.centre, dict):
-        lat = region.centre.get("lat")
-        lon = region.centre.get("lon")
-        if isinstance(lat, int | float) and isinstance(lon, int | float):
-            spatial_coverage["geo"] = {
-                "@type": "GeoCoordinates",
-                "latitude": float(lat),
-                "longitude": float(lon),
-            }
+    centre = region.centre_point()
+    if centre is not None:
+        spatial_coverage["geo"] = {
+            "@type": "GeoCoordinates",
+            "latitude": centre[0],
+            "longitude": centre[1],
+        }
 
     report: dict[str, Any] = {
         "@type": "Report",

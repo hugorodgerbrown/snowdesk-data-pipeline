@@ -204,7 +204,6 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.locations",
     "apps.regions",
-    # Migration history only — no models. See apps/weather/__init__.py.
     "apps.weather",
     "apps.bulletins",
     "apps.public",

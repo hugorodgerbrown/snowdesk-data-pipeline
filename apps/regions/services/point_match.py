@@ -237,16 +237,27 @@ def region_for_point(lat: float, lon: float) -> "MicroRegion | None":
     # imports apps.regions.models — keep it deferred.
     from apps.regions.models import MicroRegion  # noqa: PLC0415
 
-    candidates = list(MicroRegion.objects.exclude(boundary__isnull=True))
+    # select_related because _sq_distance reads centroid_location for every
+    # candidate — without it the pre-sort is an N+1 across every region that
+    # has a boundary, which is the whole table.
+    candidates = list(
+        MicroRegion.objects.exclude(boundary__isnull=True).select_related(
+            "centroid_location"
+        )
+    )
 
     # Order by squared Euclidean distance from centre (cheap proxy for proximity).
     def _sq_distance(region: "MicroRegion") -> float:
         """Return the squared distance from the region centre to (lat, lon)."""
-        centre = region.centre
-        if not centre:
+        centre = region.centre_point()
+        if centre is None:
+            # Sorts last. Only the ordering is affected — point_in_polygon
+            # below is still the answer, so a region with no centre is
+            # tested late rather than missed.
             return float("inf")
-        dlon = float(centre.get("lon", 0.0)) - lon
-        dlat = float(centre.get("lat", 0.0)) - lat
+        centre_lat, centre_lon = centre
+        dlon = centre_lon - lon
+        dlat = centre_lat - lat
         return dlon * dlon + dlat * dlat
 
     candidates.sort(key=_sq_distance)

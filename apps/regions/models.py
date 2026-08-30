@@ -409,6 +409,51 @@ class MicroRegion(BaseModel):
             self.slug = slugify(self.region_id)
         super().save(*args, **kwargs)
 
+    def centre_point(self) -> tuple[float, float] | None:
+        """Return this region's centre as a ``(latitude, longitude)`` pair.
+
+        The single reader of a micro-region's centre. Prefers
+        ``centroid_location``, which is the anchor the estate is built on
+        (SNOW-696) and the thing weather hangs off, and falls back to
+        parsing the ``centre`` JSON column when the FK is still null.
+
+        **The fallback is transitional and deliberate.** ``build.sh``
+        migrates on every deploy, so this code reaches an environment
+        before anyone runs ``link_region_centroid_locations`` against it.
+        Reading the FK alone would blank the bulletin page's JSON-LD
+        geo and drop every region out of MCP nearby-search for the whole
+        gap. The fallback closes it, and goes when the ``centre`` column
+        does — which is its own ticket, because all 149 CH rows in
+        ``fixtures/eaws_CH.json`` still carry a ``centre`` key and
+        ``loaddata`` rejects an unrecognised field.
+
+        ``centre`` is written by ``refresh_eaws_fixtures`` as
+        ``{"lon": float, "lat": float}`` and is not schema-guaranteed, so a
+        region whose fixture predates the field — or whose polygon could
+        not be reduced — reads as ``None`` rather than raising.
+
+        Callers that touch this in a loop should
+        ``select_related("centroid_location")``, or the FK read is an N+1.
+
+        Returns:
+            The ``(latitude, longitude)`` pair, or None when the region has
+            neither a centroid location nor a usable ``centre``.
+
+        """
+        location = self.centroid_location
+        if location is not None:
+            return (location.latitude, location.longitude)
+        centre = self.centre
+        if not isinstance(centre, dict):
+            return None
+        latitude = centre.get("lat")
+        longitude = centre.get("lon")
+        if not isinstance(latitude, int | float) or not isinstance(
+            longitude, int | float
+        ):
+            return None
+        return (float(latitude), float(longitude))
+
     @property
     def major_region(self) -> MajorRegion:
         """Return the L1 major region this region belongs to."""
