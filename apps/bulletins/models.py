@@ -809,6 +809,18 @@ class BulletinShareClick(BaseModel):
     No bot filtering is applied at write time. Filter on
     ``request__user_agent`` patterns or ``request__sec_purpose`` (the
     ``Sec-Purpose`` header stored on ``RequestLog``) at query time.
+
+    ``request`` is ``CASCADE``, not ``PROTECT`` (SNOW-774). Every field
+    this row would be read for lives on the ``RequestLog`` — the class
+    docstring above says so — and ``visitor_hash`` is derived from that
+    request's IP and user agent, so a click whose request context has gone
+    is both empty and, for the person it described, undeletable evidence.
+    ``PROTECT`` made two things impossible: an account holder who had
+    followed any share link could not delete their account (the cascade
+    raised ``ProtectedError`` and the request 500'd), and
+    ``purge_request_logs`` would abort the moment a click row aged past the
+    retention window. Both failed closed on the privacy-preserving action,
+    which is the wrong way round.
     """
 
     share = models.ForeignKey(
@@ -819,7 +831,7 @@ class BulletinShareClick(BaseModel):
     )
     request = models.ForeignKey(
         "core.RequestLog",
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="bulletin_share_clicks",
         help_text="Request context captured when this link was followed.",
     )

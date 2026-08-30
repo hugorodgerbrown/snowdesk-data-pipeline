@@ -31,10 +31,12 @@ from django.core.management import CommandError, call_command
 from django.utils import timezone
 
 from apps.accounts.models import Account, Subscription
+from apps.bulletins.models import BulletinShareClick
 from apps.core.management.commands.purge_request_logs import RETENTION_DAYS
 from apps.core.models import RequestLog
 from tests.factories import (
     AccountFactory,
+    BulletinShareFactory,
     MicroRegionFactory,
     RequestLogFactory,
     SubscriptionFactory,
@@ -176,3 +178,61 @@ class TestReferencedRows:
         assert not RequestLog.objects.filter(pk=via.pk).exists()
         assert Subscription.objects.filter(pk=subscription.pk).exists()
         assert subscription.subscribed_via_id is None
+
+
+@pytest.mark.django_db
+class TestShareClicks:
+    """A share click must not be able to stop the nightly purge.
+
+    ``BulletinShareClick.request`` was ``PROTECT`` until SNOW-774. A purge
+    that met one would raise ``ProtectedError`` and abort — not for the one
+    row, but for the whole run, so a single aged click would have frozen
+    retention for every other row in the table and done it silently, at
+    03:30, in a scheduled job nobody was watching.
+    """
+
+    def test_an_expired_click_does_not_block_the_purge(self) -> None:
+        """The regression test: this raised ProtectedError."""
+        log = _aged(RETENTION_DAYS + 30)
+        click = BulletinShareClick.objects.create(
+            share=BulletinShareFactory.create(),
+            request=log,
+            visitor_hash="0123456789abcdef",
+        )
+
+        _run("--commit")
+
+        assert not RequestLog.objects.filter(pk=log.pk).exists()
+        assert not BulletinShareClick.objects.filter(pk=click.pk).exists()
+
+    def test_one_expired_click_does_not_strand_the_other_rows(self) -> None:
+        """The blast radius of the old bug, pinned.
+
+        ``ProtectedError`` aborted the whole delete, so an unrelated expired
+        row would have survived because someone else's click happened to be
+        in the same sweep.
+        """
+        blocked = _aged(RETENTION_DAYS + 30)
+        BulletinShareClick.objects.create(
+            share=BulletinShareFactory.create(),
+            request=blocked,
+            visitor_hash="0123456789abcdef",
+        )
+        unrelated = _aged(RETENTION_DAYS + 30)
+
+        _run("--commit")
+
+        assert not RequestLog.objects.filter(pk=unrelated.pk).exists()
+
+    def test_a_fresh_click_is_kept(self) -> None:
+        """Cascade follows the retention window, it does not widen it."""
+        log = _aged(1)
+        click = BulletinShareClick.objects.create(
+            share=BulletinShareFactory.create(),
+            request=log,
+            visitor_hash="0123456789abcdef",
+        )
+
+        _run("--commit")
+
+        assert BulletinShareClick.objects.filter(pk=click.pk).exists()

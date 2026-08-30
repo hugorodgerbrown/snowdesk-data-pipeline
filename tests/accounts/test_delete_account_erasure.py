@@ -30,11 +30,19 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.accounts.models import Account
+from apps.bulletins.models import BulletinShareClick
 from apps.core.models import RequestLog
 from tests.factories import (
     AccountFactory,
+    BulletinShareFactory,
+    DownloadAreaFactory,
+    FavouriteFactory,
+    FieldObservationFactory,
     MicroRegionFactory,
+    PasskeyCredentialFactory,
+    PushSubscriptionFactory,
     RequestLogFactory,
+    RouteFactory,
     SubscriptionFactory,
 )
 
@@ -193,3 +201,126 @@ class TestNoIdentifierSurvives:
             "request rows survived account deletion: "
             f"{list(survivors.values('pk', *IDENTIFYING_FIELDS))}"
         )
+
+
+@pytest.mark.django_db
+class TestASharedLinkDoesNotBlockDeletion:
+    """A share click must not make its follower undeletable.
+
+    ``BulletinShareClick.request`` used to be ``PROTECT``. That was
+    survivable while ``RequestLog.account`` was ``SET_NULL`` — nothing tried
+    to delete the log row — but the moment deletion started cascading, an
+    account holder who had followed any ``/s/<token>/`` link could no longer
+    delete their account: the cascade hit the protected row and the request
+    raised ``ProtectedError``.
+
+    The failure needed a signed-in user, a share link and a deletion in the
+    same test to appear, which is why the first version of this suite went
+    green without it.
+    """
+
+    def _click(self, log: RequestLog) -> BulletinShareClick:
+        """Record a share-link follow against *log*."""
+        return BulletinShareClick.objects.create(
+            share=BulletinShareFactory.create(),
+            request=log,
+            visitor_hash="0123456789abcdef",
+        )
+
+    def test_deletion_succeeds_for_someone_who_followed_a_share(self) -> None:
+        """The regression test: this raised ProtectedError and 500'd."""
+        account = AccountFactory.create()
+        self._click(RequestLogFactory.create(account=account))
+
+        _delete(account)
+
+        assert not Account.objects.filter(pk=account.pk).exists()
+
+    def test_the_click_and_its_request_context_both_go(self) -> None:
+        """``visitor_hash`` is derived from the person's IP and user agent.
+
+        Leaving the click behind would keep a pseudonymous identifier for
+        someone who asked to be forgotten, so the click is not merely
+        collateral — removing it is the point.
+        """
+        account = AccountFactory.create()
+        log = RequestLogFactory.create(account=account)
+        click = self._click(log)
+
+        _delete(account)
+
+        assert not BulletinShareClick.objects.filter(pk=click.pk).exists()
+        assert not RequestLog.objects.filter(pk=log.pk).exists()
+
+    def test_a_click_from_the_sign_up_request_also_goes(self) -> None:
+        """The orphan path and the cascade path must both survive a click."""
+        signup = RequestLogFactory.create(account=None)
+        account = AccountFactory.create(acquisition_request=signup)
+        click = self._click(signup)
+
+        _delete(account)
+
+        assert not BulletinShareClick.objects.filter(pk=click.pk).exists()
+        assert not RequestLog.objects.filter(pk=signup.pk).exists()
+
+    def test_another_visitors_click_on_the_same_share_survives(self) -> None:
+        """Erasure is scoped to one person, not to the share's whole audience.
+
+        The share owner keeps every click that was not this account's.
+        """
+        share = BulletinShareFactory.create()
+        account = AccountFactory.create()
+        mine = BulletinShareClick.objects.create(
+            share=share,
+            request=RequestLogFactory.create(account=account),
+            visitor_hash="mine",
+        )
+        theirs = BulletinShareClick.objects.create(
+            share=share,
+            request=RequestLogFactory.create(account=None),
+            visitor_hash="theirs",
+        )
+
+        _delete(account)
+
+        assert not BulletinShareClick.objects.filter(pk=mine.pk).exists()
+        assert BulletinShareClick.objects.filter(pk=theirs.pk).exists()
+
+
+@pytest.mark.django_db
+class TestEveryKindOfAttachedDataDeletes:
+    """A fully-populated account deletes without a ProtectedError.
+
+    The share-click bug (``BulletinShareClick.request`` was ``PROTECT``)
+    was invisible until an account happened to own the protected row, and
+    it surfaced as a 500 on the one action a user is entitled to. Any
+    future ``PROTECT`` added on a path that leads back to a User will fail
+    here rather than in production, which is the point of loading one
+    account up with every kind of thing an account can own.
+    """
+
+    def test_an_account_owning_everything_can_be_deleted(self) -> None:
+        account = AccountFactory.create()
+        user = account.user
+
+        SubscriptionFactory.create(
+            account=account,
+            region=MicroRegionFactory.create(),
+            subscribed_via=RequestLogFactory.create(account=None),
+        )
+        FavouriteFactory.create(user=user)
+        FieldObservationFactory.create(user=user)
+        RouteFactory.create(user=user)
+        DownloadAreaFactory.create(user=user)
+        PasskeyCredentialFactory.create(user=user)
+        PushSubscriptionFactory.create(account=account)
+        BulletinShareClick.objects.create(
+            share=BulletinShareFactory.create(),
+            request=RequestLogFactory.create(account=account),
+            visitor_hash="0123456789abcdef",
+        )
+
+        _delete(account)
+
+        assert not Account.objects.filter(pk=account.pk).exists()
+        assert not User.objects.filter(pk=user.pk).exists()
