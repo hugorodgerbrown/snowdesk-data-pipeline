@@ -33,6 +33,13 @@ renders one panel per curated location on a single page: a fixed name would
 fuse every panel into one group, and choosing a day in one would clear the
 rest.
 
+``data-forecast-chart-focus`` marks the day the panel WANTS open, and a
+second rule shows it whenever no radio in the panel is checked. That is not
+belt-and-braces: two ``checked`` radios sharing a group leave only the last
+one checked, which is exactly what the component library produces when it
+renders one variant twice (once light, once dark) on the same page. Without
+the fallback the light copy renders a strip over nothing.
+
 SNOW-761: the days come from ONE ``Weather`` row — its own ``observed_on``
 leads, and the rest are the entries in its ``forecast`` column
 (``build_point_forecast_panel``). Before the rebuild they were N sibling
@@ -49,7 +56,11 @@ Context:
             Defaults to ``forecast``.
 {% endcomment %}
 {% with prefix=testid_prefix|default:'forecast' %}
-    <div class="flex flex-wrap items-start gap-2" data-testid="{{ prefix }}-panel">
+    <div
+        class="flex flex-wrap items-start gap-2"
+        data-forecast-panel
+        data-testid="{{ prefix }}-panel"
+    >
         {% for day in panel.days %}
             {% if day.chart %}
                 <label
@@ -78,6 +89,7 @@ Context:
                 <div
                     class="order-2 w-full"
                     data-forecast-chart
+                    {% if day.is_focus %}data-forecast-chart-focus{% endif %}
                     data-testid="{{ prefix }}-day-chart"
                     data-date="{{ day.date|date:'Y-m-d' }}"
                 >

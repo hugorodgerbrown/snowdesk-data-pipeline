@@ -700,6 +700,14 @@
 [data-forecast-chart] { display: none; }
 [data-forecast-day]:has(input:checked) + [data-forecast-chart] { display: block; }
 
+/* And the day the panel WANTS open, whenever nothing in it is checked.
+   Two checked radios sharing a group name leave only the last one checked
+   — which is what the component library produces when it renders one
+   variant twice, light and dark, on the same page. Without this the light
+   copy is a strip over nothing. The two rules are mutually exclusive: this
+   one only applies while the first one cannot. */
+[data-forecast-panel]:not(:has(input:checked)) [data-forecast-chart-focus] { display: block; }
+
 /* —— EAWS danger band tints —————————————————
    Applied via data attribute on the band element
    so the background comes from tokens, not

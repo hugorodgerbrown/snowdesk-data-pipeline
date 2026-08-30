@@ -374,6 +374,20 @@ class TestForecastPanelDaySelector:
         assert checked == ["2026-08-30"]
 
     @freeze_time(MIDDAY)
+    def test_exactly_one_chart_is_marked_as_the_panel_default(self) -> None:
+        """The default is marked, not merely checked.
+
+        Two ``checked`` radios sharing a group name leave only the last one
+        checked, which is what the component library produces when it
+        renders one variant twice on the same page. The mark is what the
+        CSS falls back to, so a panel is never a strip over nothing.
+        """
+        response = Client().get(self._resort_with_panels(2))
+
+        content = response.content.decode()
+        assert content.count("data-forecast-chart-focus") == 2
+
+    @freeze_time(MIDDAY)
     def test_a_day_past_the_horizon_gets_no_input_and_no_label(self) -> None:
         """An inert day is not a control that ignores presses."""
         response = Client().get(self._resort_with_panels(1))

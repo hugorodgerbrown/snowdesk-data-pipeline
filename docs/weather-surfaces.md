@@ -175,6 +175,12 @@ own line below.
 one panel per curated location on a single page; a fixed name would fuse
 every panel into one group, so choosing a day in one would clear the rest.
 
+A second rule shows the day marked `data-forecast-chart-focus` whenever
+**nothing** in the panel is checked. Two `checked` radios sharing a group
+leave only the last one checked, which is what the component library
+produces when it renders one variant twice — once light, once dark — on the
+same page; without the fallback the light copy is a strip over nothing.
+
 ### `includes/_forecast_hourly_chart.html`
 
 One day's meteogram, in inline SVG with **no JavaScript**. Three bands on
