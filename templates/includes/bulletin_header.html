@@ -87,7 +87,7 @@ Context:
         </div>
         {% if weather_display %}
             <div class="mt-3 pt-3 border-t border-border">
-                {% include "includes/_weather_panel.html" with testid_prefix="bulletin-weather" location_label="" %}
+                {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="bulletin-weather" location_label="" only %}
             </div>
         {% endif %}
     </div>

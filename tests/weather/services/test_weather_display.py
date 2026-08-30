@@ -210,6 +210,26 @@ class TestIsDay:
 
         assert is_day(weather, now) is True
 
+    def test_the_window_is_read_in_the_rows_own_timezone(self) -> None:
+        """A viewer in another timezone sees the REGION's daylight.
+
+        Open-Meteo returns sunrise/sunset carrying the location's own
+        offset (+02:00 for Switzerland), and the docstring promises the
+        comparison happens there rather than in UTC. This case separates
+        the two: 19:00 UTC is 21:00 in the row's zone, which is after a
+        20:15 local sunset — so it is night. Comparing the raw UTC clock
+        against the local sunset would read 19:00 < 20:15 and wrongly
+        say day.
+        """
+        local = datetime.timezone(datetime.timedelta(hours=2))
+        weather = WeatherFactory.create(
+            sunrise=datetime.datetime(2026, 8, 30, 6, 30, tzinfo=local),
+            sunset=datetime.datetime(2026, 8, 30, 20, 15, tzinfo=local),
+        )
+        now = datetime.datetime(2026, 8, 30, 19, 0, tzinfo=datetime.UTC)
+
+        assert is_day(weather, now) is False
+
 
 @pytest.mark.django_db
 class TestBuildWeatherDisplay:

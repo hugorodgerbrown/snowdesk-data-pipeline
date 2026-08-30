@@ -674,7 +674,7 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     try:
         favourite = (
             Favourite.objects.for_user(request.user)
-            .select_related("region")
+            .select_related("region", "location")
             .get(uuid=uuid)
         )
     except Favourite.DoesNotExist:
@@ -739,7 +739,7 @@ def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
     try:
         favourite = (
             Favourite.objects.for_user(request.user)
-            .select_related("region")
+            .select_related("region", "location")
             .get(uuid=uuid)
         )
     except Favourite.DoesNotExist:
