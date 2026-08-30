@@ -353,9 +353,8 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     # *shared* by curation — an observation pinned to a curated Mont Fort —
     # not by automatic dedup.
     #
-    # No forecast_cell: an observation shows no forecast panel, and
+    # No elevation: an observation shows no forecast panel, and
     # resolving one would put an Open-Meteo call on the report path.
-    # link_location_forecast_cells is scoped to named() for the same reason.
     location = Location.objects.create(latitude=lat, longitude=lon)
 
     # _auth_gate above guarantees an authenticated User; cast narrows for mypy.

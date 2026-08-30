@@ -24,7 +24,7 @@ them back. A row the DB has and the sheet does not gets an empty note,
 which is what a location placed by clicking a map genuinely has.
 
 **``elevation_m`` is never written.** It is derived by
-``link_location_forecast_cells`` from the coordinate, never supplied
+out-of-band from the coordinate, never supplied
 (``docs/locations.md``) — emitting it would invite someone to edit it, and
 the next resolve would silently overwrite the edit.
 

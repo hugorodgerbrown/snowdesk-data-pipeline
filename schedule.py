@@ -2,17 +2,14 @@
 schedule.py — APScheduler job registry for Snowdesk.
 
 Defines ``build_scheduler()``, which constructs a :class:`BlockingScheduler`
-pre-loaded with the two recurring data-pipeline jobs:
+pre-loaded with the recurring data-pipeline job:
 
 - **fetch_bulletins** — fires at ``:00`` and ``:05`` of every hour,
   running ``fetch_bulletins --source SLF ALBINA METEOFRANCE --commit``.
-- **fetch_weather** — fires at midnight, 06:00, 12:00, and 18:00 UTC,
-  running ``fetch_weather --commit``, plus ``--add-history`` when
-  ``settings.FETCH_WEATHER_ADD_HISTORY`` is set.
 
-Both jobs share the same guard settings (``coalesce=True``,
-``max_instances=1``, ``misfire_grace_time=300``) so a slow run does not
-stack up duplicate executions.
+The job carries guard settings (``coalesce=True``, ``max_instances=1``,
+``misfire_grace_time=300``) so a slow run does not stack up duplicate
+executions.
 
 Entry point
 -----------
@@ -66,29 +63,6 @@ def _run_fetch_bulletins() -> None:
     )
 
 
-def _run_fetch_weather() -> None:
-    """Invoke the ``fetch_weather`` management command.
-
-    Adds ``--add-history`` when ``settings.FETCH_WEATHER_ADD_HISTORY`` is
-    set, so point-forecast retention (SNOW-575) can be turned on or off by
-    changing the environment variable and restarting this worker — no
-    deploy, and no effect on the operational ForecastCellWeather write.
-    """
-    from django.conf import (
-        settings,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
-    )
-    from django.core.management import (
-        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
-    )
-
-    args = ["--commit"]
-    if settings.FETCH_WEATHER_ADD_HISTORY:
-        args.append("--add-history")
-
-    logger.info("schedule: firing fetch_weather (args=%s)", args)
-    call_command("fetch_weather", *args)
-
-
 def build_scheduler() -> BlockingScheduler:
     """Build and return a configured :class:`BlockingScheduler`.
 
@@ -98,12 +72,10 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with two jobs pre-registered:
+        A scheduler with one job pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
-        ``fetch_weather``
-            Cron: ``hour=0,6,12,18 minute=0`` (four times daily UTC).
 
     """
     scheduler = BlockingScheduler(timezone="UTC")
@@ -118,13 +90,6 @@ def build_scheduler() -> BlockingScheduler:
         _run_fetch_bulletins,
         trigger=CronTrigger(minute="0,5", timezone="UTC"),
         id="fetch_bulletins",
-        **_common,
-    )
-
-    scheduler.add_job(
-        _run_fetch_weather,
-        trigger=CronTrigger(hour="0,6,12,18", minute=0, timezone="UTC"),
-        id="fetch_weather",
         **_common,
     )
 

@@ -7,7 +7,7 @@ Provides ``create_favourite``, ``create_resort_favourite``, and
 
 Coordinate-argument convention: every function in this module takes
 latitude/longitude in that order — ``(latitude, longitude)`` — matching
-``apps.weather.services.forecast_cells.resolve_forecast_cell`` and
+``apps.locations.services.elevation.fetch_elevation`` and
 ``apps.regions.services.point_match.region_for_point`` (both lat-first since
 SNOW-426).
 """
@@ -25,8 +25,8 @@ from django.db.models import ProtectedError
 
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
+from apps.locations.services.elevation import fetch_elevation
 from apps.regions.services.point_match import region_for_point
-from apps.weather.services.forecast_cells import resolve_forecast_cell
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -52,9 +52,9 @@ def create_favourite(
 ) -> Favourite:
     """Create a Favourite for the given user at the given location.
 
-    Resolves the pin to a shared ``ForecastCell`` (an Open-Meteo HTTP call,
-    kept outside any transaction) and a best-effort ``MicroRegion`` before
-    writing the row. The per-user cap is checked once up front — to avoid
+    Resolves the pin's elevation (an Open-Meteo HTTP call, kept outside
+    any transaction) and a best-effort ``MicroRegion`` before writing the
+    row. The per-user cap is checked once up front — to avoid
     an unnecessary Open-Meteo call when already over the limit — and again
     inside the transaction after locking the user row, which serialises
     concurrent creators so the cap can't be exceeded under a race (SNOW-465).
@@ -81,7 +81,7 @@ def create_favourite(
 
     # External HTTP call (Open-Meteo elevation lookup) — kept outside any
     # transaction so a slow or failing request never holds a DB lock.
-    forecast_point = resolve_forecast_cell(latitude, longitude)
+    elevation = fetch_elevation(latitude, longitude)
 
     # Best-effort — may be None when the pin falls outside every known
     # boundary. region_for_point is lat-first (matching this module's
@@ -109,8 +109,7 @@ def create_favourite(
         location = Location.objects.create(
             latitude=latitude,
             longitude=longitude,
-            elevation_m=forecast_point.elevation,
-            forecast_cell=forecast_point,
+            elevation_m=elevation,
         )
         favourite = Favourite.objects.create(
             user=user,
@@ -118,15 +117,14 @@ def create_favourite(
             location=location,
             latitude=latitude,
             longitude=longitude,
-            elevation=forecast_point.elevation,
-            forecast_point=forecast_point,
+            elevation=elevation,
             region=region,
         )
 
     logger.info(
-        "Favourite created: user=%s forecast_point=%s region=%s",
+        "Favourite created: user=%s location=%s region=%s",
         user.pk,
-        forecast_point.pk,
+        location.pk,
         region.region_id if region else None,
     )
     return favourite
@@ -174,7 +172,7 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
 
     # External HTTP call (Open-Meteo elevation lookup) — kept outside any
     # transaction so a slow or failing request never holds a DB lock.
-    forecast_point = resolve_forecast_cell(resort.latitude, resort.longitude)
+    elevation = fetch_elevation(resort.latitude, resort.longitude)
 
     try:
         with transaction.atomic():
@@ -193,8 +191,7 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
             location = Location.objects.create(
                 latitude=resort.latitude,
                 longitude=resort.longitude,
-                elevation_m=forecast_point.elevation,
-                forecast_cell=forecast_point,
+                elevation_m=elevation,
             )
             favourite = Favourite.objects.create(
                 user=user,
@@ -202,8 +199,7 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
                 location=location,
                 latitude=resort.latitude,
                 longitude=resort.longitude,
-                elevation=forecast_point.elevation,
-                forecast_point=forecast_point,
+                elevation=elevation,
                 region=resort.region,
                 resort=resort,
             )
@@ -228,17 +224,12 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
 def delete_favourite(user: "User", uuid: UUID) -> None:
     """Delete the given user's favourite by uuid.
 
-    Owner-checked: only deletes a row belonging to ``user``. The linked
-    ``ForecastCell`` is never touched — ``on_delete=PROTECT`` means it
-    survives regardless (it may be shared by other favourites).
+    Owner-checked: only deletes a row belonging to ``user``.
 
     The favourite's **anonymous** ``Location`` is deleted with it, once
-    nothing else references it. Leaving it would leak: an orphan location
-    keeps its forecast cell inside ``ForecastCell.objects.active()``, so
-    the cell is fetched from Open-Meteo four times a day forever and is
-    never reached by ``prune_forecast_points`` — the exact cost SNOW-633
-    existed to stop. A **named** location is curated data and is never
-    deleted here, whatever referenced it.
+    nothing else references it — leaving it behind would accumulate
+    orphan rows nothing can reach. A **named** location is curated data
+    and is never deleted here, whatever referenced it.
 
     Args:
         user: The authenticated user requesting the deletion.

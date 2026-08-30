@@ -3,9 +3,7 @@ apps/favourites/models.py — Database models for the favourites application.
 
 Defines ``Favourite``: a saved map pin created by an authenticated user.
 Each row records the user's chosen location (latitude, longitude, optional
-name), the shared ``weather.ForecastCell`` it was resolved to (so the
-pin reuses that point's Open-Meteo weather sampling), and a best-effort
-``MicroRegion`` resolution.
+name) and a best-effort ``MicroRegion`` resolution.
 
 Business logic (forecast-point resolution, region resolution, per-user
 favourite caps) lives in ``apps/favourites/services.py``.
@@ -74,19 +72,16 @@ class Favourite(BaseModel):
     layer falls back to a coordinate-derived display string.
 
     ``location`` is the ``locations.Location`` this pin **is** (SNOW-704).
-    A favourite reaches its coordinates, elevation and weather through it:
-    weather via ``location.forecast_cell``, elevation via
-    ``location.elevation_m``. The row minted for a favourite carries no
-    ``name`` and no ``kind`` — naming is a curation act, and a saved pin's
-    label is the user's own text, which stays on the favourite.
+    A favourite reaches its coordinates and elevation through it, via
+    ``location.latitude`` / ``location.longitude`` / ``location.elevation_m``.
+    The row minted for a favourite carries no ``name`` and no ``kind`` —
+    naming is a curation act, and a saved pin's label is the user's own
+    text, which stays on the favourite.
 
-    ``forecast_point``, ``latitude``, ``longitude`` and ``elevation`` are
-    **retained but no longer authoritative** — the pre-SNOW-704 storage.
-    They stay while the backfill runs and are dropped in a later ticket
-    once nothing reads them, because ``build.sh`` migrates on every deploy:
-    a migration removing them would land before an operator could run the
-    backfill, taking every pin's weather link with it. Read ``location`` in
-    new code.
+    ``latitude``, ``longitude`` and ``elevation`` are **retained but no
+    longer authoritative** — the pre-SNOW-704 storage. They stay while the
+    backfill runs and are dropped in a later ticket once nothing reads
+    them. Read ``location`` in new code.
 
     ``region`` is a best-effort MicroRegion resolution, mirroring
     ``apps.observations.models.FieldObservation.region`` — it may be null when
@@ -141,16 +136,6 @@ class Favourite(BaseModel):
         help_text=(
             "Elevation in metres. Superseded by location.elevation_m "
             "(SNOW-704); dropped once nothing reads it."
-        ),
-    )
-    forecast_point = models.ForeignKey(
-        "weather.ForecastCell",
-        on_delete=models.PROTECT,
-        related_name="favourites",
-        help_text=(
-            "Shared ForecastCell this pin's coordinates resolved to. "
-            "Superseded by location.forecast_cell (SNOW-704); dropped once "
-            "nothing reads it."
         ),
     )
     region = models.ForeignKey(

@@ -14,9 +14,7 @@ BRA NDJSON archive (SNOW-227) — operators can drop a ``bulletins.ndjson``
 file produced by the offline script pipeline directly into the production
 database without needing SSH access.
 
-The Open-Meteo admin classes (WeatherSnapshot, ForecastCell,
-ForecastCellWeather, ForecastCellWeatherHistory) live in
-``apps.weather.admin`` — split out by SNOW-654.
+
 """
 
 import io

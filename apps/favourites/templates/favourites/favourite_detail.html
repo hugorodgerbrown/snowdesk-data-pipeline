@@ -26,7 +26,6 @@ Context expected (built by ``apps.favourites.views._favourite_card_context``):
   day_rating               — bulletins.RegionDayRating for today, or None.
   bulletin_url             — str: evergreen bulletin URL for
                               favourite.region, or "" when None.
-  forecast_panel           — ForecastPanel | None.
   problem_cards            — list[dict] — see _favourite_card.html.
   cache_payload            — dict — SNOW-418 offline-cache record.
   freshness_state          — "fresh" | "stale" | "unsafe".
@@ -42,11 +41,11 @@ Context expected (built by ``apps.favourites.views._favourite_card_context``):
     {% if favourite.name %}
         {% blocktrans with name=favourite.name asvar page_title %}{{ name }} · Snowdesk{% endblocktrans %}
         {% blocktrans with name=favourite.name trimmed asvar page_description %}
-            {{ name }} — your saved favourite pin, its point forecast, and the local avalanche bulletin.
+            {{ name }} — your saved favourite pin and the local avalanche bulletin.
         {% endblocktrans %}
     {% else %}
         {% trans "Saved location · Snowdesk" as page_title %}
-        {% trans "Your saved favourite pin, its point forecast, and the local avalanche bulletin." as page_description %}
+        {% trans "Your saved favourite pin and the local avalanche bulletin." as page_description %}
     {% endif %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
 {% endblock page_meta %}

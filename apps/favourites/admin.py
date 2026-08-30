@@ -32,7 +32,6 @@ class FavouriteAdmin(admin.ModelAdmin):
         "longitude",
         "elevation",
         "location",
-        "forecast_point",
         "created_at",
     ]
     list_filter = ["region", "created_at"]
@@ -53,7 +52,6 @@ class FavouriteAdmin(admin.ModelAdmin):
         "longitude",
         "elevation",
         "location",
-        "forecast_point",
         "region",
         "resort",
         "created_at",

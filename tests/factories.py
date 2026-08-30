@@ -50,17 +50,6 @@ from apps.regions.models import (
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
 from apps.routes.models import Route
-from apps.weather.models import (
-    ForecastCell,
-    ForecastCellWeather,
-    ForecastCellWeatherHistory,
-    WeatherSnapshot,
-)
-from apps.weather.services.forecast_cells import (
-    quantise_elevation,
-    quantise_lat,
-    quantise_lon,
-)
 
 # A small representative Alpine bbox (roughly Valais) used as
 # MicroRegionFactory's ``basemap_download`` default — SNOW-521's rework
@@ -145,11 +134,10 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     """
     Factory for Resort instances.
 
-    The ``geocoded`` trait sets ``latitude``/``longitude`` to the same
-    representative coordinates as ``ForecastCellFactory`` (46.1, 7.4) plus
-    ``geocode_source="MANUAL"``, so ``ResortFactory.create(geocoded=True)``
-    builds a resort that ``Resort.objects.geocoded()`` — and
-    ``link_resort_forecast_points`` — can pick up.
+    The ``geocoded`` trait sets ``latitude``/``longitude`` to representative
+    coordinates (46.1, 7.4) plus ``geocode_source="MANUAL"``, so
+    ``ResortFactory.create(geocoded=True)`` builds a resort that
+    ``Resort.objects.geocoded()`` can pick up.
     """
 
     class Meta:
@@ -275,50 +263,6 @@ class RegionDayRatingFactory(factory.django.DjangoModelFactory[RegionDayRating])
     bands = None
 
 
-class WeatherSnapshotFactory(factory.django.DjangoModelFactory[WeatherSnapshot]):
-    """Factory for WeatherSnapshot instances."""
-
-    class Meta:
-        """Factory metadata."""
-
-        model = WeatherSnapshot
-
-    region = factory.SubFactory(MicroRegionFactory)
-    valid_for_date = factory.LazyFunction(django_timezone.localdate)
-    weather_code = 0  # clear sky
-    sunrise = factory.LazyFunction(
-        lambda: datetime.datetime(2026, 5, 1, 5, 30, tzinfo=UTC)
-    )
-    sunset = factory.LazyFunction(
-        lambda: datetime.datetime(2026, 5, 1, 20, 45, tzinfo=UTC)
-    )
-
-
-class ForecastCellFactory(factory.django.DjangoModelFactory[ForecastCell]):
-    """
-    Factory for ForecastCell instances.
-
-    ``lat_cell``/``lon_cell``/``elevation_band`` are derived from the
-    representative ``latitude``/``longitude``/``elevation`` via
-    ``LazyAttribute`` so the quantised keys always stay consistent with the
-    coordinates, matching what ``resolve_forecast_cell`` would compute.
-    """
-
-    class Meta:
-        """Factory metadata."""
-
-        model = ForecastCell
-
-    latitude = 46.1
-    longitude = 7.4
-    elevation = 1500.0
-    lat_cell = factory.LazyAttribute(lambda obj: quantise_lat(obj.latitude))
-    lon_cell = factory.LazyAttribute(lambda obj: quantise_lon(obj.longitude))
-    elevation_band = factory.LazyAttribute(
-        lambda obj: quantise_elevation(obj.elevation)
-    )
-
-
 class LocationFactory(factory.django.DjangoModelFactory[Location]):
     """
     Factory for Location instances.
@@ -327,11 +271,10 @@ class LocationFactory(factory.django.DjangoModelFactory[Location]):
     almost every test is about — the anonymous rows SNOW-704 and SNOW-709
     mint are the exception, and the ``anonymous`` trait produces one.
 
-    ``elevation_m`` and ``forecast_cell`` are left null by default, matching
-    a freshly imported row: both are resolved out-of-band by
-    ``link_location_forecast_cells``, which makes an Open-Meteo call. The
-    ``resolved`` trait supplies both for tests that need a location the
-    weather layer can already reach.
+    ``elevation_m`` is left null by default, matching a freshly imported
+    row: it is resolved out-of-band via an Open-Meteo elevation call. The
+    ``resolved`` trait supplies it for tests that need a location whose
+    height is already known.
     """
 
     class Meta:
@@ -345,11 +288,8 @@ class LocationFactory(factory.django.DjangoModelFactory[Location]):
         # A location minted from a favourite or an observation: no name and
         # no kind, because naming is a curation act.
         anonymous = factory.Trait(name="", kind="")
-        # Elevation and cell filled in, as after link_location_forecast_cells.
-        resolved = factory.Trait(
-            elevation_m=1500.0,
-            forecast_cell=factory.SubFactory(ForecastCellFactory),
-        )
+        # Elevation filled in, as after an out-of-band resolution pass.
+        resolved = factory.Trait(elevation_m=1500.0)
 
     name = factory.Sequence(lambda n: f"Location {n}")
     kind = Location.KIND.PEAK
@@ -375,104 +315,6 @@ class ResortLocationFactory(factory.django.DjangoModelFactory[ResortLocation]):
     location = factory.SubFactory(LocationFactory)
     role = ResortLocation.ROLE.TOP
     is_primary = False
-
-
-class ForecastCellWeatherFactory(
-    factory.django.DjangoModelFactory[ForecastCellWeather]
-):
-    """
-    Factory for ForecastCellWeather instances.
-
-    Extended fields default to non-null values (rather than ``None``) so
-    factory-built rows exercise the "full daily payload" path by default;
-    tests covering the null-tolerance case construct rows or defaults dicts
-    explicitly instead of relying on this factory.
-    """
-
-    class Meta:
-        """Factory metadata."""
-
-        model = ForecastCellWeather
-
-    forecast_cell = factory.SubFactory(ForecastCellFactory)
-    valid_for_date = factory.LazyFunction(django_timezone.localdate)
-    weather_code = 0  # clear sky
-    sunrise = factory.LazyFunction(
-        lambda: datetime.datetime(2026, 5, 1, 5, 30, tzinfo=UTC)
-    )
-    sunset = factory.LazyFunction(
-        lambda: datetime.datetime(2026, 5, 1, 20, 45, tzinfo=UTC)
-    )
-    temperature_2m_max = 4.0
-    temperature_2m_min = -3.0
-    apparent_temperature_max = 2.0
-    apparent_temperature_min = -6.0
-    precipitation_sum = 0.0
-    snowfall_sum = 0.0
-    precipitation_probability_max = 10
-    precipitation_hours = 0.0
-    wind_speed_10m_max = 12.0
-    wind_gusts_10m_max = 25.0
-    wind_direction_10m_dominant = 270
-    uv_index_max = 3.5
-    daylight_duration = 46800.0
-    sunshine_duration = 30000.0
-    freezing_level_height = 1800.0
-    hourly_series = factory.LazyFunction(
-        lambda: [
-            {
-                "time": "2026-05-01T06:00",
-                "temperature_2m": -2.0,
-                "snowfall": 0.5,
-                "precipitation": 0.5,
-                "wind_speed_10m": 10.0,
-                "wind_gusts_10m": 20.0,
-                "freezing_level_height": 1700.0,
-            },
-            {
-                "time": "2026-05-01T12:00",
-                "temperature_2m": 1.0,
-                "snowfall": 0.0,
-                "precipitation": 0.0,
-                "wind_speed_10m": 14.0,
-                "wind_gusts_10m": 28.0,
-                "freezing_level_height": 1800.0,
-            },
-        ]
-    )
-
-
-class ForecastCellWeatherHistoryFactory(
-    factory.django.DjangoModelFactory[ForecastCellWeatherHistory]
-):
-    """
-    Factory for ForecastCellWeatherHistory instances.
-
-    Defaults to a three-day-out view of a day, since a lead of zero is the
-    degenerate case (the day-of forecast, which is what the accompanying
-    ForecastCellWeather row already holds). ``lead_days`` is set
-    explicitly rather than derived, so a test can construct a deliberately
-    inconsistent row when that is the thing under test.
-    """
-
-    class Meta:
-        """Factory metadata."""
-
-        model = ForecastCellWeatherHistory
-
-    forecast_cell = factory.SubFactory(ForecastCellFactory)
-    valid_for_date = factory.LazyFunction(django_timezone.localdate)
-    issued_date = factory.LazyFunction(
-        lambda: django_timezone.localdate() - datetime.timedelta(days=3)
-    )
-    lead_days = 3
-    weather_code = 0  # clear sky
-    temperature_2m_max = 4.0
-    temperature_2m_min = -3.0
-    precipitation_sum = 0.0
-    snowfall_sum = 0.0
-    wind_speed_10m_max = 12.0
-    freezing_level_height = 1800.0
 
 
 class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):
@@ -698,10 +540,8 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
     """Factory for Favourite instances.
 
     ``latitude``/``longitude`` vary per instance (``factory.Sequence``) and
-    are threaded into the ``forecast_point`` SubFactory so each build lands
-    in a distinct (lat_cell, lon_cell, elevation_band) triple — reusing
-    ``ForecastCellFactory``'s fixed defaults for every Favourite would trip
-    its ``unique_together`` constraint on the second build.
+    are threaded into the ``location`` SubFactory, so each Favourite and its
+    anonymous Location agree on where the pin is.
     """
 
     class Meta:
@@ -714,25 +554,15 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
     latitude = factory.Sequence(lambda n: 46.1 + n * 0.05)
     longitude = factory.Sequence(lambda n: 7.4 + n * 0.05)
     elevation = 1500.0
-    forecast_point = factory.SubFactory(
-        ForecastCellFactory,
-        latitude=factory.LazyAttribute(lambda obj: obj.factory_parent.latitude),
-        longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
-        elevation=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),
-    )
     # The anonymous Location this pin is (SNOW-704), threaded from the same
-    # coordinates and sharing the pin's forecast cell — which is what
-    # ``create_favourite`` builds. Pass ``location=None`` to get a
-    # pre-SNOW-704 row for the backfill command's tests.
+    # coordinates — which is what ``create_favourite`` builds. Pass
+    # ``location=None`` to get a pre-SNOW-704 row.
     location = factory.SubFactory(
         LocationFactory,
         anonymous=True,
         latitude=factory.LazyAttribute(lambda obj: obj.factory_parent.latitude),
         longitude=factory.LazyAttribute(lambda obj: obj.factory_parent.longitude),
         elevation_m=factory.LazyAttribute(lambda obj: obj.factory_parent.elevation),
-        forecast_cell=factory.LazyAttribute(
-            lambda obj: obj.factory_parent.forecast_point
-        ),
     )
     region = None
     resort = None

@@ -204,8 +204,9 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.locations",
     "apps.regions",
-    "apps.bulletins",
+    # Migration history only — no models. See apps/weather/__init__.py.
     "apps.weather",
+    "apps.bulletins",
     "apps.public",
     "apps.accounts",
     "apps.analytics",
@@ -459,11 +460,6 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/api/ratings/",
         "/api/resorts-by-region/",
         "/api/resorts.geojson",
-        # SNOW-573: map weather layer — public, resort-anchored data,
-        # same caching rationale as the rest of this set. (It was
-        # flag-gated until SNOW-724; the exemption never depended on
-        # that, only on the response being publicly cacheable.)
-        "/api/forecast-weather.geojson",
         "/api/regions.geojson",
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",
@@ -645,75 +641,31 @@ METEOFRANCE_MASSIF_IDS: tuple[int, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-# Weather (Open-Meteo) — apps/weather
+# Open-Meteo elevation API — apps/locations
 # ---------------------------------------------------------------------------
-# Every setting the weather app reads lives here (SNOW-654). The env var
-# names are unchanged by the app split — nothing on Render needs editing.
-
-# On-disk archive of every Open-Meteo weather record captured by
-# ``fetch_weather --stash`` runs.
-# NDJSON: one record per ``(region_id, date)`` pair per line, sorted
-# ascending by ``(region_id, date)``, deduped by ``(region_id, date)``
-# with the later ``captured_at`` winning. Both the stash writer and the
-# local Open-Meteo mirror view read from this path.
-OPENMETEO_ARCHIVE_PATH = (
-    BASE_DIR / "apps" / "weather" / "local_mirrors" / "openmeteo_archive.ndjson"
-)
-
-# Open-Meteo weather / elevation API (SNOW-577).
-# Live endpoints:
-#   GET {OPEN_METEO_API_BASE_URL}/elevation
-#   GET {OPEN_METEO_API_BASE_URL}/forecast
-#   GET {OPEN_METEO_ARCHIVE_BASE_URL}/archive
-# The defaults are the free public hosts, which need no key and enforce a
-# shared per-IP quota (600/min, 5,000/hour, 10,000/day) across all three.
-# A paid subscription is served from its own hostnames and authenticates
-# with an ``apikey`` query parameter, so cutting over is an environment
-# change on Render — no deploy required. The documented customer hosts are
-# https://customer-api.open-meteo.com/v1 and
-# https://customer-archive-api.open-meteo.com/v1; confirm them against the
-# subscription confirmation before setting them.
+# SNOW-762 stripped the weather app; what survives is the elevation
+# lookup, which is location domain (how high a Location is) rather than
+# weather. The env var names are unchanged — nothing on Render needs
+# editing, though the archive host and history flag are no longer read.
 #
-# The two hosts may sit on different tiers: the key is sent only to a host
-# that has been moved off its free default (SNOW-579), so setting the
-# archive host alone keeps forecast and elevation free and unkeyed.
+# Live endpoint:
+#   GET {OPEN_METEO_API_BASE_URL}/elevation
+#
+# The default is the free public host, which needs no key and enforces a
+# shared per-IP quota (600/min, 5,000/hour, 10,000/day). A paid
+# subscription is served from its own hostname and authenticates with an
+# ``apikey`` query parameter, so cutting over is an environment change on
+# Render — no deploy required. The documented customer host is
+# https://customer-api.open-meteo.com/v1; confirm it against the
+# subscription confirmation before setting it. The key is sent only to a
+# host that has been moved off its free default (SNOW-579).
 OPEN_METEO_API_BASE_URL = config(
     "OPEN_METEO_API_BASE_URL",
     default="https://api.open-meteo.com/v1",
 )
 
-OPEN_METEO_ARCHIVE_BASE_URL = config(
-    "OPEN_METEO_ARCHIVE_BASE_URL",
-    default="https://archive-api.open-meteo.com/v1",
-)
-
 # Empty means the free tier: no ``apikey`` parameter is sent at all.
 OPEN_METEO_API_KEY = config("OPEN_METEO_API_KEY", default="")
-
-# Whether the scheduled ``fetch_weather`` run also retains a
-# ForecastCellWeatherHistory row per stored day (SNOW-575).
-#
-# History is analysis data for future forecast-convergence work — nothing
-# user-facing reads it, and it grows by one row per point per day of each
-# point's window. This setting is what ``schedule.py`` reads to decide
-# whether to pass ``--add-history``, so the retention can be turned on or
-# off by changing the Render environment variable and restarting the
-# scheduler — no deploy required. Ad-hoc runs pass the flag directly.
-FETCH_WEATHER_ADD_HISTORY = config(
-    "FETCH_WEATHER_ADD_HISTORY",
-    default=False,
-    cast=bool,
-)
-
-# Warm weather snapshots on a background daemon thread when bulletin_detail
-# renders a past-date page with no snapshot (SNOW-164). Default True; tests
-# pin this False in tests/conftest.py so the fetch runs synchronously and
-# the test assertion sees the written snapshot.
-WEATHER_FETCH_ASYNC = config(
-    "WEATHER_FETCH_ASYNC",
-    default=True,
-    cast=bool,
-)
 
 # ---------------------------------------------------------------------------
 # GeoIP
@@ -1033,7 +985,7 @@ SITE_NAME = "Snowdesk"
 SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
 
 # SNOW-729: read-only production DSN, used only by `bin/sync-staging-data`
-# to refresh staging's bulletins, weather and resorts.
+# to refresh staging's bulletins and resorts.
 #
 # Nothing in Django connects to it — the script drives pg_dump/psql and reads
 # the variable from the environment itself (SNOW-736 removed the second
@@ -1219,17 +1171,6 @@ LOGGING = {
             "propagate": False,
         },
         "apps.bulletins": {
-            "handlers": ["console", "file_pipeline", "file_errors"],
-            "level": "DEBUG",
-            "propagate": False,
-        },
-        # SNOW-654 moved the Open-Meteo code out of apps.bulletins, and its
-        # loggers are named after the module, so without this entry every
-        # fetch_weather / weather_fetcher INFO and DEBUG line falls through
-        # to the root logger — which sits at WARNING and has no
-        # file_pipeline handler. They would be dropped, and pipeline.log
-        # would lose the weather half of the ingest it has always carried.
-        "apps.weather": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,

@@ -74,8 +74,6 @@
     'no-coverage': 'No bulletin coverage for this location.',
     'rating-expired': "Rating expired — reconnect to see today's danger level",
     'rating-as-of': 'as of %(time)s',
-    'weather-empty':
-      "Point forecast coming soon — weather for this exact location and altitude isn't available yet.",
     'cached-as-of': 'Showing cached data — as of %(time)s',
   });
 
@@ -206,7 +204,7 @@
    * Classify a cached record as expired — past its
    * ``unsafe_after_seconds`` horizon — using wall-clock ``Date.now()``.
    * Records with no rating (``record.rating`` null) or no horizon
-   * (``unsafe_after_seconds`` null, e.g. weather-only) never expire.
+   * (``unsafe_after_seconds`` null) never expire.
    *
    * @param {object} record
    * @returns {boolean}
@@ -296,15 +294,6 @@
       dangerSection.appendChild(row);
     }
     root.appendChild(dangerSection);
-
-    const weatherSection = document.createElement('div');
-    weatherSection.className = 'mt-4 pt-4 border-t border-border';
-    const weatherEmpty = document.createElement('p');
-    weatherEmpty.className = 'text-sm text-text-3';
-    weatherEmpty.setAttribute('data-testid', 'favourite-card-weather-empty');
-    weatherEmpty.textContent = STRINGS['weather-empty'];
-    weatherSection.appendChild(weatherEmpty);
-    root.appendChild(weatherSection);
 
     const asOf = document.createElement('p');
     asOf.className = 'text-xs text-text-3 font-mono mt-4';

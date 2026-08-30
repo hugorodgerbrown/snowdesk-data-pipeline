@@ -15,7 +15,7 @@
  *   meta:app         install timestamps, first-launch flags, opt-in/out,
  *                    and (SNOW-482) the persisted sync/freshness clocks
  *                    (keyPath: 'key')
- *   data:favourites  cached favourites + region rating + point weather,
+ *   data:favourites  cached favourites + region rating,
  *                     for offline reads (SNOW-418; keyPath: 'uuid')
  *   log:sync         rolling record of recent real (un-cached) server
  *                     round-trips, trimmed to the newest 100 rows

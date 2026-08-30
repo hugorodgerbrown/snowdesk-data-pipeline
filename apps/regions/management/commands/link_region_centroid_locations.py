@@ -1,45 +1,26 @@
 """link_region_centroid_locations — anchor each MicroRegion to a Location.
 
 Backfill for SNOW-696. Gives every ``MicroRegion`` with a ``centre`` a
-``Location`` at that centroid, with its elevation and forecast cell
-resolved — which is what lets the bulletin page render the same multi-day
-forecast panel the resort page and the favourite card already have, instead
-of the one-day condition icon, hi/lo and snowfall total ``WeatherSnapshot``
-can carry.
+``Location`` at that centroid, with its elevation resolved — which is what
+anchors the region in the location estate, so any surface wanting to say
+something about the region has a place to hang it on.
 
-**Read the cost before running this with ``--commit``.** Up to 461 new
-forecast cells, one per micro-region across AT (153), CH (149), IT (124)
-and FR (35) — fewer in practice, since the 750 m / 150 m reuse thresholds
-fold a region centre onto an existing resort cell where the two are close.
-Each cell adds one Open-Meteo call per fetch cycle and ``fetch_weather``
-runs four times daily, so roughly 1,800 additional calls per day against a
-region pass that already makes about the same number. Confirm the headroom
-on the current Open-Meteo plan first. The dry run reports how many cells
-would be created versus reused, which is the number to check against — as
-an **upper bound**, since two region centres close enough to share a cell
-both report "would create" when neither is written for the other to find.
-
-The dry run writes nothing (SNOW-719). It makes the elevation call, then
-asks ``find_forecast_cell`` — the read-only twin of
-``resolve_forecast_cell`` — which cell would be used. Calling
-``resolve_forecast_cell`` on that path would create the row it was only
-meant to be asked about, several hundred times over.
+**One Open-Meteo elevation call per region**, up to 461 of them across AT
+(153), CH (149), IT (124) and FR (35). The ``--delay`` default paces the
+run inside the free-tier rate limit. The call is made on the dry-run path
+too — it is what proves the region *can* resolve — but nothing is written
+(SNOW-719).
 
 **A centroid is not a place anyone goes.** The minted location carries no
 ``name`` and no ``kind``: it represents the region, and it sits at whatever
 elevation the polygon's centre happens to fall at rather than at a
-meaningful one. Any surface showing its weather must say which elevation it
+meaningful one. Any surface showing it must say which elevation it
 represents — see ``docs/locations.md``.
 
-**Why this resolves its own cell rather than deferring to
-``link_location_forecast_cells``.** That command is scoped to
-``Location.objects.named()``, because an observation's location must never
-be billed for an elevation lookup it has no use for. A region centroid is
-anonymous but *does* need a cell, so it resolves here, where the candidate
-set is bounded by the region fixture rather than by user activity.
-
-``WeatherSnapshot`` is untouched and keeps its job as the masthead's
-day/night visual.
+SNOW-762 stripped the weather app, and with it this command's forecast-cell
+resolution half. What remains is location work: the centroid ``Location``
+and its elevation. The weather rebuild (SNOW-757) decides for itself which
+locations it polls.
 
 A region that fails to resolve is logged and counted; it never aborts the
 batch, and the command exits non-zero when any failed.
@@ -48,7 +29,7 @@ Idempotent — regions that already have a ``centroid_location`` are excluded,
 so a second run selects zero.
 
 Usage:
-    # Preview, including how many cells would be created versus reused.
+    # Preview — resolves and reports, writes nothing.
     uv run python manage.py link_region_centroid_locations
 
     # Persist.
@@ -74,12 +55,8 @@ from apps.core.command_iteration import (
     non_negative_float,
 )
 from apps.locations.models import Location
+from apps.locations.services.elevation import fetch_elevation
 from apps.regions.models import MicroRegion
-from apps.weather.services.elevation import fetch_elevation
-from apps.weather.services.forecast_cells import (
-    find_forecast_cell,
-    resolve_forecast_cell,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +98,8 @@ class Command(BaseCommand):
 
     help = (
         "Mint a Location at each MicroRegion's centroid and resolve its "
-        "elevation and forecast cell, so the bulletin page can render the "
-        "full forecast panel. Read-only unless --commit is passed."
+        "elevation, anchoring the region in the location estate. "
+        "Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -172,12 +149,7 @@ class Command(BaseCommand):
             delay=delay,
         )
 
-        # Counted so the run can report its real cost: a reused cell is
-        # free, a created one is an extra Open-Meteo call every fetch cycle.
-        # Counted per region from find_forecast_cell rather than by diffing
-        # ForecastCell.objects.count(), which reads zero in a dry run now
-        # that a dry run creates nothing (SNOW-719).
-        counts = {"linked": 0, "skipped": 0, "failed": 0, "created": 0}
+        counts = {"linked": 0, "skipped": 0, "failed": 0}
         for index, region in enumerate(
             iterate_rows(
                 self,
@@ -232,20 +204,9 @@ class Command(BaseCommand):
         latitude, longitude = centre
         try:
             # One external HTTP call — kept outside any transaction so a
-            # slow or failing request never holds a DB lock. The elevation
-            # is handed to resolve_forecast_cell rather than fetched twice.
+            # slow or failing request never holds a DB lock. Made on the
+            # dry-run path too: it is what proves the region can resolve.
             elevation = fetch_elevation(latitude, longitude)
-            # Read-only, and asked on both paths: it is what tells a preview
-            # whether a cell would be created, and a commit run whether one
-            # was. A dry run must never call resolve_forecast_cell — that
-            # creates the row it was only meant to be asked about, and at
-            # this command's scale that is hundreds of them (SNOW-719).
-            existing = find_forecast_cell(latitude, longitude, elevation)
-            cell = (
-                resolve_forecast_cell(latitude, longitude, elevation=elevation)
-                if commit
-                else existing
-            )
         except Exception:  # noqa: BLE001 — broad catch intentional: one region must not abort the batch
             logger.exception(
                 "link_region_centroid_locations: failed to resolve region %s",
@@ -253,9 +214,6 @@ class Command(BaseCommand):
             )
             counts["failed"] += 1
             return
-
-        if existing is None:
-            counts["created"] += 1
 
         if commit:
             with transaction.atomic():
@@ -266,17 +224,15 @@ class Command(BaseCommand):
                     latitude=latitude,
                     longitude=longitude,
                     elevation_m=elevation,
-                    forecast_cell=cell,
                 )
                 region.centroid_location = location
                 region.save(update_fields=["centroid_location", "updated_at"])
         counts["linked"] += 1
         if verbosity >= 2:
             logger.info(
-                "Resolved region %s -> %.0fm, ForecastCell id=%s",
+                "Resolved region %s -> %.0fm",
                 region.region_id,
                 elevation,
-                cell.pk if cell is not None else "<would be created>",
             )
 
     def _report_outcome(
@@ -287,24 +243,13 @@ class Command(BaseCommand):
         verbosity: int,
     ) -> None:
         """Emit the post-run summary to stdout and the structured log."""
-        cells_created = counts["created"]
         if verbosity >= 1:
-            reused = counts["linked"] - cells_created
-            # In a dry run this is an upper bound, not a count: two region
-            # centres close enough to share a cell both report "would
-            # create", because neither is written for the other to find.
-            qualifier = "" if commit else "at most "
-            cost = (
-                f"{qualifier}{cells_created} new forecast cell(s), "
-                f"{reused} reused. Each new cell is one extra Open-Meteo "
-                "call per fetch cycle, four times daily."
-            )
             if commit:
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"Done. {counts['linked']} region(s) linked, "
                         f"{counts['skipped']} skipped, "
-                        f"{counts['failed']} failed. {cost}"
+                        f"{counts['failed']} failed."
                     )
                 )
             else:
@@ -312,16 +257,15 @@ class Command(BaseCommand):
                     self.style.SUCCESS(
                         f"Read-only run complete — {counts['linked']} "
                         f"region(s) would be linked, {counts['skipped']} "
-                        f"skipped, {counts['failed']} failed. {cost} "
+                        f"skipped, {counts['failed']} failed. "
                         "No data written. Pass --commit to persist."
                     )
                 )
         logger.info(
             "link_region_centroid_locations finished: linked=%d skipped=%d "
-            "failed=%d cells_created=%d commit=%s",
+            "failed=%d commit=%s",
             counts["linked"],
             counts["skipped"],
             counts["failed"],
-            cells_created,
             commit,
         )

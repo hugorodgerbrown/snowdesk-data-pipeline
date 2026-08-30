@@ -14,9 +14,7 @@ Defines four concrete reference-data models:
   - Resort: ski resorts mapped to their SLF avalanche warning region.
 
 Bulletin-derived models (PipelineRun, Bulletin, RegionBulletin,
-RegionDayRating) live in ``apps.bulletins.models``; the Open-Meteo
-weather models (WeatherSnapshot, ForecastCell, …) live in
-``apps.weather.models``.
+RegionDayRating) live in ``apps.bulletins.models``.
 
 Each model uses a custom Manager + QuerySet pair so that domain-specific
 query methods live on the queryset and are accessible via both
@@ -599,13 +597,6 @@ class Resort(BaseModel):
     run ``manage.py dump_resorts_fixture --commit`` to refresh it after a
     session of edits, or those edits reach no other worktree.
 
-    ``forecast_point`` (SNOW-503) is the shared ``weather.ForecastCell``
-    a geocoded resort's coordinates resolve to, set by
-    ``manage.py link_resort_forecast_points --commit``; it is what widens
-    the point-weather polling set to cover resorts, not just favourites.
-    ``on_delete=PROTECT`` mirrors ``Favourite.forecast_point`` — the point
-    may be shared by other resorts/favourites and by weather-fetch
-    bookkeeping.
     """
 
     class GeocodeSource(models.TextChoices):
@@ -768,15 +759,6 @@ class Resort(BaseModel):
         validators=[MONTH_DAY_VALIDATOR],
         help_text="Typical season closing as month-day, e.g. 04-30.",
     )
-    forecast_point = models.ForeignKey(
-        "weather.ForecastCell",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="resorts",
-        help_text="Shared weather-sampling point; resolved once from lat/lon.",
-    )
-
     objects = ResortQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):

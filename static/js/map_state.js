@@ -113,16 +113,13 @@ const OVERLAY_STORAGE_KEY = {
   // dead key is left unread and unwritten; nothing clears it, since
   // localStorage has no cost to leaving a stale key alone.
   downloads: 'snowdesk.map.overlay.downloads',
-  // SNOW-573: ungated since SNOW-724 retired the weather_layer flag — the
-  // toggle is in the DOM for every visitor, so this key is always live.
-  weather: 'snowdesk.map.overlay.weather',
   // SNOW-687: eligible-only, like favourites — the switch lives in the
   // routes panel and this key is only ever read/written when
   // data-routes-eligible="true" (an authenticated user; SNOW-724 retired
   // the ``routes`` flag that used to AND with it). Defaults OFF, unlike
   // favourites: a GPX track is
   // visually far heavier than a pin, so the overlay is opt-in the way
-  // community_reports and weather are.
+  // community_reports is.
   routes: 'snowdesk.map.overlay.routes',
   // SNOW-691: gated on settings.SLOPE_TILE_URL (SNOW-724 moved the gate off
   // a waffle flag and onto the setting) — the row exists in the DOM, and
@@ -263,15 +260,6 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // control reads as a missing feature. Tapping it goes to sign-in, so
   // the label has to promise that and nothing more.
   'download-signin': "Sign in to download this region's basemap",
-  // SNOW-573: the Weather overlay's layers-menu row disable reason —
-  // point weather is forecast-only and can run short (the backing model
-  // may cover fewer days than requested), so a scrubbed date outside the
-  // stored window disables the row with this as its title.
-  'weather-out-of-window': 'No forecast for this date',
-  // SNOW-660: the same row's OTHER disable reason — no day has been chosen
-  // at all. Distinct from the one above on purpose: "no forecast for this
-  // date" blames the data for a date the visitor has not picked yet.
-  'weather-no-date': 'Choose a date to see the forecast',
   // SNOW-660: #map-date-ribbon's empty state. A cold boot no longer paints
   // a day nobody asked for, so the ribbon says which day is showing —
   // including when the honest answer is "none yet".

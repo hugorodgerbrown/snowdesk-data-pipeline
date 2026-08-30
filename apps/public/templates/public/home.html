@@ -263,16 +263,6 @@ in addition to the shared map assets.
     {# constructor takes the restored centre and zoom), so it must load       #}
     {# before the bundle.                                                    #}
     <script defer src="{% static 'js/map_viewport_core.js' %}"></script>
-    {# SNOW-573: pure projection / merge / forecast-window math for the map   #}
-    {# Weather overlay (window.pwaWeatherCore), extracted so it can be        #}
-    {# unit-tested (tests/js/test_map_weather_core.js).                       #}
-    {# Sits HERE, with the other *_core.js modules, rather than next to       #}
-    {# map.js: SNOW-647's test_bundle_scripts_are_contiguous forbids a        #}
-    {# non-bundle script inside the map bundle's run, and this is not a       #}
-    {# bundle member — map.js reads window.pwaWeatherCore lazily, on the      #}
-    {# first overlay toggle, never at parse time, so it has no place in the   #}
-    {# temporal-dead-zone ordering the bundle exists to protect.              #}
-    <script defer src="{% static 'js/map_weather_core.js' %}"></script>
     {# SNOW-691: the slope overlay's coverage rectangle, zoom limits and     #}
     {# class table (window.pwaSlopeOverlayCore), extracted so the coverage   #}
     {# predicate can be unit-tested (tests/js/test_slope_overlay_core.js).   #}
@@ -289,7 +279,7 @@ in addition to the shared map assets.
     {# Here with the other *_core.js modules and NOT inside the map bundle's #}
     {# contiguous run (test_bundle_scripts_are_contiguous): map.js reads it  #}
     {# from activateRoute, on a tap, never at parse time — so like the       #}
-    {# weather and slope cores it has no place in the temporal-dead-zone     #}
+    {# slope core it has no place in the temporal-dead-zone                  #}
     {# ordering the bundle exists to protect.                                #}
     <script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
     {# The start dot and checkered finish flag on a saved route              #}

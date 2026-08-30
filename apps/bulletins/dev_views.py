@@ -23,7 +23,7 @@ Both views are wired up only when ``settings.DEBUG`` is true (see
 commands ``fetch_bulletins --source local-mirror`` and
 ``fetch_albina_bulletins --source local-mirror`` use these views to
 replay committed sample data end-to-end through the production fetch
-paths. The Open-Meteo mirror lives in ``apps.weather.dev_views``.
+paths.
 """
 
 import datetime

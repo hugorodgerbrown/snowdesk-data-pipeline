@@ -21,22 +21,7 @@ Sections, top to bottom:
      parent region's evergreen bulletin page.
   3. The favourite/unfavourite control
      (``favourites/partials/_resort_favourite_button.html``).
-  4. Weather (SNOW-509) — the parent region's ``WeatherSnapshot``, via the
-     shared ``includes/_weather_panel.html`` partial (no region ``<h1>``, no
-     share button; this page already has its own resort ``<h1>``). Remains
-     the page header and the fallback for every resort — unconditional,
-     unchanged since SNOW-509. See
-     ``docs/decisions/resort-page-shows-point-forecast.md`` (supersedes
-     ``docs/decisions/resort-page-weather-shows-region-snapshot.md``).
-  5. Point forecast (SNOW-572) — below the region weather panel, the
-     resort's own multi-day forecast via the shared
-     ``includes/_forecast_panel.html`` partial (promoted from the
-     favourite-card-only partial of the same shape), when
-     ``forecast_panel`` is set. No empty-state branch — omitted entirely
-     when the resort has no linked ``forecast_point`` or the point has no
-     rows in the forward window; the region panel above already covers
-     that resort, so no resort loses weather.
-  6. Field-observation counts (SNOW-508) — point-local, scoped to
+  4. Field-observation counts (SNOW-508) — point-local, scoped to
      ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
      coordinates, falling back to the region-wide count (the ``bulletin.html``
      pattern) when the resort has no coordinates.
@@ -48,8 +33,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
   resort                        — regions.Resort instance.
   region                        — regions.MicroRegion instance (resort.region,
                                    select_related region).
-  region_id                     — str: region.region_id, for the weather
-                                   panel's HTMX retry URL.
+  region_id                     — str: region.region_id.
   day_rating                    — bulletins.RegionDayRating for today, or None.
   target_date                   — datetime.date: today.
   bulletin_url                  — str: the region's evergreen bulletin URL.
@@ -64,30 +48,15 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    visible / scope ("point"|"region") /
                                    counts (list[(label, count)]).
   observation_has_user_located  — bool.
-  weather_display                — dict from ``build_weather_display()``, or
-                                   None (region's ``WeatherSnapshot`` for
-                                   ``target_date``).
-  weather_htmx_trigger           — bool: True when ``weather_display`` is
-                                   None, so the panel fires the
-                                   belt-and-braces HTMX retry.
-  location_forecasts             — list[ResortLocationForecast] (SNOW-702):
-                                   one labelled panel per linked Location,
-                                   primary first then by ascending
-                                   elevation. Empty for an uncurated resort.
-  forecast_panel                 — ForecastPanel | None (SNOW-572), the
-                                   legacy single panel over
-                                   ``resort.forecast_point``. Set only when
-                                   ``location_forecasts`` is empty, so the
-                                   two are mutually exclusive.
 {% endcomment %}
 {% load i18n static components snowdesk_time %}
 
-{# SNOW-650: this page emits hx-post in two places — the favourite toggle    #}
-{# (favourites/partials/_resort_favourite_button.html) and the weather       #}
-{# panel's belt-and-braces retry — but public/base.html does not load htmx   #}
-{# globally, so both were inert from SNOW-509 until now. Self-loaded here,   #}
-{# following accounts/manage.html. tests/public/test_htmx_pages.py is the    #}
-{# guard that keeps any hx-* page from shipping without the script again.    #}
+{# SNOW-650: this page emits hx-post via the favourite toggle               #}
+{# (favourites/partials/_resort_favourite_button.html), but public/base.html #}
+{# does not load htmx globally, so it was inert from SNOW-509 until now.     #}
+{# Self-loaded here, following accounts/manage.html.                         #}
+{# tests/public/test_htmx_pages.py is the guard that keeps any hx-* page     #}
+{# from shipping without the script again.                                   #}
 {% block extra_head %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
 {% endblock %}
@@ -147,66 +116,6 @@ Context expected (built by ``apps.public.views.resort_detail``):
         <div class="mb-6">
             {% include "favourites/partials/_resort_favourite_button.html" %}
         </div>
-
-        {# ── Weather (SNOW-509) — parent region's WeatherSnapshot ── #}
-        <section data-testid="resort-weather-section">
-            {% include "includes/_weather_panel.html" with weather_display=weather_display weather_htmx_trigger=weather_htmx_trigger region_id=region_id page_date=target_date htmx_variant=True region_name="" subregion_name="" panel_testid="resort-weather" testid_prefix="resort-weather" panel_extra_classes="rounded-card mb-4" %}
-        </section>
-
-        {# ── Per-location forecasts (SNOW-702) ────────────────────────── #}
-        {% comment %}
-           One panel per linked Location, primary first then up the
-           mountain by elevation. Each is labelled with its name and
-           height — "Verbier village · 1436 m", "Mont Fort · 3328 m" —
-           which is the thing the single unlabelled panel never said: a
-           resort's stored coordinate is the geocoder's hit for its
-           *name*, so it lands in the village, and the page showed that
-           figure as if it were the resort's weather.
-
-           A resort with one linked location renders what it always did
-           plus the label, so the page degrades cleanly while SNOW-701
-           curates the estate a few resorts at a time.
-        {% endcomment %}
-        {% for forecast in location_forecasts %}
-            <section
-                class="mb-6"
-                data-testid="resort-location-forecast-section"
-                data-role="{{ forecast.role }}"
-                aria-labelledby="resort-location-forecast-{{ forloop.counter }}"
-            >
-                {% if forecast.location.elevation_m %}
-                    {% blocktrans with name=forecast.location.name elevation=forecast.location.elevation_m|floatformat:0 trimmed asvar location_forecast_label %}
-                        {{ name }} · {{ elevation }} m
-                    {% endblocktrans %}
-                {% else %}
-                    {% blocktrans with name=forecast.location.name trimmed asvar location_forecast_label %}
-                        {{ name }}
-                    {% endblocktrans %}
-                {% endif %}
-                {% include "includes/_eyebrow.html" with text=location_forecast_label heading_id="resort-location-forecast-"|add:forloop.counter|stringformat:"s" class_extra="mb-2" %}
-                {% include "includes/_forecast_panel.html" with panel=forecast.panel testid_prefix="resort-location-forecast" %}
-            </section>
-        {% endfor %}
-
-        {# ── Legacy single panel (SNOW-572) — uncurated resorts only ──── #}
-        {% comment %}
-           Kept until every resort has a linked Location: a resort SNOW-701
-           has not reached still shows the point forecast SNOW-572 gave it
-           rather than dropping back to the region snapshot alone. The view
-           only sets this when there are no per-location forecasts, so the
-           two sections are mutually exclusive.
-        {% endcomment %}
-        {% if forecast_panel %}
-            <section
-                class="mb-6"
-                data-testid="resort-forecast-section"
-                aria-labelledby="resort-forecast-heading"
-            >
-                {% translate "Weather — this resort" as resort_forecast_eyebrow_label %}
-                {% include "includes/_eyebrow.html" with text=resort_forecast_eyebrow_label heading_id="resort-forecast-heading" class_extra="mb-2" %}
-                {% include "includes/_forecast_panel.html" with panel=forecast_panel testid_prefix="resort-forecast" %}
-            </section>
-        {% endif %}
 
         {# ── Field-observation counts (SNOW-324 pattern, point-local per SNOW-508) ── #}
         {% if local_observations.visible %}

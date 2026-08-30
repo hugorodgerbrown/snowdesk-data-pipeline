@@ -308,35 +308,6 @@ reachable via the SNOW-81 deep-link in the masthead.
         {% endcomment %}
         {% include "includes/bulletin_header.html" %}
 
-        {# ── Region forecast (SNOW-696) ────────────────────────────────── #}
-        {% comment %}
-           The same multi-day panel the resort page and the favourite card
-           already show, read through the region's centroid Location. The
-           masthead above stays the WeatherSnapshot day/night visual — this
-           is the numbers, and the numbers come from a point.
-
-           The eyebrow says "region centre" deliberately: a centroid
-           represents the region, not a place anyone goes, and it sits at
-           whatever elevation the polygon's middle happens to fall at. A
-           surface showing its weather has to say so (docs/locations.md).
-
-           Omitted entirely when the region has no centroid location yet,
-           when its cell has no rows in the forward window, or on a
-           historical date — the window is a forecast, and rendering it
-           beside last week's danger rating would be a lie.
-        {% endcomment %}
-        {% if forecast_panel %}
-            <section
-                class="mb-6"
-                data-testid="bulletin-forecast-section"
-                aria-labelledby="bulletin-forecast-heading"
-            >
-                {% translate "Weather — region centre" as region_forecast_eyebrow_label %}
-                {% include "includes/_eyebrow.html" with text=region_forecast_eyebrow_label heading_id="bulletin-forecast-heading" class_extra="mb-2" %}
-                {% include "includes/_forecast_panel.html" with panel=forecast_panel testid_prefix="bulletin-forecast" %}
-            </section>
-        {% endif %}
-
         {% if not bulletin %}
             {# ── Empty state ─────────────────────────────────────────── #}
             {% include "includes/_callout.html" with kind="info" heading=_("No bulletin available") body=_("There is no bulletin published for this region on this date.") only %}

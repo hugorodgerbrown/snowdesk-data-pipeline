@@ -426,9 +426,9 @@
      the post-overlay appearance, not the raw token.
      White-text contrast lands in the WCAG AA range
      (4.5:1 to 7:1 across day buckets, comfortably
-     AAA on every night bucket). Keep the token names
-     stable so the partial markup (data-weather-bucket
-     / data-time-of-day) does not need to change.
+     AAA on every night bucket). Retained through SNOW-762
+     for the weather rebuild (SNOW-757), which wants the
+     same palette; nothing renders them today.
      ————————————————————————————————————————— */
 
   --color-weather-clear-day:           #5fa1d3;   /* vivid sky blue, sun pops      */
@@ -775,7 +775,7 @@
    tint-background tokens (* -tint) used by danger
    bands — these use the saturated EAWS indicator
    colours so the badge reads as a strong visual
-   anchor against any weather-bucket background.
+   anchor against the masthead background.
    Level 5 uses a diagonal black/red split (left
    half #1a1916, right half #ff0000) implemented as
    a CSS gradient in the component rule below; the
@@ -789,44 +789,6 @@
 /* Foreground (text) on the hero badge for each level — reuse the existing
    --color-eaws-*-fg tokens; no new tokens needed for levels 1–5. */
 
-/* —— Weather panel ———————————————————————————
-   Bucket-coloured background shared by every consumer
-   of includes/_weather_panel.html — the bulletin masthead
-   (includes/bulletin_header.html, <header class="bulletin-header
-   weather-bucket">) and the resort page's weather section
-   (public/templates/public/resort.html, <div class="weather-bucket
-   rounded-card">). Preserves the SNOW-98 day/night signal; a
-   bg-black/35 overlay in the markup normalises text contrast.
-   Height is content-driven (min-height in markup). SNOW-509
-   generalised this block off the bulletin-only `.bulletin-header`
-   hook onto `.weather-bucket` so both consumers share one set of
-   rules; `.bulletin-header` itself now carries no CSS of its own.
-
-   Usage in template (see includes/_weather_panel.html):
-     <header class="weather-bucket"
-             data-weather-bucket="rain"
-             data-time-of-day="day">…</header>
-   ————————————————————————————————————————— */
-
-.weather-bucket {
-  border-radius: var(--radius-card);
-  background: var(--color-weather-fallback);   /* used when no snapshot is available */
-}
-
-.weather-bucket[data-weather-bucket="clear"][data-time-of-day="day"]           { background: var(--color-weather-clear-day); }
-.weather-bucket[data-weather-bucket="clear"][data-time-of-day="night"]         { background: var(--color-weather-clear-night); }
-.weather-bucket[data-weather-bucket="partly_cloudy"][data-time-of-day="day"]   { background: var(--color-weather-partly-cloudy-day); }
-.weather-bucket[data-weather-bucket="partly_cloudy"][data-time-of-day="night"] { background: var(--color-weather-partly-cloudy-night); }
-.weather-bucket[data-weather-bucket="cloudy"][data-time-of-day="day"]          { background: var(--color-weather-cloudy-day); }
-.weather-bucket[data-weather-bucket="cloudy"][data-time-of-day="night"]        { background: var(--color-weather-cloudy-night); }
-.weather-bucket[data-weather-bucket="fog"][data-time-of-day="day"]             { background: var(--color-weather-fog-day); }
-.weather-bucket[data-weather-bucket="fog"][data-time-of-day="night"]           { background: var(--color-weather-fog-night); }
-.weather-bucket[data-weather-bucket="rain"][data-time-of-day="day"]            { background: var(--color-weather-rain-day); }
-.weather-bucket[data-weather-bucket="rain"][data-time-of-day="night"]          { background: var(--color-weather-rain-night); }
-.weather-bucket[data-weather-bucket="snow"][data-time-of-day="day"]            { background: var(--color-weather-snow-day); }
-.weather-bucket[data-weather-bucket="snow"][data-time-of-day="night"]          { background: var(--color-weather-snow-night); }
-.weather-bucket[data-weather-bucket="thunder"][data-time-of-day="day"]         { background: var(--color-weather-thunder-day); }
-.weather-bucket[data-weather-bucket="thunder"][data-time-of-day="night"]       { background: var(--color-weather-thunder-night); }
 
 
 /* —— Period-transition chip ———————————————

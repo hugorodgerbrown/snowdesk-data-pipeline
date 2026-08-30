@@ -122,7 +122,6 @@ class ResortAdmin(admin.ModelAdmin):
         "longitude",
         "geocode_source",
         "needs_review",
-        "forecast_point",
     ]
     list_filter = ["kind", "tier", "canton", "geocode_source", "needs_review"]
     search_fields = ["name", "name_alt", "region__region_id"]
@@ -133,7 +132,6 @@ class ResortAdmin(admin.ModelAdmin):
         "geocoded_at",
         "created_at",
         "updated_at",
-        "forecast_point",
     ]
     fieldsets = (
         (None, {"fields": ("name", "name_alt", "region", "canton", "notes")}),
@@ -175,17 +173,6 @@ class ResortAdmin(admin.ModelAdmin):
                     "set lat/lon is the in-map editor at /?edit=resorts, "
                     "which is open to superusers only (SNOW-724 — previously "
                     "the ``edit_map`` waffle flag, seeded superusers=True)."
-                ),
-            },
-        ),
-        (
-            "Weather",
-            {
-                "fields": ("forecast_point",),
-                "description": (
-                    "Machine-resolved by "
-                    "`manage.py link_resort_forecast_points --commit` — not "
-                    "hand-edited."
                 ),
             },
         ),

@@ -17,11 +17,10 @@ and ``accuracy_radius_km`` are data about the *report*, not about the place.
 The ``save(update_fields=["location", "updated_at"])`` below cannot write
 another column even by accident.
 
-**No external calls, and no forecast cell.** The minted location carries no
-``forecast_cell``: an observation shows no forecast panel, and resolving one
-would mean an Open-Meteo round trip per historical report for weather
-nothing renders. ``link_location_forecast_cells`` is scoped to ``named()``
-for the same reason, so these rows are never picked up by it either.
+**No external calls, and no elevation.** The minted location carries no
+``elevation_m``: an observation shows no forecast panel, and resolving one
+would mean an Open-Meteo round trip per historical report for a figure
+nothing renders.
 
 Locations minted here carry **no name and no kind** — naming is a curation
 act.
