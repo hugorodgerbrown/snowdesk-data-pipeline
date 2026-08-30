@@ -33,6 +33,7 @@ from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from apps.locations.models import Location
 from apps.regions.fixture_utils import centre_from_bbox
@@ -185,6 +186,46 @@ class TestLinkRegionCentroidLocations:
 
         assert Location.objects.count() == 1
         assert "0 region(s) linked" in out.getvalue()
+
+    def test_a_write_failure_does_not_abort_the_batch(self) -> None:
+        """SNOW-771 follow-up: build.sh runs this under ``set -o errexit``.
+
+        An exception escaping one region would take down a deploy of three
+        services sharing a database. The region is counted and skipped
+        instead; the rest still link.
+        """
+        MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
+        MicroRegionFactory.create(boundary=OTHER_BOUNDARY, centroid_elevation_m=1800.0)
+
+        real = Location.objects.create
+        calls = {"n": 0}
+
+        def _one_bad_write(*args: Any, **kwargs: Any) -> Location:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("boom")
+            return real(*args, **kwargs)
+
+        with patch.object(Location.objects, "create", side_effect=_one_bad_write):
+            out = StringIO()
+            call_command(COMMAND, "--commit", stdout=out)
+
+        assert "1 failed" in out.getvalue()
+        assert MicroRegion.objects.filter(centroid_location__isnull=False).count() == 1
+
+    def test_a_total_failure_does_exit_non_zero(self) -> None:
+        """The one case worth blocking a deploy on — nothing linked at all.
+
+        A partial failure lets the deploy finish; every candidate failing
+        means something systemic, and a silent success there would hide it.
+        """
+        MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
+
+        with (
+            patch.object(Location.objects, "create", side_effect=RuntimeError("boom")),
+            pytest.raises(CommandError, match="linked nothing"),
+        ):
+            call_command(COMMAND, "--commit", stdout=StringIO())
 
     def test_one_unreadable_region_does_not_stop_the_batch(self) -> None:
         """A skipped region is counted; the rest still link."""
