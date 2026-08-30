@@ -7,7 +7,7 @@ Covers:
   - Dry-run (no --commit) writes nothing.
   - --commit --all creates the full navigable dataset via the factories, once the
     region fixtures are pre-loaded: 178 region-scoped rows (RegionBulletin /
-    RegionDayRating / WeatherSnapshot) but only 39 Bulletins, since the map date
+    RegionDayRating) but only 39 Bulletins, since the map date
     is covered by 10 multi-region groups (SNOW-534).
   - The map-date bulletins group contiguous micro-regions, cover every region
     exactly once, and each gets a dissolved BulletinGrouping; CH-4115's April
@@ -59,23 +59,18 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
-from apps.weather.models import (
-    ForecastCell,
-    ForecastCellWeather,
-    WeatherSnapshot,
-)
+from apps.locations.models import Location
 
 User = get_user_model()
 
-# The point-weather layer seeded alongside the bulletin dataset.
-_EXPECTED_FORECAST_POINTS = 5
-_EXPECTED_FORECAST_POINT_WEATHER = 150  # 5 points × 30 April dates
+# The point layer seeded alongside the bulletin dataset.
+_EXPECTED_LOCATIONS = 5
 _EXPECTED_FAVOURITES = 5
 
 # Region-scoped bulletin-layer rows: one per (region, date) pair — 149
 # map-coverage regions on MAP_DATE + 29 CH-4115 detail days. Unchanged by
-# SNOW-534's grouping: every region still gets its own RegionBulletin,
-# RegionDayRating and WeatherSnapshot.
+# SNOW-534's grouping: every region still gets its own RegionBulletin
+# and RegionDayRating.
 _EXPECTED_TOTAL = 178
 
 # Bulletin rows. Far lower than _EXPECTED_TOTAL since SNOW-534: the map date is
@@ -128,7 +123,7 @@ class TestSelectionValidation:
 
     def test_unknown_model_name_lists_available_models(self) -> None:
         """An --include value outside the enumeration errors and lists the models."""
-        with pytest.raises(CommandError, match="Available models:.*weathersnapshot"):
+        with pytest.raises(CommandError, match="Available models:.*location"):
             call_command("seed_test_data", "--include", "notamodel", "--commit")
 
     def test_include_without_a_model_lists_available_models(self) -> None:
@@ -150,9 +145,7 @@ class TestSelectionValidation:
             "bulletin",
             "regionbulletin",
             "regiondayrating",
-            "weathersnapshot",
-            "forecastcell",
-            "forecastcellweather",
+            "location",
             "favourite",
             "user",
         ):
@@ -178,7 +171,6 @@ class TestDryRun:
         """--all without --commit leaves the DB untouched (incl. the seeded users)."""
         call_command("seed_test_data", "--all", verbosity=0)
         assert Bulletin.objects.count() == 0
-        assert WeatherSnapshot.objects.count() == 0
         # The USER layer is rolled back with everything else in dry-run.
         assert User.objects.count() == 0
 
@@ -202,7 +194,6 @@ class TestCommit:
         assert Bulletin.objects.count() == _EXPECTED_BULLETINS
         assert RegionBulletin.objects.count() == _EXPECTED_TOTAL
         assert RegionDayRating.objects.count() == _EXPECTED_TOTAL
-        assert WeatherSnapshot.objects.count() == _EXPECTED_TOTAL
 
     def test_all_bulletins_have_current_render_model_version(self) -> None:
         """Every seeded Bulletin carries the current render-model version."""
@@ -212,17 +203,9 @@ class TestCommit:
             assert bulletin.render_model.get("version") == RENDER_MODEL_VERSION
 
     def test_ch4115_has_full_april_detail(self) -> None:
-        """CH-4115 gets a rating and a snapshot for every April day (30 each)."""
+        """CH-4115 gets a rating for every April day (30)."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
         assert RegionDayRating.objects.filter(region__region_id="CH-4115").count() == 30
-        assert WeatherSnapshot.objects.filter(region__region_id="CH-4115").count() == 30
-
-    def test_non_detail_region_has_single_map_date_snapshot(self) -> None:
-        """A non-detail region gets exactly one snapshot, on the map date."""
-        call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        snapshots = WeatherSnapshot.objects.filter(region__region_id="CH-4222")
-        assert snapshots.count() == 1
-        assert str(snapshots.get().valid_for_date) == "2026-04-08"
 
     def test_map_date_bulletins_cover_regions_in_groups(self) -> None:
         """The map date is covered by 10 multi-region bulletins (SNOW-534)."""
@@ -260,32 +243,6 @@ class TestCommit:
             assert grouping.boundary["type"] in {"Polygon", "MultiPolygon"}
             assert grouping.countries == ["CH"]
 
-    def test_weather_snapshots_use_wmo_code_1(self) -> None:
-        """All seeded snapshots use WMO weather code 1."""
-        call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        assert set(
-            WeatherSnapshot.objects.order_by().values_list("weather_code", flat=True)
-        ) == {1}
-
-    def test_include_weathersnapshot_only(self) -> None:
-        """--include weathersnapshot seeds snapshots and nothing else (no deps)."""
-        call_command(
-            "seed_test_data", "--include", "weathersnapshot", commit=True, verbosity=0
-        )
-        assert WeatherSnapshot.objects.count() == _EXPECTED_TOTAL
-        assert Bulletin.objects.count() == 0
-        assert RegionDayRating.objects.count() == 0
-
-    def test_exclude_weathersnapshot(self) -> None:
-        """--exclude weathersnapshot seeds everything else, no snapshots."""
-        call_command(
-            "seed_test_data", "--exclude", "weathersnapshot", commit=True, verbosity=0
-        )
-        assert WeatherSnapshot.objects.count() == 0
-        assert Bulletin.objects.count() == _EXPECTED_BULLETINS
-        assert RegionBulletin.objects.count() == _EXPECTED_TOTAL
-        assert RegionDayRating.objects.count() == _EXPECTED_TOTAL
-
     def test_include_regiondayrating_produces_ratings(self) -> None:
         """--include regiondayrating pulls in RegionBulletin so ratings are non-zero.
 
@@ -298,7 +255,6 @@ class TestCommit:
         assert RegionDayRating.objects.count() == _EXPECTED_TOTAL
         assert Bulletin.objects.count() == _EXPECTED_BULLETINS
         assert RegionBulletin.objects.count() == _EXPECTED_TOTAL
-        assert WeatherSnapshot.objects.count() == 0
 
     def test_include_regionbulletin_pulls_in_bulletin_prerequisite(self) -> None:
         """--include regionbulletin auto-creates the Bulletin prerequisite."""
@@ -308,7 +264,6 @@ class TestCommit:
         assert Bulletin.objects.count() == _EXPECTED_BULLETINS
         assert RegionBulletin.objects.count() == _EXPECTED_TOTAL
         assert RegionDayRating.objects.count() == 0
-        assert WeatherSnapshot.objects.count() == 0
 
     def test_prerequisite_note_is_printed(self, capsys: pytest.CaptureFixture) -> None:
         """Pulled-in prerequisites are reported to the caller."""
@@ -318,50 +273,35 @@ class TestCommit:
         assert "bulletin" in capsys.readouterr().out
 
     def test_all_seeds_the_new_models(self) -> None:
-        """--all seeds the stage-2 ForecastCell/weather/Favourite layer."""
+        """--all seeds the stage-2 Location/Favourite layer."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
-        assert ForecastCellWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
+        assert Location.objects.count() == _EXPECTED_LOCATIONS
         assert Favourite.objects.count() == _EXPECTED_FAVOURITES
 
-    def test_include_forecastcell_only(self) -> None:
-        """--include forecastcell seeds points but no weather or favourites."""
+    def test_include_location_only(self) -> None:
+        """--include location seeds locations but no favourites."""
         call_command(
-            "seed_test_data", "--include", "forecastcell", commit=True, verbosity=0
+            "seed_test_data", "--include", "location", commit=True, verbosity=0
         )
-        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
-        assert ForecastCellWeather.objects.count() == 0
+        assert Location.objects.count() == _EXPECTED_LOCATIONS
         assert Favourite.objects.count() == 0
 
-    def test_include_forecastcellweather_pulls_in_forecast_cell(self) -> None:
-        """--include forecastcellweather auto-creates its ForecastCell prerequisite."""
-        call_command(
-            "seed_test_data",
-            "--include",
-            "forecastcellweather",
-            commit=True,
-            verbosity=0,
-        )
-        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
-        assert ForecastCellWeather.objects.count() == _EXPECTED_FORECAST_POINT_WEATHER
-        assert Favourite.objects.count() == 0
-
-    def test_include_favourite_pulls_in_forecast_point(self) -> None:
-        """--include favourite auto-creates the ForecastCell prerequisite."""
+    def test_include_favourite_pulls_in_location(self) -> None:
+        """--include favourite auto-creates the Location prerequisite."""
         call_command(
             "seed_test_data", "--include", "favourite", commit=True, verbosity=0
         )
-        assert ForecastCell.objects.count() == _EXPECTED_FORECAST_POINTS
+        assert Location.objects.count() == _EXPECTED_LOCATIONS
         assert Favourite.objects.count() == _EXPECTED_FAVOURITES
-        assert ForecastCellWeather.objects.count() == 0
 
-    def test_favourites_reference_seeded_points(self) -> None:
-        """Each Favourite points at a seeded ForecastCell with matching coords."""
+    def test_favourites_reference_seeded_locations(self) -> None:
+        """Each Favourite points at a seeded Location with matching coords."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        seeded_point_ids = set(ForecastCell.objects.values_list("pk", flat=True))
-        for favourite in Favourite.objects.select_related("forecast_point"):
-            assert favourite.forecast_point.pk in seeded_point_ids
-            assert favourite.latitude == favourite.forecast_point.latitude
+        seeded_ids = set(Location.objects.values_list("pk", flat=True))
+        for favourite in Favourite.objects.select_related("location"):
+            assert favourite.location is not None
+            assert favourite.location.pk in seeded_ids
+            assert favourite.latitude == favourite.location.latitude
 
     def test_reseeding_populated_db_errors_cleanly(self) -> None:
         """Re-seeding a populated DB raises CommandError, not a raw IntegrityError."""
@@ -411,7 +351,7 @@ class TestUserSeeding:
         """--include user creates only the accounts, no bulletin/point rows."""
         call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
         assert Bulletin.objects.count() == 0
-        assert ForecastCell.objects.count() == 0
+        assert Location.objects.count() == 0
         assert Favourite.objects.count() == 0
 
     def test_include_user_is_idempotent(self) -> None:

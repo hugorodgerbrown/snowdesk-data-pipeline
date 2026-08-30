@@ -66,18 +66,6 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Panel overlay switch | The "Show X on the map" switch inside a map panel — the sheet-owned replacement for a layers-menu row, for user-generated data (downloads, favourites, community reports). Drives a frozen `window.pwa*Overlay` bridge in `map.js`; carries no sync dot (SNOW-658) | `templates/includes/_map_overlay_toggle.html`; `window.pwaFavouritesOverlay` / `window.pwaCommunityReportsOverlay` / `window.pwaDownloadedOverlay` in `static/js/map.js` |
 | Bulletin fill | The bulletin DATA painted onto micro-regions — the `regions-fill` choropleth plus `bulletin-groupings-line`. Split from the Micro regions row (geography only) by SNOW-656. Strength is one of five user-chosen opacity steps, 0 being off. Was mutually exclusive with the downloaded-areas overlay until SNOW-663 made those squares a hatch the danger colour reads through; the two are independent now | `static/js/layer_visibility_core.js`; `#map-fill-toggle` / `data-bulletins-step`; [bulletin-fill-is-a-user-choice.md](decisions/bulletin-fill-is-a-user-choice.md) |
 
-## Weather
-
-| Term | Meaning | Code |
-|------|---------|------|
-| WeatherSnapshot | Open-Meteo weather for one (region, date): WMO `weather_code` 0–99, sunrise/sunset, plus the nullable daily aggregates `temperature_2m_max` / `temperature_2m_min` (°C) and `snowfall_sum` (cm) added in SNOW-571 | `apps/weather/models.py`; fetched by `apps/weather/services/weather_fetcher.py` |
-| is_day projection | Render-time check that "now" falls between that region's sunrise and sunset — never stored | `is_day()` in `apps/weather/services/weather_display.py` |
-| Bulletin header | Context dict for `templates/includes/bulletin_header.html` ("weather header" is its historical name) | `bulletin_header_context()` in `apps/weather/services/weather_display.py` |
-| Weather panel | Shared bucket-coloured weather partial (SNOW-509); included by both the bulletin masthead and the resort page | `templates/includes/_weather_panel.html` |
-| Forecast convergence | How the forecast for one day changed as that day approached; read from the retained per-issue-date series rather than the single surviving day-of row (SNOW-575) | `ForecastCellWeatherHistory.objects.convergence_for()` in `apps/weather/models.py` |
-| Lead days | `valid_for_date - issued_date` — how far ahead a forecast was looking when it was fetched. `0` is the day-of view | `lead_days` on `ForecastCellWeatherHistory` |
-| Issued date | The run anchor a forecast was fetched on, part of the history key so one forecast day can be stored once per issue date | `issued_date` on `ForecastCellWeatherHistory` |
-
 ## Field observations
 
 | Term | Meaning | Code |
@@ -105,11 +93,8 @@ Which coordinate on which model is exact, approximate or derived:
 | Location | The domain primitive: a point on the map that we keep. A resort's village, mid-station or peak; a favourite; an observation; a region centroid. **A curated place is a `Location` with a `name`** — there is no separate curated-place model, so Mont Fort is one row four resorts reference (SNOW-700) | `Location` in `apps/locations/models.py`; `docs/decisions/location-is-the-primitive.md` |
 | Anonymous location | A `Location` carrying no `name` and no `kind` — minted from a favourite or an observation. Naming is a curation act | `LocationQuerySet.anonymous()` / `.named()` |
 | Role vs kind | `Location.kind` describes the place (Mont Fort is a peak whoever is looking); `ResortLocation.role` describes what it is *to one resort*. Attelas can be one resort's top and another's mid-station — which is why the join is a many-to-many | `Location.KIND` / `ResortLocation.ROLE` in `apps/locations/models.py` |
-| Fetch cell | A `ForecastCell` — the quantised cell at which Open-Meteo is called, **not a place**. Its `latitude`/`longitude` are whichever pin minted the cell; identity is the `(lat_cell, lon_cell, elevation_band)` triple. Was `ForecastPoint` until SNOW-703; the table is still `bulletins_forecastpoint` | `ForecastCell` in `apps/weather/models.py`; `docs/decisions/forecast-point-quantisation.md` |
-| Reuse threshold | 750 m horizontal / 150 m vertical — how close a pin must be to share an existing fetch cell rather than mint its own, so a pin near a grid boundary still shares the neighbouring row | `REUSE_HORIZONTAL_THRESHOLD_M` / `REUSE_ELEVATION_THRESHOLD_M` in `apps/weather/services/forecast_cells.py` |
-| Referent | Anything holding an FK to a fetch cell. A cell with none falls out of `active()`, stops being fetched, and is deleted **with its stored weather** by `prune_forecast_points` | `ForecastCellQuerySet.active()` / `.inactive()` in `apps/weather/models.py` |
 | Report location vs raw fix | On a field observation, `latitude`/`longitude` is where the report says it happened (possibly dragged); `gps_latitude`/`gps_longitude` is the device's own fix. The gap is precision, never anonymisation | `FieldObservation` in `apps/observations/models.py` |
-| Region centroid | `MicroRegion.centre` — the polygon's centroid, representing the region rather than any place anyone goes. Region weather means "somewhere in this region" | `centre` on `MicroRegion` / `SubRegion` / `MajorRegion`; computed by `refresh_eaws_fixtures` |
+| Region centroid | `MicroRegion.centre` — the polygon's centroid, representing the region rather than any place anyone goes | `centre` on `MicroRegion` / `SubRegion` / `MajorRegion`; computed by `refresh_eaws_fixtures` |
 | Village coordinate | `Resort.latitude`/`longitude` — the geocoder's hit for the resort's *name*, which lands in the village (Verbier 1436 m against terrain to 3330 m), not on the terrain | `Resort` in `apps/regions/models.py` |
 
 ## Terrain

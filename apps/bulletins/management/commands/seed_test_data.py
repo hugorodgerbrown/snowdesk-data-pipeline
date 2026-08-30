@@ -23,14 +23,13 @@ Bulletin-layer coverage:
   - CH-4115 (Martigny-Verbier) additionally gets a single-region bulletin per
     day across April 2026 (2026-04-08 excluded, as the map layer already
     covers it),
-  - a WeatherSnapshot per (region, date) pair,
   - render models built at ``RENDER_MODEL_VERSION`` and day ratings applied via the
     production services, so the seeded DB renders with no rebuild step.
 
 It also seeds two named dev accounts (a superuser and an active, CH-4115-subscribed
 normal user — folded in from the former ``seed_dev_users`` command) plus a small
-standalone set of ForecastCells, a ForecastCellWeather per point per April date,
-and one Favourite per point (all owned by the seeded normal dev user).
+standalone set of Locations and one Favourite per Location (all owned by the
+seeded normal dev user).
 
 Region/resort reference data (MajorRegion/SubRegion/MicroRegion/Resort) is a
 *prerequisite*: it must already be loaded (e.g. ``loaddata eaws_CH resorts``). It
@@ -56,7 +55,6 @@ import enum
 import json
 import logging
 import uuid
-import zoneinfo
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -76,8 +74,8 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from apps.bulletins.models import Bulletin
+    from apps.locations.models import Location
     from apps.regions.models import MicroRegion
-    from apps.weather.models import ForecastCell
 
 logger = logging.getLogger(__name__)
 
@@ -451,41 +449,6 @@ def _make_bulletin_params(
     }
 
 
-def _make_weather_snapshot_params(
-    region_id: str,
-    target_date: date,
-) -> dict[str, Any]:
-    """
-    Build kwargs for a deterministic WeatherSnapshot / ForecastCellWeather row.
-
-    Uses WMO code 1 (mainly clear), sunrise 06:30 Europe/Zurich,
-    sunset 18:30 Europe/Zurich for the given date.
-
-    Args:
-        region_id: Accepted for call-site symmetry; not used (sunrise/sunset are
-            derived from ``target_date`` alone).
-        target_date: The calendar date the snapshot applies to.
-
-    Returns:
-        A dict of shared weather field values (region/forecast_cell FK excluded).
-
-    """
-    zurich = zoneinfo.ZoneInfo("Europe/Zurich")
-    sunrise = datetime(
-        target_date.year, target_date.month, target_date.day, 6, 30, tzinfo=zurich
-    )
-    sunset = datetime(
-        target_date.year, target_date.month, target_date.day, 18, 30, tzinfo=zurich
-    )
-    return {
-        "valid_for_date": target_date,
-        "weather_code": 1,
-        "sunrise": sunrise,
-        "sunset": sunset,
-        "fetched_at": django_timezone.now(),
-    }
-
-
 class SeedModel(enum.StrEnum):
     """Models ``seed_test_data`` can create, named by ``--include``/``--exclude``.
 
@@ -497,9 +460,7 @@ class SeedModel(enum.StrEnum):
     REGIONBULLETIN = "regionbulletin"
     REGIONDAYRATING = "regiondayrating"
     BULLETINGROUPING = "bulletingrouping"
-    WEATHERSNAPSHOT = "weathersnapshot"
-    FORECASTCELL = "forecastcell"
-    FORECASTCELLWEATHER = "forecastcellweather"
+    LOCATION = "location"
     FAVOURITE = "favourite"
     USER = "user"
 
@@ -517,27 +478,23 @@ _DEPENDENCIES: dict[SeedModel, tuple[SeedModel, ...]] = {
     # dissolves the regions reached through the RegionBulletin M2M, so without
     # those links every bulletin looks region-less and no grouping is written.
     SeedModel.BULLETINGROUPING: (SeedModel.BULLETIN, SeedModel.REGIONBULLETIN),
-    SeedModel.WEATHERSNAPSHOT: (),
-    SeedModel.FORECASTCELL: (),
-    SeedModel.FORECASTCELLWEATHER: (SeedModel.FORECASTCELL,),
+    SeedModel.LOCATION: (),
     # Favourites are owned by the seeded normal dev user, so USER is a prerequisite.
-    SeedModel.FAVOURITE: (SeedModel.FORECASTCELL, SeedModel.USER),
+    SeedModel.FAVOURITE: (SeedModel.LOCATION, SeedModel.USER),
     SeedModel.USER: (),
 }
 
 # Dependency-safe seeding order, split into the two independent families the run
 # is organised around (the bulletin layer shares created Bulletins; the point layer
-# shares created ForecastCells). The families have no cross-dependencies.
+# shares created Locations). The families have no cross-dependencies.
 _BULLETIN_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.BULLETIN,
     SeedModel.REGIONBULLETIN,
     SeedModel.REGIONDAYRATING,
     SeedModel.BULLETINGROUPING,
-    SeedModel.WEATHERSNAPSHOT,
 )
 _POINT_FAMILY: tuple[SeedModel, ...] = (
-    SeedModel.FORECASTCELL,
-    SeedModel.FORECASTCELLWEATHER,
+    SeedModel.LOCATION,
     SeedModel.FAVOURITE,
 )
 # The account layer has no cross-dependencies on the other families and is seeded
@@ -546,10 +503,9 @@ _ACCOUNT_FAMILY: tuple[SeedModel, ...] = (SeedModel.USER,)
 
 _CHOICES: list[str] = [m.value for m in SeedModel]
 
-# Coordinates for the seeded ForecastCells — spaced (0.1° / 300 m apart) so each
-# resolves to a distinct (lat_cell, lon_cell, elevation_band) triple, around the
-# Verbier detail region.
-_FORECAST_CELL_COORDS: tuple[tuple[float, float, float], ...] = (
+# Coordinates for the seeded Locations — spaced (0.1° / 300 m apart) around the
+# Verbier detail region, so each is a visibly distinct pin on the map.
+_SEED_LOCATION_COORDS: tuple[tuple[float, float, float], ...] = (
     (46.10, 7.40, 1500.0),
     (46.20, 7.50, 1800.0),
     (46.30, 7.60, 2100.0),
@@ -640,15 +596,13 @@ class Command(BaseCommand):
                 )
             )
 
-        specs, weather_pairs = self._coverage()
+        specs = self._coverage()
         micro_map = self._load_micro_regions(specs)
 
         counts: dict[str, int] = {}
         try:
             with transaction.atomic():
-                counts = self._run_seeders(
-                    resolved, specs, weather_pairs, micro_map, verbosity
-                )
+                counts = self._run_seeders(resolved, specs, micro_map, verbosity)
                 if not commit:
                     raise _Rollback()
         except _Rollback:
@@ -762,20 +716,16 @@ class Command(BaseCommand):
     # Coverage plan and region lookup
     # ------------------------------------------------------------------
 
-    def _coverage(
-        self,
-    ) -> "tuple[list[BulletinSpec], list[tuple[str, date]]]":
-        """Build the bulletin and weather coverage plan.
+    def _coverage(self) -> "list[BulletinSpec]":
+        """Build the bulletin coverage plan.
 
         The region set and per-day danger logic are read from the same eaws_CH
-        eaws_CH fixture (for the region set) and the module-level dataset helpers.
+        fixture (for the region set) and the module-level dataset helpers.
 
         Returns:
-            A ``(bulletin_specs, weather_pairs)`` tuple. ``bulletin_specs`` is a
-            list of ``(regions, target_date, danger_value)``, where ``regions``
-            is a tuple of ``(region_id, region_name)`` pairs — one bulletin may
-            cover several adjacent micro-regions (SNOW-534). ``weather_pairs``
-            is a list of ``(region_id, target_date)``, still one per region.
+            A list of ``(regions, target_date, danger_value)``, where
+            ``regions`` is a tuple of ``(region_id, region_name)`` pairs — one
+            bulletin may cover several adjacent micro-regions (SNOW-534).
 
         """
         region_data = json.loads(_EAWS_CH_FIXTURE.read_text())
@@ -788,8 +738,8 @@ class Command(BaseCommand):
         specs: list[BulletinSpec] = []
         # Map date: one bulletin per contiguous group of micro-regions, so the
         # L3 boundary layer has real groupings to dissolve (SNOW-534). Every
-        # region is still covered exactly once, so the per-region rating and
-        # snapshot counts are unchanged — only the bulletin count drops.
+        # region is still covered exactly once, so the per-region rating
+        # counts are unchanged — only the bulletin count drops.
         adjacency = _adjacency_from_fixture(region_data)
         for group in _contiguous_groups(list(region_name_map), adjacency):
             regions = tuple((rid, region_name_map[rid]) for rid in group)
@@ -809,12 +759,7 @@ class Command(BaseCommand):
                     )
                 )
 
-        weather_pairs = [
-            (region_id, target_date)
-            for regions, target_date, _ in specs
-            for region_id, _ in regions
-        ]
-        return specs, weather_pairs
+        return specs
 
     def _load_micro_regions(
         self, specs: "list[BulletinSpec]"
@@ -845,7 +790,6 @@ class Command(BaseCommand):
         self,
         resolved: "set[SeedModel]",
         specs: "list[BulletinSpec]",
-        weather_pairs: "list[tuple[str, date]]",
         micro_map: "dict[str, MicroRegion]",
         verbosity: int,
     ) -> dict[str, int]:
@@ -854,7 +798,6 @@ class Command(BaseCommand):
         Args:
             resolved: Models to seed (already expanded with prerequisites).
             specs: Bulletin coverage plan.
-            weather_pairs: (region_id, date) pairs for weather snapshots.
             micro_map: region_id -> MicroRegion lookup.
             verbosity: Verbosity level.
 
@@ -865,11 +808,7 @@ class Command(BaseCommand):
         counts: dict[str, int] = {}
         account_counts, dev_user = self._seed_account_family(resolved, verbosity)
         counts.update(account_counts)
-        counts.update(
-            self._seed_bulletin_family(
-                resolved, specs, weather_pairs, micro_map, verbosity
-            )
-        )
+        counts.update(self._seed_bulletin_family(resolved, specs, micro_map, verbosity))
         counts.update(self._seed_point_family(resolved, dev_user, verbosity))
         return counts
 
@@ -973,7 +912,6 @@ class Command(BaseCommand):
         self,
         resolved: "set[SeedModel]",
         specs: "list[BulletinSpec]",
-        weather_pairs: "list[tuple[str, date]]",
         micro_map: "dict[str, MicroRegion]",
         verbosity: int,
     ) -> dict[str, int]:
@@ -982,7 +920,6 @@ class Command(BaseCommand):
         Args:
             resolved: Models to seed (already expanded with prerequisites).
             specs: Bulletin coverage plan.
-            weather_pairs: (region_id, date) pairs for weather snapshots.
             micro_map: region_id -> MicroRegion lookup.
             verbosity: Verbosity level.
 
@@ -1008,16 +945,12 @@ class Command(BaseCommand):
                 counts[model.value] = self._seed_bulletin_groupings(
                     bulletins, verbosity
                 )
-            elif model is SeedModel.WEATHERSNAPSHOT:
-                counts[model.value] = self._seed_weather_snapshots(
-                    weather_pairs, micro_map, verbosity
-                )
         return counts
 
     def _seed_point_family(
         self, resolved: "set[SeedModel]", dev_user: "User | None", verbosity: int
     ) -> dict[str, int]:
-        """Seed the point-layer models (ForecastCell/ForecastCellWeather/Favourite).
+        """Seed the point-layer models (Location/Favourite).
 
         Args:
             resolved: Models to seed (already expanded with prerequisites).
@@ -1031,17 +964,13 @@ class Command(BaseCommand):
 
         """
         counts: dict[str, int] = {}
-        forecast_cells: list[ForecastCell] = []
+        locations: list[Location] = []
         for model in _POINT_FAMILY:
             if model not in resolved:
                 continue
-            if model is SeedModel.FORECASTCELL:
-                forecast_cells = self._seed_forecast_cells(verbosity)
-                counts[model.value] = len(forecast_cells)
-            elif model is SeedModel.FORECASTCELLWEATHER:
-                counts[model.value] = self._seed_forecast_cell_weather(
-                    forecast_cells, verbosity
-                )
+            if model is SeedModel.LOCATION:
+                locations = self._seed_locations(verbosity)
+                counts[model.value] = len(locations)
             elif model is SeedModel.FAVOURITE:
                 if dev_user is None:  # pragma: no cover — FAVOURITE pulls in USER
                     raise CommandError(
@@ -1049,7 +978,7 @@ class Command(BaseCommand):
                         "have been pulled in as a prerequisite."
                     )
                 counts[model.value] = self._seed_favourites(
-                    forecast_cells, dev_user, verbosity
+                    locations, dev_user, verbosity
                 )
         return counts
 
@@ -1211,125 +1140,53 @@ class Command(BaseCommand):
             self.stdout.write(f"  Created {created} BulletinGrouping rows")
         return created
 
-    def _seed_weather_snapshots(
-        self,
-        weather_pairs: "list[tuple[str, date]]",
-        micro_map: "dict[str, MicroRegion]",
-        verbosity: int,
-    ) -> int:
-        """Create one WeatherSnapshot per unique (region, date) pair.
+    def _seed_locations(self, verbosity: int) -> "list[Location]":
+        """Create the fixed set of Locations from ``_SEED_LOCATION_COORDS``.
 
-        Args:
-            weather_pairs: (region_id, date) pairs to cover.
-            micro_map: region_id -> MicroRegion lookup.
-            verbosity: Verbosity level.
-
-        Returns:
-            The number of WeatherSnapshot rows created.
-
-        """
-        from tests.factories import WeatherSnapshotFactory
-
-        seen: set[tuple[str, date]] = set()
-        created = 0
-        for region_id, target_date in weather_pairs:
-            if (region_id, target_date) in seen:
-                continue
-            seen.add((region_id, target_date))
-            micro = micro_map.get(region_id)
-            if micro is None:
-                continue
-            params = _make_weather_snapshot_params(region_id, target_date)
-            WeatherSnapshotFactory.create(
-                region=micro,
-                valid_for_date=params["valid_for_date"],
-                weather_code=params["weather_code"],
-                sunrise=params["sunrise"],
-                sunset=params["sunset"],
-                fetched_at=params["fetched_at"],
-            )
-            created += 1
-
-        if verbosity >= 2:
-            self.stdout.write(f"  Created {created} WeatherSnapshot rows")
-        return created
-
-    def _seed_forecast_cells(self, verbosity: int) -> "list[ForecastCell]":
-        """Create the fixed set of ForecastCells from ``_FORECAST_CELL_COORDS``.
+        Anonymous rows — no name, no kind — matching what a favourite mints
+        for itself. Elevation is supplied here rather than resolved, because
+        the seed must not make an Open-Meteo call.
 
         Args:
             verbosity: Verbosity level.
 
         Returns:
-            The created ForecastCell instances.
+            The created Location instances.
 
         """
-        from tests.factories import ForecastCellFactory
+        from tests.factories import LocationFactory
 
-        points = [
-            ForecastCellFactory.create(
-                latitude=latitude, longitude=longitude, elevation=elevation
+        locations = [
+            LocationFactory.create(
+                name="",
+                kind="",
+                latitude=latitude,
+                longitude=longitude,
+                elevation_m=elevation,
             )
-            for latitude, longitude, elevation in _FORECAST_CELL_COORDS
+            for latitude, longitude, elevation in _SEED_LOCATION_COORDS
         ]
 
         if verbosity >= 2:
-            self.stdout.write(f"  Created {len(points)} ForecastCell rows")
-        return points
-
-    def _seed_forecast_cell_weather(
-        self, forecast_cells: "list[ForecastCell]", verbosity: int
-    ) -> int:
-        """Create a ForecastCellWeather per point across every April date.
-
-        Sunrise/sunset/weather-code come from the same helper as the region
-        snapshots; the extended daily fields use the factory defaults.
-
-        Args:
-            forecast_cells: The seeded ForecastCell instances.
-            verbosity: Verbosity level.
-
-        Returns:
-            The number of ForecastCellWeather rows created.
-
-        """
-        from tests.factories import ForecastCellWeatherFactory
-
-        created = 0
-        for point in forecast_cells:
-            for target_date in APRIL_DATES:
-                # region_id is unused by the helper (it derives sunrise/sunset from
-                # the date alone); "" keeps the call honest for point weather.
-                params = _make_weather_snapshot_params("", target_date)
-                ForecastCellWeatherFactory.create(
-                    forecast_cell=point,
-                    valid_for_date=params["valid_for_date"],
-                    weather_code=params["weather_code"],
-                    sunrise=params["sunrise"],
-                    sunset=params["sunset"],
-                    fetched_at=params["fetched_at"],
-                )
-                created += 1
-
-        if verbosity >= 2:
-            self.stdout.write(f"  Created {created} ForecastCellWeather rows")
-        return created
+            self.stdout.write(f"  Created {len(locations)} Location rows")
+        return locations
 
     def _seed_favourites(
         self,
-        forecast_cells: "list[ForecastCell]",
+        locations: "list[Location]",
         owner: "User",
         verbosity: int,
     ) -> int:
-        """Create one Favourite per ForecastCell, all owned by the dev user.
+        """Create one Favourite per seeded Location, all owned by the dev user.
 
-        Each Favourite references a seeded ForecastCell (so its coordinates line
-        up with real point weather) rather than letting the factory synthesise a
-        fresh point. Ownership is the seeded normal dev user (``owner``) so the
-        Favourites appear on that account during manual testing.
+        Each Favourite points at a seeded Location rather than letting the
+        factory synthesise a fresh one, so the pins land on the spaced
+        coordinates around the Verbier detail region. Ownership is the seeded
+        normal dev user (``owner``) so the Favourites appear on that account
+        during manual testing.
 
         Args:
-            forecast_cells: The seeded ForecastCell instances.
+            locations: The seeded Location instances.
             owner: The seeded normal dev user that owns the Favourites.
             verbosity: Verbosity level.
 
@@ -1340,13 +1197,13 @@ class Command(BaseCommand):
         from tests.factories import FavouriteFactory
 
         created = 0
-        for point in forecast_cells:
+        for location in locations:
             FavouriteFactory.create(
                 user=owner,
-                forecast_point=point,
-                latitude=point.latitude,
-                longitude=point.longitude,
-                elevation=point.elevation,
+                location=location,
+                latitude=location.latitude,
+                longitude=location.longitude,
+                elevation=location.elevation_m,
                 region=None,
             )
             created += 1

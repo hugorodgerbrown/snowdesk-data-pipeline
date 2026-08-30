@@ -24,7 +24,7 @@
  * silhouette — a black rectangle on a stick, which is not a checkered flag
  * and does not read as a finish line. It has to be a full-colour image.
  *
- * The other full-colour icons on this map (the Meteocons weather symbols)
+ * The other full-colour icons on this map (the Meteocons symbol set)
  * are `<img>`-decoded SVGs, which is asynchronous and needs a file. A
  * checkerboard and a disc are a few lines of arithmetic, so these are
  * built as a MapLibre `StyleImage` — `{width, height, data}` over a

@@ -8,7 +8,7 @@ Documents the layers menu (#basemap-menu in
 public/partials/_map_embed.html) group by group, in the order the menu
 itself renders them: Bulletins, Boundaries, Locations, Conditions,
 Terrain, Base map. Two of those groups have a panel of their own on this
-page — Map weather and Slope angle — so the rows here get a sentence and
+page — Slope angle — so the rows here get a sentence and
 a pointer rather than a second copy of the detail.
 
 The user-generated overlays (favourites, field observations, routes) are
@@ -57,13 +57,6 @@ otherwise go looking for them.
             favourites.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Conditions" %}</h3>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
-        {% blocktrans trimmed %}
-            Weather puts a condition symbol and the day's high temperature at each resort. See "Map weather" below for
-            what it covers and when it switches itself off.
-        {% endblocktrans %}
-    </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Terrain" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
         {% blocktrans trimmed %}
@@ -89,9 +82,8 @@ otherwise go looking for them.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-disabled-rows">
         {% blocktrans trimmed %}
-            A row is sometimes switched off with a reason attached &mdash; the weather layer on a date outside the
-            forecast window, the slope layer outside the area it covers, or any layer that has never been loaded while
-            you were online. The note on the row says which.
+            A row is sometimes switched off with a reason attached &mdash; the slope layer outside the area it covers,
+            or any layer that has never been loaded while you were online. The note on the row says which.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-ugc-elsewhere">

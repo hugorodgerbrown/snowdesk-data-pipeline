@@ -79,10 +79,10 @@ def announce_link_run(
     """
     Write the shared start-of-run banner and log line for a ``link_*`` command.
 
-    Every ``link_*`` backfill command (``link_resort_forecast_points``,
-    ``link_region_centroid_locations``, ``link_location_forecast_cells``)
-    opens the same way: a ``MIGRATE_HEADING`` banner suffixed
-    ``" [READ-ONLY]"`` unless ``--commit`` was passed, and a matching
+    Every ``link_*`` backfill command (e.g.
+    ``link_region_centroid_locations``) opens the same way: a
+    ``MIGRATE_HEADING`` banner suffixed ``" [READ-ONLY]"`` unless
+    ``--commit`` was passed, and a matching
     ``"<command> started: candidates=%d commit=%s delay=%s"`` log line.
     This is that shared shape.
 
@@ -91,7 +91,7 @@ def announce_link_run(
         logger: The calling module's own logger, so the log record keeps
             its original module-qualified name rather than this module's.
         command_name: The command's name, as it appears in its own log
-            lines (e.g. ``"link_resort_forecast_points"``).
+            lines (e.g. ``"link_region_centroid_locations"``).
         banner: The caller's descriptive sentence, with no flag suffix —
             this appends it.
         candidate_count: How many candidates were found.

@@ -3,9 +3,9 @@ apps/core/settings_spec.py — Declarative spec for environment-derived settings
 
 A bare ``OPEN_METEO_API_BASE_URL=customer-api.open-meteo.com`` — no scheme,
 no ``/v1`` — was accepted at startup and only surfaced as
-``Invalid URL 'customer-api.open-meteo.com/elevation'`` part-way through a
-``link_resort_forecast_points`` batch, because ``request_url()`` simply
-concatenates the base and the endpoint. Nothing validated it (SNOW-580).
+``Invalid URL 'customer-api.open-meteo.com/elevation'`` part-way through an
+elevation-resolution batch, because ``request_url()`` simply concatenates
+the base and the endpoint. Nothing validated it (SNOW-580).
 
 SNOW-554 had already solved that class of problem for one setting:
 ``check_site_base_url`` verifies ``SITE_BASE_URL`` is absolute and non-local,
@@ -274,27 +274,12 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         "OPEN_METEO_API_BASE_URL",
         validator=absolute_url,
         required_in_production=True,
-        note="Forecast + elevation host",
-    ),
-    SettingSpec(
-        "OPEN_METEO_ARCHIVE_BASE_URL",
-        validator=absolute_url,
-        required_in_production=True,
-        note="Historical archive host",
+        note="Elevation host",
     ),
     SettingSpec(
         "OPEN_METEO_API_KEY",
         secret=True,
         note="Customer apikey; empty means the free tier",
-    ),
-    SettingSpec(
-        "FETCH_WEATHER_ADD_HISTORY",
-        note="Scheduled fetch_weather retains point-forecast history",
-    ),
-    SettingSpec(
-        "WEATHER_API_LOCAL_MIRROR_BASE_URL",
-        validator=local_mirror_url,
-        note="Dev mirror; empty disables",
     ),
     # --- Third-party services ---------------------------------------------
     SettingSpec("POSTHOG_HOST", validator=absolute_url, note="PostHog ingest host"),
@@ -351,7 +336,6 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     # --- Feature flags and toggles (already cast by python-decouple) ------
     SettingSpec("SEASON_START_DATE", note="Season boundary (ISO date)"),
     SettingSpec("SW_DEV_SHELL_BYPASS", note="Dev-only SW shell bypass (SNOW-585)"),
-    SettingSpec("WEATHER_FETCH_ASYNC", note="Off-request weather fetches"),
     SettingSpec("QUERY_COUNT_HEADER_ENABLED", note="X-Query-Count debug header"),
     SettingSpec("CSP_ENABLED", note="Content-Security-Policy on/off"),
     SettingSpec("CSP_REPORT_ONLY", note="CSP in report-only mode"),
@@ -368,9 +352,7 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
 
 # Free-tier Open-Meteo hosts. A key sent to these is silently ignored; a
 # customer host reached without one 401s on every request.
-FREE_OPEN_METEO_HOSTS: frozenset[str] = frozenset(
-    {"api.open-meteo.com", "archive-api.open-meteo.com"}
-)
+FREE_OPEN_METEO_HOSTS: frozenset[str] = frozenset({"api.open-meteo.com"})
 
 
 def spec_by_name() -> dict[str, SettingSpec]:

@@ -34,13 +34,12 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  build_france_fixture, build_switzerland_fixture,
                  audit_resort_regions)
   bulletins/     Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
-                 PipelineRun, RegionDayRating, WeatherSnapshot, the ingestion
+                 PipelineRun, RegionDayRating, the ingestion
                  services (slf_fetcher / albina_fetcher / meteofrance_fetcher /
                  meteofrance_translator / meteofrance_archive_loader /
                  meteofrance_massifs / render_model / day_rating /
-                 slf_archive / openmeteo_archive / weather_fetcher /
-                 weather_display / geoip), the dev-only SLF / Open-Meteo
-                 mirror endpoints, and the bulletin and weather management
+                 slf_archive / geoip), the dev-only SLF mirror
+                 endpoints, and the bulletin management
                  commands
   accounts/      Signed-token email subscription flow — Account, Subscription,
                  PasskeyCredential, PushSubscription
@@ -73,7 +72,7 @@ abstract bases from the other.
 
 Tests live in a **top-level** `tests/` directory, not inside each app.
 The tree under `tests/` mirrors the source tree: `apps/bulletins/models.py`
-has tests at `tests/bulletins/test_weather_snapshot_model.py` and
+has tests at `tests/bulletins/test_bulletin_model.py` and
 `apps/regions/models.py` has tests at `tests/regions/models/test_models.py`.
 
 ---
@@ -243,7 +242,7 @@ Every concrete model must:
 6. **Have a Factory** in [tests/factories.py](../tests/factories.py).
 7. **Have test coverage** under `tests/<app>/` mirroring the source
    path (e.g. `tests/regions/models/test_models.py`,
-   `tests/bulletins/test_weather_snapshot_model.py`).
+   `tests/bulletins/test_bulletin_model.py`).
 
 Keep business logic **out** of models. Put it in the owning app's
 `services/` subdirectory (e.g. [apps/bulletins/services/](../apps/bulletins/services/)).
@@ -291,9 +290,9 @@ fetch, or mutate other records.
 - Located in each app's `services/` subdirectory (e.g.
   [apps/bulletins/services/](../apps/bulletins/services/)). The bulletin ingestion
   (SLF, ALBINA, Météo-France), render-model, day-rating, and bulletin-archive
-  services all live under `apps/bulletins/services/`; the Open-Meteo
-  weather-fetching, weather-display, forecast-point and elevation services
-  live under [apps/weather/services/](../apps/weather/services/) (SNOW-654).
+  services all live under `apps/bulletins/services/`; the elevation
+  service lives under
+  [apps/locations/services/](../apps/locations/services/) (SNOW-762).
 - Prefer plain functions over classes — composition over inheritance.
 - Pass collaborators as arguments rather than reaching for globals or
   building deep class hierarchies.

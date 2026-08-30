@@ -88,11 +88,6 @@ Optional context:
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
     data-community-reports-url="{{ community_reports_geojson_url }}"
     data-community-reports-eligible="true"
-    {# SNOW-573: the Weather overlay's data endpoint. Public and ungated   #}
-    {# since SNOW-724 retired the ``weather_layer`` flag, so — like        #}
-    {# community-reports above — there is no eligibility attribute to      #}
-    {# pair with it.                                                        #}
-    data-forecast-weather-url="{{ forecast_weather_geojson_url }}"
     {# SNOW-691: the slope-angle raster's tile template. Emitted only for an  #}
     {# eligible request — i.e. only while settings.SLOPE_TILE_URL is set       #}
     {# (SNOW-724 moved the gate off a waffle flag and onto the setting, which  #}
@@ -639,35 +634,6 @@ Optional context:
             {# one subject, one way in. Their sync dots went with the rows    #}
             {# rather than moving into the panels, following SNOW-645's own   #}
             {# call for the downloaded-areas row.                            #}
-            {#                                                                #}
-            {# SNOW-658: weather is a CONDITION, not a boundary or a place,   #}
-            {# so it gets a heading of its own below rather than being folded #}
-            {# into one it doesn't belong to.                                 #}
-            {# SNOW-573: Weather overlay — a Meteocons condition symbol   #}
-            {# plus the day's max temperature at each resort-anchored     #}
-            {# (and, for a signed-in visitor, favourite-anchored)         #}
-            {# forecast point. Off by default, and rendered for every      #}
-            {# visitor since SNOW-724 retired the weather_layer flag.      #}
-            {# static/js/map.js disables this row (with a reason, via a    #}
-            {# second namespaced marker — see DISABLED_MARKER in           #}
-            {# map_layer_sync_status.js) for any scrubbed date outside     #}
-            {# the stored forecast window.                                 #}
-            <li role="separator" class="basemap-menu-separator"></li>
-            <li role="none" class="basemap-menu-section-label">
-                {% trans "Conditions" %}
-            </li>
-            <li role="none">
-                <button
-                    type="button"
-                    role="menuitemcheckbox"
-                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                    data-overlay-key="weather"
-                    aria-checked="false"
-                >
-                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                    {% trans "Weather" %}
-                </button>
-            </li>
             {# SNOW-691: Terrain — the swisstopo slope-angle raster        #}
             {# (ch.swisstopo.hangneigung-ueber_30), banded so the 30-45°   #}
             {# range avalanches mostly release on reads at a glance. Its   #}
@@ -683,9 +649,8 @@ Optional context:
             {#                                                              #}
             {# static/js/map.js disables this row, with a reason, once the  #}
             {# viewport centre leaves the raster's declared coverage        #}
-            {# rectangle — via a marker of its own, mirroring the weather   #}
-            {# row's, so the offline gate and the coverage gate can clear   #}
-            {# independently.                                               #}
+            {# rectangle — via a namespaced marker, so the offline gate     #}
+            {# and the coverage gate can clear independently.               #}
             {% if slope_layer_eligible %}
                 <li role="separator" class="basemap-menu-separator"></li>
                 <li role="none" class="basemap-menu-section-label">
@@ -1503,12 +1468,6 @@ Optional context:
 {# either way. #}
 {% trans "Community reports aren't available offline right now — view them online to refresh." as offline_toast_community_reports_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-community_reports" kind="warning" body=offline_toast_community_reports_body dismissible=True timeout=6000 %}
-{# SNOW-573: same "never cached / cache aged out" shape as community reports #}
-{# above — the weather overlay write-through-caches under the idb kind      #}
-{# (map_layer_sync_status.js OVERLAY_RESOURCES.weather), so a read-back on a #}
-{# later offline visit is the recovery path once cached, not just "online". #}
-{% trans "Weather isn't available offline right now — view it online to refresh." as offline_toast_weather_body %}
-{% include "includes/_toast.html" with id="map-offline-toast-weather" kind="warning" body=offline_toast_weather_body dismissible=True timeout=6000 %}
 {# SNOW-687: routes. Its own copy rather than the shared layer toast,      #}
 {# because routes DO cache offline (map_overlay_offline_cache.js, and     #}
 {# principal-scoped there) — so this fires only when nothing was ever     #}
@@ -1687,15 +1646,6 @@ Optional context:
     {# already-downloaded region is NOT gated, so this label promises      #}
     {# only what the tap does.                                             #}
     <span data-string="download-signin">{% trans "Sign in to download this region's basemap" %}</span>
-    {# SNOW-573: the Weather layers-menu row's disable reason (title       #}
-    {# attribute) for any scrubbed date outside the stored forecast       #}
-    {# window — see updateWeatherRowAvailability in map.js.               #}
-    <span data-string="weather-out-of-window">{% trans "No forecast for this date" %}</span>
-    {# SNOW-660: the same row's other disable reason — no day has been     #}
-    {# chosen at all. Two strings rather than one, because "no forecast    #}
-    {# for this date" would blame the data for a date the visitor has not  #}
-    {# picked yet.                                                          #}
-    <span data-string="weather-no-date">{% trans "Choose a date to see the forecast" %}</span>
     {# SNOW-660: #map-date-ribbon's empty state. A cold boot no longer      #}
     {# paints a day nobody asked for, so the ribbon reports which day is   #}
     {# showing even when the honest answer is "none yet" — a blank         #}

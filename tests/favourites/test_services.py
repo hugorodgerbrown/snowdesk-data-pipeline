@@ -2,8 +2,8 @@
 tests/favourites/test_services.py — Tests for apps.favourites.services.
 
 Covers:
-  create_favourite — happy path (resolves ForecastCell, sets elevation
-    from the point, resolves region); region_for_point called with
+  create_favourite — happy path (resolves elevation, resolves region);
+    region_for_point called with
     latitude first (SNOW-415 regression guard for the SNOW-426 coord-order
     change); region-null when the point falls outside every known
     boundary; per-user cap enforcement at exactly
@@ -12,11 +12,10 @@ Covers:
     coords/region/name and sets the resort FK; an ungeocoded resort raises
     ResortNotGeocoded; a second call for the same (user, resort) is
     idempotent; the cap is shared with plain-pin favourites.
-  delete_favourite — owner-checked; the linked ForecastCell row survives
-    (PROTECT).
+  delete_favourite — owner-checked.
 
 All Open-Meteo network calls are avoided by patching
-``apps.favourites.services.resolve_forecast_cell``.
+``apps.favourites.services.fetch_elevation``.
 """
 
 from __future__ import annotations
@@ -38,10 +37,8 @@ from apps.favourites.services import (
     delete_favourite,
 )
 from apps.locations.models import Location
-from apps.weather.models import ForecastCell
 from tests.factories import (
     FavouriteFactory,
-    ForecastCellFactory,
     MicroRegionFactory,
     ResortFactory,
     ResortLocationFactory,
@@ -51,21 +48,20 @@ from tests.factories import (
 
 @pytest.mark.django_db
 class TestCreateFavouriteHappyPath:
-    """create_favourite resolves a ForecastCell and region, then saves."""
+    """create_favourite resolves an elevation and region, then saves."""
 
-    def test_creates_favourite_with_elevation_from_forecast_point(self) -> None:
-        """elevation is taken from the resolved ForecastCell, not re-fetched."""
+    def test_creates_favourite_with_resolved_elevation(self) -> None:
+        """elevation is taken from the fetch_elevation call, not re-fetched."""
         user = UserFactory.create()
-        point = ForecastCellFactory.create(elevation=1834.0)
+        elevation = 1834.0
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 46.1, 7.4, name="My pin")
 
         assert favourite.pk is not None
-        assert favourite.forecast_point == point
         assert favourite.elevation == 1834.0
         assert favourite.name == "My pin"
         assert favourite.user == user
@@ -73,11 +69,11 @@ class TestCreateFavouriteHappyPath:
     def test_resolves_region_when_point_is_inside_a_boundary(self) -> None:
         """favourite.region is set when region_for_point finds a match."""
         user = UserFactory.create()
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
         region = MicroRegionFactory.create()
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=region),
         ):
             favourite = create_favourite(user, 46.1, 7.4)
@@ -93,10 +89,10 @@ class TestCreateFavouriteHappyPath:
         swapped coordinates.
         """
         user = UserFactory.create()
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch(
                 "apps.favourites.services.region_for_point", return_value=None
             ) as mock_rfp,
@@ -108,10 +104,10 @@ class TestCreateFavouriteHappyPath:
     def test_name_defaults_to_blank(self) -> None:
         """name defaults to an empty string when not supplied."""
         user = UserFactory.create()
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 46.1, 7.4)
@@ -126,10 +122,10 @@ class TestCreateFavouriteRegionNull:
     def test_region_is_none_when_no_match(self) -> None:
         """A pin outside all boundaries is accepted with region=None."""
         user = UserFactory.create()
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 89.9, 179.9)
@@ -148,12 +144,10 @@ class TestCreateResortFavourite:
         resort = ResortFactory.create(
             name="Verbier", region=region, latitude=46.1, longitude=7.4
         )
-        point = ForecastCellFactory.create(
-            latitude=46.1, longitude=7.4, elevation=1500.0
-        )
+        elevation = 1500.0
 
         with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
+            "apps.favourites.services.fetch_elevation", return_value=elevation
         ) as mock_resolve:
             favourite = create_resort_favourite(user, resort)
 
@@ -164,7 +158,6 @@ class TestCreateResortFavourite:
         assert favourite.latitude == 46.1
         assert favourite.longitude == 7.4
         assert favourite.elevation == 1500.0
-        assert favourite.forecast_point == point
         assert favourite.user == user
 
     def test_ungeocoded_resort_raises(self) -> None:
@@ -181,11 +174,9 @@ class TestCreateResortFavourite:
         """A second create_resort_favourite call for the same pair returns the same row."""
         user = UserFactory.create()
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        elevation = 1500.0
 
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             first = create_resort_favourite(user, resort)
             second = create_resort_favourite(user, resort)
 
@@ -196,17 +187,17 @@ class TestCreateResortFavourite:
         """A user already at the cap cannot favourite a resort either."""
         settings.FAVOURITES_MAX_PER_USER = 1
         user = UserFactory.create()
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        elevation = 1500.0
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             create_favourite(user, 46.1, 7.4)
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
-        resort_point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
+        resort_point = 1500.0
         with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=resort_point
+            "apps.favourites.services.fetch_elevation", return_value=resort_point
         ):
             with pytest.raises(FavouriteLimitReached):
                 create_resort_favourite(user, resort)
@@ -223,10 +214,10 @@ class TestCreateResortFavourite:
         settings.FAVOURITES_MAX_PER_USER = 1
         user = UserFactory.create()
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        elevation = 1500.0
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch(
                 "apps.favourites.services.Favourite.objects.for_user"
             ) as mock_for_user,
@@ -246,15 +237,14 @@ class TestCreateResortFavourite:
         """
         user = UserFactory.create()
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        elevation = 1500.0
 
         winning_favourite = Favourite.objects.create(
             user=user,
             name=resort.name,
             latitude=46.1,
             longitude=7.4,
-            elevation=point.elevation,
-            forecast_point=point,
+            elevation=elevation,
             region=resort.region,
             resort=resort,
         )
@@ -265,7 +255,7 @@ class TestCreateResortFavourite:
         hit_queryset.first.return_value = winning_favourite
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch(
                 "apps.favourites.services.Favourite.objects.filter",
                 side_effect=[empty_queryset, hit_queryset],
@@ -286,16 +276,16 @@ class TestCreateFavouriteCap:
     def _create(self, user: User, n: int) -> Favourite:
         """Create one favourite for ``user`` via the service, mocks intact.
 
-        ``n`` varies the coordinates fed to ``resolve_forecast_cell`` (and
-        the ForecastCell each call creates) so successive calls don't trip
+        ``n`` varies the coordinates fed to each call so successive calls
+        don't trip
         the ``unique_together`` constraint on (lat_cell, lon_cell,
         elevation_band).
         """
         latitude = 46.1 + n * 0.05
         longitude = 7.4 + n * 0.05
-        point = ForecastCellFactory.create(latitude=latitude, longitude=longitude)
+        elevation = 1500.0
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             return create_favourite(user, latitude, longitude)
@@ -329,10 +319,10 @@ class TestCreateFavouriteCap:
         """
         settings.FAVOURITES_MAX_PER_USER = 1
         user = UserFactory.create()
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
             patch(
                 "apps.favourites.services.Favourite.objects.for_user"
@@ -361,17 +351,17 @@ class TestCreateFavouriteCap:
         settings.FAVOURITES_MAX_PER_USER = 2
         user = UserFactory.create()
         # Seed one existing favourite — one slot left under the cap of 2.
-        existing_point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        existing_point = 1500.0
         with (
             patch(
-                "apps.favourites.services.resolve_forecast_cell",
+                "apps.favourites.services.fetch_elevation",
                 return_value=existing_point,
             ),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             create_favourite(user, 46.1, 7.4)
 
-        point = ForecastCellFactory.create(latitude=48.0, longitude=9.0)
+        elevation = 1500.0
         barrier = threading.Barrier(2)
         outcomes: list[str] = []
         outcomes_lock = threading.Lock()
@@ -393,7 +383,7 @@ class TestCreateFavouriteCap:
             threading.Thread(target=worker, args=(offset,)) for offset in (0.1, 0.2)
         ]
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             for thread in threads:
@@ -407,14 +397,14 @@ class TestCreateFavouriteCap:
 
 @pytest.mark.django_db
 class TestDeleteFavourite:
-    """delete_favourite — owner-checked; the ForecastCell row survives."""
+    """delete_favourite — owner-checked."""
 
     def test_deletes_owned_favourite(self) -> None:
         """A user can delete their own favourite."""
         user = UserFactory.create()
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(user, 46.1, 7.4)
@@ -423,27 +413,13 @@ class TestDeleteFavourite:
 
         assert not Favourite.objects.filter(pk=favourite.pk).exists()
 
-    def test_forecast_point_survives_deletion(self) -> None:
-        """The linked ForecastCell row is not deleted (PROTECT)."""
-        user = UserFactory.create()
-        point = ForecastCellFactory.create()
-        with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
-            patch("apps.favourites.services.region_for_point", return_value=None),
-        ):
-            favourite = create_favourite(user, 46.1, 7.4)
-
-        delete_favourite(user, favourite.uuid)
-
-        assert ForecastCell.objects.filter(pk=point.pk).exists()
-
     def test_cannot_delete_another_users_favourite(self) -> None:
         """Deleting a favourite owned by a different user raises DoesNotExist."""
         owner = UserFactory.create()
         other_user = UserFactory.create()
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             favourite = create_favourite(owner, 46.1, 7.4)
@@ -457,9 +433,8 @@ class TestFavouriteLocation:
     """Every favourite is a Location, and takes its anonymous one with it.
 
     SNOW-704: a favourite *is* a location, so creating one mints a row and
-    deleting one takes that row away again — otherwise the orphan keeps its
-    forecast cell inside ``active()``, fetched from Open-Meteo four times a
-    day forever and never reached by ``prune_forecast_points``.
+    deleting one takes that row away again — otherwise the orphan is a row
+    nothing can ever reach.
     """
 
     def _location(self, favourite: Favourite) -> Location:
@@ -490,9 +465,9 @@ class TestFavouriteLocation:
             The created Favourite.
 
         """
-        point = ForecastCellFactory.create(elevation=2410.0)
+        elevation = 2410.0
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             return create_favourite(user, 46.4321, 7.8765, name=name)
@@ -509,17 +484,14 @@ class TestFavouriteLocation:
         assert location.latitude == 46.4321
         assert location.longitude == 7.8765
         assert location.elevation_m == 2410.0
-        assert location.forecast_cell == favourite.forecast_point
         assert location.name == ""
         assert location.kind == ""
 
     def test_resort_favourite_mints_one_too(self) -> None:
         """create_resort_favourite takes the same path."""
         resort = ResortFactory.create(geocoded=True)
-        point = ForecastCellFactory.create()
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        elevation = 1500.0
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             favourite = create_resort_favourite(UserFactory.create(), resort)
 
         assert favourite.location is not None
@@ -578,17 +550,3 @@ class TestFavouriteLocation:
         delete_favourite(user, favourite.uuid)
 
         assert Location.objects.filter(pk=location.pk).exists()
-
-    def test_delete_leaves_the_shared_forecast_cell_alone(self) -> None:
-        """Removing the location must not touch the cell it pointed at.
-
-        The cell is shared by every pin in it; only prune_forecast_points
-        may delete one, and only once nothing references it.
-        """
-        user = UserFactory.create()
-        favourite = self._create(user)
-        cell_pk = favourite.forecast_point.pk
-
-        delete_favourite(user, favourite.uuid)
-
-        assert ForecastCell.objects.filter(pk=cell_pk).exists()

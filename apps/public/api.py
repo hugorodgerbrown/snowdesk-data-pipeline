@@ -9,11 +9,6 @@ Swiss region choropleth and back the per-region tooltip:
   Replaces the legacy ``today-summaries`` and ``season-ratings`` endpoints (SNOW-239).
 * ``/api/resorts-by-region/``              — ``{region_id: [resort_name, ...]}``.
 * ``/api/resorts.geojson``                 — FeatureCollection of geocoded resorts.
-* ``/api/forecast-weather.geojson``        — SNOW-573: FeatureCollection of
-  resort-anchored ``ForecastCell`` weather, keyed by ISO date. Flag-gated
-  on ``weather_layer``; resort-anchored only — a ``Favourite``-only point
-  never appears here (see ``apps.favourites.views.favourites_geojson`` for
-  the private half).
 * ``/api/regions.geojson``                 — FeatureCollection of L4 region polygons.
   Each feature carries ``properties.download`` (SNOW-521) when the region
   has a precomputed offline-basemap size summary — see ``regions_geojson``'s
@@ -72,7 +67,7 @@ import json
 import logging
 import re
 import secrets
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
@@ -112,8 +107,6 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import blob_summary
-from apps.weather.models import ForecastCellWeather
-from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
 from .views import (
@@ -481,186 +474,6 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
             "features": features,
         }
     )
-
-
-@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
-@vary_on_headers("Accept-Encoding")
-def forecast_weather_geojson(request: HttpRequest) -> JsonResponse:
-    """
-    Return a FeatureCollection of resort-anchored forecast-point weather.
-
-    Powers the map's Weather overlay (SNOW-573): a Meteocons condition
-    symbol plus the day's max temperature at each resort. Public — the
-    overlay reached general availability in SNOW-724 and its rollout flag
-    was retired.
-
-    **Privacy contract**: one feature per geocoded ``Resort`` with a linked
-    ``forecast_point`` — never a ``ForecastCell`` reachable only from a
-    ``Favourite``. Geometry is the *resort's* coordinates (not the
-    quantised point's), so the symbol sits on the pin the user recognises.
-    A signed-in visitor's own favourite-anchored points are merged into the
-    same map layer client-side from ``favourites.geojson``
-    (``apps.favourites.views.favourites_geojson``), which is private and
-    never shared-cached.
-
-    Response shape::
-
-        {
-          "type": "FeatureCollection",
-          "features": [
-            {
-              "type": "Feature",
-              "geometry": {"type": "Point", "coordinates": [7.5, 46.1]},
-              "properties": {
-                "resort_id": 42,
-                "name": "Verbier",
-                "region_id": "CH-4115",
-                "days": {
-                  "2026-08-07": {
-                    "icon": "light_snow-day.svg",
-                    "label": "Light snow",
-                    "tmax": 4.0,
-                    "tmin": -3.0,
-                    "snow": 2.0
-                  },
-                  ...
-                }
-              }
-            },
-            ...
-          ]
-        }
-
-    Point weather is forecast-only (``POINT_FORECAST_DAYS`` days from
-    today, often fewer — see ``apps.weather.services.weather_fetcher``),
-    so ``days`` defaults to the whole stored forecast window, mirroring
-    ``/api/ratings/``'s date-keyed shape. Pass ``?d=YYYY-MM-DD`` to narrow
-    ``days`` to a single date — the scrubber uses the unfiltered default so
-    it can re-paint from the already-fetched payload with no per-date
-    round trip.
-
-    Server-side ``cache.get_or_set`` keyed ``forecast-weather:v1:<d|all>``
-    bounds DB hits to one per cache window, mirroring ``ratings``. The
-    ``@vary_on_headers("Accept-Encoding")`` decorator is necessary but not
-    sufficient on its own — this path must also be listed in
-    ``_POSTHOG_EXEMPT_PATHS`` (``config/settings/base.py``) or
-    ``PosthogContextMiddleware`` reading ``request.user`` causes
-    ``SessionMiddleware`` to append ``Vary: Cookie`` and defeat the public
-    caching.
-
-    ``generated_at`` (for the freshness headers) is the OLDEST
-    ``fetched_at`` across the payload's ``ForecastCellWeather`` rows,
-    following ``_card_freshness``'s rule that a record mixing several
-    constituents is only as fresh as its stalest one.  ``unsafe_after`` is
-    ``None`` — weather is not safety-critical, so the freshness state
-    saturates at "stale" and never escalates to "unsafe".
-
-    Errors:
-        400 — malformed ``?d=`` date string.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        A JsonResponse with a FeatureCollection payload, or 400.
-
-    """
-    date_param = request.GET.get("d")
-    parsed_date: date | None = None
-    if date_param:
-        # Enforce the strict YYYY-MM-DD wire format — mirrors the
-        # ``ratings`` idiom verbatim.
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_param):
-            return JsonResponse({"error": "malformed date"}, status=400)
-        try:
-            parsed_date = date.fromisoformat(date_param)
-        except ValueError:
-            return JsonResponse({"error": "malformed date"}, status=400)
-
-    cache_key = (
-        f"forecast-weather:v1:{parsed_date.isoformat() if parsed_date else 'all'}"
-    )
-    cached = cast(
-        "tuple[dict[str, Any], datetime | None]",
-        cache.get_or_set(
-            cache_key,
-            lambda: _build_forecast_weather_payload(parsed_date),
-            timeout=_DYNAMIC_CACHE_MAX_AGE,
-        ),
-    )
-    payload, generated_at = cached
-    response = JsonResponse(payload)
-    apply_freshness_headers(
-        response,
-        generated_at=generated_at or timezone.now(),
-        unsafe_after=None,
-    )
-    return response
-
-
-def _build_forecast_weather_payload(
-    target_date: date | None,
-) -> tuple[dict[str, Any], datetime | None]:
-    """
-    Build the forecast-weather FeatureCollection from the DB.
-
-    Two queries, no N+1 (SNOW-573): one over geocoded, resort-linked
-    ``ForecastCell`` rows (``Resort.objects.resorts().geocoded()`` with
-    ``select_related("forecast_point", "region")``), then one bulk
-    ``ForecastCellWeather`` fetch keyed by ``forecast_cell_id`` and
-    grouped into a dict in Python.
-
-    Args:
-        target_date: Narrow every feature's ``days`` to this one date, or
-            ``None`` for the whole stored forecast window.
-
-    Returns:
-        A ``(payload, generated_at)`` pair — ``payload`` is a GeoJSON
-        FeatureCollection dict; ``generated_at`` is the OLDEST
-        ``fetched_at`` across the payload's ``ForecastCellWeather`` rows,
-        or ``None`` when the payload carries no weather rows at all.
-
-    """
-    resorts = list(
-        Resort.objects.resorts()
-        .geocoded()
-        .filter(forecast_point__isnull=False)
-        .select_related("forecast_point", "region")
-        .order_by("name")
-    )
-    point_ids = [resort.forecast_point_id for resort in resorts]
-    rows_by_point: dict[int, list[ForecastCellWeather]] = defaultdict(list)
-    weather_qs = ForecastCellWeather.objects.filter(forecast_cell_id__in=point_ids)
-    if target_date is not None:
-        weather_qs = weather_qs.filter(valid_for_date=target_date)
-    for row in weather_qs.iterator():
-        rows_by_point[row.forecast_cell_id].append(row)
-
-    now = timezone.now()
-    oldest_fetched_at: datetime | None = None
-    features: list[dict[str, Any]] = []
-    for resort in resorts:
-        rows = rows_by_point.get(resort.forecast_point_id, [])
-        for row in rows:
-            if oldest_fetched_at is None or row.fetched_at < oldest_fetched_at:
-                oldest_fetched_at = row.fetched_at
-        features.append(
-            {
-                "type": "Feature",
-                "geometry": {
-                    "type": "Point",
-                    # GeoJSON ordering: [longitude, latitude] per RFC 7946.
-                    "coordinates": [resort.longitude, resort.latitude],
-                },
-                "properties": {
-                    "resort_id": resort.pk,
-                    "name": resort.name,
-                    "region_id": resort.region.region_id,
-                    "days": build_point_weather_days(rows, now),
-                },
-            }
-        )
-    return {"type": "FeatureCollection", "features": features}, oldest_fetched_at
 
 
 @cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)
@@ -2297,9 +2110,9 @@ def _location_payload(location: Location) -> dict[str, Any]:
     The single shape every endpoint below answers with, so the panel can
     splice a created location and patch a saved one from the same keys.
     ``elevation_m`` is included but read-only — it is resolved from the
-    coordinate by ``link_location_forecast_cells``, never supplied — and
-    is shown because a resolved height nowhere near the expected one is
-    how a mis-placed pin announces itself.
+    coordinate out-of-band, never supplied — and is shown because a
+    resolved height nowhere near the expected one is how a mis-placed pin
+    announces itself.
 
     Args:
         location: The location, with its links prefetched or selected.
@@ -2678,11 +2491,11 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
     links themselves are untouched here; each resort's ``role`` is its
     own and is changed by unlinking and re-linking.
 
-    **Moving the pin** clears ``elevation_m`` and ``forecast_cell``. Both
-    are resolved from the *old* coordinate, so leaving them would leave
-    the location claiming a height from where it used to be — and it is a
-    stale elevation that makes a mis-pinned summit look plausible. The
-    next ``link_location_forecast_cells`` run resolves them again.
+    **Moving the pin** clears ``elevation_m``. It is resolved from the
+    *old* coordinate, so leaving it would leave the location claiming a
+    height from where it used to be — and it is a stale elevation that
+    makes a mis-pinned summit look plausible. The next resolution pass
+    fills it in again.
 
     **Not** moving it leaves all three columns exactly as they were, and
     that distinction is load-bearing rather than an optimisation: a
@@ -2743,12 +2556,11 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
         location.latitude = lat
         location.longitude = lon
         location.elevation_m = None
-        location.forecast_cell = None
-        update_fields += ["latitude", "longitude", "elevation_m", "forecast_cell"]
+        update_fields += ["latitude", "longitude", "elevation_m"]
     location.save(update_fields=update_fields)
 
-    # Logged by row id, never by raw coordinates — the same rule SNOW-718
-    # applied to resolve_forecast_cell. A coordinate is a precise location
+    # Logged by row id, never by raw coordinates (SNOW-718). A coordinate
+    # is a precise location
     # and the id identifies the row anyway, so this is both safer and more
     # useful; whether the pin moved is the fact worth having in the log.
     logger.info(

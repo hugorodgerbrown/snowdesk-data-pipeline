@@ -30,7 +30,7 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  Location with a ``name``, so Mont Fort is one row that four
                  resorts share. Plus ``ResortLocation``, the through model
                  carrying the role each location plays for a resort. Its own
-                 app because regions, weather, favourites and observations all
+                 app because regions, favourites and observations all
                  reference it (see docs/decisions/)
   regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
@@ -42,15 +42,12 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  fetchers/translators and render-model services under
                  services/, the ingestion commands (see
                  docs/management-commands.md), and their admin classes
-  weather/       The Open-Meteo domain, split out of bulletins by SNOW-654 —
-                 WeatherSnapshot / ForecastPoint / ForecastPointWeather /
-                 ForecastPointWeatherHistory, the fetch, quantisation,
-                 elevation and display services under services/, and the
-                 fetch_weather (today, forecast endpoint) + backfill_weather
-                 (past gaps, the sole caller of the archive endpoint) +
-                 prune_forecast_points commands. The models
-                 still read the bulletins_* tables (Meta.db_table is pinned);
-                 renaming them is a separate ticket
+  weather/       MIGRATION HISTORY ONLY — no models, no code. SNOW-762
+                 stripped the Open-Meteo domain whole; the package survives
+                 because six historical migrations in four other apps depend
+                 on its migrations, and deleting them breaks `migrate` on a
+                 fresh database. Read apps/weather/__init__.py before
+                 touching it. SNOW-757 rebuilds weather elsewhere
   accounts/      Signed-token subscription flow (see docs/accounts.md);
                  owns the ``Account`` profile model (OneToOne to auth.User,
                  not AUTH_USER_MODEL itself — SNOW-514 collapsed the former
@@ -86,9 +83,7 @@ logs/            Log files (gitignored except .gitkeep)
 ```
 
 The `apps/bulletins/` ↔ `apps/regions/` split is deliberate — rationale in
-[`docs/decisions/bulletins-regions-split.md`](docs/decisions/bulletins-regions-split.md);
-`apps/weather/` was later carved out of `apps/bulletins/` for the reasons in
-[`docs/decisions/weather-is-its-own-app.md`](docs/decisions/weather-is-its-own-app.md).
+[`docs/decisions/bulletins-regions-split.md`](docs/decisions/bulletins-regions-split.md).
 
 ## Running locally
 
@@ -615,8 +610,6 @@ Read these when working in the relevant area:
 | Render model (shape, versioning, day character) | [`docs/render-model.md`](docs/render-model.md) |
 | Day summary copy matrix (movement × level × readability, editing rules) | [`docs/day-summary.md`](docs/day-summary.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
-| Weather-driven bulletin header (WMO buckets, is_day projection) | [`docs/weather-header.md`](docs/weather-header.md) |
-| Why the Open-Meteo domain is its own app (db_table pinning, ContentType move) | [`docs/decisions/weather-is-its-own-app.md`](docs/decisions/weather-is-its-own-app.md) |
 | Location is the primitive (Location model, ForecastPoint is a fetch cell, apps/locations/) | [`docs/decisions/location-is-the-primitive.md`](docs/decisions/location-is-the-primitive.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
@@ -652,8 +645,8 @@ Read these when working in the relevant area:
 | IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |
 | Mutation queue (window.pwaMutationQueue, Idempotency-Key, backoff, Background Sync, sync badge, failure toast) | [`docs/mutation-queue.md`](docs/mutation-queue.md) |
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
-| Backfill an environment onto the Location model (the five --commit commands, Open-Meteo cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
-| Refresh staging's bulletins and weather from production (bin/sync-staging-data, the nightly cron, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
+| Backfill an environment onto the Location model (the --commit commands, Open-Meteo elevation cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
+| Refresh staging's bulletins from production (bin/sync-staging-data, the nightly cron, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk-data.info; origin is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |

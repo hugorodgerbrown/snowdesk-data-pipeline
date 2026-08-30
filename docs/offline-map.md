@@ -583,7 +583,7 @@ control.
 Two gaps the opportunistic strategies above don't cover, both closed
 without loosening the `network`-only default for safety-critical data:
 
-**Favourites / community-reports / weather / routes overlays.** Every one
+**Favourites / community-reports / routes overlays.** Every one
 of these feeds is `network`-classified in `sw.js` (per-user /
 anonymised-but-live data, not safe for the SW's own
 stale-while-revalidate), so without a client-side cache they went blank
@@ -632,7 +632,7 @@ When an overlay's fetch fails offline AND nothing is cached to fall
 back to, `ensureOverlayLoaded` reveals a small dismissible toast
 (`includes/_toast.html`, `kind="warning"`) rather than silently
 leaving the toggle looking like it did nothing — `#map-offline-toast-favourites`,
-`#map-offline-toast-community_reports`, `#map-offline-toast-weather`,
+`#map-offline-toast-community_reports`,
 `#map-offline-toast-routes`, and a shared `#map-offline-toast-layer` for
 l1/l2/l3/resorts (rendered in
 `apps/public/templates/public/partials/_map_embed.html`).

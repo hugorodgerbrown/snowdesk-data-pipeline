@@ -21,10 +21,6 @@ When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
 - ``/dev/slf-mirror/`` — SLF CAAML bulletin-list mirror (``apps.bulletins.dev_urls``,
   namespace ``dev``), so ``fetch_bulletins --source local-mirror`` can replay
   the on-disk archive end-to-end.
-- ``/dev/openmeteo-mirror/`` — Open-Meteo weather mirror
-  (``apps.weather.dev_urls``, namespace ``dev_om``), so
-  ``fetch_weather --local-mirror`` can replay
-  ``apps/weather/local_mirrors/openmeteo_archive.ndjson``.
 - ``/dev/albina-mirror/`` — ALBINA bulletin mirror
   (``apps.bulletins.dev_urls_albina``, namespace ``dev_albina``), so
   ``fetch_bulletins --source albina --local-mirror`` can replay
@@ -103,7 +99,6 @@ if settings.DEBUG:
     urlpatterns.extend(
         [
             path("dev/slf-mirror/", include("apps.bulletins.dev_urls")),
-            path("dev/openmeteo-mirror/", include("apps.weather.dev_urls")),
             path("dev/albina-mirror/", include("apps.bulletins.dev_urls_albina")),
         ]
     )

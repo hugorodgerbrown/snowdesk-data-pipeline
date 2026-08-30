@@ -30,12 +30,7 @@ Content:
      falls outside every known boundary), a "no bulletin coverage" note
      is shown instead. Copy states plainly the rating is for the whole
      region, not this exact spot.
-  3. Weather — this spot. Renders forecast_panel (a compact multi-day
-     strip plus expandable hourly detail, from build_point_forecast_panel
-     over the point's own ForecastCellWeather window, SNOW-417) when
-     present; otherwise an explicit "coming soon" empty state.
-     Deliberately never falls back to the region's WeatherSnapshot.
-  4. Avalanche problems — this location (SNOW-422). Only rendered when
+  3. Avalanche problems — this location (SNOW-422). Only rendered when
      problem_cards is non-empty (region + today's default bulletin both
      resolved). One _favourite_problem.html per card, each carrying an
      altitude annotation relative to favourite.elevation — every problem
@@ -70,8 +65,6 @@ Context:
     bulletin_url         : str — evergreen bulletin URL for
                             favourite.region, or "" when favourite.region
                             is None.
-    forecast_panel       : ForecastPanel | None — from
-                            build_point_forecast_panel(), or None.
     problem_cards        : list[dict] — today's bulletin problem cards
                             (apps.public.views.problem_cards_for_bulletin),
                             each extended with altitude_relevance
@@ -191,22 +184,7 @@ has no section heading to rank under either.
         {% endif %}
     </div>
 
-    {# 3. Weather — this spot #}
-    <div class="mt-4 pt-4 border-t border-border">
-        {% translate "Weather — this spot" as weather_eyebrow_label %}
-        {% include "includes/_eyebrow.html" with text=weather_eyebrow_label class_extra="mb-2" %}
-        {% if forecast_panel %}
-            {% include "includes/_forecast_panel.html" with panel=forecast_panel %}
-        {% else %}
-            <p class="text-sm text-text-3" data-testid="favourite-card-weather-empty">
-                {% blocktrans trimmed %}
-                    Point forecast coming soon — weather for this exact location and altitude isn't available yet.
-                {% endblocktrans %}
-            </p>
-        {% endif %}
-    </div>
-
-    {# 4. Avalanche problems — this location #}
+    {# 3. Avalanche problems — this location #}
     {% if problem_cards %}
         <div class="mt-4 pt-4 border-t border-border">
             {% translate "Avalanche problems — this location" as problems_eyebrow_label %}

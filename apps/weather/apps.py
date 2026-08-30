@@ -1,18 +1,10 @@
 """
-apps/weather/apps.py — AppConfig for the weather application.
+apps/weather/apps.py — AppConfig for the (model-less) weather application.
 
-Owns the Open-Meteo domain end to end: the ``WeatherSnapshot`` /
-``ForecastCell`` / ``ForecastCellWeather`` /
-``ForecastCellWeatherHistory`` models, the fetch, quantisation, elevation
-and display services that produce and render them, and the
-``fetch_weather`` / ``prune_forecast_points`` commands. The CAAML
-avalanche bulletins (SLF, ALBINA, Météo-France) live in ``bulletins``;
-the static reference data (EAWS hierarchy, resorts) lives in ``regions``.
-
-The models were split out of ``bulletins`` by SNOW-654 without touching
-the database — each one pins its original ``bulletins_*`` table name via
-``Meta.db_table`` — see
-``docs/decisions/weather-is-its-own-app.md``.
+The app is registered only so its migration history stays resolvable for
+the four other apps that depend on it. It declares no models. See the
+package docstring in ``apps/weather/__init__.py`` for why it survives
+SNOW-762 and what would let it go.
 """
 
 from django.apps import AppConfig

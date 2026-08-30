@@ -2,16 +2,14 @@
 tests/regions/management/commands/test_link_region_centroid_locations.py
 
 Covers ``link_region_centroid_locations`` (SNOW-696):
-  - Mints a centroid Location with its elevation and cell resolved.
+  - Mints a centroid Location with its elevation resolved.
   - The location is anonymous — a centroid is not a place anyone goes.
   - Regions with no usable ``centre`` are skipped, not failed.
-  - A dry run writes nothing at all — not even the ForecastCell that
-    resolve_forecast_cell's get_or_create would mint (SNOW-719) — while
-    still reporting the cost it would incur, as an upper bound.
-  - The reported new-cell count is the number to check the Open-Meteo plan
-    against, so it must distinguish a created cell from a reused one.
+  - A dry run writes nothing (SNOW-719).
   - Idempotent; one failing region does not abort the batch.
-  - The linked cell is active(), so prune_forecast_points leaves it alone.
+
+SNOW-762 removed this command's forecast-cell half with the weather app;
+what is left is the Location and its elevation.
 
 Every Open-Meteo call is patched out.
 """
@@ -27,27 +25,24 @@ from django.core.management.base import CommandError
 
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion
-from apps.weather.models import ForecastCell
-from tests.factories import ForecastCellFactory, MicroRegionFactory
+from tests.factories import MicroRegionFactory
 
 COMMAND = "link_region_centroid_locations"
 _BASE = "apps.regions.management.commands.link_region_centroid_locations"
 _ELEVATION = f"{_BASE}.fetch_elevation"
-_RESOLVE = f"{_BASE}.resolve_forecast_cell"
 
 CENTRE = {"lat": 46.1, "lon": 7.4}
 
 
 @pytest.mark.django_db
 class TestLinkRegionCentroidLocations:
-    """--commit anchors each region to a resolved centroid Location."""
+    """--commit anchors each region to a centroid Location."""
 
     def test_mints_a_resolved_centroid_location(self) -> None:
-        """The region ends up reaching weather through a location."""
+        """The region ends up anchored to a location with a height."""
         region = MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastCellFactory.create()
 
-        with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
+        with patch(_ELEVATION, return_value=2100.0):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
 
         region.refresh_from_db()
@@ -55,7 +50,6 @@ class TestLinkRegionCentroidLocations:
         assert region.centroid_location.latitude == 46.1
         assert region.centroid_location.longitude == 7.4
         assert region.centroid_location.elevation_m == 2100.0
-        assert region.centroid_location.forecast_cell == cell
 
     def test_the_centroid_location_is_anonymous(self) -> None:
         """No name, no kind — a centroid represents the region, not a place.
@@ -65,9 +59,8 @@ class TestLinkRegionCentroidLocations:
         nobody goes to.
         """
         MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastCellFactory.create()
 
-        with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
+        with patch(_ELEVATION, return_value=2100.0):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
 
         location = Location.objects.get()
@@ -78,7 +71,7 @@ class TestLinkRegionCentroidLocations:
         """A null ``centre`` is excluded by the queryset."""
         region = MicroRegionFactory.create(centre=None)
 
-        with patch(_ELEVATION) as lookup, patch(_RESOLVE):
+        with patch(_ELEVATION) as lookup:
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
 
         lookup.assert_not_called()
@@ -93,116 +86,52 @@ class TestLinkRegionCentroidLocations:
         scheduled run.
         """
         MicroRegionFactory.create(centre={"lat": "north", "lon": 7.4})
-        cell = ForecastCellFactory.create()
 
         out = StringIO()
-        with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
+        with patch(_ELEVATION, return_value=2100.0):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=out)
 
         assert "1 skipped" in out.getvalue()
         assert not Location.objects.exists()
 
-    def test_dry_run_creates_no_forecast_cell(self) -> None:
-        """SNOW-719: the preview must not write the rows it reports on.
+    def test_dry_run_writes_nothing(self) -> None:
+        """SNOW-719: the preview reports without persisting anything.
 
-        ``resolve_forecast_cell`` ends in ``get_or_create``. Calling it on
-        the read-only path created a ForecastCell per region — several
-        hundred of them on a full fixture — under a banner reading
-        READ-ONLY. It is deliberately left unpatched here: patching it is
-        what hid the write from this suite in the first place.
+        The elevation call still happens on this path — it is what proves
+        the region can resolve, and what the report counts — but neither
+        the Location nor the FK is written.
         """
         region = MicroRegionFactory.create(centre=CENTRE)
-        cells_before = ForecastCell.objects.count()
 
         out = StringIO()
-        with (
-            patch(_ELEVATION, return_value=2100.0) as lookup,
-            patch(_RESOLVE) as resolve,
-        ):
+        with patch(_ELEVATION, return_value=2100.0) as lookup:
             call_command(COMMAND, "--delay", "0", stdout=out)
 
-        resolve.assert_not_called()
-        assert ForecastCell.objects.count() == cells_before
-        lookup.assert_called_once()
+        lookup.assert_called_once_with(46.1, 7.4)
+        assert not Location.objects.exists()
         region.refresh_from_db()
         assert region.centroid_location is None
-        assert not Location.objects.exists()
-        assert "Read-only run complete" in out.getvalue()
-
-    def test_dry_run_reports_the_cell_it_would_create(self) -> None:
-        """The preview still has to name the cost, upper-bounded."""
-        MicroRegionFactory.create(centre=CENTRE)
-
-        out = StringIO()
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--delay", "0", stdout=out)
-
-        assert "at most 1 new forecast cell(s), 0 reused" in out.getvalue()
-
-    def test_dry_run_reports_a_reusable_cell_as_reused(self) -> None:
-        """A preview that over-reported cost would block a safe run."""
-        MicroRegionFactory.create(centre=CENTRE)
-        ForecastCellFactory.create(elevation=2100.0)
-
-        out = StringIO()
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--delay", "0", stdout=out)
-
-        assert "at most 0 new forecast cell(s), 1 reused" in out.getvalue()
-
-    def test_reports_new_cells_separately_from_reused_ones(self) -> None:
-        """The new-cell count is what the Open-Meteo plan must absorb.
-
-        A reused cell is free; a created one is an extra call every fetch
-        cycle, four times daily. Reporting them together would hide the
-        only number worth checking before a 461-region run.
-        """
-        MicroRegionFactory.create(centre=CENTRE)
-        # Same coordinates and elevation as the region centre, so it falls
-        # inside both reuse thresholds. resolve_forecast_cell is left
-        # unpatched: the reuse decision under test is its own.
-        existing = ForecastCellFactory.create(elevation=2100.0)
-
-        out = StringIO()
-        with patch(_ELEVATION, return_value=2100.0):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=out)
-
-        assert "0 new forecast cell(s), 1 reused" in out.getvalue()
-        assert Location.objects.get().forecast_cell == existing
+        assert "1 region(s) would be linked" in out.getvalue()
+        assert "No data written" in out.getvalue()
 
     def test_second_run_selects_nothing(self) -> None:
         """Idempotent — a linked region is out of the candidate set."""
         MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastCellFactory.create()
 
-        with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
+        with patch(_ELEVATION, return_value=2100.0):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
             with patch(_ELEVATION) as second:
                 call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
 
         second.assert_not_called()
 
-    def test_the_linked_cell_survives_the_prune_pass(self) -> None:
-        """A region-held cell is active(), so prune leaves it alone."""
-        MicroRegionFactory.create(centre=CENTRE)
-        cell = ForecastCellFactory.create()
-
-        with patch(_ELEVATION, return_value=2100.0), patch(_RESOLVE, return_value=cell):
-            call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())
-
-        call_command("prune_forecast_points", "--commit", stdout=StringIO())
-
-        assert ForecastCell.objects.filter(pk=cell.pk).exists()
-
     def test_one_failure_does_not_stop_the_batch(self) -> None:
         """A failing region is counted; the rest still link."""
         MicroRegionFactory.create(centre=CENTRE)
         MicroRegionFactory.create(centre={"lat": 47.9, "lon": 8.9})
-        cell = ForecastCellFactory.create()
 
         with (
             patch(_ELEVATION, side_effect=[RuntimeError("boom"), 2100.0]),
-            patch(_RESOLVE, return_value=cell),
             pytest.raises(CommandError, match="1 region failure"),
         ):
             call_command(COMMAND, "--commit", "--delay", "0", stdout=StringIO())

@@ -4,7 +4,7 @@
  *
  * The layers popover (#basemap-menu in _map_embed.html) lists everything
  * the PWA can cache for offline use — the bulletin providers, the boundary
- * tiers (L1/L2/L4), resorts, weather and the active basemap — but
+ * tiers (L1/L2/L4), resorts and the active basemap — but
  * previously gave no signal of which of those are actually available
  * offline. This module is the read side of the existing "Cache this area
  * for offline" control (SNOW-492): a small two-state dot beside each
@@ -87,13 +87,10 @@
  *                          — otherwise a tier dot could sit green above a
  *                          red country row. resorts takes no country param
  *                          and keeps the single ``ignoreSearch`` probe.
- *   weather              — an IndexedDB ``data:map_overlays`` row written by
- *                          map_overlay_offline_cache.js. A truthy row
- *                          carrying ``.geojson`` counts as cached. (SNOW-658:
- *                          ``favourites`` and ``community_reports`` were
- *                          probed the same way until their rows left this
- *                          menu for their own panels — see OVERLAY_RESOURCES
- *                          below.)
+ *   (SNOW-658: ``favourites`` and ``community_reports`` were probed via an
+ *                          IndexedDB ``data:map_overlays`` row until their
+ *                          rows left this menu for their own panels — see
+ *                          OVERLAY_RESOURCES below.)
  *   basemap (one per row)— TWO signals, resolved together (SNOW-722).
  *                          Real downloaded area coverage for that basemap
  *                          — ``window.pwaBasemapDownloads.areas()``, read
@@ -192,14 +189,6 @@
   // ``data-was-disabled-offline`` idiom, namespaced to this module.
   const DISABLED_MARKER = 'data-sync-disabled-offline';
 
-  // SNOW-573: the one OTHER module that disables a row in this menu —
-  // map.js, while the scrubbed date sits outside the weather overlay's
-  // stored forecast window. Read (never written) here, so ``_setRowDisabled``
-  // can honour a disable it does not own. Kept in sync with
-  // ``WEATHER_ROW_DISABLED_MARKER`` in map.js by name only; a mismatch fails
-  // the round-trip test in tests/js/test_map_layer_sync_status.js.
-  const WEATHER_DISABLED_MARKER = 'data-weather-disabled-out-of-window';
-
   // The core row→resource constant. Keys are the overlay rows'
   // ``data-overlay-key`` values; the basemap indicator and (SNOW-524) the
   // country rows are handled separately — the country rows' resource set is
@@ -246,15 +235,6 @@
     // ``markCached('favourites')`` is still called by map.js's lazy-load path.
     // It no-ops now — the membership check in ``_markCachedNow`` is the
     // allowlist, and ``_overlayDot`` returns null for a row that isn't there.
-    // SNOW-573: the map weather layer's forecast payload. `idb`, not
-    // `geojson` — its endpoint is flag-gated and public, but the payload
-    // is a mutable forecast, not static reference data suited to sw.js's
-    // STATIC_PATHS shell cache (which never expires). The write-through
-    // IndexedDB row (window.pwaMapOverlayCache, same posture as
-    // community_reports) is self-correcting on read-back: a stale cached
-    // payload simply stops drawing anything as scrubbed dates roll past
-    // its forecast window, rather than needing an explicit staleness check.
-    weather: Object.freeze({ kind: 'idb', key: 'weather' }),
     // SNOW-645: the "Available offline" row that lived here (``downloaded:
     // {kind: 'pinned-tiles'}``, probed by the now-deleted
     // ``_probeAnyPinnedTile``) is gone — its dot went permanently grey and
@@ -310,10 +290,10 @@
 
   /**
    * The ``.sync-dot`` element for a given overlay row, or ``null`` when
-   * absent — the weather row is conditionally rendered (flag-gated), and
-   * SNOW-658 removed the favourites/community_reports rows outright while
-   * map.js still calls ``markCached`` for both, so a missing dot is expected
-   * and simply skipped rather than treated as an error.
+   * absent — SNOW-658 removed the favourites/community_reports rows
+   * outright while map.js still calls ``markCached`` for both, so a
+   * missing dot is expected and simply skipped rather than treated as an
+   * error.
    *
    * @param {string} key - an ``OVERLAY_RESOURCES`` key.
    * @returns {Element | null}
@@ -445,16 +425,7 @@
       row.setAttribute(DISABLED_MARKER, '1');
     } else if (row.getAttribute(DISABLED_MARKER) === '1') {
       row.removeAttribute(DISABLED_MARKER);
-      // SNOW-573: the weather row carries a SECOND, independent disable —
-      // map.js disables it while the scrubbed date sits outside the stored
-      // forecast window (WEATHER_ROW_DISABLED_MARKER there). Dropping our own
-      // marker must not clear ``aria-disabled`` while that one is still in
-      // force, or coming back online would re-enable a row whose date still
-      // has nothing to draw. map.js guards the mirror case the same way, so
-      // whichever reason clears second is the one that re-enables the row.
-      if (row.getAttribute(WEATHER_DISABLED_MARKER) !== '1') {
-        row.removeAttribute('aria-disabled');
-      }
+      row.removeAttribute('aria-disabled');
     }
   }
 

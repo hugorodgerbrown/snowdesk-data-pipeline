@@ -63,7 +63,6 @@ class LocationAdmin(admin.ModelAdmin):
         "latitude",
         "longitude",
         "elevation_m",
-        "forecast_cell",
         "created_at",
     ]
     list_filter = ["kind"]
@@ -84,10 +83,10 @@ class LocationAdmin(admin.ModelAdmin):
         (
             "Resolved out-of-band",
             {
-                "fields": ("elevation_m", "forecast_cell"),
+                "fields": ("elevation_m",),
                 "description": (
-                    "Both are filled by link_location_forecast_cells, which "
-                    "needs an Open-Meteo call and so cannot run on save."
+                    "Filled by an out-of-band resolution pass, which needs "
+                    "an Open-Meteo elevation call and so cannot run on save."
                 ),
             },
         ),

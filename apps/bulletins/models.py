@@ -26,11 +26,7 @@ Owns the seven bulletin-driven models:
 
 Region hierarchy (MicroRegion, MajorRegion, SubRegion, Resort) lives
 in ``apps.regions.models`` — those are stable lookup tables shared across the
-whole project, not bulletin-derived data. The Open-Meteo models
-(WeatherSnapshot, ForecastCell, ForecastCellWeather,
-ForecastCellWeatherHistory) live in ``apps.weather.models`` — they were
-split out by SNOW-654 because nothing here reads them and no foreign key
-runs in either direction.
+whole project, not bulletin-derived data.
 
 Each model uses a custom Manager + QuerySet pair so that domain-specific
 query methods live on the queryset and are accessible via both
@@ -245,10 +241,8 @@ class BulletinQuerySet(models.QuerySet["Bulletin"]):
         """
         Return the ``valid_from`` day of the oldest stored bulletin.
 
-        Used by ``fetch_weather`` to derive a sensible default start date
-        when no ``WeatherSnapshot`` rows exist yet — fetching weather from
-        the earliest bulletin date ensures the data covers every bulletin
-        already in the DB.
+        Used to derive a sensible default start date for a backfill that
+        needs to cover every bulletin already in the DB.
 
         Returns:
             The local-timezone ``valid_from`` day of the oldest bulletin in

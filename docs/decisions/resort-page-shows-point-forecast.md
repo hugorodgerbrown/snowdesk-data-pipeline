@@ -2,10 +2,18 @@
 name: resort-page-shows-point-forecast
 description: Resort page shows the resort's own ForecastPointWeather via _forecast_panel.html below the region snapshot header
 status: historical
-last-reviewed: 2026-08-09
+last-reviewed: 2026-08-30
 ---
 
 # Resort page shows the resort's own point forecast (SNOW-572) — supersedes resort-page-weather-shows-region-snapshot
+
+> **Retired by SNOW-762 (2026-08-30).** The weather app this record
+> describes was stripped whole — models, services, commands, endpoints and
+> surfaces — so nothing here constrains the code any more. SNOW-757
+> rebuilds weather as a single immutable Location-anchored model and will
+> carry its own decision record. Kept for the *why*, per
+> [the README](README.md): a reversed decision is marked historical, not
+> deleted.
 
 > **Superseded by
 > [`resort-page-shows-location-forecasts`](resort-page-shows-location-forecasts.md)**

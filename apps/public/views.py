@@ -40,8 +40,7 @@ import json
 import logging
 import random
 import uuid
-from collections import defaultdict
-from typing import Any, NamedTuple, cast
+from typing import Any, cast
 
 import waffle
 from django.conf import settings
@@ -53,7 +52,6 @@ from django.http import (
     Http404,
     HttpRequest,
     HttpResponse,
-    HttpResponseBadRequest,
     HttpResponseGone,
     HttpResponseNotModified,
     HttpResponseRedirect,
@@ -62,7 +60,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.cache import add_never_cache_headers, patch_cache_control
+from django.utils.cache import patch_cache_control
 from django.utils.functional import Promise
 from django.utils.html import strip_tags
 from django.utils.http import quote_etag
@@ -76,7 +74,6 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import (
     condition,
     require_http_methods,
-    require_POST,
 )
 from django_ratelimit.decorators import ratelimit
 
@@ -116,19 +113,6 @@ from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
-from apps.weather.models import (
-    ForecastCellWeather,
-    WeatherSnapshot,
-)
-from apps.weather.services.weather_display import (
-    build_point_forecast_panel,
-    build_weather_display,
-)
-from apps.weather.services.weather_fetcher import (
-    POINT_FORECAST_DAYS,
-    fetch_weather_async,
-    fetch_weather_for_region,
-)
 
 from .component_previews import help_illustrations
 from .decorators import lowercase_region_id
@@ -837,8 +821,6 @@ def home(request: HttpRequest) -> HttpResponse:
                                 (see ``_edit_locations_context``).
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
-      ``forecast_weather_geojson_url`` — URL for the map Weather overlay's
-                                GeoJSON endpoint (SNOW-573).
       ``slope_layer_eligible`` — True when ``settings.SLOPE_TILE_URL`` is
                                 configured (SNOW-691, SNOW-724).
       ``slope_tile_url``      — XYZ tile template for the slope-angle raster,
@@ -911,7 +893,6 @@ def home(request: HttpRequest) -> HttpResponse:
     routes_ctx = _routes_context(request)
     downloads_ctx = _downloads_context(request)
     community_reports_ctx = _community_reports_context(request)
-    weather_ctx = _weather_context(request)
     slope_ctx = _slope_context(request)
 
     return render(
@@ -925,7 +906,6 @@ def home(request: HttpRequest) -> HttpResponse:
             **routes_ctx,
             **downloads_ctx,
             **community_reports_ctx,
-            **weather_ctx,
             **slope_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
@@ -1741,34 +1721,15 @@ def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
     return {"community_reports_geojson_url": reverse("api:community_reports_geojson")}
 
 
-def _weather_context(request: HttpRequest) -> dict[str, Any]:
-    """Build the template context dict for the map Weather overlay (SNOW-573).
-
-    No eligibility split any more: SNOW-724 retired the ``weather_layer``
-    rollout flag, so the toggle and the fetch it drives are in the DOM for
-    every visitor, exactly like community reports. The ``request``
-    argument is kept for signature uniformity with the sibling
-    ``_*_context`` builders the map view composes.
-
-    Args:
-        request: The current HTTP request.
-
-    Returns:
-        Dict with ``forecast_weather_geojson_url``.
-
-    """
-    return {"forecast_weather_geojson_url": reverse("api:forecast_weather_geojson")}
-
-
 def _slope_context(request: HttpRequest) -> dict[str, Any]:
     """Build the template context dict for the map slope-angle overlay (SNOW-691).
 
     Eligibility is ``settings.SLOPE_TILE_URL`` being configured, not
     authentication and — since SNOW-724 — no longer a waffle flag either.
-    Unlike Weather, there is no Snowdesk endpoint behind this layer: the
-    tiles come straight from a third-party WMTS origin whose licence
-    position is still open, so the setting doubles as the operator kill
-    switch the flag used to provide. Clearing ``SLOPE_TILE_URL`` in the
+    There is no Snowdesk endpoint behind this layer: the tiles come
+    straight from a third-party WMTS origin whose licence position is
+    still open, so the setting doubles as the operator kill switch the
+    flag used to provide. Clearing ``SLOPE_TILE_URL`` in the
     environment is a restart, not a deploy, and it takes the whole layer
     out of the DOM — the row must be absent entirely, not merely disabled,
     and a tile template in an ineligible page's DOM would be an invitation
@@ -3698,41 +3659,6 @@ def _build_period_transition_chip(
     }
 
 
-def _region_forecast_panel(
-    region: MicroRegion, target_date: datetime.date
-) -> Any | None:
-    """Build the bulletin page's multi-day forecast panel for a region.
-
-    Reads through the region's centroid ``Location`` (SNOW-696) — the same
-    ``ForecastCellWeather`` window and the same ``_forecast_panel.html``
-    partial the resort page and the favourite card already use, so the
-    bulletin page gets wind and freezing level with no new display code.
-
-    Args:
-        region: The region whose bulletin is being rendered.
-        target_date: The first day of the forward window.
-
-    Returns:
-        The panel, or ``None`` when the region has no centroid location
-        yet, its location has no forecast cell, or the cell has no rows in
-        the window. Callers render nothing at all in that case — a section
-        promising weather it cannot show is worse than no section.
-
-    """
-    location = region.centroid_location
-    if location is None or location.forecast_cell_id is None:
-        return None
-    return build_point_forecast_panel(
-        list(
-            ForecastCellWeather.objects.filter(
-                forecast_cell_id=location.forecast_cell_id,
-                valid_for_date__gte=target_date,
-            ).order_by("valid_for_date")[:POINT_FORECAST_DAYS]
-        ),
-        timezone.now(),
-    )
-
-
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -3814,50 +3740,6 @@ def _bulletin_detail_response(
         None if canonical_is_today else target_date,
     )
 
-    # Weather header data (SNOW-98). The snapshot is one row per
-    # (region, valid_for_date); ``.first()`` is fine because the model's
-    # ``unique_together = (region, valid_for_date)`` guarantees at most
-    # one match. ``weather_display`` is ``None`` when no snapshot exists
-    # so the partial can render its safe fallback.
-    weather_snapshot = (
-        WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()
-    )
-    weather_display = build_weather_display(weather_snapshot, timezone.now())
-
-    # Region forecast (SNOW-696) — the same multi-day panel the resort page
-    # and the favourite card already show, read through the region's
-    # centroid Location. WeatherSnapshot above keeps its job as the
-    # masthead's day/night visual; this is the numbers, and the numbers
-    # come from a point (docs/locations.md).
-    #
-    # Only from today forward. The window ForecastCellWeather holds is a
-    # *forecast*, so rendering it beside a historical bulletin would put
-    # next week's weather under last week's danger rating — and the
-    # ``valid_for_date__gte=target_date`` filter below would silently
-    # return today's rows for a date in the past, which is worse than
-    # showing nothing.
-    #
-    # Gated on the date rather than on ``canonical_is_today``: that flag
-    # selects which canonical URL to advertise, and is False on the
-    # perfectly live dated form (/<region>/<slug>/<today>/).
-    forecast_panel = (
-        _region_forecast_panel(region, target_date) if target_date >= today else None
-    )
-
-    # When the page would otherwise emit the HTMX trigger, warm the snapshot
-    # on a background thread so the user's actual click — which comes seconds
-    # after the browser prefetch — lands on a server render that bakes weather
-    # inline (no HTMX swap, no flash). The HTMX trigger stays in the
-    # no-weather template as a safety net for the rare
-    # click-before-worker-finishes case. SNOW-164.
-    #
-    # Today and forward only. This warmed *past* dates off the archive
-    # endpoint until that URL was confined to ``backfill_weather``; a past day
-    # with no stored row now renders its no-weather state and waits for a
-    # backfill run, rather than fetching history on a page view.
-    if weather_snapshot is None and target_date >= today:
-        fetch_weather_async(region, target_date)
-
     # Collect every issue that touches the target day and pick the one
     # the caller asked for; otherwise fall back to the 10:00-rule
     # default. Multi-issue days render the requested (or default) issue
@@ -3915,9 +3797,6 @@ def _bulletin_detail_response(
                 "resorts_in_region": resorts_in_region,
                 "favourites_in_region": favourites_in_region,
                 "season_calendar": season_header(today),
-                "weather_display": weather_display,
-                "forecast_panel": forecast_panel,
-                "weather_htmx_trigger": weather_display is None,
                 "canonical_url": canonical_url,
                 "map_url": map_url,
             },
@@ -3925,15 +3804,7 @@ def _bulletin_detail_response(
         )
         # Empty-state: cache briefly so a freshly-ingested bulletin surfaces
         # within a minute without re-running the view on every pageview.
-        # Exception: when the response bakes in the HTMX weather trigger
-        # (``weather_display is None``), bypass the cache entirely so the
-        # browser does not serve the stale HMTL-with-trigger on reload after
-        # the snapshot has been populated — that would re-fire HTMX and cause
-        # a visible header swap (flash). See SNOW-161 follow-up.
-        if weather_display is None:
-            add_never_cache_headers(response)
-        else:
-            patch_cache_control(response, public=True, max_age=60)
+        patch_cache_control(response, public=True, max_age=60)
         return response
 
     is_today = page_date == today
@@ -4078,11 +3949,6 @@ def _bulletin_detail_response(
         "resorts_in_region": resorts_in_region,
         # The user's own favourites in this region — see SNOW-507.
         "favourites_in_region": favourites_in_region,
-        # Weather-driven header — see SNOW-98.
-        "weather_display": weather_display,
-        "forecast_panel": forecast_panel,
-        # Trigger HTMX just-in-time fetch when no snapshot exists (SNOW-159).
-        "weather_htmx_trigger": weather_display is None,
         # Canonical form-3 URL — see SNOW-99.
         "canonical_url": canonical_url,
         # Context-aware back-link for the nav bar — see SNOW-183.
@@ -4130,14 +3996,7 @@ def _bulletin_detail_response(
     response = _render_bulletin_page(request, context, bulletin=selected)
 
     # Cache-Control — branch on whether the page date is in the past.
-    # Exception (above either branch): when the response bakes in the HTMX
-    # weather trigger (``weather_display is None``), bypass the cache so the
-    # browser does not serve stale HTML-with-trigger on reload after the
-    # snapshot has been populated — that would re-fire HTMX and cause a
-    # visible header swap (flash). See SNOW-161 follow-up.
-    if weather_display is None:
-        add_never_cache_headers(response)
-    elif page_date < today:
+    if page_date < today:
         # Historic bulletins are truly immutable by (bulletin_id, render
         # model version). Cache aggressively at both the browser and any
         # upstream CDN.
@@ -4254,102 +4113,6 @@ def _bulletin_detail_render(
 # ---------------------------------------------------------------------------
 
 
-class ResortLocationForecast(NamedTuple):
-    """One linked location's labelled forecast, for the resort page.
-
-    Attributes:
-        location: The ``Location`` itself — the template reads its ``name``
-            and ``elevation_m`` for the label.
-        role: The ``ResortLocation.ROLE`` this location plays for this
-            resort, used as the section's ``data-testid`` suffix.
-        is_primary: Whether the resort leads with this one.
-        panel: The multi-day panel from ``build_point_forecast_panel``.
-        today_row: The day-0 ``ForecastCellWeather`` row, which the hero
-            band is fed from when this is the primary location. Separate
-            from ``panel`` because the panel is a rendered projection and
-            the hero needs the row itself.
-
-    """
-
-    location: Any
-    role: str
-    is_primary: bool
-    panel: Any
-    today_row: Any
-
-
-def _resort_location_forecasts(
-    resort: Resort, today: datetime.date
-) -> list[ResortLocationForecast]:
-    """Return one labelled forecast per linked Location, primary first.
-
-    Ordered primary-first then by ascending elevation, which reads as the
-    way up the mountain: village, mid-station, top. Locations with no
-    forecast cell, or a cell with no rows in the forward window, are
-    omitted rather than rendered empty — the page shows what it has.
-
-    Two queries regardless of how many locations a resort has: one for the
-    links (joined to their locations) and one bulk fetch of the window for
-    every cell at once, grouped in Python. A per-location query would put
-    an unbounded N+1 on a public page.
-
-    Args:
-        resort: The resort being rendered.
-        today: The first day of the forward window.
-
-    Returns:
-        The forecasts, primary first. Empty for an uncurated resort.
-
-    """
-    links = list(
-        resort.resort_locations.select_related("location")
-        .filter(location__forecast_cell__isnull=False)
-        .order_by("-is_primary", "location__elevation_m")
-    )
-    if not links:
-        return []
-
-    # The queryset already excludes a null cell; narrowing again here keeps
-    # mypy honest and costs nothing.
-    cell_ids = {
-        link.location.forecast_cell_id
-        for link in links
-        if link.location.forecast_cell_id is not None
-    }
-    rows_by_cell: dict[int, list[ForecastCellWeather]] = defaultdict(list)
-    for row in (
-        ForecastCellWeather.objects.filter(
-            forecast_cell_id__in=cell_ids, valid_for_date__gte=today
-        )
-        .order_by("valid_for_date")
-        .iterator()
-    ):
-        rows_by_cell[row.forecast_cell_id].append(row)
-
-    now = timezone.now()
-    forecasts = []
-    for link in links:
-        cell_id = link.location.forecast_cell_id
-        if cell_id is None:
-            continue
-        rows = rows_by_cell.get(cell_id, [])[:POINT_FORECAST_DAYS]
-        if not rows:
-            continue
-        forecasts.append(
-            ResortLocationForecast(
-                location=link.location,
-                role=link.role,
-                is_primary=link.is_primary,
-                panel=build_point_forecast_panel(rows, now),
-                # Only the day-0 row, and only when it is actually today —
-                # a cell whose window starts tomorrow must not hand the
-                # hero band a figure for the wrong day.
-                today_row=rows[0] if rows[0].valid_for_date == today else None,
-            )
-        )
-    return forecasts
-
-
 def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpResponse:
     """
     Render the public resort detail page.
@@ -4373,21 +4136,6 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     coordinates (SNOW-508) — falling back to the region-wide count when the
     resort has no coordinates.
 
-    Weather is **one forecast per linked ``Location``** (SNOW-702), each
-    labelled with its name and elevation — "Verbier village · 1436 m",
-    "Mont Fort · 3328 m" — with the resort's primary location leading. A
-    resort with one linked location renders exactly what it rendered
-    before, plus the label it was always missing, so the page degrades
-    cleanly across a partially-curated estate.
-
-    The hero band is fed from the **primary location's day-0 row**, not
-    from the parent region's ``WeatherSnapshot``. The accepted
-    weather-sourcing rule is numbers from points, decoration from
-    snapshots, and the page previously broke it by stacking
-    region-centroid figures directly above point figures for the same day.
-    The snapshot remains the fallback so an uncurated resort loses
-    nothing. See ``docs/decisions/resort-page-shows-location-forecasts.md``.
-
     Args:
         request: The incoming HTTP request.
         resort_id: The Resort's primary key, from the URL.
@@ -4399,7 +4147,7 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region", "forecast_point"),
+        Resort.objects.select_related("region"),
         pk=resort_id,
     )
 
@@ -4416,40 +4164,6 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
     if request.user.is_authenticated:
         can_favourite = True
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
-
-    # One forecast per linked Location (SNOW-702), primary first.
-    location_forecasts = _resort_location_forecasts(resort, today)
-
-    # The hero band takes its numbers from the primary location's day-0
-    # row. Falling back to the region's WeatherSnapshot when the resort has
-    # no curated location yet, or its cell has no rows — an uncurated
-    # resort must lose nothing, which is what makes SNOW-701's incremental
-    # curation safe to land a few resorts at a time.
-    #
-    # ``.first()`` on the snapshot is safe because
-    # ``unique_together = (region, valid_for_date)``.
-    hero_row = location_forecasts[0].today_row if location_forecasts else None
-    weather_snapshot = None
-    if hero_row is None:
-        weather_snapshot = (
-            WeatherSnapshot.objects.for_date(today).filter(region=region).first()
-        )
-    weather_display = build_weather_display(
-        hero_row or weather_snapshot, timezone.now()
-    )
-
-    # Retained for the legacy single-panel section until every resort is
-    # curated: a resort with no linked location still shows the point
-    # forecast SNOW-572 gave it, rather than dropping to the region
-    # snapshot alone.
-    forecast_panel = None
-    if not location_forecasts and resort.forecast_point is not None:
-        forecast_snapshots = list(
-            ForecastCellWeather.objects.forecast_for_point(
-                resort.forecast_point, today
-            )[:POINT_FORECAST_DAYS]
-        )
-        forecast_panel = build_point_forecast_panel(forecast_snapshots, timezone.now())
 
     context = {
         "resort": resort,
@@ -4470,10 +4184,6 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         "observation_has_user_located": _get_observation_has_user_located(
             request, region, today
         ),
-        "weather_display": weather_display,
-        "weather_htmx_trigger": weather_display is None,
-        "forecast_panel": forecast_panel,
-        "location_forecasts": location_forecasts,
     }
     return render(request, "public/resort.html", context)
 
@@ -4611,129 +4321,6 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     redir = HttpResponseRedirect(redirect_url)
     redir["Cache-Control"] = "no-store"
     return redir
-
-
-# ---------------------------------------------------------------------------
-# Weather snippet — HTMX-triggered just-in-time weather fetch (SNOW-159)
-# ---------------------------------------------------------------------------
-
-
-# @lowercase_region_id is outermost so the casing check short-circuits before the
-# HTMX and method guards. preserve_method=True makes it a 308: the panel builds
-# its retry URL from the uppercase EAWS id, and a 301 here would replay it as a
-# GET and hit @require_POST's 405 (SNOW-650).
-@lowercase_region_id(preserve_method=True)
-@require_htmx
-@require_POST
-def fetch_weather_snippet(
-    request: HttpRequest, region_id: str, date_str: str
-) -> HttpResponse:
-    """
-    Fetch and return the weather header fragment for a given region and date.
-
-    Called by HTMX on load when the bulletin page renders without a
-    ``WeatherSnapshot`` for the current ``(region, date)`` pair.
-
-    The view first queries the DB for an existing snapshot (belt-and-braces
-    guard against race conditions — a concurrent request may have already
-    persisted one by the time this endpoint is reached).  Only when no
-    snapshot is found does the view hit Open-Meteo (forecast endpoint for
-    today/future, archive endpoint for past dates), persist the result, and
-    return the rendered fragment.
-
-    ``?variant=panel`` (SNOW-509) selects which template renders the result:
-    the resort page's belt-and-braces retry passes it so the response is the
-    bare ``includes/_weather_panel.html`` panel (no region ``<h1>``, no
-    share button) rather than the full bulletin masthead — the bulletin
-    page's retry omits it and gets the masthead back, unchanged from
-    before SNOW-509.
-
-    ``weather_htmx_trigger`` is always ``False`` in the returned fragment so
-    that a fetch failure never triggers an infinite retry loop — HTMX will not
-    re-fire the trigger on the swapped-in response.
-
-    On any error the view still returns HTTP 200 with the no-weather fragment
-    (``data-weather-bucket="none"``); the failure is logged server-side only.
-
-    Args:
-        request: The incoming HTMX POST request. ``request.GET["variant"]``,
-            when equal to ``"panel"``, selects the bare-panel fragment.
-        region_id: EAWS micro-region identifier (e.g. ``"CH-4115"``).
-        date_str: ISO-8601 date string (``"YYYY-MM-DD"``).
-
-    Returns:
-        Rendered ``includes/bulletin_header.html`` (default) or
-        ``includes/_weather_panel.html`` (``?variant=panel``) fragment.
-
-    """
-    region = get_object_or_404(
-        MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
-    )
-    try:
-        target_date = datetime.date.fromisoformat(date_str)
-    except ValueError:
-        return HttpResponseBadRequest("Invalid date.")
-
-    today = timezone.localdate()
-    snapshot = (
-        WeatherSnapshot.objects.for_date(target_date).filter(region=region).first()
-    )
-    weather_display = None
-    if snapshot is not None:
-        weather_display = build_weather_display(snapshot, timezone.now())
-    else:
-        try:
-            # Forecast endpoint only. A past day with no stored snapshot is
-            # left to the ``backfill_weather`` command — the archive URL has
-            # one caller, and it is not a request-path view. The panel
-            # renders its no-weather state instead.
-            if target_date >= today:
-                result = fetch_weather_for_region(region, target_date, commit=True)
-                snapshot = result[0] if result is not None else None
-            if snapshot is not None:
-                weather_display = build_weather_display(snapshot, timezone.now())
-        except Exception:
-            logger.exception(
-                "weather_snippet fetch failed: region=%s date=%s",
-                region_id,
-                target_date,
-            )
-
-    variant = request.GET.get("variant")
-    if variant == "panel":
-        return render(
-            request,
-            "includes/_weather_panel.html",
-            {
-                "weather_display": weather_display,
-                "weather_htmx_trigger": False,
-                "region_name": "",
-                "subregion_name": "",
-                "page_date": target_date,
-                "region_id": region.region_id,
-                "panel_testid": "resort-weather",
-                "testid_prefix": "resort-weather",
-                "panel_extra_classes": "rounded-card mb-4",
-            },
-        )
-
-    subregion_name = (
-        region.subregion.name_en or region.subregion.name_native
-        if region.subregion
-        else ""
-    )
-    return render(
-        request,
-        "includes/bulletin_header.html",
-        {
-            "weather_display": weather_display,
-            "weather_htmx_trigger": False,
-            "region_name": region.name,
-            "subregion_name": subregion_name,
-            "page_date": target_date,
-            "region_id": region.region_id,
-        },
-    )
 
 
 # ---------------------------------------------------------------------------

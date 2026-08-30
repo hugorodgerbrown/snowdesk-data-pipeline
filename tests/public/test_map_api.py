@@ -32,9 +32,6 @@ SNOW-419:
 * ``api:community_reports_geojson`` — anonymised, 48h-windowed
   ``FieldObservation`` overlay.
 
-SNOW-573: ``api:forecast_weather_geojson``'s full test suite lives in
-``tests/public/test_forecast_weather_api.py``; this module only carries its
-``_POSTHOG_EXEMPT_PATHS`` regression case, alongside the rest of that suite.
 """
 
 from __future__ import annotations
@@ -63,7 +60,6 @@ from tests.factories import (
     BulletinGroupingFactory,
     FavouriteFactory,
     FieldObservationFactory,
-    ForecastCellFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
@@ -366,28 +362,6 @@ def test_remaining_cacheable_endpoints_no_cookie_vary_with_analytics_enabled(
     name, _, query = url.partition("?")
     target = reverse(name) + (f"?{query}" if query else "")
     response = Client().get(target)
-    assert response.status_code == 200
-    vary = response.get("Vary", "")
-    assert "Accept-Encoding" in vary, (
-        f"Expected Accept-Encoding in Vary with analytics enabled; got: {vary!r}"
-    )
-    assert "Cookie" not in vary, (
-        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
-    )
-
-
-@pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
-def test_forecast_weather_geojson_no_cookie_vary_with_analytics_enabled() -> None:
-    """SNOW-299/SNOW-573 regression: forecast-weather.geojson stays Cookie-free.
-
-    Extends the ``_POSTHOG_EXEMPT_PATHS`` key-on coverage to the SNOW-573
-    map weather layer endpoint. Kept as its own test rather than joining the
-    plain parametrize list above: it was written when the endpoint was
-    flag-gated, and it is the only member of that list carrying an
-    ``@override_settings``-driven analytics key.
-    """
-    response = Client().get(reverse("api:forecast_weather_geojson"))
     assert response.status_code == 200
     vary = response.get("Vary", "")
     assert "Accept-Encoding" in vary, (
@@ -994,13 +968,11 @@ def test_resort_popup_authenticated_already_favourited_shows_saved_state() -> No
     """An already-favourited resort shows data-favourited=true + the favourite's uuid."""
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
     user = UserFactory.create()
-    point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
     favourite = FavouriteFactory.create(
         user=user,
         resort=resort,
         latitude=46.1,
         longitude=7.4,
-        forecast_point=point,
     )
 
     client = Client()

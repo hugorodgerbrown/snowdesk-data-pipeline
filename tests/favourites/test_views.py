@@ -24,11 +24,7 @@ Covers:
                     oracle); anon → 403; non-HTMX → 400; region-null →
                     no-coverage note; region + rating → danger tile +
                     bulletin link; unnamed favourite → coordinate
-                    fallback; no weather snapshot yet → "coming soon"
-                    empty state (SNOW-415); with ForecastCellWeather
-                    rows → forecast panel (day strip + hourly detail)
-                    renders, response carries X-Data-Generated-At
-                    (SNOW-417).
+                    fallback.
   favourite_detail (SNOW-507) — owner GET 200 full page with page chrome
                     plus the card content; non-owner uuid → 404; unknown
                     uuid → 404; anon → 403; response carries
@@ -62,9 +58,7 @@ Covers:
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; each feature carries resort_id
                         (null for a plain pin, SNOW-499) and created_at as
-                        ISO-8601 (SNOW-658); every feature also carries a
-                        days property (SNOW-573), unconditionally since
-                        SNOW-724 retired the weather_layer flag.
+                        ISO-8601 (SNOW-658).
   freshness (SNOW-418) — favourite_card / favourite_list stamp
                         X-Data-Generated-At / -Max-Age / -Unsafe-After;
                         the card's cache_payload / roster_payload
@@ -75,7 +69,7 @@ Covers:
                         count.
 
 The Open-Meteo network call is avoided throughout by patching
-``apps.favourites.services.resolve_forecast_cell``.
+``apps.favourites.services.fetch_elevation``.
 """
 
 from __future__ import annotations
@@ -99,8 +93,6 @@ from apps.favourites.models import Favourite
 from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
-    ForecastCellFactory,
-    ForecastCellWeatherFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
@@ -242,9 +234,9 @@ def _create_via_service(
     """Create a Favourite directly via the service, mocking the Open-Meteo call."""
     from apps.favourites.services import create_favourite  # noqa: PLC0415
 
-    point = ForecastCellFactory.create(latitude=latitude, longitude=longitude)
+    elevation = 1500.0
     with (
-        patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+        patch("apps.favourites.services.fetch_elevation", return_value=elevation),
         patch("apps.favourites.services.region_for_point", return_value=None),
     ):
         return create_favourite(user, latitude, longitude)
@@ -328,7 +320,7 @@ class TestFavouriteCreateValidation:
         """
         user = UserFactory.create()
         client.force_login(user)
-        with patch("apps.favourites.services.resolve_forecast_cell") as mock_resolve:
+        with patch("apps.favourites.services.fetch_elevation") as mock_resolve:
             response = client.post(CREATE_URL, {"lat": lat, "lon": lon}, **HTMX_HEADERS)
         assert response.status_code == 400
         assert not Favourite.objects.filter(user=user).exists()
@@ -343,10 +335,10 @@ class TestFavouriteCreateSuccess:
         """Valid lat/lon creates a Favourite and returns 200."""
         user = UserFactory.create()
         client.force_login(user)
-        point = ForecastCellFactory.create()
+        elevation = 1500.0
 
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             response = client.post(
@@ -358,7 +350,6 @@ class TestFavouriteCreateSuccess:
         assert response.status_code == 200
         favourite = Favourite.objects.get(user=user)
         assert favourite.name == "My spot"
-        assert favourite.forecast_point == point
 
 
 @pytest.mark.django_db
@@ -379,9 +370,9 @@ class TestFavouriteCreateCap:
         client.force_login(user)
         _create_via_service(user)
 
-        point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
+        elevation = 1500.0
         with (
-            patch("apps.favourites.services.resolve_forecast_cell", return_value=point),
+            patch("apps.favourites.services.fetch_elevation", return_value=elevation),
             patch("apps.favourites.services.region_for_point", return_value=None),
         ):
             response = client.post(
@@ -561,11 +552,9 @@ class TestFavouriteCreateFromResortSuccess:
         resort = ResortFactory.create(
             name="Verbier", region=region, latitude=46.1, longitude=7.4
         )
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        elevation = 1500.0
 
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             response = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
             )
@@ -581,11 +570,9 @@ class TestFavouriteCreateFromResortSuccess:
         user = UserFactory.create()
         client.force_login(user)
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        elevation = 1500.0
 
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             first = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
             )
@@ -614,10 +601,8 @@ class TestFavouriteCreateFromResortCap:
         _create_via_service(user)
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
-        point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        elevation = 1500.0
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             response = client.post(
                 RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
             )
@@ -736,11 +721,9 @@ class TestFavouriteResortToggleSuccess:
         resort = ResortFactory.create(
             name="Verbier", region=region, latitude=46.1, longitude=7.4
         )
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
+        elevation = 1500.0
 
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             first = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
             assert first.status_code == 200
             assert Favourite.objects.filter(user=user, resort=resort).exists()
@@ -766,10 +749,8 @@ class TestFavouriteResortToggleCap:
         _create_via_service(user)
 
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
-        point = ForecastCellFactory.create(latitude=47.0, longitude=8.0)
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        elevation = 1500.0
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
 
         assert response.status_code == 409
@@ -1013,45 +994,6 @@ class TestFavouriteCard:
         content = response.content.decode()
         assert "danger-tile" in content
         assert region.get_absolute_url() in content
-
-    def test_no_weather_snapshot_shows_coming_soon(self, client: Client) -> None:
-        """Without a ForecastCellWeather snapshot, the weather slot shows 'coming soon'."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-
-        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert "coming soon" in content.lower()
-
-    def test_forecast_panel_renders_day_strip_and_hourly_detail(
-        self, client: Client
-    ) -> None:
-        """With ForecastCellWeather rows, the day strip + hourly detail render (SNOW-417)."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-        today = django_timezone.localdate()
-        ForecastCellWeatherFactory.create(
-            forecast_cell=favourite.forecast_point,
-            valid_for_date=today,
-        )
-        ForecastCellWeatherFactory.create(
-            forecast_cell=favourite.forecast_point,
-            valid_for_date=today + datetime.timedelta(days=1),
-        )
-
-        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="favourite-forecast-panel"' in content
-        assert 'data-testid="favourite-forecast-day"' in content
-        assert 'data-testid="favourite-forecast-hourly"' in content
-        assert "coming soon" not in content.lower()
-        assert "X-Data-Generated-At" in response
 
     def test_no_forecast_rows_omits_generated_at_fallback(self, client: Client) -> None:
         """With no ForecastCellWeather rows, freshness headers still stamp (fallback to now)."""
@@ -1885,10 +1827,8 @@ class TestFavouritesGeojson:
         user = UserFactory.create()
         client.force_login(user)
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        point = ForecastCellFactory.create(latitude=46.1, longitude=7.4)
-        with patch(
-            "apps.favourites.services.resolve_forecast_cell", return_value=point
-        ):
+        elevation = 1500.0
+        with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             create_resort_favourite(user, resort)
 
         response = client.get(GEOJSON_URL)
@@ -1917,88 +1857,6 @@ class TestFavouritesGeojson:
         """An anonymous GET returns 403."""
         response = client.get(GEOJSON_URL)
         assert response.status_code == 403
-
-    def test_days_always_present(self, client: Client) -> None:
-        """Every feature carries a days key, with no flag state involved.
-
-        Replaces the pair of tests that asserted the key's presence and
-        absence either side of the ``weather_layer`` flag SNOW-724 retired.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-        ForecastCellWeatherFactory.create(
-            forecast_cell=favourite.forecast_point,
-            valid_for_date=datetime.date(2026, 8, 7),
-        )
-
-        response = client.get(GEOJSON_URL)
-
-        assert "days" in response.json()["features"][0]["properties"]
-
-    def test_days_shape_matches_build_point_weather_days(self, client: Client) -> None:
-        """days mirrors build_point_weather_days's shape (SNOW-573)."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-        ForecastCellWeatherFactory.create(
-            forecast_cell=favourite.forecast_point,
-            valid_for_date=datetime.date(2026, 8, 7),
-            weather_code=0,  # clear sky
-            sunrise=datetime.datetime(2026, 8, 7, 6, 0, tzinfo=datetime.UTC),
-            sunset=datetime.datetime(2026, 8, 7, 20, 0, tzinfo=datetime.UTC),
-            temperature_2m_max=4.0,
-            temperature_2m_min=-3.0,
-            snowfall_sum=0.0,
-        )
-
-        with freeze_time("2026-08-07T12:00:00Z"):
-            response = client.get(GEOJSON_URL)
-
-        days = response.json()["features"][0]["properties"]["days"]
-        assert days == {
-            "2026-08-07": {
-                "icon": "clear-day.svg",
-                "label": "Clear",
-                "tmax": 4.0,
-                "tmin": -3.0,
-                "snow": 0.0,
-            }
-        }
-
-    def test_days_empty_dict_when_no_weather_fetched_yet(self, client: Client) -> None:
-        """A favourite with no fetched weather gets an empty days dict, not an error."""
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user)
-
-        response = client.get(GEOJSON_URL)
-
-        assert response.json()["features"][0]["properties"]["days"] == {}
-
-    def test_days_only_covers_the_requesters_own_favourite(
-        self, client: Client
-    ) -> None:
-        """One bulk query still keys weather correctly per favourite (no cross-talk)."""
-        user = UserFactory.create()
-        client.force_login(user)
-        mine = FavouriteFactory.create(user=user)
-        other = FavouriteFactory.create(user=UserFactory.create())
-        ForecastCellWeatherFactory.create(
-            forecast_cell=mine.forecast_point,
-            valid_for_date=datetime.date(2026, 8, 7),
-        )
-        ForecastCellWeatherFactory.create(
-            forecast_cell=other.forecast_point,
-            valid_for_date=datetime.date(2026, 8, 7),
-        )
-
-        response = client.get(GEOJSON_URL)
-
-        data = response.json()
-        assert len(data["features"]) == 1
-        assert data["features"][0]["properties"]["uuid"] == str(mine.uuid)
-        assert "2026-08-07" in data["features"][0]["properties"]["days"]
 
 
 # ---------------------------------------------------------------------------
@@ -2067,7 +1925,6 @@ class TestFavouriteCardFreshness:
         assert payload["rating"]["max_rating"] == "considerable"
         assert payload["rating"]["max_subdivision"] == "+"
         assert payload["rating"]["digit"] == "3"
-        assert payload["weather"] is None
         assert payload["unsafe_after_seconds"] == 172800
         assert "generated_at" in payload
 
@@ -2158,7 +2015,6 @@ class TestFavouriteListFreshness:
         [record] = [r for r in roster if r["uuid"] == str(favourite.uuid)]
         assert record["name"] == "Mine"
         assert record["rating"]["max_rating"] == "high"
-        assert record["weather"] is None
         assert "generated_at" in record
         assert record["unsafe_after_seconds"] == 172800
 

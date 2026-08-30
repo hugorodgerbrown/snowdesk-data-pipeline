@@ -523,7 +523,7 @@ Shipped from the observability + IndexedDB track:
   subject Django system check. See
   [`push-notifications.md`](push-notifications.md).
 - **SNOW-418** — First `data:*` consumer: caches favourites, region
-  rating, and (once SNOW-416 lands) point weather in `data:favourites`
+  rating in `data:favourites`
   for offline reads, per the §12.6 relaxation above. See
   `apps/favourites/views.py` and `static/js/favourites_offline.js`.
 - **SNOW-384** — Wires every remaining `pwa.*` emit call site so the

@@ -23,8 +23,8 @@ ALLOWED_HOSTS = config(
 ).split(",")
 
 # CSRF Origin checks require the *scheme + host* of the inbound request to
-# appear here for POSTs to succeed. Without this, an HTMX POST to e.g.
-# ``fetch_weather_snippet`` over an ngrok tunnel fails with HTTP 403.
+# appear here for POSTs to succeed. Without this, an HTMX POST to any
+# partial endpoint over an ngrok tunnel fails with HTTP 403.
 # Wildcards are supported on the host portion (``https://*.ngrok-free.app``).
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
@@ -166,20 +166,6 @@ SLF_API_LOCAL_MIRROR_URL = config(
 ALBINA_API_LOCAL_MIRROR_URL = config(
     "ALBINA_API_LOCAL_MIRROR_URL",
     default="http://localhost:8000/dev/albina-mirror",
-)
-
-# ---------------------------------------------------------------------------
-# Local Open-Meteo mirror (dev only)
-# ---------------------------------------------------------------------------
-# Base URL of the development-only view at
-# ``apps.weather.dev_views.openmeteo_mirror``,
-# which replays ``apps/weather/local_mirrors/openmeteo_archive.ndjson`` in an
-# Open-Meteo-compatible response shape. Only defined in development.py so that
-# ``fetch_weather --local-mirror`` errors loudly if anyone tries to run it
-# against a production-like environment.
-WEATHER_API_LOCAL_MIRROR_BASE_URL = config(
-    "WEATHER_API_LOCAL_MIRROR_BASE_URL",
-    default="http://localhost:8000/dev/openmeteo-mirror/v1",
 )
 
 # ---------------------------------------------------------------------------

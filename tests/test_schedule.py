@@ -2,12 +2,10 @@
 tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
-  - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly two jobs.
-  - The jobs have the expected IDs: ``fetch_bulletins`` and ``fetch_weather``.
-  - Each job's ``CronTrigger`` has the correct non-default field expressions.
-  - Firing each job's callable invokes ``call_command`` with the expected arguments.
-  - ``FETCH_WEATHER_ADD_HISTORY`` decides whether the scheduled fetch_weather
-    run also passes ``--add-history`` (SNOW-629).
+  - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly one job.
+  - The job has the expected ID: ``fetch_bulletins``.
+  - Its ``CronTrigger`` has the correct non-default field expressions.
+  - Firing the job's callable invokes ``call_command`` with the expected arguments.
 """
 
 from __future__ import annotations
@@ -18,7 +16,6 @@ from unittest import mock
 import pytest
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
-from django.test import override_settings
 
 import schedule as schedule_module
 from schedule import build_scheduler
@@ -48,15 +45,14 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_two_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly two registered jobs."""
-    assert len(scheduler.get_jobs()) == 2
+def test_scheduler_has_exactly_one_job(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly one registered job."""
+    assert len(scheduler.get_jobs()) == 1
 
 
 def test_job_ids(jobs: dict) -> None:
-    """Both expected job IDs are registered."""
+    """The expected job ID is registered."""
     assert "fetch_bulletins" in jobs
-    assert "fetch_weather" in jobs
 
 
 # ---------------------------------------------------------------------------
@@ -99,30 +95,6 @@ def test_fetch_bulletins_hour_field_is_wildcard(jobs: dict) -> None:
     assert hour_field.is_default
 
 
-def test_fetch_weather_trigger_type(jobs: dict) -> None:
-    """fetch_weather job uses a CronTrigger."""
-    assert isinstance(jobs["fetch_weather"].trigger, CronTrigger)
-
-
-def test_fetch_weather_hour_field(jobs: dict) -> None:
-    """fetch_weather fires at hours 0, 6, 12, and 18 (four RangeExpressions)."""
-    trigger: CronTrigger = jobs["fetch_weather"].trigger
-    hour_field = _get_field(trigger, "hour")
-    assert not hour_field.is_default
-    assert len(hour_field.expressions) == 4
-    expr_strs = {str(e) for e in hour_field.expressions}
-    assert expr_strs == {"0", "6", "12", "18"}
-
-
-def test_fetch_weather_minute_field(jobs: dict) -> None:
-    """fetch_weather fires at minute 0 (single explicit RangeExpression)."""
-    trigger: CronTrigger = jobs["fetch_weather"].trigger
-    minute_field = _get_field(trigger, "minute")
-    assert not minute_field.is_default
-    assert len(minute_field.expressions) == 1
-    assert str(minute_field.expressions[0]) == "0"
-
-
 # ---------------------------------------------------------------------------
 # Callable wiring tests
 # ---------------------------------------------------------------------------
@@ -148,30 +120,3 @@ def test_fetch_bulletins_calls_call_command() -> None:
         "METEOFRANCE",
         "--commit",
     )
-
-
-@override_settings(FETCH_WEATHER_ADD_HISTORY=False)
-def test_fetch_weather_calls_call_command() -> None:
-    """Firing the fetch_weather job invokes call_command with the correct args.
-
-    Patch target is ``django.core.management.call_command`` because the import
-    is deferred to inside the job function.
-    """
-    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
-        schedule_module._run_fetch_weather()
-
-    mock_cc.assert_called_once_with("fetch_weather", "--commit")
-
-
-@override_settings(FETCH_WEATHER_ADD_HISTORY=True)
-def test_fetch_weather_adds_history_when_the_setting_is_on() -> None:
-    """FETCH_WEATHER_ADD_HISTORY appends --add-history to the scheduled run.
-
-    The setting is read at fire time rather than at import, so flipping the
-    Render environment variable and restarting the scheduler is enough to
-    turn point-forecast retention on or off (SNOW-629) — no deploy.
-    """
-    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
-        schedule_module._run_fetch_weather()
-
-    mock_cc.assert_called_once_with("fetch_weather", "--commit", "--add-history")

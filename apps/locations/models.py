@@ -19,9 +19,10 @@ fix, a GPX trackpoint — is resolved *against* locations without minting one.
 geometry, not places. "Everything is a location" means every *place*, not
 every *coordinate*.
 
-``elevation_m`` and ``forecast_cell`` are both nullable and populated
-out-of-band: resolving them needs an Open-Meteo call, which cannot ride on a
-model save. ``link_location_forecast_cells`` (SNOW-701) fills them.
+``elevation_m`` is nullable and populated out-of-band: resolving it needs an
+Open-Meteo elevation call, which cannot ride on a model save.
+``link_region_centroid_locations`` fills it for region centroids, and
+``apps.favourites.services`` for a location minted from a favourite.
 
 Which coordinate on which model is exact, approximate or derived is written
 down in ``docs/locations.md``.
@@ -78,20 +79,18 @@ class LocationQuerySet(models.QuerySet["Location"]):
         return self.filter(name="")
 
     def unresolved(self) -> "LocationQuerySet":
-        """Return locations still missing their elevation or forecast cell.
+        """Return locations still missing their elevation.
 
-        The candidate set for ``link_location_forecast_cells`` (SNOW-701),
-        which resolves both in one Open-Meteo round trip. Excluding rows
-        that already have both is what makes a second run a no-op.
+        A row lands here when it was minted without an elevation, or when
+        the location editor cleared one because the pin moved. Excluding
+        rows that already carry an elevation is what makes a second
+        resolution pass a no-op.
 
         Returns:
-            Filtered queryset of locations with a null elevation or a null
-            forecast cell.
+            Filtered queryset of locations with a null elevation.
 
         """
-        return self.filter(
-            models.Q(elevation_m__isnull=True) | models.Q(forecast_cell__isnull=True)
-        )
+        return self.filter(elevation_m__isnull=True)
 
 
 # ---------------------------------------------------------------------------
@@ -114,19 +113,13 @@ class Location(BaseModel):
     a re-placement of the same row — the place was always where it now
     says it is, and the old coordinate was simply wrong — not a new
     place, so the links pointing at it are still correct and stay.
-    ``edit_location_save`` clears ``elevation_m`` and ``forecast_cell``
-    when the pin actually moves, because both were resolved from where
-    the row used to claim to be.
+    ``edit_location_save`` clears ``elevation_m`` when the pin actually
+    moves, because it was resolved from where the row used to claim to be.
 
     A curated place has a ``name`` and usually a ``kind``; a location minted
     from a favourite or an observation has neither, and is an anonymous
     point like any other. Both live in this table.
 
-    ``forecast_cell`` points at the quantised cell at which Open-Meteo is
-    called for this location. Many locations share one cell — that is the
-    cell's entire purpose (``docs/decisions/forecast-point-quantisation.md``)
-    — so the forecast is *for a location* and the cell is only how we avoid
-    paying twice for two points 300 m apart.
     """
 
     class KIND(models.TextChoices):
@@ -182,21 +175,9 @@ class Location(BaseModel):
         blank=True,
         help_text=(
             "Elevation in metres, resolved once via fetch_elevation. Null "
-            "until link_location_forecast_cells has run."
+            "until an out-of-band resolution pass has run."
         ),
     )
-    forecast_cell = models.ForeignKey(
-        "weather.ForecastCell",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="locations",
-        help_text=(
-            "Quantised cell at which Open-Meteo is called for this "
-            "location. Shared with every other location in the cell."
-        ),
-    )
-
     objects = LocationQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):

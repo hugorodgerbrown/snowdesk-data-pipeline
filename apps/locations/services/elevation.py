@@ -1,21 +1,27 @@
 """
-apps/weather/services/elevation.py — Elevation via the Open-Meteo elevation API.
+apps/locations/services/elevation.py — Elevation via the Open-Meteo elevation API.
 
 Contains a single function:
 
   fetch_elevation(latitude, longitude, base_url=None)
       Calls the Open-Meteo elevation endpoint for one lat/lon pair and
-      returns the elevation in metres above sea level. Used by
-      ``apps.weather.services.forecast_cells.resolve_forecast_cell`` to
-      populate the ``ForecastCell.elevation`` field before quantising a
-      new pin into an elevation band.
+      returns the elevation in metres above sea level.
 
-Follows the same idiom as ``weather_fetcher.py``: plain ``requests.get``
-with a module-level timeout, ``raise_for_status()`` so HTTP failures
-bubble to the caller, and a ``base_url`` override parameter so tests (and
-a future local mirror) can point at something other than the live API.
-The host and the customer-API key are resolved by
-``apps.weather.services.open_meteo``.
+Plain ``requests.get`` with a module-level timeout, ``raise_for_status()``
+so HTTP failures bubble to the caller, and a ``base_url`` override
+parameter so tests (and a future local mirror) can point at something
+other than the live API. The host and the customer-API key are resolved
+by ``apps.locations.services.open_meteo``.
+
+**Why this lives in the locations app.** It was
+``apps.weather.services.elevation`` until SNOW-762 stripped the weather
+app. A location's own height is location domain, not weather — it is a
+fixed property of a point on the ground, fetched once and stored on
+``Location.elevation_m``, where weather is a time-varying observation
+about the air above it. The three callers left standing after the strip
+are all location work: ``link_region_centroid_locations`` (SNOW-696's
+backfill, which SNOW-758 depends on running), ``import_locations``, and
+favourite creation in ``apps.favourites.services``.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ from typing import Any
 
 import requests
 
-from apps.weather.services import open_meteo
+from apps.locations.services import open_meteo
 
 logger = logging.getLogger(__name__)
 

@@ -1,39 +1,80 @@
+{% load i18n %}
 {% comment %}
-templates/includes/bulletin_header.html — unified bulletin header panel.
+templates/includes/bulletin_header.html — bulletin masthead.
 
-Collapses the previous masthead + weather band into a single panel carrying
-location wayfinding (region + sub-region), date, and weather (hero icon +
-condition label + sunrise/sunset). The bucket colour (SNOW-98) remains
-visible for the at-a-glance day/night signal; a ``bg-black/35`` overlay sits
-between the bucket colour and the content so white text reads against any
-bucket × time-of-day combination.
+Carries the page's location wayfinding (sub-region eyebrow + region
+``<h1>``), the page date, and the share button.
 
-The date picker for the page lives in the page nav as the
-"🗓 SEASON" sheet trigger (SNOW-117), so this header carries no
-calendar affordance.
+SNOW-762 removed the Open-Meteo weather hero this panel used to lead
+with, along with ``_weather_panel.html``, which held both the weather
+band and this wayfinding. The masthead is rebuilt here directly on design
+tokens rather than on the bucket-coloured background, which had no
+meaning without a weather code to colour it by. SNOW-761 decides whether
+weather returns to the masthead and in what form.
 
-SNOW-509: the panel markup itself now lives in
-``templates/includes/_weather_panel.html`` — this template is a thin
-``{% include %}`` wrapper that supplies the bulletin-only bits (the region
-``<h1>``, the share button, the ``header`` tag and ``bulletin-header``
-class). ``public/templates/public/resort.html`` is the partial's other
-consumer, including it with no region name and no share button to show the
-parent region's weather instead. The rendered output of this template is
-unchanged by the extraction — see ``tests/public/test_bulletin_detail.py``'s
-``TestWeatherHeader`` for the regression guard.
-
-Required context (added by ``public.views.bulletin_detail``):
-  page_date                — datetime.date for the focal day.
-  region_name              — display name for the H1.
-  subregion_name           — parent EAWS L2 sub-region (English where SLF
-                             publishes one, native otherwise), or empty.
-  weather_display          — dict from ``build_weather_display()``, or None.
-                             Shape: ``{weather, bucket, is_day, time_of_day,
-                             sunrise_local, sunset_local, icon_bucket,
-                             condition_label, icon_filename}``.
-When ``weather_display`` is None the panel still renders so the page chrome
-stays consistent — the hero icon is omitted, the metadata strip drops the
-weather/sunrise lines, and the panel falls back to a neutral dark token via
-``data-weather-bucket="none"``.
+Context:
+  region_name    — display name for the ``<h1>``; the ``<h1>`` and its
+                   wrapping row are omitted entirely when falsy.
+  subregion_name — optional eyebrow line above the ``<h1>``.
+  page_date      — date rendered in the meta strip.
+  show_share     — truthy to render the share button. Empty-state pages
+                   have no URL to share.
+  share_region   — object carrying ``region_id``, for the share button's
+                   ``data-region-id``.
+  share_date     — date for the share button's ``data-date``.
 {% endcomment %}
-{% include "includes/_weather_panel.html" with panel_tag="header" panel_extra_classes="bulletin-header mb-4" panel_testid="bulletin-header" testid_prefix="bulletin-header" region_name=region_name subregion_name=subregion_name page_date=page_date weather_display=weather_display weather_htmx_trigger=weather_htmx_trigger region_id=region_id show_share=bulletin share_region=region share_date=page_date %}
+<header
+    class="relative bg-card border border-border rounded-card mb-4 px-4 py-4"
+    data-testid="bulletin-header"
+>
+    {% if show_share %}
+        {# p-2.5 expands the hit area to ≥44×44pt around the 20×20 SVG icon (WCAG 2.5.5). #}
+        {# -m-2.5 pulls the visual padding back so the visible footprint is unchanged.     #}
+        <button
+            type="button"
+            class="absolute top-3 right-3 z-10 p-2.5 -m-2.5 text-text-3 hover:text-text-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border rounded"
+            data-bulletin-share-button
+            data-testid="bulletin-share-button"
+            data-region-id="{{ share_region.region_id }}"
+            data-date="{{ share_date|date:'Y-m-d' }}"
+            aria-label="{% trans 'Share bulletin' %}"
+        >
+            <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                {# Heroicons arrow-up-on-square outline #}
+                <path d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15" />
+                <path d="M12 3v13.5m0-13.5-3 3m3-3 3 3" />
+            </svg>
+        </button>
+    {% endif %}
+    <div class="min-w-0 pr-8">
+        {% if subregion_name %}
+            {% include "includes/_eyebrow.html" with tag="p" text=subregion_name data_testid="bulletin-header-subregion" %}
+        {% endif %}
+        {% if region_name %}
+            <div class="flex items-center gap-2 flex-wrap">
+                <h1
+                    class="text-2xl font-bold leading-tight tracking-tight text-balance text-text-1"
+                    data-testid="bulletin-header-region"
+                >
+                    {{ region_name }}
+                </h1>
+            </div>
+        {% endif %}
+        <div
+            class="text-xs text-text-2 mt-2 flex flex-wrap items-center gap-x-1 gap-y-1"
+            data-testid="bulletin-header-meta"
+        >
+            <span>{{ page_date|date:"D j M" }}</span>
+        </div>
+    </div>
+</header>

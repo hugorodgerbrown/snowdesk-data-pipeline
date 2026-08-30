@@ -33,10 +33,7 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
-  HTMX swap. Carries a ``days`` weather property per feature (SNOW-573)
-  — the private half of the map weather layer; see
-  ``apps.public.api.forecast_weather_geojson`` for the public,
-  resort-anchored half.
+  HTMX swap.
 
 All nine are authentication-gated (403 for anonymous users).
 
@@ -58,8 +55,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from collections import defaultdict
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -90,15 +86,6 @@ from apps.favourites.services import (
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
 from apps.regions.models import Resort
-from apps.weather.models import ForecastCellWeather
-from apps.weather.services.weather_display import (
-    build_point_forecast_panel,
-    build_point_weather_days,
-)
-from apps.weather.services.weather_fetcher import POINT_FORECAST_DAYS
-
-if TYPE_CHECKING:
-    from apps.weather.services.weather_display import ForecastPanel
 
 logger = logging.getLogger(__name__)
 
@@ -175,79 +162,27 @@ def _parse_latlon(
     return lat, lon
 
 
-def _point_forecast_panel(
-    favourite: Favourite, now: datetime.datetime
-) -> tuple["ForecastPanel | None", datetime.datetime | None]:
-    """Return the multi-day point forecast panel for a favourite, or None.
-
-    Queries the forward-looking ``ForecastCellWeather`` window for the
-    favourite's ``forecast_point`` (today onwards, capped at
-    ``POINT_FORECAST_DAYS`` rows) and builds the panel context via
-    ``build_point_forecast_panel``. Deliberately does **not** fall back to
-    the region-centroid ``WeatherSnapshot`` — that would misrepresent the
-    point's own conditions, which is exactly what this feature exists to
-    fix. Returns ``(None, None)`` when no rows have been fetched yet, so
-    ``_favourite_card.html`` falls back to its "Forecast coming soon" empty
-    state.
-
-    Args:
-        favourite: The Favourite whose point forecast is being resolved.
-        now: The reference instant for each day's day/night icon decision.
-
-    Returns:
-        A ``(ForecastPanel | None, latest_fetched_at)`` pair — the panel
-        context (or ``None`` when no rows exist), and the most recent
-        ``fetched_at`` across the queried rows (or ``None`` when there are
-        no rows) for the caller's freshness-header stamp. Computed
-        in-memory from the already-materialised row list rather than a
-        second ``aggregate(Max(...))`` query.
-
-    """
-    snapshots = list(
-        ForecastCellWeather.objects.forecast_for_point(
-            favourite.forecast_point, timezone.localdate()
-        )[:POINT_FORECAST_DAYS]
-    )
-    panel = build_point_forecast_panel(snapshots, now)
-    latest_fetched_at = max((row.fetched_at for row in snapshots), default=None)
-    return panel, latest_fetched_at
-
-
 def _card_freshness(
     day_rating: RegionDayRating | None,
-    weather_fetched_at: datetime.datetime | None = None,
 ) -> tuple[datetime.datetime, int | None]:
     """Resolve the ``(generated_at, unsafe_after)`` freshness pair for a favourite.
 
-    Collects whichever of the rating / weather timestamps is present and
-    uses the OLDER one as ``generated_at`` — a record mixing both
-    constituents is only as fresh as its stalest one. Falls back to
-    ``timezone.now()`` when neither is present (nothing to attach a real
-    timestamp to — a "no coverage, no weather yet" favourite is trivially
-    "current"). ``unsafe_after`` only governs the safety-critical rating
-    half: it is ``DEFAULT_UNSAFE_AFTER_SECONDS`` whenever a rating exists,
-    and ``None`` otherwise (weather is non-safety and never escalates to
-    "unsafe" per the spec's freshness contract).
+    ``generated_at`` is the rating's ``updated_at`` when a rating exists,
+    and ``timezone.now()`` otherwise — nothing to attach a real timestamp
+    to, so a "no coverage" favourite is trivially "current".
+    ``unsafe_after`` governs the safety-critical rating half: it is
+    ``DEFAULT_UNSAFE_AFTER_SECONDS`` whenever a rating exists, and
+    ``None`` otherwise.
 
     Args:
         day_rating: Today's RegionDayRating for the favourite's region,
             or None.
-        weather_fetched_at: The latest point-weather ``fetched_at`` (from
-            ``_point_forecast_panel``), or None when no forecast rows exist.
 
     Returns:
         ``(generated_at, unsafe_after)``.
 
     """
-    present = [
-        ts
-        for ts in (
-            day_rating.updated_at if day_rating else None,
-            weather_fetched_at,
-        )
-        if ts is not None
-    ]
-    generated_at = min(present) if present else timezone.now()
+    generated_at = day_rating.updated_at if day_rating else timezone.now()
     unsafe_after = DEFAULT_UNSAFE_AFTER_SECONDS if day_rating else None
     return generated_at, unsafe_after
 
@@ -304,10 +239,6 @@ def _build_favourite_cache_record(
         "elevation": favourite.elevation,
         "region": region_payload,
         "rating": rating_payload,
-        # Offline weather caching is out of scope for SNOW-418: the SNOW-417
-        # forecast panel is re-fetched online only, so the cached record
-        # carries no weather and the offline card omits the forecast.
-        "weather": None,
         "generated_at": generated_at.isoformat(timespec="seconds"),
         "unsafe_after_seconds": unsafe_after,
     }
@@ -625,9 +556,7 @@ def _favourite_card_context(
     the regional danger rating and a link to the evergreen bulletin page.
     When ``region`` is ``None`` (the pin falls outside every known
     boundary), the card renders a "no bulletin coverage here" note
-    instead. The point's own forecast comes from ``_point_forecast_panel``,
-    which returns ``None`` until at least one ``ForecastCellWeather`` row
-    has been fetched for the point (empty "coming soon" state).
+    instead.
 
     When a region and today's default bulletin both resolve, also builds
     the avalanche-problems section (SNOW-422): the bulletin's problem cards
@@ -648,10 +577,8 @@ def _favourite_card_context(
         A ``(context, generated_at, unsafe_after)`` triple — the template
         context dict for ``_favourite_card.html``, and the freshness pair
         (SNOW-370 / SNOW-418) for the caller to stamp via
-        ``apply_freshness_headers``. ``generated_at`` is the OLDER of the
-        rating's ``updated_at`` and the latest forecast row's
-        ``fetched_at`` (so the stamp is never fresher than the card's
-        stalest part); ``unsafe_after`` is the 48h horizon only when a
+        ``apply_freshness_headers``. ``generated_at`` is the rating's
+        ``updated_at``; ``unsafe_after`` is the 48h horizon only when a
         safety-critical rating is present.
 
     """
@@ -673,12 +600,7 @@ def _favourite_card_context(
             cards = problem_cards_for_bulletin(bulletin)
             problem_cards = annotate_problem_relevance(cards, favourite.elevation)
 
-    forecast_panel, latest_fetched_at = _point_forecast_panel(favourite, now)
-
-    # The card mixes a safety-critical rating and (non-safety) point weather.
-    # generated_at is the OLDER of the two present constituents; unsafe_after
-    # is governed by the rating alone (SNOW-418).
-    generated_at, unsafe_after = _card_freshness(day_rating, latest_fetched_at)
+    generated_at, unsafe_after = _card_freshness(day_rating)
     state = compute_freshness_state(generated_at, unsafe_after=unsafe_after)
     cache_payload = _build_favourite_cache_record(
         favourite, day_rating, bulletin_url, generated_at, unsafe_after
@@ -688,7 +610,6 @@ def _favourite_card_context(
         "favourite": favourite,
         "day_rating": day_rating,
         "bulletin_url": bulletin_url,
-        "forecast_panel": forecast_panel,
         "problem_cards": problem_cards,
         "cache_payload": cache_payload,
         "freshness_state": state,
@@ -729,7 +650,7 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     try:
         favourite = (
             Favourite.objects.for_user(request.user)
-            .select_related("region", "forecast_point")
+            .select_related("region")
             .get(uuid=uuid)
         )
     except Favourite.DoesNotExist:
@@ -794,7 +715,7 @@ def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
     try:
         favourite = (
             Favourite.objects.for_user(request.user)
-            .select_related("region", "forecast_point")
+            .select_related("region")
             .get(uuid=uuid)
         )
     except Favourite.DoesNotExist:
@@ -910,21 +831,6 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     renders it as a relative "saved" line must open offline, from the
     payload the map already holds.
 
-    SNOW-573: every feature also carries a ``days`` property — the same
-    date-keyed shape ``apps.public.api.forecast_weather_geojson`` serves
-    for resort-anchored points (built by the same
-    ``build_point_weather_days`` helper), so the map's Weather overlay can
-    merge a signed-in visitor's own pins into the layer with no shape
-    difference. It is unconditional since SNOW-724 retired the
-    ``weather_layer`` rollout flag. ``Favourite.forecast_point`` is
-    non-nullable, so only the weather row itself needs null handling (a
-    point with nothing fetched yet gets an empty ``days`` dict, not an
-    error).
-
-    Weather costs one extra bulk query — ``select_related`` on
-    ``forecast_point`` plus a single ``ForecastCellWeather`` fetch keyed by
-    ``forecast_cell_id__in=…``, never one query per favourite.
-
     The response is marked ``Cache-Control: private, no-store`` — the
     inverse of the public ``resorts_geojson`` layer — since this payload is
     per-user and must never be shared across users by an intermediate
@@ -940,18 +846,8 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 
-    favourites = list(
-        Favourite.objects.for_user(request.user).select_related("forecast_point")
-    )
+    favourites = list(Favourite.objects.for_user(request.user))
 
-    rows_by_point: dict[int, list[ForecastCellWeather]] = defaultdict(list)
-    point_ids = [favourite.forecast_point_id for favourite in favourites]
-    for row in ForecastCellWeather.objects.filter(
-        forecast_cell_id__in=point_ids
-    ).iterator():
-        rows_by_point[row.forecast_cell_id].append(row)
-
-    now = timezone.now()
     features: list[dict[str, Any]] = []
     for favourite in favourites:
         properties: dict[str, Any] = {
@@ -960,9 +856,6 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
             "created_at": favourite.created_at.isoformat(),
             "resort_id": favourite.resort_id,
         }
-        properties["days"] = build_point_weather_days(
-            rows_by_point.get(favourite.forecast_point_id, []), now
-        )
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(
             {

@@ -61,13 +61,13 @@ class TestHomeScriptTags:
 class TestMapCoreModulesLoaded:
     """Every ``*_core.js`` a map module depends on must be on the page first.
 
-    SNOW-573 shipped ``static/js/map_weather_core.js`` and the ``map.js``
-    code that dereferences ``window.pwaWeatherCore``, but no ``<script>``
-    tag for it — so the global was undefined in a real browser and
-    ``installWeatherLayer`` threw before it could add its source. Nothing
-    caught it: the Vitest suite imports the module directly, and
-    ``js-globals-lint`` only asks whether *some* file in the tree assigns
-    the name, not whether the page loads that file.
+    The class exists because SNOW-573 shipped a ``*_core.js`` module and
+    the ``map.js`` code that dereferences its global, but no ``<script>``
+    tag for it — so the global was undefined in a real browser and the
+    installer threw before it could add its source. Nothing caught it: the
+    Vitest suite imports each module directly, and ``js-globals-lint`` only
+    asks whether *some* file in the tree assigns the name, not whether the
+    page loads that file.
 
     Scoped to every ``map*.js`` consumer rather than ``map.js`` alone,
     because SNOW-610 split ``map.js`` eleven ways: the scrubber's
@@ -134,7 +134,7 @@ class TestMapCoreModulesLoaded:
         pair a ``map.js``-only check would miss.
         """
         pairs = {(consumer, core) for consumer, core, _ in self._dependencies()}
-        assert ("map.js", "map_weather_core.js") in pairs
+        assert ("map.js", "slope_overlay_core.js") in pairs
         assert ("map_scrubber.js", "scrubber_core.js") in pairs
 
     def test_every_core_dependency_is_loaded(self) -> None:

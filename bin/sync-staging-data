@@ -80,7 +80,6 @@ done
 # does not exist once COPY is preserving primary keys.
 LOAD_ORDER=(
     bulletins_pipelinerun
-    bulletins_forecastpoint
     bulletins_bulletin
     locations_location
     regions_resort
@@ -88,9 +87,6 @@ LOAD_ORDER=(
     bulletins_regionbulletin
     bulletins_regiondayrating
     bulletins_bulletingrouping
-    bulletins_weathersnapshot
-    bulletins_forecastpointweather
-    bulletins_forecastpointweatherhistory
 )
 
 # Cleared but never reloaded: staging's own rows referencing the copied set.
@@ -255,4 +251,4 @@ psql_prod -c "SELECT format(
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q
 
 echo
-echo "Done. Staging holds production's bulletins, weather and resorts."
+echo "Done. Staging holds production's bulletins and resorts."

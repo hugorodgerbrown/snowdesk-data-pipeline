@@ -103,10 +103,9 @@ def browser_context_args(browser_context_args: dict[str, Any]) -> dict[str, Any]
 def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the Open-Meteo elevation lookup for every e2e test.
 
-    Creating a ``Favourite`` runs ``apps.favourites.services.create_favourite`` →
-    ``resolve_forecast_cell`` → ``fetch_elevation``, which makes a live
-    ``requests.get`` to ``https://api.open-meteo.com/v1/elevation`` with a
-    30s timeout. The favourite-submit / drain tests replay that POST against
+    Creating a ``Favourite`` runs ``apps.favourites.services.create_favourite``
+    → ``fetch_elevation``, which makes a live ``requests.get`` to
+    ``https://api.open-meteo.com/v1/elevation`` with a 30s timeout. The favourite-submit / drain tests replay that POST against
     the real ``live_server`` (deliberately un-mocked at the ``page.route``
     layer — ``page.route`` only intercepts *browser* requests, never the
     server's own outbound HTTP), so the round-trip is at the mercy of a
@@ -115,14 +114,14 @@ def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     test_favourites.
 
     ``live_server`` runs in-process, so patching the name in
-    ``forecast_cells``'s namespace (where it's looked up at call time) is
-    visible to the server thread — the same mechanism that makes
+    ``apps.favourites.services``'s namespace (where it's looked up at call
+    time) is visible to the server thread — the same mechanism that makes
     ``override_flag`` work here. Patched autouse because no e2e test should
     depend on an external API; tests that never create a favourite are
     unaffected.
     """
     monkeypatch.setattr(
-        "apps.weather.services.forecast_cells.fetch_elevation",
+        "apps.favourites.services.fetch_elevation",
         lambda latitude, longitude, base_url=None: 1500.0,
     )
 

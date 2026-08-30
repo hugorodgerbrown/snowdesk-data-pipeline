@@ -297,8 +297,8 @@
   // the same invented-date problem the boot path had, reached by a different
   // route. Every region goes to ``no_rating`` (``repaintRegionsForDate``
   // clears the ones the empty frame omits), the thumb returns to today's
-  // position, and the ``date: null`` commit tells the ribbon, the weather
-  // layer and the groupings boundary to stand down with it.
+  // position, and the ``date: null`` commit tells the ribbon and the
+  // groupings boundary to stand down with it.
   window.addEventListener('popstate', () => {
     const d = readUrlDateParam();
     if (d && isInSeason(d)) {

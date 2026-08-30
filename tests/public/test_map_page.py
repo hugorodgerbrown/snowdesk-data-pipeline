@@ -585,9 +585,9 @@ def test_map_layer_menu_section_order() -> None:
     SNOW-658 renamed the first two sections to say what their rows actually
     are — "Bulletins" (one row per PROVIDER) and "Boundaries" (one per EAWS
     level) — and split the trailing rows out of the tier list into their own
-    sections: "Locations" for resorts, "Conditions" for weather.  SNOW-724
-    retired the weather_layer flag, so "Conditions" now renders for every
-    visitor and takes its place in this order.
+    sections: "Locations" for resorts.  SNOW-762 removed "Conditions" with
+    the weather overlay: it held that row alone, and an empty heading is
+    the failure SNOW-658 fixed.
     """
     client = Client()
     response = client.get(reverse("public:home"))
@@ -601,7 +601,6 @@ def test_map_layer_menu_section_order() -> None:
             "Bulletins",
             "Boundaries",
             "Locations",
-            "Conditions",
             "Terrain",
             "Base map",
         )
@@ -609,9 +608,10 @@ def test_map_layer_menu_section_order() -> None:
 
     assert positions == sorted(positions), (
         "Map layer menu sections are not in the expected order "
-        "(Bulletins < Boundaries < Locations < Conditions < Terrain < Base map)"
+        "(Bulletins < Boundaries < Locations < Terrain < Base map)"
     )
     assert "Options" not in content
+    assert "Conditions" not in content
 
 
 @pytest.mark.django_db

@@ -4,7 +4,7 @@ apps/public/templates/public/help.html — Plain-language "how it works" help pa
 
 Introduced for SNOW-456. Distinct from how_to_read_bulletin.html, which
 teaches the avalanche domain; this page documents the product itself —
-the map, the weather header, favourites, field observations, the season
+the map, favourites, field observations, the season
 timeline, accounts, and PWA install/offline behaviour — as a set of
 collapsible panels reusing includes/_collapsible_panel.html. Each panel's
 body copy lives in its own small content partial under
@@ -13,7 +13,7 @@ apps/public/templates/public/help/.
 The Sync-log panel is gated on the per-user ``sync_log_visible`` waffle
 boolean computed by apps.public.views.help_page — a user never sees
 documentation for a feature they cannot use. It is the only gated panel;
-SNOW-724 opened the map-weather and slope-angle topics to everyone.
+SNOW-724 opened the slope-angle topic to everyone.
 
 The panels are grouped under four eyebrow headings rather than running as
 one flat list of sixteen: "The map" alone holds eight, and a reader
@@ -31,7 +31,7 @@ Routes and Offline downloads came to have neither.
 
 {% block page_meta %}
     {% trans "Help" as page_name %}
-    {% trans "Plain-language guide to how Snowdesk works: the map, bulletins, weather, favourites, and more." as page_description %}
+    {% trans "Plain-language guide to how Snowdesk works: the map, bulletins, favourites, and more." as page_description %}
     {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
 {% endblock page_meta %}
 
@@ -58,8 +58,6 @@ Routes and Offline downloads came to have neither.
         {# be one topic covering the rating and the problems together; a     #}
         {# panel carries one illustration and those are two components, so   #}
         {# the topic split rather than the slot growing a list.              #}
-        {% translate "The weather header" as t_weather %}
-        {% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" illustration="public/help/illustrations/_weather_header.html" body_template="public/help/_topic_weather.html" %}
 
         {% translate "The day's danger rating" as t_bulletins %}
         {% include "includes/_collapsible_panel.html" with title=t_bulletins data_testid="help-topic-bulletins" illustration="public/help/illustrations/_day_windows.html" body_template="public/help/_topic_bulletins.html" %}
@@ -98,9 +96,6 @@ Routes and Offline downloads came to have neither.
 
         {% translate "Layers" as t_layers %}
         {% include "includes/_collapsible_panel.html" with title=t_layers data_testid="help-topic-layers" body_template="public/help/_topic_layers.html" %}
-
-        {% translate "Map weather" as t_weather_layer %}
-        {% include "includes/_collapsible_panel.html" with title=t_weather_layer data_testid="help-topic-weather-layer" body_template="public/help/_topic_weather_layer.html" %}
 
         {# SNOW-691: the map legend's "Slope angle" heading is a link to     #}
         {# #help-topic-slope, so this panel is a navigation target and not   #}

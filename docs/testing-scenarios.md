@@ -15,7 +15,7 @@ last-reviewed: 2026-08-04
 > 4. Database migrated: `uv run python manage.py migrate`
 > 5. Dataset seeded: `uv run python manage.py loaddata eaws_CH resorts && uv run python manage.py seed_test_data --all --commit`
 >    These commands load the region/resort reference data and seed all the
->    bulletin, day-rating, and weather-snapshot data needed to navigate every
+>    bulletin and day-rating data needed to navigate every
 >    scenario below. The
 >    canonical preview URL is `/ch-4115/martigny-verbier/2026-04-08/`.
 

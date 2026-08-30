@@ -222,10 +222,6 @@
     // the "Manage downloads" sheet being open, not a togglable layer (see
     // map_downloads_manager.js's open()/close handling and
     // window.pwaDownloadedOverlay's show/hide in map.js).
-    // SNOW-573: one symbol layer carries both the icon and the temp label
-    // (data-driven 'icon-image'/'text-field'), unlike favourites/resorts'
-    // separate pin+label layers.
-    weather: ['weather-point'],
     // SNOW-691: the slope raster. Deliberately NOT in the lazy-load branch
     // below: the source is installed eagerly with its layer hidden, and
     // MapLibre requests no tiles for a source whose layers are all
@@ -282,14 +278,10 @@
         // now drive them. Leaving them would not have double-counted — the
         // rows are gone, so these branches were simply unreachable — but the
         // next reader wiring a row back would have found two emitters.
-        // SNOW-573: notify telemetry when the weather overlay is flipped.
-        if (overlayKey === 'weather') {
-          window.pwaTelemetry?.emit('map.weather.overlay_toggled', { visible: next });
-        }
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts' || overlayKey === 'weather')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE

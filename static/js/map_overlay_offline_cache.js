@@ -1,7 +1,7 @@
 /*
  * static/js/map_overlay_offline_cache.js — Offline read cache for the map's
- * favourites / community-reports / weather / routes overlays (SNOW-492;
- * routes added by SNOW-687).
+ * favourites / community-reports / routes overlays (SNOW-492; routes
+ * added by SNOW-687).
  *
  * Companion to favourites_offline.js (SNOW-418), same shape: a write-through
  * cache keyed into IndexedDB (``data:map_overlays``, ``db.js`` schema v4) on
@@ -15,7 +15,7 @@
  * Storage shape
  * -------------
  * One row per resource: ``{ key, geojson, cached_at, principal }``, keyed by
- * ``resource`` (``'favourites'``, ``'community_reports'``, ``'weather'`` or
+ * ``resource`` (``'favourites'``, ``'community_reports'`` or
  * ``'routes'``). Expiry is a caller concern, not enforced here — favourites
  * and routes never expire (both are the user's own stored data, changed only
  * by the user); community reports apply the existing 48h age-opacity horizon
@@ -90,8 +90,8 @@
    * effort — never throws, so a broken cache write can't break the overlay
    * fetch it rides on.
    *
-   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
-   *   ``'weather'`` or ``'routes'``
+   * @param {string} resource - ``'favourites'``, ``'community_reports'``
+   *   or ``'routes'``
    * @param {object} geojson - the fetched FeatureCollection
    * @returns {Promise<void>}
    */
@@ -126,8 +126,8 @@
    * (community_reports) skip the principal check entirely and read back for
    * any session.
    *
-   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
-   *   ``'weather'`` or ``'routes'``
+   * @param {string} resource - ``'favourites'``, ``'community_reports'``
+   *   or ``'routes'``
    * @returns {Promise<object | null>}
    */
   async function getOverlay(resource) {

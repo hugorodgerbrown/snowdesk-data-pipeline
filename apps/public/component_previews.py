@@ -31,18 +31,11 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
-from types import SimpleNamespace
 from typing import Any
 
 from django.utils.translation import gettext_lazy as _
 
 from apps.public.season_calendar import SeasonCell, SeasonGrid
-from apps.weather.services.weather_display import (
-    _ICON_BUCKET_LABEL,
-    _WMO_CODE_TO_BUCKET,
-    _WMO_CODE_TO_ICON_BUCKET,
-    WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
-)
 
 # The illustrated grid's own calendar. Fixed dates rather than something
 # derived from today: the point of the picture is the SHAPE of a season —
@@ -292,58 +285,15 @@ def help_illustrations() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Bulletin-page illustrations (SNOW-744 follow-up)
 #
-# The three components a reader meets on a bulletin page, in the order the
-# page stacks them: the weather header, the day-risk panel, and one problem
-# card. Each is the REAL partial; only the context below is invented.
+# The two components a reader meets on a bulletin page, in the order the
+# page stacks them: the day-risk panel and one problem card. Each is the
+# REAL partial; only the context below is invented.
 #
-# All three are styled entirely from output.css — checked against the
-# bulletin page, which loads that stylesheet and nothing else. That is what
+# Both are styled entirely from output.css — checked against the bulletin
+# page, which loads that stylesheet and nothing else. That is what
 # separates them from the season scrubber, whose rules live in map.css and
 # which /help/ therefore cannot illustrate.
 # ---------------------------------------------------------------------------
-
-# WMO code 71 — slight snowfall. Chosen over a clear day because a bulletin
-# reader meets this header on the days that matter, and because it exercises
-# the coloured bucket rather than the neutral one.
-_WEATHER_CODE = 71
-
-
-def _weather_display(code: int, time_of_day: str) -> dict[str, Any]:
-    """
-    Build a ``weather_display`` mapping in the shape the panel expects.
-
-    Mirrors what ``build_weather_display`` returns at runtime, without the
-    database: the inner ``weather`` object needs only the ``weather_code``
-    attribute the partial reads.
-
-    Args:
-        code: WMO weather code.
-        time_of_day: ``"day"`` or ``"night"``, picking the icon variant and
-            the day/night background token.
-
-    Returns:
-        The display mapping.
-
-    """
-    icon_bucket = _WMO_CODE_TO_ICON_BUCKET.get(code, "cloudy")
-    if icon_bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
-        icon_filename = f"{icon_bucket}-{time_of_day}.svg"
-    else:
-        icon_filename = f"{icon_bucket}.svg"
-    return {
-        "weather": SimpleNamespace(weather_code=code),
-        "bucket": _WMO_CODE_TO_BUCKET.get(code, "cloudy"),
-        "is_day": time_of_day == "day",
-        "time_of_day": time_of_day,
-        "sunrise_local": "07:34",
-        "sunset_local": "17:52",
-        "icon_bucket": icon_bucket,
-        "condition_label": _ICON_BUCKET_LABEL[icon_bucket],
-        "icon_filename": icon_filename,
-        "temp_max": -3.0,
-        "temp_min": -9.0,
-        "snowfall_sum": 22.0,
-    }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -394,16 +344,14 @@ def _day_window(period: str, level_key: str, number: str, pill: str) -> dict[str
 
 def _bulletin_illustrations() -> dict[str, Any]:
     """
-    Build the contexts for the three bulletin-page illustrations.
+    Build the contexts for the two bulletin-page illustrations.
 
     Returns:
-        ``weather_display`` and its wayfinding for the header topic,
         ``day_windows`` for the day-risk topic, and ``card`` for the
         avalanche-problem topic.
 
     """
     return {
-        "weather_display": _weather_display(_WEATHER_CODE, "day"),
         "region_name": _("Martigny · Verbier"),
         "subregion_name": _("Valais"),
         "page_date": _GRID_TODAY,

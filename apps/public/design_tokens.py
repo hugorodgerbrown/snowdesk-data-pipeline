@@ -41,7 +41,6 @@ from apps.public._component_fixtures import (
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
-    FORECAST_PANEL_VARIANTS,
     FORM_FIELD_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
@@ -74,8 +73,6 @@ from apps.public._component_fixtures import (
     TOAST_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
-    WEATHER_HEADER_VARIANTS,
-    WEATHER_PANEL_VARIANTS,
 )
 
 
@@ -156,7 +153,7 @@ class FoundationCategory:
             a vertical stack (default, used by foundations and most
             components). ``"two-col"`` is single-column on mobile and
             two-column on desktop (≥ md breakpoint) — useful for
-            paired variants like the weather-header day/night matrix.
+            paired variant matrices.
         swatch_columns: Optional fixed column count for the swatch grid
             (``kind="swatches"`` only). Defaults to ``None``, which
             renders the responsive grid (2 → 3 → 4 columns at sm/lg).
@@ -671,33 +668,6 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
 
 
 COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
-    FoundationCategory(
-        slug="weather-header",
-        label="Weather header",
-        description=(
-            "Bulletin-page weather header — region + sub-region + date + "
-            "weather hero, rendered against every icon-bucket × time-of-day "
-            "combination plus the no-snapshot fallback."
-        ),
-        kind="components",
-        partial="includes/bulletin_header.html",
-        variants=WEATHER_HEADER_VARIANTS,
-        panel_layout="two-col",
-    ),
-    FoundationCategory(
-        slug="weather-panel",
-        label="Weather panel",
-        description=(
-            "Shared weather-bucket panel (SNOW-509) extracted from the "
-            "bulletin masthead — rendered here without the region H1 or "
-            "share button, the shape the resort page consumes to show the "
-            "parent region's weather."
-        ),
-        kind="components",
-        partial="includes/_weather_panel.html",
-        variants=WEATHER_PANEL_VARIANTS,
-        panel_layout="two-col",
-    ),
     FoundationCategory(
         slug="day-windows",
         label="Day windows",
@@ -1332,23 +1302,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_overflow_menu.html",
         variants=OVERFLOW_MENU_VARIANTS,
-        panel_layout="stack",
-    ),
-    FoundationCategory(
-        slug="forecast-panel",
-        label="Forecast panel",
-        description=(
-            "Multi-day point forecast panel (SNOW-417, promoted to a shared "
-            "partial by SNOW-572): a compact day strip (weekday, icon, "
-            "hi/lo, snowfall chip) plus an expandable hourly detail for the "
-            "near-term days, built from _collapsible_panel.html + "
-            "_chip.html. Rendered on the favourite detail card ('Weather — "
-            "this spot') and, when the resort has a linked ForecastCell "
-            "with rows, the resort page ('Weather — this resort')."
-        ),
-        kind="components",
-        partial="includes/_forecast_panel.html",
-        variants=FORECAST_PANEL_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

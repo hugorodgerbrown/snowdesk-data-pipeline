@@ -27,13 +27,6 @@ from django import forms
 from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
-from apps.weather.services.weather_display import (
-    _ICON_BUCKET_LABEL,
-    _WMO_CODE_TO_BUCKET,
-    _WMO_CODE_TO_ICON_BUCKET,
-    WEATHER_ICON_BUCKETS,
-    WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,  # used inside synthetic_weather_display
-)
 
 # String constants for elevation bound type — mirror ``apps.public.views`` so the
 # template filter (``elevation_icon``) sees the same strings without coupling
@@ -63,242 +56,6 @@ class _ElevationBounds:
     def __bool__(self) -> bool:
         """Return True when the bound has a displayable value."""
         return bool(self.display)
-
-
-def synthetic_weather_display(
-    code: int,
-    time_of_day: str,
-    *,
-    temp_max: float | None = 4.0,
-    temp_min: float | None = -2.0,
-    snowfall_sum: float | None = 12.0,
-) -> dict[str, Any]:
-    """Build a fake ``WeatherDisplay`` dict for a given WMO code and time-of-day.
-
-    Mirrors the shape that ``build_weather_display`` returns at runtime,
-    but without going through the database — the inner ``weather`` field
-    is a :class:`SimpleNamespace` with just the ``weather_code`` attribute
-    the partial reads.
-
-    ``temp_max``/``temp_min``/``snowfall_sum`` (SNOW-571) default to sample
-    values so the matrix panels show the enriched meta strip out of the
-    box; pass ``None`` for any of them to exercise the omit-individually
-    behaviour (see ``WEATHER_PANEL_VARIANTS``'s "partially populated" entry).
-
-    Lifted from the now-retired ``_synthetic_weather_display`` in
-    ``apps/public/debug_views.py`` (which fed the ``/debug/header/`` matrix
-    page from SNOW-101). The behaviour is unchanged.
-    """
-    bucket = _WMO_CODE_TO_BUCKET.get(code, "cloudy")
-    icon_bucket = _WMO_CODE_TO_ICON_BUCKET.get(code, "cloudy")
-    if icon_bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
-        icon_filename = f"{icon_bucket}-{time_of_day}.svg"
-    else:
-        icon_filename = f"{icon_bucket}.svg"
-    return {
-        "weather": SimpleNamespace(weather_code=code),
-        "bucket": bucket,
-        "is_day": time_of_day == "day",
-        "time_of_day": time_of_day,
-        "sunrise_local": "06:13",
-        "sunset_local": "20:43",
-        "icon_bucket": icon_bucket,
-        "condition_label": _ICON_BUCKET_LABEL[icon_bucket],
-        "icon_filename": icon_filename,
-        "temp_max": temp_max,
-        "temp_min": temp_min,
-        "snowfall_sum": snowfall_sum,
-    }
-
-
-def _sample_code_for_bucket(icon_bucket: str) -> int:
-    """Return one representative WMO code for an icon bucket.
-
-    Several WMO codes can map to the same bucket (e.g. drizzle covers 51,
-    53, 55, 56, 57); we just need one to drive the partial. Picks the
-    smallest matching code so the choice is deterministic across runs.
-    """
-    return min(c for c, b in _WMO_CODE_TO_ICON_BUCKET.items() if b == icon_bucket)
-
-
-def _build_weather_header_variants() -> tuple[dict[str, Any], ...]:
-    """Build the weather-header variant matrix.
-
-    Two entries per icon bucket (12 buckets × day/night = 24 entries),
-    plus a hero-badge level grid (all five EAWS levels × with/without
-    subdivision, single panel each), plus the no-snapshot fallback at
-    the end.
-
-    Every bucket emits both day and night — even ``cloudy``, which is
-    the only bucket whose *icon* is identical day vs night (it ships as
-    a single ``cloudy.svg`` rather than ``cloudy-day.svg``/
-    ``cloudy-night.svg``). The *background colour* still differs by
-    time-of-day for cloudy (``--color-weather-cloudy-day`` vs
-    ``--color-weather-cloudy-night``), so the bulletin page reads as a
-    dark band on a cloudy night and a pale band on a cloudy day — the
-    library mirrors that.
-
-    Order follows ``WEATHER_ICON_BUCKETS`` so panels in the library
-    appear in the same order designers see in the bucket vocabulary
-    documentation. ``WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT`` is consumed
-    inside ``synthetic_weather_display`` to pick the right icon
-    filename — the matrix builder doesn't branch on it.
-    """
-    today = datetime.date(2026, 2, 14)  # mid-season, deterministic
-    region_name = "Bex-Villars"
-    subregion_name = "Vaud Alps"
-
-    # Representative clear-day weather display for the badge-focused variants.
-    _clear_day = synthetic_weather_display(0, "day")
-
-    entries: list[dict[str, Any]] = []
-    for icon_bucket in WEATHER_ICON_BUCKETS:
-        code = _sample_code_for_bucket(icon_bucket)
-        bucket_label = _ICON_BUCKET_LABEL[icon_bucket]
-        for time_of_day in ("day", "night"):
-            entries.append(
-                {
-                    "caption": f"{bucket_label} · {time_of_day}",
-                    "context": {
-                        "weather_display": synthetic_weather_display(code, time_of_day),
-                        "region_name": region_name,
-                        "subregion_name": subregion_name,
-                        "page_date": today,
-                        # Default to moderate (2) so the badge is always
-                        # present — the bucket grid is for weather colours,
-                        # not for badge level variations.
-                        "morning_rating": {
-                            "level_key": "moderate",
-                            "level_number": "2",
-                            "subdivision": "",
-                        },
-                    },
-                }
-            )
-
-    # ---- Hero rating badge level grid (SNOW-246) -------------------------
-    # Five EAWS levels × {bare number, with subdivision} = 10 panels.
-    # Rendered against a fixed clear-day background so the badge fill
-    # colours are the visual focus. Subdivision only at level ≥ 2 per spec.
-    _badge_levels: tuple[tuple[str, str, str, str], ...] = (
-        ("low", "1", "", "Level 1 — no subdivision"),
-        ("moderate", "2", "", "Level 2 — no subdivision"),
-        ("moderate", "2", "-", "Level 2 — minus"),
-        ("moderate", "2", "+", "Level 2 — plus"),
-        ("considerable", "3", "", "Level 3 — no subdivision"),
-        ("considerable", "3", "-", "Level 3 — minus"),
-        ("considerable", "3", "+", "Level 3 — plus"),
-        ("high", "4", "", "Level 4 — no subdivision"),
-        ("high", "4", "-", "Level 4 — minus"),
-        ("very_high", "5", "", "Level 5 — black/red split"),
-    )
-    for level_key, level_number, subdivision, caption in _badge_levels:
-        entries.append(
-            {
-                "caption": f"Hero badge · {caption}",
-                "context": {
-                    "weather_display": _clear_day,
-                    "region_name": region_name,
-                    "subregion_name": subregion_name,
-                    "page_date": today,
-                    "morning_rating": {
-                        "level_key": level_key,
-                        "level_number": level_number,
-                        "subdivision": subdivision,
-                    },
-                },
-                "solo": True,
-            }
-        )
-
-    # No-snapshot fallback — the partial's degraded path. Kept last so the
-    # main matrix flows top-to-bottom in canonical bucket order before the
-    # edge case shows up. ``solo=True`` so it spans both columns on the
-    # two-column layout (no day/night counterpart to pair it with).
-    entries.append(
-        {
-            "caption": "No snapshot · fallback (no badge)",
-            "context": {
-                "weather_display": None,
-                "region_name": region_name,
-                "subregion_name": subregion_name,
-                "page_date": today,
-                # morning_rating absent — badge must not render on empty-state pages.
-            },
-            "solo": True,
-        }
-    )
-    return tuple(entries)
-
-
-WEATHER_HEADER_VARIANTS: tuple[dict[str, Any], ...] = _build_weather_header_variants()
-
-
-def _build_weather_panel_variants() -> tuple[dict[str, Any], ...]:
-    """Build the weather-panel variant matrix (SNOW-509).
-
-    Mirrors ``_build_weather_header_variants``'s bucket × day/night grid
-    plus the no-snapshot fallback, but panel-shaped: ``region_name=""``
-    (no ``<h1>``) so the library shows the resort-page surface — the shape
-    ``includes/_weather_panel.html`` renders for
-    ``apps/public/templates/public/resort.html``, not the bulletin masthead's
-    region-wayfinding variant (already covered by ``WEATHER_HEADER_VARIANTS``).
-    No hero-badge grid here — ``morning_rating`` is bulletin-only context.
-    """
-    today = datetime.date(2026, 2, 14)  # mid-season, deterministic
-
-    entries: list[dict[str, Any]] = []
-    for icon_bucket in WEATHER_ICON_BUCKETS:
-        code = _sample_code_for_bucket(icon_bucket)
-        bucket_label = _ICON_BUCKET_LABEL[icon_bucket]
-        for time_of_day in ("day", "night"):
-            entries.append(
-                {
-                    "caption": f"{bucket_label} · {time_of_day}",
-                    "context": {
-                        "weather_display": synthetic_weather_display(code, time_of_day),
-                        "region_name": "",
-                        "subregion_name": "",
-                        "page_date": today,
-                    },
-                }
-            )
-
-    # Partially-populated snapshot (SNOW-571) — temps present, snowfall NULL.
-    # Demonstrates the omit-individually behaviour: the temperature group
-    # renders while the snowfall group is silently absent, rather than the
-    # whole meta strip falling back.
-    entries.append(
-        {
-            "caption": "Clear · day · temps only (snowfall NULL)",
-            "context": {
-                "weather_display": synthetic_weather_display(
-                    0, "day", snowfall_sum=None
-                ),
-                "region_name": "",
-                "subregion_name": "",
-                "page_date": today,
-            },
-            "solo": True,
-        }
-    )
-
-    entries.append(
-        {
-            "caption": "No snapshot · fallback",
-            "context": {
-                "weather_display": None,
-                "region_name": "",
-                "subregion_name": "",
-                "page_date": today,
-            },
-            "solo": True,
-        }
-    )
-    return tuple(entries)
-
-
-WEATHER_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_weather_panel_variants()
 
 
 # Day-windows panel (SNOW-107) ---------------------------------------------
@@ -2665,7 +2422,6 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
     today = datetime.date(2026, 2, 14)
     region_name = "Bex-Villars"
     subregion_name = "Vaud Alps"
-    _clear_day = synthetic_weather_display(0, "day")
 
     def _dw(
         period: str, level_key: str, pill_label: str, modifier: str = ""
@@ -2742,7 +2498,6 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
         {
             "caption": "SLF escalating · all-day → rises to L3",
             "context": {
-                "weather_display": _clear_day,
                 "region_name": region_name,
                 "subregion_name": subregion_name,
                 "page_date": today,
@@ -2762,7 +2517,6 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
         {
             "caption": "SLF de-escalating · all-day → falls to L2",
             "context": {
-                "weather_display": _clear_day,
                 "region_name": region_name,
                 "subregion_name": subregion_name,
                 "page_date": today,
@@ -2783,7 +2537,6 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
             "caption": "SLF flat-but-split · no chip — problem type changes",
             "solo": True,
             "context": {
-                "weather_display": _clear_day,
                 "region_name": region_name,
                 "subregion_name": subregion_name,
                 "page_date": today,
@@ -2804,7 +2557,6 @@ def _build_period_transition_variants() -> tuple[dict[str, Any], ...]:
         {
             "caption": "EUREGIO elevation-banded · rises above 2600 m to L2",
             "context": {
-                "weather_display": _clear_day,
                 "region_name": region_name,
                 "subregion_name": subregion_name,
                 "page_date": today,
@@ -3003,93 +2755,6 @@ RATING_BLOCK_ALBINA_BAND_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
 )
-
-
-# Forecast panel (SNOW-417, promoted to a shared partial by SNOW-572) --------
-# One variant: a 3-day window mirroring build_point_forecast_panel's shape —
-# two near-term days carry an hourly series (exercising the expandable
-# _collapsible_panel.html detail), the third carries none (exercising the
-# "no hourly" branch of the compact day strip alone).
-
-
-def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
-    """Build a representative ForecastPanel fixture for the component library."""
-    days = (
-        {
-            "date": datetime.date(2026, 5, 1),
-            "weekday_label": "Fri",
-            "icon_bucket": "light_snow",
-            "icon_filename": "light_snow-day.svg",
-            "condition_label": "Light snow",
-            "temp_max": 4.0,
-            "temp_min": -3.0,
-            "snowfall_sum": 12.0,
-            "freezing_level_height": 1800.0,
-            "hourly": [
-                {
-                    "time": "2026-05-01T06:00",
-                    "temperature_2m": -2.0,
-                    "snowfall": 0.5,
-                    "precipitation": 0.5,
-                    "wind_speed_10m": 10.0,
-                    "wind_gusts_10m": 20.0,
-                    "freezing_level_height": 1700.0,
-                },
-                {
-                    "time": "2026-05-01T12:00",
-                    "temperature_2m": 1.0,
-                    "snowfall": 0.0,
-                    "precipitation": 0.0,
-                    "wind_speed_10m": 14.0,
-                    "wind_gusts_10m": 28.0,
-                    "freezing_level_height": 1800.0,
-                },
-            ],
-        },
-        {
-            "date": datetime.date(2026, 5, 2),
-            "weekday_label": "Sat",
-            "icon_bucket": "clear",
-            "icon_filename": "clear-day.svg",
-            "condition_label": "Clear",
-            "temp_max": 6.0,
-            "temp_min": -1.0,
-            "snowfall_sum": 0.0,
-            "freezing_level_height": 2000.0,
-            "hourly": [
-                {
-                    "time": "2026-05-02T06:00",
-                    "temperature_2m": -1.0,
-                    "snowfall": 0.0,
-                    "precipitation": 0.0,
-                    "wind_speed_10m": 8.0,
-                    "wind_gusts_10m": 16.0,
-                    "freezing_level_height": 1950.0,
-                },
-            ],
-        },
-        {
-            "date": datetime.date(2026, 5, 3),
-            "weekday_label": "Sun",
-            "icon_bucket": "partly_cloudy",
-            "icon_filename": "partly_cloudy-day.svg",
-            "condition_label": "Partly cloudy",
-            "temp_max": 5.0,
-            "temp_min": -2.0,
-            "snowfall_sum": 2.0,
-            "freezing_level_height": 1900.0,
-            "hourly": [],
-        },
-    )
-    return (
-        {
-            "caption": "7-day strip with near-term hourly detail",
-            "context": {"panel": {"days": days}},
-        },
-    )
-
-
-FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_panel_variants()
 
 
 # Favourite problem card (SNOW-422) -------------------------------------------

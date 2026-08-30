@@ -31,10 +31,10 @@ without the location it points at, and importing them separately would let a
 half-applied run leave links dangling.
 
 **Elevation is not a sheet column.** It is always derived, never supplied
-(``docs/locations.md``) — ``link_location_forecast_cells`` resolves it from
-the coordinate via Open-Meteo, alongside the forecast cell. That also makes
-the elevation a check on the coordinate: a location whose resolved height is
-nowhere near the figure in its ``note`` has been mis-pinned.
+(``docs/locations.md``) — an out-of-band pass resolves it from the
+coordinate via Open-Meteo. That also makes the elevation a check on the
+coordinate: a location whose resolved height is nowhere near the figure in
+its ``note`` has been mis-pinned.
 
 Like ``import_resorts``, this is deliberately **not** wired into
 ``build.sh``: location rows are editable data owned by each environment's
@@ -98,8 +98,8 @@ class Mode(enum.StrEnum):
 
 _MODE_CHOICES = [mode.value for mode in Mode]
 
-# Sheet column -> Location field. The sheet owns only these; ``elevation_m``
-# and ``forecast_cell`` are resolved out-of-band and never written here.
+# Sheet column -> Location field. The sheet owns only these;
+# ``elevation_m`` is resolved out-of-band and never written here.
 LOCATION_FIELDS = ("name", "kind", "latitude", "longitude")
 
 REQUIRED_LOCATION_COLUMNS = ("uuid", "name", "latitude", "longitude")

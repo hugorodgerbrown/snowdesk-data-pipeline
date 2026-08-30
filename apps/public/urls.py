@@ -139,14 +139,6 @@ urlpatterns += [
         views.share_redirect,
         name="share_redirect",
     ),
-    # Weather snippet — HTMX-triggered just-in-time weather fetch (SNOW-159).
-    # Registered before the generic <str:region_id>/ pattern so "partials"
-    # is never mistaken for a region ID.
-    path(
-        "partials/weather/<region_id:region_id>/<str:date_str>/",
-        views.fetch_weather_snippet,
-        name="weather_snippet",
-    ),
     # Season calendar partial — HTMX-deferred heatmap grid (SNOW-170).
     # Registered before the generic <region_id:region_id>/ pattern for the same reason.
     path(

@@ -1,11 +1,19 @@
 ---
 name: forecast-point-quantisation
-description: ForecastCell grid cell (0.01 lat / 0.015 lon) and 200m elevation band sizing; reuse-nearest precedes cell creation
-status: current
-last-reviewed: 2026-08-09
+description: Historical — ForecastCell grid and elevation-band sizing, retired with the weather app by SNOW-762
+status: historical
+last-reviewed: 2026-08-30
 ---
 
 # ForecastCell grid and elevation-band sizing
+
+> **Retired by SNOW-762 (2026-08-30).** The weather app this record
+> describes was stripped whole — models, services, commands, endpoints and
+> surfaces — so nothing here constrains the code any more. SNOW-757
+> rebuilds weather as a single immutable Location-anchored model and will
+> carry its own decision record. Kept for the *why*, per
+> [the README](README.md): a reversed decision is marked historical, not
+> deleted.
 
 **Decision.** Map pins snap to a shared `ForecastCell` row keyed on a
 quantised grid cell (`lat_cell = floor(lat / 0.01)`, `lon_cell = floor(lon

@@ -1,9 +1,8 @@
 """
-apps/weather/services/open_meteo.py — Open-Meteo request addressing.
+apps/locations/services/open_meteo.py — Open-Meteo request addressing.
 
-Every Open-Meteo call in the pipeline — elevation, forecast, archive —
-goes through the two helpers here so that the host and the customer-API
-key are configured in one place rather than repeated at each request site:
+Contains the two helpers that put the host and the customer-API key in one
+place rather than repeating them at each request site:
 
   request_url(endpoint, base_url=None)
       Build the full request URL for one endpoint. Falls back to the
@@ -19,12 +18,15 @@ query parameter (SNOW-577). Both are settings, so moving between tiers is
 an environment change rather than a deploy — see the ``OPEN_METEO_*``
 block in ``config/settings/base.py``.
 
-The key is scoped to the hosts it was issued for (SNOW-579). Open-Meteo
-gates the historical API behind a subscription while leaving forecast and
-elevation on the free tier, so the two host settings are routinely on
-different tiers — sending the key to whichever host a request happens to
-be aimed at would hand a credential to the free public API. A dev-mirror
-or test ``base_url`` falls outside the customer set for the same reason.
+The key is scoped to the hosts it was issued for (SNOW-579), so a
+dev-mirror or test ``base_url`` falls outside the customer set and is
+sent no key.
+
+**Elevation only.** SNOW-762 stripped the weather app, and with it the
+forecast and archive endpoints this module used to address. What remains
+is the elevation lookup, which is location domain rather than weather: it
+answers how high a ``Location`` is, not what the sky is doing above it.
+The weather rebuild (SNOW-757) addresses its own endpoints.
 """
 
 from __future__ import annotations
@@ -33,52 +35,35 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 
-# Endpoint path segments, appended to the resolved base URL.
+# Endpoint path segment, appended to the resolved base URL.
 ELEVATION = "elevation"
-FORECAST = "forecast"
-ARCHIVE = "archive"
 
-# The free public hosts. A configured host that is still one of these is on
-# the free tier, which takes no key. Matching on hostname rather than the
-# whole base URL means a trailing slash, an ``http://`` scheme, or a
-# different path version cannot defeat the comparison.
+# The free public host. A configured host that is still this one is on the
+# free tier, which takes no key. Matching on hostname rather than the whole
+# base URL means a trailing slash, an ``http://`` scheme, or a different
+# path version cannot defeat the comparison.
 #
-# These must stay in step with the ``OPEN_METEO_*_BASE_URL`` defaults in
+# This must stay in step with the ``OPEN_METEO_API_BASE_URL`` default in
 # ``config/settings/base.py``; the "shipped defaults send no key" test in
-# tests/weather/services/test_open_meteo.py fails if they drift apart.
-FREE_HOSTNAMES = frozenset(
-    {
-        "api.open-meteo.com",
-        "archive-api.open-meteo.com",
-    }
-)
+# tests/locations/services/test_open_meteo.py fails if they drift apart.
+FREE_HOSTNAMES = frozenset({"api.open-meteo.com"})
 
 
 def request_url(endpoint: str, base_url: str | None = None) -> str:
     """
     Build the full request URL for one Open-Meteo endpoint.
 
-    The archive endpoint is served from its own host on both the free and
-    the paid tier, so it resolves against ``OPEN_METEO_ARCHIVE_BASE_URL``
-    while elevation and forecast resolve against ``OPEN_METEO_API_BASE_URL``.
-    A ``base_url`` override applies to every endpoint alike — the dev
-    mirror serves all of them under one base.
-
     Args:
-        endpoint: One of ``ELEVATION``, ``FORECAST``, or ``ARCHIVE``.
+        endpoint: The endpoint path segment — ``ELEVATION``.
         base_url: When set, overrides the configured host. Defaults to
-            ``None``, which uses the settings-derived base.
+            ``None``, which uses ``settings.OPEN_METEO_API_BASE_URL``.
 
     Returns:
         The absolute request URL.
 
     """
     if base_url is None:
-        base_url = (
-            settings.OPEN_METEO_ARCHIVE_BASE_URL
-            if endpoint == ARCHIVE
-            else settings.OPEN_METEO_API_BASE_URL
-        )
+        base_url = settings.OPEN_METEO_API_BASE_URL
     return f"{base_url}/{endpoint}"
 
 
@@ -89,7 +74,7 @@ def _hostname(url: str) -> str:
 
 def _customer_hostnames() -> frozenset[str]:
     """
-    Return the configured hosts that are not free public hosts.
+    Return the configured host when it is not the free public host.
 
     A host the operator has moved off its free default is, by definition,
     the paid tier they hold the key for. Deriving the set this way needs
@@ -102,11 +87,10 @@ def _customer_hostnames() -> frozenset[str]:
         the free tier, which is the shipped default.
 
     """
-    configured = (
-        _hostname(settings.OPEN_METEO_API_BASE_URL),
-        _hostname(settings.OPEN_METEO_ARCHIVE_BASE_URL),
-    )
-    return frozenset(host for host in configured if host and host not in FREE_HOSTNAMES)
+    configured = _hostname(settings.OPEN_METEO_API_BASE_URL)
+    if configured and configured not in FREE_HOSTNAMES:
+        return frozenset({configured})
+    return frozenset()
 
 
 def with_api_key(params: dict[str, str], url: str) -> dict[str, str]:
@@ -114,14 +98,9 @@ def with_api_key(params: dict[str, str], url: str) -> dict[str, str]:
     Return ``params`` with the Open-Meteo customer-API key appended.
 
     The key is added only when ``url`` is aimed at a configured customer
-    host. Everything else — the free public hosts, the dev mirror, a test
+    host. Everything else — the free public host, the dev mirror, a test
     double, or no key configured at all — gets the mapping back
     unchanged.
-
-    That distinction is what makes a mixed-tier setup work: with only
-    ``OPEN_METEO_ARCHIVE_BASE_URL`` moved to the paid tier, archive
-    requests carry the key and forecast and elevation requests to the
-    free host do not (SNOW-579).
 
     Args:
         params: The request parameters built by the caller.

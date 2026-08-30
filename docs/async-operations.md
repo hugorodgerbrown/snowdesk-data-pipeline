@@ -1,6 +1,6 @@
 ---
 name: async-operations
-description: Catalogue of async callsites — django-tasks email backends, fetch_weather_async daemon thread, db_worker on Render
+description: Catalogue of async callsites — django-tasks email backends, db_worker on Render
 status: current
 last-reviewed: 2026-06-14
 ---
@@ -17,7 +17,6 @@ Snowdesk codebase, the failure mode for each, and the on/off toggle if one exist
 |----------|---------|------|-------------|--------------|-------------|--------|
 | `apps.accounts.services.email` — `_worker_send_account_access_email`, `_worker_send_subscription_confirmation_email` | Either of the two `send_*` public functions on the subscription flow | SMTP send via Django's configured backend | `django_tasks_db.DatabaseBackend` in production (DB row); `ImmediateBackend` in dev/test (in-process, no persistence) | `django-tasks` captures unhandled exceptions and marks the task failed; failed tasks are visible in the admin under the `DbTaskResult` model; no silent loss | `apps.accounts.services.email` | Backend setting: `TASKS["default"]["BACKEND"]` — `ImmediateBackend` for dev/test; `DatabaseBackend` for production |
 | `apps.accounts.push_service._worker_dispatch_push` | `enqueue_push` called from `push_test` (staff `/account/push/test/`) | Single Web Push delivery via pywebpush | `django_tasks_db.DatabaseBackend` in production (DB row); `ImmediateBackend` in dev/test (in-process, no persistence) | `django-tasks` captures unhandled exceptions and marks the task failed, visible in admin under `DbTaskResult`; `dispatch_push` handles 404/410 row-deletion and 5xx survival internally | `apps.accounts.push_service` | Same backend setting as email — `TASKS["default"]["BACKEND"]` |
-| `apps.weather.services.weather_fetcher.fetch_weather_async` | `bulletin_detail` page render where no `WeatherSnapshot` exists for `(region, target_date)` and `target_date >= today` | Idempotent DB pre-check, then `fetch_weather_for_region` (Open-Meteo forecast endpoint only — a past date returns without fetching, because the archive URL belongs to `backfill_weather`) | `WeatherSnapshot` row via `update_or_create` | `Exception` caught, logged at WARNING via `logger.warning(exc_info=True)`; `connections.close_all()` in `finally` so the thread releases its DB connection | `apps.weather.services.weather_fetcher` | `WEATHER_FETCH_ASYNC` (default True; tests pin False) |
 
 ## django-tasks backend split
 
@@ -52,7 +51,7 @@ worker. Blueprint auto-sync is enabled, so adding or renaming the worker
 in `render.yaml` propagates to Render on the next sync — but env-var
 values marked `sync: false` still have to be set in the dashboard by hand.
 
-Scheduling (running `fetch_bulletins` and `fetch_weather` on a cron cadence)
+Scheduling (running `fetch_bulletins` on a cron cadence)
 lives in a separate `snowdesk-scheduler` worker — do not conflate the two.
 `snowdesk-background-tasks` runs `db_worker` (consuming enqueued tasks from
 the DB); `snowdesk-scheduler` runs `run_scheduler` (APScheduler blocking
@@ -72,22 +71,22 @@ synchronously rather than silently dropped — but production always sets
 `prune_db_task_results` is run. This is a candidate for a future scheduled
 management command. It is not in scope for SNOW-229.
 
-## Daemon-thread operations (`fetch_weather_async`)
+## Daemon-thread operations
 
-The weather-fetch path still uses a daemon thread (not `django-tasks`). The
-following caveats apply to that path only:
+No callsite uses a daemon thread today — SNOW-762 removed the last one
+(`fetch_weather_async`) with the weather app. The caveats are kept because
+they are what any future daemon-thread path has to answer:
 
 - **Daemon threads do not block worker shutdown.** Gunicorn killing or
   recycling a worker (`--max-requests`, SIGTERM) leaves any in-flight
-  daemon work *unfinished*. All async work here is therefore idempotent —
-  if the thread is killed before persisting, the next request that needs
-  the data schedules a fresh fetch.
+  daemon work *unfinished*. Such work must therefore be idempotent — if
+  the thread is killed before persisting, the next request that needs the
+  data schedules a fresh attempt.
 - **DB connections are thread-local.** A background thread that touches
   the ORM opens its own connection, separate from the request thread's.
   Long-running worker processes will leak connections under sustained
   background traffic unless the worker calls
-  `django.db.connections.close_all()` in a `finally` clause. The
-  `fetch_weather_async` worker does this.
+  `django.db.connections.close_all()` in a `finally` clause.
 - **No request-cycle transaction.** Background threads run *outside* the
   request's atomic transaction. If you need atomicity across multiple DB
   writes inside the worker, wrap them in your own

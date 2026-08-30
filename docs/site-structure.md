@@ -33,7 +33,7 @@ prefixes depend on this ordering — don't reorder
 | `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |
-| `/resorts/<resort_id>/<slug>/` | `resort_detail` | Resort page — region weather snapshot plus a point-local field-observations panel. |
+| `/resorts/<resort_id>/<slug>/` | `resort_detail` | Resort page — curated facts plus a point-local field-observations panel. |
 | `/favourites/<uuid>/` | `favourites.views.favourite_detail` | A saved map pin or resort. |
 | `/observations/` | `public.views.observations_list` | Community field reports. |
 | `/how-to-read-a-bulletin/` | `how_to_read_bulletin` | Domain primer for readers. |
@@ -64,8 +64,6 @@ Fragment endpoints return an inner HTML snippet, not a full page, and are
 guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 [`CLAUDE.md`](../CLAUDE.md)). They live under a `partials/` prefix:
 
-- `/partials/weather/<region_id>/<date_str>/` — weather snippet
-  ([`docs/weather-header.md`](weather-header.md), [`docs/async-operations.md`](async-operations.md))
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
 - `/partials/report/`, `/partials/report/form/` — field-report submission
 - `/favourites/partials/…` — create, rename, delete, toggle, card, list

@@ -1,6 +1,6 @@
 ---
 name: map-page-functional-spec
-description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), weather overlay, basemaps
+description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
 last-reviewed: 2026-08-25
 ---
@@ -160,8 +160,8 @@ return to it across sessions. It is the user's own private data.
 
 - **What it shows.** A `★` marker at the saved point, labelled with the
   user's chosen name. Tapping it opens a detail card: the point's
-  coordinates and altitude, the current danger rating of the containing
-  micro-region, and a 7-day point weather forecast.
+  coordinates and altitude, and the current danger rating of the
+  containing micro-region.
 - **Who can use it.** Signed-in users for whom the `favourites` feature
   flag is active (currently superusers, during rollout). Anonymous
   visitors and ineligible users never see the "Add favourite" control
@@ -264,31 +264,12 @@ users so they can be used independently:
 of reports — always shows the viewer's own reports plus other users'
 reports.)
 
-### 3.4 Weather — condition symbols and temperature (SNOW-573)
-
-The **Weather** overlay draws a condition symbol (a Meteocons icon —
-clear, cloudy, rain/snow at three intensities, fog, thunder — with a
-day/night variant) plus the day's max temperature at each forecast point:
-every resort, and, for a signed-in visitor, every one of their own
-favourite pins too.
-
-- **What it shows.** One symbol per point for whichever date the scrubber
-  is showing. Point weather is forecast-only — it covers today plus the
-  next several days, and **often fewer than the full window** (the
-  backing weather model can return a shorter run than requested; a short
-  window is the normal case, not a failure). Scrubbing to a date outside
-  the stored window disables the layer's menu row, with a reason, rather
-  than silently drawing nothing.
-- **Privacy.** The public data (every resort's symbol) is not
-  authentication-gated, but a **favourite's** own weather is private —
-  it only ever reaches the map for the signed-in visitor it belongs to,
-  merged in client-side alongside the public resort data. Another user's
-  favourite-anchored weather is never part of the public payload.
-- **Who can use it.** Everyone sees resort weather; a signed-in visitor
-  additionally sees weather on their own favourite pins. **Off by
-  default**, like community reports.
-- **Rollout.** Complete. The `weather_layer` flag that gated the rollout
-  was retired in SNOW-724.
+> **Weather overlay — removed by SNOW-762.** Section 3.4 described a
+> Meteocons condition symbol plus the day's max temperature at each
+> resort- and favourite-anchored forecast point. The whole weather domain
+> was stripped ahead of the SNOW-757 rebuild; nothing on the map draws
+> weather today. SNOW-761 decides what comes back and writes this section
+> again.
 
 ### 3.4a Routes — private imported tracks (SNOW-687)
 
@@ -338,7 +319,6 @@ list.
 | Favourites | Signed in | Owner only, 10/min | On (eligible users) — switched from the favourites panel, not the layer menu | Private, per-user |
 | Resorts | Public | Superusers, via the `/?edit=resorts` editor | Off | Shared reference |
 | Community reports | Public | via Report flow below | Off — switched from the field-observation panel, not the layer menu | Anonymised, public |
-| Weather | Public (resorts) + own favourites (signed in) | n/a — derived from the weather pipeline | Off | Public + per-user merge |
 | Routes | Signed in | Owner only, 10/min upload | Off — switched from the routes panel | Private, per-user |
 | Report (submit) | Signed in, verified + location | The reporter | n/a (a control, not an overlay) | Raw observation |
 
@@ -423,7 +403,6 @@ published data**. Its sections say what their rows are:
 | **Bulletins** | SLF (CH), MétéoFrance (FR), ALBINA (AT, IT) | One warning service's bulletins, over every country it publishes for |
 | **Boundaries** | Major (EAWS Level 1), Minor (EAWS L2), Micro (EAWS L4) | One tier of the EAWS region hierarchy |
 | **Locations** | Resorts | Named places geocoded onto regions |
-| **Conditions** | Weather | Forecast symbols at each point |
 | **Terrain** | Slope angle (absent without `SLOPE_TILE_URL`) | Steepness shading |
 | **Base map** | one row per basemap | The geographic backdrop |
 
@@ -669,10 +648,7 @@ to today's position within the **November–May** avalanche season window.
   animating the choropleth day by day as a time-lapse of the winter.
 - **Derived layers follow.** The bulletin-groupings layer re-dissolves for
   each scrubbed date (it only redraws once the scrubber settles, so it
-  never thrashes during a drag or playback). The Weather overlay
-  re-projects for each scrubbed date too, but with no network round-trip
-  at all — its payload already carries the whole forecast window, so a
-  date change just re-reads the already-fetched data.
+  never thrashes during a drag or playback).
 - **Performance.** The full season's ratings are fetched once, on the
   first scrub, and served from memory thereafter — the first scrub pays a
   single round-trip; every later scrub and all playback render instantly.
@@ -724,11 +700,10 @@ always fetched fresh or shown as explicitly expired, on the principle
 that a stale avalanche rating is worse than no rating. Two offline aids
 close the gaps this leaves:
 
-- Favourites, community-reports, and weather overlays get a client-side
+- Favourites, community-reports and routes overlays get a client-side
   write-through cache so they still render offline once fetched
-  (favourites never expire on read-back; community reports re-apply their
-  48-hour age filter; a cached weather payload simply stops drawing
-  anything as scrubbed dates roll past its forecast window). When an
+  (favourites and routes never expire on read-back; community reports
+  re-apply their 48-hour age filter). When an
   overlay can't load and nothing is cached, a small "unavailable offline"
   toast explains why rather than the toggle looking broken.
 - A one-shot **"Cache this area for offline"** command warms the current

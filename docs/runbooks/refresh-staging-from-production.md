@@ -1,6 +1,6 @@
 ---
 name: refresh-staging-from-production
-description: bin/sync-staging-data, snowdesk-staging-data-sync cron, PRODUCTION_DATABASE_URL read-only role — production bulletins/weather into staging
+description: bin/sync-staging-data, snowdesk-staging-data-sync cron, PRODUCTION_DATABASE_URL read-only role — production bulletins into staging
 status: current
 last-reviewed: 2026-08-27
 ---
@@ -9,7 +9,7 @@ last-reviewed: 2026-08-27
 
 Staging runs one web dyno with no scheduler and no task worker
 ([`render.yaml`](../../render.yaml)), so its database never ingests a
-bulletin or a weather forecast of its own. [`bin/sync-staging-data`](../../bin/sync-staging-data)
+bulletin of its own. [`bin/sync-staging-data`](../../bin/sync-staging-data)
 copies the provider-derived tables out of production instead, and the
 `snowdesk-staging-data-sync` Render cron job runs it nightly at 07:20 UTC.
 
@@ -28,10 +28,6 @@ database into crash recovery.
 | `bulletins.RegionBulletin` | `favourites.Favourite`, `observations.FieldObservation` |
 | `bulletins.RegionDayRating` | `routes.Route`, `core.RequestLog` |
 | `bulletins.BulletinGrouping` | `bulletins.BulletinShare` / `BulletinShareClick` |
-| `weather.ForecastCell` | EAWS regions (fixture-loaded by `build.sh` on both sides) |
-| `weather.ForecastCellWeather` | |
-| `weather.ForecastCellWeatherHistory` | |
-| `weather.WeatherSnapshot` | |
 | `regions.Resort` | |
 | `locations.Location` *(curated rows only — see below)* | |
 | `locations.ResortLocation` | |
@@ -247,7 +243,7 @@ Region centroids are released before the clear
 ## The nightly job
 
 `snowdesk-staging-data-sync` (see [`render.yaml`](../../render.yaml)) runs
-at 07:20 UTC — after production's 06:00 `fetch_weather` pass and the hourly
+at 07:20 UTC — after the hourly
 `fetch_bulletins` run that picks up the morning issue
 ([`schedule.py`](../../schedule.py)) — so staging opens the working day
 already current.

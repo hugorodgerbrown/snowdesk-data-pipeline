@@ -45,13 +45,6 @@ urlpatterns = [
     path("ratings/", api.ratings, name="ratings"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
-    # SNOW-573: map weather layer — resort-anchored ForecastCell weather,
-    # keyed by ISO date. Public since SNOW-724 retired its rollout flag.
-    path(
-        "forecast-weather.geojson",
-        api.forecast_weather_geojson,
-        name="forecast_weather_geojson",
-    ),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
     path(
         "major-regions.geojson",
