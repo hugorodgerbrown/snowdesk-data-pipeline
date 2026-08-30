@@ -1,16 +1,16 @@
 """
 tests/routes/test_admin.py — Admin registration smoke test for routes.
 
-Verifies that Route is registered with Django admin and that the admin
-class is read-mostly, mirroring FavouriteAdmin.
+Verifies that Route and RouteShare are registered with Django admin and
+that both admin classes are read-mostly, mirroring FavouriteAdmin.
 """
 
 from __future__ import annotations
 
 from django.contrib import admin
 
-from apps.routes.admin import RouteAdmin
-from apps.routes.models import Route
+from apps.routes.admin import RouteAdmin, RouteShareAdmin
+from apps.routes.models import Route, RouteShare
 
 
 class TestRouteAdminRegistration:
@@ -53,3 +53,38 @@ class TestRouteAdminRegistration:
         """search_fields includes user__email for lookup by email."""
         registered = admin.site._registry[Route]
         assert "user__email" in registered.search_fields
+
+
+class TestRouteShareAdminRegistration:
+    """RouteShareAdmin is registered and configured correctly (SNOW-764)."""
+
+    def test_route_share_is_registered(self) -> None:
+        """RouteShare is registered with the default admin site."""
+        assert RouteShare in admin.site._registry
+
+    def test_admin_class_is_route_share_admin(self) -> None:
+        """The registered admin class is RouteShareAdmin."""
+        assert isinstance(admin.site._registry[RouteShare], RouteShareAdmin)
+
+    def test_list_display_surfaces_the_claim_counters(self) -> None:
+        """How far a link travelled is answered on the changelist."""
+        registered = admin.site._registry[RouteShare]
+        assert "claim_count" in registered.list_display
+        assert "last_claimed_at" in registered.list_display
+
+    def test_list_display_includes_the_token_and_its_window(self) -> None:
+        """The token identifies the row; expires_at says whether it still works."""
+        registered = admin.site._registry[RouteShare]
+        assert "token" in registered.list_display
+        assert "expires_at" in registered.list_display
+
+    def test_every_field_is_read_only(self) -> None:
+        """A share row records a grant; editing one rewrites the record."""
+        registered = admin.site._registry[RouteShare]
+        for field in ("token", "route", "created_by", "expires_at", "claim_count"):
+            assert field in registered.readonly_fields
+
+    def test_search_fields_includes_the_token(self) -> None:
+        """A support request arrives carrying the link, so the token is the key."""
+        registered = admin.site._registry[RouteShare]
+        assert "token" in registered.search_fields

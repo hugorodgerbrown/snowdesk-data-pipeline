@@ -49,7 +49,7 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
-from apps.routes.models import Route
+from apps.routes.models import Route, RouteShare
 from apps.weather.models import Weather
 
 # A small representative Alpine bbox (roughly Valais) used as
@@ -615,6 +615,48 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     finished_at = datetime.datetime(2026, 3, 13, 11, 0, tzinfo=UTC)
     point_count = 3
     bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])
+
+
+class RouteShareFactory(factory.django.DjangoModelFactory[RouteShare]):
+    """Factory for RouteShare instances (SNOW-764).
+
+    Defaults to a CLAIMABLE share: a route that still exists and a window
+    that is still open, which is the state every surface reads. The two
+    dead states are different facts and are reached differently:
+
+        RouteShareFactory.create(expires_at=<a past datetime>)  # expired
+
+        route = RouteFactory.create()                           # revoked
+        RouteShareFactory.create(route=route)
+        route.delete()
+
+    The second is written as a real deletion rather than ``route=None``
+    because that is how the null actually arrives — ``Route.shares`` is
+    ``SET_NULL`` — and it exercises the FK rule rather than assuming it.
+    Deleting through a separately-held ``Route`` rather than through
+    ``share.route`` also keeps mypy honest: the FK is nullable, so the
+    attribute is ``Route | None``.
+
+    ``created_by`` defaults to the route's own owner rather than to a
+    fresh user: only an owner can create a share (``create_route_share``
+    is owner-scoped), so a factory making those two different by default
+    would build a row the service can never produce. It falls back to a
+    fresh user for a routeless share, which has no owner to read.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = RouteShare
+
+    token = factory.Sequence(lambda n: f"rtok{n:04d}")
+    route = factory.SubFactory(RouteFactory)
+    created_by = factory.LazyAttribute(
+        lambda o: o.route.user if o.route is not None else UserFactory.create()
+    )
+    expires_at = factory.LazyFunction(
+        lambda: django_timezone.now() + datetime.timedelta(days=30)
+    )
 
 
 class DownloadAreaFactory(factory.django.DjangoModelFactory[DownloadArea]):
