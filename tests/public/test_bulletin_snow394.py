@@ -34,6 +34,7 @@ from apps.bulletins.models import Bulletin
 from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
+    LocationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
@@ -150,6 +151,26 @@ class TestStructuredDataExtraFields:
         data = _extract_jsonld(response.content.decode())
         assert data is not None
         assert "geo" not in data["mainEntity"]["spatialCoverage"]
+
+    def test_geo_prefers_the_centroid_location(self, client: Client) -> None:
+        """geo reads centre_point(), which prefers the centroid Location.
+
+        The ``centre`` column below is deliberately wrong: if the page were
+        still reading it, this assertion would fail with the stale value.
+        """
+        _, region = _make_bulletin_with_region(centre={"lon": 170.0, "lat": -80.0})
+        region.centroid_location = LocationFactory.create(
+            anonymous=True, latitude=46.1, longitude=7.2
+        )
+        region.save(update_fields=["centroid_location", "updated_at"])
+
+        response = client.get(_bulletin_url(region))
+
+        data = _extract_jsonld(response.content.decode())
+        assert data is not None
+        geo = data["mainEntity"]["spatialCoverage"]["geo"]
+        assert geo["latitude"] == 46.1
+        assert geo["longitude"] == 7.2
 
     def test_is_based_on_points_at_pdf_url(self, client: Client) -> None:
         """isBasedOn carries bulletin.pdf_url as a CreativeWork URL."""

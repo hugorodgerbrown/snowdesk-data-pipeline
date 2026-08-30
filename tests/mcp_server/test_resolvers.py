@@ -3,8 +3,9 @@ tests/mcp_server/test_resolvers.py — Tests for apps.mcp_server.resolvers.
 
 Covers ``resolve_region`` (exact ``region_id`` lookup), ``search_places``
 (fuzzy name search, including the alpine-name misspelling table from the
-SNOW-391 implementation plan), and ``regions_for_scope`` (country /
-major-region scoping for ``get_regional_snapshot``, SNOW-408).
+SNOW-391 implementation plan), ``regions_for_scope`` (country /
+major-region scoping for ``get_regional_snapshot``, SNOW-408), and
+``find_places_near`` (radius search off each region's centre).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from django.utils import timezone
 from apps.mcp_server import resolvers
 from apps.regions.models import RegionAlias, Resort
 from tests.factories import (
+    LocationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionAliasFactory,
@@ -531,3 +533,66 @@ def test_pool_cache_key_is_stable_when_nothing_changes(
     """The key must only move on real change — otherwise the cache is useless."""
     RegionAliasFactory.create(region=alpine_fixture["bas_valais"], alias_text="Sitten")
     assert resolvers._pool_cache_key() == resolvers._pool_cache_key()
+
+
+@pytest.mark.django_db
+class TestFindPlacesNearReadsCentroidLocations:
+    """find_places_near measures from ``centre_point()``.
+
+    The radius search is the reader most exposed to a null centre: without
+    a guard a region with no anchor would raise and empty the whole result
+    set rather than simply not being ranked.
+    """
+
+    def _region(self, **kwargs: Any) -> Any:
+        """Create a CH micro-region under its own major region."""
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        subregion = SubRegionFactory.create(major=major)
+        return MicroRegionFactory.create(subregion=subregion, **kwargs)
+
+    def test_finds_a_region_by_its_centroid_location(self) -> None:
+        """A region anchored to a centroid Location is ranked by that point."""
+        location = LocationFactory.create(anonymous=True, latitude=46.1, longitude=7.2)
+        region = self._region(centroid_location=location, centre=None)
+
+        hits = resolvers.find_places_near(46.1, 7.2, radius_km=10, limit=5)
+
+        assert [hit["region_id"] for hit in hits] == [region.region_id]
+
+    def test_a_region_with_no_centre_is_skipped_not_fatal(self) -> None:
+        """One unanchored region must not empty the result set.
+
+        Before the centroid backfill runs, a partially seeded environment
+        has regions with neither anchor. Raising there would take every
+        other region's hit down with it.
+        """
+        location = LocationFactory.create(anonymous=True, latitude=46.1, longitude=7.2)
+        found = self._region(centroid_location=location, centre=None)
+        self._region(centroid_location=None, centre=None)
+
+        hits = resolvers.find_places_near(46.1, 7.2, radius_km=10, limit=5)
+
+        assert [hit["region_id"] for hit in hits] == [found.region_id]
+
+    def test_a_region_outside_the_radius_is_excluded(self) -> None:
+        """The radius bound still applies through the new reader."""
+        far = LocationFactory.create(anonymous=True, latitude=60.0, longitude=20.0)
+        self._region(centroid_location=far, centre=None)
+
+        hits = resolvers.find_places_near(46.1, 7.2, radius_km=10, limit=5)
+
+        assert hits == []
+
+    def test_the_centroid_location_wins_over_the_legacy_column(self) -> None:
+        """A stale ``centre`` must not decide the distance."""
+        location = LocationFactory.create(anonymous=True, latitude=46.1, longitude=7.2)
+        region = self._region(
+            centroid_location=location,
+            # If this were still read the region would be ~14,000 km away
+            # and would fall outside the radius entirely.
+            centre={"lon": 170.0, "lat": -80.0},
+        )
+
+        hits = resolvers.find_places_near(46.1, 7.2, radius_km=10, limit=5)
+
+        assert [hit["region_id"] for hit in hits] == [region.region_id]

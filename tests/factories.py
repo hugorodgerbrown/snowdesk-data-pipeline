@@ -50,6 +50,7 @@ from apps.regions.models import (
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
 from apps.routes.models import Route
+from apps.weather.models import Weather
 
 # A small representative Alpine bbox (roughly Valais) used as
 # MicroRegionFactory's ``basemap_download`` default — SNOW-521's rework
@@ -650,3 +651,41 @@ class DownloadAreaFactory(factory.django.DjangoModelFactory[DownloadArea]):
     bbox = None
     basemap_key = "outdoor"
     name = ""
+
+
+class WeatherFactory(factory.django.DjangoModelFactory[Weather]):
+    """Factory for Weather instances.
+
+    Defaults to **today**, because today's row is the writable one and a
+    test that wants the immutable case should have to say
+    ``observed_on=<a past date>`` rather than getting it by accident of
+    when the suite runs.
+
+    ``forecast`` defaults to an empty list rather than null: a row written
+    by the fetcher always has the key, even when the model horizon left
+    nothing forward to record, and a test asserting on it should not have
+    to distinguish "no forward days" from "never fetched".
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = Weather
+
+    location = factory.SubFactory(LocationFactory)
+    observed_on = factory.LazyFunction(django_timezone.localdate)
+    fetched_at = factory.LazyFunction(django_timezone.now)
+    weather_code = 3
+    sunrise = factory.LazyFunction(
+        lambda: django_timezone.now().replace(hour=6, minute=30)
+    )
+    sunset = factory.LazyFunction(
+        lambda: django_timezone.now().replace(hour=18, minute=45)
+    )
+    temperature_2m_max = 4.5
+    temperature_2m_min = -2.0
+    snowfall_sum = 1.2
+    hourly = None
+    # LazyFunction, not a bare [] — a mutable class attribute would be the
+    # same list object on every row the factory builds.
+    forecast = factory.LazyFunction(list)
