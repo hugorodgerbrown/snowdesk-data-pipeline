@@ -1,6 +1,6 @@
 ---
 name: weather-surfaces
-description: Weather UI — _weather_panel.html, _forecast_panel.html, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js
+description: Weather UI — _weather_panel, _forecast_panel, _forecast_hourly_chart, build_weather_display, build_hourly_chart, /api/weather.geojson
 status: current
 last-reviewed: 2026-08-30
 ---
@@ -65,6 +65,7 @@ what they carried. There is one model now.)
 |----------|---------|---------|
 | `build_weather_display(weather, now)` | `WeatherDisplay \| None` | `_weather_panel.html` |
 | `build_point_forecast_panel(weather, now)` | `ForecastPanel \| None` | `_forecast_panel.html` |
+| `build_hourly_chart(hourly)` | `HourlyChart \| None` | `_forecast_hourly_chart.html` |
 | `build_point_weather_days(weather)` | `{date: {code, tmax}}` | `/api/weather.geojson` |
 
 `build_point_forecast_panel` builds the whole outlook from **one row**: its
@@ -106,7 +107,7 @@ signature and nothing else.
 > The day/night suffix follows the current clock, so an unfrozen assertion
 > passes locally and fails in CI after sunset.
 
-## The two partials
+## The three partials
 
 ### `includes/_weather_panel.html`
 
@@ -136,16 +137,80 @@ the palette in place.
 
 ### `includes/_forecast_panel.html`
 
-The week ahead: a scrolling day strip, then one
-`includes/_collapsible_panel.html` per day that carries an hourly series,
-bodied by `includes/_forecast_hourly_body.html`.
+The week ahead as a day strip **that is also the control** (SNOW-776): one
+day is focused and its hourly chart renders directly beneath it. Before
+that the strip carried no state and every day with a series stacked its own
+collapsible table of twenty-four hour rows underneath, so the same seven
+labels repeated down the page with nothing saying which day a table
+belonged to.
+
+Three states a card can be in:
+
+* **focused** — its radio is checked, so its chart is the one on show. The
+  panel opens on `day.is_focus`, the first day it can actually draw.
+* **live** — it carries a chart and can be selected. The card **is** the
+  `<label>`, wrapping its own hidden radio, so the whole card is the hit
+  target. A `<span>` inside a label would leave the visible card inert.
+* **inert** — a plain `<div>` with `aria-disabled`, no radio and no label,
+  so it reads as unavailable rather than as a control that ignores presses.
 
 **`hourly` is optional per forward day.** Only the first few entries carry
 one (`HOURLY_DAYS` in
 [`apps/weather/services/fetch.py`](../apps/weather/services/fetch.py));
 beyond that the key is **absent**, not null. `ForecastDay.hourly` is
-`NotRequired` for exactly that reason, and both the service and the
-template test for presence rather than assuming.
+`NotRequired` for exactly that reason, and the live/inert split keys off
+`day.chart` — never off an index — so the strip follows the horizon
+wherever that constant moves.
+
+**Selection is CSS-only.** Each card is followed in the DOM by its own
+chart, and one adjacent-sibling rule in
+[`src/css/main.css`](../src/css/main.css) reveals the chart whose card holds
+the checked radio. Tailwind's `peer-*` variants compile to the general
+sibling combinator, which would reveal every *later* day's chart too, which
+is why that one rule is a component exception rather than a utility. Flex
+`order` then lays the cards along the top with the revealed chart on its
+own line below.
+
+**The radio group name comes from `testid_prefix`.** The resort page renders
+one panel per curated location on a single page; a fixed name would fuse
+every panel into one group, so choosing a day in one would clear the rest.
+
+### `includes/_forecast_hourly_chart.html`
+
+One day's meteogram, in inline SVG with **no JavaScript**. Three bands on
+one 24-hour x axis:
+
+* **A** — temperature bars drawn from the **zero isotherm**, so a
+  below-zero day reads as below zero rather than as short bars, with the
+  freezing-level height laid over them on its own scale (metres, not °C).
+* **B** — precipitation hanging from the top of its band. An hour that is
+  snowing takes the snow token instead of the rain one.
+* **C** — wind speed with gusts above it and the gap between them shaded.
+  The gap is the gustiness, which is the point of drawing both.
+
+Every coordinate comes from `build_hourly_chart`, so the arithmetic is
+covered by pytest rather than by a browser test and the chart draws under
+the service worker offline. Four rules that are each a test in
+`tests/weather/services/test_weather_display.py`:
+
+* **x comes from the hour parsed out of `time`, not the list index** — a
+  series missing 03:00 leaves a gap at 03:00 rather than shifting every
+  later hour left, which would read as real data.
+* **lines are lists of segments**, so they break across a null instead of
+  interpolating through it.
+* **a null hour contributes no bar**, not a zero-height one.
+* **a flat series does not divide by zero** — `max == min` is a windless
+  day, drawn down the middle of its band.
+
+An empty series, a series whose every `time` is unparseable, and a day
+whose every value is null all produce **no chart** rather than an empty
+frame.
+
+Colours are `--color-chart-*` design tokens surfaced as `fill-*` /
+`stroke-*` utilities, so the SVG carries class names and no hex and follows
+the theme. `{% localize off %}` wraps the drawing and is load-bearing:
+coordinates are floats, and a locale that formats decimals with a comma
+would render `x="12,5"` and take every band out.
 
 ## The map overlay
 
