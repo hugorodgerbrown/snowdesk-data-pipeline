@@ -18,8 +18,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from apps.locations.services.elevation import fetch_elevation
 from django.test import override_settings
+
+from apps.locations.services.elevation import fetch_elevation
 
 
 def _mock_get(response_data: dict[str, Any]) -> MagicMock:

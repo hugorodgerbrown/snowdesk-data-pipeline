@@ -25,9 +25,7 @@ import datetime
 import re
 
 import pytest
-from django.db import connection
 from django.test import Client
-from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
