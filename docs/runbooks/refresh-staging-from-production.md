@@ -1,6 +1,6 @@
 ---
 name: refresh-staging-from-production
-description: bin/sync-staging-data, snowdesk-staging-data-sync cron, PRODUCTION_DATABASE_URL read-only role — production bulletins into staging
+description: bin/sync-staging-data, snowdesk-staging-data-sync cron, PRODUCTION_DATABASE_URL read-only role — production bulletins + weather to staging
 status: current
 last-reviewed: 2026-08-27
 ---
@@ -61,16 +61,30 @@ per saved map pin and per field report, straight from user input. The table
 therefore holds curated and personal rows side by side, and copying it whole
 would put somebody's saved positions on staging.
 
-The copy restricts it to rows that a `ResortLocation` references — a
-**structural** test of "is this curated", not a heuristic on whether the row
-happens to have a name. It is a `\copy` of a filtered `SELECT` rather than a
-`pg_dump --table`, so an unreferenced Location is never read out of
-production at all, rather than read and then discarded.
+The copy restricts it to rows a `ResortLocation` references **or** a
+`MicroRegion` names as its centroid — a **structural** test of "is this
+curated", not a heuristic on whether the row happens to have a name. It is a
+`\copy` of a filtered `SELECT` rather than a `pg_dump --table`, so an
+unreferenced Location is never read out of production at all, rather than
+read and then discarded.
 
-Region-centroid Locations are *not* copied: `regions_microregion` is not in
-the set. Its `centroid_location_id` is released before the clear and
-rebuilt afterwards by `link_region_centroid_locations --commit`, which the
-script runs for you.
+`regions_microregion` itself is not in the set, so its
+`centroid_location_id` is released before the clear and **copied back from
+production** afterwards. Copying beats recomputing on both counts:
+`link_region_centroid_locations --commit` would make one live Open-Meteo
+elevation call per region on every nightly run, and copying leaves staging
+pointing at the same centroids production does.
+
+### `weather.Weather` rides on the same filter
+
+`weather_weather` foreign-keys `locations_location`, so it is copied under
+the **same** curated-id subquery (`CURATED_LOCATION_IDS`, shared by both
+filters in the script). It has to be: a `Weather` row whose location is a
+saved pin or a field report would arrive pointing at a row the script
+deliberately did not copy, and the `\copy` would fail on the foreign key.
+
+Staging has no scheduler, so `fetch_weather` never runs there — this sync is
+the only way staging gets weather at all.
 
 ### Why copying resorts does not contradict the resorts-are-editable ADR
 

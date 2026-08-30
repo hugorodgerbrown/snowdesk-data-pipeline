@@ -38,6 +38,12 @@ the existing resort estate.
 The command paces itself with `--delay` (default 1.0s) to stay inside the
 free-tier rate limit, so a full run takes roughly eight minutes.
 
+**Do not shorten the delay to save time.** Measured 2026-08-30 on the CH
+fixture: `--delay 0.3` linked 144 of 149 regions and lost 5 to rate-limit
+rejections. Because the command is idempotent that cost nothing but a
+second run — but on a bigger estate it is a slower path to the same place,
+not a faster one.
+
 ## Steps
 
 ### 1. Preview
@@ -102,4 +108,5 @@ they simply stop being refreshed.
 
 | Environment | Date | Regions linked | Active locations after |
 |---|---|---|---|
+| Local worktree (CH fixture only) | 2026-08-30 | 149 / 149 | 154 |
 | _(record production and staging runs here)_ | | | |
