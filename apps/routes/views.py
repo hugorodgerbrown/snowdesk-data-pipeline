@@ -45,9 +45,12 @@ owner-scoped via ``Route.objects.for_user()`` — another user's uuid returns
 ``apps.favourites.views``, which is the reference implementation for the
 whole shape.
 
-``route_create`` additionally applies django-ratelimit (10/m, keyed on
-``user`` since these endpoints are auth-only) and returns 429 when the
-limit is exceeded.
+Every mutating endpoint here applies django-ratelimit and returns 429 when
+the budget is spent: ``route_create`` at 10/m, ``route_share_create`` and
+``route_share_claim`` at 20/m — all keyed on ``user``, since those three are
+auth-only — and ``route_share_redirect`` at 30/h keyed on (token, IP),
+because it is the one endpoint an anonymous stranger can reach. The rates
+themselves are named and justified beside their constants below.
 
 TWO ENDPOINTS ARE DELIBERATELY WIDER THAN OWNER-SCOPED (SNOW-764).
 ``route_list`` and ``routes_geojson`` answer for an ANONYMOUS request when
@@ -183,6 +186,16 @@ _SHARE_FOLLOW_RATE = "30/h"
 # is auth-only, matching ``route_create``'s own limiter. Each call mints a
 # row, so the cap is what stops a scripted client filling the table.
 _SHARE_CREATE_RATE = "20/m"
+
+# The claim's budget. Keyed on ``user`` for the same reason the two above
+# are keyed the way they are — this endpoint is auth-only, so the account
+# is the bucket. Each successful call writes a Route, and the per-user cap
+# bounds how many can ever land; this bounds how fast a scripted client can
+# spend that cap and how hard it can hammer the locked cap re-check. Looser
+# than ``route_create``'s 10/m because a claim carries no upload and no
+# parse, and a recipient claiming several routes they were sent in one
+# message should not be told to wait.
+_SHARE_CLAIM_RATE = "20/m"
 
 # The 410 body for a share link that has stopped working. Deliberately says
 # nothing about WHY: expired, revoked and route-deleted are one answer to a
@@ -809,6 +822,7 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
 
 @require_htmx
 @require_POST
+@ratelimit(key="user", rate=_SHARE_CLAIM_RATE, block=False)
 def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
     """Take a copy of a shared route onto the requesting user's account.
 
@@ -839,6 +853,7 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
         404 — sharing is off, or the share is unknown, expired, or its
               route has been deleted.
         409 — the claimer is at ``settings.ROUTES_MAX_PER_USER``.
+        429 — rate limit exceeded (> 20 claims/min per user).
 
     Args:
         request: The incoming HTMX POST request.
@@ -854,6 +869,15 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
 
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
+
+    # After the auth check, not before: the limiter keys on ``user``, and an
+    # anonymous request has no account to bucket. Same order ``route_create``
+    # puts its own limiter in, and for the same reason.
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before saving another route.",
+            status=429,
+        )
 
     try:
         route = claim_route_share(request.user, token)

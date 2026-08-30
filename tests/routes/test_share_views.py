@@ -458,6 +458,41 @@ class TestRouteShareClaim:
 
         assert client.session[PENDING_SESSION_KEY] == [share.token]
 
+    def test_the_rate_limited_branch_returns_429(self, client: Client) -> None:
+        """429, and nothing is claimed.
+
+        The transient status, unlike the cap's 409: a limited claimer gets
+        their route by waiting, where an at-cap one has to delete something
+        first. The token therefore stays pending — the same reason
+        ``test_an_at_cap_claim_keeps_the_token_pending`` above checks it.
+        """
+        claimer = UserFactory.create()
+        share = RouteShareFactory.create()
+        client.force_login(claimer)
+        client.get(_redirect_url(share.token))
+
+        with patch("django_ratelimit.decorators.is_ratelimited", return_value=True):
+            response = client.post(_claim_url(share.token), **HTMX_HEADERS)
+
+        assert response.status_code == 429
+        assert not Route.objects.filter(user=claimer).exists()
+        assert client.session[PENDING_SESSION_KEY] == [share.token]
+
+    def test_an_anonymous_claim_is_403_not_429(self, client: Client) -> None:
+        """The auth check runs FIRST, and the ordering is the point.
+
+        The limiter keys on ``user``, so an anonymous request has no bucket
+        to charge. Answering 429 there would be both wrong and a way to
+        spend somebody else's budget.
+        """
+        share = RouteShareFactory.create()
+        client.get(_redirect_url(share.token))
+
+        with patch("django_ratelimit.decorators.is_ratelimited", return_value=True):
+            response = client.post(_claim_url(share.token), **HTMX_HEADERS)
+
+        assert response.status_code == 403
+
 
 @pytest.mark.django_db
 class TestRouteShareClaimFlag:
