@@ -142,16 +142,14 @@ class TestImportLocationsCommit:
         assert location.name == "Mont Fort"
 
     def test_update_never_touches_the_resolved_fields(self, tmp_path: Path) -> None:
-        """elevation_m and forecast_cell survive a re-import.
+        """elevation_m survives a re-import.
 
-        The sheet does not own them — link_location_forecast_cells does —
+        The sheet does not own it — an out-of-band resolution pass does —
         so an import must not blank the work an Open-Meteo call paid for.
         """
         location = LocationFactory.create(
             uuid=MONT_FORT, name="Mt Fort", kind=Location.KIND.PEAK, resolved=True
         )
-        assert location.forecast_cell is not None
-        cell_pk = location.forecast_cell.pk
         sheets = write_sheets(
             tmp_path, [f"{MONT_FORT}\tMont Fort\tPEAK\t46.1036\t7.2989\t"], []
         )
@@ -160,8 +158,6 @@ class TestImportLocationsCommit:
 
         location.refresh_from_db()
         assert location.elevation_m == 1500.0
-        assert location.forecast_cell is not None
-        assert location.forecast_cell.pk == cell_pk
 
     def test_deletes_a_curated_location_the_sheet_dropped(self, tmp_path: Path) -> None:
         """A curated row removed from the sheet is deleted, links first.

@@ -536,7 +536,6 @@ class TestSave:
         location = LocationFactory.create(
             name="Mont Fort", resolved=True, latitude=46.0, longitude=7.0
         )
-        assert location.forecast_cell is not None
 
         _post(
             _superuser_client(),
@@ -551,7 +550,6 @@ class TestSave:
 
         location.refresh_from_db()
         assert location.elevation_m is None
-        assert location.forecast_cell is None
 
     def test_a_rename_alone_keeps_the_resolved_elevation(self) -> None:
         """The height belongs to the coordinate, which did not change."""
@@ -575,7 +573,6 @@ class TestSave:
 
         location.refresh_from_db()
         assert location.elevation_m == pytest.approx(1500.0)
-        assert location.forecast_cell is not None
 
     def test_the_edit_reaches_every_linked_resort(self) -> None:
         """Sharing one row is the point — one save re-pins all of them."""
@@ -619,7 +616,6 @@ class TestSave:
             latitude=46.1036123456,
             longitude=7.2988987654,
         )
-        cell = location.forecast_cell
 
         resp = _post(
             _superuser_client(),
@@ -640,7 +636,6 @@ class TestSave:
         assert location.latitude == 46.1036123456
         assert location.longitude == 7.2988987654
         assert location.elevation_m == pytest.approx(1500.0)
-        assert location.forecast_cell == cell
 
     def test_a_genuine_move_from_full_precision_still_clears(self) -> None:
         """The fix above must not turn the clear-on-move into a no-op."""
@@ -660,7 +655,6 @@ class TestSave:
         location.refresh_from_db()
         assert location.latitude == pytest.approx(46.2)
         assert location.elevation_m is None
-        assert location.forecast_cell is None
 
     def test_an_anonymous_location_cannot_be_named_here(self) -> None:
         """The editor curates the estate the sheets own, and nothing else.

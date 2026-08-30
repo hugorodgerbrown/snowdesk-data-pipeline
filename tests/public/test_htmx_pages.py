@@ -32,6 +32,7 @@ from tests.factories import (
     ResortFactory,
     SubRegionFactory,
     SubscriptionFactory,
+    UserFactory,
 )
 
 _TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
@@ -117,14 +118,21 @@ class TestResortPage:
     """The page the guard was written for (SNOW-509 → SNOW-650)."""
 
     def test_resort_page_emits_hx_attributes_and_loads_htmx(
-        self, client: Client, anonymous_pages: dict[str, str]
+        self, anonymous_pages: dict[str, str]
     ) -> None:
-        """Both the favourite toggle and the weather retry can actually fire.
+        """The favourite toggle can actually fire.
 
         Asserting the attributes are present as well as the script stops the
         guard being silently satisfied by a future change that removes the
         htmx wiring instead of fixing it.
+
+        Signed in, because that is now the only state in which this page
+        uses htmx: SNOW-762 removed the weather panel's retry, which was
+        the one unconditional hx-* on the page, leaving the favourite
+        toggle — which an anonymous visitor sees as a sign-in link.
         """
+        client = Client()
+        client.force_login(UserFactory.create(), backend=_TOKEN_BACKEND)
         html = client.get(anonymous_pages["resort"]).content.decode()
         assert _hx_attributes(html), "resort page lost its hx-* attributes"
         assert _HTMX_SCRIPT in html, "resort page emits hx-* but never loads htmx"

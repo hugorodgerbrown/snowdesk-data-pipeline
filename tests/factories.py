@@ -176,7 +176,6 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     top_elevation_m = None
     typical_season_open = ""
     typical_season_close = ""
-    forecast_point = None
 
 
 class RegionAliasFactory(factory.django.DjangoModelFactory[RegionAlias]):
@@ -519,8 +518,8 @@ class FieldObservationFactory(factory.django.DjangoModelFactory[FieldObservation
     latitude = 46.10
     longitude = 7.10
     # The anonymous Location this report happened at (SNOW-709), threaded
-    # from the same coordinates. No forecast_cell: an observation shows no
-    # forecast panel. Pass ``location=None`` for a pre-SNOW-709 row.
+    # from the same coordinates. Pass ``location=None`` for a pre-SNOW-709
+    # row.
     location = factory.SubFactory(
         LocationFactory,
         anonymous=True,

@@ -44,7 +44,6 @@ from waffle.testutils import override_flag
 ALWAYS_ON_TESTIDS = [
     "help-topic-overview",
     "help-topic-bulletins",
-    "help-topic-weather",
     "help-topic-problems",
     "help-topic-calendar",
     "help-topic-map",
@@ -67,7 +66,6 @@ LAYERS_GROUP_TESTIDS = [
     "help-layers-bulletins",
     "help-layers-boundaries",
     "help-layers-resorts",
-    "help-layers-weather",
     "help-layers-slope",
     "help-layers-basemaps",
 ]
@@ -222,10 +220,6 @@ class TestHelpPageFlagGating:
 
         assert b"They do not follow your account to your phone" not in response.content
 
-    def test_weather_layer_panel_present_for_anonymous(self, client: Client) -> None:
-        response = client.get(reverse("public:help"))
-        assert b'data-testid="help-topic-weather-layer"' in response.content
-
     def test_slope_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-slope"' in response.content
@@ -356,7 +350,6 @@ class TestHelpIllustrations:
     #: Topics that carry an illustration, and a marker proving the right
     #: component rendered inside it rather than merely a wrapper.
     ILLUSTRATED = {
-        "help-topic-weather": b'data-testid="bulletin-header"',
         "help-topic-bulletins": b'data-testid="day-windows-panel"',
         "help-topic-problems": b"Wind slab",
         "help-topic-calendar": b"calendar-cell",

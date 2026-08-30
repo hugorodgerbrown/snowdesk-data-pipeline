@@ -54,7 +54,6 @@ from apps.public.views import (
     _community_reports_context,
     _default_region_label,
     _favourites_context,
-    _weather_context,
 )
 from tests.factories import (
     AccountFactory,
@@ -919,47 +918,6 @@ class TestHomePageCommunityReportsParity:
         assert 'id="map-community-reports-overlay-toggle"' in content
         assert 'data-community-reports-eligible="true"' in content
         assert reverse("api:community_reports_geojson") in content
-
-
-@pytest.mark.django_db
-class TestWeatherContext:
-    """Unit tests for _weather_context() (SNOW-573).
-
-    Called directly (via RequestFactory) rather than through the full
-    home() round-trip — mirrors TestCommunityReportsContext above, which it
-    now matches in shape too: SNOW-724 retired the ``weather_layer`` flag,
-    so there is no eligibility key left to compute.
-    """
-
-    def _request(self) -> HttpRequest:
-        request = RequestFactory().get("/")
-        request.user = AnonymousUser()
-        return request
-
-    def test_carries_the_endpoint_url(self) -> None:
-        """The context is the overlay's data URL and nothing else."""
-        ctx = _weather_context(self._request())
-        assert ctx == {
-            "forecast_weather_geojson_url": reverse("api:forecast_weather_geojson")
-        }
-
-
-@pytest.mark.django_db
-class TestHomePageWeatherParity:
-    """The Weather map overlay control renders on / per SNOW-573's rules."""
-
-    def test_controls_shown_for_anonymous_visitor(self) -> None:
-        """Overlay toggle and #map URL render for everyone (SNOW-724)."""
-        client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
-        assert 'data-overlay-key="weather"' in content
-        assert reverse("api:forecast_weather_geojson") in content
-
-    def test_no_eligibility_attribute_is_emitted(self) -> None:
-        """The retired flag leaves no data-weather-layer-eligible behind."""
-        client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
-        assert "data-weather-layer-eligible" not in content
 
 
 @pytest.mark.django_db

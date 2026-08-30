@@ -306,7 +306,7 @@ reachable via the SNOW-81 deep-link in the masthead.
            the provider's bulletin (docs/design-system.md, "Why the page
            renders the bulletin whole").
         {% endcomment %}
-        {% include "includes/bulletin_header.html" %}
+        {% include "includes/bulletin_header.html" with show_share=bulletin share_region=region share_date=page_date %}
 
         {% if not bulletin %}
             {# ── Empty state ─────────────────────────────────────────── #}

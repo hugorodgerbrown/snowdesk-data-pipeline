@@ -136,7 +136,7 @@ class TestBackfillObservationLocations:
         assert observation.gps_longitude == 7.1000
         assert observation.latitude != observation.gps_latitude
 
-    def test_minted_location_is_anonymous_and_has_no_cell(self) -> None:
+    def test_minted_location_is_anonymous(self) -> None:
         """No name, no kind, and no forecast cell.
 
         An observation shows no forecast panel; resolving a cell would mean
@@ -150,7 +150,6 @@ class TestBackfillObservationLocations:
         location = Location.objects.get()
         assert location.name == ""
         assert location.kind == ""
-        assert location.forecast_cell is None
 
     def test_dry_run_writes_nothing(self) -> None:
         """The default invocation is read-only."""

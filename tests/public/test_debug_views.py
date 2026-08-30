@@ -180,23 +180,6 @@ class TestComponentLibraryPanel:
         template_names = [t.name for t in response.templates]
         assert "_components/partials/_panel.html" in template_names
 
-    def test_weather_header_panel_renders_real_weather_buckets(
-        self, htmx_staff_client: Client
-    ) -> None:
-        """The components panel reaches the partial with real weather-bucket data.
-
-        Catches drift in the ``include_variant`` template tag or the variant
-        fixtures by asserting the partial's data attributes appear in the
-        rendered HTML — both a representative bucket × time-of-day combo and
-        the no-snapshot fallback.
-        """
-        response = htmx_staff_client.get(_panel_url("weather-header"))
-        assert response.status_code == 200
-        body = response.content.decode()
-        assert 'data-weather-bucket="clear"' in body
-        assert 'data-time-of-day="day"' in body
-        assert 'data-weather-bucket="none"' in body  # fallback variant
-
     def test_day_windows_panel_renders_expected_variants(
         self, htmx_staff_client: Client
     ) -> None:

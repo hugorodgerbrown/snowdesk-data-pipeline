@@ -30,8 +30,7 @@
       "base_elevation_m": 1500,
       "top_elevation_m": 3330,
       "typical_season_open": "12-01",
-      "typical_season_close": "04-30",
-      "forecast_point": null
+      "typical_season_close": "04-30"
     }
   },
   {
@@ -65,8 +64,7 @@
       "base_elevation_m": 1400,
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
-      "typical_season_close": "04-30",
-      "forecast_point": null
+      "typical_season_close": "04-30"
     }
   },
   {
@@ -100,8 +98,7 @@
       "base_elevation_m": 1300,
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
-      "typical_season_close": "04-30",
-      "forecast_point": null
+      "typical_season_close": "04-30"
     }
   },
   {
@@ -135,8 +132,7 @@
       "base_elevation_m": 2095,
       "top_elevation_m": 3330,
       "typical_season_open": "11-01",
-      "typical_season_close": "04-30",
-      "forecast_point": null
+      "typical_season_close": "04-30"
     }
   },
   {
@@ -170,8 +166,7 @@
       "base_elevation_m": 1468,
       "top_elevation_m": 2194,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -205,8 +200,7 @@
       "base_elevation_m": 1607,
       "top_elevation_m": 2172,
       "typical_season_open": "12-20",
-      "typical_season_close": "04-05",
-      "forecast_point": null
+      "typical_season_close": "04-05"
     }
   },
   {
@@ -240,8 +234,7 @@
       "base_elevation_m": 1620,
       "top_elevation_m": 3899,
       "typical_season_open": "11-01",
-      "typical_season_close": "04-30",
-      "forecast_point": null
+      "typical_season_close": "04-30"
     }
   },
   {
@@ -275,8 +268,7 @@
       "base_elevation_m": 1800,
       "top_elevation_m": 3573,
       "typical_season_open": "07-15",
-      "typical_season_close": "04-30",
-      "forecast_point": null
+      "typical_season_close": "04-30"
     }
   },
   {
@@ -310,8 +302,7 @@
       "base_elevation_m": 1559,
       "top_elevation_m": 3200,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-15",
-      "forecast_point": null
+      "typical_season_close": "04-15"
     }
   },
   {
@@ -345,8 +336,7 @@
       "base_elevation_m": 1684,
       "top_elevation_m": 2347,
       "typical_season_open": "12-19",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -380,8 +370,7 @@
       "base_elevation_m": 1510,
       "top_elevation_m": 2927,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -415,8 +404,7 @@
       "base_elevation_m": 1411,
       "top_elevation_m": 2610,
       "typical_season_open": "12-05",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -450,8 +438,7 @@
       "base_elevation_m": 1570,
       "top_elevation_m": 2900,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-18",
-      "forecast_point": null
+      "typical_season_close": "04-18"
     }
   },
   {
@@ -485,8 +472,7 @@
       "base_elevation_m": 1675,
       "top_elevation_m": 2900,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-18",
-      "forecast_point": null
+      "typical_season_close": "04-18"
     }
   },
   {
@@ -520,8 +506,7 @@
       "base_elevation_m": 1340,
       "top_elevation_m": 2374,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-18",
-      "forecast_point": null
+      "typical_season_close": "04-18"
     }
   },
   {
@@ -555,8 +540,7 @@
       "base_elevation_m": 1680,
       "top_elevation_m": 3000,
       "typical_season_open": "12-18",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -590,8 +574,7 @@
       "base_elevation_m": 1936,
       "top_elevation_m": 3000,
       "typical_season_open": "12-18",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -625,8 +608,7 @@
       "base_elevation_m": 1984,
       "top_elevation_m": 2877,
       "typical_season_open": "12-12",
-      "typical_season_close": "04-18",
-      "forecast_point": null
+      "typical_season_close": "04-18"
     }
   },
   {
@@ -660,8 +642,7 @@
       "base_elevation_m": 1441,
       "top_elevation_m": 1447,
       "typical_season_open": "12-13",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -695,8 +676,7 @@
       "base_elevation_m": 1404,
       "top_elevation_m": 2632,
       "typical_season_open": "12-19",
-      "typical_season_close": "03-21",
-      "forecast_point": null
+      "typical_season_close": "03-21"
     }
   },
   {
@@ -730,8 +710,7 @@
       "base_elevation_m": 1925,
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
-      "typical_season_close": "04-03",
-      "forecast_point": null
+      "typical_season_close": "04-03"
     }
   },
   {
@@ -765,8 +744,7 @@
       "base_elevation_m": 1948,
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
-      "typical_season_close": "04-03",
-      "forecast_point": null
+      "typical_season_close": "04-03"
     }
   },
   {
@@ -800,8 +778,7 @@
       "base_elevation_m": 2212,
       "top_elevation_m": 2869,
       "typical_season_open": "12-05",
-      "typical_season_close": "04-03",
-      "forecast_point": null
+      "typical_season_close": "04-03"
     }
   },
   {
@@ -835,8 +812,7 @@
       "base_elevation_m": 1333,
       "top_elevation_m": 1445,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -870,8 +846,7 @@
       "base_elevation_m": 1363,
       "top_elevation_m": 1645,
       "typical_season_open": "12-13",
-      "typical_season_close": "03-22",
-      "forecast_point": null
+      "typical_season_close": "03-22"
     }
   },
   {
@@ -905,8 +880,7 @@
       "base_elevation_m": 1373,
       "top_elevation_m": 1404,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -940,8 +914,7 @@
       "base_elevation_m": 1050,
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-15",
-      "forecast_point": null
+      "typical_season_close": "04-15"
     }
   },
   {
@@ -975,8 +948,7 @@
       "base_elevation_m": 1350,
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-15",
-      "forecast_point": null
+      "typical_season_close": "04-15"
     }
   },
   {
@@ -1010,8 +982,7 @@
       "base_elevation_m": 1085,
       "top_elevation_m": 2254,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-15",
-      "forecast_point": null
+      "typical_season_close": "04-15"
     }
   },
   {
@@ -1045,8 +1016,7 @@
       "base_elevation_m": 1595,
       "top_elevation_m": 2267,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-25",
-      "forecast_point": null
+      "typical_season_close": "03-25"
     }
   },
   {
@@ -1080,8 +1050,7 @@
       "base_elevation_m": 1772,
       "top_elevation_m": 3057,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -1115,8 +1084,7 @@
       "base_elevation_m": 2093,
       "top_elevation_m": 3006,
       "typical_season_open": "10-17",
-      "typical_season_close": "05-02",
-      "forecast_point": null
+      "typical_season_close": "05-02"
     }
   },
   {
@@ -1150,8 +1118,7 @@
       "base_elevation_m": 1797,
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
-      "typical_season_close": "04-25",
-      "forecast_point": null
+      "typical_season_close": "04-25"
     }
   },
   {
@@ -1185,8 +1152,7 @@
       "base_elevation_m": 1815,
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
-      "typical_season_close": "04-25",
-      "forecast_point": null
+      "typical_season_close": "04-25"
     }
   },
   {
@@ -1220,8 +1186,7 @@
       "base_elevation_m": 1730,
       "top_elevation_m": 3057,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -1255,8 +1220,7 @@
       "base_elevation_m": 1870,
       "top_elevation_m": 3303,
       "typical_season_open": "11-21",
-      "typical_season_close": "04-25",
-      "forecast_point": null
+      "typical_season_close": "04-25"
     }
   },
   {
@@ -1290,8 +1254,7 @@
       "base_elevation_m": 2093,
       "top_elevation_m": 2978,
       "typical_season_open": "10-17",
-      "typical_season_close": "05-02",
-      "forecast_point": null
+      "typical_season_close": "05-02"
     }
   },
   {
@@ -1325,8 +1288,7 @@
       "base_elevation_m": 1716,
       "top_elevation_m": 2465,
       "typical_season_open": "12-19",
-      "typical_season_close": "03-14",
-      "forecast_point": null
+      "typical_season_close": "03-14"
     }
   },
   {
@@ -1360,8 +1322,7 @@
       "base_elevation_m": 1698,
       "top_elevation_m": 1787,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -1395,8 +1356,7 @@
       "base_elevation_m": 1250,
       "top_elevation_m": 2785,
       "typical_season_open": "12-13",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -1430,8 +1390,7 @@
       "base_elevation_m": 1648,
       "top_elevation_m": 2785,
       "typical_season_open": "12-13",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -1465,8 +1424,7 @@
       "base_elevation_m": 1840,
       "top_elevation_m": 2872,
       "typical_season_open": "11-26",
-      "typical_season_close": "05-02",
-      "forecast_point": null
+      "typical_season_close": "05-02"
     }
   },
   {
@@ -1500,8 +1458,7 @@
       "base_elevation_m": 2150,
       "top_elevation_m": 2700,
       "typical_season_open": "12-19",
-      "typical_season_close": "03-21",
-      "forecast_point": null
+      "typical_season_close": "03-21"
     }
   },
   {
@@ -1535,8 +1492,7 @@
       "base_elevation_m": 1386,
       "top_elevation_m": 2700,
       "typical_season_open": "12-19",
-      "typical_season_close": "03-21",
-      "forecast_point": null
+      "typical_season_close": "03-21"
     }
   },
   {
@@ -1570,8 +1526,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -1605,8 +1560,7 @@
       "base_elevation_m": 1471,
       "top_elevation_m": 1601,
       "typical_season_open": "12-26",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -1640,8 +1594,7 @@
       "base_elevation_m": 1817,
       "top_elevation_m": 2100,
       "typical_season_open": "12-19",
-      "typical_season_close": "03-07",
-      "forecast_point": null
+      "typical_season_close": "03-07"
     }
   },
   {
@@ -1675,8 +1628,7 @@
       "base_elevation_m": 1560,
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -1710,8 +1662,7 @@
       "base_elevation_m": 1191,
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -1745,8 +1696,7 @@
       "base_elevation_m": 810,
       "top_elevation_m": 2844,
       "typical_season_open": "11-07",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -1780,8 +1730,7 @@
       "base_elevation_m": 1775,
       "top_elevation_m": 2653,
       "typical_season_open": "11-29",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -1815,8 +1764,7 @@
       "base_elevation_m": 1470,
       "top_elevation_m": 2865,
       "typical_season_open": "11-29",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -1850,8 +1798,7 @@
       "base_elevation_m": 1229,
       "top_elevation_m": 2865,
       "typical_season_open": "11-29",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -1885,8 +1832,7 @@
       "base_elevation_m": 1100,
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -1920,8 +1866,7 @@
       "base_elevation_m": 1100,
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -1955,8 +1900,7 @@
       "base_elevation_m": 1100,
       "top_elevation_m": 3018,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -1990,8 +1934,7 @@
       "base_elevation_m": 1227,
       "top_elevation_m": 2833,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-06",
-      "forecast_point": null
+      "typical_season_close": "04-06"
     }
   },
   {
@@ -2025,8 +1968,7 @@
       "base_elevation_m": 1201,
       "top_elevation_m": 2310,
       "typical_season_open": "12-06",
-      "typical_season_close": "04-06",
-      "forecast_point": null
+      "typical_season_close": "04-06"
     }
   },
   {
@@ -2060,8 +2002,7 @@
       "base_elevation_m": 1656,
       "top_elevation_m": 1791,
       "typical_season_open": "12-20",
-      "typical_season_close": "03-08",
-      "forecast_point": null
+      "typical_season_close": "03-08"
     }
   },
   {
@@ -2095,8 +2036,7 @@
       "base_elevation_m": 1250,
       "top_elevation_m": 2851,
       "typical_season_open": "12-19",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -2130,8 +2070,7 @@
       "base_elevation_m": 1484,
       "top_elevation_m": 2215,
       "typical_season_open": "12-19",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -2165,8 +2104,7 @@
       "base_elevation_m": 1769,
       "top_elevation_m": 2560,
       "typical_season_open": "12-19",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -2200,8 +2138,7 @@
       "base_elevation_m": 1988,
       "top_elevation_m": 2539,
       "typical_season_open": "12-20",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -2235,8 +2172,7 @@
       "base_elevation_m": 1200,
       "top_elevation_m": 2713,
       "typical_season_open": "12-06",
-      "typical_season_close": "04-06",
-      "forecast_point": null
+      "typical_season_close": "04-06"
     }
   },
   {
@@ -2270,8 +2206,7 @@
       "base_elevation_m": 1384,
       "top_elevation_m": 2550,
       "typical_season_open": "12-20",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -2305,8 +2240,7 @@
       "base_elevation_m": 1034,
       "top_elevation_m": 2472,
       "typical_season_open": "11-29",
-      "typical_season_close": "04-26",
-      "forecast_point": null
+      "typical_season_close": "04-26"
     }
   },
   {
@@ -2340,8 +2274,7 @@
       "base_elevation_m": 1274,
       "top_elevation_m": 2472,
       "typical_season_open": "11-29",
-      "typical_season_close": "04-26",
-      "forecast_point": null
+      "typical_season_close": "04-26"
     }
   },
   {
@@ -2375,8 +2308,7 @@
       "base_elevation_m": 796,
       "top_elevation_m": 2970,
       "typical_season_open": "11-22",
-      "typical_season_close": "05-03",
-      "forecast_point": null
+      "typical_season_close": "05-03"
     }
   },
   {
@@ -2410,8 +2342,7 @@
       "base_elevation_m": 1050,
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -2445,8 +2376,7 @@
       "base_elevation_m": 1011,
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -2480,8 +2410,7 @@
       "base_elevation_m": 1231,
       "top_elevation_m": 3016,
       "typical_season_open": "11-27",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -2515,8 +2444,7 @@
       "base_elevation_m": 948,
       "top_elevation_m": 2011,
       "typical_season_open": "11-27",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -2550,8 +2478,7 @@
       "base_elevation_m": 1083,
       "top_elevation_m": 2001,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-05",
-      "forecast_point": null
+      "typical_season_close": "04-05"
     }
   },
   {
@@ -2585,8 +2512,7 @@
       "base_elevation_m": 1260,
       "top_elevation_m": 2200,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-11",
-      "forecast_point": null
+      "typical_season_close": "04-11"
     }
   },
   {
@@ -2620,8 +2546,7 @@
       "base_elevation_m": 1200,
       "top_elevation_m": 1730,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -2655,8 +2580,7 @@
       "base_elevation_m": 1065,
       "top_elevation_m": 2433,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-05",
-      "forecast_point": null
+      "typical_season_close": "04-05"
     }
   },
   {
@@ -2690,8 +2614,7 @@
       "base_elevation_m": 1065,
       "top_elevation_m": 2433,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-05",
-      "forecast_point": null
+      "typical_season_close": "04-05"
     }
   },
   {
@@ -2725,8 +2648,7 @@
       "base_elevation_m": 1233,
       "top_elevation_m": 1833,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -2760,8 +2682,7 @@
       "base_elevation_m": 1334,
       "top_elevation_m": 2289,
       "typical_season_open": "11-15",
-      "typical_season_close": "04-05",
-      "forecast_point": null
+      "typical_season_close": "04-05"
     }
   },
   {
@@ -2795,8 +2716,7 @@
       "base_elevation_m": 1127,
       "top_elevation_m": 1945,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -2830,8 +2750,7 @@
       "base_elevation_m": 1403,
       "top_elevation_m": 3100,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-15",
-      "forecast_point": null
+      "typical_season_close": "04-15"
     }
   },
   {
@@ -2865,8 +2784,7 @@
       "base_elevation_m": 1250,
       "top_elevation_m": 2198,
       "typical_season_open": "11-25",
-      "typical_season_close": "04-15",
-      "forecast_point": null
+      "typical_season_close": "04-15"
     }
   },
   {
@@ -2900,8 +2818,7 @@
       "base_elevation_m": 1224,
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
-      "typical_season_close": "04-15",
-      "forecast_point": null
+      "typical_season_close": "04-15"
     }
   },
   {
@@ -2935,8 +2852,7 @@
       "base_elevation_m": 1224,
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -2970,8 +2886,7 @@
       "base_elevation_m": 1224,
       "top_elevation_m": 2120,
       "typical_season_open": "12-05",
-      "typical_season_close": "04-12",
-      "forecast_point": null
+      "typical_season_close": "04-12"
     }
   },
   {
@@ -3005,8 +2920,7 @@
       "base_elevation_m": 1546,
       "top_elevation_m": 3016,
       "typical_season_open": "11-08",
-      "typical_season_close": "04-30",
-      "forecast_point": null
+      "typical_season_close": "04-30"
     }
   },
   {
@@ -3040,8 +2954,7 @@
       "base_elevation_m": 1109,
       "top_elevation_m": 1978,
       "typical_season_open": "12-15",
-      "typical_season_close": "02-28",
-      "forecast_point": null
+      "typical_season_close": "02-28"
     }
   },
   {
@@ -3075,8 +2988,7 @@
       "base_elevation_m": 875,
       "top_elevation_m": 1626,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -3110,8 +3022,7 @@
       "base_elevation_m": 1023,
       "top_elevation_m": 1571,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-22",
-      "forecast_point": null
+      "typical_season_close": "03-22"
     }
   },
   {
@@ -3145,8 +3056,7 @@
       "base_elevation_m": 1898,
       "top_elevation_m": 2012,
       "typical_season_open": "12-13",
-      "typical_season_close": "03-29",
-      "forecast_point": null
+      "typical_season_close": "03-29"
     }
   },
   {
@@ -3180,8 +3090,7 @@
       "base_elevation_m": 1444,
       "top_elevation_m": 2961,
       "typical_season_open": "11-15",
-      "typical_season_close": "04-18",
-      "forecast_point": null
+      "typical_season_close": "04-18"
     }
   },
   {
@@ -3215,8 +3124,7 @@
       "base_elevation_m": 1550,
       "top_elevation_m": 1660,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-28",
-      "forecast_point": null
+      "typical_season_close": "03-28"
     }
   },
   {
@@ -3250,8 +3158,7 @@
       "base_elevation_m": 1002,
       "top_elevation_m": 3020,
       "typical_season_open": "10-11",
-      "typical_season_close": "05-03",
-      "forecast_point": null
+      "typical_season_close": "05-03"
     }
   },
   {
@@ -3285,8 +3192,7 @@
       "base_elevation_m": 1080,
       "top_elevation_m": 2255,
       "typical_season_open": "12-13",
-      "typical_season_close": "04-06",
-      "forecast_point": null
+      "typical_season_close": "04-06"
     }
   },
   {
@@ -3320,8 +3226,7 @@
       "base_elevation_m": 1020,
       "top_elevation_m": 2105,
       "typical_season_open": "12-12",
-      "typical_season_close": "03-28",
-      "forecast_point": null
+      "typical_season_close": "03-28"
     }
   },
   {
@@ -3355,8 +3260,7 @@
       "base_elevation_m": 1020,
       "top_elevation_m": 2076,
       "typical_season_open": "12-12",
-      "typical_season_close": "03-28",
-      "forecast_point": null
+      "typical_season_close": "03-28"
     }
   },
   {
@@ -3390,8 +3294,7 @@
       "base_elevation_m": 910,
       "top_elevation_m": 2262,
       "typical_season_open": "11-28",
-      "typical_season_close": "04-06",
-      "forecast_point": null
+      "typical_season_close": "04-06"
     }
   },
   {
@@ -3425,8 +3328,7 @@
       "base_elevation_m": 1220,
       "top_elevation_m": 2222,
       "typical_season_open": "11-16",
-      "typical_season_close": "03-29",
-      "forecast_point": null
+      "typical_season_close": "03-29"
     }
   },
   {
@@ -3460,8 +3362,7 @@
       "base_elevation_m": 509,
       "top_elevation_m": 2250,
       "typical_season_open": "11-27",
-      "typical_season_close": "04-04",
-      "forecast_point": null
+      "typical_season_close": "04-04"
     }
   },
   {
@@ -3495,8 +3396,7 @@
       "base_elevation_m": 1175,
       "top_elevation_m": 2250,
       "typical_season_open": "12-23",
-      "typical_season_close": "03-28",
-      "forecast_point": null
+      "typical_season_close": "03-28"
     }
   },
   {
@@ -3530,8 +3430,7 @@
       "base_elevation_m": 1550,
       "top_elevation_m": 1610,
       "typical_season_open": "12-26",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -3565,8 +3464,7 @@
       "base_elevation_m": 1482,
       "top_elevation_m": 2331,
       "typical_season_open": "12-15",
-      "typical_season_close": "04-05",
-      "forecast_point": null
+      "typical_season_close": "04-05"
     }
   },
   {
@@ -3600,8 +3498,7 @@
       "base_elevation_m": 1207,
       "top_elevation_m": 1578,
       "typical_season_open": "12-15",
-      "typical_season_close": "03-15",
-      "forecast_point": null
+      "typical_season_close": "03-15"
     }
   },
   {
@@ -3635,8 +3532,7 @@
       "base_elevation_m": 1637,
       "top_elevation_m": 2525,
       "typical_season_open": "12-06",
-      "typical_season_close": "03-28",
-      "forecast_point": null
+      "typical_season_close": "03-28"
     }
   },
   {
@@ -3670,8 +3566,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3705,8 +3600,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3740,8 +3634,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3775,8 +3668,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3810,8 +3702,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3845,8 +3736,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3880,8 +3770,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3915,8 +3804,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3950,8 +3838,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -3985,8 +3872,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4020,8 +3906,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4055,8 +3940,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4090,8 +3974,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4125,8 +4008,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4160,8 +4042,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4195,8 +4076,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4230,8 +4110,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4265,8 +4144,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4300,8 +4178,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4335,8 +4212,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4370,8 +4246,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4405,8 +4280,7 @@
       "base_elevation_m": null,
       "top_elevation_m": null,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4440,8 +4314,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2600,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4475,8 +4348,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2420,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4510,8 +4382,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1831,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4545,8 +4416,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1593,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4580,8 +4450,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2864,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4615,8 +4484,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2298,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4650,8 +4518,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1938,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4685,8 +4552,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2418,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4720,8 +4586,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1874,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4755,8 +4620,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 3118,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4790,8 +4654,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1935,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4825,8 +4688,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2640,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4860,8 +4722,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2381,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4895,8 +4756,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1800,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4930,8 +4790,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2174,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -4965,8 +4824,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1751,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5000,8 +4858,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2280,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5035,8 +4892,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2558,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5070,8 +4926,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2151,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5105,8 +4960,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2075,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5140,8 +4994,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2299,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5175,8 +5028,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2443,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5210,8 +5062,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1684,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5245,8 +5096,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2353,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5280,8 +5130,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2356,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5315,8 +5164,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1959,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5350,8 +5198,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1620,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5385,8 +5232,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1837,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5420,8 +5266,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1868,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5455,8 +5300,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2473,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5490,8 +5334,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1720,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5525,8 +5368,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 2075,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5560,8 +5402,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1570,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5595,8 +5436,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1656,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5630,8 +5470,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1793,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5665,8 +5504,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1405,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5700,8 +5538,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1200,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   },
   {
@@ -5735,8 +5572,7 @@
       "base_elevation_m": null,
       "top_elevation_m": 1937,
       "typical_season_open": "",
-      "typical_season_close": "",
-      "forecast_point": null
+      "typical_season_close": ""
     }
   }
 ]

@@ -18,7 +18,6 @@ from django.db.models import ProtectedError
 
 from apps.locations.models import Location, ResortLocation
 from tests.factories import (
-    ForecastCellFactory,
     LocationFactory,
     ResortFactory,
     ResortLocationFactory,
@@ -37,14 +36,13 @@ class TestLocationModel:
         assert location.kind == Location.KIND.PEAK
 
     def test_unresolved_by_default(self) -> None:
-        """A fresh location has no elevation and no forecast cell.
+        """A fresh location has no elevation.
 
-        Both need an Open-Meteo call, which cannot ride on a save — they
-        are filled by link_location_forecast_cells (SNOW-701).
+        Resolving one needs an Open-Meteo call, which cannot ride on a
+        save, so it is filled out-of-band.
         """
         location = LocationFactory.create()
         assert location.elevation_m is None
-        assert location.forecast_cell is None
 
     def test_anonymous_trait_carries_no_name_or_kind(self) -> None:
         """A location minted from user data carries neither name nor kind.
@@ -116,22 +114,13 @@ class TestLocationQuerySet:
         assert named | anonymous == set(Location.objects.all())
         assert named & anonymous == set()
 
-    def test_unresolved_selects_rows_missing_either_half(self) -> None:
-        """unresolved() catches a null elevation OR a null cell, not only both.
-
-        The two are filled together today, but a row that has one and not
-        the other is still work for link_location_forecast_cells — treating
-        it as done would leave it permanently unfetched.
-        """
-        neither = LocationFactory.create()
-        elevation_only = LocationFactory.create(elevation_m=1500.0)
-        cell_only = LocationFactory.create(
-            forecast_cell=ForecastCellFactory.create(latitude=47.9, longitude=8.9)
-        )
+    def test_unresolved_selects_rows_with_no_elevation(self) -> None:
+        """unresolved() is exactly the rows still missing an elevation."""
+        missing = LocationFactory.create()
         done = LocationFactory.create(resolved=True)
 
         unresolved = set(Location.objects.unresolved())
-        assert unresolved == {neither, elevation_only, cell_only}
+        assert unresolved == {missing}
         assert done not in unresolved
 
 
