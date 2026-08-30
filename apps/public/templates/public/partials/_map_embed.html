@@ -1705,15 +1705,16 @@ Optional context:
     <span data-string="route-duration-hours">{% blocktrans %}%(hours)sh%(minutes)sm{% endblocktrans %}</span>
     <span data-string="route-duration-minutes">{% blocktrans %}%(minutes)sm{% endblocktrans %}</span>
     <span data-string="route-untitled">{% trans "Untitled route" %}</span>
-    {# SNOW-764: the shared-route popup — the qualifier, the Save control's  #}
-    {# label, and its three outcomes. "Shared with you" is the same wording  #}
-    {# routes/partials/_route.html prefixes a pending row's meta line with,  #}
-    {# so one route says the same thing on the panel and on the map.         #}
+    {# SNOW-764: the shared-route popup — the Save control's label and its   #}
+    {# three outcomes. There is deliberately no "Shared with you" qualifier  #}
+    {# here: both labels below already say the route is somebody else's      #}
+    {# being offered, so the line only repeated them. The pending PANEL ROW  #}
+    {# keeps its own prefix (routes/partials/_route.html), because a row     #}
+    {# sits in a list beside owned ones and a popup has no such neighbour.   #}
     {#                                                                       #}
     {# The at-cap line names the remedy, because that is the only thing      #}
     {# separating it from the generic failure: a user at the cap who is told #}
     {# only "that couldn't be saved" will retry the identical action.        #}
-    <span data-string="route-shared-with-you">{% trans "Shared with you" %}</span>
     <span data-string="route-save">{% trans "Save route" %}</span>
     <span data-string="route-save-signin">{% trans "Sign in to save this route" %}</span>
     <span data-string="route-save-failed">{% trans "That couldn't be saved. Try again." %}</span>

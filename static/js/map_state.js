@@ -300,15 +300,15 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // The popup's payload carries no ``source_filename`` (the row's middle
   // fallback), so a nameless route lands straight here.
   'route-untitled': 'Untitled route',
-  // SNOW-764: the shared-route popup. 'route-shared-with-you' is the same
-  // qualifier the pending panel row carries, so the two surfaces say the
-  // same thing about the same route; the rest are the Save control's
-  // label and its three outcomes.
+  // SNOW-764: the shared-route popup's Save control — its label and its
+  // three outcomes. No 'route-shared-with-you' qualifier: both labels
+  // below already say the route is somebody else's being offered, so the
+  // line only repeated them. The pending PANEL ROW keeps its own prefix,
+  // because a row sits in a list beside owned ones and a popup does not.
   //
   // The at-cap line names the remedy, because the remedy is the only thing
   // that distinguishes it from the generic failure — a user at the cap who
   // is only told "that couldn't be saved" will retry the identical action.
-  'route-shared-with-you': 'Shared with you',
   'route-save': 'Save route',
   'route-save-signin': 'Sign in to save this route',
   'route-save-failed': "That couldn't be saved. Try again.",

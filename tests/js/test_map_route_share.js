@@ -345,10 +345,15 @@ describe('the pending route popup', () => {
     expect(node.textContent).toContain('Col de Balme');
   });
 
-  it('says the route was shared with you', () => {
-    // The same words routes/partials/_route.html prefixes a pending row's
-    // meta line with, so one route reads the same on both surfaces.
-    expect(tapAt(LINE_Y).textContent).toContain('Shared with you');
+  it('does not repeat the qualifier above the control', () => {
+    // The popup shipped with a "Shared with you" line above the Save
+    // control and it said nothing the control did not: both its labels —
+    // "Save route" and "Sign in to save this route" — already state that
+    // this is somebody else's route being offered. The pending PANEL ROW
+    // keeps its own prefix, because a row sits in a list beside owned ones
+    // and has only its actions to tell them apart; a popup has no such
+    // neighbour. Asserted as an absence so the line cannot creep back.
+    expect(tapAt(LINE_Y).textContent).not.toContain('Shared with you');
   });
 
   it('offers Save', () => {

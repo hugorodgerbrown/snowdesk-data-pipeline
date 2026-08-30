@@ -5687,7 +5687,7 @@
     };
 
     /**
-     * Append the Save control to a pending (shared-with-you) route's popup.
+     * Append the Save control to a pending (unclaimed) route's popup.
      *
      * SNOW-764. The popup is where a deep-link recipient arrives — the
      * link lands on the map with the camera already on the track — so the
@@ -5712,10 +5712,13 @@
      * @returns {void}
      */
     const appendRouteClaimCta = (container, token) => {
-      const note = document.createElement('div');
-      note.className = 'mt-1 text-xs text-text-3';
-      note.textContent = MAP_STRINGS['route-shared-with-you'];
-      container.appendChild(note);
+      // NO "Shared with you" line above the control. It shipped with one
+      // and it said nothing the control below it does not already say —
+      // "Sign in to save this route" and "Save route" both state that this
+      // is somebody else's route being offered. The row in the panel keeps
+      // its own prefix, because a row sits in a list beside owned ones and
+      // has only its actions to tell them apart; a popup has no such
+      // neighbour and needs no such label.
 
       // Signed out: the way in, not a dead button. Same treatment the four
       // UGC panels give an ineligible visitor.
