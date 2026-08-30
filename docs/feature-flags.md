@@ -52,9 +52,21 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
+| `route_sharing` | `superusers=True` | Route sharing: the row's Share control, `/routes/<uuid>/share/`, the `/routes/s/<token>/` follow, the claim endpoint, the pending rows and features `route_list` / `routes_geojson` render for a session holding a followed share, and the matching `/help/` subsection. | SNOW-764. |
 
-**One flag, and it is the right shape for one.** `sync_log` is not a
-rollout gate waiting to be opened: it is a per-user diagnostic toggle. The
+**`route_sharing` IS a rollout gate, and it is priced to be one.** Route
+sharing is the first feature since SNOW-724 to ship behind one, and the
+reason it can is where the flag is read. `_downloads_context`'s flag ran on
+the homepage and cost three queries a request; this one is read only by
+`apps.routes.views` (the three share endpoints, and the two widened
+branches, both of which sit behind an empty-session short-circuit) and by
+`help_page`. The homepage never asks — `apps.public.views._routes_context`
+deliberately reads no flag, and `monitor_query_counts` still puts `home` at
+5. When the rollout opens to everyone the flag comes out, as its
+predecessors did.
+
+**`sync_log` is the other shape.** It is not a rollout gate waiting to be
+opened: it is a per-user diagnostic toggle. The
 panel prints a device's recent real server round-trips, which is a
 debugging read-out rather than a product surface, and the `Users` M2M is
 the point — inviting one reporter to turn it on while chasing a sync
