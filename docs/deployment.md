@@ -91,13 +91,22 @@ worker ever sends — persisted silently, with no error in the logs.
 free public host, which needs no key. The free per-IP quota is 600/minute,
 5,000/hour, 10,000/day.
 
-Since SNOW-762 the only caller is the **elevation** lookup
-(`apps.locations.services.elevation.fetch_elevation`), which resolves a
-`Location`'s height once and stores it. That is a handful of calls when a
-favourite is created or a backfill runs, not a scheduled load — the forecast
-and archive endpoints went with the weather app, and `OPEN_METEO_ARCHIVE_BASE_URL`
-is no longer read. SNOW-757 decides what the rebuilt weather domain calls and
-how often.
+Two callers, with very different profiles:
+
+- **Elevation** (`apps.locations.services.elevation.fetch_elevation`)
+  resolves a `Location`'s height once and stores it — a handful of calls
+  when a favourite is created or a backfill runs, not a scheduled load.
+- **Forecast** (`apps.weather.services.fetch`, SNOW-759) runs on a schedule:
+  one call per active location, four times a day. **That is the number to
+  size the plan against.** Today it is the resort estate; giving all 461
+  micro-regions a centroid `Location` adds roughly 1,800 calls a day on top
+  — see
+  [`runbooks/region-centroid-backfill.md`](runbooks/region-centroid-backfill.md)
+  and confirm headroom before running that backfill in production.
+
+`OPEN_METEO_ARCHIVE_BASE_URL` is still not read: the archive endpoint went
+with the old weather app and a historical backfill (SNOW-731) has not
+landed.
 
 Cutting over to a paid subscription is an env-group edit, not a deploy: set
 the variables on the `Production` group (web, scheduler, and worker all read

@@ -42,12 +42,18 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  fetchers/translators and render-model services under
                  services/, the ingestion commands (see
                  docs/management-commands.md), and their admin classes
-  weather/       MIGRATION HISTORY ONLY — no models, no code. SNOW-762
-                 stripped the Open-Meteo domain whole; the package survives
-                 because six historical migrations in four other apps depend
-                 on its migrations, and deleting them breaks `migrate` on a
-                 fresh database. Read apps/weather/__init__.py before
-                 touching it. SNOW-757 rebuilds weather elsewhere
+  weather/       The Open-Meteo domain, rebuilt by SNOW-759 — one model,
+                 ``Weather``: what was known about one Location on one day,
+                 one row per (location, observed_on), never rewritten once
+                 that day is past. Plus ``services/upsert.py`` (the write
+                 rule), ``services/fetch.py`` (one walk over
+                 ``Location.objects.active()``) and the ``fetch_weather``
+                 command, scheduled 4×/day. Migrations 0001–0006 belong to
+                 the estate SNOW-762 stripped and are retained because six
+                 migrations in four other apps depend on them; 0007 creates
+                 the new table. Read
+                 docs/decisions/weather-is-one-immutable-location-row.md
+                 before changing the shape of a row
   accounts/      Signed-token subscription flow (see docs/accounts.md);
                  owns the ``Account`` profile model (OneToOne to auth.User,
                  not AUTH_USER_MODEL itself — SNOW-514 collapsed the former
@@ -611,6 +617,7 @@ Read these when working in the relevant area:
 | Day summary copy matrix (movement × level × readability, editing rules) | [`docs/day-summary.md`](docs/day-summary.md) |
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Location is the primitive (Location model, ForecastPoint is a fetch cell, apps/locations/) | [`docs/decisions/location-is-the-primitive.md`](docs/decisions/location-is-the-primitive.md) |
+| Weather is one immutable row per location per day (Weather model, upsert_weather, Location.objects.active()) | [`docs/decisions/weather-is-one-immutable-location-row.md`](docs/decisions/weather-is-one-immutable-location-row.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |
@@ -646,6 +653,7 @@ Read these when working in the relevant area:
 | Mutation queue (window.pwaMutationQueue, Idempotency-Key, backoff, Background Sync, sync badge, failure toast) | [`docs/mutation-queue.md`](docs/mutation-queue.md) |
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
 | Backfill an environment onto the Location model (the --commit commands, Open-Meteo elevation cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
+| Give every micro-region a centroid Location (link_region_centroid_locations --commit, the Open-Meteo bill it raises) | [`docs/runbooks/region-centroid-backfill.md`](docs/runbooks/region-centroid-backfill.md) |
 | Refresh staging's bulletins from production (bin/sync-staging-data, the nightly cron, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |

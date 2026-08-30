@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, import_resorts, import_locations, dump_locations_sheets, link_region_centroid_locations, fixture builders
+description: Commands — fetch_bulletins, fetch_weather, import_resorts, import_locations, link_region_centroid_locations, fixture builders
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -115,9 +115,7 @@ visible in the worker logs.
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
-
-Bulletin ingestion is the only scheduled job since SNOW-762 removed the
-weather backstop with the weather app.
+| Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 
 ### `seed_test_data` — build the navigable test dataset (local dev and CI)
 
@@ -384,6 +382,43 @@ uv run python manage.py dump_locations_sheets --commit \
     --file /tmp/locations.tsv --links-file /tmp/resort_locations.tsv
 ```
 
+### `fetch_weather` — today's Open-Meteo forecast for every active location
+
+Rebuilt by SNOW-759. One pass over one anchor: it walks
+`Location.objects.active()` — a location reachable from a `ResortLocation`,
+a `MicroRegion.centroid_location` or a `Favourite` — and writes one
+`Weather` row per location, for today.
+
+**An observation-only location is excluded.** A field report must not mint a
+billable forecast call, and must never raise a forecast panel on a public
+surface. The boundary is `LocationQuerySet.active()`, asserted in
+`tests/locations/test_models.py`.
+
+The two passes this replaces (a region pass over `MicroRegion.centre` and a
+point pass over a quantised `ForecastCell` grid) resolved to the same places
+by two routes, so `--skip-points` is gone with the second pass and
+`--add-history` with the history table — the `Weather.forecast` column now
+does that job inside the row.
+
+**Historical days are not this command's business.** A day is written once,
+on the day it is current, and `upsert_weather` then refuses to rewrite it.
+Filling a day this command missed is a backfill against the archive
+endpoint (SNOW-731), a different job with a different upstream.
+
+Streams the estate through `iterate_rows`, so stdout reads as a countdown.
+A per-location failure is logged and counted, never aborts the batch, and
+makes the command exit non-zero.
+
+Before its first useful run in an environment, every micro-region needs a
+centroid `Location` — see
+[`runbooks/region-centroid-backfill.md`](runbooks/region-centroid-backfill.md),
+which also carries the Open-Meteo cost this command's cadence implies.
+
+```bash
+uv run python manage.py fetch_weather           # preview (calls the API)
+uv run python manage.py fetch_weather --commit  # persist
+```
+
 ### `link_region_centroid_locations` — anchor each region to a Location
 
 Backfill for SNOW-696. Gives every `MicroRegion` with a `centre` a
@@ -404,8 +439,12 @@ the polygon's middle happens to fall at. Any surface showing it must say
 which elevation it represents.
 
 SNOW-762 removed this command's forecast-cell half with the weather app.
-What remains is the Location and its elevation; SNOW-757 decides for itself
-which locations the rebuilt weather domain polls.
+What remains is the Location and its elevation — but that is now what makes
+a region eligible for weather: SNOW-759's `fetch_weather` walks
+`Location.objects.active()`, which includes every `centroid_location`. So
+running this command has a **recurring** cost as well as a one-off one; the
+sizing is in
+[`runbooks/region-centroid-backfill.md`](runbooks/region-centroid-backfill.md).
 
 ```bash
 uv run python manage.py link_region_centroid_locations           # preview

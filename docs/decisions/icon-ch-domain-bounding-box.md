@@ -10,8 +10,10 @@ last-reviewed: 2026-08-30
 > **Retired by SNOW-762 (2026-08-30).** The weather app this record
 > describes was stripped whole — models, services, commands, endpoints and
 > surfaces — so nothing here constrains the code any more. SNOW-757
-> rebuilds weather as a single immutable Location-anchored model and will
-> carry its own decision record. Kept for the *why*, per
+> rebuilds weather as a single immutable Location-anchored model; that
+> decision is
+> [`weather-is-one-immutable-location-row`](weather-is-one-immutable-location-row.md).
+> Kept for the *why*, per
 > [the README](README.md): a reversed decision is marked historical, not
 > deleted.
 
