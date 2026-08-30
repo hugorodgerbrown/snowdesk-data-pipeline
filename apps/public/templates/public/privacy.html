@@ -5,6 +5,26 @@ apps/public/templates/public/privacy.html — Privacy Policy page (SNOW-153).
 Covers data collection, legal bases, retention periods, third-party
 providers, and user rights under UK GDPR. Content is authored directly
 in this template; no runtime context is required.
+
+SNOW-773 rewrote it. The page had gone on describing a Swiss-only
+bulletin viewer whose single piece of personal data was a subscription
+email address, while accounts, favourites, routes, observations, passkeys
+and push had all arrived underneath it. Three of its statements had become
+false rather than merely stale: that location is never stored, that
+request data is kept for fourteen days, and — by implication — that
+deleting an account erases everything. The first is now stated accurately;
+the other two were fixed in code first (SNOW-774 erasure, SNOW-775
+retention) and the page follows what the code does.
+
+Two rules for editing this file:
+
+* Every retention period and processor named here has to match something
+  real. ``RETENTION_DAYS`` in ``purge_request_logs`` is the source of the
+  twelve months in §4 — change one and change the other.
+* The processor list in §5 includes the hosts the *browser* contacts
+  directly, not only the ones the server does. A tile origin sees a
+  reader's IP address and the area they are looking at, which is exactly
+  the kind of processing a reader would want listed.
 {% endcomment %}
 {% load i18n components %}
 
@@ -19,15 +39,16 @@ in this template; no runtime context is required.
         {% trans "Privacy Policy" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="privacy-heading" %}
         <p class="text-xs text-text-3 mb-6">
-            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 1 November 2026 &middot; Version 1.0" %}
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 30 August 2026 &middot; Version 1.1" %}
         </p>
 
         <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
             <strong>{% trans "The short version:" %}</strong>
             {% blocktrans trimmed %}
-                We collect your email address only if you choose to subscribe to bulletin notifications. We don't sell
-                your data. We don't track you across the web. We don't use advertising cookies. Our anonymous app-usage
-                telemetry uses IndexedDB, not cookies — see section 5.
+                You can read every bulletin on Snowdesk without giving us anything. An account stores what you save to
+                it — favourites, routes, observations — and we keep the technical record of how it was created for
+                twelve months. Delete your account and all of it goes. We don't sell your data, track you across the
+                web, or use advertising cookies.
             {% endblocktrans %}
         </div>
 
@@ -36,9 +57,10 @@ in this template; no runtime context is required.
             <p class="mb-3">
                 {% blocktrans trimmed %}
                     Snowdesk is operated by Hugo Rodger-Brown, an individual based in London, UK. Snowdesk is a free
-                    service that displays Swiss avalanche bulletins published by the WSL Institute for Snow and
-                    Avalanche Research (SLF). There are no employees; all operations are carried out by the sole
-                    operator.
+                    service that displays avalanche bulletins published by the WSL Institute for Snow and Avalanche
+                    Research (SLF) for Switzerland, by ALBINA / EUREGIO for Tyrol, South Tyrol and Trentino, and by
+                    Météo-France for the French mountain ranges. There are no employees; all operations are carried
+                    out by the sole operator.
                 {% endblocktrans %}
             </p>
             <p>
@@ -52,52 +74,67 @@ in this template; no runtime context is required.
         <section data-testid="privacy-what-we-collect">
             <h2>{% trans "2. What data we collect" %}</h2>
 
-            <h3>{% trans "2a. Subscriptions" %}</h3>
+            <h3>{% trans "2a. Your account" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
-                    If you subscribe to bulletin email notifications, we collect your email address. That is the only
-                    personal data we ever ask for. We collect it only when you actively sign up — we never collect it
-                    passively.
+                    You can read every bulletin on Snowdesk without an account. If you create one, we collect your email
+                    address, and a password if you set one. You may also register a passkey, in which case your device
+                    keeps the private key and we store only the public credential — we never see the biometric or PIN
+                    that unlocks it.
                 {% endblocktrans %}
             </p>
 
-            <h3>{% trans "2b. Location" %}</h3>
+            <h3>{% trans "2b. Things you save to your account" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
-                    The interactive map can use your browser's optional geolocation to centre the map on your current
-                    position. This happens entirely in your browser — your location is never transmitted to or stored
-                    by Snowdesk.
+                    An account stores what you choose to put in it: favourite places, which are map pins with
+                    coordinates; ski-touring routes you upload as GPX files, which describe where a route goes; regions
+                    you subscribe to for email notifications; offline map areas you download; and any field observations
+                    you submit. We store these because they are the feature — none of it is collected in the
+                    background, and deleting an item deletes the record.
                 {% endblocktrans %}
             </p>
 
-            <h3>{% trans "2c. Field observation reports" %}</h3>
+            <h3>{% trans "2c. Location" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
-                    When you submit a field observation report from the map page, we ask your browser for a GPS fix.
-                    Your latitude, longitude, and optional accuracy radius are transmitted to Snowdesk and stored with
-                    the report so that we can match your location to an avalanche warning region. Location is captured
-                    only at the moment you tap "Report" — we never track your position in the background or between
-                    sessions. You can submit multiple reports per day; each is stored as a separate row linked to your
-                    subscriber account. Reports are displayed on the bulletin page as anonymous aggregate counts (e.g.
-                    "3 people reported whumpfing") — your name and exact coordinates are never shown publicly.
+                    The map can use your browser's geolocation to centre on where you are. That position is used in the
+                    browser and is not sent to us. Location does reach us in three other ways, each because you asked
+                    for something that needs it: a field observation carries the GPS fix taken when you tapped "Report";
+                    a favourite carries the coordinates of the pin you placed; and an uploaded route carries its track.
+                    We also derive an approximate location — country, region and city — from your IP address at a
+                    few specific moments, described in section 2e.
                 {% endblocktrans %}
             </p>
 
-            <h3>{% trans "2d. Session data" %}</h3>
+            <h3>{% trans "2d. Field observation reports" %}</h3>
             <p class="mb-2">
                 {% blocktrans trimmed %}
-                    We use a session cookie that is strictly necessary for the site to function. It contains no personal
-                    information and expires when you close your browser. No consent is required for this cookie under UK
-                    PECR.
+                    When you submit a field observation, we ask your browser for a GPS fix. Your latitude, longitude and
+                    optional accuracy radius are stored with the report so we can match it to an avalanche warning
+                    region. Location is captured only at the moment you tap "Report" — we never track your position in
+                    the background or between sessions. Reports appear publicly as anonymous aggregate counts (for
+                    example "3 people reported whumpfing"); your identity and exact coordinates are never shown.
                 {% endblocktrans %}
             </p>
 
-            <h3>{% trans "2e. Server logs" %}</h3>
+            <h3>{% trans "2e. Request records" %}</h3>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    At a few specific moments — creating an account, signing in, subscribing to a region, and opening
+                    a shared link — we store a record of the request. It holds your IP address, an approximate
+                    country, region and city derived from it, your browser's user agent and language, the page
+                    requested, and your session identifier. We use it to understand how people find Snowdesk and to
+                    investigate abuse. It is not written on every page view, and the approximate location comes from
+                    your IP address rather than from your device's GPS.
+                {% endblocktrans %}
+            </p>
+
+            <h3>{% trans "2f. Session data" %}</h3>
             <p>
                 {% blocktrans trimmed %}
-                    Our server automatically records standard technical information when you visit: your IP address, the
-                    page you requested, and the time of the request. We use this only to keep the service running and to
-                    investigate errors. Logs are retained for 14 days and then deleted.
+                    We use cookies that are strictly necessary for the site to work — see section 8. They carry no
+                    personal information beyond keeping you signed in.
                 {% endblocktrans %}
             </p>
         </section>
@@ -108,14 +145,44 @@ in this template; no runtime context is required.
             <ul class="list-disc pl-5 space-y-1">
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>Email address</strong> — consent. You gave it to us voluntarily when you subscribed,
-                        and you can withdraw it at any time by unsubscribing.
+                        <strong>Email address and password</strong> — contract. We need them to give you an account
+                        and to sign you in.
                     {% endblocktrans %}
                 </li>
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>Session data and server logs</strong> — legitimate interest. We need these to keep the
-                        service secure and operational.
+                        <strong>Bulletin notification emails</strong> — consent. You gave it when you subscribed to a
+                        region, and you can withdraw it at any time by unsubscribing.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Favourites, routes, downloaded areas and passkeys</strong> — contract. These are the
+                        features you asked for; we cannot provide them without storing what you saved.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Field observations</strong> — consent. Submitting one is a deliberate act, and you can
+                        ask us to remove a report you made.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Push notifications</strong> — consent. Your browser asks you before a subscription is
+                        created, and turning notifications off removes it.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Request records and session data</strong> — legitimate interest. We need them to keep
+                        the service secure, to investigate abuse, and to understand how people find Snowdesk.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Anonymous app-usage telemetry</strong> — consent. It is off unless you switch it on,
+                        and section 5 describes what it contains.
                     {% endblocktrans %}
                 </li>
             </ul>
@@ -123,16 +190,39 @@ in this template; no runtime context is required.
 
         <section data-testid="privacy-retention">
             <h2>{% trans "4. How long we keep your data" %}</h2>
-            <ul class="list-disc pl-5 space-y-1">
+            <ul class="list-disc pl-5 space-y-1 mb-3">
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>Email address</strong> — kept for as long as your subscription is active. Deleted
-                        within 30 days of unsubscribing or on request.
+                        <strong>Your account and everything in it</strong> — kept until you delete it. Deleting your
+                        account removes the account, your subscriptions, your saved items and the request records
+                        described in section 2e, in one operation and without delay.
                     {% endblocktrans %}
                 </li>
-                <li>{% trans "<strong>Location</strong> — never stored." %}</li>
-                <li>{% trans "<strong>Server logs</strong> — 14 days." %}</li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Request records</strong> — twelve months, then deleted automatically, whether or not
+                        they were ever linked to an account.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Field observations</strong> — kept as part of the community record. Ask us and we will
+                        remove yours.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% trans "<strong>Geolocation from your browser</strong> — never stored; used in the browser only." %}
+                </li>
+                <li>
+                    {% trans "<strong>Server error logs</strong> — 14 days." %}
+                </li>
             </ul>
+            <p>
+                {% blocktrans trimmed %}
+                    An unsubscribe removes the subscription; it does not delete your account. Delete the account itself
+                    from your account settings if you want everything gone.
+                {% endblocktrans %}
+            </p>
         </section>
 
         <section data-testid="privacy-sharing">
@@ -158,8 +248,9 @@ in this template; no runtime context is required.
                 </li>
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>Open-Meteo</strong> (open-meteo.com) — resolves the elevation of a saved location. No
-                        personal data is shared with them.
+                        <strong>Open-Meteo</strong> (open-meteo.com) — resolves the elevation of a location and
+                        supplies its mountain weather forecast. Requests are made by our servers for places, not for
+                        people; no personal data is shared with them.
                     {% endblocktrans %}
                 </li>
                 <li>
@@ -187,6 +278,43 @@ in this template; no runtime context is required.
                         your IP address as part of these events.
                     {% endblocktrans %}
                 </li>
+                {% comment %}
+                    SNOW-773: the three entries below are hosts the BROWSER contacts
+                    directly, not ones our server calls. They therefore see a reader's
+                    IP address without us sending it, which is precisely why they
+                    belong in this list — omitting them was the largest gap in the
+                    old version of this page. Anything else added to the CSP's
+                    connect-src or img-src for a user-facing feature belongs here too.
+                {% endcomment %}
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Our map tile provider</strong> — your browser loads map tiles directly from the tile
+                        host, so it receives your IP address and the area of the map you are viewing. We do not send it
+                        anything else, and it is not told who you are.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>swisstopo</strong> (swisstopo.admin.ch) — supplies the slope-angle overlay. As with
+                        the basemap, your browser requests those tiles directly, so swisstopo receives your IP address
+                        and the area you are viewing while the overlay is switched on.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Your browser's push service</strong> (Google, Mozilla or Apple, depending on your
+                        browser) — if you turn on push notifications, your browser creates a subscription on its
+                        vendor's service and we send notifications through it. We never include bulletin content or your
+                        email address in a notification payload.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>MaxMind</strong> (maxmind.com) — supplies the GeoLite2 database we use to turn an IP
+                        address into an approximate country, region and city. The lookup runs on our own servers against
+                        a local copy, so your IP address is never sent to MaxMind.
+                    {% endblocktrans %}
+                </li>
             </ul>
             <p class="mb-3">
                 {% blocktrans trimmed %}
@@ -194,15 +322,15 @@ in this template; no runtime context is required.
                     use advertising networks, and we do not sell or share data for advertising purposes.
                 {% endblocktrans %}
             </p>
-            {% url 'accounts:hub' as manage_url %}
+            {% url 'accounts:settings' as manage_url %}
             <p>
                 {% blocktrans trimmed %}
                     We collect a small stream of anonymous app-usage events — for example
                     <code>pwa.sw.installed</code> or <code>pwa.push.received</code> — so we can keep Snowdesk working
                     reliably across browsers and devices. These events never include bulletin content, your email
                     address, or your IP address. This is switched off by default for browsers set to a European
-                    language, and on by default otherwise; you can change this at any time from the toggle on your
-                    <a class="underline" href="{{ manage_url }}">manage subscriptions page</a>.
+                    language, and on by default otherwise; you can change this at any time from the toggle in your
+                    <a class="underline" href="{{ manage_url }}">account settings</a>.
                 {% endblocktrans %}
             </p>
         </section>
@@ -218,8 +346,16 @@ in this template; no runtime context is required.
                 <li>{% trans "Withdraw consent at any time" %}</li>
             </ul>
             <p class="mb-2">
+                {% url 'accounts:settings' as settings_url %}
                 {% blocktrans trimmed %}
-                    To exercise any of these rights, email
+                    You can exercise the most important of these yourself and immediately: deleting your account from
+                    your <a class="underline" href="{{ settings_url }}">account settings</a> removes the account, your
+                    subscriptions, everything you saved to it, and the request records described in section 2e.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    For anything else, email
                     <a class="underline" href="mailto:privacy@snowdesk.info">privacy@snowdesk.info</a>. We will respond
                     within 30 days.
                 {% endblocktrans %}
@@ -237,7 +373,7 @@ in this template; no runtime context is required.
             <p>
                 {% blocktrans trimmed %}
                     Snowdesk is a publicly accessible information service. We do not knowingly collect personal data
-                    from children under 13. If you believe a child under 13 has subscribed, please contact us at
+                    from children under 13. If you believe a child under 13 has created an account, please contact us at
                     <a class="underline" href="mailto:privacy@snowdesk.info">privacy@snowdesk.info</a>
                     and we will delete the data without delay.
                 {% endblocktrans %}
@@ -248,11 +384,18 @@ in this template; no runtime context is required.
             <h2>{% trans "8. Cookies" %}</h2>
             <p>
                 {% blocktrans trimmed %}
-                    Snowdesk uses one strictly necessary session cookie. It is set automatically when you visit the
-                    site, contains no personal information, and expires when you close your browser. Because it is
-                    strictly necessary, no consent banner is required under UK PECR. We do not use advertising cookies,
-                    and our anonymous usage-data telemetry (see section 5) does not use cookies either — it is stored
-                    locally in your browser and sent to us directly when you have it switched on.
+                    Snowdesk uses two strictly necessary cookies: a session cookie, and a CSRF token that protects forms
+                    from cross-site submission. Neither carries personal information beyond keeping you signed in, and
+                    because both are strictly necessary no consent banner is required under UK PECR. We use no
+                    advertising cookies and no third-party cookies.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% blocktrans trimmed %}
+                    Snowdesk also stores things in your browser that are not cookies and are never sent to us on their
+                    own: your light or dark theme choice, the map areas you download for offline use, and the queue our
+                    anonymous usage-data telemetry (section 5) uses when you have it switched on. Clearing your
+                    browser's site data removes all of it.
                 {% endblocktrans %}
             </p>
         </section>
@@ -261,8 +404,9 @@ in this template; no runtime context is required.
             <h2>{% trans "9. Changes to this policy" %}</h2>
             <p>
                 {% blocktrans trimmed %}
-                    If we make material changes to this policy, we will update the effective date at the top and notify
-                    subscribers by email. Continued use of Snowdesk after changes constitutes acceptance.
+                    If we make material changes to this policy, we will update the effective date and version at the
+                    top, and email anyone who has an account with us. Continued use of Snowdesk after changes
+                    constitutes acceptance.
                 {% endblocktrans %}
             </p>
         </section>
