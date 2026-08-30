@@ -13,10 +13,20 @@ This closes that: a geocoded resort with no link gets an anonymous
 village / mid / peak points stays worthwhile and stays the editor's job —
 this is the floor, not a replacement for it.
 
+**Run by an operator, never by a deploy.** It first shipped wired into
+``bin/build.sh``, which was wrong: it writes one row per candidate — up to
+115 of them — and a deploy that times out mid-run leaves the estate half
+linked, on three services that deploy concurrently against one database.
+Bulk data writes are management commands for the same reason they are not
+data migrations. Nothing wipes ``ResortLocation`` on deploy either
+(``resorts.json`` is excluded from the deploy-time ``loaddata``), so there
+was never a reason for it to run there.
+
+Run it after geocoding resorts in the map editor, or after an
+``import_resorts`` that adds coordinates.
+
 **Offline.** The coordinate is the resort's own, and the height is
-``base_elevation_m`` where the sheet records one. No Open-Meteo call, which
-is what makes it affordable to run on every deploy alongside
-``link_region_centroid_locations``.
+``base_elevation_m`` where the sheet records one. No Open-Meteo call.
 
 **Reuses rather than mints** via ``anchor_location``, for the reason SNOW-771
 records: a re-link that created a fresh row each deploy would orphan the
@@ -30,7 +40,7 @@ Usage:
     # Preview — reports what it would link, writes nothing.
     uv run python manage.py link_resort_locations
 
-    # Persist. This is what build.sh runs on every deploy.
+    # Persist.
     uv run python manage.py link_resort_locations --commit
 """
 
