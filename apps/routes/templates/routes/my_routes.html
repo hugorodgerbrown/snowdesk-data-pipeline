@@ -101,10 +101,18 @@ is not getting one.
             {% comment %}
                 The context strip, saying where this data lives — the same
                 claim the map's routes panel carries above its own copy of
-                this list (public/partials/_routes_surface.html).
+                this list (public/partials/_routes_surface.html), and it has
+                to stay the same claim: one user, two surfaces, one fact
+                about their own data.
+
+                SNOW-765: it read "Your routes are private and not shared."
+                until SNOW-764 shipped sharing, which made it a flat promise
+                the feature breaks. The conditional form is the true one and
+                keeps the half that matters — nothing here is published, and
+                nothing leaves this account unless you send someone a link.
             {% endcomment %}
             <p class="text-sm text-text-2 mb-6">
-                {% trans "Your routes are private and not shared." %}
+                {% trans "Your routes are private unless you share one." %}
             </p>
 
             {% comment %}

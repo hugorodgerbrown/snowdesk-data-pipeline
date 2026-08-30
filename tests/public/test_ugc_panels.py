@@ -1,5 +1,5 @@
 """
-tests/public/test_ugc_panels.py — the three UGC map panels share one skeleton.
+tests/public/test_ugc_panels.py — the four UGC map panels share one skeleton.
 
 SNOW-658. Downloads, favourites and field observations answer the same
 question on the same map behind the same kind of roundel — "what have I
@@ -8,6 +8,19 @@ ticket they shared exactly one element (the "Show X on the map" switch)
 and diverged at every other point of contact: three sheet-scroll models,
 two title sizes, three body wrappers, three row shapes. Nothing enforced
 the sameness, so each panel drifted the moment someone edited it.
+
+SNOW-687 made ROUTES the fourth panel and did not add it here, so for two
+months the guards below ran over three of the four. That gap had a cost,
+and SNOW-765 is it: SNOW-764 put a Share control on every route row while
+the strip above them went on promising "Routes are private and not
+shared", and ``test_panel_states_where_its_data_lives`` — the check whose
+entire purpose is to catch a strip that stopped telling the truth — was
+not looking at that panel. Routes is in every dict below now.
+
+The lesson generalises past this file: a guard that enumerates its
+subjects by hand silently stops covering the thing it was written for the
+moment a fifth one is added. If a UGC panel is ever added, it goes in
+PANEL_ICONS and the two dicts under it in the same commit.
 
 That is what these tests exist to stop. They do NOT check that the panels
 look nice; they check that the chrome around each one's own content came
@@ -54,6 +67,16 @@ PANEL_ICONS = {
     "favourite-list-template": "12 2 15.09 8.26",
     # The binoculars' left eyepiece (Font Awesome Free, 512 grid).
     "report-list-template": "M128 32l32 0c17.7 0 32 14.3 32 32",
+    # The S-bend track between the route glyph's two waypoints.
+    #
+    # SNOW-765: routes was ABSENT from this file until now. SNOW-658 wrote
+    # these guards for three panels; SNOW-687 made routes the fourth and
+    # never added it here, so for two months the one panel nobody was
+    # checking was free to drift. It did: SNOW-764 put a Share control on
+    # every row while the strip above them went on promising "Routes are
+    # private and not shared", and the check that exists precisely to catch
+    # a strip that stopped telling the truth was not looking at this panel.
+    "route-list-template": "M8.5 19h5a3.5 3.5 0 0 0 0-7",
 }
 
 PANEL_TEMPLATE_IDS = tuple(PANEL_ICONS)
@@ -74,6 +97,13 @@ PANEL_CONTEXT_LINES = {
     ),
     "favourite-list-template": "Favourites are private and not shared.",
     "report-list-template": "Reports are shared with the community.",
+    # SNOW-765: conditional, and the condition is the point. It said
+    # "Routes are private and not shared." until SNOW-764 put a Share
+    # control on every row below it — a flat promise sitting a few pixels
+    # from the control whose whole purpose is to break it. The favourites
+    # line above keeps the unconditional form because a favourite really
+    # cannot be shared; this one cannot.
+    "route-list-template": "Routes are private unless you share one.",
 }
 
 # The mono uppercase section label heading each panel's list. Downloads has
@@ -82,6 +112,7 @@ PANEL_SECTION_LABELS = {
     "map-downloads-body-template": ("Regions", "Custom areas"),
     "favourite-list-template": ("Places",),
     "report-list-template": ("Reports",),
+    "route-list-template": ("Tracks",),
 }
 
 # The overlay switch's label — ONE sentence for all three panels, fixed

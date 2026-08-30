@@ -90,10 +90,20 @@ Context expected:
 <template id="route-list-template">
     {% trans "Routes" as route_list_title %}
     {% trans "Add a route" as route_add_label %}
-    {# The context strip — where this panel's data lives. A route is the    #}
-    {# user's own and is never published, the same promise the favourites   #}
-    {# panel makes in its own words.                                       #}
-    {% trans "Routes are private and not shared." as routes_context_line %}
+    {# The context strip — where this panel's data lives.                   #}
+    {#                                                                      #}
+    {# SNOW-765: this said "Routes are private and not shared." until       #}
+    {# SNOW-764 put a Share control on every row below it, at which point   #}
+    {# the panel was making a flat promise that the control a few pixels    #}
+    {# away exists to break. A privacy claim a user reads next to the thing #}
+    {# that falsifies it is worse than no claim at all.                     #}
+    {#                                                                      #}
+    {# The conditional form is the true one and still says the load-bearing #}
+    {# half: nothing here is published, and nothing leaves this account      #}
+    {# unless the owner sends someone a link. The favourites panel keeps    #}
+    {# the unconditional wording because a favourite genuinely cannot be    #}
+    {# shared.                                                              #}
+    {% trans "Routes are private unless you share one." as routes_context_line %}
     {% trans "Tracks" as routes_section_label %}
     {# SNOW-687: the switch the panel shipped without. Its id is the hook  #}
     {# routes.js delegates on; the LABEL is fixed inside _ugc_panel.html,  #}
