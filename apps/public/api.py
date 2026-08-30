@@ -107,6 +107,8 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import blob_summary
+from apps.weather.models import Weather
+from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
 from .views import (
@@ -474,6 +476,163 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
             "features": features,
         }
     )
+
+
+@cache_control(public=True, max_age=_DYNAMIC_CACHE_MAX_AGE)
+@vary_on_headers("Accept-Encoding")
+def weather_geojson(request: HttpRequest) -> JsonResponse:
+    """
+    Return a FeatureCollection of weather at every public ``Location``.
+
+    Powers the map's Weather overlay. **One feed, one anchor** — SNOW-761
+    replaced two endpoints (a resort-anchored ``forecast-weather.geojson``
+    and a region-anchored ``region-weather.geojson``) with this. A region
+    centroid is a ``Location`` like any other now, so there is no tier to
+    choose between and nothing for a zoom threshold to switch.
+
+    **Privacy contract.** Filtered by ``Location.objects.public()`` — the
+    curated estate, reachable from a ``ResortLocation`` or a
+    ``MicroRegion.centroid_location``. Never ``active()``, which also
+    includes the locations a ``Favourite`` reaches: that is the set worth
+    paying Open-Meteo for, not the set anyone may see, and serving it here
+    would put a stranger's private pin and its coordinates on a public map.
+    The retired resort-anchored feed excluded favourite-only points for
+    exactly this reason and the contract survives.
+
+    Response shape::
+
+        {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "geometry": {"type": "Point", "coordinates": [7.5, 46.1]},
+              "properties": {
+                "location_id": 42,
+                "name": "Mont Fort",
+                "elevation_m": 3328.0,
+                "days": {"2026-08-30": {"code": 71, "tmax": 4.0}, ...}
+              }
+            },
+            ...
+          ]
+        }
+
+    Four properties and no more. The map draws a condition icon and a
+    label; the icon is resolved from ``code`` in ``map_weather_core.js``
+    and the label is ``tmax`` beside ``elevation_m``. There is no ``kind``,
+    no ``resort_id`` and no ``region_id``, because nothing on the map reads
+    them — a feature carrying fields no layer touches is payload every
+    visitor downloads and no visitor sees.
+
+    ``elevation_m`` is nullable: it is resolved out of band, so a
+    freshly-imported location has none yet and the label falls back to the
+    temperature alone rather than printing a gap.
+
+    ``days`` covers today and the days after it, read off **one** ``Weather``
+    row per location — its ``observed_on`` plus its ``forecast`` column.
+    That is one row per location, not one per location per day, which is
+    what makes the whole window one query. A location with no row for today
+    still gets a feature, with an empty ``days``: the map filters it out at
+    draw time, and an absent feature would be indistinguishable from a
+    location we do not know about.
+
+    Server-side ``cache.get_or_set`` bounds DB hits to one per cache
+    window. The ``@vary_on_headers("Accept-Encoding")`` decorator is
+    necessary but not sufficient — this path must also be listed in
+    ``_POSTHOG_EXEMPT_PATHS`` (``config/settings/base.py``) or
+    ``PosthogContextMiddleware`` reading ``request.user`` causes
+    ``SessionMiddleware`` to append ``Vary: Cookie`` and defeat the public
+    caching.
+
+    ``generated_at`` (for the freshness headers) is the OLDEST ``fetched_at``
+    across the payload's rows, following ``_card_freshness``'s rule that a
+    record mixing several constituents is only as fresh as its stalest
+    one. ``unsafe_after`` is ``None`` — weather is not safety-critical, so
+    the freshness state saturates at "stale" and never escalates.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse carrying a GeoJSON FeatureCollection.
+
+    """
+    observed_on = timezone.localdate()
+    cache_key = f"weather-geojson:v1:{observed_on.isoformat()}"
+    payload, generated_at = cast(
+        "tuple[dict[str, Any], datetime | None]",
+        cache.get_or_set(
+            cache_key,
+            lambda: _build_weather_payload(observed_on),
+            timeout=_DYNAMIC_CACHE_MAX_AGE,
+        ),
+    )
+    response = JsonResponse(payload)
+    apply_freshness_headers(
+        response,
+        generated_at=generated_at or timezone.now(),
+        unsafe_after=None,
+    )
+    return response
+
+
+def _build_weather_payload(
+    observed_on: date,
+) -> tuple[dict[str, Any], datetime | None]:
+    """
+    Build the weather FeatureCollection from the DB.
+
+    Two queries and no N+1: one over ``Location.objects.public()``, then one
+    bulk ``Weather`` fetch for ``observed_on`` across those locations,
+    grouped by ``location_id`` in Python. The forward days ride in each
+    row's ``forecast`` column, so the week costs nothing extra.
+
+    The row lookup is keyed on the ``(location, observed_on)`` unique
+    constraint — never ordered by ``fetched_at``, since today's row is
+    updated in place rather than appended.
+
+    Args:
+        observed_on: The day whose rows to read — today, in the site's
+            timezone.
+
+    Returns:
+        A ``(payload, generated_at)`` pair. ``generated_at`` is the oldest
+        ``fetched_at`` across the rows, or ``None`` when there are none.
+
+    """
+    locations = list(Location.objects.public().order_by("id"))
+    rows = {
+        row.location_id: row
+        for row in Weather.objects.filter(
+            location__in=locations, observed_on=observed_on
+        )
+    }
+    oldest_fetched_at: datetime | None = None
+    features: list[dict[str, Any]] = []
+    for location in locations:
+        row = rows.get(location.pk)
+        if row is not None and (
+            oldest_fetched_at is None or row.fetched_at < oldest_fetched_at
+        ):
+            oldest_fetched_at = row.fetched_at
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    # GeoJSON ordering: [longitude, latitude] per RFC 7946.
+                    "type": "Point",
+                    "coordinates": [location.longitude, location.latitude],
+                },
+                "properties": {
+                    "location_id": location.pk,
+                    "name": location.name,
+                    "elevation_m": location.elevation_m,
+                    "days": build_point_weather_days(row),
+                },
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}, oldest_fetched_at
 
 
 @cache_control(public=True, max_age=_GEOJSON_CACHE_MAX_AGE)

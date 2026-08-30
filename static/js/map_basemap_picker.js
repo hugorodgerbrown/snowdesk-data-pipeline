@@ -228,6 +228,13 @@
     // ``visibility: none`` — so there is nothing to fetch on first enable
     // and this takes the direct setLayoutProperty path.
     slope: ['slope-raster'],
+    // SNOW-761: the weather symbols. Lazy like l1/l2/resorts — the layer
+    // does not exist until the first enable fetches the feed, which is why
+    // 'weather' is also in the lazy-load branch below. This entry is what
+    // the toggle-OFF path needs; without it that path throws
+    // "OVERLAY_LAYER_IDS[overlayKey] is not iterable" before any of the
+    // work happens, and the row goes aria-checked with nothing on the map.
+    weather: ['weather-point'],
   };
 
   for (const item of items) {
@@ -281,7 +288,8 @@
         // Tier overlay — toggle layer visibility.
         writeStorage(OVERLAY_STORAGE_KEY[overlayKey], String(next));
         if (MAP) {
-          if (next && (overlayKey === 'l1' || overlayKey === 'l2' || overlayKey === 'resorts')) {
+          if (next && (overlayKey === 'l1' || overlayKey === 'l2'
+                       || overlayKey === 'resorts' || overlayKey === 'weather')) {
             // SNOW-235: First enable of a lazy overlay tier — delegate to the
             // main IIFE via snowdesk:overlay-load so it can fetch the GeoJSON,
             // install the layers, and then make them visible. The main IIFE

@@ -30,6 +30,10 @@ Context expected (built by ``apps.favourites.views._favourite_card_context``):
   cache_payload            — dict — SNOW-418 offline-cache record.
   freshness_state          — "fresh" | "stale" | "unsafe".
   freshness_generated_at   — datetime.
+  weather_display          — WeatherDisplay | None for the pin's Location
+                              today (SNOW-761).
+  forecast_panel           — ForecastPanel | None, from the same row's
+                              ``forecast`` column.
 {% endcomment %}
 {% load i18n components %}
 

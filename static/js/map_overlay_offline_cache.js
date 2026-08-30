@@ -15,7 +15,7 @@
  * Storage shape
  * -------------
  * One row per resource: ``{ key, geojson, cached_at, principal }``, keyed by
- * ``resource`` (``'favourites'``, ``'community_reports'`` or
+ * ``resource`` (``'favourites'``, ``'community_reports'``, ``'weather'`` or
  * ``'routes'``). Expiry is a caller concern, not enforced here — favourites
  * and routes never expire (both are the user's own stored data, changed only
  * by the user); community reports apply the existing 48h age-opacity horizon
@@ -29,8 +29,8 @@
  * account can never be read back after a different account signs in on the
  * same browser. Only resources in ``PRINCIPAL_SCOPED`` (``favourites`` and,
  * since SNOW-687, ``routes``) carry and validate a ``principal``.
- * ``community_reports`` is public data with no account binding, so it is
- * deliberately NOT partitioned: a report cached while signed in must stay
+ * ``community_reports`` and ``weather`` are public data with no account
+ * binding, so neither is partitioned: a report cached while signed in must stay
  * readable after logout, and an anonymous report after login — tying it to a
  * principal would wrongly hide public data across an account change.
  *
@@ -90,8 +90,8 @@
    * effort — never throws, so a broken cache write can't break the overlay
    * fetch it rides on.
    *
-   * @param {string} resource - ``'favourites'``, ``'community_reports'``
-   *   or ``'routes'``
+   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
+   *   ``'weather'`` or ``'routes'``
    * @param {object} geojson - the fetched FeatureCollection
    * @returns {Promise<void>}
    */
@@ -126,8 +126,8 @@
    * (community_reports) skip the principal check entirely and read back for
    * any session.
    *
-   * @param {string} resource - ``'favourites'``, ``'community_reports'``
-   *   or ``'routes'``
+   * @param {string} resource - ``'favourites'``, ``'community_reports'``,
+   *   ``'weather'`` or ``'routes'``
    * @returns {Promise<object | null>}
    */
   async function getOverlay(resource) {

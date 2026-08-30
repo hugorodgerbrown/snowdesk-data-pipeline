@@ -249,12 +249,15 @@ class TestResortLocationDeletion:
 
 @pytest.mark.django_db
 class TestLocationQuerySetActive:
-    """Tests for ``LocationQuerySet.active()`` — the fetch and feed boundary.
+    """Tests for ``LocationQuerySet.active()`` — what costs money to fetch.
 
-    The set this returns is the set that costs money (one Open-Meteo call
-    per row, four times a day) and the set SNOW-761's map feed publishes.
-    Both questions are "public place or private pin", which is why there is
-    one method rather than two.
+    The set this returns is the set that costs money: one Open-Meteo call
+    per row, four times a day.
+
+    It is **not** the set the map feed publishes. That is ``public()``,
+    which is narrower — see ``TestLocationQuerySetPublic``. The two were
+    briefly assumed to be one question during SNOW-761 scoping; they are
+    not, and conflating them puts a private favourite on a public map.
     """
 
     def test_a_resort_location_is_active(self) -> None:
@@ -320,3 +323,72 @@ class TestLocationQuerySetActive:
         FieldObservationFactory.create(location=link.location)
 
         assert list(Location.objects.active()) == [link.location]
+
+
+@pytest.mark.django_db
+class TestLocationQuerySetPublic:
+    """Tests for ``LocationQuerySet.public()`` — what anyone may see.
+
+    SNOW-761's map weather feed renders this set. The boundary that matters
+    is the one against ``active()``: a favourite is a billable pin but a
+    private one, so it belongs in ``active()`` and must never reach here.
+    """
+
+    def test_a_resort_location_is_public(self) -> None:
+        """A place a resort points at is already on a public page."""
+        link = ResortLocationFactory.create()
+
+        assert list(Location.objects.public()) == [link.location]
+
+    def test_a_region_centroid_is_public(self) -> None:
+        """A region's centroid represents the region, not a person."""
+        location = LocationFactory.create(anonymous=True)
+        MicroRegionFactory.create(centroid_location=location)
+
+        assert list(Location.objects.public()) == [location]
+
+    def test_a_favourite_only_location_is_NOT_public(self) -> None:
+        """The privacy boundary — a saved pin must not reach a public feed.
+
+        A favourite is one person's private place. Publishing it would put
+        that person's saved location, and its coordinates, on a map every
+        visitor can read. The pre-SNOW-762 forecast feed excluded
+        favourite-only points for this reason; this assertion is what keeps
+        the rebuilt feed honest.
+        """
+        favourite = FavouriteFactory.create()
+
+        assert list(Location.objects.active()) == [favourite.location]
+        assert list(Location.objects.public()) == []
+
+    def test_an_observation_only_location_is_not_public(self) -> None:
+        """A field report is not a curation act either."""
+        observation = FieldObservationFactory.create()
+
+        assert observation.location is not None
+        assert list(Location.objects.public()) == []
+
+    def test_public_is_a_subset_of_active(self) -> None:
+        """Everything public is fetched; not everything fetched is public.
+
+        Stated as one assertion so the direction of the containment cannot
+        be quietly reversed by a later edit.
+        """
+        resort_link = ResortLocationFactory.create()
+        favourite = FavouriteFactory.create()
+
+        public = set(Location.objects.public())
+        active = set(Location.objects.active())
+
+        assert public < active
+        assert resort_link.location in public
+        assert favourite.location in active
+        assert favourite.location not in public
+
+    def test_a_location_reachable_two_ways_appears_once(self) -> None:
+        """A resort's village that is also a region centroid joins twice."""
+        location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
+        MicroRegionFactory.create(centroid_location=location)
+
+        assert list(Location.objects.public()) == [location]

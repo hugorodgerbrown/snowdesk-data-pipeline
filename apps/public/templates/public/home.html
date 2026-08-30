@@ -272,6 +272,17 @@ in addition to the shared map assets.
     {# time, so it has no place in the temporal-dead-zone ordering the       #}
     {# bundle exists to protect.                                            #}
     <script defer src="{% static 'js/slope_overlay_core.js' %}"></script>
+    {# SNOW-761: the weather overlay's pure transforms                       #}
+    {# (window.pwaWeatherCore) — the WMO code -> Meteocons icon mapping, the #}
+    {# temperature-and-altitude label, the date projection and the           #}
+    {# cluster-to-lowest collapse, extracted so all four are Vitest-covered  #}
+    {# (tests/js/test_map_weather_core.js). Here with the other *_core.js    #}
+    {# modules and NOT inside the map bundle's contiguous run                #}
+    {# (test_bundle_scripts_are_contiguous): map.js reads it from            #}
+    {# installWeatherLayer and refreshWeatherSourceData, never at parse      #}
+    {# time, so it has no place in the temporal-dead-zone ordering the       #}
+    {# bundle exists to protect.                                             #}
+    <script defer src="{% static 'js/map_weather_core.js' %}"></script>
     {# The saved-route elevation profile's maths and SVG                     #}
     {# (window.pwaElevationProfileCore) — the picture the route popup's      #}
     {# distance/ascent/descent figures summarise, derived from the elevation #}

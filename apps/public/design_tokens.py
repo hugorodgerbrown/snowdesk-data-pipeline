@@ -41,6 +41,7 @@ from apps.public._component_fixtures import (
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
+    FORECAST_PANEL_VARIANTS,
     FORM_FIELD_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
@@ -73,6 +74,7 @@ from apps.public._component_fixtures import (
     TOAST_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
+    WEATHER_PANEL_VARIANTS,
 )
 
 
@@ -1315,6 +1317,42 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="favourites/partials/_favourite_problem.html",
         variants=FAVOURITE_PROBLEM_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-panel",
+        label="Weather panel",
+        description=(
+            "One day's weather at one location (SNOW-761) — condition icon, "
+            "En-GB label, hi/lo, snowfall, freezing level and the sunrise–"
+            "sunset pair. Shared by the bulletin masthead, the resort page "
+            "and the favourite card, which is why it carries no colour of "
+            "its own: it drops into whichever card includes it. Every "
+            "measurement group renders independently, so a partially-"
+            "populated row shows what it has — Open-Meteo drops variables "
+            "depending on which model backs the coordinates. The whole "
+            "panel is absent when there is no row, which is the ordinary "
+            "state for a historical date."
+        ),
+        kind="components",
+        partial="includes/_weather_panel.html",
+        variants=WEATHER_PANEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="forecast-panel",
+        label="Forecast panel",
+        description=(
+            "The multi-day outlook for one location (SNOW-761): a scrolling "
+            "day strip, then one collapsible hourly panel per day that "
+            "carries an hourly series. Only the first few days do — the "
+            "stored ``forecast[]`` entries beyond that horizon have no "
+            "``hourly`` key at all — so the second variant is the sparse "
+            "shape rather than a degraded version of the first."
+        ),
+        kind="components",
+        partial="includes/_forecast_panel.html",
+        variants=FORECAST_PANEL_VARIANTS,
         panel_layout="stack",
     ),
 )

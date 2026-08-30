@@ -262,14 +262,53 @@ _PANELS: dict[str, dict[str, Any]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Weather panel (SNOW-761)
+#
+# A hand-built ``WeatherDisplay``, not the output of
+# ``build_weather_display`` against a real row: /help/ renders without
+# touching the database, and the illustration is about the panel's layout
+# rather than about the derivation, which is covered in
+# ``tests/weather/services/test_weather_display.py``.
+#
+# ``weather`` is a plain dict here where a call site passes a model
+# instance — the partial reads only ``weather_code`` off it, for a data
+# attribute.
+#
+# The values describe a snowy day at altitude, because that is the case
+# the topic's copy is about: the same forecast reads differently at the
+# village and at the summit.
+# ---------------------------------------------------------------------------
+
+_WEATHER_PANEL: dict[str, Any] = {
+    "location_label": "Mont Fort · 3328 m",
+    "weather_display": {
+        "weather": {"weather_code": 73},
+        "bucket": "snow",
+        "is_day": True,
+        "time_of_day": "day",
+        "sunrise_local": "07:48",
+        "sunset_local": "17:12",
+        "icon_bucket": "moderate_snow",
+        "condition_label": "Snow",
+        "icon_filename": "moderate_snow-day.svg",
+        "temp_max": -4.0,
+        "temp_min": -11.0,
+        "snowfall_sum": 18.0,
+        "freezing_level_height": 900.0,
+    },
+}
+
+
 def help_illustrations() -> dict[str, Any]:
     """
     Build the illustration context for the /help/ page.
 
     Returns:
         A mapping consumed by ``public/help.html``: ``season_calendar`` for
-        the heatmap topic, and ``panels`` keyed by topic for the four that
-        share the UGC panel shell.
+        the heatmap topic, ``panels`` keyed by topic for the four that
+        share the UGC panel shell, and ``weather_panel`` for the weather
+        topic.
 
         The season scrubber is deliberately absent — its styles live in
         ``static/css/map.css``, which ``/help/`` does not load. See that
@@ -279,6 +318,7 @@ def help_illustrations() -> dict[str, Any]:
     context: dict[str, Any] = {
         "season_calendar": synthetic_season_grid(),
         "panels": _PANELS,
+        "weather_panel": _WEATHER_PANEL,
     }
     context.update(_bulletin_illustrations())
     return context

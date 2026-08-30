@@ -460,6 +460,10 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         "/api/resorts-by-region/",
         "/api/resorts.geojson",
         "/api/regions.geojson",
+        # SNOW-761: the map's Weather overlay feed. Public and shared-cached
+        # for the same reason as the geojson endpoints above, so it needs the
+        # same exemption or Vary: Cookie defeats it.
+        "/api/weather.geojson",
         "/api/major-regions.geojson",
         "/api/sub-regions.geojson",
         "/api/bulletin-groupings.geojson",

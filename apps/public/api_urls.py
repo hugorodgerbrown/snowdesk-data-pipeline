@@ -46,6 +46,12 @@ urlpatterns = [
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),
+    # SNOW-761: the map's Weather overlay. ONE feed, anchored on Location —
+    # it replaces the resort-anchored /api/forecast-weather.geojson and the
+    # region-anchored /api/region-weather.geojson that SNOW-762 removed.
+    # Filtered by Location.objects.public(), never active(): the latter also
+    # reaches favourites, and a public feed built from it leaks private pins.
+    path("weather.geojson", api.weather_geojson, name="weather_geojson"),
     path(
         "major-regions.geojson",
         api.major_regions_geojson,

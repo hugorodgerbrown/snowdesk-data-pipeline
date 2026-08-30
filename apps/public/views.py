@@ -109,11 +109,19 @@ from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache
 from apps.core.utils import html_to_markdown
 from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
+from apps.locations.models import Location
 from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.services.shares import pending_tokens
+from apps.weather.models import Weather
+from apps.weather.services.weather_display import (
+    ForecastPanel,
+    WeatherDisplay,
+    build_point_forecast_panel,
+    build_weather_display,
+)
 
 from .component_previews import help_illustrations
 from .decorators import lowercase_region_id
@@ -820,6 +828,8 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_locations_*``     — the five location-editor URLs, present only
                                 when ``edit_target == "locations"``
                                 (see ``_edit_locations_context``).
+      ``weather_geojson_url`` — URL for the map's Weather overlay feed
+        (SNOW-761). Ungated: the feed is public.
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
       ``slope_layer_eligible`` — True when ``settings.SLOPE_TILE_URL`` is
@@ -894,6 +904,7 @@ def home(request: HttpRequest) -> HttpResponse:
     routes_ctx = _routes_context(request)
     downloads_ctx = _downloads_context(request)
     community_reports_ctx = _community_reports_context(request)
+    weather_ctx = _weather_overlay_context()
     slope_ctx = _slope_context(request)
 
     return render(
@@ -907,6 +918,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **routes_ctx,
             **downloads_ctx,
             **community_reports_ctx,
+            **weather_ctx,
             **slope_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
@@ -1763,6 +1775,21 @@ def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
 
     """
     return {"community_reports_geojson_url": reverse("api:community_reports_geojson")}
+
+
+def _weather_overlay_context() -> dict[str, Any]:
+    """Build the template context dict for the map's Weather overlay.
+
+    Like community reports and unlike favourites, there is no eligibility
+    split: the feed is filtered server-side by ``Location.objects.public()``
+    and carries no per-user data, so every request sees the toggle and the
+    URL.
+
+    Returns:
+        Dict with ``weather_geojson_url``.
+
+    """
+    return {"weather_geojson_url": reverse("api:weather_geojson")}
 
 
 def _slope_context(request: HttpRequest) -> dict[str, Any]:
@@ -3230,6 +3257,40 @@ def _build_canonical_url(
     return f"{base}{region.get_absolute_url(target_date)}"
 
 
+# ---------------------------------------------------------------------------
+# Weather (SNOW-761)
+# ---------------------------------------------------------------------------
+
+
+def _weather_for_location(
+    location: Location | None, observed_on: datetime.date
+) -> Weather | None:
+    """Return the ``Weather`` row for one location on one day, or ``None``.
+
+    The read path every weather surface goes through. Keyed on the
+    ``(location, observed_on)`` unique constraint — **never**
+    ``.order_by("-fetched_at").first()``, because today's row is updated in
+    place rather than appended, so ordering by fetch time would return the
+    same row while implying there were several.
+
+    ``None`` is the ordinary answer, not an error case: a location with no
+    centroid link has nowhere to read from, and a historical date predates
+    the estate's first fetch (the SNOW-731 backfill is deferred). Both must
+    degrade to no panel.
+
+    Args:
+        location: The location to read, or ``None``.
+        observed_on: The calendar day the caller is showing.
+
+    Returns:
+        The row, or ``None`` when there is none.
+
+    """
+    if location is None:
+        return None
+    return Weather.objects.for_location(location).on_date(observed_on).first()
+
+
 def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     """
     Look up a MicroRegion with the prefetches the bulletin page needs.
@@ -3242,9 +3303,15 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     query-count monitor catches regressions). ``neighbours`` is prefetched
     ordered-by-name so the "Adjoining regions" section iterates in display
     order without a per-render sort.
+
+    SNOW-761 added ``centroid_location`` to the chain: the masthead's
+    weather panel reads the region's centroid ``Location`` on every
+    pageview, and without it that FK is a second SELECT.
     """
     return get_object_or_404(
-        MicroRegion.objects.select_related("subregion__major").prefetch_related(
+        MicroRegion.objects.select_related(
+            "subregion__major", "centroid_location"
+        ).prefetch_related(
             Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
         ),
         region_id__iexact=region_id,
@@ -3821,6 +3888,15 @@ def _bulletin_detail_response(
         else ""
     )
 
+    # SNOW-761: the masthead's weather, read off the region's centroid
+    # Location for the day the page represents. A region with no centroid
+    # link, or a date before the estate's first fetch, yields None and the
+    # partial renders nothing — a historical bulletin simply has no panel.
+    weather_display = build_weather_display(
+        _weather_for_location(region.centroid_location, target_date),
+        timezone.now(),
+    )
+
     if selected is None:
         response = _render_bulletin_page(
             request,
@@ -3831,6 +3907,7 @@ def _bulletin_detail_response(
                 "region_id": region.region_id,
                 "slug": slugify(region.name),
                 "subregion_name": subregion_name,
+                "weather_display": weather_display,
                 "page_date": target_date,
                 "prev_date": prev_date,
                 "next_date": next_date,
@@ -3977,6 +4054,9 @@ def _bulletin_detail_response(
         # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
+        # SNOW-761: the masthead's weather panel — the region centroid's
+        # Weather row for page_date, or None.
+        "weather_display": weather_display,
         # Hero rating badge — morning level + optional subdivision (SNOW-246).
         "morning_rating": morning_rating,
         # Period transition chip — rise/fall beside the hero badge (SNOW-248).
@@ -4155,6 +4235,96 @@ def _bulletin_detail_render(
 # ---------------------------------------------------------------------------
 
 
+@dataclasses.dataclass(frozen=True)
+class ResortWeatherSection:
+    """One curated location's weather block on the resort page.
+
+    Attributes:
+        location: The ``Location`` the block describes.
+        label: The eyebrow text — the location's name and, when known, its
+            elevation. The elevation is the whole reason a resort shows
+            more than one block: village rain and summit snow are the same
+            forecast read at two heights.
+        role_label: The role this location plays FOR THIS RESORT (Base /
+            Mid-mountain / Top), which is not the same as the location's own
+            ``kind`` — see ``ResortLocation.role``.
+        weather_display: The day's ``WeatherDisplay``, or ``None``.
+        forecast_panel: The multi-day ``ForecastPanel``, or ``None``.
+        testid_prefix: Stable per-block prefix for ``data-testid``s.
+
+    """
+
+    location: Location
+    label: str
+    role_label: str
+    weather_display: WeatherDisplay | None
+    forecast_panel: ForecastPanel | None
+    testid_prefix: str
+
+
+def _resort_weather_sections(
+    resort: Resort, observed_on: datetime.date, now: datetime.datetime
+) -> list[ResortWeatherSection]:
+    """Build one weather block per curated location linked to a resort.
+
+    Ordered with the primary link first — the one the resort leads with,
+    normally the village, because that is where someone arrives — then by
+    role and name so the rest read bottom-to-top consistently.
+
+    Blocks with no ``Weather`` row are dropped entirely rather than rendered
+    empty: a resort whose peak has a row and whose village does not should
+    show one block, not one block and a hole.
+
+    One query for the links (with their locations joined) and one for the
+    day's rows across all of them, so the section costs two queries however
+    many locations a resort has.
+
+    Args:
+        resort: The resort whose links to walk.
+        observed_on: The calendar day to read.
+        now: The reference instant for each block's day/night icon decision.
+
+    Returns:
+        The blocks, in display order. Empty when the resort has no linked
+        locations or none of them has a row for the day.
+
+    """
+    links = list(
+        resort.resort_locations.select_related("location").order_by(
+            "-is_primary", "role", "location__name"
+        )
+    )
+    if not links:
+        return []
+    rows = {
+        row.location_id: row
+        for row in Weather.objects.filter(
+            location__in=[link.location_id for link in links],
+            observed_on=observed_on,
+        )
+    }
+    sections: list[ResortWeatherSection] = []
+    for index, link in enumerate(links):
+        weather = rows.get(link.location_id)
+        if weather is None:
+            continue
+        location = link.location
+        label = location.name or location.to_string()
+        if location.elevation_m is not None:
+            label = f"{label} · {location.elevation_m:.0f} m"
+        sections.append(
+            ResortWeatherSection(
+                location=location,
+                label=label,
+                role_label=str(link.get_role_display()),
+                weather_display=build_weather_display(weather, now),
+                forecast_panel=build_point_forecast_panel(weather, now),
+                testid_prefix=f"resort-weather-{index}",
+            )
+        )
+    return sections
+
+
 def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpResponse:
     """
     Render the public resort detail page.
@@ -4226,6 +4396,10 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         "observation_has_user_located": _get_observation_has_user_located(
             request, region, today
         ),
+        # SNOW-761: one weather block per curated location, labelled with the
+        # height it was read at. Empty list when the resort has no linked
+        # locations or none of them has a row for today.
+        "weather_sections": _resort_weather_sections(resort, today, timezone.now()),
     }
     return render(request, "public/resort.html", context)
 

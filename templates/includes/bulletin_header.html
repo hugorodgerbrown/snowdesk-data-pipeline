@@ -7,10 +7,17 @@ Carries the page's location wayfinding (sub-region eyebrow + region
 
 SNOW-762 removed the Open-Meteo weather hero this panel used to lead
 with, along with ``_weather_panel.html``, which held both the weather
-band and this wayfinding. The masthead is rebuilt here directly on design
-tokens rather than on the bucket-coloured background, which had no
-meaning without a weather code to colour it by. SNOW-761 decides whether
-weather returns to the masthead and in what form.
+band and this wayfinding. SNOW-761 answers the question that comment
+left open: weather returns, but as a **row inside this card** rather than
+as the bucket-coloured hero that used to own the wayfinding. The masthead
+keeps its own ``<h1>``, eyebrow and share button; the weather partial
+renders weather and nothing else, which is what lets the resort page and
+the favourite card include the same one.
+
+The panel is absent whenever ``weather_display`` is falsy — no centroid
+location, or a date before the estate's first fetch. That is the ordinary
+case for a historical bulletin and must read as "no panel", never as an
+error.
 
 Context:
   region_name    — display name for the ``<h1>``; the ``<h1>`` and its
@@ -22,6 +29,8 @@ Context:
   share_region   — object carrying ``region_id``, for the share button's
                    ``data-region-id``.
   share_date     — date for the share button's ``data-date``.
+  weather_display — WeatherDisplay | None for the region centroid on
+                   ``page_date``; the weather row is omitted when falsy.
 {% endcomment %}
 <header
     class="relative bg-card border border-border rounded-card mb-4 px-4 py-4"
@@ -76,5 +85,10 @@ Context:
         >
             <span>{{ page_date|date:"D j M" }}</span>
         </div>
+        {% if weather_display %}
+            <div class="mt-3 pt-3 border-t border-border">
+                {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="bulletin-weather" location_label="" only %}
+            </div>
+        {% endif %}
     </div>
 </header>

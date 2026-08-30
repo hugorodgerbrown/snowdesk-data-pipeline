@@ -235,6 +235,15 @@
     // ``markCached('favourites')`` is still called by map.js's lazy-load path.
     // It no-ops now — the membership check in ``_markCachedNow`` is the
     // allowlist, and ``_overlayDot`` returns null for a row that isn't there.
+    // SNOW-761: the Weather overlay's payload. ``idb``, not ``geojson`` —
+    // its endpoint is public, but what it carries is a mutable forecast,
+    // not static reference data suited to sw.js's STATIC_PATHS shell cache
+    // (which never expires). The write-through IndexedDB row
+    // (window.pwaMapOverlayCache, same posture as community_reports) is
+    // self-correcting on read-back: a stale cached payload simply stops
+    // drawing anything as scrubbed dates roll past its forecast window,
+    // rather than needing an explicit staleness check.
+    weather: Object.freeze({ kind: 'idb', key: 'weather' }),
     // SNOW-645: the "Available offline" row that lived here (``downloaded:
     // {kind: 'pinned-tiles'}``, probed by the now-deleted
     // ``_probeAnyPinnedTile``) is gone — its dot went permanently grey and

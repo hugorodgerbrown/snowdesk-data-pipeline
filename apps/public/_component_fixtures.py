@@ -2825,3 +2825,229 @@ def _build_favourite_problem_variants() -> tuple[dict[str, Any], ...]:
 FAVOURITE_PROBLEM_VARIANTS: tuple[dict[str, Any], ...] = (
     _build_favourite_problem_variants()
 )
+
+
+# ---------------------------------------------------------------------------
+# Weather panel + forecast panel (SNOW-761)
+# ---------------------------------------------------------------------------
+
+# Contexts here are hand-built ``WeatherDisplay`` / ``ForecastPanel`` dicts
+# rather than the output of ``build_weather_display`` against a real row: the
+# component library renders without a database, and the point of the panel is
+# its layout under each combination of present and absent fields. The
+# derivation itself is covered in
+# ``tests/weather/services/test_weather_display.py``.
+#
+# ``weather`` inside a WeatherDisplay is a model instance at call sites; here
+# it is a plain dict, because the only thing the partial reads off it is
+# ``weather_code`` for a data attribute.
+
+
+def _weather_display(**overrides: Any) -> dict[str, Any]:
+    """Build one WeatherDisplay-shaped context for the library.
+
+    Args:
+        **overrides: Any key to replace on the fully-populated default.
+
+    Returns:
+        The context dict.
+
+    """
+    display: dict[str, Any] = {
+        "weather": {"weather_code": 73},
+        "bucket": "snow",
+        "is_day": True,
+        "time_of_day": "day",
+        "sunrise_local": "06:32",
+        "sunset_local": "20:14",
+        "icon_bucket": "moderate_snow",
+        "condition_label": "Snow",
+        "icon_filename": "moderate_snow-day.svg",
+        "temp_max": -1.0,
+        "temp_min": -8.0,
+        "snowfall_sum": 22.0,
+        "freezing_level_height": 1200.0,
+    }
+    display.update(overrides)
+    return display
+
+
+WEATHER_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Every field present, no location label (bulletin masthead)",
+        "context": {
+            "weather_display": _weather_display(),
+            "testid_prefix": "component-library-weather",
+        },
+    },
+    {
+        "caption": "Labelled with its location and elevation (resort page)",
+        "context": {
+            "weather_display": _weather_display(
+                weather={"weather_code": 0},
+                bucket="clear",
+                icon_bucket="clear",
+                condition_label="Clear",
+                icon_filename="clear-day.svg",
+                temp_max=6.0,
+                temp_min=-2.0,
+                snowfall_sum=0.0,
+                freezing_level_height=2600.0,
+            ),
+            "location_label": "Mont Fort · 3328 m",
+            "testid_prefix": "component-library-weather-labelled",
+        },
+    },
+    {
+        # Open-Meteo drops variables depending on which model backs the
+        # coordinates, so a partially-populated row is ordinary. Each group
+        # renders independently of the others rather than all-or-nothing.
+        "caption": "Partial row — no temperatures, no freezing level",
+        "context": {
+            "weather_display": _weather_display(
+                temp_max=None,
+                temp_min=None,
+                snowfall_sum=None,
+                freezing_level_height=None,
+            ),
+            "testid_prefix": "component-library-weather-partial",
+        },
+    },
+    {
+        # Night is not a variant of the panel's chrome — it is a different
+        # icon file, which is the whole visual difference.
+        "caption": "Night",
+        "context": {
+            "weather_display": _weather_display(
+                is_day=False,
+                time_of_day="night",
+                icon_filename="moderate_snow-night.svg",
+            ),
+            "testid_prefix": "component-library-weather-night",
+        },
+    },
+)
+
+
+def _forecast_panel_day(
+    *,
+    date: datetime.date,
+    icon_bucket: str,
+    condition_label: str,
+    temp_max: float | None,
+    temp_min: float | None,
+    snowfall_sum: float | None,
+    freezing_level_height: float | None,
+    hourly: tuple[dict[str, Any], ...] = (),
+) -> dict[str, Any]:
+    """Build one ForecastPanelDay-shaped context column.
+
+    Args:
+        date: The column's calendar day.
+        icon_bucket: The day's icon bucket.
+        condition_label: The day's En-GB condition label.
+        temp_max: Daily max air temperature, °C, or None.
+        temp_min: Daily min air temperature, °C, or None.
+        snowfall_sum: Daily snowfall total, cm, or None.
+        freezing_level_height: Day's freezing level, m, or None.
+        hourly: That day's hourly rows. Empty for a day past the horizon
+            that carries no series — which is most of the strip.
+
+    Returns:
+        The context dict.
+
+    """
+    return {
+        "date": date,
+        "weekday_label": date.strftime("%a"),
+        "icon_bucket": icon_bucket,
+        "icon_filename": f"{icon_bucket}-day.svg",
+        "condition_label": condition_label,
+        "temp_max": temp_max,
+        "temp_min": temp_min,
+        "snowfall_sum": snowfall_sum,
+        "freezing_level_height": freezing_level_height,
+        "hourly": list(hourly),
+    }
+
+
+def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
+    """Build the forecast-panel variants.
+
+    A function rather than a literal because every column is derived from
+    one anchor date, so the strip reads as consecutive days whenever the
+    library is opened.
+
+    Returns:
+        The variant tuple.
+
+    """
+    anchor = datetime.date(2026, 1, 12)
+    hourly = tuple(
+        {
+            "time": f"2026-01-12T{hour:02d}:00",
+            "temperature_2m": -3.0 + hour * 0.4,
+            "wind_speed_10m": 12.0 + hour,
+            "wind_gusts_10m": 28.0 + hour,
+            "precipitation": 0.4,
+            "freezing_level_height": 1100.0 + hour * 20,
+            "snowfall": 0.6,
+        }
+        for hour in (6, 9, 12, 15)
+    )
+    conditions = (
+        ("moderate_snow", "Snow", -1.0, -8.0, 22.0, 1200.0),
+        ("light_snow", "Light snow", -2.0, -9.0, 6.0, 1000.0),
+        ("cloudy", "Overcast", 0.0, -6.0, 0.0, 1500.0),
+        ("clear", "Clear", 3.0, -4.0, 0.0, 2200.0),
+        ("light_rain", "Light rain", 6.0, 1.0, None, 2800.0),
+    )
+    full_days = [
+        _forecast_panel_day(
+            date=anchor + datetime.timedelta(days=index),
+            icon_bucket=bucket,
+            condition_label=label,
+            temp_max=tmax,
+            temp_min=tmin,
+            snowfall_sum=snow,
+            freezing_level_height=freezing,
+            # Only the first two days carry an hourly series — that is the
+            # real shape (``ForecastDay.hourly`` is NotRequired), and a
+            # library that showed one per column would misrepresent it.
+            hourly=hourly if index < 2 else (),
+        )
+        for index, (bucket, label, tmax, tmin, snow, freezing) in enumerate(conditions)
+    ]
+    return (
+        {
+            "caption": "Five days, hourly detail on the first two",
+            "solo": True,
+            "context": {
+                "panel": {"days": full_days},
+                "testid_prefix": "component-library-forecast",
+            },
+        },
+        {
+            "caption": "One day, no hourly series and no freezing level",
+            "solo": True,
+            "context": {
+                "panel": {
+                    "days": [
+                        _forecast_panel_day(
+                            date=anchor,
+                            icon_bucket="fog",
+                            condition_label="Fog",
+                            temp_max=None,
+                            temp_min=None,
+                            snowfall_sum=None,
+                            freezing_level_height=None,
+                        )
+                    ]
+                },
+                "testid_prefix": "component-library-forecast-sparse",
+            },
+        },
+    )
+
+
+FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_panel_variants()
