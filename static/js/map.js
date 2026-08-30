@@ -808,7 +808,6 @@
     // below the more personal pin layers, so a favourite star or a
     // community-report flag at the same point is never hidden behind a
     // weather icon.
-    'weather-plate',
     'weather-point',
     'community-reports-clusters',
     'community-reports-cluster-count',
@@ -2394,33 +2393,6 @@
     const projected = weatherDataForCurrentView();
     map.addSource('weather', { type: 'geojson', data: projected });
     map.addLayer({
-      id: 'weather-plate',
-      type: 'circle',
-      source: 'weather',
-      minzoom: WEATHER_MIN_ZOOM,
-      filter: ['!=', ['get', 'icon'], ''],
-      layout: {
-        visibility: overlayState.weather ? 'visible' : 'none',
-      },
-      paint: {
-        // Ground for the icon. The Meteocons set is pale and gradient-filled
-        // — a sun or a cloud is mostly white — so on the winter basemap the
-        // symbols were nearly invisible with nothing behind them. A raster
-        // icon cannot take icon-halo-*, which only applies to SDF images, so
-        // the contrast has to come from a layer underneath.
-        //
-        // --color-card over --color-border-strong, matched by value because
-        // MapLibre paint cannot read a CSS variable (see CLAUDE.md).
-        'circle-radius': 15,
-        'circle-color': '#ffffff',
-        'circle-opacity': 0.82,
-        'circle-stroke-width': 1,
-        'circle-stroke-color': 'rgba(0, 0, 0, 0.16)',
-        'circle-translate': [0, -13],
-      },
-    });
-
-    map.addLayer({
       id: 'weather-point',
       type: 'symbol',
       source: 'weather',
@@ -2432,7 +2404,13 @@
       layout: {
         visibility: overlayState.weather ? 'visible' : 'none',
         'icon-image': ['get', 'icon'],
-        'icon-size': 1.05,
+        // Larger than a pin icon would be, because nothing sits behind it.
+        // A `weather-plate` circle layer was tried underneath — the
+        // Meteocons set is pale and gradient-filled, and a raster icon
+        // cannot take icon-halo-* — but a disc big enough to back the
+        // symbol read as a bubble swamping it rather than as ground. Size
+        // carries the icon on its own; the label below it does the rest.
+        'icon-size': 1.35,
         'icon-anchor': 'bottom',
         'icon-allow-overlap': false,
         // Two lines: the day's max temperature, then the station's
@@ -3451,7 +3429,7 @@
     // SNOW-761: one symbol layer, not a pin+label pair — the icon and the
     // label are two data-driven properties of the same symbol
     // ('icon-image' / 'text-field'), unlike favourites and resorts.
-    weather: ['weather-plate', 'weather-point'],
+    weather: ['weather-point'],
     // SNOW-687: the coloured line FIRST and the casing second — deliberately
     // the inverse of the order installRoutesLayer adds them in, where the
     // casing has to be added first to paint underneath. This list's order is
