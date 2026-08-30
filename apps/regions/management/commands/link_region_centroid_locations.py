@@ -39,6 +39,14 @@ null ``elevation_m``: weather does not need a height, and
 ``Location.objects.unresolved()`` exists to fill it in later. A region whose
 boundary cannot be read is logged and counted, never fatal.
 
+**Failure is per-region and almost never fatal, by design.** ``build.sh``
+runs this under ``set -o errexit`` on three services that share one
+database, so an escaping exception would take a whole deploy down. One
+region that cannot be linked is not worth that — it degrades to a region
+with no weather, which every surface already handles. The command exits
+non-zero only when *every* candidate failed, which means something systemic
+rather than one bad row.
+
 Idempotent — regions that already have a ``centroid_location`` are excluded,
 so a second run in the same deploy selects zero.
 
@@ -169,10 +177,16 @@ class Command(BaseCommand):
 
         self._report_outcome(counts, commit=commit, verbosity=verbosity)
 
-        if counts["failed"] > 0:
+        # Non-zero ONLY on a total failure — every candidate raised. That is
+        # systemic (a bad migration, an unreachable database) and worth
+        # blocking a deploy on. A partial failure is not: it logs loudly
+        # above, leaves the regions that did link working, and lets the
+        # deploy finish. Failing every deploy of every service because one
+        # of 461 regions could not be written would be the worse outcome.
+        if counts["failed"] > 0 and counts["linked"] == 0:
             raise CommandError(
-                f"link_region_centroid_locations completed with "
-                f"{counts['failed']} region failure(s). Check logs for details."
+                f"link_region_centroid_locations linked nothing: all "
+                f"{counts['failed']} candidate(s) failed. Check logs."
             )
 
     def _resolve_one(
@@ -216,17 +230,30 @@ class Command(BaseCommand):
         elevation = region.centroid_elevation_m
 
         if commit:
-            with transaction.atomic():
-                # Anonymous: a centroid represents the region, not a place
-                # anyone goes, and naming it would put it in the curated
-                # estate that import_locations owns.
-                location = Location.objects.create(
-                    latitude=latitude,
-                    longitude=longitude,
-                    elevation_m=elevation,
+            try:
+                with transaction.atomic():
+                    # Anonymous: a centroid represents the region, not a
+                    # place anyone goes, and naming it would put it in the
+                    # curated estate that import_locations owns.
+                    location = Location.objects.create(
+                        latitude=latitude,
+                        longitude=longitude,
+                        elevation_m=elevation,
+                    )
+                    region.centroid_location = location
+                    region.save(update_fields=["centroid_location", "updated_at"])
+            except Exception:  # noqa: BLE001 — one region must not fail a deploy
+                # build.sh runs this under ``set -o errexit``, so an escaping
+                # exception takes the whole deploy down — of three services
+                # that share a database. One micro-region that cannot be
+                # linked is not worth that: it degrades to a region with no
+                # weather, which the surfaces already handle.
+                logger.exception(
+                    "link_region_centroid_locations: failed to link region %s",
+                    region.region_id,
                 )
-                region.centroid_location = location
-                region.save(update_fields=["centroid_location", "updated_at"])
+                counts["failed"] += 1
+                return
         counts["linked"] += 1
         if verbosity >= 2:
             height = "unknown" if elevation is None else f"{elevation:.0f}m"
