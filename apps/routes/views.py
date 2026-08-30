@@ -71,14 +71,6 @@ Three properties keep that widening honest:
 * both short-circuit on an empty session list before any query, so a
   visitor who never followed a share link pays nothing — which is what
   keeps the homepage's query count where it was.
-
-The whole sharing surface sits behind the ``route_sharing`` waffle flag.
-It is read in the three share views and in the two widened branches above
-— never in ``apps.public.views._routes_context``, which runs on the
-homepage where a flag read costs queries on the site's most-requested page
-(see ``docs/feature-flags.md``). Every gated surface is rendered by
-``routes:list``, ``my_routes`` or ``/help/``, so the flag never has to be
-read by ``home``.
 """
 
 from __future__ import annotations
@@ -88,7 +80,6 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-import waffle
 from django.conf import settings
 from django.http import (
     Http404,
@@ -229,55 +220,25 @@ def _share_follow_rate_limit_key(group: str, request: HttpRequest) -> str:
     return f"{token}|{client_ip(request)}"
 
 
-def _sharing_enabled(request: HttpRequest) -> bool:
-    """Whether the SNOW-764 sharing surface is on for this request.
-
-    One reader inside this module, so its four gates cannot disagree. The
-    name is a LITERAL rather than a constant on purpose:
-    ``tests/core/services/test_waffle_manifest_call_sites.py`` reads the
-    source to check the manifest and the code name the same flags, and it
-    can only see literals — a constant here would make this gate invisible
-    to the one check that catches a rename going dark.
-
-    Args:
-        request: The current HTTP request.
-
-    Returns:
-        True when the ``route_sharing`` waffle flag is active.
-
-    """
-    # ``bool()`` because waffle's own annotation is ``bool | None`` — a
-    # flag with ``everyone`` unset and no other rule matching answers
-    # None, which is "not on" and must reach the callers as False rather
-    # than as a third state each of them has to think about.
-    return bool(waffle.flag_is_active(request, "route_sharing"))
-
-
 def _pending_shares_for(request: HttpRequest) -> list[RouteShare]:
     """Return this request's pending shares, or nothing when there are none.
 
     The guard the two widened endpoints share, and the reason neither of
     them costs a visitor who has never followed a share link anything: the
     session read is a dict lookup on an object the auth middleware has
-    already loaded, and BOTH the flag read and the database query sit
-    behind it. An empty list short-circuits before either.
-
-    The order is deliberate — session first, flag second. Reversing them
-    would read the flag (a cached DB row) on every routes request from
-    every visitor, which is the cost ``docs/feature-flags.md`` records
-    SNOW-749 deciding was not worth paying.
+    already loaded, and the database query sits behind it. An empty list
+    short-circuits before the query is ever built, which is what keeps the
+    homepage's query count where it was.
 
     Args:
         request: The current HTTP request.
 
     Returns:
         The claimable shares this session is holding, oldest-followed
-        first; empty when there are none or when sharing is off.
+        first; empty when there are none.
 
     """
     if not pending_tokens(request.session):
-        return []
-    if not _sharing_enabled(request):
         return []
     return pending_shares(request.session)
 
@@ -542,8 +503,8 @@ def route_list(request: HttpRequest) -> HttpResponse:
         {
             "routes": routes,
             "pending_shares": pending,
-            # SNOW-764: whether an owned row draws its Share control. Two
-            # conditions, and the second is not a flag read — it is which
+            # SNOW-764: whether an owned row draws its Share control. One
+            # condition, and it is not about permission — it is about which
             # SURFACE asked. Share is wired by static/js/routes.js, which
             # owns the map panel; /account/routes/ renders the same row
             # through the default variant and has no handler for it, and a
@@ -551,9 +512,7 @@ def route_list(request: HttpRequest) -> HttpResponse:
             # (it is the "dead pencil" argument account_routes.js's own
             # header makes). The account page gains Share when its module
             # does — noted as a follow-up on SNOW-764.
-            "sharing_enabled": (
-                variant == ROUTE_LIST_MAP_VARIANT and _sharing_enabled(request)
-            ),
+            "sharing_enabled": variant == ROUTE_LIST_MAP_VARIANT,
         },
     )
 
@@ -705,7 +664,7 @@ def route_share_create(request: HttpRequest, uuid: UUID) -> JsonResponse:
 
     Errors:
         403 — anonymous request.
-        404 — sharing is off; or the uuid is not this user's route.
+        404 — the uuid is not this user's route.
         429 — rate limit exceeded.
         500 — a unique token could not be minted (implausible; see
               ``create_route_share``).
@@ -718,12 +677,6 @@ def route_share_create(request: HttpRequest, uuid: UUID) -> JsonResponse:
         A JsonResponse carrying the absolute share URL.
 
     """
-    if not _sharing_enabled(request):
-        # 404 rather than 403: with the flag off the endpoint does not
-        # exist as far as anyone outside the rollout is concerned, and a
-        # 403 would advertise that it is about to.
-        return JsonResponse({"error": "not_found"}, status=404)
-
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 
@@ -778,7 +731,7 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     off the same helper, as ``apps.public.views.share_redirect``.
 
     Errors:
-        404 — sharing is off, or the token matches no share at all.
+        404 — the token matches no share at all.
         410 — the share exists but is expired or its route was deleted.
         429 — rate limit exceeded (30/hour per token+IP).
 
@@ -790,9 +743,6 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         A 302 to the map, or a 404/410/429.
 
     """
-    if not _sharing_enabled(request):
-        raise Http404("Route sharing is not enabled.")
-
     if getattr(request, "limited", False):
         return HttpResponse(status=429)
 
@@ -850,8 +800,8 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
         403 — anonymous request. A claim needs an account to claim ONTO;
               the map's own Save control sends an anonymous visitor to
               sign-in rather than posting here.
-        404 — sharing is off, or the share is unknown, expired, or its
-              route has been deleted.
+        404 — the share is unknown, expired, or its route has been
+              deleted.
         409 — the claimer is at ``settings.ROUTES_MAX_PER_USER``.
         429 — rate limit exceeded (> 20 claims/min per user).
 
@@ -864,9 +814,6 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
         response.
 
     """
-    if not _sharing_enabled(request):
-        return HttpResponse("Route not found.", status=404)
-
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
@@ -889,10 +836,13 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
 
     drop_pending_token(request.session, token)
 
-    # ``sharing_enabled`` True: the only surface that posts here is the map
-    # panel, and the row it swaps in is now an ordinary owned row on a
-    # surface whose Share control is wired. Reaching here at all means the
-    # flag is on — the guard at the top of this view saw to that.
+    # ``sharing_enabled`` True because of WHERE this row lands, not because
+    # of who claimed it: the only surface that posts here is the map panel
+    # (static/js/routes.js), and the row swapped in is an ordinary owned row
+    # on the one surface whose Share control is wired. It is the same
+    # condition ``route_list`` spells as ``variant == ROUTE_LIST_MAP_VARIANT``
+    # — hardcoded rather than read off the request because this endpoint has
+    # no variant to read, having only ever one caller.
     return render(
         request,
         "routes/partials/_route.html",

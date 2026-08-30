@@ -1248,13 +1248,6 @@ def help_page(request: HttpRequest) -> HttpResponse:
     """
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
-        # SNOW-764: the Routes topic's sharing subsection, behind the same
-        # flag as the surface it describes. A help section for a feature
-        # the reader cannot reach is worse than no section — the flag name
-        # is a literal here, as sync_log's is, so
-        # tests/core/services/test_waffle_manifest_call_sites.py can see
-        # it.
-        "routes_sharing_visible": waffle.flag_is_active(request, "route_sharing"),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)

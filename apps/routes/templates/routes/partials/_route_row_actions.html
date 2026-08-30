@@ -12,8 +12,9 @@ that row; there was never anything map-shaped about either control.
 TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
 
   An OWNED row gets Share, Rename, Remove — Share only when
-  ``sharing_enabled`` says so, which is the rollout flag AND a surface
-  with a handler for it (see apps/routes/views.py's route_list). Trash
+  ``sharing_enabled`` says so, which is a surface check and nothing else:
+  which listing asked, and therefore whether a handler is wired for the
+  click (see apps/routes/views.py's route_list). Trash
   stays last, on the design's rule that the destructive control is in the
   same place on every panel; Share goes FIRST rather than beside the
   trash, because it is the only one of the three that involves anybody
@@ -72,8 +73,8 @@ given. Same contract as the favourite row's actions.
 Context:
     route           : Route — the saved route this row describes.
     sharing_enabled : bool, optional — draw the Share control. False on a
-                      surface with no handler wired and whenever the
-                      ``route_sharing`` flag is off.
+                      surface with no handler wired for it, which today
+                      means everywhere except the map panel.
     pending_share : RouteShare, optional — set when this row is a share
                     the visitor has followed but not claimed. Its presence
                     selects the Save branch; its ``token`` addresses the

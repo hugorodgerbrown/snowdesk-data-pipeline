@@ -5,8 +5,7 @@ route_share_create:
   the owner gets an absolute URL naming routes:share_redirect;
   another user's uuid → 404, never 403 (no existence oracle);
   an unknown uuid → 404;
-  anonymous → 403; GET → 405; the flag off → 404;
-  the rate-limited branch → 429.
+  anonymous → 403; GET → 405; the rate-limited branch → 429.
 
 route_share_redirect:
   a live token → 302 (never 301) to /?route_share=<token>, no-store, and
@@ -15,13 +14,12 @@ route_share_redirect:
     nothing written to the session;
   an unknown token → 404;
   a speculative request (HEAD, Sec-Purpose) redirects but writes nothing;
-  the flag off → 404;
   POST → 405.
 
 route_share_claim:
   a signed-in claimer gets the new owned row and the token leaves the
     session;
-  anonymous → 403; non-HTMX → 400; GET → 405; the flag off → 404;
+  anonymous → 403; non-HTMX → 400; GET → 405;
   an unknown, expired or route-deleted token → 404;
   at ROUTES_MAX_PER_USER → 409 with _route_limit.html, and the token
     stays pending because the claim can still be retried after a delete.
@@ -43,7 +41,6 @@ from unittest.mock import patch
 import pytest
 from django.test import Client
 from django.utils import timezone
-from waffle.testutils import override_flag
 
 from apps.routes.models import Route
 from apps.routes.services.shares import PENDING_SESSION_KEY
@@ -75,17 +72,6 @@ def _claim_url(token: str) -> str:
 @pytest.mark.django_db
 class TestRouteShareCreate:
     """Minting a share link from the owner's row."""
-
-    @pytest.fixture(autouse=True)
-    def _sharing_on(self) -> Any:
-        """Turn the rollout flag on for every test in this class.
-
-        ``override_flag`` is a ``TestCase``-shaped decorator and refuses a
-        plain pytest class, so it is entered as a context manager by an
-        autouse fixture rather than repeated on twenty methods.
-        """
-        with override_flag("route_sharing", active=True):
-            yield
 
     def test_the_owner_gets_a_share_url(self, client: Client) -> None:
         """The response carries an absolute URL naming the redirect route."""
@@ -154,21 +140,6 @@ class TestRouteShareCreate:
         create.assert_not_called()
 
 
-@pytest.mark.django_db
-class TestRouteShareCreateFlag:
-    """The flag closes the endpoint entirely."""
-
-    def test_the_flag_off_returns_404(self, client: Client) -> None:
-        """404 and not 403 — off means the endpoint does not exist yet."""
-        route = RouteFactory.create()
-        client.force_login(route.user)
-
-        response = client.post(_share_url(route.uuid))
-
-        assert response.status_code == 404
-        assert not route.shares.exists()
-
-
 # ---------------------------------------------------------------------------
 # route_share_redirect
 # ---------------------------------------------------------------------------
@@ -177,17 +148,6 @@ class TestRouteShareCreateFlag:
 @pytest.mark.django_db
 class TestRouteShareRedirect:
     """Following a share link."""
-
-    @pytest.fixture(autouse=True)
-    def _sharing_on(self) -> Any:
-        """Turn the rollout flag on for every test in this class.
-
-        ``override_flag`` is a ``TestCase``-shaped decorator and refuses a
-        plain pytest class, so it is entered as a context manager by an
-        autouse fixture rather than repeated on twenty methods.
-        """
-        with override_flag("route_sharing", active=True):
-            yield
 
     def test_a_live_token_redirects_to_the_map(self, client: Client) -> None:
         """302 to the homepage carrying the token as a deep-link parameter."""
@@ -285,20 +245,6 @@ class TestRouteShareRedirect:
         assert client.post(_redirect_url(share.token)).status_code == 405
 
 
-@pytest.mark.django_db
-class TestRouteShareRedirectFlag:
-    """The flag closes the link."""
-
-    def test_the_flag_off_returns_404(self, client: Client) -> None:
-        """No token reaches a session while the rollout is closed."""
-        share = RouteShareFactory.create()
-
-        response = client.get(_redirect_url(share.token))
-
-        assert response.status_code == 404
-        assert PENDING_SESSION_KEY not in client.session
-
-
 # ---------------------------------------------------------------------------
 # route_share_claim
 # ---------------------------------------------------------------------------
@@ -307,17 +253,6 @@ class TestRouteShareRedirectFlag:
 @pytest.mark.django_db
 class TestRouteShareClaim:
     """Saving a shared route onto one's own account."""
-
-    @pytest.fixture(autouse=True)
-    def _sharing_on(self) -> Any:
-        """Turn the rollout flag on for every test in this class.
-
-        ``override_flag`` is a ``TestCase``-shaped decorator and refuses a
-        plain pytest class, so it is entered as a context manager by an
-        autouse fixture rather than repeated on twenty methods.
-        """
-        with override_flag("route_sharing", active=True):
-            yield
 
     def test_a_claim_creates_the_copy(self, client: Client) -> None:
         """The claimer ends up owning a route they did not upload."""
@@ -494,22 +429,6 @@ class TestRouteShareClaim:
         assert response.status_code == 403
 
 
-@pytest.mark.django_db
-class TestRouteShareClaimFlag:
-    """The flag closes the claim."""
-
-    def test_the_flag_off_returns_404(self, client: Client) -> None:
-        """Nothing is copied while the rollout is closed."""
-        claimer = UserFactory.create()
-        share = RouteShareFactory.create()
-        client.force_login(claimer)
-
-        response = client.post(_claim_url(share.token), **HTMX_HEADERS)
-
-        assert response.status_code == 404
-        assert not Route.objects.for_user(claimer).exists()
-
-
 # ---------------------------------------------------------------------------
 # The Share control's own gate
 # ---------------------------------------------------------------------------
@@ -519,28 +438,15 @@ class TestRouteShareClaimFlag:
 class TestShareControlRendering:
     """Which route rows draw a Share button."""
 
-    def test_the_map_panel_row_has_share_when_the_flag_is_on(
-        self, client: Client
-    ) -> None:
-        """The surface with a wired handler, and the rollout open."""
+    def test_the_map_panel_row_has_share(self, client: Client) -> None:
+        """The one surface with a wired handler draws it."""
         user = UserFactory.create()
         route = RouteFactory.create(user=user)
         client.force_login(user)
 
-        with override_flag("route_sharing", active=True):
-            response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
-
-        assert f'data-route-share="{route.uuid}"' in response.content.decode()
-
-    def test_the_flag_off_draws_no_share_control(self, client: Client) -> None:
-        """A control whose endpoint 404s is a dead control."""
-        user = UserFactory.create()
-        RouteFactory.create(user=user)
-        client.force_login(user)
-
         response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
 
-        assert "data-route-share" not in response.content.decode()
+        assert f'data-route-share="{route.uuid}"' in response.content.decode()
 
     def test_the_account_variant_draws_no_share_control(self, client: Client) -> None:
         """/account/routes/ has no handler for it yet — see route_list."""
@@ -548,8 +454,7 @@ class TestShareControlRendering:
         RouteFactory.create(user=user)
         client.force_login(user)
 
-        with override_flag("route_sharing", active=True):
-            response = client.get("/routes/partials/list/", **HTMX_HEADERS)
+        response = client.get("/routes/partials/list/", **HTMX_HEADERS)
 
         assert "data-route-share" not in response.content.decode()
 
@@ -557,8 +462,7 @@ class TestShareControlRendering:
         """You cannot pass on a route you have not yet saved."""
         share = RouteShareFactory.create()
 
-        with override_flag("route_sharing", active=True):
-            client.get(_redirect_url(share.token))
-            response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+        client.get(_redirect_url(share.token))
+        response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
 
         assert "data-route-share" not in response.content.decode()

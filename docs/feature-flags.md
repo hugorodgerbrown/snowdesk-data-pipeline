@@ -52,21 +52,9 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
-| `route_sharing` | `superusers=True` | Route sharing: the row's Share control, `/routes/<uuid>/share/`, the `/routes/s/<token>/` follow, the claim endpoint, the pending rows and features `route_list` / `routes_geojson` render for a session holding a followed share, and the matching `/help/` subsection. | SNOW-764. |
 
-**`route_sharing` IS a rollout gate, and it is priced to be one.** Route
-sharing is the first feature since SNOW-724 to ship behind one, and the
-reason it can is where the flag is read. `_downloads_context`'s flag ran on
-the homepage and cost three queries a request; this one is read only by
-`apps.routes.views` (the three share endpoints, and the two widened
-branches, both of which sit behind an empty-session short-circuit) and by
-`help_page`. The homepage never asks — `apps.public.views._routes_context`
-deliberately reads no flag, and `monitor_query_counts` still puts `home` at
-5. When the rollout opens to everyone the flag comes out, as its
-predecessors did.
-
-**`sync_log` is the other shape.** It is not a rollout gate waiting to be
-opened: it is a per-user diagnostic toggle. The
+**One flag, and it is the right shape for one.** `sync_log` is not a
+rollout gate waiting to be opened: it is a per-user diagnostic toggle. The
 panel prints a device's recent real server round-trips, which is a
 debugging read-out rather than a product surface, and the `Users` M2M is
 the point — inviting one reporter to turn it on while chasing a sync
@@ -89,6 +77,24 @@ switch nobody intended to pull, and the feature shipped unconditionally.
 The general form: **a flag on a hot path is not free, and "we can always
 turn it off" is worth costing before it is assumed.** Reverting an
 un-flagged feature is a deploy, which this project can do in minutes.
+
+**A flag can also be the wrong SHAPE for a feature, not just the wrong
+price.** SNOW-764 shipped route sharing behind a `route_sharing` flag
+targeted at `superusers=True`, and the feature could not work under its own
+targeting. The flag was read on the RECIPIENT's path as well as the
+sharer's, and a recipient is by definition somebody else — usually
+anonymous — so following a link a superuser had just minted raised
+`Http404`. The tests missed it because `override_flag` flips a flag
+globally for the whole test, which puts the sharer and the recipient on the
+same side of a gate whose entire problem was that they are on opposite
+sides of it. The flag was removed and sharing ships on.
+
+The rule that came out of it: **a flag targeted at an audience cannot gate
+a surface whose whole purpose is to be reached from outside that
+audience.** Where a feature's value passes between two principals, either
+both are inside the rollout or the flag sits on the minting half alone —
+and a test that flips one flag for both principals can never tell you which
+of those you built.
 
 The saved-map-pin favourites feature (SNOW-413), the field-report button
 and submission endpoints (SNOW-324), the "Community reports" read overlay

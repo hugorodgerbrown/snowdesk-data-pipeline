@@ -30,9 +30,8 @@ Covers:
   SNOW-764's widening of the last two — route_list and routes_geojson
                  answering for an anonymous session that holds a pending
                  share; the pending rows sorting above the owned ones; a
-                 pending FEATURE carrying token + pending and NO uuid; the
-                 headers unchanged; the flag off collapsing both back to
-                 the pre-SNOW-764 403.
+                 pending FEATURE carrying token + pending and NO uuid; and
+                 the headers unchanged.
 
 Scoped to the Django test client throughout — per CLAUDE.md's layer rules
 there is nothing browser-shaped in this ticket, and a 404 needs no browser.
@@ -51,7 +50,6 @@ from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from waffle.testutils import override_flag
 
 from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
@@ -1143,12 +1141,6 @@ def _follow(client: Client, token: str) -> None:
 class TestRouteListPendingShares:
     """route_list answers for a session holding a followed share."""
 
-    @pytest.fixture(autouse=True)
-    def _sharing_on(self) -> Any:
-        """Turn the rollout flag on for every test in this class."""
-        with override_flag("route_sharing", active=True):
-            yield
-
     def test_an_anonymous_session_with_nothing_pending_still_gets_403(
         self, client: Client
     ) -> None:
@@ -1274,28 +1266,8 @@ class TestRouteListPendingShares:
 
 
 @pytest.mark.django_db
-class TestRouteListPendingSharesFlagOff:
-    """With the flag off, route_list is exactly what it was."""
-
-    def test_a_pending_session_still_gets_403(self, client: Client) -> None:
-        """A token cannot reach a session at all, but the gate holds anyway."""
-        share = RouteShareFactory.create()
-        session = client.session
-        session["route_shares"] = [share.token]
-        session.save()
-
-        assert client.get(LIST_URL, **HTMX_HEADERS).status_code == 403
-
-
-@pytest.mark.django_db
 class TestRoutesGeojsonPendingShares:
     """routes_geojson draws a followed share's line."""
-
-    @pytest.fixture(autouse=True)
-    def _sharing_on(self) -> Any:
-        """Turn the rollout flag on for every test in this class."""
-        with override_flag("route_sharing", active=True):
-            yield
 
     def test_an_anonymous_session_with_nothing_pending_still_gets_403(
         self, client: Client
@@ -1391,17 +1363,3 @@ class TestRoutesGeojsonPendingShares:
 
         assert "private" in response["Cache-Control"]
         assert "no-store" in response["Cache-Control"]
-
-
-@pytest.mark.django_db
-class TestRoutesGeojsonPendingSharesFlagOff:
-    """With the flag off, routes_geojson is exactly what it was."""
-
-    def test_a_pending_session_still_gets_403(self, client: Client) -> None:
-        """The gate holds even for a session seeded before the flag closed."""
-        share = RouteShareFactory.create()
-        session = client.session
-        session["route_shares"] = [share.token]
-        session.save()
-
-        assert client.get(GEOJSON_URL).status_code == 403

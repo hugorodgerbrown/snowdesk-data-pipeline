@@ -4,11 +4,6 @@
       "name": "sync_log",
       "note": "Gates the SNOW-482 sync-log panel (manage page) and its matching /help/ section — a read-out of the client-side log:sync IndexedDB store of recent real server round-trips.",
       "superusers": true
-    },
-    {
-      "name": "route_sharing",
-      "note": "Gates the SNOW-764 route-sharing surface: the row's Share control, the tokenised /routes/s/<token>/ redirect, the claim endpoint, and the pending rows route_list and routes_geojson render for a session holding a followed-but-unclaimed share. Read only by apps.routes.views and the /help/ subsection — never by the homepage's _routes_context, so it costs no query on home.",
-      "superusers": true
     }
   ]
 }

@@ -30,7 +30,7 @@ tap it, and the link has to survive that. Three properties were needed:
   not.
 * **It must not become an ownership hole.** The widening is keyed on the
   session, never on a URL parameter, so nothing a caller can type reaches
-  the pending branch: the token had to pass through the flagged, rate-limited
+  the pending branch: the token had to pass through the rate-limited
   redirect first.
 
 The alternatives each fail one of those. Claiming on follow writes to an
