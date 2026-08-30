@@ -236,3 +236,33 @@ class TestShareClicks:
         _run("--commit")
 
         assert BulletinShareClick.objects.filter(pk=click.pk).exists()
+
+    def test_the_reported_count_is_request_rows_not_cascaded_rows(self) -> None:
+        """``delete()`` returns a total that includes cascaded rows.
+
+        Reporting that total overstates the purge — a RequestLog with one
+        click behind it reads as two rows deleted — and the number goes
+        into the nightly log line, which is where someone auditing
+        retention would look. The headline count is request rows; anything
+        cascaded is reported separately as what it is.
+        """
+        for _ in range(3):
+            BulletinShareClick.objects.create(
+                share=BulletinShareFactory.create(),
+                request=_aged(RETENTION_DAYS + 30),
+                visitor_hash="0123456789abcdef",
+            )
+
+        output = _run("--commit")
+
+        assert "Deleted 3 RequestLog row(s)" in output
+        assert "plus 3 cascaded row(s)" in output
+
+    def test_no_cascade_suffix_when_nothing_cascaded(self) -> None:
+        """The common case stays a plain sentence."""
+        _aged(RETENTION_DAYS + 30)
+
+        output = _run("--commit")
+
+        assert "Deleted 1 RequestLog row(s)" in output
+        assert "cascaded" not in output

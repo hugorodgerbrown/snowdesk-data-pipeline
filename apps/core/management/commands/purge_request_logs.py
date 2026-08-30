@@ -128,20 +128,25 @@ class Command(BaseCommand):
         cutoff = timezone.now() - timedelta(days=days)
         expired = RequestLog.objects.filter(created_at__lt=cutoff)
 
-        # Stream the ids rather than the instances: the delete is a single
-        # queryset call, so nothing here needs a model object, and holding
-        # 20k of them to print a countdown would be the one thing that
-        # makes this command expensive.
-        pks: list[int] = list(
-            iterate_rows(
-                self,
-                expired.values_list("pk", flat=True),
-                verbosity=verbosity,
-                describe=lambda pk: f"RequestLog {pk}",
-            )
-        )
+        # Count during the walk rather than accumulating ids. The first
+        # production run purges everything older than a year in one go, and
+        # the obvious shape — collect every pk, then delete WHERE pk IN
+        # (...) — holds the whole set in memory to build an IN clause the
+        # database then has to parse. Deleting on the same ``created_at``
+        # predicate the walk used needs neither: the cutoff is fixed before
+        # the walk starts, and a row created during it has ``created_at``
+        # of now, so it cannot fall inside the window. The two are
+        # equivalent, and only one of them scales.
+        expired_count = 0
+        for _ in iterate_rows(
+            self,
+            expired.values_list("pk", flat=True),
+            verbosity=verbosity,
+            describe=lambda pk: f"RequestLog {pk}",
+        ):
+            expired_count += 1
 
-        if not pks:
+        if not expired_count:
             if verbosity >= 1:
                 self.stdout.write(
                     self.style.SUCCESS(
@@ -155,20 +160,38 @@ class Command(BaseCommand):
             if verbosity >= 1:
                 self.stdout.write(
                     self.style.WARNING(
-                        f"Would delete {len(pks)} RequestLog row(s) older than "
-                        f"{days} days (cutoff {cutoff:%Y-%m-%d %H:%M} UTC). "
+                        f"Would delete {expired_count} RequestLog row(s) older "
+                        f"than {days} days (cutoff {cutoff:%Y-%m-%d %H:%M} UTC). "
                         "Re-run with --commit to persist."
                     )
                 )
             return
 
-        deleted, _ = RequestLog.objects.filter(pk__in=pks).delete()
+        # ``delete()`` returns (total, {label: count}) where the total counts
+        # cascaded rows too. Reporting that total would overstate the purge —
+        # a RequestLog with one BulletinShareClick behind it reads as two
+        # rows deleted — so the headline number comes from the per-model
+        # dict and anything cascaded is reported as what it is.
+        _, by_model = RequestLog.objects.filter(created_at__lt=cutoff).delete()
+        deleted = by_model.get(RequestLog._meta.label, 0)  # noqa: SLF001
+        cascaded = sum(
+            count
+            for label, count in by_model.items()
+            if label != RequestLog._meta.label  # noqa: SLF001
+        )
+
         logger.info(
-            "purge_request_logs: deleted %d row(s) older than %d days", deleted, days
+            "purge_request_logs: deleted %d row(s) older than %d days "
+            "(%d cascaded row(s))",
+            deleted,
+            days,
+            cascaded,
         )
         if verbosity >= 1:
+            suffix = f", plus {cascaded} cascaded row(s)" if cascaded else ""
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Deleted {deleted} RequestLog row(s) older than {days} days."
+                    f"Deleted {deleted} RequestLog row(s) older than "
+                    f"{days} days{suffix}."
                 )
             )
