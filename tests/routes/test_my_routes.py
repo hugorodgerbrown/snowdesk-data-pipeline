@@ -157,6 +157,54 @@ class TestMyRoutesOwnerScope:
 
 
 # ---------------------------------------------------------------------------
+# The context strip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestMyRoutesContextStrip:
+    """The page's one claim about where this data goes must stay true.
+
+    SNOW-765. The strip read "Your routes are private and not shared."
+    from SNOW-713 until SNOW-764 shipped route sharing, at which point the
+    page was making a flat promise the feature exists to break — and
+    nothing failed, because no test had ever asserted this page's copy and
+    the map panel's equivalent guard (tests/public/test_ugc_panels.py) did
+    not cover the routes panel either.
+
+    Two assertions, and the negative one is the load-bearing half: stating
+    the new wording only checks that somebody typed a sentence, while
+    asserting the OLD wording is gone is what catches a revert, a
+    copy-paste from the favourites page (which keeps the unconditional
+    form legitimately, because a favourite cannot be shared), or a merge
+    that resurrects it.
+    """
+
+    def test_the_strip_says_sharing_is_the_exception(self, client: Client) -> None:
+        """Private by default, and the condition is named."""
+        client.force_login(UserFactory.create())
+
+        body = client.get(PAGE_URL).content.decode()
+
+        assert "Your routes are private unless you share one." in body
+
+    def test_the_strip_makes_no_unconditional_privacy_promise(
+        self, client: Client
+    ) -> None:
+        """The pre-SNOW-764 wording must not come back.
+
+        It is false the moment a Share control renders beside it, and a
+        false privacy claim is worse than none: a user reads it and
+        decides what to upload on the strength of it.
+        """
+        client.force_login(UserFactory.create())
+
+        body = client.get(PAGE_URL).content.decode()
+
+        assert "routes are private and not shared" not in body.lower()
+
+
+# ---------------------------------------------------------------------------
 # Caching
 # ---------------------------------------------------------------------------
 

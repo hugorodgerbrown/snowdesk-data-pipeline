@@ -216,7 +216,9 @@ _PANELS: dict[str, dict[str, Any]] = {
     "routes": {
         "title": _("Routes"),
         "icon_template": "includes/_icon_route.html",
-        "context_line": _("Routes are private and not shared."),
+        # SNOW-765: tracks the real panel's own wording, which SNOW-764
+        # made conditional when it put a Share control on every row.
+        "context_line": _("Routes are private unless you share one."),
         "section_label": _("Tracks"),
         "cta_label": _("Add a route"),
         "toggle_id": "help-illustration-toggle-routes",
