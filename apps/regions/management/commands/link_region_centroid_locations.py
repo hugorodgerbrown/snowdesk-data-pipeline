@@ -287,9 +287,31 @@ class Command(BaseCommand):
         if commit:
             try:
                 with transaction.atomic():
+                    # Row lock, then re-read. Production deploys THREE
+                    # services from `release` at once, all running a build
+                    # script that calls this command, all against one
+                    # database. Without the lock, on the first run in an
+                    # environment — when there is no row to reuse yet — all
+                    # three would find nothing, all three would create, and
+                    # the last writer would win: two orphans per region,
+                    # ~922 on a first release. Locking the region serialises
+                    # them, and the re-read lets the losers see the winner's
+                    # work instead of repeating it.
+                    locked = (
+                        MicroRegion.objects.select_for_update()
+                        .filter(pk=region.pk)
+                        .first()
+                    )
+                    if locked is None:
+                        counts["skipped"] += 1
+                        return
+                    if locked.centroid_location_id is not None:
+                        # A concurrent build linked it while we queued.
+                        counts["linked"] += 1
+                        return
                     location = _centroid_location_for(latitude, longitude, elevation)
-                    region.centroid_location = location
-                    region.save(update_fields=["centroid_location", "updated_at"])
+                    locked.centroid_location = location
+                    locked.save(update_fields=["centroid_location", "updated_at"])
             except Exception:  # noqa: BLE001 — one region must not fail a deploy
                 # build.sh runs this under ``set -o errexit``, so an escaping
                 # exception takes the whole deploy down — of three services

@@ -38,11 +38,15 @@ from django.utils import timezone
 
 from apps.locations.models import Location
 from apps.regions.fixture_utils import centre_from_bbox
+from apps.regions.management.commands.link_region_centroid_locations import (
+    _centre_of,
+)
 from apps.regions.models import MicroRegion
 from apps.weather.models import Weather
 from tests.factories import LocationFactory, MicroRegionFactory, WeatherFactory
 
 COMMAND = "link_region_centroid_locations"
+_BASE = "apps.regions.management.commands.link_region_centroid_locations"
 
 # Patched at its source module, not at the command's import site — the point
 # of the assertion below is that the command does not import it at all.
@@ -228,6 +232,47 @@ class TestLinkRegionCentroidLocations:
             pytest.raises(CommandError, match="linked nothing"),
         ):
             call_command(COMMAND, "--commit", stdout=StringIO())
+
+    def test_a_region_linked_by_a_concurrent_build_is_not_duplicated(self) -> None:
+        """A build that loses the race adopts the winner's row, not a new one.
+
+        Production deploys three services from ``release`` at once, all
+        running a build script that calls this command against one
+        database. This pins the OUTCOME: a region linked by another build
+        mid-run ends up with that build's Location and no duplicate.
+
+        It does not prove the mechanism. Two things produce this result —
+        the ``select_for_update`` on the region, and the coordinate reuse in
+        ``_centroid_location_for`` — and reuse alone is enough here, so this
+        test passes with the lock's re-read removed. The lock is what makes
+        the outcome hold when two builds query *before* either commits,
+        which SQLite cannot reproduce (``select_for_update`` is a no-op
+        there). Read this as a regression guard on the result, not as
+        coverage of the lock.
+
+        Simulated by linking the region from inside ``_centre_of``, which
+        runs after the candidate queryset is built and before the lock —
+        the window a concurrent build occupies.
+        """
+        region = MicroRegionFactory.create(
+            boundary=BOUNDARY, centroid_elevation_m=2100.0
+        )
+        winner = Location.objects.create(
+            latitude=46.1, longitude=7.4, elevation_m=2100.0
+        )
+
+        real_centre_of = _centre_of
+
+        def _link_then_resolve(r: Any) -> Any:
+            MicroRegion.objects.filter(pk=r.pk).update(centroid_location=winner)
+            return real_centre_of(r)
+
+        with patch(f"{_BASE}._centre_of", side_effect=_link_then_resolve):
+            call_command(COMMAND, "--commit", stdout=StringIO())
+
+        region.refresh_from_db()
+        assert region.centroid_location_id == winner.pk
+        assert Location.objects.count() == 1
 
     def test_one_unreadable_region_does_not_stop_the_batch(self) -> None:
         """A skipped region is counted; the rest still link."""
