@@ -2,10 +2,12 @@
 tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
-  - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly one job.
-  - The job has the expected ID: ``fetch_bulletins``.
-  - Its ``CronTrigger`` has the correct non-default field expressions.
-  - Firing the job's callable invokes ``call_command`` with the expected arguments.
+  - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
+    two jobs.
+  - The jobs have the expected IDs: ``fetch_bulletins`` and ``fetch_weather``.
+  - Their ``CronTrigger``s have the correct non-default field expressions.
+  - Firing each job's callable invokes ``call_command`` with the expected
+    arguments.
 """
 
 from __future__ import annotations
@@ -45,14 +47,14 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_one_job(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly one registered job."""
-    assert len(scheduler.get_jobs()) == 1
+def test_scheduler_has_exactly_two_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly two registered jobs."""
+    assert len(scheduler.get_jobs()) == 2
 
 
 def test_job_ids(jobs: dict) -> None:
-    """The expected job ID is registered."""
-    assert "fetch_bulletins" in jobs
+    """The expected job IDs are registered."""
+    assert set(jobs) == {"fetch_bulletins", "fetch_weather"}
 
 
 # ---------------------------------------------------------------------------
@@ -120,3 +122,42 @@ def test_fetch_bulletins_calls_call_command() -> None:
         "METEOFRANCE",
         "--commit",
     )
+
+
+def test_fetch_weather_trigger_type(jobs: dict) -> None:
+    """fetch_weather job uses a CronTrigger."""
+    assert isinstance(jobs["fetch_weather"].trigger, CronTrigger)
+
+
+def test_fetch_weather_hour_field(jobs: dict) -> None:
+    """fetch_weather fires four times a day, at 00/06/12/18 UTC.
+
+    Four runs because a location has no live on-demand fetch behind its
+    page render the way a bulletin region does — the scheduled batch is the
+    only thing keeping today's row current.
+    """
+    trigger: CronTrigger = jobs["fetch_weather"].trigger
+    hour_field = _get_field(trigger, "hour")
+    assert not hour_field.is_default
+    assert {str(e) for e in hour_field.expressions} == {"0", "6", "12", "18"}
+
+
+def test_fetch_weather_minute_field_is_on_the_hour(jobs: dict) -> None:
+    """fetch_weather fires on the hour, not every minute of it."""
+    trigger: CronTrigger = jobs["fetch_weather"].trigger
+    minute_field = _get_field(trigger, "minute")
+    assert not minute_field.is_default
+    assert {str(e) for e in minute_field.expressions} == {"0"}
+
+
+def test_fetch_weather_calls_call_command() -> None:
+    """Firing the fetch_weather job invokes call_command with --commit.
+
+    Without --commit the scheduled run would call the API four times a day
+    and write nothing, which is the failure mode a read-only default is
+    supposed to protect against everywhere except here.
+    """
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_fetch_weather()
+
+    mock_cc.assert_called_once_with("fetch_weather", "--commit")

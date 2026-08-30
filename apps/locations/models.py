@@ -78,6 +78,43 @@ class LocationQuerySet(models.QuerySet["Location"]):
         """
         return self.filter(name="")
 
+    def active(self) -> "LocationQuerySet":
+        """Return the locations worth spending an upstream call on.
+
+        A location is active when something public or saved reaches it: a
+        ``ResortLocation``, a ``MicroRegion.centroid_location``, or a
+        ``Favourite``. This is the set ``fetch_weather`` walks, so it is
+        also the set that costs money — one Open-Meteo call per row per run,
+        four runs a day.
+
+        **A location reached only by a ``FieldObservation`` is excluded, and
+        that is the point of the method.** A field report is a user saying
+        "this happened here"; it is not a request for a forecast. Including
+        one would mint a billable call from a stranger dropping a pin, and
+        would let a private report surface a forecast panel on a public
+        page. The exclusion is asserted in ``tests/locations/test_models.py``
+        rather than left to this docstring.
+
+        ``.distinct()`` because a location referenced from two sides — a
+        resort's village that someone has also favourited — joins twice and
+        must still be fetched once.
+
+        One definition, called from both the fetch and SNOW-761's map feed:
+        both are asking "is this a public place or a private pin", and two
+        implementations would drift until a private pin leaked into a
+        public feed.
+
+        Returns:
+            Filtered queryset of locations reachable from a resort, a
+            region centroid or a favourite.
+
+        """
+        return self.filter(
+            models.Q(resort_locations__isnull=False)
+            | models.Q(micro_regions__isnull=False)
+            | models.Q(favourites__isnull=False)
+        ).distinct()
+
     def unresolved(self) -> "LocationQuerySet":
         """Return locations still missing their elevation.
 

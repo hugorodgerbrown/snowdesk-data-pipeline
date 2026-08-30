@@ -2,7 +2,8 @@
 tests/regions/models/test_micro_region.py — Tests for the MicroRegion model.
 
 Covers model creation, string representation, ordering, natural key support,
-the auto-slug behaviour, and the new centre and boundary JSON fields.
+the auto-slug behaviour, the centre and boundary JSON fields, and
+``centre_point()`` — the single reader of a region's centre.
 """
 
 from collections.abc import Callable
@@ -10,7 +11,11 @@ from collections.abc import Callable
 import pytest
 
 from apps.regions.models import MicroRegion
-from tests.factories import MicroRegionFactory, SubRegionFactory
+from tests.factories import (
+    LocationFactory,
+    MicroRegionFactory,
+    SubRegionFactory,
+)
 
 
 @pytest.mark.django_db
@@ -268,3 +273,76 @@ class TestMicroRegionsFixture:
                 if ring[0] != ring[-1]:
                     offenders.append(f"{region.region_id}[ring {ring_idx}]")
         assert offenders == [], f"Unclosed rings: {offenders}"
+
+
+@pytest.mark.django_db
+class TestMicroRegionCentrePoint:
+    """Tests for ``MicroRegion.centre_point()`` — the single centre reader.
+
+    Three readers used to parse ``MicroRegion.centre`` themselves: the
+    proximity pre-sort in ``point_match``, the bulletin page's JSON-LD geo,
+    and the MCP nearby-region search. They now all come through here, so the
+    preference order and the null behaviour are asserted once.
+    """
+
+    def test_prefers_the_centroid_location(self) -> None:
+        """The FK is the anchor the estate is built on, so it wins.
+
+        A centroid Location is what weather hangs off (SNOW-696); the
+        ``centre`` column is the legacy derivation it replaced.
+        """
+        location = LocationFactory.create(anonymous=True, latitude=46.1, longitude=7.2)
+        region = MicroRegionFactory.create(
+            centroid_location=location, centre={"lon": 9.9, "lat": 49.9}
+        )
+
+        assert region.centre_point() == (46.1, 7.2)
+
+    def test_falls_back_to_the_centre_column(self) -> None:
+        """Before the backfill runs, the legacy column still answers.
+
+        build.sh migrates on every deploy, so this code reaches an
+        environment before anyone runs link_region_centroid_locations
+        against it. Without the fallback the JSON-LD geo would blank and
+        every region would drop out of MCP nearby-search for that gap.
+        """
+        region = MicroRegionFactory.create(
+            centroid_location=None, centre={"lon": 7.5, "lat": 46.8}
+        )
+
+        assert region.centre_point() == (46.8, 7.5)
+
+    def test_returns_none_when_the_region_has_neither(self) -> None:
+        """A region with no centre degrades rather than raising."""
+        region = MicroRegionFactory.create(centroid_location=None, centre=None)
+
+        assert region.centre_point() is None
+
+    def test_returns_none_for_an_unreadable_centre(self) -> None:
+        """``centre`` is a JSONField, so its shape is not guaranteed."""
+        region = MicroRegionFactory.create(centroid_location=None, centre={})
+
+        assert region.centre_point() is None
+
+    def test_returns_none_for_a_non_numeric_centre(self) -> None:
+        """A fixture carrying strings must not reach the haversine as strings."""
+        region = MicroRegionFactory.create(
+            centroid_location=None, centre={"lon": "east", "lat": "north"}
+        )
+
+        assert region.centre_point() is None
+
+    def test_returns_latitude_first(self) -> None:
+        """The pair is (latitude, longitude) — the column is (lon, lat).
+
+        The JSON column stores lon first and every caller wants lat first,
+        which is exactly the kind of swap that produces a plausible-looking
+        point in the wrong hemisphere.
+        """
+        region = MicroRegionFactory.create(
+            centroid_location=None, centre={"lon": 7.5, "lat": 46.8}
+        )
+
+        latitude, longitude = region.centre_point()  # type: ignore[misc]
+        assert latitude == 46.8
+        assert longitude == 7.5

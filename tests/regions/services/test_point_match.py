@@ -29,7 +29,7 @@ from apps.regions.services.point_match import (
     point_in_polygon,
     region_for_point,
 )
-from tests.factories import MicroRegionFactory
+from tests.factories import LocationFactory, MicroRegionFactory
 
 # ---------------------------------------------------------------------------
 # Shared geometry helpers
@@ -491,3 +491,57 @@ class TestConstantsDriftGuard:
 
     def test_unknown_matches_geomatchkind(self) -> None:
         assert UNKNOWN == Subscription.GeoMatchKind.UNKNOWN
+
+
+@pytest.mark.django_db
+class TestRegionForPointReadsCentroidLocations:
+    """region_for_point pre-sorts on ``centre_point()``, not the raw column.
+
+    Only the ordering of the polygon tests depends on the centre, so these
+    assert that the resolver still answers correctly through the FK and
+    still answers at all when a region has no centre to sort by.
+    """
+
+    def test_resolves_through_a_centroid_location(self) -> None:
+        """A region anchored to a centroid Location still matches its own points."""
+        location = LocationFactory.create(anonymous=True, latitude=5.0, longitude=5.0)
+        region = MicroRegionFactory.create(
+            boundary=_square_polygon(0, 0, 10, 10),
+            centroid_location=location,
+            centre=None,
+        )
+
+        assert region_for_point(5.0, 5.0) == region
+
+    def test_a_region_with_no_centre_is_still_matched(self) -> None:
+        """A missing centre costs sort position, not correctness.
+
+        point_in_polygon is the answer; the centre only decides which
+        polygon is tested first. A region that has neither anchor sorts
+        last and is still found.
+        """
+        region = MicroRegionFactory.create(
+            boundary=_square_polygon(0, 0, 10, 10),
+            centroid_location=None,
+            centre=None,
+        )
+
+        assert region_for_point(5.0, 5.0) == region
+
+    def test_the_centroid_location_wins_over_the_legacy_column(self) -> None:
+        """A stale ``centre`` must not out-rank the anchor that replaced it."""
+        near = LocationFactory.create(anonymous=True, latitude=5.0, longitude=5.0)
+        wanted = MicroRegionFactory.create(
+            boundary=_square_polygon(0, 0, 10, 10),
+            centroid_location=near,
+            # A wildly wrong legacy value: if it were still read, this
+            # region would sort last rather than first.
+            centre={"lon": 170.0, "lat": -80.0},
+        )
+        MicroRegionFactory.create(
+            boundary=_square_polygon(20, 20, 30, 30),
+            centroid_location=None,
+            centre={"lon": 6.0, "lat": 6.0},
+        )
+
+        assert region_for_point(5.0, 5.0) == wanted

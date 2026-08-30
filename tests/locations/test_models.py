@@ -5,7 +5,7 @@ Covers:
   - Factories produce valid instances via .create().
   - to_string() / __str__() for a named, an anonymous and an unresolved row.
   - Meta.ordering.
-  - LocationQuerySet.named() / .anonymous() / .unresolved().
+  - LocationQuerySet.named() / .anonymous() / .unresolved() / .active().
   - The sharing the M2M exists for: one location referenced by four
     resorts, holding a different role in each.
   - PROTECT on ResortLocation.location and CASCADE on .resort.
@@ -18,7 +18,10 @@ from django.db.models import ProtectedError
 
 from apps.locations.models import Location, ResortLocation
 from tests.factories import (
+    FavouriteFactory,
+    FieldObservationFactory,
     LocationFactory,
+    MicroRegionFactory,
     ResortFactory,
     ResortLocationFactory,
 )
@@ -242,3 +245,78 @@ class TestResortLocationDeletion:
 
         assert Location.objects.filter(pk=mont_fort.pk).exists()
         assert mont_fort.resort_locations.count() == 1
+
+
+@pytest.mark.django_db
+class TestLocationQuerySetActive:
+    """Tests for ``LocationQuerySet.active()`` — the fetch and feed boundary.
+
+    The set this returns is the set that costs money (one Open-Meteo call
+    per row, four times a day) and the set SNOW-761's map feed publishes.
+    Both questions are "public place or private pin", which is why there is
+    one method rather than two.
+    """
+
+    def test_a_resort_location_is_active(self) -> None:
+        """A place a resort points at is public and gets a forecast."""
+        link = ResortLocationFactory.create()
+
+        assert list(Location.objects.active()) == [link.location]
+
+    def test_a_region_centroid_is_active(self) -> None:
+        """A micro-region's centroid is how a region gets weather at all."""
+        location = LocationFactory.create(anonymous=True)
+        MicroRegionFactory.create(centroid_location=location)
+
+        assert list(Location.objects.active()) == [location]
+
+    def test_a_favourited_location_is_active(self) -> None:
+        """A saved pin is a place its owner asked us to watch."""
+        favourite = FavouriteFactory.create()
+
+        assert list(Location.objects.active()) == [favourite.location]
+
+    def test_an_observation_only_location_is_excluded(self) -> None:
+        """A field report must never mint a billable forecast.
+
+        This is the assertion the ticket asks for in place of a comment. A
+        report is a user saying "this happened here", not a request to
+        watch the spot — and including it would also let a private report
+        raise a forecast panel on a public surface.
+        """
+        observation = FieldObservationFactory.create()
+
+        assert observation.location is not None
+        assert list(Location.objects.active()) == []
+
+    def test_an_unreferenced_location_is_excluded(self) -> None:
+        """A location nothing points at is not worth an upstream call."""
+        LocationFactory.create()
+
+        assert list(Location.objects.active()) == []
+
+    def test_a_location_reachable_two_ways_appears_once(self) -> None:
+        """A resort's village that someone has also favourited is fetched once.
+
+        Without ``.distinct()`` the joins multiply and the location is
+        billed twice per run.
+        """
+        location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
+        FavouriteFactory.create(location=location)
+
+        assert list(Location.objects.active()) == [location]
+
+    def test_an_observation_at_an_otherwise_active_location_is_still_active(
+        self,
+    ) -> None:
+        """The exclusion is of observation-ONLY locations, not of observations.
+
+        A field report dropped on a resort's village must not remove that
+        village from the fetch — the report is simply not what makes it
+        active.
+        """
+        link = ResortLocationFactory.create()
+        FieldObservationFactory.create(location=link.location)
+
+        assert list(Location.objects.active()) == [link.location]

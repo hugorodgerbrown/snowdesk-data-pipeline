@@ -1,10 +1,9 @@
 """
-apps/weather/apps.py — AppConfig for the (model-less) weather application.
+apps/weather/apps.py — AppConfig for the weather application.
 
-The app is registered only so its migration history stays resolvable for
-the four other apps that depend on it. It declares no models. See the
-package docstring in ``apps/weather/__init__.py`` for why it survives
-SNOW-762 and what would let it go.
+The Open-Meteo domain: one ``Weather`` model, one scheduled fetch. See the
+package docstring in ``apps/weather/__init__.py`` for why it is its own app
+and why its migration history starts before its models do.
 """
 
 from django.apps import AppConfig

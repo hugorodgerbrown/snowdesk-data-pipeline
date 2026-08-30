@@ -87,6 +87,7 @@ LOAD_ORDER=(
     bulletins_regionbulletin
     bulletins_regiondayrating
     bulletins_bulletingrouping
+    weather_weather
 )
 
 # Cleared but never reloaded: staging's own rows referencing the copied set.
@@ -107,10 +108,31 @@ CLEAR_ONLY=(
 #   * a region's centroid, via regions_microregion.centroid_location_id.
 # Everything else in this table is a saved map pin or a field report, minted
 # from user input, and is never selected.
-LOCATION_FILTER="SELECT * FROM locations_location WHERE id IN ( \
-SELECT location_id FROM locations_resortlocation \
+CURATED_LOCATION_IDS="SELECT location_id FROM locations_resortlocation \
 UNION SELECT centroid_location_id FROM regions_microregion \
-WHERE centroid_location_id IS NOT NULL)"
+WHERE centroid_location_id IS NOT NULL"
+
+LOCATION_FILTER="SELECT * FROM locations_location \
+WHERE id IN (${CURATED_LOCATION_IDS})"
+
+# weather_weather is filtered by the same set, and must be: a Weather row
+# whose location is a saved pin or a field report would arrive pointing at a
+# locations_location row this script deliberately did not copy, and the
+# \copy would fail on the foreign key. Restricting it here keeps the two
+# filters provably in step — they read the same subquery.
+WEATHER_FILTER="SELECT * FROM weather_weather \
+WHERE location_id IN (${CURATED_LOCATION_IDS})"
+
+# The production-side query for one table: whole table by default, filtered
+# for the two that must not carry user-minted rows across. One function so
+# the count preview and the load below cannot disagree about what is copied.
+source_query() {
+    case "$1" in
+        locations_location) printf '%s' "$LOCATION_FILTER" ;;
+        weather_weather) printf '%s' "$WEATHER_FILTER" ;;
+        *) printf 'SELECT * FROM %s' "$1" ;;
+    esac
+}
 
 psql_prod() { psql "$PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -At "$@"; }
 psql_local() { psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -At -q "$@"; }
@@ -151,11 +173,7 @@ echo "regions_microregion verified identical on both databases."
 echo
 printf '%-42s %12s %12s\n' "TABLE" "PRODUCTION" "STAGING"
 for table in "${LOAD_ORDER[@]}"; do
-    if [[ "$table" == "locations_location" ]]; then
-        prod_count=$(psql_prod -c "SELECT count(*) FROM ($LOCATION_FILTER) f;")
-    else
-        prod_count=$(psql_prod -c "SELECT count(*) FROM ${table};")
-    fi
+    prod_count=$(psql_prod -c "SELECT count(*) FROM ($(source_query "$table")) f;")
     printf '%-42s %12s %12s\n' \
         "$table" "$prod_count" "$(psql_local -c "SELECT count(*) FROM ${table};")"
 done
@@ -200,13 +218,8 @@ done
 # sequences itself below — so pg_dump's setval was redundant anyway.
 for table in "${LOAD_ORDER[@]}"; do
     echo "Loading ${table}..."
-    if [[ "$table" == "locations_location" ]]; then
-        source_query="$LOCATION_FILTER"
-    else
-        source_query="SELECT * FROM ${table}"
-    fi
     psql "$PRODUCTION_DATABASE_URL" -v ON_ERROR_STOP=1 -q \
-        -c "\copy (${source_query}) TO STDOUT" |
+        -c "\copy ($(source_query "$table")) TO STDOUT" |
         psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q \
             -c "\copy ${table} FROM STDIN"
 done
@@ -251,4 +264,4 @@ psql_prod -c "SELECT format(
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q
 
 echo
-echo "Done. Staging holds production's bulletins and resorts."
+echo "Done. Staging holds production's bulletins, weather and resorts."

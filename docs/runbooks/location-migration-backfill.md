@@ -22,7 +22,14 @@ management command an operator runs by hand**, per
 > deleted, and `fetch_weather` no longer exists. What remains is the
 > location estate itself. `link_region_centroid_locations` survives with
 > its forecast-cell half removed, so its cost is now one elevation call per
-> region and nothing recurring. SNOW-757 will add its own steps.
+> region and nothing recurring.
+>
+> **Superseded in part by SNOW-759 (2026-08-30).** `fetch_weather` exists
+> again, and `link_region_centroid_locations` is now a step with a
+> recurring cost after all — the centroid `Location`s it mints are what the
+> rebuilt fetch walks. Its own procedure and cost sizing live in
+> [`region-centroid-backfill.md`](region-centroid-backfill.md); run that
+> one for the weather estate and this one for the location estate.
 
 ## Order
 

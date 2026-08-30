@@ -1,6 +1,6 @@
 ---
 name: glossary
-description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels
+description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
 last-reviewed: 2026-08-05
 ---
@@ -92,6 +92,10 @@ Which coordinate on which model is exact, approximate or derived:
 |------|---------|------|
 | Location | The domain primitive: a point on the map that we keep. A resort's village, mid-station or peak; a favourite; an observation; a region centroid. **A curated place is a `Location` with a `name`** — there is no separate curated-place model, so Mont Fort is one row four resorts reference (SNOW-700) | `Location` in `apps/locations/models.py`; `docs/decisions/location-is-the-primitive.md` |
 | Anonymous location | A `Location` carrying no `name` and no `kind` — minted from a favourite or an observation. Naming is a curation act | `LocationQuerySet.anonymous()` / `.named()` |
+| Active location | A `Location` reachable from a `ResortLocation`, a `MicroRegion.centroid_location` or a `Favourite` — the set worth an Open-Meteo call, and the set a public feed may publish. **Explicitly excludes a location reachable only from a `FieldObservation`**: a field report must not mint a billable forecast (SNOW-759) | `LocationQuerySet.active()` in `apps/locations/models.py` |
+| Weather | What was known about one `Location` on one day. One row per `(location, observed_on)`, immutable once that day is past; `forecast` holds the days after it *as known on it* | `Weather` in `apps/weather/models.py`; `docs/decisions/weather-is-one-immutable-location-row.md` |
+| observed_on | The day a `Weather` row **is of** — not the day it was fetched (that is `fetched_at`). Today's row is refined in place by each of the four daily runs; a past one raises `ImmutableWeatherRowError` | `Weather.observed_on`; `upsert_weather` in `apps/weather/services/upsert.py` |
+| Region centroid | The `Location` at a micro-region's centre — what anchors a region in the location estate so it can have weather. Anonymous by design: a centroid is not a place anyone goes | `MicroRegion.centroid_location`, filled by `link_region_centroid_locations`; read via `MicroRegion.centre_point()` |
 | Role vs kind | `Location.kind` describes the place (Mont Fort is a peak whoever is looking); `ResortLocation.role` describes what it is *to one resort*. Attelas can be one resort's top and another's mid-station — which is why the join is a many-to-many | `Location.KIND` / `ResortLocation.ROLE` in `apps/locations/models.py` |
 | Report location vs raw fix | On a field observation, `latitude`/`longitude` is where the report says it happened (possibly dragged); `gps_latitude`/`gps_longitude` is the device's own fix. The gap is precision, never anonymisation | `FieldObservation` in `apps/observations/models.py` |
 | Region centroid | `MicroRegion.centre` — the polygon's centroid, representing the region rather than any place anyone goes | `centre` on `MicroRegion` / `SubRegion` / `MajorRegion`; computed by `refresh_eaws_fixtures` |

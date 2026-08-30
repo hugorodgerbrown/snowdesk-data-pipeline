@@ -1,22 +1,31 @@
 """
-apps/weather — migration history only.
+apps/weather — the Open-Meteo domain.
 
-SNOW-762 stripped the Open-Meteo domain: the models, services, commands,
-admin, dev mirror and every surface that read them are gone, and this
-package holds nothing but its own migrations.
+One model, ``Weather``: what was known about one ``locations.Location`` on
+one day, never rewritten once that day is past. One fetch, ``fetch_weather``,
+which walks ``Location.objects.active()`` once and writes one row per
+location per run.
 
-**It cannot simply be deleted.** Six historical migrations in four other
-apps declare a dependency on this app's migrations — ``bulletins/0018``,
-``favourites/0005``/``0006``/``0007``, ``locations/0001_initial`` and
-``regions/0016`` — because ``ForecastCell`` was a foreign-key target in
-all three of those domains and moved app label in SNOW-654. Removing
-``apps/weather/migrations/`` makes ``migrate`` fail on a fresh database
-with ``NodeNotFoundError``, which is every CI run. Django's own answer to
-removing an app whose history others depend on is to keep the history
-and drop the models, which is what ``0006_delete_weather_models`` does.
+**Why weather is its own app rather than part of ``locations``.** The
+reasons in ``docs/decisions/weather-is-its-own-app.md`` survived the
+collapse from four models to one: a different upstream (Open-Meteo, not the
+CAAML providers), a different cadence (a 4×/day scheduled batch), a
+different failure mode (a rate limit and a billable call count), and no
+foreign key to bulletins in either direction. Putting ``Weather`` in
+``apps/locations/`` would make the locations app — the domain primitive
+every other app reaches through — depend on Open-Meteo fetch semantics it
+has no reason to know about.
 
-The package goes for real once those six migrations have been squashed
-away — a migration-history rewrite, which needs its own ticket and a live
-database reset (``docs/runbooks/reset-live-db.md``), not a side effect of
-this one.
+**The migration history predates the models.** ``0001``–``0006`` belong to
+the estate SNOW-762 stripped (``WeatherSnapshot``, ``ForecastCell``,
+``ForecastCellWeather``, ``ForecastCellWeatherHistory``) and are retained
+because six migrations in four other apps depend on them —
+``bulletins/0018``, ``favourites/0005``/``0006``/``0007``,
+``locations/0001_initial`` and ``regions/0016``. ``0007`` creates
+``Weather`` on the empty surface ``0006`` left. The old numbers go once
+those six have been squashed away, which is a migration-history rewrite
+with its own ticket, not a side effect of this one.
+
+Read ``docs/decisions/weather-is-one-immutable-location-row.md`` before
+changing the shape of a row.
 """
