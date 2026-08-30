@@ -2,9 +2,23 @@
 {% comment %}
 apps/public/templates/public/terms_of_service.html — Terms of Service page (SNOW-153).
 
-Full terms covering the service description, safety disclaimer, acceptable
-use, intellectual property, subscriptions, and limitation of liability.
-Distinct from /terms/, which covers the SLF data-licence acknowledgement.
+The site's single legal page: service description, safety disclaimer,
+intellectual property, provider disclaimers, acceptable use, limitation
+of liability, governing law.
+
+SNOW-770 merged /terms/ into this page and turned that URL into a
+permanent redirect here. The two were indistinguishable by name, and
+three of /terms/'s five sections said what this page already said —
+the licences (also on the colophon, and named in §5), the
+check-the-bulletin warning (§4, in fuller form), and a liability clause
+narrower than §8. Two were not duplicates and moved in: the SNOW-666
+fidelity paragraph, now in §4, and the provider disclaimers, now §6.
+
+The colophon carries the licence links; this page carries the terms the
+services attach to their data. That split is deliberate — do not
+"deduplicate" §6 into a colophon link, because the colophon has no
+disclaimer text to link to.
+
 Content is authored directly in this template; no runtime context required.
 {% endcomment %}
 {% load i18n components %}
@@ -20,7 +34,7 @@ Content is authored directly in this template; no runtime context required.
         {% trans "Terms of Service" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="tos-heading" %}
         <p class="text-xs text-text-3 mb-6">
-            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 1 November 2026 &middot; Version 1.0" %}
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 30 August 2026 &middot; Version 1.1" %}
         </p>
 
         <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
@@ -86,6 +100,24 @@ Content is authored directly in this template; no runtime context required.
                     of conditions in the field.
                 {% endblocktrans %}
             </div>
+            {% comment %}
+                SNOW-666's framing, moved here from /terms/ by SNOW-770. It
+                states what Snowdesk IS before the section states what it is
+                not, and it is deliberately not an apology: the render is
+                complete, and the provider is the authority. The older
+                "not a substitute for the official bulletin" wording implied
+                Snowdesk showed less than the official bulletin. It doesn't —
+                see docs/decisions/bulletin-fidelity-over-simplification.md,
+                and tests/sentinels/fidelity.py, which enforces it.
+            {% endcomment %}
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    Snowdesk aims to render each bulletin in full — every danger rating, avalanche problem and comment
+                    the issuing service published. Nothing is withheld or summarised away. It remains an information
+                    service: the avalanche warning service that issued the bulletin is the authority on it, and every
+                    bulletin page links back to the official source so you can check it for yourself.
+                {% endblocktrans %}
+            </p>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     Avalanche conditions change rapidly and vary with aspect, elevation, and recent weather. No digital
@@ -124,7 +156,7 @@ Content is authored directly in this template; no runtime context required.
                 {% endblocktrans %}
             </p>
             <p>
-                {% url 'public:terms' as terms_url %}
+                {% url 'public:colophon' as colophon_url %}
                 {% blocktrans trimmed %}
                     The avalanche bulletin data displayed on Snowdesk is published by three avalanche warning services
                     — the
@@ -147,14 +179,80 @@ Content is authored directly in this template; no runtime context required.
                         target="_blank"
                         rel="noopener"
                     >Météo-France open-data licence</a>. Each service retains the intellectual property in its own
-                    data. Full licence details are on the
-                    <a class="underline" href="{{ terms_url }}">terms of use</a> page.
+                    data. Full attribution details are in the
+                    <a class="underline" href="{{ colophon_url }}">colophon</a>.
                 {% endblocktrans %}
             </p>
         </section>
 
+        {% comment %}
+            SNOW-770 moved this section here from /terms/, which is now a
+            redirect to this page. It is the only place on the site that
+            carries each provider's own disclaimer — the colophon lists the
+            licences, not the terms the services attach to their data — so
+            it cannot be dropped in favour of a link.
+        {% endcomment %}
+        <section data-testid="tos-provider-disclaimers">
+            <h2>{% trans "6. Provider disclaimers" %}</h2>
+            <p class="mb-2">
+                {% blocktrans trimmed %}
+                    Each avalanche warning service publishes its bulletin for information purposes and sets its own
+                    terms for the use of that data. Those terms apply to you as a reader of Snowdesk exactly as they
+                    would on the service's own site.
+                {% endblocktrans %}
+            </p>
+            <ul class="list-disc pl-5 space-y-2">
+                <li>
+                    {% blocktrans trimmed %}
+                        Per the SLF
+                        <a
+                            class="underline"
+                            href="https://www.slf.ch/en/services-and-products/slf-data-service/"
+                            target="_blank"
+                            rel="noopener"
+                        >data-service terms of use</a>, SLF makes bulletin data available for information purposes only
+                        and accepts no liability for the delivery of that data or for decisions made on the basis of it.
+                    {% endblocktrans %}
+                </li>
+                {% comment %}
+                    SNOW-666: ALBINA's own disclaimer wording is NOT verified, and SNOW-770 moved
+                    this caveat here with the copy rather than losing it. avalanche.report is
+                    client-rendered and could not be fetched to confirm the text of its legal notice
+                    or open-data page, so nothing is quoted or paraphrased from it here — only the
+                    CC BY 4.0 licence (corroborated by public/colophon.html, the reviewed
+                    attribution source) and a pointer to the provider's own page. Confirm the
+                    wording with ALBINA / EUREGIO and replace this block before relying on it.
+                    Same pattern as the unverified EAWS icon licence noted in colophon.html.
+                {% endcomment %}
+                <li>
+                    {% blocktrans trimmed %}
+                        ALBINA / EUREGIO publishes the Tyrol, South Tyrol and Trentino bulletin under CC BY 4.0. See
+                        <a
+                            class="underline"
+                            href="https://avalanche.report/more/open-data"
+                            target="_blank"
+                            rel="noopener"
+                        >avalanche.report's open-data page</a>
+                        for the terms that apply to its data.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        Météo-France publishes the BRA under its
+                        <a
+                            class="underline"
+                            href="https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/license"
+                            target="_blank"
+                            rel="noopener"
+                        >open-data licence</a>, which sets out the conditions of reuse and the limits of
+                        Météo-France's responsibility for the data.
+                    {% endblocktrans %}
+                </li>
+            </ul>
+        </section>
+
         <section data-testid="tos-subscriptions">
-            <h2>{% trans "6. Email subscriptions" %}</h2>
+            <h2>{% trans "7. Email subscriptions" %}</h2>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     You can subscribe to receive email notifications when new avalanche bulletins are published for one
@@ -171,7 +269,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-acceptable-use">
-            <h2>{% trans "7. Acceptable use" %}</h2>
+            <h2>{% trans "8. Acceptable use" %}</h2>
             <p class="mb-2">{% trans "You agree not to:" %}</p>
             <ul class="list-disc pl-5 space-y-1">
                 <li>
@@ -186,7 +284,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-liability">
-            <h2>{% trans "8. Limitation of liability" %}</h2>
+            <h2>{% trans "9. Limitation of liability" %}</h2>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     To the maximum extent permitted by law, Snowdesk and its operator shall not be liable for any
@@ -204,7 +302,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-governing-law">
-            <h2>{% trans "9. Governing law" %}</h2>
+            <h2>{% trans "10. Governing law" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     These terms are governed by the laws of England and Wales. Any disputes shall be subject to the
@@ -214,7 +312,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-changes">
-            <h2>{% trans "10. Changes to these terms" %}</h2>
+            <h2>{% trans "11. Changes to these terms" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     We may update these terms from time to time. We will update the effective date at the top. Continued
@@ -224,7 +322,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-contact">
-            <h2>{% trans "11. Contact" %}</h2>
+            <h2>{% trans "12. Contact" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     Questions about these terms? Email:

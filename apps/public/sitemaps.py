@@ -205,7 +205,10 @@ class StaticViewSitemap(Sitemap):
     * ``public:examples_random`` / ``examples_category`` — the content is a
       *random* bulletin per request, so listing them invites duplicate-content
       collisions with the real bulletin pages they sample.
-    * ``/map/`` and ``/random/`` — permanent redirects, not destinations.
+    * ``/map/``, ``/random/`` and ``/terms/`` — permanent redirects, not
+      destinations. ``/terms/`` became one in SNOW-770, when its page was
+      merged into ``/terms-of-service/``; listing it would offer a crawler
+      a redirect to a URL already listed two lines below it.
     * ``_components/``, ``_push-demo/``, ``_sw-version/`` — staff-only.
     * ``/account/…`` and ``/favourites/<uuid>/`` — per-user, and ``Disallow``ed
       in robots.txt (``apps.public.views.serve_robots``). Listing them here
@@ -217,7 +220,6 @@ class StaticViewSitemap(Sitemap):
         "public:home": ("daily", 1.0),
         "public:how_to_read_bulletin": ("monthly", 0.5),
         "public:help": ("monthly", 0.5),
-        "public:terms": ("yearly", 0.3),
         "public:privacy": ("yearly", 0.3),
         "public:terms_of_service": ("yearly", 0.3),
         "public:colophon": ("yearly", 0.3),

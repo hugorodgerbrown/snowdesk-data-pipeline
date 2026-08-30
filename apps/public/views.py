@@ -934,26 +934,6 @@ def home(request: HttpRequest) -> HttpResponse:
     )
 
 
-def terms(request: HttpRequest) -> HttpResponse:
-    """
-    Render the /terms page.
-
-    Holds the SLF data-licence acknowledgement and Snowdesk's liability
-    disclaimer. Introduced for SLF data-licence compliance (SNOW-30);
-    the actual legal copy is authored by Hugo separately and edited
-    directly into ``apps/public/templates/public/terms.html``. This view
-    is purely a static-template render — no context required.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        The rendered terms page.
-
-    """
-    return render(request, "public/terms.html")
-
-
 def colophon(request: HttpRequest) -> HttpResponse:
     """
     Render the /colophon page.
@@ -2405,10 +2385,11 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "",
         "## Legal",
         "",
-        f"- [Terms & data licences]({link('public:terms')}): source-service "
-        "attribution and Snowdesk liability disclaimer.",
         f"- [Privacy]({link('public:privacy')}): how subscriber data is handled.",
-        f"- [Terms of service]({link('public:terms_of_service')}): conditions of use.",
+        # SNOW-770: /terms/ now redirects here, so this one entry covers both.
+        f"- [Terms of service]({link('public:terms_of_service')}): conditions "
+        "of use, source-service attribution, each provider's own disclaimer, "
+        "and Snowdesk's liability disclaimer.",
         f"- [Colophon]({link('public:colophon')}): technology credits and attribution.",
         "",
     ]

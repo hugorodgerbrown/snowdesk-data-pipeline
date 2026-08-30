@@ -9,9 +9,11 @@ exists to fix.
 
 Covers:
 
-  * ``/terms/`` page renders, has its required sections, and is reachable.
+  * ``/terms/`` redirects permanently to ``/terms-of-service/``, and the
+    merged page carries its twelve sections, the fidelity claim and every
+    provider's own disclaimer.
   * **Every legal page names every provider** — the SNOW-666 guard, over
-    ``/terms/``, ``/terms-of-service/`` and ``/privacy/``.
+    ``/terms-of-service/`` and ``/privacy/``.
   * The global ``_site_footer.html`` partial renders on every public page
     (home, terms, bulletin, map) and carries the route to the licences.
   * The map legend names all three providers and links to /colophon/.
@@ -32,14 +34,22 @@ footer and the legend render into one body, so a page-wide assertion can
 no longer tell which of them satisfied it, and would keep passing after
 either one lost its links.
 
-Per the SNOW-30 ticket, the *legal copy* on /terms is to be authored
-by Hugo separately — these tests assert the structural scaffold is
-present, not the wording of the legal text.
+SNOW-770 merged /terms/ into /terms-of-service/ and left the URL as a
+permanent redirect. Two of its sections were not duplicates and moved
+rather than being deleted — the fidelity claim and the provider
+disclaimers, the latter having no other home on the site, since the
+colophon carries licence links and not disclaimer text. Both are
+asserted here for that reason.
+
+Per the SNOW-30 ticket, the *legal copy* is authored by Hugo separately
+— these tests assert the structural scaffold is present, not the wording
+of the legal text.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -166,43 +176,123 @@ def client() -> Client:
 
 
 @pytest.mark.django_db
-class TestTermsPage:
-    """The /terms page satisfies the SNOW-30 acceptance criteria."""
+class TestTermsRedirect:
+    """``/terms/`` outlived its page and now points at the merged one.
+
+    SNOW-770 folded the page into ``/terms-of-service/``. The URL is kept
+    because it was linked from the footer for the project's whole life and
+    is the one an external link or a search result would carry.
+    """
+
+    def test_terms_redirects_permanently(self, client: Client) -> None:
+        """301, not 302 — the move is permanent and crawlers should learn it."""
+        response = client.get(reverse("public:terms"))
+
+        assert response.status_code == 301
+        assert response["Location"] == reverse("public:terms_of_service")
+
+    def test_terms_does_not_resolve_as_a_region(self, client: Client) -> None:
+        """The redirect must stay ahead of the ``<str:region_id>/`` catch-all.
+
+        ``urls.py`` registers literal slugs before the generic region
+        patterns. Move this one below them and "terms" becomes a region
+        lookup — a 404 on a URL that has worked for years, and the reason
+        the original ``path()`` carried a comment saying so.
+        """
+        response = client.get(reverse("public:terms"), follow=True)
+
+        assert response.status_code == 200
+        assert b'data-testid="tos-heading"' in response.content
+
+
+@pytest.mark.django_db
+class TestTermsOfServicePage:
+    """The merged page carries everything both originals carried.
+
+    SNOW-30's acceptance criteria were written against ``/terms/``. That
+    page is gone; the obligations are not, so the same assertions now run
+    against the page that absorbed them.
+    """
 
     def test_returns_200(self, client: Client) -> None:
-        response = client.get(reverse("public:terms"))
+        response = client.get(reverse("public:terms_of_service"))
         assert response.status_code == 200
 
     def test_has_heading(self, client: Client) -> None:
-        response = client.get(reverse("public:terms"))
-        assert b'data-testid="terms-heading"' in response.content
+        response = client.get(reverse("public:terms_of_service"))
+        assert b'data-testid="tos-heading"' in response.content
 
     @pytest.mark.parametrize(
         "marker",
         [
-            b'data-testid="terms-data-sources"',
-            b'data-testid="terms-not-authoritative"',
-            b'data-testid="terms-on-site-assessment"',
-            b'data-testid="terms-liability"',
-            b'data-testid="terms-provider-disclaimers"',
+            b'data-testid="tos-about"',
+            b'data-testid="tos-acceptance"',
+            b'data-testid="tos-service"',
+            b'data-testid="tos-safety"',
+            b'data-testid="tos-ip"',
+            b'data-testid="tos-provider-disclaimers"',
+            b'data-testid="tos-subscriptions"',
+            b'data-testid="tos-acceptable-use"',
+            b'data-testid="tos-liability"',
+            b'data-testid="tos-governing-law"',
+            b'data-testid="tos-changes"',
+            b'data-testid="tos-contact"',
         ],
     )
     def test_has_required_sections(self, client: Client, marker: bytes) -> None:
-        response = client.get(reverse("public:terms"))
+        response = client.get(reverse("public:terms_of_service"))
         assert marker in response.content
 
-    def test_links_to_slf_data_service_terms(self, client: Client) -> None:
-        response = client.get(reverse("public:terms"))
-        assert b"slf.ch/en/services-and-products/slf-data-service" in response.content
+    def test_sections_are_numbered_one_to_twelve_in_order(self, client: Client) -> None:
+        """SNOW-770 inserted a section mid-document and renumbered the rest.
+
+        A merge that leaves two sections numbered 6, or jumps from 5 to 7,
+        is the obvious way to get this wrong, and it reads as sloppy on a
+        legal page.
+        """
+        content = client.get(reverse("public:terms_of_service")).content.decode()
+        numbers = [int(n) for n in re.findall(r"<h2>(\d+)\.", content)]
+
+        assert numbers == list(range(1, 13)), f"section numbers were {numbers}"
+
+    def test_carries_the_fidelity_claim(self, client: Client) -> None:
+        """The SNOW-666 framing moved here from /terms/ and must not be lost.
+
+        It is the positive claim — the render is complete — that the
+        fidelity guard in ``tests/sentinels/`` exists to keep true. The
+        surrounding section only says what Snowdesk is *not*.
+        """
+        content = client.get(reverse("public:terms_of_service")).content.decode()
+
+        assert "render each bulletin in full" in content
+        assert "Nothing is withheld or summarised away" in content
+
+    def test_carries_each_providers_own_disclaimer(self, client: Client) -> None:
+        """The one surface that has them — the colophon carries licences only.
+
+        Dropping this section in favour of a colophon link would delete the
+        text rather than move it.
+        """
+        content = client.get(reverse("public:terms_of_service")).content.decode()
+
+        assert "slf.ch/en/services-and-products/slf-data-service" in content
+        assert "avalanche.report/more/open-data" in content
+        assert "portail-api.meteofrance.fr" in content
 
     def test_links_to_cc_by_4_0(self, client: Client) -> None:
-        response = client.get(reverse("public:terms"))
+        response = client.get(reverse("public:terms_of_service"))
         assert b"creativecommons.org/licenses/by/4.0/" in response.content
 
-    def test_links_to_meteofrance_open_data_licence(self, client: Client) -> None:
-        """Météo-France's licence is not CC BY 4.0 and needs its own link (SNOW-666)."""
-        response = client.get(reverse("public:terms"))
-        assert b"portail-api.meteofrance.fr" in response.content
+    def test_no_longer_points_at_the_merged_page(self, client: Client) -> None:
+        """§5 used to send the reader to /terms/ for "full licence details".
+
+        That link would now bounce them straight back here. It points at
+        the colophon instead, which is where the licence list actually is.
+        """
+        content = client.get(reverse("public:terms_of_service")).content.decode()
+
+        assert reverse("public:terms") not in content
+        assert reverse("public:colophon") in content
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +308,10 @@ _PROVIDER_MARKERS: tuple[bytes, ...] = (
 )
 
 _LEGAL_PAGE_ROUTES: tuple[str, ...] = (
-    "public:terms",
+    # SNOW-770 merged ``public:terms`` into the Terms of Service, so there
+    # are two legal pages to walk rather than three. The guard did not
+    # weaken: the merged page inherited every provider the old one named,
+    # which ``TestTermsOfServicePage`` asserts section by section.
     "public:terms_of_service",
     "public:privacy",
 )
@@ -271,8 +364,8 @@ class TestGlobalSiteFooter:
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
-    def test_terms_renders_footer(self, client: Client) -> None:
-        response = client.get(reverse("public:terms"))
+    def test_terms_of_service_renders_footer(self, client: Client) -> None:
+        response = client.get(reverse("public:terms_of_service"))
         assert b'data-testid="site-footer"' in response.content
 
     def test_map_renders_footer(self, client: Client) -> None:
@@ -290,9 +383,10 @@ class TestGlobalSiteFooter:
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
 
-    def test_footer_links_to_terms(self, client: Client) -> None:
-        response = client.get(reverse("public:home"))
-        assert reverse("public:terms").encode() in response.content
+    def test_footer_links_to_the_terms_of_service(self, client: Client) -> None:
+        footer = _footer_of(client, reverse("public:home"))
+
+        assert reverse("public:terms_of_service") in footer
 
     def test_footer_links_to_privacy_and_colophon(self, client: Client) -> None:
         """The other two legal destinations, on every page (SNOW-769)."""
@@ -301,16 +395,16 @@ class TestGlobalSiteFooter:
         assert reverse("public:privacy") in footer
         assert reverse("public:colophon") in footer
 
-    def test_footer_no_longer_links_to_terms_of_service(self, client: Client) -> None:
-        """SNOW-769 dropped it; SNOW-770 folds the page into /terms/.
+    def test_footer_links_past_the_redirect(self, client: Client) -> None:
+        """The link points at the page, not at the URL that redirects to it.
 
-        The page is still served at its own URL — only the footer entry
-        point is gone.
+        SNOW-769 put a "Terms of Use" link here aimed at /terms/. SNOW-770
+        turned that URL into a redirect, so leaving the link alone would
+        have cost every reader an extra round trip to reach the same page.
         """
         footer = _footer_of(client, reverse("public:home"))
 
-        assert reverse("public:terms_of_service") not in footer
-        assert client.get(reverse("public:terms_of_service")).status_code == 200
+        assert reverse("public:terms") not in footer
 
     def test_footer_no_longer_names_the_providers(self, client: Client) -> None:
         """The SNOW-769 removal, asserted where it happened.
