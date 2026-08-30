@@ -11,11 +11,14 @@ that row; there was never anything map-shaped about either control.
 
 TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
 
-  An OWNED row gets Share, Rename, Remove. Trash stays last, on the
-  design's rule that the destructive control is in the same place on
-  every panel; Share goes FIRST rather than beside the trash, because it
-  is the only one of the three that involves anybody else and putting it
-  next to Remove would seat "give this away" beside "destroy this".
+  An OWNED row gets Share, Rename, Remove — Share only when
+  ``sharing_enabled`` says so, which is the rollout flag AND a surface
+  with a handler for it (see apps/routes/views.py's route_list). Trash
+  stays last, on the design's rule that the destructive control is in the
+  same place on every panel; Share goes FIRST rather than beside the
+  trash, because it is the only one of the three that involves anybody
+  else and putting it next to Remove would seat "give this away" beside
+  "destroy this".
 
   A PENDING row — one the visitor was sent and has not claimed — gets a
   single Save. It is not an icon: the other three name actions a user
@@ -67,7 +70,10 @@ directly would go on addressing the default one whatever the row was
 given. Same contract as the favourite row's actions.
 
 Context:
-    route         : Route — the saved route this row describes.
+    route           : Route — the saved route this row describes.
+    sharing_enabled : bool, optional — draw the Share control. False on a
+                      surface with no handler wired and whenever the
+                      ``route_sharing`` flag is off.
     pending_share : RouteShare, optional — set when this row is a share
                     the visitor has followed but not claimed. Its presence
                     selects the Save branch; its ``token`` addresses the
@@ -119,14 +125,16 @@ Context:
     {# hands the URL it carries to the native share sheet. The uuid rides  #}
     {# on the button so the delegated handler needs no closure over the    #}
     {# rendered row, exactly as the rename pencil's does.                  #}
-    <button
-        type="button"
-        data-route-share="{{ route.uuid }}"
-        aria-label="{{ share_aria_label }}"
-        class="{% icon_button_classes %}"
-    >
-        {% include "includes/_icon_share.html" only %}
-    </button>
+    {% if sharing_enabled %}
+        <button
+            type="button"
+            data-route-share="{{ route.uuid }}"
+            aria-label="{{ share_aria_label }}"
+            class="{% icon_button_classes %}"
+        >
+            {% include "includes/_icon_share.html" only %}
+        </button>
+    {% endif %}
     {# Two hooks, two readers: `data-row-rename` is the shared one every       #}
     {# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
     {# recognise a rename click without knowing which panel it is on;          #}

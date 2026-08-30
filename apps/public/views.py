@@ -1635,8 +1635,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
     homepage's query count is unmoved.
 
     Returns:
-        Dict with ``routes_eligible``, ``route_create_url``,
-        ``route_list_url``,
+        Dict with ``routes_eligible``, ``routes_upload_eligible``,
+        ``route_create_url``, ``route_list_url``,
         ``route_rename_url_template``, ``route_share_url_template``,
         ``route_claim_url_template``, ``routes_geojson_url`` and
         ``routes_signin_url``.
@@ -1650,6 +1650,13 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         "routes_eligible": (
             request.user.is_authenticated or bool(pending_tokens(request.session))
         ),
+        # SNOW-764: the question ``routes_eligible`` used to answer on its
+        # own. Uploading needs an account; reading a route somebody sent
+        # you does not. Kept as a separate value rather than re-derived in
+        # JS because "may upload" and "has routes to show" are now
+        # genuinely different facts, and collapsing them is what would put
+        # an Add-a-route CTA in front of a signed-out recipient.
+        "routes_upload_eligible": request.user.is_authenticated,
         "route_create_url": reverse("routes:create"),
         # ``?variant=map`` asks for the sheet's lean row template — the
         # shared includes/_ugc_panel_row.html shape, rather than

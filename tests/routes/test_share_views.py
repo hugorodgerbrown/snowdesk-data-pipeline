@@ -473,3 +473,57 @@ class TestRouteShareClaimFlag:
 
         assert response.status_code == 404
         assert not Route.objects.for_user(claimer).exists()
+
+
+# ---------------------------------------------------------------------------
+# The Share control's own gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestShareControlRendering:
+    """Which route rows draw a Share button."""
+
+    def test_the_map_panel_row_has_share_when_the_flag_is_on(
+        self, client: Client
+    ) -> None:
+        """The surface with a wired handler, and the rollout open."""
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user)
+        client.force_login(user)
+
+        with override_flag("route_sharing", active=True):
+            response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+
+        assert f'data-route-share="{route.uuid}"' in response.content.decode()
+
+    def test_the_flag_off_draws_no_share_control(self, client: Client) -> None:
+        """A control whose endpoint 404s is a dead control."""
+        user = UserFactory.create()
+        RouteFactory.create(user=user)
+        client.force_login(user)
+
+        response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+
+        assert "data-route-share" not in response.content.decode()
+
+    def test_the_account_variant_draws_no_share_control(self, client: Client) -> None:
+        """/account/routes/ has no handler for it yet — see route_list."""
+        user = UserFactory.create()
+        RouteFactory.create(user=user)
+        client.force_login(user)
+
+        with override_flag("route_sharing", active=True):
+            response = client.get("/routes/partials/list/", **HTMX_HEADERS)
+
+        assert "data-route-share" not in response.content.decode()
+
+    def test_a_pending_row_never_draws_a_share_control(self, client: Client) -> None:
+        """You cannot pass on a route you have not yet saved."""
+        share = RouteShareFactory.create()
+
+        with override_flag("route_sharing", active=True):
+            client.get(_redirect_url(share.token))
+            response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+
+        assert "data-route-share" not in response.content.decode()

@@ -521,10 +521,27 @@ def route_list(request: HttpRequest) -> HttpResponse:
         else []
     )
 
+    variant = request.GET.get("variant", "")
+
     return render(
         request,
-        _LIST_TEMPLATES.get(request.GET.get("variant", ""), _LIST_TEMPLATE_DEFAULT),
-        {"routes": routes, "pending_shares": pending},
+        _LIST_TEMPLATES.get(variant, _LIST_TEMPLATE_DEFAULT),
+        {
+            "routes": routes,
+            "pending_shares": pending,
+            # SNOW-764: whether an owned row draws its Share control. Two
+            # conditions, and the second is not a flag read — it is which
+            # SURFACE asked. Share is wired by static/js/routes.js, which
+            # owns the map panel; /account/routes/ renders the same row
+            # through the default variant and has no handler for it, and a
+            # control nothing listens to is worse than no control at all
+            # (it is the "dead pencil" argument account_routes.js's own
+            # header makes). The account page gains Share when its module
+            # does — noted as a follow-up on SNOW-764.
+            "sharing_enabled": (
+                variant == ROUTE_LIST_MAP_VARIANT and _sharing_enabled(request)
+            ),
+        },
     )
 
 
@@ -848,7 +865,15 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
 
     drop_pending_token(request.session, token)
 
-    return render(request, "routes/partials/_route.html", {"route": route})
+    # ``sharing_enabled`` True: the only surface that posts here is the map
+    # panel, and the row it swaps in is now an ordinary owned row on a
+    # surface whose Share control is wired. Reaching here at all means the
+    # flag is on — the guard at the top of this view saw to that.
+    return render(
+        request,
+        "routes/partials/_route.html",
+        {"route": route, "sharing_enabled": True},
+    )
 
 
 # ---------------------------------------------------------------------------

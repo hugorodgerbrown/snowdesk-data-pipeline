@@ -79,12 +79,24 @@
   // unlike favourites).
   const COMMUNITY_REPORTS_URL = mapEl.dataset.communityReportsUrl || null;
   const COMMUNITY_REPORTS_ELIGIBLE = mapEl.dataset.communityReportsEligible === 'true';
-  // SNOW-687: per-user saved-routes GeoJSON — eligibility is an
+  // SNOW-687: per-user saved-routes GeoJSON — eligibility was an
   // authenticated user (the endpoint 403s for anyone else, and there is
   // nothing to draw), so this is gated the same way as favourites rather
   // than as the two public layers above.
+  //
+  // SNOW-764 widened it: a visitor holding a followed share link is
+  // eligible too, and the payload they get is the shared route alone. That
+  // is what makes the ?route_share deep link work signed out — the layer
+  // has to be fetchable before there is anything to fly to.
   const ROUTES_URL = mapEl.dataset.routesUrl || null;
   const ROUTES_ELIGIBLE = mapEl.dataset.routesEligible === 'true';
+  // SNOW-764: the shared-route popup's Save. Three values, because the
+  // control has three states — post here, or send them to sign in first.
+  // Templated on __TOKEN__ rather than a uuid: a pending feature carries
+  // the share token and deliberately no uuid (apps/routes/views.py).
+  const ROUTE_CLAIM_URL_TEMPLATE = mapEl.dataset.routeClaimUrlTemplate || null;
+  const ROUTES_UPLOAD_ELIGIBLE = mapEl.dataset.routesUploadEligible === 'true';
+  const ROUTES_SIGNIN_URL = mapEl.dataset.routesSigninUrl || null;
   // SNOW-691: the slope-angle raster's tile template and its gate. Public
   // third-party tiles, so "eligible" is settings.SLOPE_TILE_URL being
   // configured (SNOW-724 moved the gate off a waffle flag and onto the
@@ -1766,6 +1778,15 @@
   // would think to look for.
   const ROUTE_LINE_COLOUR = '#c026d3';
   const ROUTE_CASING_COLOUR = '#1a1916';
+  // SNOW-764: the pending (shared-with-you, not yet saved) line's own
+  // colour, mirroring --color-route-line-pending in src/css/main.css. A
+  // different HUE rather than a lighter fuchsia, because the distinction is
+  // categorical — "this one is not yours yet" — and a tint of the owned
+  // colour reads as the same thing seen through haze. Teal is far enough
+  // round the wheel to be unmistakable beside the fuchsia and is not in the
+  // EAWS danger palette, so a pending route can never be mistaken for a
+  // rating.
+  const ROUTE_PENDING_COLOUR = '#0d9488';
 
   /** Map image ids for the two route end markers. */
   const ROUTE_START_ICON = 'route-start-dot';
@@ -1830,8 +1851,19 @@
     return core.endpointsGeojson(geojson);
   };
 
+  // SNOW-764: which features each of the three route line layers draws.
+  //
+  // ``pending`` is present and true only on a share this session has
+  // followed and not yet claimed (apps/routes/views.py's routes_geojson).
+  // ``['!=', ['get', 'pending'], true]`` rather than ``['==', …, false]``
+  // because an OWNED feature omits the property entirely — ``get`` answers
+  // null for it, which is not equal to false either.
+  const OWNED_ROUTE_FILTER = ['!=', ['get', 'pending'], true];
+  const PENDING_ROUTE_FILTER = ['==', ['get', 'pending'], true];
+
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
-  // LineStrings (routes:geojson), drawn as TWO ``line`` layers.
+  // LineStrings (routes:geojson), drawn as TWO ``line`` layers (three
+  // since SNOW-764 — see the pending one below).
   //
   // The casing is added FIRST so MapLibre paints it underneath: a wider,
   // translucent dark under-stroke, with the route colour over it. One
@@ -1869,6 +1901,11 @@
       id: 'routes-line',
       type: 'line',
       source: 'routes',
+      // SNOW-764: owned routes only. The pending ones get their own layer
+      // below so they can be painted differently; without the filter they
+      // would be drawn twice, once in each colour, with whichever layer
+      // sits on top winning.
+      filter: OWNED_ROUTE_FILTER,
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
         'line-cap': 'round',
@@ -1877,6 +1914,41 @@
       paint: {
         'line-color': ROUTE_LINE_COLOUR,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+      },
+    });
+    // SNOW-764: the shared-with-you line. A THIRD layer rather than a
+    // data-driven `line-color` on the one above, because the difference is
+    // not only colour: this line is DASHED, and `line-dasharray` is not a
+    // data-driven property in MapLibre — it cannot vary per feature, so a
+    // dashed subset needs a layer of its own.
+    //
+    // Dashed AND a different hue, deliberately both. The dash carries the
+    // meaning on its own for a colour-blind reader; the hue carries it at a
+    // zoom where a 1.5px dashed line and a 1.5px solid one are hard to tell
+    // apart. Neither is decoration: a route somebody sent you and a route
+    // you own support different actions, and the map has to say which is
+    // which before it is tapped.
+    //
+    // It is added AFTER the owned line, so a pending route drawn over one
+    // of your own is the one on top — which is right, because it is the one
+    // with an action attached.
+    map.addLayer({
+      id: 'routes-line-pending',
+      type: 'line',
+      source: 'routes',
+      filter: PENDING_ROUTE_FILTER,
+      layout: {
+        visibility: overlayState.routes ? 'visible' : 'none',
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ROUTE_PENDING_COLOUR,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+        // In line-widths, so the dash keeps its proportions as the line
+        // thickens with zoom. 'line-cap' is butt rather than round above
+        // for the same reason: round caps on a short dash close the gaps.
+        'line-dasharray': [2, 1.5],
       },
     });
     // SNOW-687 follow-up: the start dot and finish flag. Their own point
@@ -3122,7 +3194,13 @@
     // casing has to be added first to paint underneath. This list's order is
     // read by panelOverlayPainted below, which answers for the whole group
     // from element [0], and that has to be the layer the user actually sees.
-    routes: ['routes-line', 'routes-line-casing', 'routes-endpoints'],
+    // SNOW-764 adds 'routes-line-pending'. It is NOT first: panelOverlayPainted
+    // answers for the whole group from element [0], and that has to be the
+    // layer every routes user has — a visitor with only a pending share is
+    // the exception, not the case the roundel ring is painted from.
+    routes: [
+      'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
+    ],
     // SNOW-691: one layer — the raster. The coverage outline that rode
     // alongside it was removed; see slope_overlay_core.js's header.
     slope: ['slope-raster'],
@@ -4969,10 +5047,16 @@
     // line's tap tolerance is set explicitly by ROUTE_TAP_SLOP_PX below,
     // and querying a second, wider layer as well would make that tolerance
     // whatever the casing's width happened to be.
+    //
+    // SNOW-764: 'routes-line-pending' joins on the same terms and directly
+    // above the owned line, so a pending route drawn over one of your own
+    // takes the tap — it is the one carrying an action (Save) the user has
+    // not taken yet.
     const MARKER_EXCLUSION_LAYERS = [
       'community-reports-clusters',
       'favourites-pin',
       'community-reports-point',
+      'routes-line-pending',
       'routes-line',
     ];
 
@@ -4991,8 +5075,8 @@
     // reach across to steal taps that were aimed at something else.
     const ROUTE_TAP_SLOP_PX = 8;
 
-    /** The one exclusion layer that is a line rather than a point. */
-    const ROUTE_LINE_LAYER = 'routes-line';
+    /** The exclusion layers that are lines rather than points (SNOW-764). */
+    const ROUTE_LINE_LAYERS = ['routes-line', 'routes-line-pending'];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
     // point, or null. Filters to layers actually present because these
@@ -5014,7 +5098,7 @@
       const layers = MARKER_EXCLUSION_LAYERS.filter((id) => map.getLayer(id));
       if (!layers.length) return null;
 
-      const pointLayers = layers.filter((id) => id !== ROUTE_LINE_LAYER);
+      const pointLayers = layers.filter((id) => !ROUTE_LINE_LAYERS.includes(id));
       if (pointLayers.length) {
         let best = null;
         let bestPriority = Infinity;
@@ -5028,15 +5112,21 @@
         if (best) return best;
       }
 
-      if (!layers.includes(ROUTE_LINE_LAYER)) return null;
+      const lineLayers = layers.filter((id) => ROUTE_LINE_LAYERS.includes(id));
+      if (!lineLayers.length) return null;
       const slop = ROUTE_TAP_SLOP_PX;
       const box = [
         [point.x - slop, point.y - slop],
         [point.x + slop, point.y + slop],
       ];
       // Topmost first, which for overlapping routes is the one drawn last —
-      // the same one the user sees on top at the point they touched.
-      return map.queryRenderedFeatures(box, { layers: [ROUTE_LINE_LAYER] })[0] || null;
+      // the same one the user sees on top at the point they touched. Both
+      // line layers are queried in one call (SNOW-764) rather than in the
+      // exclusion array's priority order, precisely so that "drawn last"
+      // decides: the pending layer is added above the owned one, so a
+      // pending route over one of your own wins without a second rule
+      // saying so.
+      return map.queryRenderedFeatures(box, { layers: lineLayers })[0] || null;
     };
 
     // SNOW-419: tapping a cluster zooms in just far enough to break it apart
@@ -5227,6 +5317,121 @@
 
     openFavouriteDeepLink();
 
+    /**
+     * Read ``?route_share=`` and strip it from the address bar in one step.
+     *
+     * SNOW-764. Consumed rather than merely read, for the same reasons
+     * ``consumeFavouriteDeepLink`` above gives: the routes collection is
+     * refetched on every ``snowdesk:routes-changed``, so a parameter left
+     * in the URL would be a standing instruction that flew the map back to
+     * the shared track every time the user saved or deleted anything. And
+     * once the route is claimed, an address bar still naming the share
+     * would be a link to a row the user now owns.
+     *
+     * The TOKEN leaves the URL; it does not leave the session. The
+     * redirect that brought the visitor here already recorded it
+     * (apps.routes.views.route_share_redirect), which is what keeps the
+     * Save control alive across a sign-in round trip after this strip.
+     *
+     * @returns {?string} The share token, or null when there is none.
+     */
+    const consumeRouteShareDeepLink = () => {
+      const params = new URLSearchParams(location.search);
+      const token = params.get('route_share');
+      if (!token) return null;
+      params.delete('route_share');
+      const query = params.toString();
+      history.replaceState(
+        null,
+        '',
+        location.pathname + (query ? `?${query}` : '') + location.hash,
+      );
+      return token;
+    };
+
+    /**
+     * Honour a ``/?route_share=<token>`` arrival: frame the shared route
+     * and open the popup a tap on its line would have opened.
+     *
+     * The twin of ``openFavouriteDeepLink``, and deliberately the same
+     * shape — including the wait-for-``sourcedata`` dance, which is what
+     * makes it work whichever branch of the boot load installs the layer
+     * (the network fetch or the offline cache read-back).
+     *
+     * It calls ``activateRoute`` directly rather than synthesising a tap.
+     * That function takes the popup's anchor as an argument because a LINE
+     * has no single natural anchor and the tap point is the honest one —
+     * but a deep-link arrival HAS no tap, so the bounds centre is used
+     * instead. The objection recorded on that function is specifically
+     * about overriding a real touch point with a computed one, which does
+     * not arise when there was no touch.
+     *
+     * Silent in every case it cannot satisfy, exactly as the favourite
+     * deep link is: an expired share never reaches here (the redirect
+     * answers 410 before the map loads), and a token that resolves to no
+     * feature means the layer answered without it. Saying anything about
+     * either would be a puzzle rather than an explanation.
+     *
+     * @returns {void}
+     */
+    const openRouteShareDeepLink = () => {
+      const token = consumeRouteShareDeepLink();
+      if (!token || !ROUTES_ELIGIBLE) return;
+
+      // Somebody who followed a link to one specific route means to see
+      // it, so an overlay left switched off is switched back on rather
+      // than flown to invisibly. Through ``showPanelOverlay`` — the call
+      // the panel's own switch makes — because that persists the
+      // preference and drives the lazy load; flipping ``visibility`` by
+      // hand would paint layers whose stored preference still said "off".
+      if (!overlayState.routes) showPanelOverlay('routes');
+
+      const flyToShare = () => {
+        const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
+        const feature = features.find(
+          (f) => f && f.properties && f.properties.token === token,
+        );
+        if (!feature) return false;
+        const bounds = readFeatureJson(feature.properties.bounds);
+        if (!Array.isArray(bounds) || bounds.length !== 4) return false;
+        // activateRoute fits the camera to these same bounds; the anchor
+        // is their centre because there is no tap point to honour.
+        activateRoute(feature, [
+          (bounds[0] + bounds[2]) / 2,
+          (bounds[1] + bounds[3]) / 2,
+        ]);
+        return true;
+      };
+
+      // The layer may already be installed by the time this runs — the
+      // boot restore is async and this sits late in the ``load`` handler,
+      // so both orders happen.
+      if (flyToShare()) return;
+
+      // Otherwise wait for the install, exactly once. It unbinds on the
+      // first routes load it sees, found or not: a token absent from that
+      // collection will not appear in a later one, and a listener left
+      // bound would re-fire on every subsequent ``snowdesk:routes-changed``
+      // setData — flying the map back to a route the user has since
+      // claimed.
+      const onRoutesSourceData = (e) => {
+        if (e.sourceId !== 'routes' || !map.isSourceLoaded('routes')) return;
+        map.off('sourcedata', onRoutesSourceData);
+        flyToShare();
+      };
+      map.on('sourcedata', onRoutesSourceData);
+    };
+
+    // NOT called here, unlike openFavouriteDeepLink() directly above.
+    // ``activateRoute`` and ``readFeatureJson`` are ``const`` arrow
+    // functions declared further down this same block, so calling from
+    // here would hit their temporal dead zone and throw
+    // ("Cannot access 'activateRoute' before initialization") — taking the
+    // whole load handler with it. The invocation sits immediately after
+    // ``activateMarker``, which is the first point at which everything it
+    // reaches exists. Nothing about the timing changes: it is the same
+    // synchronous run of the same handler.
+
     // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
     // small popup with the observation type and a relative time — built via
     // DOM methods (not setHTML) since these values, though server-controlled,
@@ -5353,17 +5558,27 @@
      * Returns the profile either way, so appendRouteCaption can caption a
      * chart that exists without having to re-read the geometry.
      *
+     * SNOW-764: the key may be a uuid OR a share token. A pending route
+     * carries no uuid at all — a non-owner must not be handed the
+     * identifier the owner-scoped endpoints are addressed by — so the
+     * cache lookup matches on either. It has to be the cache for a pending
+     * route too, and for the same reason as an owned one: the tapped
+     * feature is the tile's clipped, zoom-simplified copy, and a profile
+     * drawn from it would be a profile of part of the track.
+     *
      * @param {HTMLElement} container The popup body being built.
-     * @param {string} uuid The route's uuid, from the feature properties.
+     * @param {string} key The route's uuid, or a pending share's token,
+     *   from the feature properties.
      * @returns {object|null} The profile drawn, or null if none was.
      */
-    const appendElevationProfile = (container, uuid) => {
+    const appendElevationProfile = (container, key) => {
       const core = self.pwaElevationProfileCore;
-      if (!core || !uuid || !routesGeojsonCache) return null;
+      if (!core || !key || !routesGeojsonCache) return null;
 
       const features = routesGeojsonCache.features || [];
       const cached = features.find(
-        (f) => f && f.properties && f.properties.uuid === uuid,
+        (f) =>
+          f && f.properties && (f.properties.uuid === key || f.properties.token === key),
       );
       const coordinates = cached && cached.geometry && cached.geometry.coordinates;
       if (!Array.isArray(coordinates)) return null;
@@ -5442,6 +5657,105 @@
       caption.className = 'text-xs text-text-3';
       caption.textContent = parts.join(' · ');
       container.appendChild(caption);
+    };
+
+    // The shared-route popup's Save control, in both its states. Design
+    // tokens only — `bg-status-info-*` is the informational status pair
+    // from @theme, the same one static/js/signin_cta.js uses for the four
+    // panels' sign-in prompt, so the two read as one treatment. It is not
+    // signin_cta.js itself because that builds a prompt-plus-link PAIR and
+    // this is one control that is sometimes a button.
+    const ROUTE_CLAIM_CTA_CLASS =
+      'mt-2 block w-full cursor-pointer rounded-pill bg-status-info-bg ' +
+      'px-4 py-2 text-center text-sm font-medium text-status-info-text ' +
+      'disabled:cursor-not-allowed disabled:opacity-60';
+
+    /**
+     * The CSRF token for the claim POST.
+     *
+     * Read from the DOM at call time rather than captured: the token input
+     * lives in the routes surface's own hidden upload form, which is
+     * rendered on the page but is not this IIFE's. Django issues one token
+     * per session and it is valid across every form on the page, so any of
+     * them answers.
+     *
+     * @returns {string}
+     */
+    const routeCsrfToken = () => {
+      const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+      return input ? input.value : '';
+    };
+
+    /**
+     * Append the Save control to a pending (shared-with-you) route's popup.
+     *
+     * SNOW-764. The popup is where a deep-link recipient arrives — the
+     * link lands on the map with the camera already on the track — so the
+     * action has to be here and not only in the routes panel, which they
+     * would have to know to open.
+     *
+     * TWO STATES, AND NEITHER IS "NOTHING". A signed-in viewer gets a
+     * button that posts the claim; a signed-out one gets a link to sign
+     * in. The control is never hidden: a hidden control reads as a bug,
+     * and the whole reason they are looking at this popup is that somebody
+     * sent them the route.
+     *
+     * The claim itself is window.pwaShare's, so this and the panel's own
+     * HTMX form reach the same endpoint the same way. On success it
+     * announces `snowdesk:routes-changed` and closes the popup — the
+     * claimed route is an owned route now, and the pending line it was
+     * drawn as has to be replaced by the owned one, which the refetch that
+     * event triggers does.
+     *
+     * @param {HTMLElement} container The popup body being built.
+     * @param {string} token The share token, from the feature properties.
+     * @returns {void}
+     */
+    const appendRouteClaimCta = (container, token) => {
+      const note = document.createElement('div');
+      note.className = 'mt-1 text-xs text-text-3';
+      note.textContent = MAP_STRINGS['route-shared-with-you'];
+      container.appendChild(note);
+
+      // Signed out: the way in, not a dead button. Same treatment the four
+      // UGC panels give an ineligible visitor.
+      if (!ROUTES_UPLOAD_ELIGIBLE) {
+        if (!ROUTES_SIGNIN_URL) return;
+        const link = document.createElement('a');
+        link.href = ROUTES_SIGNIN_URL;
+        link.className = ROUTE_CLAIM_CTA_CLASS;
+        link.textContent = MAP_STRINGS['route-save-signin'];
+        container.appendChild(link);
+        return;
+      }
+
+      if (!ROUTE_CLAIM_URL_TEMPLATE || !token || !window.pwaShare) return;
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = ROUTE_CLAIM_CTA_CLASS;
+      button.textContent = MAP_STRINGS['route-save'];
+      button.addEventListener('click', function () {
+        // Disabled for the duration: the claim writes a row, and a second
+        // tap while the first is in flight would write a second copy.
+        button.disabled = true;
+        window.pwaShare
+          .claim(ROUTE_CLAIM_URL_TEMPLATE.replace('__TOKEN__', token), routeCsrfToken())
+          .then(function () {
+            window.pwaTelemetry?.emit('map.route.claimed', {});
+            document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+            closeDetailPopup();
+          })
+          .catch(function (resp) {
+            button.disabled = false;
+            const status = resp && resp.status;
+            button.textContent =
+              status === 409
+                ? MAP_STRINGS['route-save-limit']
+                : MAP_STRINGS['route-save-failed'];
+          });
+      });
+      container.appendChild(button);
     };
 
     // SNOW-687: tapping a saved route frames the whole track and opens its
@@ -5524,8 +5838,13 @@
         container.appendChild(meta);
       }
 
-      const profile = appendElevationProfile(container, props.uuid);
+      // uuid for an owned route, token for a pending one — see
+      // appendElevationProfile. The two can never collide: a pending
+      // feature carries no uuid and an owned one carries no token.
+      const profile = appendElevationProfile(container, props.uuid || props.token);
       appendRouteCaption(container, profile, props.duration_s);
+
+      if (props.pending) appendRouteClaimCta(container, props.token);
 
       // The already-registered 'map-detail-popup' exclusivity member, so a
       // route tap closes every other map overlay and needs no registration
@@ -5549,10 +5868,17 @@
           activateCommunityReport(feature);
           break;
         case 'routes-line':
+        case 'routes-line-pending':
           activateRoute(feature, lngLat);
           break;
       }
     };
+
+    // SNOW-764: honour a ``/?route_share=<token>`` arrival. Declared far
+    // above beside the favourite deep link it mirrors; invoked HERE because
+    // everything it reaches — activateRoute, readFeatureJson — is declared
+    // between the two points. See its own note for why.
+    openRouteShareDeepLink();
 
     // Double-click always zooms to the region regardless of AUTOZOOM setting,
     // and prevents the default map double-click zoom so we control the target.

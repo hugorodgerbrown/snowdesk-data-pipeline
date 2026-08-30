@@ -14,11 +14,39 @@
  * regardless of whether the user is authenticated. The floating
  * #route-add-btn carries the data attributes that drive branching:
  *
- *   data-routes-eligible="true|false"         — True for authenticated users.
+ *   data-routes-eligible="true|false"         — Is there a list to load at
+ *                                               all: authenticated, OR an
+ *                                               anonymous visitor holding a
+ *                                               followed share link.
+ *   data-routes-upload-eligible="true|false"  — May this request upload:
+ *                                               authentication, which is what
+ *                                               data-routes-eligible meant on
+ *                                               its own before SNOW-764.
  *   data-signin-url="<url>"                   — Sign-in page for the anon CTA.
  *   data-route-create-url="<url>"             — Multipart upload endpoint.
  *   data-route-list-url="<url>"               — The list endpoint, ?variant=map.
  *   data-route-rename-url-template="<url>"    — __UUID__-templated rename.
+ *   data-route-share-url-template="<url>"     — __UUID__-templated share mint.
+ *
+ * SHARING (SNOW-764). A row's Share button mints a link and hands it to the
+ * platform, both through window.pwaShare (static/js/share.js) — the same
+ * helper the bulletin page's own share button uses, so the three outcomes
+ * that matter (the sheet took it, the user cancelled, the clipboard caught
+ * it) behave identically on both surfaces. Nothing is swapped: the endpoint
+ * answers JSON and its body goes to the share sheet, not into the page.
+ *
+ * The RECEIVING half is a pending row, rendered server-side by
+ * routes:list for a session holding a followed share, with a Save that is a
+ * plain HTMX form. Nothing here handles that POST; what this module does is
+ * notice it landing (window.pwaRowRemoved, keyed on the claim's own hook)
+ * so the list can be re-read and the map told, exactly as it does for a
+ * Remove.
+ *
+ * The anonymous branch is therefore no longer "sign-in CTA INSTEAD of the
+ * list". A visitor who followed a share link has rows to see — that is the
+ * whole point of the link — so they get the rows AND the sign-in prompt,
+ * because saving one still needs an account. A visitor with nothing pending
+ * is unchanged: the CTA replaces the rows.
  *
  * There is no delete URL template, unlike favourites.js: a route row's
  * Remove is a plain HTMX form rendered into the row server-side
@@ -34,9 +62,15 @@
  *   3. Choosing a file POSTs it straight to routes:create as multipart,
  *      then re-reads the list.
  *
- * Flow when not eligible (anonymous):
+ * Flow when not eligible (anonymous, nothing pending):
  *   Tap opens the panel with a sign-in / sign-up CTA pointing at the
  *   sign-in page (data-signin-url) in place of the list and the add CTA.
+ *
+ * Flow for an anonymous visitor holding a followed share link (SNOW-764):
+ *   Tap opens the panel, the rows load as normal — they are the pending
+ *   shares and nothing else — and the sign-in CTA sits UNDER them rather
+ *   than in place of them. The add CTA is still removed: uploading needs
+ *   an account.
  *
  * NO MAP STATE, still. Unlike favourites.js this module never reads
  * window.snowdeskMapState: a route's geometry comes out of the uploaded
@@ -117,13 +151,25 @@
     'upload-too-large': 'That file is too large to upload.',
     'upload-limit': "You've reached your saved-route limit. Remove one to upload another.",
     'upload-failed': "That route couldn't be uploaded. Try again.",
+    'share-copied': 'Link copied.',
+    'share-failed': "That link couldn't be created. Try again.",
   });
 
   const CREATE_URL = btn.dataset.routeCreateUrl;
   const LIST_URL = btn.dataset.routeListUrl;
   const RENAME_URL_TEMPLATE = btn.dataset.routeRenameUrlTemplate;
+  const SHARE_URL_TEMPLATE = btn.dataset.routeShareUrlTemplate;
   const SIGNIN_URL = btn.dataset.signinUrl;
+  // Two questions since SNOW-764, and keeping them apart is what stops a
+  // signed-out recipient being offered an upload control they cannot use.
+  // IS_ELIGIBLE: there is a list to load. UPLOAD_ELIGIBLE: this visitor may
+  // add to it.
   const IS_ELIGIBLE = btn.dataset.routesEligible === 'true';
+  const UPLOAD_ELIGIBLE = btn.dataset.routesUploadEligible === 'true';
+  // The only way an anonymous request is eligible at all is a followed
+  // share link, so the pair says "there is something pending" without a
+  // third attribute repeating a fact these two already carry.
+  const SHARE_PENDING = IS_ELIGIBLE && !UPLOAD_ELIGIBLE;
 
   // ---------------------------------------------------------------------------
   // Sheet controller + toast — SNOW-608's shared static/js/map_sheet.js, which
@@ -223,14 +269,52 @@
     const toggle = sheet.querySelector('#map-routes-overlay-toggle');
     if (toggle) toggle.checked = !!window.pwaRoutesOverlay?.isEnabled?.();
 
-    if (!IS_ELIGIBLE) {
+    if (!UPLOAD_ELIGIBLE) {
+      // Uploading needs an account either way, so the add CTA goes.
       const addButton = sheet.querySelector('[data-panel-add]');
       if (addButton) addButton.remove();
-      const rows = sheet.querySelector('[data-routes-rows]');
-      if (rows) rows.replaceChildren(buildSigninCta());
+
+      if (!SHARE_PENDING) {
+        const rows = sheet.querySelector('[data-routes-rows]');
+        if (rows) rows.replaceChildren(buildSigninCta());
+        return;
+      }
+
+      // SNOW-764: they followed a share link, so there ARE rows — the
+      // pending ones routes:list renders for this session. Load them, and
+      // put the sign-in prompt UNDER the list rather than over it: the
+      // route they were sent is the thing they came to see, and replacing
+      // it with "sign in to save a route" would hide the very thing the
+      // link was for. Saving still needs an account, which is what the
+      // prompt beneath says.
+      //
+      // The CTA is appended to the panel's own foot (where the add CTA
+      // was) rather than into [data-routes-rows], because that container
+      // is replaced wholesale by every list load and by the failed-load
+      // handler below — a CTA inside it would vanish on the first
+      // re-read.
+      loadRows();
+      appendSigninCta();
       return;
     }
     loadRows();
+  }
+
+  /** Put the sign-in prompt at the foot of the panel, under the rows.
+   *
+   * Only reached for an anonymous visitor holding a pending share. The
+   * panel's foot is where the add CTA lives for a signed-in user, so the
+   * prompt lands in the place the surface already reserves for "the thing
+   * you do next" — and, unlike the rows container, it survives a list
+   * re-read.
+   *
+   * @returns {void}
+   */
+  function appendSigninCta() {
+    const foot = sheet.querySelector('[data-panel-foot]');
+    const host = foot || sheet.querySelector('[data-routes-rows]');
+    if (!host) return;
+    host.appendChild(buildSigninCta());
   }
 
   /** (Re)load the panel's rows from routes:list over HTMX.
@@ -284,9 +368,10 @@
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
     if (handleFocusClick(event)) return;
+    if (handleShareClick(event)) return;
     if (handleRenameClick(event)) return;
     if (!target.closest('[data-panel-add]')) return;
-    if (!IS_ELIGIBLE || !uploadInput) return;
+    if (!UPLOAD_ELIGIBLE || !uploadInput) return;
     // Refuse before the picker rather than after the choice: making
     // somebody find a file, then telling them it cannot be sent, wastes
     // the one action they took. See the header's note on online-only.
@@ -334,6 +419,59 @@
       overlay: window.pwaRoutesOverlay,
       close: closeSheet,
     });
+  }
+
+  /** Handle a click on a row's Share control (SNOW-764).
+   *
+   * Two steps, both window.pwaShare's: mint the link, then hand it to the
+   * platform. Neither is written here, because the bulletin page's share
+   * button does exactly the same two things and one of them (the native
+   * sheet's three outcomes) is fiddly enough that a second copy would
+   * drift — see static/js/share.js.
+   *
+   * The uuid rides on the button (`data-route-share`), so this delegated
+   * handler needs no closure over the rendered row — the same contract the
+   * rename pencil's `data-route-rename` carries, and the reason both
+   * survive the sheet body being re-cloned on every open.
+   *
+   * ONLINE-ONLY, like every other action on this panel: minting a link is
+   * a POST, and there is nothing to hand out until it lands. It is refused
+   * with the generic share failure rather than the offline upload line —
+   * "you need to be online to upload a route" would be a wrong description
+   * of what just failed.
+   *
+   * Only the CLIPBOARD outcome says anything. A share sheet that opened is
+   * on screen and needs no announcement; a user who cancelled it declined,
+   * and telling them a link was copied would contradict them.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a share, so the caller stops
+   *   rather than also testing rename and the add CTA.
+   */
+  function handleShareClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const control = target.closest('[data-route-share]');
+    if (!control) return false;
+    if (!SHARE_URL_TEMPLATE || !window.pwaShare) return true;
+
+    const uuid = control.getAttribute('data-route-share');
+    if (!uuid) return true;
+
+    window.pwaShare
+      .createShare(SHARE_URL_TEMPLATE.replace('__UUID__', uuid), getCsrfToken())
+      .then(function (url) {
+        window.pwaTelemetry?.emit('map.route.shared', {});
+        return window.pwaShare.shareOrCopy(url);
+      })
+      .then(function (outcome) {
+        if (outcome === 'copied') showToast(STRINGS['share-copied']);
+        else if (outcome === 'failed') showToast(STRINGS['share-failed']);
+      })
+      .catch(function () {
+        showToast(STRINGS['share-failed']);
+      });
+
+    return true;
   }
 
   /** Handle a click that starts a row's inline rename.
@@ -420,7 +558,7 @@
    * @returns {void}
    */
   function upload(file) {
-    if (!IS_ELIGIBLE || !CREATE_URL) return;
+    if (!UPLOAD_ELIGIBLE || !CREATE_URL) return;
     if (!networkInUse()) {
       showToast(STRINGS['upload-offline']);
       return;
@@ -521,4 +659,36 @@
     loadRows();
     document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
   });
+
+  // ---------------------------------------------------------------------------
+  // A shared route claimed from the panel (SNOW-764).
+  //
+  // The Save is a plain HTMX form and its own swap replaces the pending row
+  // with the claimed one, so the LIST is momentarily correct without any
+  // help. Both re-reads below are still needed:
+  //
+  //   the LIST — the claimed route is an owned route now, and its position
+  //     in the list is the server's to decide (owned rows sort under
+  //     pending ones, newest first). The in-place swap leaves it sitting
+  //     where the pending row was, at the top, which is not where a
+  //     re-read would put it.
+  //
+  //   the MAP — the claim both adds a line (a new owned route the layer
+  //     has never seen) and removes one (the dashed pending line, which
+  //     is no longer pending). Nothing else takes either.
+  //
+  // Same mark-pair mechanism the removal above uses, keyed on the claim
+  // form's own hook — see static/js/row_removed.js for why recognising
+  // this needs two events.
+  // ---------------------------------------------------------------------------
+
+  window.pwaRowRemoved?.watch(
+    '[data-routes-rows]',
+    function () {
+      window.pwaTelemetry?.emit('map.route.claimed', {});
+      loadRows();
+      document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+    },
+    '[data-row-claimed]'
+  );
 }());

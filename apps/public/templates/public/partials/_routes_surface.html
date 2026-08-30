@@ -12,8 +12,14 @@ implementation, and the differences below are all deliberate.
 
 Included from home.html unconditionally since SNOW-724 retired the
 ``routes`` rollout flag that used to gate the whole surface. Authentication
-still decides what the panel shows: routes.js branches on
-``data-routes-eligible`` for the anonymous sign-in CTA.
+still decides most of what the panel shows: routes.js branches on
+``data-routes-upload-eligible`` for the anonymous sign-in CTA.
+
+SNOW-764 added a second way to have rows here: a visitor holding a share
+link they have followed. ``data-routes-eligible`` is what widened to cover
+them — "is there a list to load" — while the upload attribute above stays
+authentication, so a signed-out recipient sees the route they were sent AND
+a sign-in prompt underneath it rather than the prompt instead of it.
 
 Five shared modules are loaded once each by home.html before this partial
 — none is repeated here:
@@ -120,6 +126,14 @@ Context expected:
 {# shared map state through window.snowdeskMapState, so it is not listed in  #}
 {# MAP_BUNDLE (tests/js/_load_map_bundle.js) and does not sit inside the     #}
 {# bundle's contiguous run (tests/public/test_map_script_order.py).          #}
+{# SNOW-764: the native-share/clipboard helper, loaded BEFORE routes.js —   #}
+{# deferred scripts run in document order, so window.pwaShare exists by the  #}
+{# time that module's own top level runs. Loaded from here rather than       #}
+{# home.html for the same reason routes.js is: it is this surface's          #}
+{# dependency, not the map bundle's. static/js/map.js also reads it, for     #}
+{# the shared-route popup's Save, and reaches it from a click handler that   #}
+{# runs long after every deferred script on the page has executed.           #}
+<script defer src="{% static 'js/share.js' %}"></script>
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}
@@ -148,4 +162,10 @@ Context expected:
         data-string="upload-limit"
     >{% trans "You've reached your saved-route limit. Remove one to upload another." %}</span>
     <span data-string="upload-failed">{% trans "That route couldn't be uploaded. Try again." %}</span>
+    {# SNOW-764: the two outcomes of Share that need words. The other two   #}
+    {# deliberately say nothing — a share sheet that opened is on screen    #}
+    {# and needs no announcement, and a user who cancelled it declined, so  #}
+    {# "link copied" would contradict them. See static/js/share.js.         #}
+    <span data-string="share-copied">{% trans "Link copied." %}</span>
+    <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
 </template>
