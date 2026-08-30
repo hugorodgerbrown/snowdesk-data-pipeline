@@ -465,6 +465,25 @@ uv run python manage.py link_region_centroid_locations           # preview
 uv run python manage.py link_region_centroid_locations --commit  # apply
 ```
 
+### `prune_orphan_locations` — sweep anonymous Locations nothing points at
+
+Cleanup for the orphans SNOW-771 left behind. Before its reuse fix, each
+deploy's re-link minted a fresh centroid `Location` instead of rebinding to
+the existing one, so every deploy stranded 461 rows and their `Weather`.
+Staging accumulated three generations in a day.
+
+Only an **anonymous** location with no `ResortLocation`, `MicroRegion`,
+`Favourite` or `FieldObservation` is a candidate. A named location is
+curated data owned by `import_locations` and is never touched, even when
+nothing references it — an unreferenced curated place is a curation
+question, not garbage. Deleting a `Location` cascades to its `Weather`,
+which is the point: that data describes a place nothing can reach.
+
+```bash
+uv run python manage.py prune_orphan_locations           # preview
+uv run python manage.py prune_orphan_locations --commit  # delete
+```
+
 ### `refresh_centroid_elevations` — resolve centroid heights into the fixtures
 
 The one manual half of the above, and the only part of a centroid that

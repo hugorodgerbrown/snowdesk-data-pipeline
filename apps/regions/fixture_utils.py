@@ -219,6 +219,56 @@ def write_fixture(path: Path, data: list[dict[str, Any]]) -> None:
     logger.info("Wrote %s (%d entries)", path, len(data))
 
 
+# Fields a rebuild must carry across from the committed fixture rather than
+# recompute. Each is per-estate data that lives on a fixture-managed row but
+# is NOT derivable from the upstream source the builders read.
+#
+# ``centroid_elevation_m`` is the one that matters (SNOW-771): it costs an
+# Open-Meteo call per region, and a rebuild that dropped it would leave 461
+# regions with no height and nothing to say so — the same silent-loss shape
+# as the deploy-time wipe that ticket fixed, one layer up. Unlike
+# ``basemap_download``, which ``compute_basemap_download`` recomputes on
+# every deploy, nothing restores this one offline.
+PRESERVED_L4_FIELDS = ("centroid_elevation_m",)
+
+
+def carry_forward_preserved_fields(
+    path: Path, entries: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Copy PRESERVED_L4_FIELDS from the committed fixture onto fresh entries.
+
+    The ``build_*_fixture`` commands rebuild each micro-region's fields from
+    the upstream EAWS GeoJSON, so any field that is not in that source is
+    absent from the new dict and would be lost on write. This restores them,
+    matched on ``region_id``.
+
+    Args:
+        path: The existing fixture file; missing is fine (first build).
+        entries: The freshly built entries, mutated in place.
+
+    Returns:
+        ``entries``, for chaining.
+
+    """
+    existing = load_fixture(path, missing_ok=True)
+    by_region: dict[str, dict[str, Any]] = {
+        e["fields"]["region_id"]: e["fields"]
+        for e in existing
+        if e.get("model") == "regions.microregion"
+        and "region_id" in e.get("fields", {})
+    }
+    for entry in entries:
+        if entry.get("model") != "regions.microregion":
+            continue
+        old = by_region.get(entry["fields"].get("region_id"))
+        if not old:
+            continue
+        for name in PRESERVED_L4_FIELDS:
+            if name not in entry["fields"] and old.get(name) is not None:
+                entry["fields"][name] = old[name]
+    return entries
+
+
 def diff_against_existing(path: Path, new_data: list[dict[str, Any]]) -> int:
     """Return the number of entries that differ from the on-disk fixture.
 

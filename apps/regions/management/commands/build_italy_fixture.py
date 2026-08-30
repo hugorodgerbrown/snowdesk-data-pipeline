@@ -54,6 +54,7 @@ from django.utils.text import slugify
 
 from apps.regions.fixture_utils import (
     build_entries_from_eaws_dir,
+    carry_forward_preserved_fields,
     diff_against_existing,
     write_fixture,
 )
@@ -121,6 +122,10 @@ class Command(BaseCommand):
         if verbosity >= 1:
             self.stdout.write(f"Built: L1={l1_count} L2={l2_count} L4={l4_count}")
 
+        # SNOW-771: the upstream EAWS source carries no centroid
+        # elevation, so a rebuild would drop all of them. Carry the
+        # committed values across before diffing or writing.
+        entries = carry_forward_preserved_fields(_ITALY_FIXTURE, entries)
         changes = diff_against_existing(_ITALY_FIXTURE, entries)
 
         if verbosity >= 1:

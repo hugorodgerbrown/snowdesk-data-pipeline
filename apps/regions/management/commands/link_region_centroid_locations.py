@@ -113,6 +113,61 @@ def _centre_of(region: MicroRegion) -> tuple[float, float] | None:
     return float(centre["lat"]), float(centre["lon"])
 
 
+def _centroid_location_for(
+    latitude: float, longitude: float, elevation: float | None
+) -> Location:
+    """Return the Location for a centroid, reusing the existing row if there is one.
+
+    **Reuse is the whole point, not an optimisation.** ``loaddata`` NULLs
+    every ``centroid_location`` on each deploy, and this command runs
+    straight afterwards to restore them. If it minted a fresh row each time,
+    the previous one would be orphaned along with every ``Weather`` row
+    hanging off it — so the map would go blank after every deploy until the
+    next ``fetch_weather``, and both tables would grow by 461 rows per
+    deploy, for ever. Staging reproduced exactly that on 2026-08-30: 467
+    locations carrying weather before a deploy, 6 after.
+
+    Rebinding to the same row instead keeps the weather attached and the
+    estate flat. The coordinate makes that safe: it is
+    ``centre_from_bbox(boundary)``, a pure function of fixture data, so it
+    is bit-identical on every run and the previous row is findable exactly.
+
+    The match is deliberately narrow. Only an **anonymous** location can be
+    reused — a curated, named place may legitimately sit at the same
+    coordinate, and rebinding a region's centroid onto it would put that
+    name on the map where a centroid belongs. Oldest id wins, so the row
+    with the longest weather history is the one that survives.
+
+    Args:
+        latitude: The centroid's latitude.
+        longitude: The centroid's longitude.
+        elevation: Ground elevation in metres, or ``None`` when unresolved.
+
+    Returns:
+        The reused or newly created ``Location``.
+
+    """
+    existing = (
+        Location.objects.anonymous()
+        .filter(latitude=latitude, longitude=longitude)
+        .order_by("id")
+        .first()
+    )
+    if existing is None:
+        # Anonymous: a centroid represents the region, not a place anyone
+        # goes, and naming it would put it in the curated estate that
+        # import_locations owns.
+        return Location.objects.create(
+            latitude=latitude, longitude=longitude, elevation_m=elevation
+        )
+    if existing.elevation_m != elevation:
+        # A fixture rebuild can move a centroid's elevation; keep the row
+        # (and its weather) and correct the height in place.
+        existing.elevation_m = elevation
+        existing.save(update_fields=["elevation_m", "updated_at"])
+    return existing
+
+
 class Command(BaseCommand):
     """Give every MicroRegion with a boundary a centroid Location.
 
@@ -232,16 +287,31 @@ class Command(BaseCommand):
         if commit:
             try:
                 with transaction.atomic():
-                    # Anonymous: a centroid represents the region, not a
-                    # place anyone goes, and naming it would put it in the
-                    # curated estate that import_locations owns.
-                    location = Location.objects.create(
-                        latitude=latitude,
-                        longitude=longitude,
-                        elevation_m=elevation,
+                    # Row lock, then re-read. Production deploys THREE
+                    # services from `release` at once, all running a build
+                    # script that calls this command, all against one
+                    # database. Without the lock, on the first run in an
+                    # environment — when there is no row to reuse yet — all
+                    # three would find nothing, all three would create, and
+                    # the last writer would win: two orphans per region,
+                    # ~922 on a first release. Locking the region serialises
+                    # them, and the re-read lets the losers see the winner's
+                    # work instead of repeating it.
+                    locked = (
+                        MicroRegion.objects.select_for_update()
+                        .filter(pk=region.pk)
+                        .first()
                     )
-                    region.centroid_location = location
-                    region.save(update_fields=["centroid_location", "updated_at"])
+                    if locked is None:
+                        counts["skipped"] += 1
+                        return
+                    if locked.centroid_location_id is not None:
+                        # A concurrent build linked it while we queued.
+                        counts["linked"] += 1
+                        return
+                    location = _centroid_location_for(latitude, longitude, elevation)
+                    locked.centroid_location = location
+                    locked.save(update_fields=["centroid_location", "updated_at"])
             except Exception:  # noqa: BLE001 — one region must not fail a deploy
                 # build.sh runs this under ``set -o errexit``, so an escaping
                 # exception takes the whole deploy down — of three services
