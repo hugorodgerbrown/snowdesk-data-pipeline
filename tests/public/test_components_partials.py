@@ -9,6 +9,8 @@ Covers:
   _status_page.html — rendered via real child templates (manage_sent,
                      manage_saved, link_expired, unsubscribe_done) using the
                      test client; asserts on structural chrome and content.
+  _forecast_panel.html — every variant registered in the component library,
+                     asserting the live/inert split reaches the markup.
 
 Follows the pattern in tests/public/test_nav_partial.py: render_to_string
 for partials, test client for full-page templates.
@@ -25,6 +27,7 @@ from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 from django.test import Client, RequestFactory
 
+from apps.public._component_fixtures import FORECAST_PANEL_VARIANTS
 from apps.public.templatetags.components import (
     _button_chrome_classes,
     _card_chrome_classes,
@@ -428,3 +431,56 @@ class TestStatusPageChildren:
             assert "max-w-md" in html, f"{tpl}: missing max-w-md"
             assert "bg-card" in html, f"{tpl}: missing card chrome"
             assert "rounded-card" in html, f"{tpl}: missing card chrome"
+
+
+class TestForecastPanelVariants:
+    """Every forecast-panel variant in the component library renders.
+
+    The library is where the panel's states are read side by side, so a
+    variant that raises — or that silently draws nothing — is a hole in the
+    only place anyone looks at all four at once (SNOW-776).
+    """
+
+    @pytest.mark.parametrize(
+        "variant",
+        FORECAST_PANEL_VARIANTS,
+        ids=lambda variant: str(variant["context"]["testid_prefix"]),
+    )
+    def test_variant_renders_its_strip(self, variant: dict[str, object]) -> None:
+        """Each variant draws one card per day in its panel.
+
+        Args:
+            variant: One entry from ``FORECAST_PANEL_VARIANTS``.
+
+        """
+        context = variant["context"]
+        assert isinstance(context, dict)
+        html = render_to_string("includes/_forecast_panel.html", context)
+        prefix = context["testid_prefix"]
+        assert html.count(f'data-testid="{prefix}-day"') == len(
+            context["panel"]["days"]
+        )
+
+    @pytest.mark.parametrize(
+        "variant",
+        FORECAST_PANEL_VARIANTS,
+        ids=lambda variant: str(variant["context"]["testid_prefix"]),
+    )
+    def test_variant_draws_one_chart_per_day_that_has_one(
+        self, variant: dict[str, object]
+    ) -> None:
+        """A day carries a chart or it is inert — never a half state.
+
+        Args:
+            variant: One entry from ``FORECAST_PANEL_VARIANTS``.
+
+        """
+        context = variant["context"]
+        assert isinstance(context, dict)
+        html = render_to_string("includes/_forecast_panel.html", context)
+        prefix = context["testid_prefix"]
+        live = [day for day in context["panel"]["days"] if day["chart"]]
+        assert html.count(f'data-testid="{prefix}-chart-svg"') == len(live)
+        assert html.count('aria-disabled="true"') == len(
+            context["panel"]["days"]
+        ) - len(live)

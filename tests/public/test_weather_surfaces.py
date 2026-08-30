@@ -20,10 +20,12 @@ an unfrozen assertion passes locally and fails in CI after sunset.
 from __future__ import annotations
 
 import datetime
+import re
 
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import translation
 from freezegun import freeze_time
 
 from apps.locations.models import Location, ResortLocation
@@ -238,6 +240,54 @@ class TestFavouriteCard:
         assert 'data-testid="favourite-card-weather"' in content
         assert "clear-day.svg" in content
 
+    @freeze_time(MIDDAY)
+    def test_the_outlook_panel_reaches_the_card_with_its_chart(self) -> None:
+        """The card is the forecast panel's second consumer.
+
+        It includes the same partial the resort page does, with only its
+        ``testid_prefix`` differing — so a change to the panel's contract
+        that this misses is a change that ships broken on one of them.
+        """
+        user = UserFactory.create()
+        favourite = FavouriteFactory.create(user=user)
+        WeatherFactory.create(
+            location=favourite.location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            hourly=[
+                {
+                    "time": "2026-08-30T09:00",
+                    "temperature_2m": -2.0,
+                    "wind_speed_10m": 14.0,
+                    "wind_gusts_10m": 30.0,
+                    "precipitation": 0.2,
+                    "snowfall": 0.1,
+                    "freezing_level_height": 1900.0,
+                },
+                {
+                    "time": "2026-08-30T10:00",
+                    "temperature_2m": -1.0,
+                    "wind_speed_10m": 16.0,
+                    "wind_gusts_10m": 33.0,
+                    "precipitation": 0.4,
+                    "snowfall": 0.2,
+                    "freezing_level_height": 1950.0,
+                },
+            ],
+        )
+
+        client = Client()
+        client.force_login(user)
+        response = client.get(
+            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+        )
+
+        content = response.content.decode()
+        assert 'data-testid="favourite-forecast-panel"' in content
+        assert 'data-testid="favourite-forecast-chart-svg"' in content
+        assert 'name="favourite-forecast-days"' in content
+
     def test_a_pin_with_no_row_renders_no_weather_section(self) -> None:
         """No row for today means the section is absent, not empty."""
         user = UserFactory.create()
@@ -251,3 +301,123 @@ class TestFavouriteCard:
 
         assert response.status_code == 200
         assert 'data-testid="favourite-card-weather"' not in response.content.decode()
+
+
+def _hourly(date: str) -> list[dict[str, object]]:
+    """Build a short hourly series for one day.
+
+    Args:
+        date: The day's ISO date, used to build each row's ``time``.
+
+    Returns:
+        The rows.
+
+    """
+    return [
+        {
+            "time": f"{date}T{hour:02d}:00",
+            "temperature_2m": -4.0 + hour,
+            "snowfall": 0.4,
+            "precipitation": 0.6,
+            "wind_speed_10m": 18.0,
+            "wind_gusts_10m": 34.0,
+            "freezing_level_height": 1800.0,
+        }
+        for hour in (6, 7, 8, 9)
+    ]
+
+
+@pytest.mark.django_db
+class TestForecastPanelDaySelector:
+    """The day strip is the control, and it is CSS-only (SNOW-776).
+
+    Rendered through the resort page rather than the partial in isolation,
+    because the trap this guards against — two panels sharing one radio
+    group — only exists on a page that renders more than one.
+    """
+
+    def _resort_with_panels(self, count: int) -> str:
+        """Build a resort with ``count`` weather-bearing locations.
+
+        Args:
+            count: How many curated locations to link and give a row.
+
+        Returns:
+            The resort's URL.
+
+        """
+        resort = ResortFactory.create()
+        for index in range(count):
+            location = LocationFactory.create(name=f"Point {index}")
+            ResortLocationFactory.create(resort=resort, location=location)
+            WeatherFactory.create(
+                location=location,
+                observed_on=PAGE_DATE,
+                sunrise=SUNRISE,
+                sunset=SUNSET,
+                hourly=_hourly("2026-08-30"),
+                forecast=[
+                    {**_forecast_day("2026-08-31"), "hourly": _hourly("2026-08-31")},
+                    _forecast_day("2026-09-01"),
+                ],
+            )
+        return resort.get_absolute_url()
+
+    @freeze_time(MIDDAY)
+    def test_the_first_live_day_ships_checked(self) -> None:
+        """The panel opens on a day, so it is never a strip over nothing."""
+        response = Client().get(self._resort_with_panels(1))
+
+        content = response.content.decode()
+        assert content.count('data-testid="resort-weather-0-day-input"') == 2
+        checked = re.findall(r'<input[^>]*?value="([^"]+)"[^>]*?checked', content, re.S)
+        assert checked == ["2026-08-30"]
+
+    @freeze_time(MIDDAY)
+    def test_a_day_past_the_horizon_gets_no_input_and_no_label(self) -> None:
+        """An inert day is not a control that ignores presses."""
+        response = Client().get(self._resort_with_panels(1))
+
+        content = response.content.decode()
+        assert 'data-date="2026-09-01"' in content
+        assert content.count('aria-disabled="true"') == 1
+        assert content.count("<label") == 2
+
+    @freeze_time(MIDDAY)
+    def test_one_chart_per_day_that_carries_a_series(self) -> None:
+        """The chart count follows ``hourly``, not the length of the strip."""
+        response = Client().get(self._resort_with_panels(1))
+
+        content = response.content.decode()
+        assert content.count('data-testid="resort-weather-0-day-chart"') == 2
+        assert content.count('data-testid="resort-weather-0-chart-svg"') == 2
+
+    @freeze_time(MIDDAY)
+    def test_two_panels_on_one_page_get_distinct_radio_group_names(self) -> None:
+        """A shared name would fuse every panel into one group.
+
+        The resort page renders one panel per curated location, so choosing
+        a day in one would clear the choice in all the others.
+        """
+        response = Client().get(self._resort_with_panels(2))
+
+        content = response.content.decode()
+        assert 'name="resort-weather-0-days"' in content
+        assert 'name="resort-weather-1-days"' in content
+
+    @freeze_time(MIDDAY)
+    def test_chart_coordinates_survive_a_comma_decimal_locale(self) -> None:
+        """``localize off`` is load-bearing, not decoration.
+
+        Coordinates reach the template as floats. An active locale that
+        formats decimals with a comma would render ``x="12,5"`` and take
+        every band out.
+        """
+        with translation.override("de"):
+            response = Client().get(self._resort_with_panels(1))
+
+        content = response.content.decode()
+        # 06:00 is the first hour in the series, so its bar is the first
+        # rect on the axis: 6 * 10 + 5 - 6 / 2 user units.
+        assert 'x="62.0"' in content
+        assert 'x="62,0"' not in content
