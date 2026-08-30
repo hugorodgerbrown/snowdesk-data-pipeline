@@ -35,7 +35,7 @@ The dataset is built from the FactoryBoy factories in `tests/factories.py` by
 `seed_test_data` (the factory-based path that replaced the old
 `loaddata test_data` JSON fixture). It covers the CH region/resort reference
 data, the map-coverage and CH-4115 detail bulletin layer, a small
-`ForecastCell`/`ForecastCellWeather`/`Favourite` set, and the two named dev
+`Location`/`Favourite` set, and the two named dev
 accounts (see [Dev credentials](#dev-credentials) — folded in from the former
 `seed_dev_users` command via `SeedModel.USER`, so `--all` creates them and
 `seed_test_data --include user` seeds just the accounts). `seed_test_data`
@@ -150,9 +150,7 @@ contains so it can be relied on and extended safely.
 | `bulletins.regionbulletin` | 178 | `seed_test_data` |
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
 | `bulletins.bulletingrouping` | 39 | `seed_test_data` (one per bulletin) |
-| `weather.weathersnapshot` | 178 | `seed_test_data` |
-| `weather.forecastcell` | 5 | `seed_test_data` |
-| `weather.forecastcellweather` | 150 | `seed_test_data` |
+| `locations.location` | 5 | `seed_test_data` |
 | `favourites.favourite` | 5 | `seed_test_data` (owned by the normal dev user) |
 | `auth.user` | 2 | `seed_test_data` (superuser + subscribed normal user) |
 | `accounts.subscriber` | 1 | `seed_test_data` (the normal dev user) |
@@ -187,9 +185,9 @@ contains so it can be relied on and extended safely.
   (am/pm separate) or banded (ALBINA-style elevation-band) bulletins.
 - **Multi-problem days:** each bulletin carries a single `persistent_weak_layers`
   problem; wet-snow and dry/wet mixed days are absent.
-- **Point weather / favourites:** 5 `ForecastCell`s near Verbier, each with a
-  `ForecastCellWeather` per April date, and one `Favourite` per point owned by
-  the seeded normal dev user (`dev@snowdesk.dev`).
+- **Locations / favourites:** 5 `Location`s near Verbier, and one
+  `Favourite` per location owned by the seeded normal dev user
+  (`dev@snowdesk.dev`).
 - **Accounts:** the superuser and the subscribed normal dev user (see
   [Dev credentials](#dev-credentials)).
 
@@ -251,7 +249,7 @@ reference: [`docs/management-commands.md`](management-commands.md#seed_test_week
 
 The dataset shape lives in code, not a committed fixture:
 
-- Bulletin/weather coverage, the CAAML payload template, and the danger
+- Bulletin coverage, the CAAML payload template, and the danger
   gradient are the module-level helpers in
   `apps/bulletins/management/commands/seed_test_data.py`.
 - Row *values* come from the factories in `tests/factories.py`.

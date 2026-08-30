@@ -16,7 +16,7 @@ positioning, and product shape, see `README.md`.
 
 **The governing principle is fidelity.** Snowdesk renders the provider's
 bulletin *whole* — every field the provider published, verifiable against the
-source link — and adds what the provider cannot: weather at a finer grain than
+source link — and adds what the provider cannot: detail at a finer grain than
 the warning region, and field observations from the people who were there. We
 add to the bulletin. We do not edit it, summarise it, or leave parts of it out.
 
@@ -139,7 +139,7 @@ A condensed brief of the editorial character. Expanded reasoning is in "What Sno
 - **Character:** calm, confident, quietly expert. Closer to a well-edited publication than a software dashboard. Treat the reader as a thoughtful adult making real decisions.
 - **Voice:** direct, unpatronising, no extreme-sports energy, no emojis, no cheerful disclaimers hiding uncertainty. Content should survive being pasted into a WhatsApp group without feeling out of place.
 - **Mission lens:** Snowdesk shows the provider's bulletin **in full**, and adds the context the provider cannot. Completeness is the product; the visual language must carry a long, uneven document without making it feel heavy.
-- **Hierarchy:** provider content is primary; Snowdesk-added content (day-character labels, weather, field observations, field guidance) is visually distinguishable and deferential.
+- **Hierarchy:** provider content is primary; Snowdesk-added content (day-character labels, field observations, field guidance) is visually distinguishable and deferential.
 - **Restraint as a rule:** new features arrive in the same restrained idiom — small, quiet, deferential to the existing hierarchy. Do not add visual weight or accent colours to make additions feel "important".
 - **Asymmetry is honest:** uneven CAAML data should produce visibly uneven blocks. Do not fabricate structure for symmetry.
 - **Never recommend behaviour:** characterise, explain, do not tell users to go or stay.
@@ -153,7 +153,7 @@ The editorial test for any addition: look at the page and ask whether it still f
 
 Before diving into specifics, the design exists to support a particular product framing that should shape every visual decision:
 
-Snowdesk shows the **real bulletin**, not a simplified reading of one. A user can follow the source link and check: nothing the provider published is missing, softened, or paraphrased away. That claim is the product's foundation — it is what makes Snowdesk safe to rely on for a decision, and it is what a competitor shipping a prettier summary cannot copy without doing the same work. On top of it, Snowdesk adds what the provider does not offer: weather at a finer grain than the warning region, community field observations, and cross-provider coverage in one place.
+Snowdesk shows the **real bulletin**, not a simplified reading of one. A user can follow the source link and check: nothing the provider published is missing, softened, or paraphrased away. That claim is the product's foundation — it is what makes Snowdesk safe to rely on for a decision, and it is what a competitor shipping a prettier summary cannot copy without doing the same work. On top of it, Snowdesk adds what the provider does not offer: community field observations and cross-provider coverage in one place.
 
 This framing has a load-bearing implication for design: the page has to carry a long, structurally uneven document without becoming exhausting. The work is hierarchy, pacing and restraint — deciding what is loud, what is quiet, and what is behind a disclosure — never deciding what to drop. Where a section is genuinely secondary, the answer is a collapsible panel, not a deletion.
 
@@ -207,7 +207,7 @@ These are the principles that should govern any addition or change to the page d
 
 **Never recommend behaviour.** Snowdesk characterises the day and explains the bulletin. It does not tell users to go or to stay. The line between "information" and "judgement" exists for good reasons in Swiss avalanche culture, and crossing it has real consequences. Even features that introduce Snowdesk's own interpretation (the day-character labels) are deliberately descriptive rather than prescriptive.
 
-**The provider is the authoritative source, and the page should make this visible.** The bulletin prose comes from SLF, ALBINA or Météo-France; Snowdesk renders it faithfully. Anywhere Snowdesk adds its own content alongside the source — plain-language sentences, day-character labels, weather, field observations, field guidance — the visual treatment must distinguish the Snowdesk layer from the provider layer so users can tell which content comes from where.
+**The provider is the authoritative source, and the page should make this visible.** The bulletin prose comes from SLF, ALBINA or Météo-France; Snowdesk renders it faithfully. Anywhere Snowdesk adds its own content alongside the source — plain-language sentences, day-character labels, field observations, field guidance — the visual treatment must distinguish the Snowdesk layer from the provider layer so users can tell which content comes from where.
 
 **Render everything; add alongside, never instead.** Snowdesk-derived content sits next to the provider's, and never displaces it. When a surface feels crowded, the move is to change the hierarchy — quieten, group, collapse — not to remove what the provider published. "This section is long" is not a reason to drop it; it is a reason to give it a disclosure.
 

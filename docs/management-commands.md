@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, backfill_weather, import_resorts, import_locations, dump_locations_sheets, fixture builders
+description: Commands — fetch_bulletins, import_resorts, import_locations, dump_locations_sheets, link_region_centroid_locations, fixture builders
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -115,12 +115,9 @@ visible in the worker logs.
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
-| Weather backstop | `fetch_weather --commit` | `0 0-18/6 * * *` (00:00, 06:00, 12:00, 18:00 UTC) | Writes today's `WeatherSnapshot` rows for every region, plus the 7-day point forecasts. Forecast endpoint only — gaps from a missed run are filled by `backfill_weather`, never by this job. The live path is the HTMX-triggered `public:weather_snippet` view (see [`async-operations.md`](async-operations.md)); this job is a backstop so the first page-view of the day doesn't pay the Open-Meteo round-trip. |
 
-Run order is handled automatically: APScheduler fires both jobs
-independently on their own triggers. The weather job fires less frequently
-than bulletin ingestion, so by design the weather backstop typically runs
-after bulletin data has already been refreshed for that hour.
+Bulletin ingestion is the only scheduled job since SNOW-762 removed the
+weather backstop with the weather app.
 
 ### `seed_test_data` — build the navigable test dataset (local dev and CI)
 
@@ -138,12 +135,12 @@ uv run python manage.py seed_test_data --all --commit
 
 This brings a freshly migrated DB to a fully navigable state:
 
-- One `Bulletin` + `RegionBulletin` + `RegionDayRating` + `WeatherSnapshot` per
+- One `Bulletin` + `RegionBulletin` + `RegionDayRating` per
   CH MicroRegion for 2026-04-08 (the map-coverage layer), plus full April 2026
   for CH-4115 (Martigny-Verbier) — 178 of each model.
 - All bulletins carry render models at `RENDER_MODEL_VERSION` (day ratings via the
   production `apply_bulletin_day_ratings` service); no rebuild step is needed.
-- A small standalone `ForecastCell` / `ForecastCellWeather` / `Favourite` set.
+- A small standalone `Location` / `Favourite` set.
 - The two named dev accounts (a superuser and an active, CH-4115-subscribed
   normal user that owns the favourites — folded in from the former
   `seed_dev_users` command). Credentials: [`docs/worktrees.md`](worktrees.md).
@@ -153,16 +150,15 @@ The canonical preview URL after seeding is `/ch-4115/martigny-verbier/2026-04-08
 
 Read-only by default (prints intended counts); `--commit` persists. It refuses to
 run when `DEBUG=False` and expects an empty/migrated DB — it creates deterministic
-bulletin IDs and one `WeatherSnapshot` per (region, date), so re-seeding a
-populated DB raises a clean `CommandError`. Exactly one selection flag is required:
+bulletin IDs, so re-seeding a populated DB raises a clean `CommandError`. Exactly one selection flag is required:
 
 - `--all` — seed every model.
 - `--include MODEL [MODEL ...]` — seed only the named model(s).
 - `--exclude MODEL [MODEL ...]` — seed everything except the named model(s).
 
 Model names are case-insensitive and strongly typed against a `SeedModel`
-enumeration (`bulletin`, `regionbulletin`, `regiondayrating`, `weathersnapshot`,
-`forecastcell`, `forecastcellweather`, `favourite`, `user`); an empty or unknown value
+enumeration (`bulletin`, `regionbulletin`, `regiondayrating`,
+`bulletingrouping`, `location`, `favourite`, `user`); an empty or unknown value
 lists the available models. FK prerequisites of a selected model are pulled in
 automatically even if not named. The dataset shape (coverage, CAAML template,
 danger gradient) lives in module-level helpers in the command; row values come
@@ -337,8 +333,8 @@ observations are not the sheet's to own, and deleting them would destroy
 user data.
 
 **There is no elevation column.** Elevation is always derived
-([`docs/locations.md`](locations.md)); `link_location_forecast_cells`
-resolves it. That makes it a **check on the curation**: compare a resolved
+([`docs/locations.md`](locations.md)); an out-of-band resolution pass
+resolves it via `fetch_elevation`. That makes it a **check on the curation**: compare a resolved
 height against the resort sheet's `base_elevation_m` / `top_elevation_m`
 before committing, because a location whose height is nowhere near the
 expected figure has been mis-pinned.
@@ -388,116 +384,34 @@ uv run python manage.py dump_locations_sheets --commit \
     --file /tmp/locations.tsv --links-file /tmp/resort_locations.tsv
 ```
 
-### `link_location_forecast_cells` — resolve each Location's height and cell
-
-The companion to `import_locations`, in the role
-`link_resort_forecast_points` plays for `import_resorts`: the import writes
-what a curator typed, this resolves the two fields needing an external call.
-
-Per unresolved location it makes **one** Open-Meteo call. `fetch_elevation`
-gives the location's *own* height — deliberately not the forecast cell's
-`elevation`, which is the representative height of whichever pin minted the
-cell and is shared by everything in it. Mont Fort must carry 3328 m, not the
-cell's average. That elevation is then handed to `resolve_forecast_cell`,
-which reuses or creates the shared cell without looking it up again, and is
-what puts the location into `ForecastCell.objects.active()` and so into the
-scheduled `fetch_weather` point pass — no scheduler change.
-
-The elevation call is made in a dry run too, so the reported outcome is
-real. The cell is not: a dry run asks `find_forecast_cell`, the read-only
-twin, which cell *would* be used, and reports "at most N new cell(s)" — an
-upper bound, because two locations close enough to share a cell both count
-as new when neither is written for the other to find. A per-location failure
-is logged and counted, never aborts the batch, and makes the command exit
-non-zero.
-
-**Scoped to `Location.objects.named()`** — the curated estate. That filter
-is what keeps the cost bounded: a favourite's location already carries its
-cell from creation and is never unresolved, and an observation's
-deliberately has none, because an observation shows no forecast panel.
-Without it, every historical field report would bill an elevation lookup
-for weather nothing renders.
-
-```bash
-uv run python manage.py link_location_forecast_cells             # preview
-uv run python manage.py link_location_forecast_cells --commit    # persist
-uv run python manage.py link_location_forecast_cells --commit --delay 2
-```
-
 ### `link_region_centroid_locations` — anchor each region to a Location
 
 Backfill for SNOW-696. Gives every `MicroRegion` with a `centre` a
-`Location` at that centroid, with its elevation and forecast cell resolved
-— which is what lets the bulletin page render the same multi-day forecast
-panel the resort page and the favourite card already have, instead of the
-one-day condition icon, hi/lo and snowfall total `WeatherSnapshot` carries.
+`Location` at that centroid, with its elevation resolved — which is what
+anchors the region in the location estate.
 
-⚠️ **Read the cost before running with `--commit`.** Up to 461 new forecast
-cells, one per micro-region across AT (153), CH (149), IT (124) and FR (35)
-— fewer in practice, since the 750 m / 150 m reuse thresholds fold a region
-centre onto an existing resort cell where the two are close. Each new cell
-adds one Open-Meteo call per fetch cycle and `fetch_weather` runs four
-times daily, so roughly **1,800 additional calls per day**. Confirm the
-headroom on the current plan first — the dry run reports created-versus-
-reused, which is the number to check against. It is an upper bound on the
-created side: two region centres close enough to share a cell both count as
-new, because a dry run writes neither for the other to find.
+One Open-Meteo elevation call per region, up to 461 across AT (153), CH
+(149), IT (124) and FR (35). The `--delay` default (1.0s) paces the run
+inside the free-tier rate limit.
 
-The dry run itself writes nothing and makes one Open-Meteo call per region
-(SNOW-719). Before that fix it called `resolve_forecast_cell` — a
-`get_or_create` — on the read-only path, so a "preview" created the very
-cells it was reporting on.
+The call is made on the dry-run path too, so the reported outcome is real —
+but nothing is written (SNOW-719). A per-region failure is logged and
+counted, never aborts the batch, and makes the command exit non-zero.
 
 **A centroid is not a place anyone goes.** The minted location carries no
 name and no kind: it represents the region and sits at whatever elevation
-the polygon's middle happens to fall at. Any surface showing its weather
-must say which elevation it represents — the bulletin page's eyebrow reads
-"Weather — region centre" for exactly this reason.
+the polygon's middle happens to fall at. Any surface showing it must say
+which elevation it represents.
 
-It resolves its own cell rather than deferring to
-`link_location_forecast_cells`, which is scoped to `named()` so an
-observation's location is never billed for a lookup it has no use for. A
-region centroid is anonymous but *does* need a cell, so it resolves here,
-where the candidate set is bounded by the region fixture rather than by
-user activity.
-
-`WeatherSnapshot` is untouched and keeps its job as the masthead's
-day/night visual.
+SNOW-762 removed this command's forecast-cell half with the weather app.
+What remains is the Location and its elevation; SNOW-757 decides for itself
+which locations the rebuilt weather domain polls.
 
 ```bash
-uv run python manage.py link_region_centroid_locations           # preview + cost
+uv run python manage.py link_region_centroid_locations           # preview
 uv run python manage.py link_region_centroid_locations --commit  # apply
 ```
 
-### `backfill_favourite_locations` — mint a Location per existing Favourite
-
-One-shot backfill for SNOW-704. Every favourite created before that ticket
-stores its own coordinates and points straight at a `ForecastCell`; this
-mints the `Location` each one *is* and repoints the FK.
-
-**Not a data migration** — CLAUDE.md forbids bulk dataset updates in
-migrations, so this is a `--commit`-gated command.
-
-**No external calls.** The favourite already carries the elevation and the
-resolved cell from when it was created; copying them is correct and free,
-and re-resolving could return a *different* answer for a pin whose weather
-users have already been reading.
-
-One transaction **per favourite**, not one for the batch: a pin that fails
-must not roll back the pins already migrated, and a single transaction over
-a growable user table is the lock this command exists to avoid. The minted
-location carries no name and no kind — a pin's label is the user's own text
-and stays on the favourite.
-
-```bash
-uv run python manage.py backfill_favourite_locations           # preview
-uv run python manage.py backfill_favourite_locations --commit  # apply
-```
-
-Run it **before** the follow-up that drops `Favourite.forecast_point` /
-`latitude` / `longitude` / `elevation`. Those columns stay in place for now
-precisely because `build.sh` migrates on every deploy: a migration removing
-them would land before an operator could run this.
 ### `backfill_observation_locations` — mint a Location per field report
 
 One-shot backfill for SNOW-709, the sibling of
@@ -513,9 +427,8 @@ gap between the report coordinate and the device fix — "I was standing
 here" versus "I tapped roughly here" — stays recoverable.
 
 **No forecast cell.** An observation shows no forecast panel, so resolving
-one would mean an Open-Meteo round trip per historical report for weather
-nothing renders. `link_location_forecast_cells` is scoped to `named()` for
-the same reason, so these rows are never picked up by it either.
+one would mean an Open-Meteo round trip per historical report for a figure
+nothing renders.
 
 One row per report — coordinates are not merged on equality. Exact float
 equality on a user coordinate is a false economy, and wrongly merging two
@@ -559,14 +472,12 @@ the default manifest path (`apps/core/fixtures/waffle_flags.json`). Respects
 
 Copies the provider-derived tables out of the **production** database into
 the local one (SNOW-729). Staging has no scheduler and no task worker, so it
-never ingests a bulletin or a weather forecast of its own; this is how it
-gets data. Runs unattended as the `snowdesk-staging-data-sync` Render cron
+never ingests a bulletin of its own; this is how it gets data. Runs unattended as the `snowdesk-staging-data-sync` Render cron
 job at 07:20 UTC.
 
 Copies `Bulletin`, `RegionBulletin`, `RegionDayRating`, `BulletinGrouping`,
-`ForecastCell`, `ForecastCellWeather`, `ForecastCellWeatherHistory`,
-`WeatherSnapshot`, and the curated resort estate — `Resort`,
-`ResortLocation`, and the `Location` rows a `ResortLocation` references.
+and the curated resort estate — `Resort`, `ResortLocation`, and the
+`Location` rows a `ResortLocation` references.
 
 Copies **no user data** — no `auth_user`, `Account`, passkeys, push
 subscriptions, favourites, observations, routes, request logs or bulletin
@@ -784,68 +695,13 @@ incident that invalidates derived state:
 
   Flags: `--commit`.
 
-- `backfill_weather --start <YYYY-MM-DD> --end <YYYY-MM-DD> --commit` —
-  to fill a historical gap (e.g. after adding a new region, or
-  recovering from an outage longer than a day).
 - `fetch_bulletins --source <src> --start-date <YYYY-MM-DD> --commit` —
   to backfill bulletins after a multi-day outage. Add `--delay 5` for
   multi-year backfills to stay polite to the public APIs.
 - `audit_resort_regions --commit` — after editing resort coordinates or
   region polygons; refixes FKs and rewrites the resort fixture.
-- `link_resort_forecast_points --commit` — one-off backfill for SNOW-503:
-  anchors every geocoded, unlinked `Resort` to a shared `weather.ForecastCell`
-  via `apps.weather.services.forecast_cells.resolve_forecast_cell` (the same
-  SNOW-416 resolution/reuse machinery `create_favourite` uses). Widens
-  `ForecastCell.objects.active()` (favourite-OR-resort) so the scheduled
-  `fetch_weather` point pass picks up linked resorts automatically — no
-  scheduler change. Read-only by default; pass `--commit` to persist the
-  FK. Idempotent — a resort with `forecast_point` already set is excluded
-  from the candidate set, so a second run selects nothing. Per-resort
-  elevation-lookup failures are caught, logged, and counted (`failed`);
-  they never abort the batch. Run once after this ships, and again after
-  any future geocoding session (`?edit=resorts`).
-
-  ```bash
-  # Dry-run — resolves and reports, writes no FK.
-  uv run python manage.py link_resort_forecast_points
-
-  # Persist the resolved links.
-  uv run python manage.py link_resort_forecast_points --commit
-
-  # Tighten pacing between the per-resort elevation calls (default 1.0s).
-  uv run python manage.py link_resort_forecast_points --commit --delay 2
-  ```
 
   Flags: `--commit`, `--delay SECONDS` (default 1.0).
-
-- `prune_forecast_points --commit` — deletes every `ForecastCell` that no
-  `Favourite` and no `Resort` references (SNOW-633). A point becomes
-  unreferenced when the last pin holding it goes away: a favourite deleted
-  by its owner, or a resort retired by `import_resorts`. It is already
-  invisible to the pipeline at that moment — the `fetch_weather` point pass
-  iterates `ForecastCell.objects.active()` — so its `ForecastCellWeather`
-  and `ForecastCellWeatherHistory` rows can only grow staler. Both child
-  tables are `CASCADE`, so they go with the point.
-
-  Fail-safe by FK: `Favourite.forecast_point` and `Resort.forecast_point`
-  are `PROTECT`, so a point that gains a reference between the walk and the
-  delete raises `ProtectedError` instead of taking a live favourite's
-  weather with it. That row is counted as `failed`, the batch continues, and
-  the command exits non-zero.
-
-  Run it after any bulk resort deletion. The first production
-  `import_resorts --commit` run (2026-08-04) retired 22 resorts and left 15
-  unreferenced points holding 75 weather rows.
-
-  ```bash
-  # Dry-run — reports the points, weather and history rows it would delete.
-  uv run python manage.py prune_forecast_points
-
-  # Persist the deletions.
-  uv run python manage.py prune_forecast_points --commit
-  ```
-
-  Flags: `--commit`.
 
 - `uppercase_resort_choice_values --commit` — one-off post-deploy step for
   SNOW-582: rewrites `Resort.geocode_source` from its legacy lower-case
@@ -1208,113 +1064,6 @@ and redeploy the worker.
 
 ---
 
-## `fetch_weather` — today's forecast (cron)
-
-Fetches **today** from the Open-Meteo **forecast** endpoint. It takes no date
-arguments, and nothing in it selects an upstream URL from a date. The HTMX
-`public:weather_snippet` lazy-load view remains the per-request live path for
-individual bulletin pages.
-
-**Historical days belong to `backfill_weather`** — the codebase's only caller
-of the Open-Meteo archive endpoint. The two were one command until the split:
-because that command chose its endpoint from the date, the day it had just
-written fell inside the next run's archive sub-range and was rewritten with
-the ERA5 reanalysis value. A day is written once, on the day it is current,
-and that record then stands.
-
-**Active-ForecastCell pass (SNOW-416, widened SNOW-417)** — the command also
-fetches a **7-day** window
-(`POINT_FORECAST_DAYS`) of daily forecast data — plus a **2-day**
-(`POINT_HOURLY_DAYS`) near-term hourly series of ski-relevant variables
-(temperature, snowfall, precipitation, wind speed/gusts, freezing level) —
-for every **active** `ForecastCell` (a point referenced by at least one
-`Favourite` **or** `regions.Resort` — widened by SNOW-503's
-`link_resort_forecast_points` backfill so every geocoded resort gets a
-precise, elevation-downscaled forecast too; see
-[`favourites`/`accounts` glossary entries](glossary.md)),
-passing the point's stored `elevation` explicitly so the forecast is
-statistically downscaled to the pin's altitude. One API call per point
-returns the whole window; one `ForecastCellWeather` row per day is
-persisted. Each row's `freezing_level_height` is derived as the daily
-maximum of that day's hourly values (Open-Meteo has no daily freezing-level
-aggregate); `hourly_series` is populated for the first `POINT_HOURLY_DAYS`
-rows only, `None` beyond, to keep the JSON payload bounded. No `models=`
-parameter is sent, so Open-Meteo picks the highest-resolution model it has
-for the point's coordinates — the same policy the region pass follows
-(SNOW-699). Points
-are **forecast-only**: there is no archive/backfill path for them, and
-they do not participate in `--local-mirror` or `--stash` — both are
-skipped cleanly for the point pass regardless of the flag values. Pass
-`--skip-points` to fetch region weather only. Point failures are merged
-into the same `failed` total that triggers the command's non-zero exit;
-`created`/`updated` counters sum across every day of every point's window,
-not one count per point.
-
-**Short model horizons are not failures (SNOW-628)** — a day whose
-`weather_code`, `sunrise` or `sunset` comes back null is dropped before the
-write loop opens its transaction, and the days that did resolve are stored.
-A model that covers fewer than seven days therefore stores fewer than seven
-rows. This is the normal outcome and is not counted as `failed`. A payload
-where *no* day resolves is malformed rather than short, and still counts.
-Before this, one null day raised `NotNullViolation` inside the SNOW-546
-transaction and rolled back the whole window — a point whose model ran
-short wrote nothing at all.
-
-**Forecast history (SNOW-575, opt-in since SNOW-629)** — with
-`--add-history`, each stored day of the point pass also writes a
-`ForecastCellWeatherHistory` row keyed on `(forecast_cell,
-valid_for_date, issued_date)`, in the same transaction as its
-`ForecastCellWeather` twin. It is **off by default**: nothing user-facing
-reads the table, so retention is switchable without touching the
-operational write. The scheduled run passes the flag when
-`FETCH_WEATHER_ADD_HISTORY` is set in the environment (read at fire time,
-so flipping the Render variable and restarting `snowdesk-scheduler` is
-enough — no deploy). Because `ForecastCellWeather` is upserted on
-`(point, date)`, a forecast day is overwritten on every run and only the
-final day-of view survives; the history table retains the earlier ones, so
-how a forecast moved as its day approached can be read back
-(`ForecastCellWeatherHistory.objects.convergence_for(point, day)`).
-`issued_date` is the run's anchor date, so the four scheduled runs in a day
-collapse to one row and a forecast day accrues one row per day of its
-window. The payload is a narrow subset — the scalars whose movement is the
-signal — with `hourly_series` and sunrise/sunset excluded. The table starts
-empty and cannot be backfilled: a past forecast no longer exists to fetch.
-The counters above are unaffected; they still count `ForecastCellWeather`
-rows only.
-
-Read-only by default; the API is always called even without `--commit`,
-making a bare invocation a useful connectivity probe.
-
-> **Scheduler note:** `fetch_weather` is invoked by the `snowdesk-scheduler`
-> Background Worker via `schedule.py` — see the Operational requirements section
-> at the top of this file. To change the schedule, update `_run_fetch_weather` in `schedule.py`
-> and redeploy the worker.
-
-```bash
-# Read-only probe — calls the API, writes nothing.
-uv run python manage.py fetch_weather
-
-# Persist today's region snapshots and point forecasts.
-uv run python manage.py fetch_weather --commit
-
-# Region weather only — skip the active-ForecastCell pass.
-uv run python manage.py fetch_weather --commit --skip-points
-
-# Also retain the per-issue point-forecast history (SNOW-575).
-uv run python manage.py fetch_weather --commit --add-history
-
-# Flags:
-#   --commit         persist WeatherSnapshot/ForecastCellWeather rows;
-#                    omit for a read-only run
-#   --skip-points    skip the active-ForecastCell forecast pass; region only
-#   --add-history    also retain a ForecastCellWeatherHistory row per stored
-#                    day (SNOW-575); off by default, and passed by the
-#                    scheduler when FETCH_WEATHER_ADD_HISTORY is set
-#
-# There is deliberately no --date/--start/--end/--delay/--local-mirror/--stash:
-# those flags moved to backfill_weather along with the archive endpoint.
-```
-
 ## Development & one-shot setup commands
 
 These commands never run on a schedule. `dev_magic_link` is dev-only and
@@ -1364,77 +1113,6 @@ every other command here).
 
 ---
 
-## `backfill_weather` — fill WeatherSnapshot gaps from the archive
-
-**The only caller of the Open-Meteo archive endpoint in the codebase.** No
-view, no background thread and no other command reaches
-`OPEN_METEO_ARCHIVE_BASE_URL`.
-
-A day is normally written once, by `fetch_weather`, on the day it is current.
-This command exists for the days that never happened: a scheduler outage, a
-region added mid-season, a fresh environment with an empty table.
-
-**Create-only.** A day already stored is left exactly as the forecast pass
-wrote it. Re-running is safe, and the archive can never overwrite a record
-with its ERA5 reanalysis value.
-
-**Gap detection runs before any HTTP call.** A region with no missing days in
-the window costs nothing; a region with holes is requested only across the
-span containing them. A bare re-run on a populated season makes **zero** API
-calls — on a 149-region local DB it returns in under a second.
-
-**Default window** (no `--date`/`--start`/`--end`): start is the earliest
-`Bulletin.valid_from` date in the DB, or `settings.SEASON_START_DATE` when
-there are no bulletins; end is **yesterday**. Today is never included — today
-belongs to `fetch_weather`, and the archive has no entry for an unfinished
-day. Passing `--end` today or later is a `CommandError`.
-
-Points (`ForecastCell` / `ForecastCellWeather`) have no archive path and are
-untouched here: Open-Meteo cannot say what the forecast for a point would have
-been in the past (SNOW-416, SNOW-417).
-
-Not scheduled — it runs by hand, or from `bin/bootstrap-dev-db`.
-
-```bash
-# Read-only — reports the gaps it would fill, writes nothing.
-uv run python manage.py backfill_weather
-
-# Fill every gap from the start of the bulletin archive to yesterday.
-uv run python manage.py backfill_weather --commit
-
-# A single missed day.
-uv run python manage.py backfill_weather --date 2026-08-26 --commit
-
-# An explicit range.
-uv run python manage.py backfill_weather --start 2026-01-01 --end 2026-04-30 --commit
-
-# Bootstrap against the on-disk archive instead of the live Open-Meteo API.
-# Requires the dev server to be running and
-# settings.WEATHER_API_LOCAL_MIRROR_BASE_URL to be configured (development.py).
-uv run python manage.py backfill_weather --local-mirror --commit
-
-# Capture the window to apps/weather/local_mirrors/openmeteo_archive.ndjson.
-uv run python manage.py backfill_weather --stash
-
-# Tighten pacing for a long historical backfill.
-uv run python manage.py backfill_weather \
-    --start 2020-11-01 --end 2025-04-30 --delay 2 --commit
-
-# Flags:
-#   --date         YYYY-MM-DD  single date; mutually exclusive with --start/--end
-#   --start        YYYY-MM-DD  start of window (inclusive); defaults to the
-#                              earliest bulletin date or SEASON_START_DATE
-#   --end          YYYY-MM-DD  end of window (inclusive); defaults to yesterday.
-#                              Must be before today.
-#   --commit                   persist the missing WeatherSnapshot rows;
-#                              omit for a read-only run
-#   --local-mirror             replay from apps/weather/local_mirrors/openmeteo_archive.ndjson
-#                              via the dev-only view (development.py only)
-#   --delay        SECONDS     seconds between per-region archive calls
-#                              (default 1.0; pass 0 to disable)
-#   --stash                    append fetched weather records to the on-disk archive
-```
-
 ---
 
 ## Local DB bootstrap
@@ -1443,13 +1121,13 @@ Two paths for seeding a fresh local development database:
 
 ### `bin/bootstrap-dev-db` — one-command seed (mirrors required)
 
-Runs migrate, loads all region/resort fixtures, fetches bulletins from
-all three providers, and backfills weather over the default window — all
-via the local mirrors served by the running dev server.
+Runs migrate, loads all region/resort fixtures, and fetches bulletins from
+all three providers — via the local mirrors served by the running dev
+server.
 
 **Prerequisite:** the Django dev server must already be running on :8000
-before you execute this script. The SLF, ALBINA, and Open-Meteo local
-mirrors are served by dev-only views in the running server.
+before you execute this script. The SLF and ALBINA local mirrors are
+served by dev-only views in the running server.
 
 ```bash
 # In one terminal — keep this running.

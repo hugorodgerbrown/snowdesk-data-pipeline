@@ -1,11 +1,19 @@
 ---
 name: weather-is-its-own-app
-description: Open-Meteo models and services live in apps/weather, not apps/bulletins; bulletins_* table names stay pinned via Meta.db_table
-status: current
-last-reviewed: 2026-08-09
+description: Historical — apps/weather and its pinned bulletins_* table names, retired by SNOW-762
+status: historical
+last-reviewed: 2026-08-30
 ---
 
 # Weather is its own app (SNOW-654)
+
+> **Retired by SNOW-762 (2026-08-30).** The weather app this record
+> describes was stripped whole — models, services, commands, endpoints and
+> surfaces — so nothing here constrains the code any more. SNOW-757
+> rebuilds weather as a single immutable Location-anchored model and will
+> carry its own decision record. Kept for the *why*, per
+> [the README](README.md): a reversed decision is marked historical, not
+> deleted.
 
 **Decision.** The Open-Meteo domain — `WeatherSnapshot`, `ForecastCell`,
 `ForecastCellWeather`, `ForecastCellWeatherHistory`, the six services that

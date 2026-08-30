@@ -83,7 +83,8 @@ and submission endpoints (SNOW-324), the "Community reports" read overlay
 (SNOW-419), and the `/observations/` page (SNOW-476) were all pre-launch
 flags — removed once the features reached general availability (SNOW-520).
 SNOW-724 removed four more the same way: the map's Weather overlay
-(`weather_layer`, SNOW-573), the GPX routes panel and its map layer
+(`weather_layer`, SNOW-573 — the overlay itself went in SNOW-762), the GPX
+routes panel and its map layer
 (`routes`, SNOW-686/687), the swisstopo slope-angle raster (`slope_layer`,
 SNOW-691) and the in-map resort editor (`edit_map`, SNOW-86). All of them
 remain gated by ordinary auth/ownership checks where they need to be — the

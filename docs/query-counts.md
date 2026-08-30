@@ -59,7 +59,7 @@ becomes a number no environment produces.
 learned.** SNOW-690 hit it twice, in both directions, back when the
 manifest carried five flags. `routes` was seeded by a migration and absent
 from the manifest, so it existed in CI and was deleted on every deploy;
-`weather_layer` was the mirror image — manifest-only, with no seeding
+`weather_layer` (now retired) was the mirror image — manifest-only, with no seeding
 migration, so it existed on every deployed environment and never in CI.
 The committed `home` baseline of 9 was measuring a database that had the
 first flag and not the second, a combination no environment has ever run.

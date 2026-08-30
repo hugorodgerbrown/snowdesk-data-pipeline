@@ -1,8 +1,8 @@
 ---
 name: location-migration-backfill
-description: Backfill an environment onto the Location model — the five --commit commands, their Open-Meteo cost, and the per-environment progress log
+description: Backfill an environment onto the Location model — the --commit commands, Open-Meteo elevation cost, per-environment progress log
 status: current
-last-reviewed: 2026-08-29
+last-reviewed: 2026-08-30
 ---
 
 # Runbook — bring an environment onto the Location model
@@ -16,45 +16,37 @@ columns. **Every row that fills them is written by a `--commit`-gated
 management command an operator runs by hand**, per
 [`dry-run-default-commands`](../decisions/dry-run-default-commands.md).
 
-Until these commands run, the new surfaces render nothing: the resort page
-shows no per-location forecast, and the bulletin page falls back to the
-one-day `WeatherSnapshot` masthead rather than the multi-day panel. Nothing
-breaks — `_region_forecast_panel()` returns `None` when a region has no
-`centroid_location` — it just stays dark.
+> **Reduced by SNOW-762 (2026-08-30).** The weather app was stripped, so
+> three of the original five steps are gone with it:
+> `backfill_favourite_locations` and `link_location_forecast_cells` were
+> deleted, and `fetch_weather` no longer exists. What remains is the
+> location estate itself. `link_region_centroid_locations` survives with
+> its forecast-cell half removed, so its cost is now one elevation call per
+> region and nothing recurring. SNOW-757 will add its own steps.
 
 ## Order
 
-The five commands are independent except for one edge: `import_locations`
-must precede `link_location_forecast_cells`, which resolves what the import
-wrote. Everything else can run in any order.
-
-`prune_forecast_points` is **not** scheduled — it only ever runs by hand — so
-no cell minted here is at risk of being pruned between steps.
+The three remaining commands are independent — the ordering edge
+(`import_locations` before the cell resolution) went with the deleted
+command.
 
 ## Cost
 
-Only two of the five call Open-Meteo, one call per row:
+One of the three calls Open-Meteo, one call per row:
 
 | Command | Calls | Notes |
 |---|---|---|
-| `backfill_favourite_locations` | 0 | copies the cell the favourite already had |
-| `backfill_observation_locations` | 0 | observations get no cell — no forecast panel to fill |
+| `backfill_observation_locations` | 0 | reads existing rows |
 | `import_locations` | 0 | reads two TSVs |
-| `link_location_forecast_cells` | 1 per curated location | 4 today |
-| `link_region_centroid_locations` | 1 per region | **461** |
+| `link_region_centroid_locations` | 1 per region | **461**, one-off |
 
-⚠️ `link_region_centroid_locations` is the one to think about before
-committing. It mints up to 461 forecast cells, and **each new cell is one
-extra Open-Meteo call per `fetch_weather` cycle, four times daily** —
-roughly 1,800 additional calls per day, forever. Check the environment's
-Open-Meteo plan first: the free tier allows 10,000/day per IP shared across
-elevation, forecast and archive. The dry run reports the created-vs-reused
-split; its created figure is an **upper bound**, because a preview writes
-nothing, so two nearby region centres each count as new where the commit run
-would have the second reuse the first.
+`link_region_centroid_locations` is a one-off cost, not a recurring one:
+it resolves each region's centroid elevation once and stores it. The free
+tier allows 10,000/day per IP, so a full run fits inside a day's
+allowance with room to spare. The `--delay` default (1.0s) paces it.
 
-Check which tier an environment is on by reading the URL in the elevation
-debug log, or `OPEN_METEO_API_BASE_URL` in its Render env group.
+Check which tier an environment is on by reading
+`OPEN_METEO_API_BASE_URL` in its Render env group.
 `customer-api.open-meteo.com` is the paid tier; `api.open-meteo.com` is free.
 
 ## Steps
@@ -67,72 +59,43 @@ bare first and read the plan before committing.
 ```bash
 # 0. Confirm the migrations landed.
 uv run --no-sync python manage.py showmigrations \
-    locations regions favourites observations weather
+    locations regions favourites observations
 
-# 1. One Location per existing favourite.
-uv run --no-sync python manage.py backfill_favourite_locations --commit
-
-# 2. One Location per existing field observation.
+# 1. One Location per existing field observation.
 uv run --no-sync python manage.py backfill_observation_locations --commit
 
-# 3. The curated estate — four villages and their resort links.
+# 2. The curated estate — four villages and their resort links.
 uv run --no-sync python manage.py import_locations --commit
 
-# 4. Resolve those locations' own elevation and shared cell.
-uv run --no-sync python manage.py link_location_forecast_cells --commit
-
-# 5. Anchor each micro-region to a centroid Location. READ THE COST ABOVE.
+# 3. Anchor each micro-region to a centroid Location.
 uv run --no-sync python manage.py link_region_centroid_locations --commit
-
-# 6. Populate weather for the newly-active cells.
-uv run --no-sync python manage.py fetch_weather --commit
 ```
 
-### Step 4 doubles as a curation check
+### Step 3 doubles as a curation check
 
-`link_location_forecast_cells` logs each location's resolved elevation. It
-should match the figure in that row's `note` in
+`link_region_centroid_locations` logs each region's resolved elevation, and
+`import_locations` rows should match the figure in that row's `note` in
 `apps/locations/data/locations.tsv`. A height far off means the coordinate
-is mis-pinned, and it shows up here rather than on the resort page. As of
-2026-08-24 the four curated villages resolve to Verbier 1494 m, Thyon 2144 m,
-Silvaplana 1815 m, Sils-Maria 1805 m — all matching their notes.
-
-### Step 6 differs per environment
-
-**Production** runs `snowdesk-scheduler`, which fires `fetch_weather` at
-00/06/12/18 UTC. New cells are picked up by the next cycle on their own, so
-step 6 is optional there — it only front-runs the wait.
-
-**Staging has no scheduler**, so nothing populates weather unless step 6 is
-run by hand. Without it the panels stay empty even though every location and
-cell exists.
-
-`fetch_weather` takes no date arguments: it fetches today's forecast for
-every region plus the whole active-cell forecast pass, which is all a
-freshly-backfilled environment needs. (This step used to require pinning
-`--date` on staging, because the command derived a window from the latest
-stored snapshot and walked it through the archive endpoint — on a
-hand-run environment that could be a two-week gap, ~7,000 paced calls,
-over two hours. That routing is gone.)
-
-Filling historical days is now a separate, explicit command —
-`backfill_weather` — which fetches only the days actually missing and makes
-no API call for a region that is already complete. It is never needed just
-to light up the panels: they read forward from today.
+is mis-pinned. As of 2026-08-24 the four curated villages resolve to
+Verbier 1494 m, Thyon 2144 m, Silvaplana 1815 m, Sils-Maria 1805 m — all
+matching their notes.
 
 ## Verification
 
-A resort with a curated location (Verbier, Thyon, Silvaplana, Sils-Maria)
-should show a per-location forecast on its resort page. A bulletin page for
-a current or future date should show the multi-day forecast panel rather
-than the one-day masthead — note the panel is gated on
-`target_date >= today`, so a historical bulletin correctly shows nothing.
+Every micro-region with a `centre` should carry a `centroid_location`, and
+the curated villages should exist as named `Location` rows with their
+resort links. There is no user-facing surface to check until SNOW-761
+builds the weather surfaces back.
 
 ## Progress log
 
 Record each environment as it is done, so a resumed run knows where it is.
 
 ### Staging — 2026-08-24
+
+*A record of what ran on the day, against the pre-SNOW-762 six-step
+sequence. The steps referencing forecast cells and `fetch_weather` no
+longer exist; the location rows they were run alongside do.*
 
 | Step | Result |
 |---|---|
@@ -171,19 +134,20 @@ step 5 there.
 
 Production deploys from `release`, which is behind `main` — **cut a release
 first** (`bin/cut-release`, and see [`deployment.md`](../deployment.md)).
-Confirm production's own `OPEN_METEO_API_BASE_URL` before step 5; the
+Confirm production's own `OPEN_METEO_API_BASE_URL` before step 3; the
 `Production` and `Staging` env groups are independent.
+
+Hold this until the whole SNOW-757 sequence has landed on `main`: a
+release cut mid-rebuild would take a weather-less site to production,
+which is the one thing the staged landing exists to avoid.
 
 | Step | Result |
 |---|---|
 | cut release | ⬜ not started |
 | 0. migrations | ⬜ not started |
-| 1. favourites | ⬜ not started |
-| 2. observations | ⬜ not started |
-| 3. import_locations | ⬜ not started |
-| 4. link_location_forecast_cells | ⬜ not started |
-| 5. link_region_centroid_locations | ⬜ not started |
-| 6. fetch_weather | ⬜ optional — the scheduler picks new cells up |
+| 1. observations | ⬜ not started |
+| 2. import_locations | ⬜ not started |
+| 3. link_region_centroid_locations | ⬜ not started |
 | verification | ⬜ not started |
 
 ## How a curated edit reaches an environment

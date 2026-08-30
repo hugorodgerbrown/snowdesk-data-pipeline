@@ -73,7 +73,7 @@ has its own `DATABASE_URL`, `SECRET_KEY`, `ALLOWED_HOSTS`, and email target
 Staging has **no scheduler and no task worker**, so its database does not
 ingest bulletins on its own. The `snowdesk-staging-data-sync` cron job
 (SNOW-729) copies the provider-derived tables out of production nightly at
-07:20 UTC instead — bulletins, region ratings, weather and the curated resort
+07:20 UTC instead — bulletins, region ratings and the curated resort
 estate, and no user data whatsoever. Setup, the first full load, and skipped-row triage:
 [`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
 A manual `fetch_bulletins` run against staging still works, but is no longer
@@ -87,33 +87,26 @@ worker ever sends — persisted silently, with no error in the logs.
 
 ## Open-Meteo: free tier by default, paid tier by env var
 
-`OPEN_METEO_API_BASE_URL`, `OPEN_METEO_ARCHIVE_BASE_URL`, and
-`OPEN_METEO_API_KEY` (SNOW-577) default to the free public hosts, which need
-no key. The free per-IP quota (600/minute, 5,000/hour, 10,000/day) is shared
-across the elevation, forecast, and archive endpoints, so the scheduled
-`fetch_weather` passes at 00/06/12/18 UTC and any ad-hoc backfill run from the
-same service compete for one allowance.
+`OPEN_METEO_API_BASE_URL` and `OPEN_METEO_API_KEY` (SNOW-577) default to the
+free public host, which needs no key. The free per-IP quota is 600/minute,
+5,000/hour, 10,000/day.
+
+Since SNOW-762 the only caller is the **elevation** lookup
+(`apps.locations.services.elevation.fetch_elevation`), which resolves a
+`Location`'s height once and stores it. That is a handful of calls when a
+favourite is created or a backfill runs, not a scheduled load — the forecast
+and archive endpoints went with the weather app, and `OPEN_METEO_ARCHIVE_BASE_URL`
+is no longer read. SNOW-757 decides what the rebuilt weather domain calls and
+how often.
 
 Cutting over to a paid subscription is an env-group edit, not a deploy: set
 the variables on the `Production` group (web, scheduler, and worker all read
-it via `fromGroup`) and on `Staging`. The documented customer hosts are
-`https://customer-api.open-meteo.com/v1` and
-`https://customer-archive-api.open-meteo.com/v1`; confirm both against the
-subscription confirmation rather than assuming the prefix.
-
-**The two hosts can be on different tiers.** The `apikey` parameter is sent
-only to a host that has been moved off its free default (SNOW-579), so
-setting `OPEN_METEO_ARCHIVE_BASE_URL` and `OPEN_METEO_API_KEY` while leaving
-`OPEN_METEO_API_BASE_URL` free puts historical requests on the paid plan and
-keeps the daily forecast and elevation traffic on the free tier, unkeyed.
-That is the configuration for a one-off history pull: subscribe, set those
-two, run the backfill, then unset them again.
-
-Whichever hosts you move, set the key at the same time — a customer host
-without a key fails auth on every call.
-
-A paid plan is metered monthly rather than unlimited, so an exhausted
-allowance still returns `429`. Nothing in the pipeline backs off on that yet.
+it via `fromGroup`) and on `Staging`. The documented customer host is
+`https://customer-api.open-meteo.com/v1`; confirm it against the subscription
+confirmation rather than assuming the prefix. Set the key at the same time —
+a customer host without a key fails auth on every call, and
+`apps.core.checks.check_open_meteo_key_host_pairing` raises an `Error` at
+deploy time for either half of that mistake.
 
 ## `SITE_BASE_URL` is checked at deploy time
 

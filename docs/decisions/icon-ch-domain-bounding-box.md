@@ -2,10 +2,18 @@
 name: icon-ch-domain-bounding-box
 description: Superseded by SNOW-699 — ICON-CH point-forecast model pin, its loose lat/lon bounding box and its day-0 fallback are all removed
 status: historical
-last-reviewed: 2026-08-21
+last-reviewed: 2026-08-30
 ---
 
 # ICON-CH selection is gated by a deliberately loose bounding box
+
+> **Retired by SNOW-762 (2026-08-30).** The weather app this record
+> describes was stripped whole — models, services, commands, endpoints and
+> surfaces — so nothing here constrains the code any more. SNOW-757
+> rebuilds weather as a single immutable Location-anchored model and will
+> carry its own decision record. Kept for the *why*, per
+> [the README](README.md): a reversed decision is marked historical, not
+> deleted.
 
 > **Superseded by SNOW-699 (2026-08-21).** The pin is gone: `ICON_CH_MODEL`,
 > `ICON_CH_BOUNDS`, `_is_alpine_point`, `_day_zero_is_degraded` and the

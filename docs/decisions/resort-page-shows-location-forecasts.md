@@ -1,11 +1,19 @@
 ---
 name: resort-page-shows-location-forecasts
-description: Resort page renders one labelled forecast per linked Location, and feeds the hero band from the primary location's day-0 row
-status: current
-last-reviewed: 2026-08-23
+description: Historical — resort page's per-location forecast panels, removed with the weather app by SNOW-762
+status: historical
+last-reviewed: 2026-08-30
 ---
 
 # Resort page shows one forecast per location — supersedes resort-page-shows-point-forecast
+
+> **Retired by SNOW-762 (2026-08-30).** The weather app this record
+> describes was stripped whole — models, services, commands, endpoints and
+> surfaces — so nothing here constrains the code any more. SNOW-757
+> rebuilds weather as a single immutable Location-anchored model and will
+> carry its own decision record. Kept for the *why*, per
+> [the README](README.md): a reversed decision is marked historical, not
+> deleted.
 
 **Supersedes
 [`resort-page-shows-point-forecast`](resort-page-shows-point-forecast.md)**

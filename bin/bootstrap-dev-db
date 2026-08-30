@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # bin/bootstrap-dev-db — Seed a fresh local development database.
 #
-# Runs migrations, loads all region and resort fixtures, fetches bulletins from
-# all three providers via the local mirrors, and backfills weather across the
-# default window (latest snapshot → today), all against the local DB defined
-# in your .env.
+# Runs migrations, loads all region and resort fixtures, and fetches bulletins
+# from all three providers via the local mirrors, all against the local DB
+# defined in your .env.
 #
 # PREREQUISITE: the Django dev server must be running on :8000 before you
-# execute this script. The SLF, ALBINA, and Open-Meteo local mirrors are
+# execute this script. The SLF and ALBINA local mirrors are
 # served by dev-only views in the running server; Météo-France reads a local
 # directory and does not need the server, but it does need a configured
 # METEOFRANCE_API_KEY (or the local-mirror path) in your .env.
@@ -40,9 +39,6 @@ uv run python manage.py fetch_bulletins \
     --source slf albina meteofrance \
     --local-mirror \
     --commit
-
-echo "==> Fetching weather across the default window (local mirror) …"
-uv run python manage.py fetch_weather --local-mirror --commit
 
 echo ""
 echo "Bootstrap complete. Open a bulletin page to verify:"

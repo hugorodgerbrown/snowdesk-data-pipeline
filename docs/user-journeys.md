@@ -275,11 +275,10 @@ is for.
 
 **Key invariants:**
 - Historical bulletins render exactly as they were stored — never
-  back-fill them with present-day weather or render-model changes. The
+  back-fill them with render-model changes. The
   same fidelity rule as J1 applies to them
   ([`decisions/bulletin-fidelity-over-simplification.md`](decisions/bulletin-fidelity-over-simplification.md)):
   a stored bulletin is shown whole, not summarised for age.
-- The weather header on historical pages projects the time-of-day
   (not the absolute instant) onto the page date — so a historical
   page rendered in the evening shows what the evening looked like
   back then.
@@ -287,7 +286,7 @@ is for.
   prior knowledge — no jargon without an inline definition or link.
 
 **Adding functionality here:**
-- Don't add features that require live weather or a fresh ingest to
+- Don't add features that require a fresh ingest to
   render — historical bulletins must remain self-contained.
 - New educational content goes in `/how-to-read-a-bulletin/`, not
   scattered across bulletin pages. One canonical place to learn the

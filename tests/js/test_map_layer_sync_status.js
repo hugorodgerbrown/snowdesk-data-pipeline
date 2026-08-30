@@ -63,10 +63,6 @@ function buildFixture({
   // SNOW-524: country rows are opt-in so the pre-existing tier tests keep
   // exercising the country-blind fallback (no country enabled ⟹ ignoreSearch).
   countries = null,
-  // SNOW-573: opt-in for the same reason `countries` is above — the
-  // weather row is the only one carrying a SECOND disable marker owned by
-  // another module, and the pre-existing tests were not written to expect it.
-  includeWeather = false,
 } = {}) {
   const overlayRow = (key) => `
     <li role="none">
@@ -111,7 +107,6 @@ function buildFixture({
       ${overlayRow('l2')}
       ${overlayRow('l4')}
       ${overlayRow('resorts')}
-      ${includeWeather ? overlayRow('weather') : ''}
       ${basemapRow('standard', STANDARD_STYLE, true)}
       ${basemapRow('swisstopo', SWISSTOPO_STYLE, false)}
     </ul>
@@ -532,36 +527,10 @@ describe('country rows (SNOW-524)', () => {
   });
 });
 
-describe('IndexedDB overlay rows (weather)', () => {
-  it('resolves cached when window.pwaDb holds a row with .geojson, uncached when absent', async () => {
-    buildFixture({ includeWeather: true });
-    vi.stubGlobal('caches', fakeCaches());
-    window.pwaDb = {
-      get: vi.fn(async (_store, key) => {
-        if (key === 'weather') return { key: 'weather', geojson: { type: 'FeatureCollection' } };
-        return undefined;
-      }),
-    };
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(dotState('weather')).toBe('cached');
-    expect(window.pwaDb.get).toHaveBeenCalledWith('data:map_overlays', 'weather');
-  });
-
-  it('resolves uncached, not throw, when window.pwaDb is unavailable', async () => {
-    buildFixture({ includeWeather: true });
-    vi.stubGlobal('caches', fakeCaches());
-
-    await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
-
-    expect(dotState('weather')).toBe('uncached');
-  });
-
-  it('skips rows absent from the DOM (conditionally rendered)', async () => {
-    // The weather row is flag-gated, so this is the live case. SNOW-658 also
-    // removed the favourites and community_reports rows outright — map.js
-    // still calls markCached('favourites') on its lazy-load path, so a
+describe('rows absent from the DOM (conditionally rendered)', () => {
+  it('skips them rather than throwing', async () => {
+    // SNOW-658 removed the favourites and community_reports rows outright —
+    // map.js still calls markCached('favourites') on its lazy-load path, so a
     // missing row has to stay a no-op rather than a throw.
     buildFixture();
     vi.stubGlobal('caches', fakeCaches());
@@ -569,7 +538,6 @@ describe('IndexedDB overlay rows (weather)', () => {
 
     await expect(window.pwaLayerSyncStatus.refresh()).resolves.toBeUndefined();
 
-    expect(document.querySelector('[data-overlay-key="weather"]')).toBeNull();
     expect(document.querySelector('[data-overlay-key="favourites"]')).toBeNull();
     expect(document.querySelector('[data-overlay-key="community_reports"]')).toBeNull();
     expect(() => window.pwaLayerSyncStatus.markCached('favourites')).not.toThrow();
@@ -952,83 +920,5 @@ describe('refresh coalescing (SNOW-613)', () => {
 
     // The guard is not a one-shot latch — a later menu open still re-probes.
     expect(caches.match.mock.calls.length).toBe(perPass);
-  });
-});
-
-describe('weather row — two independent disables on one row (SNOW-573)', () => {
-  // The weather row is disabled by TWO modules for two unrelated reasons:
-  // this one, while offline and uncached, and map.js, while the scrubbed date
-  // sits outside the stored forecast window. Each owns a marker attribute and
-  // must clear `aria-disabled` only once the OTHER's marker is gone, or
-  // whichever reason lifts first silently re-enables a row the other still
-  // holds down.
-  const WEATHER_MARKER = 'data-weather-disabled-out-of-window';
-
-  function weatherRow() {
-    return document.querySelector('[data-overlay-key="weather"]');
-  }
-
-  /** Stand in for map.js disabling the row for an out-of-window date. */
-  function disableForOutOfWindow() {
-    const row = weatherRow();
-    row.setAttribute('aria-disabled', 'true');
-    row.setAttribute(WEATHER_MARKER, '1');
-  }
-
-  beforeEach(() => {
-    buildFixture({ includeWeather: true });
-    // `caches` is not part of jsdom — without the stub the whole probe pass
-    // throws before it reaches the idb-backed weather row.
-    vi.stubGlobal('caches', fakeCaches());
-    window.pwaDb = { get: vi.fn(async () => ({ geojson: { type: 'FeatureCollection' } })) };
-  });
-
-  it('coming back online leaves the row disabled while the date is still out of window', async () => {
-    // The reported sequence: out-of-window date, then offline, then online.
-    disableForOutOfWindow();
-    setOnline(false);
-    // Uncached, so this module disables it too and tags its own marker.
-    window.pwaDb = { get: vi.fn(async () => undefined) };
-    await window.pwaLayerSyncStatus.refresh();
-    expect(rowDisabled('weather')).toBe(true);
-
-    // Back online and cached — this module's reason is gone, but the date's
-    // is not. Before the fix, `aria-disabled` was dropped unconditionally
-    // here and the row became clickable for a date with nothing to draw.
-    setOnline(true);
-    window.pwaDb = { get: vi.fn(async () => ({ geojson: { type: 'FeatureCollection' } })) };
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(rowDisabled('weather')).toBe(true);
-    expect(weatherRow().getAttribute(WEATHER_MARKER)).toBe('1');
-    // This module still drops its OWN marker — it no longer holds the row.
-    expect(weatherRow().getAttribute('data-sync-disabled-offline')).toBe(null);
-  });
-
-  it('re-enables the row when neither reason is in force', async () => {
-    // The plain case must not regress: with no out-of-window marker, coming
-    // back online re-enables exactly as it always did.
-    setOnline(false);
-    window.pwaDb = { get: vi.fn(async () => undefined) };
-    await window.pwaLayerSyncStatus.refresh();
-    expect(rowDisabled('weather')).toBe(true);
-
-    setOnline(true);
-    window.pwaDb = { get: vi.fn(async () => ({ geojson: { type: 'FeatureCollection' } })) };
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(rowDisabled('weather')).toBe(false);
-  });
-
-  it('never removes a marker it does not own', async () => {
-    // Online and cached from the start: this module never disabled the row,
-    // so its re-enable branch must not touch map.js's marker at all.
-    disableForOutOfWindow();
-    setOnline(true);
-
-    await window.pwaLayerSyncStatus.refresh();
-
-    expect(weatherRow().getAttribute(WEATHER_MARKER)).toBe('1');
-    expect(rowDisabled('weather')).toBe(true);
   });
 });
