@@ -391,7 +391,11 @@ class RouteShare(BaseModel):
 
         Format: ``RouteShare(<token>, <route label or "deleted">)``
         """
-        label = self.route.to_string() if self.route_id is not None else "deleted"
+        # Bound to a local rather than tested through ``route_id``: the FK
+        # is nullable, so the attribute is ``Route | None`` and only a test
+        # on the object itself narrows it.
+        route = self.route
+        label = route.to_string() if route is not None else "deleted"
         return f"RouteShare({self.token}, {label})"
 
     def __str__(self) -> str:
