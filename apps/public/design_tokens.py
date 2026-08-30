@@ -921,9 +921,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="site-footer",
         label="Site footer",
         description=(
-            "Global site footer — SLF data-licence attribution line with links "
-            "to Terms, Privacy, Terms of Service, and Colophon. "
-            "Reverses URLs internally; no context variables required."
+            "Global site footer — one line of legal links (Help, Terms of Use, "
+            "Privacy Policy, Colophon) followed by the running release. "
+            "Reverses URLs internally; the release comes from the "
+            "``pwa_version`` context processor, so no context variables are "
+            "passed in."
         ),
         kind="components",
         partial="public/_site_footer.html",

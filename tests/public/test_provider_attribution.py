@@ -12,20 +12,25 @@ Covers:
   * ``/terms/`` page renders, has its required sections, and is reachable.
   * **Every legal page names every provider** — the SNOW-666 guard, over
     ``/terms/``, ``/terms-of-service/`` and ``/privacy/``.
-  * The global ``_site_footer.html`` partial renders on every public
-    page (home, terms, bulletin, map) with all three provider links
-    (SLF, ALBINA, Météo-France) and a link to /terms.
+  * The global ``_site_footer.html`` partial renders on every public page
+    (home, terms, bulletin, map) and carries the route to the licences.
   * The map legend names all three providers and links to /colophon/.
 
 SNOW-174 note: the inline SLF source + feedback block that previously
-lived in the map drawer's expanded fragment has been removed. Attribution
-is fully covered by the global ``_site_footer.html`` which renders on
-every page (including ``/map/``). The ``TestRegionExpandedAttribution``
-class now asserts that the site footer — not the drawer fragment — is
-the single canonical attribution surface.
+lived in the map drawer's expanded fragment has been removed.
 
-SNOW-294: the legend/footer now credits SLF, ALBINA, and Météo-France.
-Full attribution (including licence links) lives in the colophon.
+SNOW-294: the legend and footer both credited SLF, ALBINA and
+Météo-France, with full attribution (including licence links) in the
+colophon.
+
+SNOW-769 removed the footer's copy — three links on every page, when the
+map already had the legend and every other page has the colophon one
+click away. That changes what these tests can assert and where. Anything
+about *which surface* names a provider is now scoped to that surface's
+own markup, via ``_footer_of`` and ``_legend_of``: on ``/`` both the
+footer and the legend render into one body, so a page-wide assertion can
+no longer tell which of them satisfied it, and would keep passing after
+either one lost its links.
 
 Per the SNOW-30 ticket, the *legal copy* on /terms is to be authored
 by Hugo separately — these tests assert the structural scaffold is
@@ -93,6 +98,45 @@ def _make_today_bulletin(region: MicroRegion) -> object:
         region_name_at_time=region.name,
     )
     return bulletin
+
+
+def _footer_of(client: Client, url: str) -> str:
+    """Return just the ``<footer>`` markup from the page at *url*.
+
+    SNOW-769 made scoping necessary. The footer used to be the only
+    surface naming the three providers on ``/``, so a page-wide assertion
+    was unambiguous; now the map legend names them too, and an assertion
+    over the whole body cannot tell which surface answered it.
+
+    Args:
+        client: The test client to fetch with.
+        url: The page to fetch.
+
+    Returns:
+        The decoded markup from ``data-testid="site-footer"`` up to the
+        closing ``</footer>`` tag.
+
+    """
+    body = client.get(url).content.decode("utf-8")
+    footer = body[body.index('data-testid="site-footer"') :]
+    return footer[: footer.index("</footer>")]
+
+
+def _legend_of(client: Client, url: str) -> str:
+    """Return just the map legend's attribution markup from the page at *url*.
+
+    Args:
+        client: The test client to fetch with.
+        url: The page to fetch — in practice always the map page.
+
+    Returns:
+        The decoded markup of the legend's "Avalanche data" section, from
+        its heading to the end of the enclosing ``<section>``.
+
+    """
+    body = client.get(url).content.decode("utf-8")
+    legend = body[body.index("Avalanche data") :]
+    return legend[: legend.index("</section>")]
 
 
 @pytest.fixture()
@@ -214,15 +258,18 @@ class TestEveryLegalPageNamesEveryProvider:
 
 @pytest.mark.django_db
 class TestGlobalSiteFooter:
-    """The site-wide three-provider attribution footer renders on every public page."""
+    """The global footer renders on every public page, with its legal links.
+
+    SNOW-769 removed the three provider links from this footer — they were
+    the third copy of the same attribution, after the map legend and the
+    colophon. What the footer still owes the reader is the route to the
+    licences, which is the colophon link asserted below.
+    """
 
     def test_home_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
-        assert b"slf.ch" in response.content
-        assert b"avalanche.report" in response.content
-        assert "Météo-France".encode() in response.content
 
     def test_terms_renders_footer(self, client: Client) -> None:
         response = client.get(reverse("public:terms"))
@@ -247,6 +294,49 @@ class TestGlobalSiteFooter:
         response = client.get(reverse("public:home"))
         assert reverse("public:terms").encode() in response.content
 
+    def test_footer_links_to_privacy_and_colophon(self, client: Client) -> None:
+        """The other two legal destinations, on every page (SNOW-769)."""
+        footer = _footer_of(client, reverse("public:home"))
+
+        assert reverse("public:privacy") in footer
+        assert reverse("public:colophon") in footer
+
+    def test_footer_no_longer_links_to_terms_of_service(self, client: Client) -> None:
+        """SNOW-769 dropped it; SNOW-770 folds the page into /terms/.
+
+        The page is still served at its own URL — only the footer entry
+        point is gone.
+        """
+        footer = _footer_of(client, reverse("public:home"))
+
+        assert reverse("public:terms_of_service") not in footer
+        assert client.get(reverse("public:terms_of_service")).status_code == 200
+
+    def test_footer_no_longer_names_the_providers(self, client: Client) -> None:
+        """The SNOW-769 removal, asserted where it happened.
+
+        Scoped to the footer rather than the page, because on ``/`` the
+        legend supplies these same three links and a page-wide assertion
+        would pass whether the footer had been changed or not.
+        """
+        footer = _footer_of(client, reverse("public:home"))
+
+        assert "slf.ch" not in footer
+        assert "avalanche.report" not in footer
+        assert "Météo-France" not in footer
+
+    def test_a_non_map_page_still_reaches_the_licences(self, client: Client) -> None:
+        """A page with no legend and no bulletin still has a route.
+
+        ``/privacy/`` carries neither the map legend's attribution card nor
+        a per-bulletin Source link, so the footer's colophon link is the
+        only path to the provider licences from there. That makes it the
+        one this ticket must not break.
+        """
+        footer = _footer_of(client, reverse("public:privacy"))
+
+        assert reverse("public:colophon") in footer
+
 
 # ---------------------------------------------------------------------------
 # Bulletin page — historical note
@@ -260,37 +350,41 @@ class TestGlobalSiteFooter:
 # SNOW-174: the map drawer's expanded fragment previously carried an
 # inline source + feedback block (expanded-slf-attribution). That block
 # was removed when the expanded fragment was rewritten to show structural
-# region info rather than bulletin content. Attribution is now fully
-# covered by the global site footer on ``/`` (SNOW-344: /map/ redirects there).
+# region info rather than bulletin content.
+#
+# SNOW-769: the footer stopped naming the providers, so the sentence that
+# used to end this note — "attribution is now fully covered by the global
+# site footer" — no longer describes anything. On the map page it is the
+# legend; on a bulletin page it is that page's own per-bulletin Source
+# link in the metadata strip, which names the service that issued the
+# bulletin being read rather than all three regardless.
 
 
 # ---------------------------------------------------------------------------
-# Map page — SLF attribution via site footer (not the drawer fragment)
+# Map drawer — no inline attribution in the expanded fragment
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestRegionExpandedAttribution:
-    """SLF attribution on the map page is carried by the site footer only.
+    """The drawer's expanded fragment carries no attribution of its own.
 
-    SNOW-174: the inline attribution block was removed from the drawer's
-    expanded fragment. The global ``_site_footer.html`` on ``/map/`` is the
-    single SLF attribution surface — verified by ``TestGlobalSiteFooter``
-    above.
-
-    These tests assert the map page itself has the footer (belt-and-braces)
-    and that the drawer expanded fragment no longer duplicates it.
+    SNOW-174 removed the inline block when the fragment was rewritten to
+    show structural region info rather than bulletin content. The map page
+    around it still attributes — via the legend, asserted in
+    ``TestMapLegendAttribution`` below.
     """
 
-    def test_map_page_carries_slf_footer(self, client: Client) -> None:
-        """The canonical map page (/) carries the global SLF attribution footer.
+    def test_map_page_carries_the_footer(self, client: Client) -> None:
+        """The canonical map page (/) carries the global site footer.
 
         SNOW-344: /map/ is now a 301 redirect; the live map page is /.
+        SNOW-769: this asserts the footer is present, not that it names a
+        provider — that moved to the legend, one class down.
         """
         response = client.get(reverse("public:home"))
         assert response.status_code == 200
         assert b'data-testid="site-footer"' in response.content
-        assert b"slf.ch" in response.content
 
     def test_expanded_fragment_does_not_duplicate_attribution(
         self, client: Client, region: MicroRegion
@@ -303,7 +397,7 @@ class TestRegionExpandedAttribution:
         assert response.status_code == 200
         payload = json.loads(response.content)
         # SNOW-174: the tooltip returns {"html": "..."} only; attribution is
-        # covered by the global site footer, not the per-region tooltip.
+        # covered by the map legend, not the per-region tooltip.
         assert 'data-testid="expanded-slf-attribution"' not in payload["html"]
 
 
@@ -318,24 +412,27 @@ class TestMapLegendAttribution:
 
     SNOW-294: the legend was updated from SLF-only to SLF + ALBINA +
     Météo-France, with full attribution delegated to the colophon.
+
+    SNOW-769: these assertions are scoped to the legend section rather
+    than the page body. They used to be page-wide, which was unambiguous
+    while the footer carried the same three links — it does not any more,
+    and a page-wide assertion would now pass on the footer's evidence
+    even if the legend lost them.
     """
 
     def test_map_legend_names_all_providers(self, client: Client) -> None:
-        """The map legend contains links to all three avalanche data providers.
+        """The legend section links all three avalanche data providers.
 
         SNOW-344: /map/ is now a 301 redirect; the live map page is /.
         """
-        response = client.get(reverse("public:home"))
-        assert response.status_code == 200
-        assert b"slf.ch" in response.content
-        assert b"avalanche.report" in response.content
-        assert "Météo-France".encode() in response.content
+        legend = _legend_of(client, reverse("public:home"))
+
+        assert "slf.ch" in legend
+        assert "avalanche.report" in legend
+        assert "Météo-France" in legend
 
     def test_map_legend_links_to_colophon(self, client: Client) -> None:
-        """The map legend links to /colophon/ for full attribution.
+        """The legend section links to /colophon/ for full attribution."""
+        legend = _legend_of(client, reverse("public:home"))
 
-        SNOW-344: /map/ is now a 301 redirect; the live map page is /.
-        """
-        response = client.get(reverse("public:home"))
-        assert response.status_code == 200
-        assert reverse("public:colophon").encode() in response.content
+        assert reverse("public:colophon") in legend

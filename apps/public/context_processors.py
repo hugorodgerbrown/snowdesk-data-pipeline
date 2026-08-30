@@ -55,9 +55,8 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
 
     ``APP_RELEASE_LABEL`` is the other half of the same subject and is
     deliberately not the same string: the SHA above identifies a build to
-    a machine, this names the release to a person ("v24"), and the account
-    menu shows it. See ``apps.public.release`` for how the two combine per
-    environment.
+    a machine, this names the release to a person ("v24"), and the site
+    footer shows it. See ``apps.public.release``.
 
     SNOW-609 removed the companion ``APP_MIN_VERSION`` value and its
     ``<meta name="pwa-app-min-version">`` tag: the forced-update verdict is
@@ -71,8 +70,8 @@ def pwa_version(request: HttpRequest) -> dict[str, Any]:
         ``{"APP_VERSION": str, "APP_RELEASE_LABEL": str}``. An empty
         ``APP_VERSION`` is passed through unchanged — the client treats it
         as "no build declared" and makes the whole version check a no-op.
-        An empty label means no release number is configured, and the menu
-        row is omitted rather than rendered blank.
+        An empty label means no release number is configured, and the
+        footer omits it rather than rendering a blank.
 
     """
     return {
