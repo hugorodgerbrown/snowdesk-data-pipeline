@@ -44,6 +44,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+# The two halves of "which locations matter", written once so ``public()``
+# and ``active()`` cannot drift apart. ``active()`` is ``public()`` plus
+# favourites; if these were spelled out separately in each method, a clause
+# added to one would silently not reach the other — and the direction that
+# fails is the dangerous one, since a public feed built from a stale
+# predicate leaks private pins.
+_CURATED = models.Q(resort_locations__isnull=False) | models.Q(
+    micro_regions__isnull=False
+)
+_FAVOURITED = models.Q(favourites__isnull=False)
+
+
 class LocationQuerySet(models.QuerySet["Location"]):
     """Custom queryset for Location."""
 
@@ -78,14 +90,45 @@ class LocationQuerySet(models.QuerySet["Location"]):
         """
         return self.filter(name="")
 
+    def public(self) -> "LocationQuerySet":
+        """Return the locations anyone may see — the curated estate.
+
+        A location is public when a ``ResortLocation`` or a
+        ``MicroRegion.centroid_location`` reaches it: someone curated it as
+        a place, and it is already visible on a resort page or a bulletin.
+        **A ``Favourite`` does not make a location public**, and neither
+        does a ``FieldObservation``.
+
+        This is the set the map's weather feed renders (SNOW-761). It is
+        deliberately narrower than ``active()``: a favourite is one
+        person's private pin, and putting it on a public feed would show a
+        stranger's saved place — and its coordinates — to everyone. The
+        pre-SNOW-762 ``/api/forecast-weather.geojson`` excluded
+        favourite-only points for exactly this reason, and that contract
+        survives here.
+
+        ``.distinct()`` because a location reached from both sides — a
+        resort's village that is also a region centroid — joins twice.
+
+        Returns:
+            Filtered queryset of locations reachable from a resort or a
+            region centroid.
+
+        """
+        return self.filter(_CURATED).distinct()
+
     def active(self) -> "LocationQuerySet":
         """Return the locations worth spending an upstream call on.
 
-        A location is active when something public or saved reaches it: a
-        ``ResortLocation``, a ``MicroRegion.centroid_location``, or a
-        ``Favourite``. This is the set ``fetch_weather`` walks, so it is
-        also the set that costs money — one Open-Meteo call per row per run,
-        four runs a day.
+        Every ``public()`` location, plus the ones a ``Favourite`` reaches.
+        This is the set ``fetch_weather`` walks, so it is also the set that
+        costs money — one Open-Meteo call per row per run, four runs a day.
+
+        **``public()`` and this method are not interchangeable.** This one
+        answers "what do we pay to fetch"; ``public()`` answers "what may
+        anyone see". A favourite is in the first and not the second, so
+        rendering a public surface from ``active()`` would leak a private
+        pin. Both assertions live in ``tests/locations/test_models.py``.
 
         **A location reached only by a ``FieldObservation`` is excluded, and
         that is the point of the method.** A field report is a user saying
@@ -99,21 +142,12 @@ class LocationQuerySet(models.QuerySet["Location"]):
         resort's village that someone has also favourited — joins twice and
         must still be fetched once.
 
-        One definition, called from both the fetch and SNOW-761's map feed:
-        both are asking "is this a public place or a private pin", and two
-        implementations would drift until a private pin leaked into a
-        public feed.
-
         Returns:
             Filtered queryset of locations reachable from a resort, a
             region centroid or a favourite.
 
         """
-        return self.filter(
-            models.Q(resort_locations__isnull=False)
-            | models.Q(micro_regions__isnull=False)
-            | models.Q(favourites__isnull=False)
-        ).distinct()
+        return self.filter(_CURATED | _FAVOURITED).distinct()
 
     def unresolved(self) -> "LocationQuerySet":
         """Return locations still missing their elevation.
