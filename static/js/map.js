@@ -79,6 +79,11 @@
   // unlike favourites).
   const COMMUNITY_REPORTS_URL = mapEl.dataset.communityReportsUrl || null;
   const COMMUNITY_REPORTS_ELIGIBLE = mapEl.dataset.communityReportsEligible === 'true';
+  // SNOW-761: the Weather overlay's data endpoint. ONE feed, anchored on
+  // Location, filtered server-side by Location.objects.public() — public
+  // data like community reports, so there is no eligibility attribute to
+  // pair with it.
+  const WEATHER_URL = mapEl.dataset.weatherUrl || null;
   // SNOW-687: per-user saved-routes GeoJSON — eligibility was an
   // authenticated user (the endpoint 403s for anyone else, and there is
   // nothing to draw), so this is gated the same way as favourites rather
@@ -309,6 +314,10 @@
   const overlayState = {
     l1: false, l2: false, l4: true, bulletins: true, resorts: false,
     favourites: true, community_reports: false,
+    // SNOW-761: weather defaults OFF, like community_reports — a layer of
+    // condition symbols over every station is an opt-in, not the state the
+    // map should open in for someone who came to read danger ratings.
+    weather: false,
     routes: false, slope: false,
   };
 
@@ -365,7 +374,7 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'routes', 'slope']) {
+  for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes', 'slope']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   overlayState.l4 = readBoolStorage(OVERLAY_STORAGE_KEY.l4, true);
@@ -795,6 +804,11 @@
   // Listed lowest -> highest: moveLayer() with no beforeId moves a layer to the
   // very top, so the last id in this list ends up topmost.
   const ALWAYS_ON_TOP_MARKER_LAYERS = [
+    // SNOW-761: weather symbols sit above region fills and boundaries but
+    // below the more personal pin layers, so a favourite star or a
+    // community-report flag at the same point is never hidden behind a
+    // weather icon.
+    'weather-point',
     'community-reports-clusters',
     'community-reports-cluster-count',
     'community-reports-point',
@@ -2235,6 +2249,199 @@
     announceOverlayVisibility();
   };
 
+  // ---------------------------------------------------------------------
+  // SNOW-761: Weather overlay — one condition symbol per public Location,
+  // labelled with the day's max temperature and the station's altitude.
+  // Everything pure about it — the code -> icon mapping, the label, the
+  // date projection and the cluster-to-lowest collapse — lives in
+  // map_weather_core.js (window.pwaWeatherCore) so it is Vitest-covered;
+  // everything here needs a real MapLibre `map` and is glue only.
+  // ---------------------------------------------------------------------
+
+  // The raw, unprojected multi-day payload from WEATHER_URL (or its
+  // offline-cached copy). Retained so a date change, a zoom change or a
+  // basemap swap can re-derive what is drawn with no refetch — the payload
+  // carries the whole forecast window, so re-projection is a pure in-memory
+  // transform.
+  let weatherGeojsonCache = null;
+
+  // Meteocons are multi-path, gradient-filled SVGs. Unlike the favourite
+  // star and the community-report flag (single-colour Path2D fills,
+  // registered `sdf: true`), SDF discards colour and keeps only the alpha
+  // mask, which cannot carry that — so these are rasterised full-colour via
+  // an <img> decode. Decoded once per filename into this module-level
+  // cache; every later map.addImage (including the re-register after a
+  // basemap setStyle wipes registered images) is then synchronous from the
+  // cache, preserving the "image id exists before addLayer references it"
+  // invariant every other icon on this map relies on. Image ids ARE the
+  // filenames, so the layer's `['get', 'icon']` reads the projected
+  // property directly with no id-mapping table.
+  const WEATHER_ICON_BASE_URL = '/static/icons/weather/';
+  // Logical (CSS-pixel) footprint of the decoded icon — matches the
+  // forecast panel's day-strip icon (`w-8 h-8`).
+  const WEATHER_ICON_RASTER_SIZE = 32;
+  const weatherIconImageDataCache = new Map();
+
+  // Decode one weather icon SVG into RGBA ImageData, memoised by filename.
+  // Async by necessity (an Image decode has no synchronous equivalent) —
+  // callers register the result with map.addImage themselves once it
+  // resolves; see ensureWeatherIconsRegistered.
+  const decodeWeatherIcon = (filename) => new Promise((resolve, reject) => {
+    if (weatherIconImageDataCache.has(filename)) {
+      resolve(weatherIconImageDataCache.get(filename));
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const pixelRatio = window.devicePixelRatio || 1;
+      const canvas = document.createElement('canvas');
+      canvas.width = WEATHER_ICON_RASTER_SIZE * pixelRatio;
+      canvas.height = WEATHER_ICON_RASTER_SIZE * pixelRatio;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      let imageData;
+      try {
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      const entry = { data: imageData, pixelRatio };
+      weatherIconImageDataCache.set(filename, entry);
+      resolve(entry);
+    };
+    img.onerror = () => reject(new Error('weather icon decode failed: ' + filename));
+    img.src = WEATHER_ICON_BASE_URL + filename;
+  });
+
+  // Decode + register every filename not already a registered MapLibre
+  // image. Never rejects — one icon's decode failure (a malformed SVG, a
+  // network hiccup) is logged and skipped rather than blocking every other
+  // icon or the caller's `.then()`.
+  const ensureWeatherIconsRegistered = (filenames) => Promise.all(
+    filenames
+      .filter((filename) => filename && !map.hasImage(filename))
+      .map((filename) => decodeWeatherIcon(filename)
+        .then(({ data, pixelRatio }) => {
+          if (!map.hasImage(filename)) map.addImage(filename, data, { pixelRatio });
+        })
+        .catch((err) => {
+          console.warn('[map] SNOW-761: weather icon decode failed', filename, err);
+        })),
+  );
+
+  // Below this zoom the symbols are not drawn at all: a condition icon per
+  // station across a whole country is a texture, not information.
+  const WEATHER_MIN_ZOOM = 7;
+
+  // Cluster half-width in degrees at WEATHER_MIN_ZOOM, halved for each zoom
+  // level above it — the same doubling the viewport itself does, so the
+  // radius is a roughly constant number of SCREEN pixels at every zoom.
+  // Above WEATHER_DECLUTTER_MAX_ZOOM the stations no longer collide, so
+  // collapsing is switched off entirely (a zero radius) and every station
+  // draws.
+  const WEATHER_CLUSTER_BASE_DEGREES = 0.55;
+  const WEATHER_DECLUTTER_MAX_ZOOM = 11;
+
+  // The cluster radius for the current camera. Read at projection time
+  // rather than stored, so it can never disagree with the zoom on screen.
+  const weatherClusterRadius = () => {
+    const zoom = map.getZoom();
+    if (zoom >= WEATHER_DECLUTTER_MAX_ZOOM) return 0;
+    return WEATHER_CLUSTER_BASE_DEGREES / Math.pow(2, zoom - WEATHER_MIN_ZOOM);
+  };
+
+  // Collapse to the lowest station of each cluster, then project the day's
+  // entry onto flat icon/label properties. Collapse FIRST: projecting every
+  // station and discarding most of the work would be the same picture at
+  // more cost, and — more importantly — the collapse must be decided on
+  // elevation, which the projection does not carry.
+  //
+  // A null `currentDisplayedDate` — no day asked for — projects every
+  // feature to `icon: ''`, which the layer's own filter drops, so the map
+  // carries no weather symbols for a day the visitor never chose.
+  const weatherDataForCurrentView = () => {
+    const collapsed = window.pwaWeatherCore.collapseToLowest(
+      weatherGeojsonCache, weatherClusterRadius(),
+    );
+    return window.pwaWeatherCore.projectFeatureCollectionForDate(
+      collapsed, currentDisplayedDate,
+    );
+  };
+
+  // Recompute what is drawn from whatever is cached — no fetch. No-op
+  // before the layer has been installed.
+  const refreshWeatherSourceData = () => {
+    if (!map.getSource('weather')) return;
+    const projected = weatherDataForCurrentView();
+    ensureWeatherIconsRegistered(
+      window.pwaWeatherCore.iconFilenamesForPayload(weatherGeojsonCache),
+    ).then(() => {
+      const src = map.getSource('weather');
+      // The style may have swapped mid-decode, taking the source with it.
+      if (src) src.setData(projected);
+    });
+  };
+
+  // Install the Weather overlay. Idempotent, like installFavouritesLayer /
+  // installCommunityReportsLayer — early-returns if the source already
+  // exists, so the styledata re-install handler can call it safely on every
+  // basemap swap.
+  const installWeatherLayer = (geojson) => {
+    if (!geojson || map.getSource('weather')) return;
+    weatherGeojsonCache = geojson;
+    const projected = weatherDataForCurrentView();
+    map.addSource('weather', { type: 'geojson', data: projected });
+    map.addLayer({
+      id: 'weather-point',
+      type: 'symbol',
+      source: 'weather',
+      minzoom: WEATHER_MIN_ZOOM,
+      // A feature with no entry for the current date projects to `icon: ''`
+      // — filtered out entirely rather than drawing an empty symbol, so it
+      // also never reserves a collision box.
+      filter: ['!=', ['get', 'icon'], ''],
+      layout: {
+        visibility: overlayState.weather ? 'visible' : 'none',
+        'icon-image': ['get', 'icon'],
+        'icon-size': 0.85,
+        'icon-anchor': 'bottom',
+        'icon-allow-overlap': false,
+        // Two lines: the day's max temperature, then the station's
+        // altitude. The altitude is what makes the temperature mean
+        // anything on a mountain map — see map_weather_core.js.
+        'text-field': ['get', 'label'],
+        'text-font': overlayTextFont,
+        'text-size': 10,
+        'text-anchor': 'top',
+        'text-offset': [0, 0.3],
+        'text-allow-overlap': false,
+        'text-padding': 4,
+      },
+      paint: {
+        // Neutral dark grey, matching resorts-label's muted-annotation
+        // treatment rather than introducing a new hue for a third kind of
+        // pin label.
+        'text-color': '#5a5a5a',
+        'text-halo-color': 'rgba(255,255,255,0.95)',
+        'text-halo-width': 1.4,
+      },
+    });
+    raiseMarkerLayers();
+    // The icons referenced by `projected` are almost certainly not
+    // registered yet on a first install. Until this resolves the layer
+    // exists with no icons registered; MapLibre logs a warning and omits
+    // the icon rather than throwing, so it is a brief "no icons yet" flash
+    // rather than a broken layer.
+    ensureWeatherIconsRegistered(
+      window.pwaWeatherCore.iconFilenamesForPayload(weatherGeojsonCache),
+    ).then(() => {
+      const src = map.getSource('weather');
+      if (src) src.setData(projected);
+    });
+    announceOverlayVisibility();
+  };
+
   // ==== SNOW-691: the slope-angle overlay ====
   //
   // A third-party raster (swisstopo's ch.swisstopo.hangneigung-ueber_30),
@@ -3119,6 +3326,26 @@
         communityReportsGeojsonCache = withCommunityReportsAgeOpacity(fresh);
         installCommunityReportsLayer(communityReportsGeojsonCache);
       }
+    } else if (key === 'weather') {
+      // SNOW-761: no eligibility gate at all, like community_reports — the
+      // feed is public. Guard on the URL alone in case this is ever reached
+      // some other way (e.g. the boot-time restore below).
+      if (!WEATHER_URL) return;
+      const data = await fetch(WEATHER_URL).then(r => r.json()).catch(() => null);
+      if (data) {
+        // SNOW-492: write-through. The payload carries the whole forecast
+        // window, so a cached copy stays useful for every date in it rather
+        // than for the day it was fetched on.
+        window.pwaMapOverlayCache?.putOverlay('weather', data);
+        installWeatherLayer(data);
+      } else {
+        const cached = await window.pwaMapOverlayCache?.getOverlay('weather');
+        if (!cached) {
+          revealOfflineToast('map-offline-toast-weather');
+          return;
+        }
+        installWeatherLayer(cached);
+      }
     } else if (key === 'routes') {
       // SNOW-687: eligible-gated like favourites (flag + authenticated) —
       // the switch only exists in the DOM for an eligible user, but guard
@@ -3189,6 +3416,10 @@
       'community-reports-cluster-count',
       'community-reports-point',
     ],
+    // SNOW-761: one symbol layer, not a pin+label pair — the icon and the
+    // label are two data-driven properties of the same symbol
+    // ('icon-image' / 'text-field'), unlike favourites and resorts.
+    weather: ['weather-point'],
     // SNOW-687: the coloured line FIRST and the casing second — deliberately
     // the inverse of the order installRoutesLayer adds them in, where the
     // casing has to be added first to paint underneath. This list's order is
@@ -4285,6 +4516,28 @@
     scheduleGroupingsForDate(dk);
   });
 
+  // SNOW-761: re-project the weather overlay for the newly committed date.
+  // No fetch — the payload already holds the whole forecast window, so a
+  // date change is an in-memory transform (map_weather_core.js) and a
+  // setData call. Registered unconditionally: refreshWeatherSourceData
+  // no-ops until the layer exists.
+  //
+  // ``currentDisplayedDate`` is updated by the listener registered above,
+  // and listeners fire in registration order, so it is already the new date
+  // by the time this one runs.
+  document.addEventListener('snowdesk:date-changed', () => {
+    refreshWeatherSourceData();
+  });
+
+  // SNOW-761: the cluster-to-lowest collapse is zoom-dependent, so zooming
+  // has to re-derive which station stands for each cluster. `moveend`
+  // rather than `zoom`: the collapse walks every feature, and running it on
+  // each frame of a pinch would do that work sixty times a second for a
+  // picture nobody sees until the gesture ends.
+  map.on('moveend', () => {
+    refreshWeatherSourceData();
+  });
+
   // SNOW-323: While the user is actively dragging the thumb, the scrubber
   // emits a continuous stream of preview dates (no commit). Blank the
   // boundary and cancel any pending fetch so a stale outline never lingers
@@ -4542,6 +4795,13 @@
     // this only fires for a returning user who opted in.
     if (COMMUNITY_REPORTS_ELIGIBLE && overlayState.community_reports) {
       restoreOverlay('community_reports');
+    }
+
+    // SNOW-761: restore the weather overlay if the user had it enabled in a
+    // prior session. Off by default, so this only fires for a returning
+    // user who opted in.
+    if (overlayState.weather) {
+      restoreOverlay('weather');
     }
 
     // SNOW-687: restore the routes overlay if the user had it enabled in a
@@ -6463,7 +6723,7 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'routes', 'slope']) {
+      for (const key of ['l1', 'l2', 'resorts', 'community_reports', 'weather', 'routes', 'slope']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
       // l4 and bulletins are re-seeded before any install fn runs: the fill's
@@ -6530,6 +6790,12 @@
       // swap, mirroring the community-reports reinstall above.
       if (overlayLoaded.favourites) {
         installFavouritesLayer(favouritesGeojsonCache);
+      }
+      // SNOW-761: the weather symbols went with the style too, along with
+      // every registered icon image. installWeatherLayer re-registers them
+      // from the module-level decode cache, so this costs no network.
+      if (overlayLoaded.weather) {
+        installWeatherLayer(weatherGeojsonCache);
       }
       // SNOW-687: same story for the route lines — re-install from the
       // last-fetched cache rather than re-requesting an endpoint whose

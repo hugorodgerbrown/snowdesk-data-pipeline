@@ -87,6 +87,11 @@ Optional context:
     {% if favourites_eligible %}data-resort-create-url="{% url 'favourites:resort_create' %}"{% endif %}
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
     data-community-reports-url="{{ community_reports_geojson_url }}"
+    {# SNOW-761: the Weather overlay's data endpoint. One Location-anchored #}
+    {# feed, filtered server-side by Location.objects.public() — so like    #}
+    {# community reports above there is no eligibility attribute to pair    #}
+    {# with it.                                                             #}
+    data-weather-url="{{ weather_geojson_url }}"
     data-community-reports-eligible="true"
     {# SNOW-691: the slope-angle raster's tile template. Emitted only for an  #}
     {# eligible request — i.e. only while settings.SLOPE_TILE_URL is set       #}
@@ -661,6 +666,30 @@ Optional context:
             {# one subject, one way in. Their sync dots went with the rows    #}
             {# rather than moving into the panels, following SNOW-645's own   #}
             {# call for the downloaded-areas row.                            #}
+            {# SNOW-761: weather is a CONDITION, not a boundary or a place, #}
+            {# so it gets a heading of its own rather than being folded into #}
+            {# one it does not belong to. One symbol per public Location —   #}
+            {# a region centroid is a Location like any other now, so there  #}
+            {# is no region tier and no point tier to switch between. Off by #}
+            {# default; overlapping stations collapse to the lowest of each  #}
+            {# cluster (static/js/map_weather_core.js) so a valley reading,  #}
+            {# not a summit one, is what survives at low zoom.               #}
+            <li role="separator" class="basemap-menu-separator"></li>
+            <li role="none" class="basemap-menu-section-label">
+                {% trans "Conditions" %}
+            </li>
+            <li role="none">
+                <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                    data-overlay-key="weather"
+                    aria-checked="false"
+                >
+                    <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                    {% trans "Weather" %}
+                </button>
+            </li>
             {# SNOW-691: Terrain — the swisstopo slope-angle raster        #}
             {# (ch.swisstopo.hangneigung-ueber_30), banded so the 30-45°   #}
             {# range avalanches mostly release on reads at a glance. Its   #}
@@ -1502,6 +1531,12 @@ Optional context:
 {# recovery action, exactly as it is for favourites.                      #}
 {% trans "Your routes aren't available offline yet — view them online first." as offline_toast_routes_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-routes" kind="warning" body=offline_toast_routes_body dismissible=True timeout=6000 %}
+{# SNOW-761: weather. Same shape as community reports above — the overlay #}
+{# write-through-caches under the idb kind (map_layer_sync_status.js's    #}
+{# OVERLAY_RESOURCES.weather), so a read-back with nothing stored is the  #}
+{# only way here.                                                         #}
+{% trans "Weather isn't available offline right now — view it online to refresh." as offline_toast_weather_body %}
+{% include "includes/_toast.html" with id="map-offline-toast-weather" kind="warning" body=offline_toast_weather_body dismissible=True timeout=6000 %}
 {# SNOW-521: a SUCCESSFUL "Download basemap" run is carried by the download #}
 {# roundel itself (a green offline circle) — there is no completion toast,  #}
 {# because a success needs no words and no action.                         #}

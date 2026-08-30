@@ -97,6 +97,12 @@ const OVERLAY_STORAGE_KEY = {
   // SNOW-419: flag-gated only — the toggle exists in the DOM (and this key
   // is only ever read/written) when data-community-reports-eligible="true".
   community_reports: 'snowdesk.map.overlay.community_reports',
+  // SNOW-761: the map's Weather overlay row. Ungated like community reports
+  // — the feed is public, filtered server-side by Location.objects.public()
+  // — so this key is read and written for every visitor. Defaults OFF: a
+  // condition symbol at every station is a second layer of information over
+  // the danger ratings someone opened the map to read.
+  weather: 'snowdesk.map.overlay.weather',
   // The downloads panel's "Display on the map" switch. PERSISTED, like the
   // three switches beside it — this reverses SNOW-645's "session-scoped
   // inspection mode", which is what Hugo reported as a bug: four identical

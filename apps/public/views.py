@@ -828,6 +828,8 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_locations_*``     — the five location-editor URLs, present only
                                 when ``edit_target == "locations"``
                                 (see ``_edit_locations_context``).
+      ``weather_geojson_url`` — URL for the map's Weather overlay feed
+        (SNOW-761). Ungated: the feed is public.
       ``community_reports_geojson_url`` — URL for the community-reports
                                 GeoJSON endpoint (SNOW-419).
       ``slope_layer_eligible`` — True when ``settings.SLOPE_TILE_URL`` is
@@ -902,6 +904,7 @@ def home(request: HttpRequest) -> HttpResponse:
     routes_ctx = _routes_context(request)
     downloads_ctx = _downloads_context(request)
     community_reports_ctx = _community_reports_context(request)
+    weather_ctx = _weather_overlay_context()
     slope_ctx = _slope_context(request)
 
     return render(
@@ -915,6 +918,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **routes_ctx,
             **downloads_ctx,
             **community_reports_ctx,
+            **weather_ctx,
             **slope_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
@@ -1771,6 +1775,21 @@ def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
 
     """
     return {"community_reports_geojson_url": reverse("api:community_reports_geojson")}
+
+
+def _weather_overlay_context() -> dict[str, Any]:
+    """Build the template context dict for the map's Weather overlay.
+
+    Like community reports and unlike favourites, there is no eligibility
+    split: the feed is filtered server-side by ``Location.objects.public()``
+    and carries no per-user data, so every request sees the toggle and the
+    URL.
+
+    Returns:
+        Dict with ``weather_geojson_url``.
+
+    """
+    return {"weather_geojson_url": reverse("api:weather_geojson")}
 
 
 def _slope_context(request: HttpRequest) -> dict[str, Any]:

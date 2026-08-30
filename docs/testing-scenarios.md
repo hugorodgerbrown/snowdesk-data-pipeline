@@ -209,6 +209,24 @@ and region IDs in the sheet.
 
 ---
 
+### Scenario M5: Switch on the Weather overlay
+
+**Goal**: Verify the map's Weather overlay draws a condition icon and a
+temperature/altitude label at each public location, and that the symbols
+follow the scrubbed date.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/ and open the layers menu | A "Conditions" section with a single "Weather" row, unchecked |
+| 2 | Click the Weather row | Row becomes checked; condition icons appear across the map, each labelled with the day's max temperature and the station's altitude on the line below |
+| 3 | Zoom out below zoom 7 | The symbols disappear entirely — a condition icon per station across a whole country is a texture, not information |
+| 4 | Zoom back in to a valley with a village and a peak close together | At low zoom only one symbol shows per cluster, and it is the LOWER station's; both appear once zoomed past ~11 |
+| 5 | Scrub the timeline forward a day | The icons and temperatures change without a page reload and without a new network request |
+| 6 | Scrub back to a date before today | The symbols disappear — the feed is forecast-only, and there is nothing to draw for a past day |
+| 7 | Reload the page | The Weather row is still checked and the symbols come back |
+
+---
+
 ## Map Search
 
 ### Scenario MS1: Search for a region by name
