@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, import_resorts, import_locations, link_region_centroid_locations, refresh_centroid_elevations
+description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, import_resorts, import_locations, link_region_centroid_locations
 status: current
 last-reviewed: 2026-08-07
 ---
@@ -103,19 +103,60 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
 
 ## Operational requirements
 
-Two scheduled jobs keep the public site in sync with upstream data. Both
+Three scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, and one enforces a data-retention window. All three
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). Both jobs run with `--commit`
-so they actually persist; both exit non-zero on failure so a missed run is
+and documented in [`render.yaml`](../render.yaml). All run with `--commit`
+so they actually persist; all exit non-zero on failure so a missed run is
 visible in the worker logs.
 
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
+| Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
+
+### `purge_request_logs` — enforce the RequestLog retention window
+
+`RequestLog` is written at sign-up, sign-in, subscribe, add-region and
+share-click, and every row carries `ip_address`, `city`, `latitude`,
+`longitude`, `user_agent` and `session_key`. Until SNOW-775 nothing deleted
+any of it, while `/privacy/` told readers technical request data was kept
+for fourteen days — a promise no code made true. This command is what makes
+the stated period real.
+
+```bash
+uv run python manage.py purge_request_logs            # report only
+uv run python manage.py purge_request_logs --commit   # delete
+uv run python manage.py purge_request_logs --days 90  # try a stricter window
+```
+
+**Twelve months, not fourteen days.** The table is not an access log. Rows
+exist to give `Account.acquisition_request` and `Subscription.subscribed_via`
+their geo and language context, so a two-week window would blank that for
+every account older than a fortnight and defeat the reason the rows are
+kept. `RETENTION_DAYS` in the command module is the source of the period —
+**the Privacy Policy quotes it, so changing one means changing the other.**
+
+The delete is a hard delete, matching the erasure decision in SNOW-774: an
+account deletion removes its rows outright rather than anonymising them, and
+a retention sweep that only blanked columns would leave the two paths
+disagreeing about what a spent row looks like.
+
+Rows referenced by `Account.acquisition_request` or
+`Subscription.subscribed_via` are deleted like any other — both FKs are
+`SET_NULL`, so the referring row survives with the pointer cleared. That is
+intended: the account keeps its history, the identifiers behind it expire.
+`BulletinShareClick.request` is `CASCADE` (SNOW-774), so a click goes with
+the request context it consists of; it was `PROTECT`, which would have
+aborted the whole nightly run on the first aged click.
+
+Reported counts distinguish request rows from cascaded rows — `delete()`
+returns a total that includes both, and reporting that total would overstate
+the purge in the one log line an auditor would read.
 
 ### `seed_test_data` — build the navigable test dataset (local dev and CI)
 

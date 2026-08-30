@@ -156,15 +156,34 @@ class RequestLog(BaseModel):
     ``subscribed_via``, ``request``) so geo/language data is available for
     downstream analytics without duplicating fields on every model.
 
-    The ``anonymise()`` method nulls PII fields — it is a defensive primitive
-    for future data-protection work and is never called automatically.
+    A row is personal data: it carries ``ip_address``, ``city``, ``latitude``,
+    ``longitude``, ``user_agent`` and ``session_key``. Two mechanisms bound
+    how long it lives, and both are deliberate (SNOW-774, SNOW-775):
+
+    * ``account`` is ``on_delete=CASCADE``, so deleting an account takes the
+      rows written while it was signed in. It does **not** reach the sign-up
+      row, which was written before the account existed and so has
+      ``account=None``; ``apps.accounts.views.delete_account`` deletes those
+      explicitly via the ``acquisition_request`` / ``subscribed_via`` FKs
+      that point at them. Changing either half without the other reopens the
+      erasure gap SNOW-774 closed.
+    * ``purge_request_logs`` deletes every row past the retention window,
+      whether or not it was ever linked to an account. That is what bounds
+      the anonymous rows nothing else refers to.
+
+    A previous ``anonymise()`` helper nulled the identifying columns in
+    place. It was covered by six tests and called by nothing outside them,
+    so the behaviour it guaranteed was never reached in production — the
+    erasure path it was written for went straight past it. SNOW-774 removed
+    it rather than leave a tested method that reads as though deletion is
+    handled somewhere.
     """
 
     account = models.ForeignKey(
         "accounts.Account",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         related_name="request_logs",
         help_text=(
             "Authenticated account at request time, if any. "
@@ -292,33 +311,6 @@ class RequestLog(BaseModel):
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return self.to_string()
-
-    def anonymise(self) -> None:
-        """Null PII fields in place and save the row.
-
-        Clears ``ip_address``, ``session_key``, ``user_agent``, ``referer``,
-        ``latitude``, and ``longitude``. Country, subdivision, and city are
-        retained as they are not individually identifying.
-
-        This is a defensive primitive for future data-protection work.
-        It is never called automatically.
-        """
-        self.ip_address = None
-        self.session_key = ""
-        self.user_agent = ""
-        self.referer = ""
-        self.latitude = None
-        self.longitude = None
-        self.save(
-            update_fields=[
-                "ip_address",
-                "session_key",
-                "user_agent",
-                "referer",
-                "latitude",
-                "longitude",
-            ]
-        )
 
 
 # ---------------------------------------------------------------------------

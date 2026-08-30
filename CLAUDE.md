@@ -57,9 +57,11 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
   accounts/      Signed-token subscription flow (see docs/accounts.md);
                  owns the ``Account`` profile model (OneToOne to auth.User,
                  not AUTH_USER_MODEL itself — SNOW-514 collapsed the former
-                 ``Subscriber`` into it), plus ``Subscription``,
-                 ``PasskeyCredential`` and ``PushSubscription`` (all FK to
-                 auth.User — any authenticated user can register passkeys)
+                 ``Subscriber`` into it), plus ``Subscription`` and
+                 ``PushSubscription`` (both FK to ``Account``) and
+                 ``PasskeyCredential`` (FK to auth.User, so any
+                 authenticated user can register a passkey without an
+                 Account profile)
   favourites/    Saved map pins and resorts — the ``Favourite`` model, its
                  relevance scoring, and the HTMX partials under /favourites/
   observations/  Community field reports — the ``FieldObservation`` model and

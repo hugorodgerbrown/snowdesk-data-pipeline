@@ -1,7 +1,7 @@
 """
 tests/core/test_models.py — Tests for the apps.core.models.RequestLog concrete model.
 
-Covers factory creation, to_string() format, anonymise() field clearing,
+Covers factory creation, to_string() format,
 default ordering, and the from_request() manager method (end-to-end capture
 with a patched geo_lookup).
 """
@@ -66,55 +66,6 @@ class TestRequestLogToString:
         """str(log) returns the same value as log.to_string()."""
         log = RequestLogFactory.create()
         assert str(log) == log.to_string()
-
-
-@pytest.mark.django_db
-class TestRequestLogAnonymise:
-    """anonymise() nulls PII fields and saves the row."""
-
-    def test_anonymise_nulls_ip_address(self) -> None:
-        """ip_address is set to None after anonymise()."""
-        log = RequestLogFactory.create(ip_address="203.0.113.1")
-        log.anonymise()
-        log.refresh_from_db()
-        assert log.ip_address is None
-
-    def test_anonymise_clears_session_key(self) -> None:
-        """session_key is cleared to '' after anonymise()."""
-        log = RequestLogFactory.create(session_key="abc123")
-        log.anonymise()
-        log.refresh_from_db()
-        assert log.session_key == ""
-
-    def test_anonymise_clears_user_agent(self) -> None:
-        """user_agent is cleared to '' after anonymise()."""
-        log = RequestLogFactory.create(user_agent="Mozilla/5.0")
-        log.anonymise()
-        log.refresh_from_db()
-        assert log.user_agent == ""
-
-    def test_anonymise_clears_referer(self) -> None:
-        """referer is cleared to '' after anonymise()."""
-        log = RequestLogFactory.create(referer="https://example.com/")
-        log.anonymise()
-        log.refresh_from_db()
-        assert log.referer == ""
-
-    def test_anonymise_nulls_latitude_longitude(self) -> None:
-        """latitude and longitude are nulled after anonymise()."""
-        log = RequestLogFactory.create(latitude=46.2, longitude=7.4)
-        log.anonymise()
-        log.refresh_from_db()
-        assert log.latitude is None
-        assert log.longitude is None
-
-    def test_anonymise_retains_country_and_city(self) -> None:
-        """country_code and city are retained (not PII by themselves)."""
-        log = RequestLogFactory.create(country_code="CH", city="Sion")
-        log.anonymise()
-        log.refresh_from_db()
-        assert log.country_code == "CH"
-        assert log.city == "Sion"
 
 
 @pytest.mark.django_db

@@ -3,8 +3,9 @@ tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
   - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
-    two jobs.
-  - The jobs have the expected IDs: ``fetch_bulletins`` and ``fetch_weather``.
+    three jobs.
+  - The jobs have the expected IDs: ``fetch_bulletins``, ``fetch_weather``
+    and ``purge_request_logs``.
   - Their ``CronTrigger``s have the correct non-default field expressions.
   - Firing each job's callable invokes ``call_command`` with the expected
     arguments.
@@ -47,14 +48,14 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_two_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly two registered jobs."""
-    assert len(scheduler.get_jobs()) == 2
+def test_scheduler_has_exactly_three_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly three registered jobs."""
+    assert len(scheduler.get_jobs()) == 3
 
 
 def test_job_ids(jobs: dict) -> None:
     """The expected job IDs are registered."""
-    assert set(jobs) == {"fetch_bulletins", "fetch_weather"}
+    assert set(jobs) == {"fetch_bulletins", "fetch_weather", "purge_request_logs"}
 
 
 # ---------------------------------------------------------------------------
@@ -161,3 +162,30 @@ def test_fetch_weather_calls_call_command() -> None:
         schedule_module._run_fetch_weather()
 
     mock_cc.assert_called_once_with("fetch_weather", "--commit")
+
+
+def test_purge_request_logs_calls_call_command() -> None:
+    """Firing the purge job invokes call_command with --commit (SNOW-775).
+
+    Without --commit the nightly run reports what it would delete and
+    deletes nothing, so the retention period the Privacy Policy states
+    would go on being enforced by nobody — which is the exact defect this
+    job was added to fix.
+    """
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_purge_request_logs()
+
+    mock_cc.assert_called_once_with("purge_request_logs", "--commit")
+
+
+def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
+    """03:30 UTC — no fetch job runs at hour 3, and none runs at :30.
+
+    The purge holds a delete transaction over a table the request path
+    writes to. Overlapping it with an ingest run would contend for no
+    reason, so the separation is deliberate rather than incidental.
+    """
+    trigger = jobs["purge_request_logs"].trigger
+
+    assert {str(e) for e in _get_field(trigger, "hour").expressions} == {"3"}
+    assert {str(e) for e in _get_field(trigger, "minute").expressions} == {"30"}
