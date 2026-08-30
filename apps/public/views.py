@@ -4290,7 +4290,13 @@ def _resort_weather_sections(
         if weather is None:
             continue
         location = link.location
-        label = location.name or location.to_string()
+        # A curated point carries its own name ("Verbier village"). An
+        # anonymous one — the Location link_resort_locations mints at the
+        # resort's own pin so a geocoded resort has weather at all — has
+        # none, and Location.to_string() would put raw coordinates on the
+        # page. Fall back to the resort's name instead: "Verbier · 1494 m"
+        # is what that point actually is.
+        label = location.name or resort.name
         if location.elevation_m is not None:
             label = f"{label} · {location.elevation_m:.0f} m"
         sections.append(

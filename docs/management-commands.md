@@ -525,6 +525,36 @@ uv run python manage.py prune_orphan_locations           # preview
 uv run python manage.py prune_orphan_locations --commit  # delete
 ```
 
+### `link_resort_locations` — give every geocoded resort weather
+
+A resort's pin and a resort's weather used to be unconnected. The
+edit-resorts map overlay writes `Resort.latitude`/`longitude` and never
+touches `Location`; the resort page's weather section reads
+`ResortLocation` links, which only the separate edit-locations overlay
+creates. So a resort could sit on the map for months with a hand-placed pin
+and show no weather at all — production had **115 geocoded resorts and 4
+links**.
+
+This gives a geocoded resort with no link an anonymous `Location` at its own
+coordinate, height from `base_elevation_m`, marked `is_primary`. Curating
+named village / mid / peak points stays worthwhile and stays the editor's
+job; this is the floor, not a replacement.
+
+`role` is left blank on purpose: BASE/MID/TOP are claims about what a point
+*is*, and a hand-placed pin is only "where this resort is" — `is_primary`
+already carries that.
+
+Offline (no Open-Meteo call) and idempotent, so `build.sh` and
+`build_headless.sh` both run it on every deploy. It reuses an existing
+anonymous `Location` at the coordinate rather than minting a new one, for
+the reason SNOW-771 records — a fresh row each deploy would orphan the
+previous one and every `Weather` row hanging off it.
+
+```bash
+uv run python manage.py link_resort_locations           # preview
+uv run python manage.py link_resort_locations --commit  # apply
+```
+
 ### `refresh_centroid_elevations` — resolve centroid heights into the fixtures
 
 The one manual half of the above, and the only part of a centroid that

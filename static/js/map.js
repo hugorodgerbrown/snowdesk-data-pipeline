@@ -808,6 +808,7 @@
     // below the more personal pin layers, so a favourite star or a
     // community-report flag at the same point is never hidden behind a
     // weather icon.
+    'weather-plate',
     'weather-point',
     'community-reports-clusters',
     'community-reports-cluster-count',
@@ -2393,6 +2394,33 @@
     const projected = weatherDataForCurrentView();
     map.addSource('weather', { type: 'geojson', data: projected });
     map.addLayer({
+      id: 'weather-plate',
+      type: 'circle',
+      source: 'weather',
+      minzoom: WEATHER_MIN_ZOOM,
+      filter: ['!=', ['get', 'icon'], ''],
+      layout: {
+        visibility: overlayState.weather ? 'visible' : 'none',
+      },
+      paint: {
+        // Ground for the icon. The Meteocons set is pale and gradient-filled
+        // — a sun or a cloud is mostly white — so on the winter basemap the
+        // symbols were nearly invisible with nothing behind them. A raster
+        // icon cannot take icon-halo-*, which only applies to SDF images, so
+        // the contrast has to come from a layer underneath.
+        //
+        // --color-card over --color-border-strong, matched by value because
+        // MapLibre paint cannot read a CSS variable (see CLAUDE.md).
+        'circle-radius': 15,
+        'circle-color': '#ffffff',
+        'circle-opacity': 0.82,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': 'rgba(0, 0, 0, 0.16)',
+        'circle-translate': [0, -13],
+      },
+    });
+
+    map.addLayer({
       id: 'weather-point',
       type: 'symbol',
       source: 'weather',
@@ -2404,7 +2432,7 @@
       layout: {
         visibility: overlayState.weather ? 'visible' : 'none',
         'icon-image': ['get', 'icon'],
-        'icon-size': 0.85,
+        'icon-size': 1.05,
         'icon-anchor': 'bottom',
         'icon-allow-overlap': false,
         // Two lines: the day's max temperature, then the station's
@@ -2412,19 +2440,23 @@
         // anything on a mountain map — see map_weather_core.js.
         'text-field': ['get', 'label'],
         'text-font': overlayTextFont,
-        'text-size': 10,
+        'text-size': 12,
         'text-anchor': 'top',
-        'text-offset': [0, 0.3],
+        'text-offset': [0, 0.35],
         'text-allow-overlap': false,
         'text-padding': 4,
       },
       paint: {
-        // Neutral dark grey, matching resorts-label's muted-annotation
-        // treatment rather than introducing a new hue for a third kind of
-        // pin label.
-        'text-color': '#5a5a5a',
+        // --color-text-1. This label is the overlay's PRIMARY content, not
+        // an annotation beside a pin: it is the only place the temperature
+        // and altitude appear. It first shipped copying resorts-label's
+        // muted #5a5a5a at 10px, which is the right treatment for a name
+        // sitting next to a solid pin and the wrong one for two lines of
+        // figures that are the whole point of the layer — on the pale
+        // winter basemap they were close to unreadable.
+        'text-color': '#1a1916',
         'text-halo-color': 'rgba(255,255,255,0.95)',
-        'text-halo-width': 1.4,
+        'text-halo-width': 1.8,
       },
     });
     raiseMarkerLayers();
@@ -3419,7 +3451,7 @@
     // SNOW-761: one symbol layer, not a pin+label pair — the icon and the
     // label are two data-driven properties of the same symbol
     // ('icon-image' / 'text-field'), unlike favourites and resorts.
-    weather: ['weather-point'],
+    weather: ['weather-plate', 'weather-point'],
     // SNOW-687: the coloured line FIRST and the casing second — deliberately
     // the inverse of the order installRoutesLayer adds them in, where the
     // casing has to be added first to paint underneath. This list's order is
