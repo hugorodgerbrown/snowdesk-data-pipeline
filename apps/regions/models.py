@@ -336,8 +336,8 @@ class MicroRegion(BaseModel):
         help_text=(
             "The Location at this region's centroid, which the bulletin "
             "page reads its forecast through (SNOW-696). Resolved by "
-            "link_region_centroid_locations from ``centre``. Null until "
-            "that has run."
+            "link_region_centroid_locations from ``boundary`` (SNOW-765). "
+            "Null until that has run."
         ),
     )
     boundary = models.JSONField(

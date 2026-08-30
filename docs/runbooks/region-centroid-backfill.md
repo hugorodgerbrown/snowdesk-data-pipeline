@@ -56,9 +56,11 @@ uv run python manage.py link_region_centroid_locations
 ```
 
 Expect `N region(s) would be linked, 0 skipped, 0 failed`. A non-zero
-`skipped` is a region whose `centre` column holds something unreadable,
-which is a fixture problem to fix rather than a reason to stop. A non-zero
-`failed` exits non-zero — check the logs before continuing.
+`skipped` is a region whose `boundary` holds a geometry the centroid
+derivation cannot read, which is a fixture problem to fix rather than a
+reason to stop — every committed L4 region has a readable one, so a skip
+here means something upstream changed. A non-zero `failed` exits non-zero —
+check the logs before continuing.
 
 ### 2. Commit
 
