@@ -7,13 +7,17 @@ last-reviewed: 2026-08-30
 
 # Runbook — region centroid Locations
 
-## There is no per-environment backfill any more
+## The backfill is offline, and an operator runs it
 
-This document used to describe an operator running
-`link_region_centroid_locations --commit` against staging and production,
-paying ~461 Open-Meteo elevation calls each time. **That procedure is
-gone.** SNOW-771 replaced it: `bin/build.sh` and `bin/build_headless.sh`
-run the link step on every deploy, and it is wholly offline.
+This document used to describe paying ~461 Open-Meteo elevation calls per
+environment. That cost is gone: SNOW-771 put the elevations in the fixture,
+so `link_region_centroid_locations` is now wholly offline.
+
+It briefly ran on every deploy, to repair what the deploy's own `loaddata`
+had just wiped. Both are gone now — the deploy no longer reloads fixtures
+(a bulk write that a timeout leaves half applied), so nothing wipes the
+link and nothing needs to repair it. Run the command when you seed an
+environment or change a fixture.
 
 If you are here because region weather is missing in an environment, the
 answer is almost certainly not "run the backfill" — see
@@ -21,11 +25,11 @@ answer is almost certainly not "run the backfill" — see
 
 ## Why it works this way
 
-`build.sh` reloads the four EAWS fixtures on every deploy. `loaddata`
-builds each instance from the fixture's fields alone and saves the whole
-row, so any column the fixtures do not carry is reset to its model default.
-`MicroRegion.centroid_location` is one of those, so **every deploy NULLs all
-461 links** and orphans the `Location` rows behind them.
+`build.sh` used to reload the four EAWS fixtures on every deploy.
+`loaddata` builds each instance from the fixture's fields alone and saves
+the whole row, so any column the fixtures do not carry is reset to its
+model default. `MicroRegion.centroid_location` is one of those, so **every
+deploy NULLed all 461 links** and orphaned the `Location` rows behind them.
 
 That was a silent data-loss bug for as long as the link was treated as
 durable: `link_region_centroid_locations` would report "461 linked, 0
@@ -40,8 +44,9 @@ The fix is not to defend the FK but to make rebuilding it free:
 | Coordinate | `centre_from_bbox(boundary)` — the boundary is in the fixture | No |
 | Elevation | `MicroRegion.centroid_elevation_m` — also in the fixture | No |
 
-So the link step costs nothing but a query, and runs on every deploy of
-every service. The estate heals itself.
+So the link step costs nothing but a query and is safe to re-run at any
+time. It reuses the existing anonymous `Location` at each coordinate rather
+than minting a new one, so re-running never orphans weather.
 
 ## The one manual step — and it is not per environment
 
@@ -97,9 +102,8 @@ print('weather rows       :', Weather.objects.count())
 "
 ```
 
-- **`regions w/ centroid` is 0** — the deploy's link step did not run or
-  failed. Check the build log for `link_region_centroid_locations`. Running
-  it by hand is safe and offline.
+- **`regions w/ centroid` is 0** — the environment has not been linked.
+  Run `link_region_centroid_locations --commit`; it is safe and offline.
 - **Linked, but `public locations` is small** — `public()` is
   `resort_locations OR micro_regions`; a centroid reaches it only through
   the FK above.

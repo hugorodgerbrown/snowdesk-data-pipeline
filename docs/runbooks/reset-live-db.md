@@ -39,8 +39,8 @@ from the new graph.
 
 | Lost (the DB is the only source)        | Restored automatically on rebuild                          |
 | --------------------------------------- | ---------------------------------------------------------- |
-| Subscribers + push subscriptions        | Regions/resorts — `loaddata` of committed fixtures (`build.sh`) |
-| Ingested bulletins, pipeline runs, weather | Schema — `migrate` from the new graph                   |
+| Subscribers + push subscriptions        | Schema — `migrate` from the new graph (`build.sh`)          |
+| Ingested bulletins, pipeline runs, weather | Reference data — **NOT automatic**, see Step 5b            |
 | Request logs, day ratings, share clicks | —                                                          |
 | Django superuser(s)                     | (recreate manually — Step 6)                               |
 | Bulletins                               | (re-ingest via `fetch_bulletins` — Step 7)                 |
@@ -106,13 +106,48 @@ Trigger **Manual Deploy → Deploy latest commit** on `snowdesk-website`. Its
 
 ```
 manage.py migrate          # builds the NEW graph from scratch — succeeds
-manage.py loaddata ...      # re-seeds regions + resorts (idempotent)
 ```
 
-Watch the deploy log: confirm `migrate` completes cleanly and `loaddata` reports
-the installed objects. Using the deploy path (not an ad-hoc shell `migrate`)
-guarantees the rebuild runs against the **new committed code**, not a stale
-build left live by a failed deploy.
+Watch the deploy log: confirm `migrate` completes cleanly. Using the deploy
+path (not an ad-hoc shell `migrate`) guarantees the rebuild runs against the
+**new committed code**, not a stale build left live by a failed deploy.
+
+**The deploy no longer seeds reference data.** It used to run `loaddata`
+over the EAWS fixtures on every deploy; that was removed because a deploy
+that times out mid-write leaves 461 rows half applied, and because the
+reload silently NULLed `MicroRegion.centroid_location` every time
+(SNOW-771). Seeding is now an explicit operator step.
+
+### 5b. Seed the reference data
+
+From the Render Shell of the environment's web service. Order matters —
+each step reads what the one before it wrote.
+
+```bash
+# Regions: the EAWS hierarchy and the aliases.
+uv run --no-sync python manage.py loaddata \
+    apps/regions/fixtures/eaws_CH.json \
+    apps/regions/fixtures/eaws_FR.json \
+    apps/regions/fixtures/eaws_AT.json \
+    apps/regions/fixtures/eaws_IT.json \
+    apps/regions/fixtures/region_aliases.json
+
+# Offline-basemap tile coverage. Only the CH fixture ships it; this fills
+# FR/AT/IT from their geometry.
+uv run --no-sync python manage.py compute_basemap_download --commit
+
+# Resorts: editable data, applied from the curated sheet rather than a
+# fixture (see docs/decisions/resorts-are-editable-data.md).
+uv run --no-sync python manage.py import_resorts --commit
+
+# Weather anchors: a Location per region centroid, then one per geocoded
+# resort. Both offline and idempotent.
+uv run --no-sync python manage.py link_region_centroid_locations --commit
+uv run --no-sync python manage.py link_resort_locations --commit
+```
+
+Confirm with the diagnostic in
+[`region-centroid-backfill.md`](region-centroid-backfill.md).
 
 ### 6. Recreate the superuser
 
