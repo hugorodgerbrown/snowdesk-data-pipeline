@@ -88,7 +88,6 @@ from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulle
 from apps.regions.models import Resort
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import (
-    build_point_forecast_panel,
     build_weather_display,
 )
 
@@ -655,7 +654,14 @@ def _favourite_card_context(
         "bulletin_url": bulletin_url,
         "problem_cards": problem_cards,
         "weather_display": build_weather_display(weather, now),
-        "forecast_panel": build_point_forecast_panel(weather, now),
+        # SNOW-783: the day, then a link. The week and the hourly detail
+        # live on the location's own forecast page rather than being
+        # redrawn inside a card that is already a scrolling surface.
+        "forecast_url": (
+            reverse("public:location_weather", args=[favourite.location_id])
+            if favourite.location_id
+            else ""
+        ),
         "cache_payload": cache_payload,
         "freshness_state": state,
         "freshness_generated_at": generated_at,

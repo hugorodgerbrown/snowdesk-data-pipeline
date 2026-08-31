@@ -137,11 +137,16 @@ Context expected (built by ``apps.public.views.resort_detail``):
                     {% for section in weather_sections %}
                         <div data-testid="{{ section.testid_prefix }}" data-location-id="{{ section.location.pk }}">
                             {% include "includes/_weather_panel.html" with weather_display=section.weather_display location_label=section.label testid_prefix=section.testid_prefix only %}
-                            {% if section.forecast_panel %}
-                                <div class="mt-2">
-                                    {% include "includes/_forecast_panel.html" with panel=section.forecast_panel testid_prefix=section.testid_prefix only %}
-                                </div>
-                            {% endif %}
+                            {# SNOW-783: the day here, the week on the location's own #}
+                            {# forecast page. Drawing the same week once per altitude  #}
+                            {# was the same seven days three times over; the rows      #}
+                            {# above are the altitude comparison this page exists for. #}
+                            <a
+                                class="mt-1 inline-block text-xs text-text-3 underline hover-affordance"
+                                href="{{ section.forecast_url }}"
+                                data-testid="{{ section.testid_prefix }}-forecast-link"
+                            >{% blocktrans with place=section.label trimmed %}Full forecast for
+                                    {{ place }}{% endblocktrans %}</a>
                         </div>
                     {% endfor %}
                 </div>

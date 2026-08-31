@@ -1,11 +1,16 @@
 """
 tests/public/test_weather_surfaces.py — Tests for the server-rendered weather.
 
-Three surfaces read a ``Weather`` row and render it (SNOW-761):
+Four surfaces read a ``Weather`` row and render it (SNOW-761):
 
 * the bulletin masthead, from the region's ``centroid_location``;
 * the resort page, one block per curated ``Location`` linked to the resort;
-* the favourite detail card, from the pin's own ``Location``.
+* the favourite detail card, from the pin's own ``Location``;
+* the location forecast page, from one ``Location``.
+
+**Only the last of those draws the week** (SNOW-783). The resort page and
+the favourite card show the day and link out; asserting a day-strip on
+either is asserting the defect this ticket removed.
 
 The assertions below are about what reaches the page, and about the one
 behaviour every surface shares: **no row means no panel, never an error**.
@@ -161,8 +166,13 @@ class TestResortPage:
         assert content.index("Verbier · 1500 m") < content.index("Mont Fort · 3328 m")
 
     @freeze_time(MIDDAY)
-    def test_the_outlook_comes_from_the_same_rows_forecast_column(self) -> None:
-        """The multi-day strip is one row's ``forecast[]``, not N rows."""
+    def test_the_week_is_not_drawn_here_only_linked(self) -> None:
+        """SNOW-783: the day per altitude, and a link out for the week.
+
+        The strip used to be rendered once per curated location, so a
+        resort with a village, a mid-station and a peak drew the same
+        seven days three times.
+        """
         today = datetime.date(2026, 8, 30)
         resort = ResortFactory.create()
         location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
@@ -178,9 +188,14 @@ class TestResortPage:
         response = Client().get(resort.get_absolute_url())
 
         content = response.content.decode()
-        assert 'data-date="2026-08-30"' in content
-        assert 'data-date="2026-08-31"' in content
-        assert 'data-date="2026-09-01"' in content
+        # The day is here.
+        assert 'data-testid="resort-weather-0-panel"' in content
+        # The week is not.
+        assert 'data-testid="resort-weather-0-forecast-panel"' not in content
+        assert 'data-date="2026-08-31"' not in content
+        # But it is one click away, per location.
+        assert 'data-testid="resort-weather-0-forecast-link"' in content
+        assert reverse("public:location_weather", args=[location.pk]) in content
 
     def test_a_location_without_a_row_is_dropped_not_rendered_empty(self) -> None:
         """A resort whose peak has a row and village none shows one block."""
@@ -251,3 +266,87 @@ class TestFavouriteCard:
 
         assert response.status_code == 200
         assert 'data-testid="favourite-card-weather"' not in response.content.decode()
+
+    @freeze_time(MIDDAY)
+    def test_the_week_is_not_drawn_here_only_linked(self) -> None:
+        """SNOW-783: the card shows the day and links to the week.
+
+        The card is already a scrolling surface; a seven-day strip with
+        its hourly tables was most of its height.
+        """
+        user = UserFactory.create()
+        favourite = FavouriteFactory.create(user=user, name="The col")
+        WeatherFactory.create(
+            location=favourite.location,
+            observed_on=datetime.date(2026, 8, 30),
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            forecast=[_forecast_day("2026-08-31")],
+        )
+
+        client = Client()
+        client.force_login(user)
+        response = client.get(
+            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+        )
+
+        content = response.content.decode()
+        assert 'data-testid="favourite-weather-panel"' in content
+        assert 'data-testid="favourite-forecast-panel"' not in content
+        assert 'data-testid="favourite-card-forecast-link"' in content
+        assert (
+            reverse("public:location_weather", args=[favourite.location_id]) in content
+        )
+
+
+@pytest.mark.django_db
+class TestLocationForecastPage:
+    """The location forecast page — the one surface that draws the week."""
+
+    @freeze_time(MIDDAY)
+    def test_the_outlook_comes_from_the_same_rows_forecast_column(self) -> None:
+        """The multi-day strip is one row's ``forecast[]``, not N rows.
+
+        Moved here from the resort page by SNOW-783, which is where the
+        week now lives.
+        """
+        location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
+        # public(), so the page is reachable anonymously.
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
+        )
+
+        response = Client().get(reverse("public:location_weather", args=[location.pk]))
+
+        content = response.content.decode()
+        assert 'data-date="2026-08-30"' in content
+        assert 'data-date="2026-08-31"' in content
+        assert 'data-date="2026-09-01"' in content
+
+    def test_a_favourite_pin_is_reachable_by_its_owner_and_nobody_else(self) -> None:
+        """SNOW-783: the card links here, so the owner must get through.
+
+        ``public()`` excludes favourite locations so the map feed cannot
+        leak one. That contract is about strangers — the owner following
+        their own card's "Full forecast" link is not a leak, and a 404
+        there would make the link a dead end.
+        """
+        owner = UserFactory.create()
+        stranger = UserFactory.create()
+        favourite = FavouriteFactory.create(user=owner, name="The col")
+        url = reverse("public:location_weather", args=[favourite.location_id])
+
+        owner_client = Client()
+        owner_client.force_login(owner)
+        assert owner_client.get(url).status_code == 200
+
+        stranger_client = Client()
+        stranger_client.force_login(stranger)
+        assert stranger_client.get(url).status_code == 404
+
+        assert Client().get(url).status_code == 404

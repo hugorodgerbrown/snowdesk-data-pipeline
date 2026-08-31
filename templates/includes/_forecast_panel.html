@@ -21,8 +21,11 @@ rows from a second table. **``hourly`` is present on only the first few
 forward days**, so part 2 tests each day for one rather than assuming; a day
 past that horizon simply contributes no panel.
 
-Consumers: the resort page (one strip per curated location) and the
-favourite detail card.
+Consumer: the location forecast page (``/weather/<location_id>/``), and
+nothing else. SNOW-783 took this strip off the resort page and the
+favourite card — both drew the same week the forecast page already owned,
+the resort page once per curated altitude — so each of those now shows the
+day and links here.
 
 Context:
     panel : ForecastPanel — ``{"days": [ForecastPanelDay, ...]}`` from

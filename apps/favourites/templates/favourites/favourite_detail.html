@@ -32,8 +32,10 @@ Context expected (built by ``apps.favourites.views._favourite_card_context``):
   freshness_generated_at   — datetime.
   weather_display          — WeatherDisplay | None for the pin's Location
                               today (SNOW-761).
-  forecast_panel           — ForecastPanel | None, from the same row's
-                              ``forecast`` column.
+  forecast_url             — str: the pin location's own forecast page,
+                              or "" for a pre-SNOW-704 row with no
+                              location. The week and the hourly detail
+                              live there, not here (SNOW-783).
 {% endcomment %}
 {% load i18n components %}
 

@@ -20,17 +20,28 @@ night palette; SNOW-762 removed it along with the rest of the estate, and
 SNOW-761 rebuilt weather on a different shape. Nothing below is a
 restoration.
 
-## The four surfaces
+## The surfaces
 
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
 | Bulletin masthead ([`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html)) | `MicroRegion.centroid_location` | the page's date |
 | Resort page ([`apps/public/templates/public/resort.html`](../apps/public/templates/public/resort.html)) | every `ResortLocation.location` | today |
 | Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) | `Favourite.location` | today |
+| Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?d=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
 
-The first three are server-rendered and share two partials; the fourth is a
-GeoJSON feed and a MapLibre symbol layer.
+The first four are server-rendered; the map overlay is a GeoJSON feed and a
+MapLibre symbol layer, plus a tap sheet
+([`apps/public/templates/public/partials/_weather_detail.html`](../apps/public/templates/public/partials/_weather_detail.html))
+that hands off to the location forecast page.
+
+**Each component appears once (SNOW-782).** The one-day row
+(`_weather_panel.html`) goes wherever a location is named; the week
+(`_forecast_panel.html`, `_forecast_chart.html`) and the day
+(`_hourly_chart.html`) belong to the location forecast page alone. A
+surface that names a location shows the day and links to the rest — the
+resort page and the favourite card both drew the whole week inline until
+SNOW-783, the resort page once per curated altitude.
 
 ## The read path
 

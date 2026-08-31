@@ -118,7 +118,6 @@ from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.weather_chart import build_forecast_chart
 from apps.weather.services.weather_display import (
-    ForecastPanel,
     WeatherDisplay,
     build_point_forecast_panel,
     build_weather_display,
@@ -4231,7 +4230,10 @@ class ResortWeatherSection:
             Mid-mountain / Top), which is not the same as the location's own
             ``kind`` — see ``ResortLocation.role``.
         weather_display: The day's ``WeatherDisplay``, or ``None``.
-        forecast_panel: The multi-day ``ForecastPanel``, or ``None``.
+        forecast_url: The location's own forecast page — where the week and
+            the hourly detail live (SNOW-783). The resort page shows the
+            day per altitude and hands the week off rather than drawing it
+            once per location.
         testid_prefix: Stable per-block prefix for ``data-testid``s.
 
     """
@@ -4240,7 +4242,7 @@ class ResortWeatherSection:
     label: str
     role_label: str
     weather_display: WeatherDisplay | None
-    forecast_panel: ForecastPanel | None
+    forecast_url: str
     testid_prefix: str
 
 
@@ -4306,7 +4308,7 @@ def _resort_weather_sections(
                 label=label,
                 role_label=str(link.get_role_display()),
                 weather_display=build_weather_display(weather, now),
-                forecast_panel=build_point_forecast_panel(weather, now),
+                forecast_url=reverse("public:location_weather", args=[location.pk]),
                 testid_prefix=f"resort-weather-{index}",
             )
         )
@@ -4361,11 +4363,15 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
     of their own, so the link would have been absent on the large majority
     of taps.
 
-    **Public estate only.** ``Location.objects.public()`` is the same filter
-    the map feed and the card use. A location outside it has no symbol to
-    tap, and — the reason this matters — ``public()`` excludes the locations
-    a ``Favourite`` reaches, so without it a guessed id would expose the
-    name, coordinates and elevation of a stranger's private pin.
+    **Public estate, plus the reader's own pins.**
+    ``Location.objects.visible_to(request.user)`` is ``public()`` — the
+    same filter the map feed and the card use — widened by the locations
+    this user's own ``Favourite`` rows reach. ``public()`` excludes
+    favourite locations so a public feed cannot leak one, and that holds:
+    a guessed id still cannot expose a *stranger's* pin, its coordinates
+    or its elevation. But the favourite card links here for the week
+    (SNOW-783), and refusing the owner their own pin's forecast would be
+    reading the privacy contract backwards.
 
     ``date`` is an optional ISO-8601 query parameter so the page can follow
     the day the map was showing. A malformed value falls back to today
@@ -4379,10 +4385,13 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
         The rendered page.
 
     Raises:
-        Http404: The id is unknown, or outside the public estate.
+        Http404: The id is unknown, or belongs to neither the public
+            estate nor this user's own favourites.
 
     """
-    location = get_object_or_404(Location.objects.public(), pk=location_id)
+    location = get_object_or_404(
+        Location.objects.visible_to(request.user), pk=location_id
+    )
 
     observed_on = timezone.localdate()
     raw_date = request.GET.get("date", "")
