@@ -41,6 +41,7 @@ from apps.public._component_fixtures import (
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
+    FORECAST_CHART_VARIANTS,
     FORECAST_PANEL_VARIANTS,
     FORM_FIELD_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
@@ -1355,6 +1356,31 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_forecast_panel.html",
         variants=FORECAST_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="forecast-chart",
+        label="Forecast chart",
+        description=(
+            "The daily high/low band across the outlook window (SNOW-761), "
+            "as one server-rendered SVG — no charting library, and the "
+            "geometry comes from "
+            "``apps.weather.services.weather_chart.build_forecast_chart`` "
+            "rather than from the template. It carries the SHAPE of the "
+            "week, which the day strip beside it cannot: a wide band is a "
+            "big diurnal swing, a narrow one a flat cloudy day. The 0 °C "
+            "line is drawn ONLY when the window crosses it — above or "
+            "below all week it would sit on the plot edge implying "
+            "something it does not mean, which is what the second variant "
+            "shows. Freezing level is deliberately absent: metres against "
+            "a degrees axis is two scales in one small chart, and it is "
+            "already a figure per column in the forecast panel. Colours "
+            "are ``currentColor`` off token classes, not ``fill`` "
+            "literals, so the chart follows the dark-mode override."
+        ),
+        kind="components",
+        partial="includes/_forecast_chart.html",
+        variants=FORECAST_CHART_VARIANTS,
         panel_layout="stack",
     ),
 )

@@ -92,6 +92,10 @@ Optional context:
     {# community reports above there is no eligibility attribute to pair    #}
     {# with it.                                                             #}
     data-weather-url="{{ weather_geojson_url }}"
+    {# SNOW-761: the sheet body behind a tap on a weather symbol. A template #}
+    {# with a placeholder id, substituted in map_weather_detail.js — the     #}
+    {# same idiom data-resort-popup-url uses above.                          #}
+    data-weather-detail-url="{% url 'api:weather_detail' location_id=0 %}"
     data-community-reports-eligible="true"
     {# SNOW-691: the slope-angle raster's tile template. Emitted only for an  #}
     {# eligible request — i.e. only while settings.SLOPE_TILE_URL is set       #}

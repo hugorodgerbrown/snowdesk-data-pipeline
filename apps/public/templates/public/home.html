@@ -210,6 +210,10 @@ in addition to the shared map assets.
     {# sheet renders for every visitor, and routes.js branches on           #}
     {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
     {% include "public/partials/_routes_surface.html" %}
+    {# SNOW-761: weather detail sheet + JS. No roundel — the trigger is the  #}
+    {# condition symbol on the map itself, so this surface is inert until    #}
+    {# one is tapped.                                                        #}
+    {% include "public/partials/_weather_surface.html" %}
     {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
     {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
     {# the map roundel (#map-custom-download-control) now, not the       #}

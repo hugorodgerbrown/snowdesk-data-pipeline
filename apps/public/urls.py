@@ -103,6 +103,16 @@ urlpatterns = [
         views.resort_detail,
         name="resort",
     ),
+    # SNOW-761: the full forecast for one Location — the page the map's
+    # weather card hands off to via "View forecast". Keyed on Location
+    # rather than on a resort or a region because most of the estate is
+    # neither: 461 of 540 public locations are region centroids, which had
+    # no page of their own before this one.
+    path(
+        "weather/<int:location_id>/",
+        views.location_weather,
+        name="location_weather",
+    ),
     # Component library — staff-only design-system page (SNOW-103).
     # Underscore prefix follows the project convention for staff-only routes.
     path(

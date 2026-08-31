@@ -2251,7 +2251,7 @@
 
   // ---------------------------------------------------------------------
   // SNOW-761: Weather overlay — one condition symbol per public Location,
-  // labelled with the day's max temperature and the station's altitude.
+  // captioned with the day's max temperature.
   // Everything pure about it — the code -> icon mapping, the label, the
   // date projection and the cluster-to-lowest collapse — lives in
   // map_weather_core.js (window.pwaWeatherCore) so it is Vitest-covered;
@@ -2279,9 +2279,112 @@
   const WEATHER_ICON_BASE_URL = '/static/icons/weather/';
   // Logical (CSS-pixel) footprint of the decoded icon — matches the
   // forecast panel's day-strip icon (`w-8 h-8`).
-  const WEATHER_ICON_RASTER_SIZE = 32;
+  const WEATHER_ICON_RASTER_SIZE = 27;
+  // The Meteocons viewBox, and the centred box its ink actually occupies.
+  // Measured off the rendered alpha channel, not read off the markup.
+  const WEATHER_ICON_VIEWBOX = 128;
+  const WEATHER_ICON_INK_ORIGIN = 16;
+  const WEATHER_ICON_INK_BOX = 96;
   const weatherIconImageDataCache = new Map();
 
+  // The weather label's type scale, in one place. The elevation mark is
+  // drawn to match the caption, so a change to either of these that the
+  // mark did not see would put them back out of step.
+  const WEATHER_TEXT_SIZE = 13;
+  const WEATHER_TEMP_SCALE = 1.2;
+  const WEATHER_ELEV_SCALE = 0.95;
+
+  // The elevation mark — a mountain silhouette drawn before the metre
+  // value on the label's second line.
+  //
+  // It exists because "1300 m" beside a weather symbol on a map reads as a
+  // DISTANCE. Nothing else in the label disambiguates it, and the one
+  // surface where the number is unlabelled is the one where the wrong
+  // reading is most plausible.
+  //
+  // Canvas rather than an SVG asset: it is two triangles at roughly 9px,
+  // it must exist before the layer's `format` references it (a missing
+  // image drops the whole symbol, not just that section), and a canvas
+  // draw is synchronous where an SVG decode is not.
+  //
+  // Not SDF, so it cannot take `icon-color` — the fill below is the same
+  // literal the layer's `text-color` uses, and the two have to be changed
+  // together.
+  // Sized off the caption it sits beside rather than by eye, so the two
+  // cannot drift apart when either is retuned. `WEATHER_ELEV_SCALE` gives
+  // the caption's font size; ~0.72 of a font size is where a digit's cap
+  // sits, and the mark should stand exactly that tall — shorter and it
+  // reads as a bullet, taller and it reads as a second glyph.
+  const DIGIT_CAP_RATIO = 0.72;
+  const ELEVATION_MARK_SIZE = Math.round(
+    WEATHER_TEXT_SIZE * WEATHER_ELEV_SCALE * DIGIT_CAP_RATIO,
+  );
+
+  const buildElevationMark = () => {
+    const ratio = window.devicePixelRatio || 1;
+    const size = ELEVATION_MARK_SIZE * ratio;
+    // ONE try/catch around the whole draw, not a check on the context.
+    // `getContext('2d')` does not fail in one predictable way: it returns
+    // null in a browser that refuses one, a partial stub under jsdom (an
+    // object with no `beginPath`, so a truthiness guard passes and the
+    // first call still throws), and a working context whose `getImageData`
+    // throws once the canvas is tainted. Catching the operation covers all
+    // three; testing the object covers whichever one was in mind.
+    //
+    // It matters because this runs inside installWeatherLayer between
+    // addSource and addLayer: an escaping throw leaves an orphaned source
+    // and no weather layer at all.
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      // A peak and a lower shoulder — one triangle reads as a "play"
+      // arrow at this size, two read as terrain.
+      //
+      // FLUSH TO THE BOTTOM OF THE BOX. MapLibre pins an inline image's
+      // bottom edge to the text baseline, so any gap left under the ink
+      // becomes the mark floating above the digits beside it. `base` is
+      // 1px short of the edge only so the fill's antialiasing is not
+      // clipped.
+      const base = size - ratio;
+      ctx.fillStyle = '#1a1916';
+      ctx.beginPath();
+      ctx.moveTo(size * 0.02, base);
+      ctx.lineTo(size * 0.40, 0);
+      ctx.lineTo(size * 0.68, base);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(size * 0.52, base);
+      ctx.lineTo(size * 0.76, size * 0.38);
+      ctx.lineTo(size * 0.98, base);
+      ctx.closePath();
+      ctx.fill();
+      return { data: ctx.getImageData(0, 0, size, size), pixelRatio: ratio };
+    } catch (_err) {
+      return null;
+    }
+  };
+
+  const ensureElevationMarkRegistered = () => {
+    const id = window.pwaWeatherCore.ELEVATION_MARK_ID;
+    if (map.hasImage(id)) return true;
+    const mark = buildElevationMark();
+    if (mark) {
+      map.addImage(id, mark.data, { pixelRatio: mark.pixelRatio });
+      return true;
+    }
+    // The mark could not be drawn. Register a 1x1 transparent image under
+    // the same id anyway, because the label's `format` names it and
+    // MapLibre drops the WHOLE symbol when a section's image is missing —
+    // so the alternative to an invisible mark is no weather on the map at
+    // all. The plain {width, height, data} form is deliberate: it is the
+    // one addImage accepts without a canvas, which is exactly what is
+    // unavailable when this branch is reached.
+    map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+    return false;
+  };
   // Decode one weather icon SVG into RGBA ImageData, memoised by filename.
   // Async by necessity (an Image decode has no synchronous equivalent) —
   // callers register the result with map.addImage themselves once it
@@ -2298,9 +2401,61 @@
       canvas.width = WEATHER_ICON_RASTER_SIZE * pixelRatio;
       canvas.height = WEATHER_ICON_RASTER_SIZE * pixelRatio;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      // Crop the set's uniform transparent border before rasterising.
+      // Every Meteocons file is a 128-unit viewBox whose ink never leaves
+      // the centred 96-unit box — `clear-day`, the largest, spans exactly
+      // 16..112 on both axes. Drawing the full 128 therefore spent a
+      // quarter of every symbol's width on nothing — pushing the glyph
+      // away from the temperature beside it, inflating the collision box
+      // it reserves against its neighbours, and leaving the symbol small
+      // for the space it took.
+      //
+      // The crop is the SAME for every icon on purpose. Cropping each one
+      // to its own ink would scale `cloudy` up to fill the box a full sun
+      // occupies, and the set encodes meaning in relative size — an
+      // overcast day is not as loud as a clear one.
+      const scale = canvas.width / WEATHER_ICON_INK_BOX;
+      const inset = WEATHER_ICON_INK_ORIGIN * scale;
+      const drawSymbol = () => {
+        ctx.drawImage(
+          img,
+          -inset,
+          -inset,
+          WEATHER_ICON_VIEWBOX * scale,
+          WEATHER_ICON_VIEWBOX * scale,
+        );
+      };
+      // Outline the symbol before drawing it.
+      //
+      // Meteocons draws cloud bodies in a pale grey with white highlights.
+      // That is legible on the set's own dark previews and invisible here:
+      // the plate under it is --color-card at 92%, and the winter basemap
+      // under THAT is near-white too, so a cloud's edge had nothing to
+      // meet and the glyph dissolved into its own background.
+      //
+      // A zero-offset drop-shadow is a halo around the alpha channel, so
+      // repeating it dilates a dark edge that follows the symbol's real
+      // silhouette rather than boxing it. The unfiltered pass on top then
+      // restores the interior, leaving the artist's colours untouched and
+      // only the perimeter darkened.
+      //
+      // `ctx.filter` is unsupported in a few engines, where assignment is
+      // a silent no-op — the icon then renders exactly as it did before
+      // this block, which is the correct degradation.
       let imageData;
+      // The try covers the DRAWING as well as the read-back. A 2D context
+      // fails in more than one way — null in a browser that refuses one, a
+      // partial stub with no `beginPath` under jsdom, a working context
+      // whose `getImageData` throws on a tainted canvas — and the caller
+      // handles a rejected decode by leaving that icon unregistered, which
+      // is the right outcome for all of them.
       try {
+        ctx.filter =
+          'drop-shadow(0 0 ' + pixelRatio + 'px rgba(41, 45, 54, 0.85))';
+        drawSymbol();
+        drawSymbol();
+        ctx.filter = 'none';
+        drawSymbol();
         imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       } catch (err) {
         reject(err);
@@ -2423,6 +2578,12 @@
     weatherGeojsonCache = geojson;
     const projected = weatherDataForCurrentView();
     map.addSource('weather', { type: 'geojson', data: projected });
+    // Before the layer: an unregistered image in a `format` expression
+    // drops the entire symbol, not just its own section. This one is a
+    // canvas draw with no decode, so unlike the condition glyphs there is
+    // no window in which it is absent.
+    ensureElevationMarkRegistered();
+
     map.addLayer({
       id: 'weather-point',
       type: 'symbol',
@@ -2434,38 +2595,87 @@
       filter: ['!=', ['get', 'icon'], ''],
       layout: {
         visibility: overlayState.weather ? 'visible' : 'none',
-        'icon-image': ['get', 'icon'],
-        // Larger than a pin icon would be, because nothing sits behind it.
-        // A `weather-plate` circle layer was tried underneath — the
-        // Meteocons set is pale and gradient-filled, and a raster icon
-        // cannot take icon-halo-* — but a disc big enough to back the
-        // symbol read as a bubble swamping it rather than as ground. Size
-        // carries the icon on its own; the label below it does the rest.
-        'icon-size': 1.35,
-        'icon-anchor': 'bottom',
-        'icon-allow-overlap': false,
-        // Two lines: the day's max temperature, then the station's
-        // altitude. The altitude is what makes the temperature mean
-        // anything on a mountain map — see map_weather_core.js.
-        'text-field': ['get', 'label'],
+        // TWO ROWS, and every part of both is inside `text-field`:
+        //
+        //     [WMO]  19°
+        //     [mark] 1300 m
+        //
+        // The condition symbol was briefly an `icon-image` anchored beside
+        // the label, to centre it on the temperature. That is not a row —
+        // `icon-anchor` centres the symbol on the whole TEXT BLOCK, so
+        // with a second line it lands between the two and the three parts
+        // read as a triangle. An icon outside the text cannot sit on a
+        // text row; only an inline `image` section can.
+        //
+        // The cost is that MapLibre shapes an inline image at
+        // `ONE_EM - height * scale`, which pins its BOTTOM to the row's
+        // baseline rather than centring it on the text. The symbol
+        // therefore rides a little high against the digits, and that is
+        // not tunable: padding under it in the raster only lifts it
+        // further, padding above moves nothing, and this build has no
+        // per-section `vertical-align` (the `verticalAlign` inside
+        // maplibre-gl.min.js belongs to `text-anchor`/`icon-anchor`, not
+        // to `format`). Sharing a baseline is what "same row" can mean
+        // here.
+        //
+        // The station's ground elevation is `Location.elevation_m` — where
+        // the reading is taken — NOT the freezing level, which is
+        // `Weather.freezing_level_height` and has never been on the map.
+        // Its mark is there because "1300 m" beside a weather symbol on a
+        // map otherwise reads as a distance.
+        //
+        // `label_break` and `elev_mark` are separate feature properties
+        // rather than literals because a `format` is fixed at style time:
+        // a station with no resolved elevation contributes three empty
+        // strings, not three omitted sections. Put the break inside the
+        // value instead and that station renders a blank second row,
+        // which shifts the whole label off the point it is labelling.
+        // See formatElevationBreak in map_weather_core.js.
+        'text-field': [
+          'format',
+          ['image', ['get', 'icon']], {},
+          // The gap. Its own section because the raster's transparent
+          // margin is cropped on purpose (see decodeWeatherIcon) and
+          // re-adding some of it would undo that crop on one side only.
+          ' ', {'font-scale': WEATHER_TEMP_SCALE},
+          ['get', 'label_temp'], {'font-scale': WEATHER_TEMP_SCALE},
+          ['get', 'label_break'], {},
+          ['image', ['get', 'elev_mark']], {},
+          // The mark's own gap. An inline image's advance is exactly its
+          // width, so without this the digits start against its edge.
+          // Full size rather than the caption's, because the space is
+          // separating a glyph from a number and wants to read at least
+          // as wide as the one on row 1.
+          ' ', {},
+          ['get', 'label_elev'], {'font-scale': WEATHER_ELEV_SCALE},
+        ],
         'text-font': overlayTextFont,
-        'text-size': 12,
-        'text-anchor': 'top',
-        'text-offset': [0, 0.35],
+        'text-size': WEATHER_TEXT_SIZE,
+        'text-anchor': 'center',
         'text-allow-overlap': false,
         'text-padding': 4,
+        // Ems of text-size. It looks tight for two rows because it is
+        // not the whole story: MapLibre
+        // advances a row by `lineHeight * maxScale + imageOverhang`, where
+        // the overhang is how far a tall inline image sticks out of its
+        // line box (`r[1] * scale - ONE_EM * s` in the shaper). The 27px
+        // symbol contributes 21 em-units of that on its own, so the rows
+        // are already held apart whatever this says — an earlier 1.66,
+        // picked on the belief that this property was what kept the
+        // symbol off row 2, was paying for the same clearance twice and
+        // left a visible hole under the temperature.
+        'text-line-height': 1.15,
       },
       paint: {
-        // --color-text-1. This label is the overlay's PRIMARY content, not
-        // an annotation beside a pin: it is the only place the temperature
-        // and altitude appear. It first shipped copying resorts-label's
-        // muted #5a5a5a at 10px, which is the right treatment for a name
-        // sitting next to a solid pin and the wrong one for two lines of
-        // figures that are the whole point of the layer — on the pale
-        // winter basemap they were close to unreadable.
+        // --color-text-1. The caption is the overlay's own content rather
+        // than an annotation beside a pin, so it does not take
+        // resorts-label's muted #5a5a5a: that is the right treatment for a
+        // name sitting next to a solid pin and the wrong one for the only
+        // figure the layer carries. On the pale winter basemap the muted
+        // grey was close to unreadable.
         'text-color': '#1a1916',
         'text-halo-color': 'rgba(255,255,255,0.95)',
-        'text-halo-width': 1.8,
+        'text-halo-width': 2.2,
       },
     });
     raiseMarkerLayers();
@@ -3486,9 +3696,10 @@
       'community-reports-cluster-count',
       'community-reports-point',
     ],
-    // SNOW-761: one symbol layer, not a pin+label pair — the icon and the
-    // label are two data-driven properties of the same symbol
-    // ('icon-image' / 'text-field'), unlike favourites and resorts.
+    // SNOW-761: one symbol layer, not a pin+label pair — the condition
+    // glyph is an inline `image` section inside `text-field`, so there is
+    // a single layer to toggle rather than the pin+label pairs favourites
+    // and resorts use.
     weather: ['weather-point'],
     // SNOW-687: the coloured line FIRST and the casing second — deliberately
     // the inverse of the order installRoutesLayer adds them in, where the
@@ -6279,6 +6490,28 @@
         return;
       }
 
+      // SNOW-761: a weather symbol owns its tap the same way a marker does,
+      // and is checked in the same place — before the region fill, so a
+      // tap on a symbol does not also select the region under it. The
+      // symbol IS the tap target: `icon-text-fit` is gone, so the hit box
+      // is the label's own extent, which is what the user aimed at.
+      //
+      // `collapseToLowest` means the feature under the cursor may stand for
+      // several stations. Its `location_id` is the one that survived the
+      // collapse — the lowest — which is the reading the symbol is drawing,
+      // so the sheet answers for the same place the map showed.
+      if (map.getLayer('weather-point')) {
+        const weatherHit = map.queryRenderedFeatures(e.point, {
+          layers: ['weather-point'],
+        })[0];
+        if (weatherHit) {
+          window.pwaWeatherDetail?.open(
+            weatherHit.properties.location_id, currentDisplayedDate,
+          );
+          return;
+        }
+      }
+
       // No marker claimed the tap. Resolve region intent from the fill layer
       // and the resort pins. SNOW-235: both are lazy-installed, so filter to
       // present layers — queryRenderedFeatures throws on an unknown layer id.
@@ -6331,6 +6564,13 @@
 
     map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'resorts-pin', () => { map.getCanvas().style.cursor = ''; });
+
+    // SNOW-761: the weather symbol is tappable, so say so. Bound
+    // unconditionally like the rest — MapLibre tolerates a handler on a
+    // layer that does not exist yet and starts delivering when it does,
+    // which is what the lazily-installed weather layer needs.
+    map.on('mouseenter', 'weather-point', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'weather-point', () => { map.getCanvas().style.cursor = ''; });
 
     map.on('mouseenter', 'favourites-pin', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'favourites-pin', () => { map.getCanvas().style.cursor = ''; });

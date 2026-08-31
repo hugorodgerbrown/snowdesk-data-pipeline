@@ -32,11 +32,15 @@
  *      reader, not about the day. The server-rendered panels, which show
  *      one place at a time, still make the day/night call (`is_day`).
  *
- *   2. THE LABEL CARRIES THE ALTITUDE. A weather symbol on a mountain map
- *      is meaningless without the height it was read at: 2° at 1500 m and
- *      2° at 3000 m are different weeks. `formatLabel` puts the elevation
- *      under the temperature. A location with no resolved elevation falls
- *      back to the temperature alone rather than printing a gap.
+ *   2. THE LABEL IS THE SYMBOL, CAPTIONED. The WMO condition icon leads and
+ *      the temperature sits under it; the station's ground elevation is
+ *      deliberately absent. It was there — a symbol on a mountain map does
+ *      mean less without the height it was read at — but every marker
+ *      carrying one made the map unreadable at any density, and elevation
+ *      earns its place on a resort page showing three points at three
+ *      heights rather than here. (It is `Location.elevation_m`, not the
+ *      freezing level, which has never been on the map.) Elevation still
+ *      drives the cluster collapse below.
  *
  *   3. CLUSTERING COLLAPSES TO THE LOWEST STATION, and it is a pure
  *      transform here rather than MapLibre `clusterProperties`. MapLibre's
@@ -60,11 +64,19 @@
  *     WMO weather interpretation code → Meteocons SVG basename, e.g.
  *     `'light_snow-day.svg'`. Unknown codes fall back to `'cloudy.svg'`,
  *     matching the server's own neutral default.
- *   formatLabel(tmax, elevationM)
- *     The day's max temperature and the station's altitude → the symbol
- *     layer's text-field, e.g. `'4°\n3328 m'`. Returns `''` when neither
- *     is a finite number, so MapLibre draws no label rather than a stray
- *     character.
+ *   formatElevation(elevationM)
+ *     The station's ground elevation as the label's second line.
+ *
+ *   formatElevationBreak(elevationM) / elevationMarkFor(elevationM)
+ *     The line break before it, and the id of the mark that says the
+ *     metre value is a height — both empty when there is no elevation.
+ *     Separate properties because a `format` section cannot be inserted
+ *     into the middle of another one; see formatElevationBreak.
+ *
+ *   formatTemp(tmax)
+ *     The day's max temperature → the label's caption, e.g. `'4°'`.
+ *     Returns `''` when there is no finite reading, so MapLibre draws the
+ *     symbol alone rather than a stray character.
  *   projectFeatureForDate(feature, dateKey)
  *   projectFeatureCollectionForDate(featureCollection, dateKey)
  *     Project the `days` dict onto flat `icon`/`label` properties for one
@@ -124,6 +136,12 @@
   var NO_DAY_NIGHT_BUCKET = 'cloudy';
   var DEFAULT_BUCKET = 'cloudy';
 
+  // The registered MapLibre image id of the elevation mark. Declared here
+  // rather than in map.js because the projection below writes it into every
+  // feature and the layer reads it back — the two have to agree on the
+  // string, and this module is the one both of them already import.
+  var ELEVATION_MARK_ID = 'weather-elevation-mark';
+
   /**
    * WMO weather interpretation code → Meteocons SVG basename.
    *
@@ -139,25 +157,68 @@
   }
 
   /**
-   * The day's max temperature and the station's altitude → symbol label.
+   * The temperature alone, as its own label line.
    *
-   * Two lines: the temperature, then the elevation. Either half is omitted
-   * when it is not a finite number, and the result is `''` when both are —
-   * MapLibre renders an empty label rather than a stray character.
+   * Its own field rather than part of a combined string, so the layer can
+   * hold it down with `font-scale` while the inline symbol grows with
+   * `text-size`. That is how the icon leads without a bold face — one is
+   * not guaranteed by whatever glyph endpoint the active basemap uses.
    *
-   * @param {number|null|undefined} tmax Daily max temperature, °C.
-   * @param {number|null|undefined} elevationM Station elevation, metres.
-   * @returns {string}
+   * @param {number|null|undefined} tmax Day's max temperature, °C.
+   * @returns {string} e.g. `'21°'`, or `''` when there is no reading.
    */
-  function formatLabel(tmax, elevationM) {
-    var lines = [];
-    if (typeof tmax === 'number' && Number.isFinite(tmax)) {
-      lines.push(Math.round(tmax) + '°');
-    }
-    if (typeof elevationM === 'number' && Number.isFinite(elevationM)) {
-      lines.push(Math.round(elevationM) + ' m');
-    }
-    return lines.join('\n');
+  function formatTemp(tmax) {
+    if (typeof tmax !== 'number' || !Number.isFinite(tmax)) return '';
+    return Math.round(tmax) + '°';
+  }
+
+  /**
+   * The station's ground elevation, as the label's second line.
+   *
+   * NO LEADING NEWLINE — see `formatElevationBreak`, which owns it. The
+   * break used to live in this string, until the elevation gained a mark
+   * that has to sit BETWEEN the break and the value; a section cannot be
+   * inserted into the middle of another section's text.
+   *
+   * @param {number|null|undefined} elevationM Station elevation, metres.
+   * @returns {string} e.g. `'3328 m'`, or `''` when unresolved.
+   */
+  function formatElevation(elevationM) {
+    if (typeof elevationM !== 'number' || !Number.isFinite(elevationM)) return '';
+    return Math.round(elevationM) + ' m';
+  }
+
+  /**
+   * The line break before the elevation — its own label property.
+   *
+   * A `format` expression is fixed at style time: there is no way to add or
+   * drop a section per feature, so every section renders for every symbol
+   * and the only lever is what each one CONTAINS. A station with no
+   * resolved elevation therefore has to contribute an empty break, an
+   * empty mark and an empty value — three empty strings, which render as
+   * nothing — rather than three sections the layer could omit. Put the
+   * break in the value instead and the empty case leaves a blank second
+   * line, which shifts the whole label off the point it is labelling.
+   *
+   * @param {number|null|undefined} elevationM Station elevation, metres.
+   * @returns {string} `'\n'`, or `''` when there is no elevation to break for.
+   */
+  function formatElevationBreak(elevationM) {
+    return formatElevation(elevationM) === '' ? '' : '\n';
+  }
+
+  /**
+   * The mark that says the metre value is a HEIGHT, not a distance.
+   *
+   * Returns an image id for the layer's inline `image` section, or `''`
+   * when there is no elevation — an empty id draws nothing, the same
+   * mechanism `icon` uses for a day with no reading.
+   *
+   * @param {number|null|undefined} elevationM Station elevation, metres.
+   * @returns {string} The registered image id, or `''`.
+   */
+  function elevationMarkFor(elevationM) {
+    return formatElevation(elevationM) === '' ? '' : ELEVATION_MARK_ID;
   }
 
   /**
@@ -174,7 +235,10 @@
     var day = days[dateKey] || null;
     var newProperties = Object.assign({}, properties, {
       icon: day ? iconForCode(day.code) : '',
-      label: day ? formatLabel(day.tmax, properties.elevation_m) : '',
+      label_temp: day ? formatTemp(day.tmax) : '',
+      label_break: day ? formatElevationBreak(properties.elevation_m) : '',
+      elev_mark: day ? elevationMarkFor(properties.elevation_m) : '',
+      label_elev: day ? formatElevation(properties.elevation_m) : '',
     });
     return Object.assign({}, feature, { properties: newProperties });
   }
@@ -337,7 +401,11 @@
 
   window.pwaWeatherCore = Object.freeze({
     iconForCode: iconForCode,
-    formatLabel: formatLabel,
+    formatTemp: formatTemp,
+    formatElevation: formatElevation,
+    formatElevationBreak: formatElevationBreak,
+    elevationMarkFor: elevationMarkFor,
+    ELEVATION_MARK_ID: ELEVATION_MARK_ID,
     projectFeatureForDate: projectFeatureForDate,
     projectFeatureCollectionForDate: projectFeatureCollectionForDate,
     forecastWindowDates: forecastWindowDates,
