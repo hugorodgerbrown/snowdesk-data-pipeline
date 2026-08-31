@@ -116,6 +116,7 @@ from apps.regions.models import MicroRegion, Resort
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
+from apps.weather.services.weather_chart import build_forecast_chart
 from apps.weather.services.weather_display import (
     ForecastPanel,
     WeatherDisplay,
@@ -4310,6 +4311,104 @@ def _resort_weather_sections(
             )
         )
     return sections
+
+
+def _location_forecast_context(
+    location: Location, observed_on: datetime.date, now: datetime.datetime
+) -> dict[str, Any]:
+    """Assemble the full forecast for one location on one day.
+
+    Shared by nothing yet, but written as its own function because the shape
+    it returns is the answer to "what does a full forecast consist of" and
+    the view around it is otherwise all HTTP.
+
+    The chart is built from the panel rather than from the row: it plots the
+    daily bounds the panel already resolved, so deriving it twice would let
+    the two disagree about which days made the cut.
+
+    Args:
+        location: The location to describe.
+        observed_on: The calendar day to read.
+        now: The reference instant for each day/night icon decision.
+
+    Returns:
+        A dict of ``weather``, ``display``, ``panel`` and ``chart``. Every
+        value is ``None`` when the location has no row for the day.
+
+    """
+    weather = Weather.objects.filter(location=location, observed_on=observed_on).first()
+    panel = build_point_forecast_panel(weather, now)
+    return {
+        "weather": weather,
+        "display": build_weather_display(weather, now),
+        "panel": panel,
+        "chart": build_forecast_chart(panel),
+    }
+
+
+def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
+    """Render the full forecast for one location.
+
+    THE PAGE THE MAP CARD HANDS OFF TO. Tapping a weather symbol opens a
+    card with today's conditions and a "View forecast" link; this is what
+    that link opens. It carries what the card deliberately does not — the
+    outlook chart, the seven-day strip, and the hourly detail at full
+    resolution.
+
+    It exists because most weather symbols had nowhere to point. A location
+    linked to a resort could hand off to the resort page, but 461 of the
+    estate's 540 public locations are ``MicroRegion`` centroids with no page
+    of their own, so the link would have been absent on the large majority
+    of taps.
+
+    **Public estate only.** ``Location.objects.public()`` is the same filter
+    the map feed and the card use. A location outside it has no symbol to
+    tap, and — the reason this matters — ``public()`` excludes the locations
+    a ``Favourite`` reaches, so without it a guessed id would expose the
+    name, coordinates and elevation of a stranger's private pin.
+
+    ``date`` is an optional ISO-8601 query parameter so the page can follow
+    the day the map was showing. A malformed value falls back to today
+    rather than 400-ing.
+
+    Args:
+        request: The incoming HTTP request.
+        location_id: The Location's primary key.
+
+    Returns:
+        The rendered page.
+
+    Raises:
+        Http404: The id is unknown, or outside the public estate.
+
+    """
+    location = get_object_or_404(Location.objects.public(), pk=location_id)
+
+    observed_on = timezone.localdate()
+    raw_date = request.GET.get("date", "")
+    if raw_date:
+        try:
+            observed_on = datetime.date.fromisoformat(raw_date)
+        except ValueError:
+            logger.debug("location_weather: ignoring unparseable date %r", raw_date)
+
+    resort_location = location.resort_locations.select_related("resort").first()
+    region = location.micro_regions.first()
+    context: dict[str, Any] = {
+        "location": location,
+        # Same precedence as the map card's heading: a curated point names
+        # itself, an anonymous one is named by what it stands for, and the
+        # coordinates are never a heading.
+        "heading": location.name
+        or (resort_location.resort.name if resort_location else None)
+        or (region.name if region else None)
+        or str(_("Weather station")),
+        "resort": resort_location.resort if resort_location else None,
+        "region": region,
+        "observed_on": observed_on,
+        **_location_forecast_context(location, observed_on, timezone.now()),
+    }
+    return render(request, "public/location_weather.html", context)
 
 
 def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpResponse:

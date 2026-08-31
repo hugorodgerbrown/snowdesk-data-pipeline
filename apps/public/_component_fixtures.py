@@ -27,7 +27,12 @@ from django import forms
 from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
-from apps.weather.services.weather_display import weather_icon_filename
+from apps.weather.services.weather_chart import build_forecast_chart
+from apps.weather.services.weather_display import (
+    ForecastPanel,
+    ForecastPanelDay,
+    weather_icon_filename,
+)
 
 # String constants for elevation bound type — mirror ``apps.public.views`` so the
 # template filter (``elevation_icon``) sees the same strings without coupling
@@ -3057,3 +3062,129 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
 
 
 FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_panel_variants()
+
+
+def _chart_panel(
+    anchor: datetime.date, bounds: tuple[tuple[float, float], ...]
+) -> ForecastPanel:
+    """Build a ForecastPanel carrying one column per bounds pair.
+
+    The chart reads only ``weekday_label``, ``temp_max`` and ``temp_min``,
+    but ``ForecastPanelDay`` is a total TypedDict — a dict of just those
+    three is not one, and casting would be a claim about the contract
+    rather than a use of it. The remaining fields are filled with ordinary
+    values that no part of the chart looks at.
+
+    Args:
+        anchor: The first day of the window.
+        bounds: One ``(temp_max, temp_min)`` pair per consecutive day.
+
+    Returns:
+        A panel the chart builder accepts.
+
+    """
+    days = [
+        ForecastPanelDay(
+            date=anchor + datetime.timedelta(days=index),
+            weekday_label=(anchor + datetime.timedelta(days=index)).strftime("%a"),
+            icon_bucket="cloudy",
+            icon_filename="cloudy.svg",
+            condition_label="Overcast",
+            temp_max=temp_max,
+            temp_min=temp_min,
+            snowfall_sum=None,
+            freezing_level_height=None,
+            # Neither is read by the chart; ForecastPanelDay is total.
+            wind_speed_max=None,
+            wind_bearing=None,
+            hourly=[],
+        )
+        for index, (temp_max, temp_min) in enumerate(bounds)
+    ]
+    return ForecastPanel(days=days)
+
+
+def _build_forecast_chart_variants() -> tuple[dict[str, Any], ...]:
+    """Build the forecast-chart variants.
+
+    Four shapes, chosen for the decisions the geometry actually makes rather
+    than for visual variety:
+
+      1. A midwinter week that CROSSES freezing — the only case that draws
+         the 0 °C reference line, and the case the chart is most useful in.
+      2. A summer week wholly above it, where that line is deliberately
+         absent rather than pinned to the plot floor.
+      3. A flat week, which has no range of its own to scale against — the
+         padding on both ends is what keeps the scale from collapsing.
+      4. The two-day minimum. One day fewer returns ``None`` and renders
+         nothing, which is why this variant sits at the boundary.
+
+    Returns:
+        The variant tuple.
+
+    """
+    anchor = datetime.date(2026, 1, 12)
+    return (
+        {
+            "caption": "A week crossing zero — the 0° reference line is drawn",
+            "solo": True,
+            "context": {
+                "chart": build_forecast_chart(
+                    _chart_panel(
+                        anchor,
+                        (
+                            (-1.0, -8.0),
+                            (-2.0, -9.0),
+                            (0.0, -6.0),
+                            (3.0, -4.0),
+                            (6.0, 1.0),
+                            (4.0, -1.0),
+                            (2.0, -5.0),
+                        ),
+                    )
+                )
+            },
+        },
+        {
+            "caption": "Wholly above freezing — no zero line",
+            "solo": True,
+            "context": {
+                "chart": build_forecast_chart(
+                    _chart_panel(
+                        datetime.date(2026, 7, 6),
+                        (
+                            (18.0, 9.0),
+                            (21.0, 11.0),
+                            (24.0, 13.0),
+                            (22.0, 12.0),
+                            (19.0, 10.0),
+                        ),
+                    )
+                )
+            },
+        },
+        {
+            "caption": "A flat week — the scale is spread to a floor, not collapsed",
+            "solo": True,
+            "context": {
+                "chart": build_forecast_chart(
+                    _chart_panel(
+                        anchor,
+                        ((2.0, 2.0), (2.0, 2.0), (2.0, 2.0), (2.0, 2.0)),
+                    )
+                )
+            },
+        },
+        {
+            "caption": "Two days — the shortest window that still draws",
+            "solo": True,
+            "context": {
+                "chart": build_forecast_chart(
+                    _chart_panel(anchor, ((-1.0, -7.0), (4.0, -2.0)))
+                )
+            },
+        },
+    )
+
+
+FORECAST_CHART_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_chart_variants()

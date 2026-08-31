@@ -1,0 +1,116 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_weather_detail.html — weather-sheet body (SNOW-761).
+
+Server-rendered by ``apps.public.api.weather_detail`` and injected into the
+map's weather sheet by ``static/js/map_weather_detail.js`` when a condition
+symbol on the map is tapped.
+
+THIS IS A CARD, NOT A PAGE. It briefly carried the outlook chart, the
+seven-day strip and per-day hourly tables; that was too much for a surface
+reached by tapping a symbol, and it was the wrong place for all three. What
+is left answers one question — what is it doing there, now — and hands the
+rest to the full forecast behind a link.
+
+The trim is also what the payload wanted: the hourly tables alone were 79%
+of this response.
+
+Content, in the order a skier reads it:
+  1. Who and when — location name, elevation, the day being shown.
+  2. Today's conditions — the symbol, the high/low, and the figures that
+     change a plan (freezing level, snowfall, wind, precipitation chance).
+  3. A link to the full forecast, when the location has one.
+
+Nothing here is user-supplied: a Location's name is curated and a Weather
+row comes from Open-Meteo, so there is no untrusted text on this surface.
+
+Context:
+    location   — locations.Location the reading belongs to.
+    heading    — str: the location's name, or a coordinate fallback.
+    weather    — weather.Weather row for the requested date, or None.
+    display    — WeatherDisplay for that row, or None
+                 (apps.weather.services.weather_display.build_weather_display).
+    target_date — datetime.date the sheet was opened for.
+    forecast_url — str: URL of the full forecast for this location, or "".
+                 Empty for a location with no page of its own — see the
+                 view. The link is omitted rather than pointed somewhere
+                 that is not a forecast.
+{% endcomment %}
+<div class="flex flex-col min-h-0 flex-1" data-testid="weather-detail" data-location-id="{{ location.pk }}">
+    {% trans "Close" as weather_sheet_close_label %}
+    {% include "includes/_sheet_header.html" with title=heading close_label=weather_sheet_close_label close_action="dismiss" title_class="text-lg font-bold" %}
+    <div class="flex-1 overflow-y-auto min-h-0 px-4 pb-4 space-y-4">
+        {# 1. Who and when. #}
+        <p class="text-xs text-text-3" data-testid="weather-detail-meta">
+            {% if location.elevation_m is not None %}
+                {{ location.elevation_m|floatformat:0 }}&nbsp;m &middot;
+            {% endif %}
+            {{ target_date|date:"l j F Y" }}
+        </p>
+        {% if display %}
+            {# 2. Today. The symbol at a size worth having travelled to see. #}
+            <div class="flex items-center gap-3" data-testid="weather-detail-today">
+                <img
+                    src="{% static 'icons/weather/'|add:display.icon_filename %}"
+                    class="w-14 h-14 shrink-0"
+                    alt="{{ display.condition_label }}"
+                >
+                <div class="min-w-0">
+                    <p class="text-2xl text-text-1 leading-none">
+                        {% if weather.temperature_2m_max is not None %}
+                            {{ weather.temperature_2m_max|floatformat:0 }}&deg;<span
+                                class="text-base text-text-3"
+                            >{% if weather.temperature_2m_min is not None %}&thinsp;/&thinsp;{{ weather.temperature_2m_min|floatformat:0 }}&deg;{% endif %}</span>
+                        {% else %}
+                            &mdash;
+                        {% endif %}
+                    </p>
+                    <p class="text-sm text-text-2 mt-1">{{ display.condition_label }}</p>
+                </div>
+            </div>
+            {# The figures that change a plan. Each renders only when the    #}
+            {# provider gave one — a dash here would be four dashes in a row #}
+            {# on a summer day, which reads as a broken panel rather than as #}
+            {# an absent measurement.                                        #}
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-b border-border py-3">
+                {% if weather.freezing_level_height is not None %}
+                    <div class="flex items-baseline justify-between gap-2">
+                        <dt class="text-xs text-text-3">{% trans "Freezing level" %}</dt>
+                        <dd class="text-sm text-text-1">{{ weather.freezing_level_height|floatformat:0 }}&nbsp;m</dd>
+                    </div>
+                {% endif %}
+                {% if weather.snowfall_sum is not None %}
+                    <div class="flex items-baseline justify-between gap-2">
+                        <dt class="text-xs text-text-3">{% trans "Snowfall" %}</dt>
+                        <dd class="text-sm text-text-1">{{ weather.snowfall_sum|floatformat:"-1" }}&nbsp;cm</dd>
+                    </div>
+                {% endif %}
+                {% if weather.wind_speed_10m_max is not None %}
+                    <div class="flex items-baseline justify-between gap-2">
+                        <dt class="text-xs text-text-3">{% trans "Wind" %}</dt>
+                        <dd class="text-sm text-text-1">{{ weather.wind_speed_10m_max|floatformat:0 }}&nbsp;km/h</dd>
+                    </div>
+                {% endif %}
+                {% if weather.precipitation_probability_max is not None %}
+                    <div class="flex items-baseline justify-between gap-2">
+                        <dt class="text-xs text-text-3">{% trans "Chance of precip." %}</dt>
+                        <dd class="text-sm text-text-1">{{ weather.precipitation_probability_max }}%</dd>
+                    </div>
+                {% endif %}
+            </dl>
+            {# 3. Out to the full forecast — the outlook, the day strip and #}
+            {# the hourly detail all live there rather than here.            #}
+            {% if forecast_url %}
+                {% trans "View forecast →" as weather_forecast_cta %}
+                {% include "includes/_button.html" with label=weather_forecast_cta href=forecast_url variant="secondary" size="compact" %}
+            {% endif %}
+        {% else %}
+            {# A past date before the backfill, or a location fetched after   #}
+            {# the day it is being asked about. Say which, rather than        #}
+            {# showing an empty panel that reads as a failure.                #}
+            <p class="text-sm text-text-2" data-testid="weather-detail-empty">
+                {% trans "No weather was recorded here for this day." %}
+            </p>
+        {% endif %}
+    </div>
+</div>
