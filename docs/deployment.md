@@ -214,6 +214,15 @@ to measure by session continuity.
    is a tracked file rather than something derived. `bin/cut-release`
    refuses to release when it has not moved, so a forgotten bump stops the
    release rather than shipping a menu that names the previous one.
+
+   **Name only one release number in that commit.** Render's deploy list
+   renders the subject and body flattened onto a single line, so a bump
+   whose body opens by describing what the *previous* release shipped
+   produces "Bump VERSION to 27 … Release 26 shipped …" against the live
+   deploy, and a reader cannot tell which version is running. That happened
+   on 2026-08-30. Keep the body to why this bump exists; what the last
+   release contained belongs in the PR description or the GitHub Release,
+   both of which are read on their own.
 3. Fast-forward `release` to `main`. Use the helper, which lists the
    `SNOW-xx` tickets that are on `main` but not yet on `release` and then
    advances the ref:
