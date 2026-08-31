@@ -13,6 +13,7 @@ Covers:
 """
 
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError
 from django.db.models import ProtectedError
 
@@ -24,6 +25,7 @@ from tests.factories import (
     MicroRegionFactory,
     ResortFactory,
     ResortLocationFactory,
+    UserFactory,
 )
 
 
@@ -392,3 +394,54 @@ class TestLocationQuerySetPublic:
         MicroRegionFactory.create(centroid_location=location)
 
         assert list(Location.objects.public()) == [location]
+
+
+@pytest.mark.django_db
+class TestLocationQuerySetVisibleTo:
+    """Tests for ``LocationQuerySet.visible_to()`` — what one reader may open.
+
+    ``public()`` widened by the reader's OWN favourites, and nobody
+    else's (SNOW-783). The favourite card links to the forecast page for
+    the pin it describes, and that pin is private by construction — so
+    the owner must get through while a stranger must not.
+    """
+
+    def test_a_public_location_is_visible_to_anyone(self) -> None:
+        """The curated estate needs no account."""
+        link = ResortLocationFactory.create()
+
+        assert list(Location.objects.visible_to(AnonymousUser())) == [link.location]
+
+    def test_my_own_favourite_pin_is_visible_to_me(self) -> None:
+        """The owner following their card's forecast link gets through."""
+        owner = UserFactory.create()
+        favourite = FavouriteFactory.create(user=owner)
+
+        assert favourite.location in Location.objects.visible_to(owner)
+
+    def test_someone_elses_favourite_pin_is_not_visible_to_me(self) -> None:
+        """The privacy contract is about strangers, and it holds."""
+        favourite = FavouriteFactory.create(user=UserFactory.create())
+        stranger = UserFactory.create()
+
+        assert favourite.location not in Location.objects.visible_to(stranger)
+        assert favourite.location not in Location.objects.visible_to(AnonymousUser())
+
+    def test_it_never_widens_beyond_active(self) -> None:
+        """Whatever a reader sees, we already pay to fetch it."""
+        owner = UserFactory.create()
+        FavouriteFactory.create(user=owner)
+        ResortLocationFactory.create()
+        FieldObservationFactory.create()
+
+        visible = set(Location.objects.visible_to(owner))
+        assert visible <= set(Location.objects.active())
+
+    def test_a_location_reachable_two_ways_appears_once(self) -> None:
+        """A curated place the reader has also favourited joins twice."""
+        owner = UserFactory.create()
+        location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
+        FavouriteFactory.create(user=owner, location=location)
+
+        assert list(Location.objects.visible_to(owner)) == [location]

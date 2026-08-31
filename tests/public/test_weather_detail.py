@@ -273,7 +273,7 @@ class TestCard:
 class TestForecastPage:
     """The destination: everything the card left out."""
 
-    def test_renders_the_chart_the_strip_and_the_hourly_detail(
+    def test_renders_the_outlook_the_strip_and_the_hourly_chart(
         self, client: Client, resort_location: Location
     ) -> None:
         """All three live here, which is what makes the card's link worth following."""
@@ -283,23 +283,23 @@ class TestForecastPage:
         html = response.content.decode()
         assert 'data-testid="forecast-chart"' in html
         assert "location-weather-forecast-day" in html
-        assert "location-weather-forecast-hourly-list" in html
+        assert 'data-testid="location-weather-hourly' in html
 
-    def test_keeps_the_hourly_series_unthinned(
+    def test_the_hourly_table_is_gone(
         self, client: Client, resort_location: Location
     ) -> None:
-        """A destination shows all 24 hours; the card would show 8.
+        """SNOW-786: the chart replaced the 24-row table, it did not join it.
 
-        Three days carry a series here — the row's OWN day, out of the
-        ``hourly`` column, plus the two forward days whose ``forecast[]``
-        entries have one — so a full-resolution render is 72 rows.
-        Thinning is a decision the card makes for itself.
+        Both answered "what happens through this day"; the table existed
+        only because there was no chart. Rendering both would be the
+        duplication this ticket removed, at 24 rows a day.
         """
         html = client.get(
             _page_url(resort_location), {"date": TODAY.isoformat()}
         ).content.decode()
 
-        assert html.count('<span class="font-mono text-text-3 w-12 shrink-0">') == 72
+        assert "-hourly-list" not in html
+        assert '<span class="font-mono text-text-3 w-12 shrink-0">' not in html
 
     def test_sets_its_own_page_metadata(
         self, client: Client, resort_location: Location

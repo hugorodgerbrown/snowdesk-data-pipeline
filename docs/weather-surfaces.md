@@ -20,17 +20,35 @@ night palette; SNOW-762 removed it along with the rest of the estate, and
 SNOW-761 rebuilt weather on a different shape. Nothing below is a
 restoration.
 
-## The four surfaces
+## The surfaces
 
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
-| Bulletin masthead ([`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html)) | `MicroRegion.centroid_location` | the page's date |
 | Resort page ([`apps/public/templates/public/resort.html`](../apps/public/templates/public/resort.html)) | every `ResortLocation.location` | today |
 | Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) | `Favourite.location` | today |
+| Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?d=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
 
-The first three are server-rendered and share two partials; the fourth is a
-GeoJSON feed and a MapLibre symbol layer.
+The first four are server-rendered; the map overlay is a GeoJSON feed and a
+MapLibre symbol layer, plus a tap sheet
+([`apps/public/templates/public/partials/_weather_detail.html`](../apps/public/templates/public/partials/_weather_detail.html))
+that hands off to the location forecast page.
+
+**The bulletin masthead is not on this list, and that is the point
+(SNOW-784).** It carried a row read off `MicroRegion.centroid_location`
+until SNOW-784 removed it: a micro-region spans thousands of metres of
+vertical, so one centroid point presented under a regional heading claims
+more than it knows. The bulletin's own weather — `weatherReview`,
+`weatherForecast`, `tendency` — is the forecaster's pan-regional prose and
+is unaffected; see the closing note in this file.
+
+**Each component appears once (SNOW-782).** The one-day row
+(`_weather_panel.html`) goes wherever a location is named; the week
+(`_forecast_panel.html`, `_forecast_chart.html`) and the day
+(`_hourly_chart.html`) belong to the location forecast page alone. A
+surface that names a location shows the day and links to the rest — the
+resort page and the favourite card both drew the whole week inline until
+SNOW-783, the resort page once per curated altitude.
 
 ## The read path
 
@@ -136,16 +154,49 @@ the palette in place.
 
 ### `includes/_forecast_panel.html`
 
-The week ahead: a scrolling day strip, then one
-`includes/_collapsible_panel.html` per day that carries an hourly series,
-bodied by `includes/_forecast_hourly_body.html`.
+The week ahead: a scrolling day strip, one column per day.
 
-**`hourly` is optional per forward day.** Only the first few entries carry
-one (`HOURLY_DAYS` in
+It carried a second part — one `includes/_collapsible_panel.html` per day
+holding a 24-row table, bodied by `_forecast_hourly_body.html` — until
+SNOW-786 deleted both. That table and `includes/_hourly_chart.html`
+answer the same question, and the table only existed because there was no
+chart; the chart replaced it rather than joining it.
+
+**`hourly` is still optional per forward day**, and now it decides whether
+a chart is drawn rather than whether a collapsible is. Only the first few
+entries carry one (`HOURLY_DAYS` in
 [`apps/weather/services/fetch.py`](../apps/weather/services/fetch.py));
 beyond that the key is **absent**, not null. `ForecastDay.hourly` is
-`NotRequired` for exactly that reason, and both the service and the
-template test for presence rather than assuming.
+`NotRequired` for exactly that reason.
+
+The strip is also the **day selector** for the hourly charts beneath it
+(SNOW-787), when the page passes a `selector_name`. Only days carrying an
+hourly series become controls; the rest are inert columns with no input at
+all, because a disabled radio invites a click that does nothing.
+
+**The reveal is CSS-only and hand-written, twice, for the same reason.**
+Tailwind's `peer-checked:` compiles to the *general* sibling combinator, so
+a checked input matches every later sibling — the panel stack would show
+the selected chart and every one after it, and a flat strip would highlight
+the selected column and every one after it. The fix is the same on both
+sides: bound the `~`. Each input/label pair gets its own wrapper, and the
+cross-container reveal is written out per day index in
+[`src/css/main.css`](../src/css/main.css). `tests/public/test_weather_surfaces.py`
+asserts both structures, because pytest renders HTML and never evaluates
+the CSS that depends on it.
+
+### `includes/_hourly_chart.html`
+
+One day, hour by hour: three charts on one x-axis — temperature,
+precipitation and wind — built by
+[`apps/weather/services/hourly_chart.py`](../apps/weather/services/hourly_chart.py)
+(SNOW-723, placed by SNOW-786). Temperature and precipitation are hourly;
+wind is three-hourly, because a gust is a peak over a span and a bearing
+is only meaningful averaged over one.
+
+Its wind arrows point at the **source**, and since SNOW-785 so does
+`_weather_panel.html` — the two share the location forecast page, and
+`tests/public/test_weather_tags.py` asserts they cannot drift apart.
 
 ## The map overlay
 

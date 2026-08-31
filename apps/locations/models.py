@@ -31,8 +31,13 @@ down in ``docs/locations.md``.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from django.db import models
+
+if TYPE_CHECKING:
+    from django.contrib.auth.base_user import AbstractBaseUser
+    from django.contrib.auth.models import AnonymousUser
 
 from apps.core.models import BaseModel
 
@@ -148,6 +153,37 @@ class LocationQuerySet(models.QuerySet["Location"]):
 
         """
         return self.filter(_CURATED | _FAVOURITED).distinct()
+
+    def visible_to(
+        self, user: "AbstractBaseUser | AnonymousUser"
+    ) -> "LocationQuerySet":
+        """Return the locations this user may open a page for.
+
+        Every ``public()`` location, plus the ones this user's own
+        ``Favourite`` rows reach — and nobody else's (SNOW-783).
+
+        The forecast page is reached from two places with different
+        audiences. The map's weather symbol only ever points at
+        ``public()``, so that path is unchanged. The favourite card points
+        at the pin it is describing, which is private by construction:
+        ``public()`` excludes favourite locations precisely so a public
+        feed cannot leak one. Refusing the owner their own pin's forecast
+        would be reading that contract backwards — the rule is that a
+        *stranger* may not see it.
+
+        Anonymous users get ``public()`` exactly, with no favourite branch
+        to widen it.
+
+        Args:
+            user: The requesting user, authenticated or not.
+
+        Returns:
+            Filtered queryset of locations this user may view.
+
+        """
+        if not user.is_authenticated:
+            return self.public()
+        return self.filter(_CURATED | models.Q(favourites__user=user)).distinct()
 
     def unresolved(self) -> "LocationQuerySet":
         """Return locations still missing their elevation.

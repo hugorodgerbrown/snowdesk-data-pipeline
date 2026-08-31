@@ -440,6 +440,13 @@ class ForecastPanelDay(TypedDict):
     wind_speed_max: float | None  # Daily max sustained wind at 10m, km/h.
     wind_bearing: float | None  # Dominant direction at 10m, degrees FROM.
     hourly: list[HourlyRow]  # That day's hourly rows, or [].
+    # SNOW-787: whether this column can act as the hourly chart's selector.
+    # Presence of an hourly series, NOT truthiness of some other field — a
+    # forward day past HOURLY_DAYS has no 'hourly' key at all, and an empty
+    # list is equally "no detail to select". Kept as its own field rather
+    # than left to the template testing ``day.hourly``, so the rule lives
+    # where it can be tested.
+    selectable: bool
 
 
 class ForecastPanel(TypedDict):
@@ -494,7 +501,8 @@ def _forecast_day_context(
         wind_bearing=entry.get("wind_direction_10m_dominant"),
         # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
         # 'hourly' key at all, so this is a presence check, not a null check.
-        hourly=list(entry.get("hourly") or []),
+        hourly=(hourly := list(entry.get("hourly") or [])),
+        selectable=bool(hourly),
     )
 
 
@@ -534,7 +542,8 @@ def build_point_forecast_panel(
             freezing_level_height=weather.freezing_level_height,
             wind_speed_max=weather.wind_speed_10m_max,
             wind_bearing=weather.wind_direction_10m_dominant,
-            hourly=list(weather.hourly or []),
+            hourly=(lead_hourly := list(weather.hourly or [])),
+            selectable=bool(lead_hourly),
         )
     ]
     for entry in weather.forecast or []:
@@ -547,79 +556,6 @@ def build_point_forecast_panel(
 # ---------------------------------------------------------------------------
 # Map weather feed
 # ---------------------------------------------------------------------------
-
-
-#: Hours between the rows a thinned hourly series keeps. Three is the
-#: granularity most public forecasts publish at, so 00:00, 03:00, 06:00 …
-#: reads as a normal outlook rather than as a series with gaps in it.
-HOURLY_THIN_STEP_HOURS = 3
-
-
-def _hour_of(row: HourlyRow) -> int | None:
-    """Read the local hour out of an hourly row's ``time`` string.
-
-    ``time`` is Open-Meteo's own ISO-8601 local string, not a datetime —
-    the same fixed format ``_forecast_hourly_body.html`` slices for display.
-
-    Args:
-        row: The hourly row to read.
-
-    Returns:
-        The hour as ``0``–``23``, or ``None`` when ``time`` is absent or
-        does not parse.
-
-    """
-    # ``time`` is a required key on the TypedDict, but these rows come out
-    # of a JSON column rather than a constructor — the contract is a
-    # description of what is written, not something the DB enforces. The
-    # KeyError/TypeError arms are for a row that predates or violates it.
-    try:
-        return datetime.datetime.fromisoformat(row["time"]).hour
-    except KeyError, TypeError, ValueError:
-        return None
-
-
-def thin_panel_hourly(
-    panel: ForecastPanel, step_hours: int = HOURLY_THIN_STEP_HOURS
-) -> ForecastPanel:
-    """Return the panel with every day's hourly series thinned by step.
-
-    **This is a payload decision, not a display one.** The hourly rows are
-    ~79% of the map sheet's HTML — 48 rows at roughly 1.2 kB each, because
-    every row carries its own utility classes — and they arrive on a tap,
-    not on a page load. An hour-by-hour series is the right resolution on
-    the resort page, which is a destination; it is the wrong one behind a
-    map symbol, where the question is what the day looks like.
-
-    Rows are kept on the WALL-CLOCK hour rather than by position, so a
-    series that starts late still lines up on 00:00/03:00/06:00 and two
-    days never disagree about which hours they show. A row whose ``time``
-    will not parse is kept rather than dropped — losing a reading is worse
-    than showing one off-step.
-
-    Does not mutate ``panel``: the caller may be holding a panel that other
-    surfaces render at full resolution.
-
-    Args:
-        panel: The panel to thin.
-        step_hours: Keep rows whose hour is a multiple of this. ``1`` or
-            less returns an equivalent panel unthinned.
-
-    Returns:
-        A new :class:`ForecastPanel` whose days carry the kept rows.
-
-    """
-    if step_hours <= 1:
-        return ForecastPanel(days=list(panel["days"]))
-    days: list[ForecastPanelDay] = []
-    for day in panel["days"]:
-        kept = [
-            row
-            for row in day["hourly"]
-            if (hour := _hour_of(row)) is None or hour % step_hours == 0
-        ]
-        days.append(ForecastPanelDay({**day, "hourly": kept}))
-    return ForecastPanel(days=days)
 
 
 class PointWeatherDay(TypedDict):

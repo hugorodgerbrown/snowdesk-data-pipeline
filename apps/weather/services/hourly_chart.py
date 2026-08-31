@@ -116,11 +116,13 @@ draws an arrowhead pointing west, at the weather coming towards you. The
 base glyph points north at zero rotation, so the rotation applied is the
 bearing itself.
 
-**This is the opposite of** ``apps.public.templatetags.weather_tags``'s
-``wind_arrow_rotation``, which adds 180° so its glyph flies downwind, and
-the two conventions must not end up on the same page. See that module's
-docstring for the case it makes; this one follows the design handoff and the
-legend copy it ships with ("arrows point where the wind comes from").
+``apps.public.templatetags.weather_tags``'s ``wind_arrow_rotation`` now
+does the same. It used to add 180° so its glyph flew downwind, which meant
+the two conventions could not share a page — SNOW-785 settled it on the
+source, following this module's design handoff and the legend copy it ships
+with ("arrows point where the wind comes from"). ``tests/public/
+test_weather_tags.py`` asserts the two agree for the same bearing, so they
+cannot drift apart again.
 
 Labels are HTML, positioned by percentage
 -----------------------------------------
@@ -968,8 +970,9 @@ def _direction_arrows(bearings: Sequence[float | None]) -> list[ChartArrow]:
     Build one arrow per block whose bearings had a usable mean.
 
     The rotation is the bearing itself, which points the arrowhead at the
-    weather's source — see this module's docstring for why that differs from
-    the ``wind_arrow_rotation`` filter.
+    weather's source — the same convention the ``wind_arrow_rotation``
+    filter uses since SNOW-785, and ``tests/public/test_weather_tags.py``
+    asserts the two agree.
 
     Args:
         bearings: The per-block mean bearings, ``None`` where there is none.

@@ -5,19 +5,20 @@ templates/includes/bulletin_header.html — bulletin masthead.
 Carries the page's location wayfinding (sub-region eyebrow + region
 ``<h1>``), the page date, and the share button.
 
-SNOW-762 removed the Open-Meteo weather hero this panel used to lead
-with, along with ``_weather_panel.html``, which held both the weather
-band and this wayfinding. SNOW-761 answers the question that comment
-left open: weather returns, but as a **row inside this card** rather than
-as the bucket-coloured hero that used to own the wayfinding. The masthead
-keeps its own ``<h1>``, eyebrow and share button; the weather partial
-renders weather and nothing else, which is what lets the resort page and
-the favourite card include the same one.
+**No Open-Meteo weather here, and that is deliberate (SNOW-784).** A
+point forecast is location-anchored; a bulletin is not. The row this
+masthead carried read the region's ``centroid_location`` — one arbitrary
+point standing in for a micro-region that spans thousands of metres of
+vertical — and presented it under a heading a reader takes to describe
+the whole region. SNOW-762 removed the hero version of it and SNOW-761
+brought it back as a row; SNOW-784 removed the row on the grounds the
+hero should have been removed on.
 
-The panel is absent whenever ``weather_display`` is falsy — no centroid
-location, or a date before the estate's first fetch. That is the ordinary
-case for a historical bulletin and must read as "no panel", never as an
-error.
+The bulletin's own weather is still on the page, further down: the
+forecaster's ``weatherReview`` / ``weatherForecast`` / ``tendency``
+prose in the "Snowpack & Weather" section. That is written for the whole
+region, it is text, and it is a different provider — see
+``docs/weather-surfaces.md``.
 
 Context:
   region_name    — display name for the ``<h1>``; the ``<h1>`` and its
@@ -29,8 +30,6 @@ Context:
   share_region   — object carrying ``region_id``, for the share button's
                    ``data-region-id``.
   share_date     — date for the share button's ``data-date``.
-  weather_display — WeatherDisplay | None for the region centroid on
-                   ``page_date``; the weather row is omitted when falsy.
 {% endcomment %}
 <header
     class="relative bg-card border border-border rounded-card mb-4 px-4 py-4"
@@ -85,10 +84,5 @@ Context:
         >
             <span>{{ page_date|date:"D j M" }}</span>
         </div>
-        {% if weather_display %}
-            <div class="mt-3 pt-3 border-t border-border">
-                {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="bulletin-weather" location_label="" only %}
-            </div>
-        {% endif %}
     </div>
 </header>

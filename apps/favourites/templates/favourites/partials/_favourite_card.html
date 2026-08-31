@@ -194,10 +194,15 @@ has no section heading to rank under either.
             {% translate "Weather — this spot" as weather_eyebrow_label %}
             {% include "includes/_eyebrow.html" with text=weather_eyebrow_label class_extra="mb-2" only %}
             {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="favourite-weather" location_label="" only %}
-            {% if forecast_panel %}
-                <div class="mt-3">
-                    {% include "includes/_forecast_panel.html" with panel=forecast_panel testid_prefix="favourite-forecast" only %}
-                </div>
+            {# SNOW-783: today here, the week behind the link. This card is #}
+            {# already a scrolling surface and a seven-day strip with its   #}
+            {# hourly tables was most of its height.                        #}
+            {% if forecast_url %}
+                <a
+                    class="mt-2 inline-block text-xs text-text-3 underline hover-affordance"
+                    href="{{ forecast_url }}"
+                    data-testid="favourite-card-forecast-link"
+                >{% translate "Full forecast" %}</a>
             {% endif %}
         </div>
     {% endif %}

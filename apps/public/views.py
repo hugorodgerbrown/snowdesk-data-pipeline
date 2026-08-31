@@ -116,9 +116,9 @@ from apps.regions.models import MicroRegion, Resort
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
+from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_chart import build_forecast_chart
 from apps.weather.services.weather_display import (
-    ForecastPanel,
     WeatherDisplay,
     build_point_forecast_panel,
     build_weather_display,
@@ -3244,35 +3244,6 @@ def _build_canonical_url(
 # ---------------------------------------------------------------------------
 
 
-def _weather_for_location(
-    location: Location | None, observed_on: datetime.date
-) -> Weather | None:
-    """Return the ``Weather`` row for one location on one day, or ``None``.
-
-    The read path every weather surface goes through. Keyed on the
-    ``(location, observed_on)`` unique constraint — **never**
-    ``.order_by("-fetched_at").first()``, because today's row is updated in
-    place rather than appended, so ordering by fetch time would return the
-    same row while implying there were several.
-
-    ``None`` is the ordinary answer, not an error case: a location with no
-    centroid link has nowhere to read from, and a historical date predates
-    the estate's first fetch (the SNOW-731 backfill is deferred). Both must
-    degrade to no panel.
-
-    Args:
-        location: The location to read, or ``None``.
-        observed_on: The calendar day the caller is showing.
-
-    Returns:
-        The row, or ``None`` when there is none.
-
-    """
-    if location is None:
-        return None
-    return Weather.objects.for_location(location).on_date(observed_on).first()
-
-
 def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     """
     Look up a MicroRegion with the prefetches the bulletin page needs.
@@ -3286,9 +3257,11 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     ordered-by-name so the "Adjoining regions" section iterates in display
     order without a per-render sort.
 
-    SNOW-761 added ``centroid_location`` to the chain: the masthead's
-    weather panel reads the region's centroid ``Location`` on every
-    pageview, and without it that FK is a second SELECT.
+    ``centroid_location`` is in the chain for ``MicroRegion.centre_point()``,
+    which ``_build_structured_data`` calls for the JSON-LD ``geo`` block on
+    every pageview; without it that FK is a second SELECT. SNOW-761 added it
+    for the masthead's weather panel instead, and SNOW-784 removed that
+    panel — the JOIN is still earned, just by a different reader.
     """
     return get_object_or_404(
         MicroRegion.objects.select_related(
@@ -3870,15 +3843,6 @@ def _bulletin_detail_response(
         else ""
     )
 
-    # SNOW-761: the masthead's weather, read off the region's centroid
-    # Location for the day the page represents. A region with no centroid
-    # link, or a date before the estate's first fetch, yields None and the
-    # partial renders nothing — a historical bulletin simply has no panel.
-    weather_display = build_weather_display(
-        _weather_for_location(region.centroid_location, target_date),
-        timezone.now(),
-    )
-
     if selected is None:
         response = _render_bulletin_page(
             request,
@@ -3889,7 +3853,6 @@ def _bulletin_detail_response(
                 "region_id": region.region_id,
                 "slug": slugify(region.name),
                 "subregion_name": subregion_name,
-                "weather_display": weather_display,
                 "page_date": target_date,
                 "prev_date": prev_date,
                 "next_date": next_date,
@@ -4036,9 +3999,6 @@ def _bulletin_detail_response(
         # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
-        # SNOW-761: the masthead's weather panel — the region centroid's
-        # Weather row for page_date, or None.
-        "weather_display": weather_display,
         # Hero rating badge — morning level + optional subdivision (SNOW-246).
         "morning_rating": morning_rating,
         # Period transition chip — rise/fall beside the hero badge (SNOW-248).
@@ -4231,7 +4191,10 @@ class ResortWeatherSection:
             Mid-mountain / Top), which is not the same as the location's own
             ``kind`` — see ``ResortLocation.role``.
         weather_display: The day's ``WeatherDisplay``, or ``None``.
-        forecast_panel: The multi-day ``ForecastPanel``, or ``None``.
+        forecast_url: The location's own forecast page — where the week and
+            the hourly detail live (SNOW-783). The resort page shows the
+            day per altitude and hands the week off rather than drawing it
+            once per location.
         testid_prefix: Stable per-block prefix for ``data-testid``s.
 
     """
@@ -4240,7 +4203,7 @@ class ResortWeatherSection:
     label: str
     role_label: str
     weather_display: WeatherDisplay | None
-    forecast_panel: ForecastPanel | None
+    forecast_url: str
     testid_prefix: str
 
 
@@ -4306,7 +4269,7 @@ def _resort_weather_sections(
                 label=label,
                 role_label=str(link.get_role_display()),
                 weather_display=build_weather_display(weather, now),
-                forecast_panel=build_point_forecast_panel(weather, now),
+                forecast_url=reverse("public:location_weather", args=[location.pk]),
                 testid_prefix=f"resort-weather-{index}",
             )
         )
@@ -4322,9 +4285,20 @@ def _location_forecast_context(
     it returns is the answer to "what does a full forecast consist of" and
     the view around it is otherwise all HTTP.
 
-    The chart is built from the panel rather than from the row: it plots the
-    daily bounds the panel already resolved, so deriving it twice would let
-    the two disagree about which days made the cut.
+    The outlook chart is built from the panel rather than from the row: it
+    plots the daily bounds the panel already resolved, so deriving it twice
+    would let the two disagree about which days made the cut.
+
+    ``hourly_charts`` is one SNOW-723 chart per **selectable** day, indexed
+    by that day's position in the strip so the two line up (SNOW-787): the
+    strip is the selector and the charts are what it selects between.
+    ``HOURLY_DAYS`` is 2, so in practice this is the row's own day and one
+    forward day; the rest of the week has no ``hourly`` key at all and
+    contributes no chart rather than an empty frame.
+
+    The index is the panel position, not an enumeration of the charts. A
+    day that drops out of the strip for a malformed date would otherwise
+    shift every later chart off its column.
 
     Args:
         location: The location to describe.
@@ -4332,17 +4306,31 @@ def _location_forecast_context(
         now: The reference instant for each day/night icon decision.
 
     Returns:
-        A dict of ``weather``, ``display``, ``panel`` and ``chart``. Every
-        value is ``None`` when the location has no row for the day.
+        A dict of ``weather``, ``display``, ``panel``, ``chart`` and
+        ``hourly_charts``. The first four are ``None`` when the location
+        has no row for the day; ``hourly_charts`` is then empty.
 
     """
     weather = Weather.objects.filter(location=location, observed_on=observed_on).first()
     panel = build_point_forecast_panel(weather, now)
+    hourly_charts = []
+    for index, day in enumerate(panel["days"] if panel else []):
+        if not day["selectable"]:
+            continue
+        chart = build_hourly_chart(
+            day,
+            elevation=location.elevation_m,
+            location_label=location.name or "",
+            now=now,
+        )
+        if chart is not None:
+            hourly_charts.append({"index": index, "chart": chart})
     return {
         "weather": weather,
         "display": build_weather_display(weather, now),
         "panel": panel,
         "chart": build_forecast_chart(panel),
+        "hourly_charts": hourly_charts,
     }
 
 
@@ -4361,11 +4349,15 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
     of their own, so the link would have been absent on the large majority
     of taps.
 
-    **Public estate only.** ``Location.objects.public()`` is the same filter
-    the map feed and the card use. A location outside it has no symbol to
-    tap, and — the reason this matters — ``public()`` excludes the locations
-    a ``Favourite`` reaches, so without it a guessed id would expose the
-    name, coordinates and elevation of a stranger's private pin.
+    **Public estate, plus the reader's own pins.**
+    ``Location.objects.visible_to(request.user)`` is ``public()`` — the
+    same filter the map feed and the card use — widened by the locations
+    this user's own ``Favourite`` rows reach. ``public()`` excludes
+    favourite locations so a public feed cannot leak one, and that holds:
+    a guessed id still cannot expose a *stranger's* pin, its coordinates
+    or its elevation. But the favourite card links here for the week
+    (SNOW-783), and refusing the owner their own pin's forecast would be
+    reading the privacy contract backwards.
 
     ``date`` is an optional ISO-8601 query parameter so the page can follow
     the day the map was showing. A malformed value falls back to today
@@ -4379,10 +4371,13 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
         The rendered page.
 
     Raises:
-        Http404: The id is unknown, or outside the public estate.
+        Http404: The id is unknown, or belongs to neither the public
+            estate nor this user's own favourites.
 
     """
-    location = get_object_or_404(Location.objects.public(), pk=location_id)
+    location = get_object_or_404(
+        Location.objects.visible_to(request.user), pk=location_id
+    )
 
     observed_on = timezone.localdate()
     raw_date = request.GET.get("date", "")

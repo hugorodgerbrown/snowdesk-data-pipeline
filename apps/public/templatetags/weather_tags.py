@@ -9,23 +9,27 @@ compass point for the text label.
 **The bearing is the direction the wind blows FROM.** That is the
 meteorological convention Open-Meteo follows, and it is the one that matters
 here: a wind *from* the west loads east-facing slopes, so the aspect under
-suspicion is the opposite of the number. Both filters below are written
-around that asymmetry, and they resolve it in opposite directions on
-purpose:
+suspicion is what the number already names. **Both filters below report the
+source**, and neither transforms the bearing:
 
 ``wind_arrow_rotation``
-    Rotates the glyph to point **downwind** — the way the air is travelling,
-    which is the convention every mainstream forecast UI draws. A bearing of
-    270 (from the west) yields 90, pointing the arrow east.
+    Rotates the glyph to point **at the source** — a bearing of 270 (from
+    the west) yields 270, and the arrow points west, at the weather coming
+    towards the reader.
 
 ``compass_point``
-    Names the **source** — 270 is ``W``, not ``E``. This is what goes in the
-    visible text and the accessible label, so the reading a screen reader
-    announces is "from W" and never depends on interpreting a glyph's
-    rotation.
+    Names the same source in words — 270 is ``W``. This goes in the visible
+    text and the accessible label, so a screen reader announces "from W"
+    without depending on a glyph's rotation.
 
-The two disagreeing is the point, not a bug: the arrow shows travel, the
-label names origin, and the word "from" in the template ties them together.
+**They agreed only after SNOW-785.** ``wind_arrow_rotation`` used to add
+180° so the glyph flew downwind, on the argument that travel is what
+mainstream forecast UIs draw — leaving the arrow and the "from W" beside it
+pointing opposite ways, and disagreeing outright with the hourly chart
+(``apps.weather.services.hourly_chart``), which had always drawn the source
+per its design handoff. Two arrows on one page meaning opposite things is
+worse than either convention alone, and on an avalanche site the source is
+the actionable fact: it names the aspect being loaded.
 """
 
 import logging
@@ -86,11 +90,13 @@ def _as_bearing(value: Any) -> float | None:
 @register.filter
 def wind_arrow_rotation(value: Any) -> float | None:
     """
-    Return the CSS rotation, in degrees, for a downwind arrow glyph.
+    Return the CSS rotation, in degrees, for a source-pointing arrow glyph.
 
-    Assumes a base glyph pointing **up** (north) at zero rotation, and adds
-    180 so the arrow flies with the wind rather than into it — see this
-    module's docstring for why that differs from :func:`compass_point`.
+    Assumes a base glyph pointing **up** (north) at zero rotation. The
+    rotation applied is the bearing itself, so the arrow points at where
+    the wind comes from — the same convention
+    :func:`compass_point` names in words and
+    ``apps.weather.services.hourly_chart`` draws (SNOW-785).
 
     Usage::
 
@@ -105,10 +111,7 @@ def wind_arrow_rotation(value: Any) -> float | None:
         — in which case the caller must not draw an arrow at all.
 
     """
-    bearing = _as_bearing(value)
-    if bearing is None:
-        return None
-    return (bearing + 180) % 360
+    return _as_bearing(value)
 
 
 @register.filter

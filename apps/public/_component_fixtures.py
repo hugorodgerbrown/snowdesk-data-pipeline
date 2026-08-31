@@ -2982,6 +2982,11 @@ def _forecast_panel_day(
         "snowfall_sum": snowfall_sum,
         "freezing_level_height": freezing_level_height,
         "hourly": list(hourly),
+        # SNOW-787: presence of a series is what makes a column a control.
+        # The library renders the strip with no ``selector_name``, so
+        # nothing here is interactive — the flag is carried so the fixture
+        # stays the same shape as the real ForecastPanelDay.
+        "selectable": bool(hourly),
     }
 
 
@@ -3034,7 +3039,7 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
     ]
     return (
         {
-            "caption": "Five days, hourly detail on the first two",
+            "caption": "Five days across the outlook window",
             "solo": True,
             "context": {
                 "panel": {"days": full_days},
@@ -3042,7 +3047,7 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
             },
         },
         {
-            "caption": "One day, no hourly series and no freezing level",
+            "caption": "One day, no freezing level",
             "solo": True,
             "context": {
                 "panel": {
@@ -3101,6 +3106,7 @@ def _chart_panel(
             wind_speed_max=None,
             wind_bearing=None,
             hourly=[],
+            selectable=False,
         )
         for index, (temp_max, temp_min) in enumerate(bounds)
     ]
