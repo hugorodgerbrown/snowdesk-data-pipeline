@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import json
+import pathlib
 from types import SimpleNamespace
 from typing import Any
 
@@ -27,6 +29,7 @@ from django import forms
 from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
+from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import weather_icon_filename
 
 # String constants for elevation bound type — mirror ``apps.public.views`` so the
@@ -3057,3 +3060,116 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
 
 
 FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_panel_variants()
+
+
+# ── Hourly chart (SNOW-723) ──────────────────────────────────────────────
+
+# The three real days committed under ``apps/weather/sample_days/``. Real
+# observed weather rather than a generated series, because a chart fixture
+# has to be shaped like weather or it cannot show whether the chart works:
+# SNOW-776's meteogram fixture was an arithmetic ramp, every band rendered
+# as a straight diagonal, and it was impossible to tell which of the visual
+# problems were real ones. See that directory's README for what each day is
+# and why these three.
+_SAMPLE_DAYS_DIR = (
+    pathlib.Path(__file__).resolve().parent.parent / "weather" / "sample_days"
+)
+
+# Each entry is (file, caption, cursor hour). The cursor hour renders the
+# time-of-day line, which only draws when the chart's day IS the current
+# day — so the library pins a "now" onto each sample day rather than
+# leaving every variant without the mark. Different hours across the three
+# so the line is visible against different parts of the shape.
+_HOURLY_CHART_CAPTIONS: tuple[tuple[str, str, tuple[int, int]], ...] = (
+    (
+        "2026-02-16-verbier-storm.json",
+        "Storm day — 15.7 cm of snow, temperature crossing zero, gusts to 53",
+        (14, 20),
+    ),
+    (
+        "2026-01-05-verbier-cold-clear.json",
+        "Cold clear day — no precipitation at all, so both bands collapse",
+        (9, 45),
+    ),
+    (
+        "2026-04-11-verbier-spring-thaw.json",
+        "Spring thaw — never near freezing, so no 0 °C line and no station mark",
+        (17, 0),
+    ),
+)
+
+
+def _load_sample_day(filename: str) -> dict[str, Any]:
+    """
+    Read one committed sample day off disk.
+
+    Args:
+        filename: The file's name within ``apps/weather/sample_days/``.
+
+    Returns:
+        The day, in the provider's own shape.
+
+    """
+    day: dict[str, Any] = json.loads(
+        (_SAMPLE_DAYS_DIR / filename).read_text(encoding="utf-8")
+    )
+    return day
+
+
+def _build_hourly_chart_variants() -> tuple[dict[str, Any], ...]:
+    """
+    Build the hourly-chart variants from the three committed sample days.
+
+    The three disagree on every axis the chart draws, which is the point:
+    between them they exercise the empty bar bands, a temperature domain
+    that never reaches zero, and a freezing level too far from the station
+    for the elevation line to be worth drawing.
+
+    Returns:
+        The variant tuple.
+
+    """
+    variants: list[dict[str, Any]] = []
+    for filename, caption, (hour, minute) in _HOURLY_CHART_CAPTIONS:
+        day = _load_sample_day(filename)
+        location = day["location"]
+        # The sample days are local time and carry their own UTC offset, so
+        # the cursor's clock is built in that offset rather than in UTC —
+        # a "now" of 14:20 has to mean 14:20 at the location, not 14:20 in
+        # a timezone the chart never mentions.
+        at_location = datetime.timezone(
+            datetime.timedelta(seconds=location["utc_offset_seconds"])
+        )
+        chart = build_hourly_chart(
+            day,
+            elevation=location["elevation"],
+            location_label=location["name"],
+            now=datetime.datetime.fromisoformat(day["date"]).replace(
+                hour=hour, minute=minute, tzinfo=at_location
+            ),
+        )
+        variants.append(
+            {
+                "caption": caption,
+                "solo": True,
+                "context": {
+                    "chart": chart,
+                    "testid_prefix": f"component-library-chart-{day['slug']}",
+                    # Provenance as we can actually state it. The design
+                    # handoff's copy said the freezing level is "derived
+                    # using atmospheric lapse rate"; it is not — it is a
+                    # variable the forecast model publishes and we request
+                    # directly (see apps.weather.services.fetch).
+                    "about": {
+                        "elevation": f"{location['elevation']:,.0f} m",
+                        "freezing": "Published by the forecast model",
+                        "updated": f"{day['date']} · 06:00 {location['timezone']}",
+                        "source": day["source"]["provider"],
+                    },
+                },
+            }
+        )
+    return tuple(variants)
+
+
+HOURLY_CHART_VARIANTS: tuple[dict[str, Any], ...] = _build_hourly_chart_variants()

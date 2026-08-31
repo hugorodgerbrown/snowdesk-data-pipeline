@@ -43,6 +43,7 @@ from apps.public._component_fixtures import (
     FAVOURITE_PROBLEM_VARIANTS,
     FORECAST_PANEL_VARIANTS,
     FORM_FIELD_VARIANTS,
+    HOURLY_CHART_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
@@ -1355,6 +1356,24 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_forecast_panel.html",
         variants=FORECAST_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="hourly-chart",
+        label="Hourly chart",
+        description=(
+            "One day's weather as a meteogram (SNOW-723), replacing the "
+            "24-row hourly table. Temperature and freezing level as lines on "
+            "two derived scales, new snow and precipitation as bars, wind "
+            "speed and gusts beneath, all on one eight-block axis. Both "
+            "vertical scales come from the data rather than being fixed — "
+            "the three variants are real observed days chosen to disagree "
+            "with each other, and two of them fall entirely outside the "
+            "fixed domains the design was first drawn against."
+        ),
+        kind="components",
+        partial="includes/_hourly_chart.html",
+        variants=HOURLY_CHART_VARIANTS,
         panel_layout="stack",
     ),
 )

@@ -117,6 +117,13 @@
   --text-caption:  11px;    /* mono caption (callout diagnostics, nav
                                trigger, swatch / icon token labels)    */
   --text-summary:  13px;    /* collapsible-panel summary title         */
+  /* Legend-sheet type (SNOW-723). The hourly chart's key specifies 22px
+     for its title and 17px for its subhead; the default ramp's nearest
+     steps are 20/24 and 18, none of which is the specified size. Named for
+     the role rather than the component, so the next sheet can reuse them. */
+  --text-sheet-title:   22px;
+  --text-sheet-subhead: 17px;
+
   --text-label:    15px;    /* rating-block problem label, nav back-
                                state wordmark                          */
   --leading-prose: 1.6;     /* slf-prose body line-height               */
@@ -268,6 +275,24 @@
   --color-accent:        #2563eb;
   --color-accent-hover:  #1d4ed8;
   --color-accent-text:   #ffffff;
+
+  /* Hourly chart (SNOW-723) — the four marks the meteogram needs that no
+     existing token carries. The other four series reuse what is already
+     here: temperature is --color-text-1, freezing level --color-accent,
+     gusts --color-text-2, and the axis furniture --color-border.
+
+     Tailwind v4 turns each of these into fill-* and stroke-* utilities, so
+     the chart's SVG carries class names and no literal colour — the design
+     system's hex rule has an SVG fill/stroke exception, but a token that
+     tracks the theme is better than an exception that doesn't.
+
+     Light values only. Dark was explicitly out of scope for the first cut
+     and these need real decisions on a dark ground rather than an
+     inversion. */
+  --color-chart-precip:   #0f766e;                 /* teal-700: rain, mm    */
+  --color-chart-wind:     #4a4740;                 /* sustained wind line   */
+  --color-chart-snow:     rgba(37, 99, 235, 0.35); /* accent @ 35%: new snow */
+  --color-chart-note-bg:  #eef2ff;                 /* indigo-50: legend note */
 
   /* Floating overlays — frosted glass surface used by the map utility
      cluster (SNOW-36) and any future overlay pinned above content. */

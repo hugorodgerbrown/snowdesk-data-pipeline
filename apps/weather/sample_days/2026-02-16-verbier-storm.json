@@ -1,0 +1,271 @@
+{
+  "date": "2026-02-16",
+  "slug": "storm",
+  "note": "Warm Atlantic storm: 15.7 cm of new snow and 27 mm of precipitation, temperature crossing zero twice, gusts to 53 km/h.",
+  "location": {
+    "name": "Verbier village",
+    "latitude": 46.1,
+    "longitude": 7.1999993,
+    "elevation": 1436.0,
+    "timezone": "Europe/Zurich",
+    "utc_offset_seconds": 7200
+  },
+  "source": {
+    "provider": "Open-Meteo",
+    "endpoint": "historical-forecast-api.open-meteo.com/v1/forecast",
+    "retrieved_on": "2026-08-31",
+    "licence": "CC BY 4.0"
+  },
+  "sunrise": "2026-02-16T08:32",
+  "sunset": "2026-02-16T18:58",
+  "weather_code": 85,
+  "temperature_2m_max": 1.6,
+  "temperature_2m_min": -2.5,
+  "snowfall_sum": 15.68,
+  "precipitation_sum": 27.0,
+  "wind_speed_10m_max": 15.5,
+  "wind_gusts_10m_max": 52.6,
+  "wind_direction_10m_dominant": 123,
+  "hourly": [
+    {
+      "time": "2026-02-16T00:00",
+      "temperature_2m": 0.7,
+      "snowfall": 0.07,
+      "precipitation": 0.5,
+      "wind_speed_10m": 10.9,
+      "wind_gusts_10m": 29.9,
+      "wind_direction_10m": 96,
+      "freezing_level_height": 1640.0
+    },
+    {
+      "time": "2026-02-16T01:00",
+      "temperature_2m": 0.6,
+      "snowfall": 0.07,
+      "precipitation": 0.7,
+      "wind_speed_10m": 15.5,
+      "wind_gusts_10m": 38.2,
+      "wind_direction_10m": 103,
+      "freezing_level_height": 1610.0
+    },
+    {
+      "time": "2026-02-16T02:00",
+      "temperature_2m": 1.1,
+      "snowfall": 0.07,
+      "precipitation": 0.6,
+      "wind_speed_10m": 11.4,
+      "wind_gusts_10m": 38.2,
+      "wind_direction_10m": 101,
+      "freezing_level_height": 1760.0
+    },
+    {
+      "time": "2026-02-16T03:00",
+      "temperature_2m": 1.6,
+      "snowfall": 0.0,
+      "precipitation": 0.1,
+      "wind_speed_10m": 8.1,
+      "wind_gusts_10m": 37.8,
+      "wind_direction_10m": 111,
+      "freezing_level_height": 1730.0
+    },
+    {
+      "time": "2026-02-16T04:00",
+      "temperature_2m": 1.2,
+      "snowfall": 0.07,
+      "precipitation": 0.2,
+      "wind_speed_10m": 13.8,
+      "wind_gusts_10m": 39.2,
+      "wind_direction_10m": 99,
+      "freezing_level_height": 1740.0
+    },
+    {
+      "time": "2026-02-16T05:00",
+      "temperature_2m": 1.2,
+      "snowfall": 0.35,
+      "precipitation": 0.7,
+      "wind_speed_10m": 10.9,
+      "wind_gusts_10m": 45.4,
+      "wind_direction_10m": 96,
+      "freezing_level_height": 1690.0
+    },
+    {
+      "time": "2026-02-16T06:00",
+      "temperature_2m": 0.5,
+      "snowfall": 0.63,
+      "precipitation": 1.3,
+      "wind_speed_10m": 10.4,
+      "wind_gusts_10m": 50.8,
+      "wind_direction_10m": 110,
+      "freezing_level_height": 1580.0
+    },
+    {
+      "time": "2026-02-16T07:00",
+      "temperature_2m": 0.2,
+      "snowfall": 0.91,
+      "precipitation": 1.5,
+      "wind_speed_10m": 10.8,
+      "wind_gusts_10m": 38.2,
+      "wind_direction_10m": 120,
+      "freezing_level_height": 1530.0
+    },
+    {
+      "time": "2026-02-16T08:00",
+      "temperature_2m": -0.3,
+      "snowfall": 1.12,
+      "precipitation": 1.9,
+      "wind_speed_10m": 4.3,
+      "wind_gusts_10m": 32.4,
+      "wind_direction_10m": 114,
+      "freezing_level_height": 1400.0
+    },
+    {
+      "time": "2026-02-16T09:00",
+      "temperature_2m": -0.4,
+      "snowfall": 1.4,
+      "precipitation": 2.2,
+      "wind_speed_10m": 6.4,
+      "wind_gusts_10m": 27.0,
+      "wind_direction_10m": 297,
+      "freezing_level_height": 1400.0
+    },
+    {
+      "time": "2026-02-16T10:00",
+      "temperature_2m": -0.9,
+      "snowfall": 1.68,
+      "precipitation": 2.5,
+      "wind_speed_10m": 5.6,
+      "wind_gusts_10m": 22.3,
+      "wind_direction_10m": 140,
+      "freezing_level_height": 1360.0
+    },
+    {
+      "time": "2026-02-16T11:00",
+      "temperature_2m": -1.0,
+      "snowfall": 1.47,
+      "precipitation": 2.2,
+      "wind_speed_10m": 0.5,
+      "wind_gusts_10m": 22.3,
+      "wind_direction_10m": 45,
+      "freezing_level_height": 1350.0
+    },
+    {
+      "time": "2026-02-16T12:00",
+      "temperature_2m": -0.7,
+      "snowfall": 1.4,
+      "precipitation": 2.1,
+      "wind_speed_10m": 0.7,
+      "wind_gusts_10m": 19.8,
+      "wind_direction_10m": 180,
+      "freezing_level_height": 1370.0
+    },
+    {
+      "time": "2026-02-16T13:00",
+      "temperature_2m": -0.9,
+      "snowfall": 1.4,
+      "precipitation": 2.2,
+      "wind_speed_10m": 4.7,
+      "wind_gusts_10m": 21.2,
+      "wind_direction_10m": 171,
+      "freezing_level_height": 1360.0
+    },
+    {
+      "time": "2026-02-16T14:00",
+      "temperature_2m": -0.4,
+      "snowfall": 1.19,
+      "precipitation": 1.8,
+      "wind_speed_10m": 2.7,
+      "wind_gusts_10m": 25.6,
+      "wind_direction_10m": 247,
+      "freezing_level_height": 1390.0
+    },
+    {
+      "time": "2026-02-16T15:00",
+      "temperature_2m": -0.3,
+      "snowfall": 0.56,
+      "precipitation": 0.8,
+      "wind_speed_10m": 4.8,
+      "wind_gusts_10m": 39.2,
+      "wind_direction_10m": 153,
+      "freezing_level_height": 1400.0
+    },
+    {
+      "time": "2026-02-16T16:00",
+      "temperature_2m": -0.0,
+      "snowfall": 0.0,
+      "precipitation": 0.0,
+      "wind_speed_10m": 7.8,
+      "wind_gusts_10m": 47.9,
+      "wind_direction_10m": 214,
+      "freezing_level_height": 1410.0
+    },
+    {
+      "time": "2026-02-16T17:00",
+      "temperature_2m": -0.5,
+      "snowfall": 0.49,
+      "precipitation": 0.8,
+      "wind_speed_10m": 7.9,
+      "wind_gusts_10m": 34.6,
+      "wind_direction_10m": 294,
+      "freezing_level_height": 1390.0
+    },
+    {
+      "time": "2026-02-16T18:00",
+      "temperature_2m": -0.9,
+      "snowfall": 1.61,
+      "precipitation": 2.6,
+      "wind_speed_10m": 11.7,
+      "wind_gusts_10m": 52.6,
+      "wind_direction_10m": 304,
+      "freezing_level_height": 1360.0
+    },
+    {
+      "time": "2026-02-16T19:00",
+      "temperature_2m": -1.5,
+      "snowfall": 0.21,
+      "precipitation": 0.5,
+      "wind_speed_10m": 6.3,
+      "wind_gusts_10m": 47.2,
+      "wind_direction_10m": 283,
+      "freezing_level_height": 1320.0
+    },
+    {
+      "time": "2026-02-16T20:00",
+      "temperature_2m": -1.6,
+      "snowfall": 0.0,
+      "precipitation": 0.0,
+      "wind_speed_10m": 9.2,
+      "wind_gusts_10m": 39.2,
+      "wind_direction_10m": 301,
+      "freezing_level_height": 1310.0
+    },
+    {
+      "time": "2026-02-16T21:00",
+      "temperature_2m": -2.3,
+      "snowfall": 0.14,
+      "precipitation": 0.3,
+      "wind_speed_10m": 10.7,
+      "wind_gusts_10m": 37.4,
+      "wind_direction_10m": 282,
+      "freezing_level_height": 1260.0
+    },
+    {
+      "time": "2026-02-16T22:00",
+      "temperature_2m": -2.3,
+      "snowfall": 0.35,
+      "precipitation": 0.6,
+      "wind_speed_10m": 6.0,
+      "wind_gusts_10m": 38.9,
+      "wind_direction_10m": 287,
+      "freezing_level_height": 1260.0
+    },
+    {
+      "time": "2026-02-16T23:00",
+      "temperature_2m": -2.5,
+      "snowfall": 0.49,
+      "precipitation": 0.9,
+      "wind_speed_10m": 14.0,
+      "wind_gusts_10m": 46.8,
+      "wind_direction_10m": 293,
+      "freezing_level_height": 1250.0
+    }
+  ]
+}
