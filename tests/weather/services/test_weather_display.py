@@ -359,6 +359,46 @@ class TestBuildPointForecastPanel:
         ]
 
     @freeze_time(MIDDAY)
+    def test_wind_reaches_the_lead_day_and_the_forward_days(self) -> None:
+        """Both build sites populate wind, not just the lead one.
+
+        The lead day is read off the ``Weather`` row and the forward days
+        off their ``forecast[]`` entries, in two separate constructor
+        calls. Updating one and not the other would show wind on today
+        and nothing after it — which is why this asserts across the whole
+        strip rather than on ``days[0]``.
+        """
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30),
+            wind_speed_10m_max=24.0,
+            wind_direction_10m_dominant=270.0,
+            forecast=[
+                _forecast_day(
+                    date="2026-08-31",
+                    wind_speed_10m_max=31.0,
+                    wind_direction_10m_dominant=45.0,
+                ),
+            ],
+        )
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert [day["wind_speed_max"] for day in panel["days"]] == [24.0, 31.0]
+        assert [day["wind_bearing"] for day in panel["days"]] == [270.0, 45.0]
+
+    @freeze_time(MIDDAY)
+    def test_a_forward_day_missing_wind_degrades_to_none(self) -> None:
+        """Open-Meteo drops variables per model, so absence is ordinary."""
+        weather = WeatherFactory.create(forecast=[_forecast_day()])
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert panel["days"][1]["wind_speed_max"] is None
+        assert panel["days"][1]["wind_bearing"] is None
+
+    @freeze_time(MIDDAY)
     def test_a_forward_day_without_hourly_yields_an_empty_list(self) -> None:
         """``hourly`` is optional per entry, so absence is not an error.
 

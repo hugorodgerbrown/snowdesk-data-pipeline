@@ -437,6 +437,8 @@ class ForecastPanelDay(TypedDict):
     temp_min: float | None
     snowfall_sum: float | None
     freezing_level_height: float | None
+    wind_speed_max: float | None  # Daily max sustained wind at 10m, km/h.
+    wind_bearing: float | None  # Dominant direction at 10m, degrees FROM.
     hourly: list[HourlyRow]  # That day's hourly rows, or [].
 
 
@@ -488,6 +490,8 @@ def _forecast_day_context(
         temp_min=entry.get("temperature_2m_min"),
         snowfall_sum=entry.get("snowfall_sum"),
         freezing_level_height=entry.get("freezing_level_height"),
+        wind_speed_max=entry.get("wind_speed_10m_max"),
+        wind_bearing=entry.get("wind_direction_10m_dominant"),
         # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
         # 'hourly' key at all, so this is a presence check, not a null check.
         hourly=list(entry.get("hourly") or []),
@@ -528,6 +532,8 @@ def build_point_forecast_panel(
             temp_min=weather.temperature_2m_min,
             snowfall_sum=weather.snowfall_sum,
             freezing_level_height=weather.freezing_level_height,
+            wind_speed_max=weather.wind_speed_10m_max,
+            wind_bearing=weather.wind_direction_10m_dominant,
             hourly=list(weather.hourly or []),
         )
     ]
