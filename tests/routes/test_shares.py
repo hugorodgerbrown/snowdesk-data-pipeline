@@ -242,6 +242,24 @@ class TestClaimRouteShare:
         assert share.claim_count == 1
         assert share.last_claimed_at is not None
 
+    def test_updated_at_moves_with_the_counters(self) -> None:
+        """The bump is an UPDATE, and update() does not apply auto_now.
+
+        The increment is ``F("claim_count") + 1`` so two simultaneous
+        claims cannot lose one another — which takes it off the save()
+        path, where ``updated_at`` used to be filled in for free. The
+        column has to be named explicitly now, and this is what says so.
+        """
+        claimer = UserFactory.create()
+        share = RouteShareFactory.create()
+        before = share.updated_at
+
+        claim_route_share(claimer, share.token)
+
+        share.refresh_from_db()
+        assert share.updated_at > before
+        assert share.updated_at == share.last_claimed_at
+
     def test_the_link_is_reusable(self) -> None:
         """Two people claiming one link each get a copy."""
         owner = UserFactory.create()
@@ -349,6 +367,21 @@ class TestPendingTokenHelpers:
         add_pending_token(session, "three")
 
         assert pending_tokens(session) == ["two", "three"]
+
+    def test_a_cap_of_zero_keeps_nothing(self, settings: Any) -> None:
+        """Zero means zero, which the slice on its own gets backwards.
+
+        ``tokens[-0:]`` is ``tokens[0:]`` — the WHOLE list — so the cap
+        that should hold the tightest bound was the one value that removed
+        the bound entirely.
+        """
+        settings.ROUTE_SHARE_MAX_PENDING = 0
+        session = _session()
+
+        add_pending_token(session, "one")
+        add_pending_token(session, "two")
+
+        assert pending_tokens(session) == []
 
     def test_adding_marks_the_session_modified(self) -> None:
         """Otherwise the write never reaches the cookie."""

@@ -191,6 +191,21 @@ class TestTermsRedirect:
         assert response.status_code == 301
         assert response["Location"] == reverse("public:terms_of_service")
 
+    def test_terms_redirect_forwards_query_string(self, client: Client) -> None:
+        """``/terms/?utm_source=x`` keeps its query string (``query_string=True``).
+
+        Mirrors ``/map/``'s redirect, which has carried the flag since
+        SNOW-344. Without it an inbound link's campaign or anchor
+        parameters are silently dropped at the 301.
+        """
+        response = client.get(f"{reverse('public:terms')}?utm_source=newsletter")
+
+        assert response.status_code == 301
+        assert (
+            response["Location"]
+            == f"{reverse('public:terms_of_service')}?utm_source=newsletter"
+        )
+
     def test_terms_does_not_resolve_as_a_region(self, client: Client) -> None:
         """The redirect must stay ahead of the ``<str:region_id>/`` catch-all.
 

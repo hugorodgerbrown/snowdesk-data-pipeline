@@ -426,18 +426,23 @@ def _forecast_day_context(
 
     Returns:
         A :class:`ForecastPanelDay`, or ``None`` when the entry's ``date``,
-        ``sunrise`` or ``sunset`` cannot be parsed — a malformed forward day
-        drops out of the strip rather than taking the page with it.
+        ``sunrise``, ``sunset`` or ``weather_code`` cannot be read — a
+        malformed forward day drops out of the strip rather than taking the
+        page with it.
 
     """
     try:
         day_date = datetime.date.fromisoformat(entry["date"])
         sunrise = datetime.datetime.fromisoformat(entry["sunrise"])
         sunset = datetime.datetime.fromisoformat(entry["sunset"])
+        # Inside the guard alongside the date parsing (and matching
+        # build_point_weather_days below): a day missing its weather_code is
+        # as malformed as one missing its date, and must drop out the same
+        # way rather than raising KeyError past the caller.
+        icon_bucket = weather_code_icon_bucket(entry["weather_code"])
     except KeyError, TypeError, ValueError:
         return None
     time_of_day = "day" if _is_day_between(sunrise, sunset, now) else "night"
-    icon_bucket = weather_code_icon_bucket(entry["weather_code"])
     return ForecastPanelDay(
         date=day_date,
         weekday_label=day_date.strftime("%a"),

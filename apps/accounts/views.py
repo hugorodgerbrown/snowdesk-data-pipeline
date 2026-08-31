@@ -81,7 +81,6 @@ from django_ratelimit.decorators import ratelimit
 
 from apps import analytics
 from apps.core.decorators import require_htmx
-from apps.core.models import RequestLog
 from apps.core.services.request_log import capture as capture_request_log
 from apps.public.decorators import lowercase_region_id
 from apps.regions.models import MicroRegion
@@ -98,6 +97,7 @@ from .forms import (
 from .identity import user_identity
 from .logging_utils import mask_email
 from .models import Account, Subscription
+from .services.deletion import erase_account
 from .services.email import (
     send_account_access_email,
     send_email_change_confirmation,
@@ -167,43 +167,6 @@ def _get_account(request: HttpRequest) -> Account | None:
         return request.user.account
     except Account.DoesNotExist:
         return None
-
-
-def _referenced_request_log_ids(account: Account | None) -> list[int]:
-    """Return the ids of RequestLog rows this account points at (SNOW-774).
-
-    These are the rows a ``CASCADE`` on ``RequestLog.account`` cannot reach.
-    The sign-up request happens before the account exists, so that row is
-    written anonymously with ``account=None``; the association is recorded
-    the other way round, by ``Account.acquisition_request`` and
-    ``Subscription.subscribed_via`` pointing *at* the log row. Both are
-    ``SET_NULL``, so deleting the account drops the pointer and strands the
-    row — still holding the IP address, city, coordinates, user agent and
-    session key captured at sign-up.
-
-    Collect them before the delete, not after: once the account and its
-    subscriptions are gone there is nothing left to read the FKs from.
-
-    Args:
-        account: The account being deleted, or None for an authenticated
-            user with no Account profile (a staff superuser), which owns no
-            such rows.
-
-    Returns:
-        Distinct RequestLog primary keys, empty when there are none.
-
-    """
-    if account is None:
-        return []
-
-    ids = {
-        pk
-        for pk in account.subscriptions.values_list("subscribed_via_id", flat=True)
-        if pk is not None
-    }
-    if account.acquisition_request_id is not None:
-        ids.add(account.acquisition_request_id)
-    return list(ids)
 
 
 # ---------------------------------------------------------------------------
@@ -1708,11 +1671,14 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     """
     Hard-delete the authenticated account (User) and all their subscriptions.
 
-    The sole hard-delete path, available to any authenticated account —
-    including a registered-only account with no subscriptions. Calls
-    ``django.contrib.auth.logout()`` to clear the Django session and
-    responds with an ``HX-Redirect`` header pointing to the unsubscribe-done
-    page.
+    The sole hard-delete path for a signed-in person, available to any
+    authenticated account — including a registered-only account with no
+    subscriptions. The erasure itself lives in
+    ``apps.accounts.services.deletion.erase_account``, which the admin also
+    calls; this view adds only the session and analytics work around it,
+    calling ``django.contrib.auth.logout()`` to clear the Django session and
+    responding with an ``HX-Redirect`` header pointing to the
+    unsubscribe-done page.
 
     Guarded by authentication (no session → 403), ``@require_POST``,
     ``@require_htmx``, and rate-limited at 3 requests/min per IP.
@@ -1741,27 +1707,11 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     )
     distinct_id = user_identity(user)
 
-    # SNOW-774: the RequestLog rows written while signed in have
-    # account=<this account> and go with the CASCADE below. The rows written
-    # BEFORE the account existed do not — sign-up happens anonymously, so
-    # ``RequestLog.account`` is null on that row and the link runs the other
-    # way, from ``Account.acquisition_request`` and
-    # ``Subscription.subscribed_via``. Both are SET_NULL, so the CASCADE
-    # would leave those rows behind holding the IP address, city,
-    # coordinates, user agent and session key of the person who just asked
-    # to be forgotten. Collect them first; delete them after the cascade has
-    # dropped the FKs pointing at them.
-    orphan_log_ids = _referenced_request_log_ids(account)
-
-    # Both deletes commit together or neither does. Erasure that half
-    # succeeds is the worst of the three outcomes: the account is gone, so
-    # the person has no way back in to ask again, while the rows carrying
-    # their IP address and coordinates are still there and no longer
-    # attached to anything that would lead you to them.
-    with transaction.atomic():
-        user.delete()  # CASCADE: Account, Subscriptions, RequestLogs, clicks.
-        if orphan_log_ids:
-            RequestLog.objects.filter(pk__in=orphan_log_ids).delete()
+    # One transaction, and the parts a CASCADE cannot reach — the favourites'
+    # minted Locations and the request rows written before the account
+    # existed — go with it. The admin deletes through the same service, so
+    # there is one erasure path rather than two that drift.
+    erase_account(user, account)
 
     logout(request)
     logger.info("Account %s hard-deleted via delete_account", mask_email(email))

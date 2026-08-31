@@ -345,7 +345,7 @@ class TestErasureIsAllOrNothing:
         user_pk = account.user.pk
 
         with mock.patch(
-            "apps.accounts.views.RequestLog.objects.filter",
+            "apps.accounts.services.deletion.RequestLog.objects.filter",
             side_effect=RuntimeError("database went away"),
         ):
             client = _client_for(account)

@@ -27,6 +27,14 @@ TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
   point of the row and the only thing on the surface asking to be
   pressed. A 17px glyph for the row's primary action would be a puzzle.
 
+  The pending branch is itself two states, on authentication. A signed-in
+  visitor gets the Save form; an anonymous one gets a link to sign in,
+  because routes:share_claim answers a claim with no account to claim
+  onto with a 403 — and the same control is what the map popup draws for
+  the same visitor (static/js/map.js's appendRouteClaimCta). Never
+  nothing: the reason they are on this surface at all is that somebody
+  sent them the route.
+
   The two never both render. A pending row's route is not the viewer's, so
   Rename and Remove have nothing to address — and they are owner-scoped
   server-side anyway, so a rendered pencil would be a control that 404s.
@@ -107,16 +115,42 @@ Context:
         visitor is doing is keeping something they were sent, and "save" is
         the word every other surface on this site uses for that.
     {% endcomment %}
-    {% trans "Save route" as claim_label %}
-    <form
-        data-row-claimed
-        hx-post="{% url 'routes:share_claim' pending_share.token %}"
-        hx-target="{{ row_target }}"
-        hx-swap="outerHTML"
-    >
-        {% csrf_token %}
-        {% include "includes/_button.html" with label=claim_label variant="primary" size="compact" %}
-    </form>
+    {% if request.user.is_authenticated %}
+        {% trans "Save route" as claim_label %}
+        <form
+            data-row-claimed
+            hx-post="{% url 'routes:share_claim' pending_share.token %}"
+            hx-target="{{ row_target }}"
+            hx-swap="outerHTML"
+        >
+            {% csrf_token %}
+            {% include "includes/_button.html" with label=claim_label variant="primary" size="compact" %}
+        </form>
+    {% else %}
+        {% comment %}
+            A claim needs an account to claim ONTO, so an anonymous
+            recipient gets the way in rather than a control that posts to a
+            403 — routes:share_claim refuses them, and a button whose only
+            outcome is a swallowed error reads as a broken page.
+
+            The same two states, and the same copy, the map popup's own CTA
+            uses (static/js/map.js's appendRouteClaimCta, whose signed-out
+            branch is a link to `route-save-signin`): a recipient who meets
+            the shared route on the map and one who meets it in the panel
+            are told the same thing. It is a link and not a form because
+            there is nothing to post yet.
+
+            The panel ALSO puts a sign-in prompt at its foot for this
+            visitor (static/js/routes.js's appendSigninCta), and that is
+            not this. The foot's prompt is about the panel — you cannot
+            upload — while this one sits in the row it applies to, and the
+            row is where the visitor is looking: it is the route somebody
+            sent them.
+        {% endcomment %}
+        {% trans "Sign in to save this route" as claim_signin_label %}
+        {% url 'accounts:sign_in' as claim_signin_url %}
+        {% include "includes/_button.html" with label=claim_signin_label href=claim_signin_url variant="primary" size="compact" %}
+    {% endif %}
 {% else %}
     {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
     {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}

@@ -352,6 +352,32 @@ class TestBuildPointForecastPanel:
         ]
 
     @freeze_time(MIDDAY)
+    def test_a_forward_day_without_a_weather_code_is_dropped_not_raised(self) -> None:
+        """A code-less entry is as malformed as a date-less one.
+
+        The date/sunrise/sunset guard once stopped short of the icon-bucket
+        lookup, so an entry that parsed its dates but carried no
+        ``weather_code`` raised ``KeyError`` past the caller and took the
+        page down — the opposite of what the docstring promised. Unlike
+        ``hourly``, ``weather_code`` is required on every entry, so its
+        absence is corruption rather than an expected gap.
+        """
+        entry = _forecast_day(date="2026-08-31")
+        del entry["weather_code"]
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30),
+            forecast=[entry, _forecast_day(date="2026-09-01")],
+        )
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert [day["date"] for day in panel["days"]] == [
+            datetime.date(2026, 8, 30),
+            datetime.date(2026, 9, 1),
+        ]
+
+    @freeze_time(MIDDAY)
     def test_forward_day_scalars_reach_the_column(self) -> None:
         """A forward day renders its own temps, snowfall and freezing level."""
         weather = WeatherFactory.create(forecast=[_forecast_day(weather_code=73)])

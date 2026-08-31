@@ -1,8 +1,8 @@
 ---
 name: region-centroid-backfill
-description: Region centroid Locations — build.sh re-links every deploy because loaddata NULLs the FK; refresh_centroid_elevations is the manual step
+description: Region centroid Locations — not re-linked on deploy; an operator runs link_region_centroid_locations and link_resort_locations --commit
 status: current
-last-reviewed: 2026-08-30
+last-reviewed: 2026-08-31
 ---
 
 # Runbook — region centroid Locations

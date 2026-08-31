@@ -65,7 +65,9 @@ class Command(BaseCommand):
     """Give every geocoded resort without a linked Location one at its pin.
 
     Read-only by default; pass --commit to persist. Offline and idempotent,
-    so it is safe on every deploy of every service.
+    so it is safe to re-run at any time — but an operator runs it, never a
+    deploy (see the module docstring). Per-resort failures are caught,
+    logged and counted; the command exits non-zero when any failed.
     """
 
     help = (
@@ -118,14 +120,14 @@ class Command(BaseCommand):
 
         self._report_outcome(counts, commit=commit, verbosity=verbosity)
 
-        # Non-zero only on a total failure — every candidate raised. A
-        # partial failure logs loudly and lets the deploy finish; failing
-        # every deploy of every service over one unwritable resort is the
-        # worse outcome (see link_region_centroid_locations).
-        if counts["failed"] > 0 and counts["linked"] == 0:
+        # Non-zero on ANY failure, partial batches included — the command
+        # contract in CLAUDE.md. One unwritable resort never aborts the
+        # walk (it is counted and stepped over above), but the operator who
+        # ran this must not read a half-linked estate as a clean run.
+        if counts["failed"] > 0:
             raise CommandError(
-                f"link_resort_locations linked nothing: all "
-                f"{counts['failed']} candidate(s) failed. Check logs."
+                f"link_resort_locations: {counts['failed']} of {total} "
+                f"candidate(s) failed to link. Check logs."
             )
 
     def _resolve_one(
@@ -175,7 +177,7 @@ class Command(BaseCommand):
                         role="",
                         is_primary=True,
                     )
-            except Exception:  # noqa: BLE001 — one resort must not fail a deploy
+            except Exception:  # noqa: BLE001 — one resort must not fail the batch
                 logger.exception(
                     "link_resort_locations: failed to link resort %s", resort.pk
                 )

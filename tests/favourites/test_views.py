@@ -66,7 +66,10 @@ Covers:
                         the card shows the freshness indicator when a
                         rating exists; the list's rating lookup is
                         batched into one query regardless of favourite
-                        count.
+                        count; the card's generated_at is the OLDER of the
+                        rating's updated_at and the weather row's
+                        fetched_at, and falls back to whichever of the two
+                        is present alone.
 
 The Open-Meteo network call is avoided throughout by patching
 ``apps.favourites.services.fetch_elevation``.
@@ -90,6 +93,7 @@ from freezegun import freeze_time
 
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
+from apps.weather.models import Weather
 from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
@@ -98,6 +102,7 @@ from tests.factories import (
     RegionDayRatingFactory,
     ResortFactory,
     UserFactory,
+    WeatherFactory,
 )
 
 CREATE_URL = "/favourites/partials/create/"
@@ -995,16 +1000,62 @@ class TestFavouriteCard:
         assert "danger-tile" in content
         assert region.get_absolute_url() in content
 
-    def test_no_forecast_rows_omits_generated_at_fallback(self, client: Client) -> None:
-        """With no ForecastCellWeather rows, freshness headers still stamp (fallback to now)."""
+    def test_no_weather_row_falls_back_to_the_ratings_timestamp(
+        self, client: Client
+    ) -> None:
+        """A pin with a rating but no weather stamps the rating's own timestamp.
+
+        The freshness pair takes the older of the rating's ``updated_at``
+        and the weather row's ``fetched_at``. With one of the two absent
+        there is nothing to compare against, so the present one stands
+        alone rather than the header being dropped or the view raising.
+
+        This test previously used a region-less favourite, which made
+        ``day_rating`` None regardless of weather and left it asserting
+        only that the header existed at all — it could not have failed.
+        """
         user = UserFactory.create()
         client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
+        region = MicroRegionFactory.create()
+        rating = RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        favourite = FavouriteFactory.create(user=user, region=region)
+        assert not Weather.objects.exists()
 
         response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
 
         assert response.status_code == 200
-        assert "X-Data-Generated-At" in response
+        assert response["X-Data-Generated-At"] == rating.updated_at.isoformat(
+            timespec="seconds"
+        )
+
+    def test_freshness_reports_the_staler_of_rating_and_weather(
+        self, client: Client
+    ) -> None:
+        """A card mixing both constituents is only as fresh as its stalest one.
+
+        The rating is written now; the weather row was fetched six hours
+        ago. The card renders both, so the header must carry the weather's
+        ``fetched_at`` — reporting the rating's timestamp would tell the
+        offline client the whole card is newer than half of it is.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        favourite = FavouriteFactory.create(user=user, region=region)
+        stale_fetched_at = django_timezone.now() - datetime.timedelta(hours=6)
+        WeatherFactory.create(
+            location=favourite.location,
+            observed_on=django_timezone.localdate(),
+            fetched_at=stale_fetched_at,
+        )
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert response["X-Data-Generated-At"] == stale_fetched_at.isoformat(
+            timespec="seconds"
+        )
 
 
 # ---------------------------------------------------------------------------

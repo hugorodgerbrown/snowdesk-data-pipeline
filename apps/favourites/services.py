@@ -1,9 +1,10 @@
 """
 apps/favourites/services.py — Business logic for creating and deleting Favourites.
 
-Provides ``create_favourite``, ``create_resort_favourite``, and
+Provides ``create_favourite``, ``create_resort_favourite`` and
 ``delete_favourite`` — the mutating entry points used by
-``apps/favourites/views.py``.
+``apps/favourites/views.py`` — plus ``delete_favourites_for_user``, the
+whole-roster variant account erasure calls.
 
 Coordinate-argument convention: every function in this module takes
 latitude/longitude in that order — ``(latitude, longitude)`` — matching
@@ -247,6 +248,42 @@ def delete_favourite(user: "User", uuid: UUID) -> None:
         if location is not None:
             _delete_location_if_orphaned(location)
     logger.info("Favourite deleted: user=%s uuid=%s", user.pk, uuid)
+
+
+def delete_favourites_for_user(user: "User") -> int:
+    """Delete every favourite owned by ``user``, minted Locations included.
+
+    The whole-roster counterpart to ``delete_favourite``, for account
+    erasure. ``Favourite.user`` is ``CASCADE``, so deleting the user removes
+    the favourite rows in bulk — but a bulk cascade runs no Python, so the
+    anonymous ``Location`` each favourite minted would survive with its real
+    coordinates and elevation, referenced by nothing. Deleting the rows one
+    at a time here, before the user goes, is what puts the orphan sweep back
+    on the erasure path.
+
+    Deleting the favourite first and asking about its location second means
+    two favourites sharing one location still resolve correctly: the first
+    pass leaves the location alone (still referenced), the last pass takes
+    it.
+
+    Args:
+        user: The user whose favourites are being removed.
+
+    Returns:
+        The number of favourites deleted.
+
+    """
+    deleted = 0
+    with transaction.atomic():
+        for favourite in Favourite.objects.for_user(user).select_related("location"):
+            location = favourite.location
+            favourite.delete()
+            if location is not None:
+                _delete_location_if_orphaned(location)
+            deleted += 1
+    if deleted:
+        logger.info("Favourites deleted for user=%s: %s row(s)", user.pk, deleted)
+    return deleted
 
 
 def _delete_location_if_orphaned(location: Location) -> None:

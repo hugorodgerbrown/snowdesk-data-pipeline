@@ -194,11 +194,11 @@ class TestLinkRegionCentroidLocations:
         assert "0 region(s) linked" in out.getvalue()
 
     def test_a_write_failure_does_not_abort_the_batch(self) -> None:
-        """SNOW-771 follow-up: build.sh runs this under ``set -o errexit``.
+        """One bad region is counted and stepped over; the rest still link.
 
-        An exception escaping one region would take down a deploy of three
-        services sharing a database. The region is counted and skipped
-        instead; the rest still link.
+        An exception escaping one region would abandon every region after
+        it. The batch runs to the end instead — and then exits non-zero, so
+        a partial run is never mistaken for a clean one.
         """
         MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
         MicroRegionFactory.create(boundary=OTHER_BOUNDARY, centroid_elevation_m=1800.0)
@@ -212,24 +212,27 @@ class TestLinkRegionCentroidLocations:
                 raise RuntimeError("boom")
             return real(*args, **kwargs)
 
-        with patch.object(Location.objects, "create", side_effect=_one_bad_write):
-            out = StringIO()
+        out = StringIO()
+        with (
+            patch.object(Location.objects, "create", side_effect=_one_bad_write),
+            pytest.raises(CommandError, match="1 of 2 candidate"),
+        ):
             call_command(COMMAND, "--commit", stdout=out)
 
         assert "1 failed" in out.getvalue()
         assert MicroRegion.objects.filter(centroid_location__isnull=False).count() == 1
 
     def test_a_total_failure_does_exit_non_zero(self) -> None:
-        """The one case worth blocking a deploy on — nothing linked at all.
+        """Every candidate failing means something systemic.
 
-        A partial failure lets the deploy finish; every candidate failing
-        means something systemic, and a silent success there would hide it.
+        A silent success there would hide it, so the command exits
+        non-zero — as it does for any failure count above zero.
         """
         MicroRegionFactory.create(boundary=BOUNDARY, centroid_elevation_m=2100.0)
 
         with (
             patch.object(Location.objects, "create", side_effect=RuntimeError("boom")),
-            pytest.raises(CommandError, match="linked nothing"),
+            pytest.raises(CommandError, match="1 of 1 candidate"),
         ):
             call_command(COMMAND, "--commit", stdout=StringIO())
 

@@ -65,3 +65,50 @@ def is_speculative(request: HttpRequest) -> bool:
         return True
     purpose = request.headers.get("Sec-Purpose", "").lower()
     return any(token in purpose for token in _SPECULATIVE_PURPOSES)
+
+
+# The one ``Sec-Fetch-Dest`` value that means "the browser is about to put
+# this in the address bar". Every other value — image, iframe, script,
+# empty, style, … — is a subresource some other document asked for.
+_TOP_LEVEL_DESTINATION = "document"
+
+
+def is_top_level_navigation(request: HttpRequest) -> bool:
+    """Return True when the request looks like a person following a link.
+
+    Stricter than ``not is_speculative(request)``, and deliberately its own
+    helper rather than a widening of that one: ``is_speculative`` answers
+    "should this count as a visit" for analytics, where a passive
+    subresource load is a harmless over-count. This answers "did a person
+    choose to come here", which is the question an endpoint has to ask
+    before it writes to the session on a bare GET.
+
+    THE HOLE THIS CLOSES. ``Sec-Purpose`` marks a prefetch, but nothing
+    marks an ``<img src="…">`` or ``<iframe src="…">`` pointed at the same
+    URL — any page anywhere on the web can embed one and make every
+    visitor's browser issue the GET with no interaction at all.
+    ``Sec-Fetch-Dest`` is the header that tells the two apart: a browser
+    sets it on every request it makes, and only a top-level navigation
+    carries ``document``.
+
+    ABSENT MEANS YES, and that is a deliberate trade-off. The header is
+    forbidden to scripts, so it cannot be forged — but an older browser
+    (or any client that sends no fetch metadata at all) omits it entirely,
+    and treating that as a refusal would break the feature for those
+    visitors rather than merely narrow it. Fetch metadata is a hardening
+    signal, not an authentication one, so the fallback is permissive.
+
+    Speculative requests are excluded too, so one call answers both
+    questions for a caller that must not write on either.
+
+    Args:
+        request: The current HTTP request.
+
+    Returns:
+        True when the request may be treated as a deliberate navigation.
+
+    """
+    if is_speculative(request):
+        return False
+    destination = request.headers.get("Sec-Fetch-Dest", "").strip().lower()
+    return destination in ("", _TOP_LEVEL_DESTINATION)
