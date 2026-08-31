@@ -99,7 +99,8 @@ DAILY_VARIABLES = (
 # freezing-level aggregate, so the daily column is derived from this block.
 HOURLY_VARIABLES = (
     "temperature_2m,snowfall,precipitation,"
-    "wind_speed_10m,wind_gusts_10m,freezing_level_height"
+    "wind_speed_10m,wind_gusts_10m,wind_direction_10m,"
+    "freezing_level_height"
 )
 
 # The keys written onto each HourlyRow, in order. Must match
@@ -110,6 +111,7 @@ _HOURLY_FIELDS = (
     "precipitation",
     "wind_speed_10m",
     "wind_gusts_10m",
+    "wind_direction_10m",
     "freezing_level_height",
 )
 

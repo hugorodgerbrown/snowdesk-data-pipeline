@@ -272,6 +272,49 @@ class TestBuildWeatherDisplay:
         assert display["snowfall_sum"] == 14.0
         assert display["freezing_level_height"] == 1900.0
 
+    @freeze_time(MIDDAY)
+    def test_wind_fields_reach_the_panel(self) -> None:
+        """Speed, bearing and a qualifying gust are all handed over."""
+        weather = WeatherFactory.create(
+            wind_speed_10m_max=24.0,
+            wind_gusts_10m_max=41.0,
+            wind_direction_10m_dominant=270.0,
+        )
+
+        display = build_weather_display(weather, timezone.now())
+
+        assert display is not None
+        assert display["wind_speed_max"] == 24.0
+        assert display["wind_bearing"] == 270.0
+        assert display["wind_gusts_max"] == 41.0
+
+    @freeze_time(MIDDAY)
+    @pytest.mark.parametrize(
+        ("speed", "gusts"),
+        [
+            (24.0, 24.0),  # Equal — "24 gusting 24" says nothing.
+            (24.0, 20.0),  # Below the sustained max; not a gust worth naming.
+            (24.0, None),  # Open-Meteo omitted it.
+            (None, 41.0),  # No speed means no wind item to qualify.
+        ],
+    )
+    def test_gusts_are_dropped_when_they_add_nothing(
+        self, speed: float | None, gusts: float | None
+    ) -> None:
+        """A gust only renders when it exceeds the sustained speed.
+
+        The stat row already carries four other values, so a gust that
+        merely restates the maximum is dropped rather than shown.
+        """
+        weather = WeatherFactory.create(
+            wind_speed_10m_max=speed, wind_gusts_10m_max=gusts
+        )
+
+        display = build_weather_display(weather, timezone.now())
+
+        assert display is not None
+        assert display["wind_gusts_max"] is None
+
     @freeze_time("2026-08-30T23:00:00+00:00")
     def test_night_selects_the_night_icon(self) -> None:
         """After sunset the same code resolves to the night variant."""
@@ -314,6 +357,46 @@ class TestBuildPointForecastPanel:
             datetime.date(2026, 8, 31),
             datetime.date(2026, 9, 1),
         ]
+
+    @freeze_time(MIDDAY)
+    def test_wind_reaches_the_lead_day_and_the_forward_days(self) -> None:
+        """Both build sites populate wind, not just the lead one.
+
+        The lead day is read off the ``Weather`` row and the forward days
+        off their ``forecast[]`` entries, in two separate constructor
+        calls. Updating one and not the other would show wind on today
+        and nothing after it — which is why this asserts across the whole
+        strip rather than on ``days[0]``.
+        """
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30),
+            wind_speed_10m_max=24.0,
+            wind_direction_10m_dominant=270.0,
+            forecast=[
+                _forecast_day(
+                    date="2026-08-31",
+                    wind_speed_10m_max=31.0,
+                    wind_direction_10m_dominant=45.0,
+                ),
+            ],
+        )
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert [day["wind_speed_max"] for day in panel["days"]] == [24.0, 31.0]
+        assert [day["wind_bearing"] for day in panel["days"]] == [270.0, 45.0]
+
+    @freeze_time(MIDDAY)
+    def test_a_forward_day_missing_wind_degrades_to_none(self) -> None:
+        """Open-Meteo drops variables per model, so absence is ordinary."""
+        weather = WeatherFactory.create(forecast=[_forecast_day()])
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert panel["days"][1]["wind_speed_max"] is None
+        assert panel["days"][1]["wind_bearing"] is None
 
     @freeze_time(MIDDAY)
     def test_a_forward_day_without_hourly_yields_an_empty_list(self) -> None:

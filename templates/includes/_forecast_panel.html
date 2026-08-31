@@ -1,12 +1,16 @@
-{% load i18n static %}
+{% load i18n static weather_tags %}
 {% comment %}
 templates/includes/_forecast_panel.html — multi-day outlook for one location.
 
 Two parts:
 
   1. A compact day strip — one column per day: weekday label, condition
-     icon, hi/lo temperature, that day's freezing level, and a snowfall chip
-     when the day's ``snowfall_sum`` is non-zero.
+     icon, hi/lo temperature, that day's freezing level, its wind, and a
+     snowfall chip when the day's ``snowfall_sum`` is non-zero. The column
+     is ``w-24`` rather than ``w-20`` so the wind value keeps its unit — a
+     bare number sitting under "2400 m" says nothing about which is which.
+     Gusts are deliberately absent: ``_weather_panel.html`` has a wrapping
+     row to spend on them and this column does not (SNOW-780).
   2. Expandable hourly detail — one ``_collapsible_panel.html`` per day that
      carries an hourly series, listing it via ``_forecast_hourly_body.html``.
 
@@ -31,7 +35,7 @@ Context:
     <div class="flex gap-2 overflow-x-auto pb-1">
         {% for day in panel.days %}
             <div
-                class="flex flex-col items-center gap-1 bg-card border border-border rounded-card px-3 py-2 w-20 shrink-0"
+                class="flex flex-col items-center gap-1 bg-card border border-border rounded-card px-3 py-2 w-24 shrink-0"
                 data-testid="{{ testid_prefix|default:'forecast' }}-day"
                 data-date="{{ day.date|date:'Y-m-d' }}"
             >
@@ -56,6 +60,32 @@ Context:
                         <span class="sr-only">{% trans "Freezing level" %}</span>
                         {% blocktrans with m=day.freezing_level_height|floatformat:0 trimmed %}
                             {{ m }} m
+                        {% endblocktrans %}
+                    </span>
+                {% endif %}
+                {% if day.wind_speed_max is not None %}
+                    {# Arrow points DOWNWIND, the sr-only label names the source — #}
+                    {# the same convention as _weather_panel and the hourly row.   #}
+                    {# See apps.public.templatetags.weather_tags.                  #}
+                    <span
+                        class="inline-flex items-center gap-x-1 text-xs text-text-3 whitespace-nowrap"
+                        data-testid="{{ testid_prefix|default:'forecast' }}-wind"
+                    >
+                        <span class="sr-only">{% trans "Wind" %}</span>
+                        {% with bearing=day.wind_bearing|compass_point %}
+                            {% if bearing %}
+                                <span
+                                    aria-hidden="true"
+                                    class="inline-block"
+                                    style="transform: rotate({{ day.wind_bearing|wind_arrow_rotation|floatformat:0 }}deg)"
+                                >&uarr;</span>
+                                <span class="sr-only">
+                                    {% blocktrans %}from {{ bearing }},{% endblocktrans %}
+                                </span>
+                            {% endif %}
+                        {% endwith %}
+                        {% blocktrans with speed=day.wind_speed_max|floatformat:0 trimmed %}
+                            {{ speed }} km/h
                         {% endblocktrans %}
                     </span>
                 {% endif %}

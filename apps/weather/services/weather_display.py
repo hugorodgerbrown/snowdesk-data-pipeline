@@ -339,6 +339,36 @@ class WeatherDisplay(TypedDict):
     temp_min: float | None  # Daily min air temp at 2m, °C.
     snowfall_sum: float | None  # Daily snowfall total, cm.
     freezing_level_height: float | None  # Day's maximum freezing level, m.
+    wind_speed_max: float | None  # Daily max sustained wind at 10m, km/h.
+    wind_bearing: float | None  # Dominant direction at 10m, degrees FROM.
+    # Gusts only when they exceed the sustained speed — an equal value adds
+    # nothing to the reading, and "24 gusting 24" is noise on a stat row.
+    wind_gusts_max: float | None
+
+
+def _gusts_worth_showing(speed: float | None, gusts: float | None) -> float | None:
+    """Return the gust value only when it says more than the speed alone.
+
+    Open-Meteo reports a gust maximum for every day, and on a still day it
+    sits at or barely above the sustained maximum. Rendering it regardless
+    produces "24 gusting 24" on a stat row that is already carrying four
+    other values, so the panel drops it unless it is genuinely higher.
+
+    A missing sustained speed means there is no wind item at all, so the
+    gust has nothing to qualify and is dropped with it.
+
+    Args:
+        speed: The day's maximum sustained wind at 10m, or ``None``.
+        gusts: The day's maximum gust at 10m, or ``None``.
+
+    Returns:
+        The gust value, or ``None`` when it is absent, unqualifiable, or
+        not above the sustained speed.
+
+    """
+    if speed is None or gusts is None:
+        return None
+    return gusts if gusts > speed else None
 
 
 def build_weather_display(
@@ -382,6 +412,11 @@ def build_weather_display(
         temp_min=weather.temperature_2m_min,
         snowfall_sum=weather.snowfall_sum,
         freezing_level_height=weather.freezing_level_height,
+        wind_speed_max=weather.wind_speed_10m_max,
+        wind_bearing=weather.wind_direction_10m_dominant,
+        wind_gusts_max=_gusts_worth_showing(
+            weather.wind_speed_10m_max, weather.wind_gusts_10m_max
+        ),
     )
 
 
@@ -402,6 +437,8 @@ class ForecastPanelDay(TypedDict):
     temp_min: float | None
     snowfall_sum: float | None
     freezing_level_height: float | None
+    wind_speed_max: float | None  # Daily max sustained wind at 10m, km/h.
+    wind_bearing: float | None  # Dominant direction at 10m, degrees FROM.
     hourly: list[HourlyRow]  # That day's hourly rows, or [].
 
 
@@ -453,6 +490,8 @@ def _forecast_day_context(
         temp_min=entry.get("temperature_2m_min"),
         snowfall_sum=entry.get("snowfall_sum"),
         freezing_level_height=entry.get("freezing_level_height"),
+        wind_speed_max=entry.get("wind_speed_10m_max"),
+        wind_bearing=entry.get("wind_direction_10m_dominant"),
         # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
         # 'hourly' key at all, so this is a presence check, not a null check.
         hourly=list(entry.get("hourly") or []),
@@ -493,6 +532,8 @@ def build_point_forecast_panel(
             temp_min=weather.temperature_2m_min,
             snowfall_sum=weather.snowfall_sum,
             freezing_level_height=weather.freezing_level_height,
+            wind_speed_max=weather.wind_speed_10m_max,
+            wind_bearing=weather.wind_direction_10m_dominant,
             hourly=list(weather.hourly or []),
         )
     ]
