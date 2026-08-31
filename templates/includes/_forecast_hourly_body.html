@@ -15,9 +15,9 @@ column of "0.0 cm" down a dry week is noise.
 
 Wind direction shares the wind cell rather than taking a column of its own —
 a bearing means nothing beside a speed it does not modify. The arrow points
-DOWNWIND (the way the air travels) while the accessible label names where the
-wind comes FROM, which is the aspect being loaded; see
-``apps.public.templatetags.weather_tags`` for why the two differ. Rows
+AT THE SOURCE and the accessible label names that same source, which is the
+aspect being loaded; SNOW-785 made the two agree, and the glyph used to fly
+downwind. See ``apps.public.templatetags.weather_tags``. Rows
 written before SNOW-778 have no direction key at all, so the arrow is
 presence-checked and the speed renders alone when it is absent.
 {% endcomment %}

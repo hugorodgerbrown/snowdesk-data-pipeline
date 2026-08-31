@@ -99,9 +99,11 @@ Context:
                 {% if weather_display.wind_speed_max is not None %}
                     {# Direction rides with the speed rather than standing as its #}
                     {# own item: a bearing modifies a speed, and alone it states  #}
-                    {# nothing. The arrow points DOWNWIND while the sr-only text  #}
-                    {# names the source, which is the aspect being loaded — same  #}
-                    {# convention as the hourly row, see weather_tags.           #}
+                    {# nothing. The arrow points AT THE SOURCE and the sr-only    #}
+                    {# text names the same source — the aspect being loaded.      #}
+                    {# SNOW-785 made the two agree; the glyph used to fly         #}
+                    {# downwind, contradicting both its own label and the hourly  #}
+                    {# chart. See weather_tags.                                   #}
                     <span
                         class="inline-flex items-center gap-x-1 whitespace-nowrap"
                         data-testid="{{ testid_prefix|default:'weather' }}-wind"
