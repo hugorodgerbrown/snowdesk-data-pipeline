@@ -24,7 +24,6 @@ restoration.
 
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
-| Bulletin masthead ([`templates/includes/bulletin_header.html`](../templates/includes/bulletin_header.html)) | `MicroRegion.centroid_location` | the page's date |
 | Resort page ([`apps/public/templates/public/resort.html`](../apps/public/templates/public/resort.html)) | every `ResortLocation.location` | today |
 | Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) | `Favourite.location` | today |
 | Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?d=` or today |
@@ -34,6 +33,14 @@ The first four are server-rendered; the map overlay is a GeoJSON feed and a
 MapLibre symbol layer, plus a tap sheet
 ([`apps/public/templates/public/partials/_weather_detail.html`](../apps/public/templates/public/partials/_weather_detail.html))
 that hands off to the location forecast page.
+
+**The bulletin masthead is not on this list, and that is the point
+(SNOW-784).** It carried a row read off `MicroRegion.centroid_location`
+until SNOW-784 removed it: a micro-region spans thousands of metres of
+vertical, so one centroid point presented under a regional heading claims
+more than it knows. The bulletin's own weather — `weatherReview`,
+`weatherForecast`, `tendency` — is the forecaster's pan-regional prose and
+is unaffected; see the closing note in this file.
 
 **Each component appears once (SNOW-782).** The one-day row
 (`_weather_panel.html`) goes wherever a location is named; the week

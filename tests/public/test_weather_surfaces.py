@@ -75,11 +75,20 @@ def _forecast_day(date: str, weather_code: int = 71) -> dict[str, object]:
 
 @pytest.mark.django_db
 class TestBulletinMasthead:
-    """The masthead's weather row, read off the region's centroid."""
+    """The bulletin masthead carries NO Open-Meteo weather (SNOW-784).
+
+    It used to, read off the region's ``centroid_location``. A
+    micro-region spans thousands of metres of vertical, so one centroid
+    point under a regional heading claims more than it knows. The
+    forecaster's own pan-regional prose is the bulletin's weather and
+    stays where it is. That prose section is covered by
+    ``tests/public/test_bulletin_page.py`` (``snowpack-weather-section``)
+    — it is the thing this ticket must NOT remove.
+    """
 
     @freeze_time(MIDDAY)
-    def test_centroid_weather_reaches_the_masthead(self) -> None:
-        """A centroid row for the page date renders inside the masthead."""
+    def test_a_centroid_row_does_not_reach_the_masthead(self) -> None:
+        """Even with a row for the exact page date, no panel renders."""
         centroid = LocationFactory.create(name="CH-1000 centroid")
         region = MicroRegionFactory.create(centroid_location=centroid)
         WeatherFactory.create(
@@ -94,33 +103,8 @@ class TestBulletinMasthead:
 
         assert response.status_code == 200
         content = response.content.decode()
-        assert 'data-testid="bulletin-weather-panel"' in content
-        assert "light_snow-day.svg" in content
-        assert "Light snow" in content
-
-    def test_a_region_with_no_centroid_renders_no_panel(self) -> None:
-        """No centroid link means nothing to read, and no panel."""
-        region = MicroRegionFactory.create(centroid_location=None)
-
-        response = Client().get(region.get_absolute_url(PAGE_DATE))
-
-        assert response.status_code == 200
-        assert 'data-testid="bulletin-weather-panel"' not in response.content.decode()
-
-    def test_a_date_with_no_row_renders_no_panel(self) -> None:
-        """A historical date predates the estate's first fetch.
-
-        This is the SNOW-731 case: no backfill, so a bulletin for last
-        February has no row. It must degrade to no panel, not to an error.
-        """
-        centroid = LocationFactory.create()
-        region = MicroRegionFactory.create(centroid_location=centroid)
-        WeatherFactory.create(location=centroid, observed_on=PAGE_DATE)
-
-        response = Client().get(region.get_absolute_url(datetime.date(2026, 2, 14)))
-
-        assert response.status_code == 200
-        assert 'data-testid="bulletin-weather-panel"' not in response.content.decode()
+        assert 'data-testid="bulletin-weather-panel"' not in content
+        assert "light_snow-day.svg" not in content
 
 
 @pytest.mark.django_db

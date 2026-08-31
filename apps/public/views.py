@@ -3243,35 +3243,6 @@ def _build_canonical_url(
 # ---------------------------------------------------------------------------
 
 
-def _weather_for_location(
-    location: Location | None, observed_on: datetime.date
-) -> Weather | None:
-    """Return the ``Weather`` row for one location on one day, or ``None``.
-
-    The read path every weather surface goes through. Keyed on the
-    ``(location, observed_on)`` unique constraint — **never**
-    ``.order_by("-fetched_at").first()``, because today's row is updated in
-    place rather than appended, so ordering by fetch time would return the
-    same row while implying there were several.
-
-    ``None`` is the ordinary answer, not an error case: a location with no
-    centroid link has nowhere to read from, and a historical date predates
-    the estate's first fetch (the SNOW-731 backfill is deferred). Both must
-    degrade to no panel.
-
-    Args:
-        location: The location to read, or ``None``.
-        observed_on: The calendar day the caller is showing.
-
-    Returns:
-        The row, or ``None`` when there is none.
-
-    """
-    if location is None:
-        return None
-    return Weather.objects.for_location(location).on_date(observed_on).first()
-
-
 def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     """
     Look up a MicroRegion with the prefetches the bulletin page needs.
@@ -3285,9 +3256,11 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     ordered-by-name so the "Adjoining regions" section iterates in display
     order without a per-render sort.
 
-    SNOW-761 added ``centroid_location`` to the chain: the masthead's
-    weather panel reads the region's centroid ``Location`` on every
-    pageview, and without it that FK is a second SELECT.
+    ``centroid_location`` is in the chain for ``MicroRegion.centre_point()``,
+    which ``_build_structured_data`` calls for the JSON-LD ``geo`` block on
+    every pageview; without it that FK is a second SELECT. SNOW-761 added it
+    for the masthead's weather panel instead, and SNOW-784 removed that
+    panel — the JOIN is still earned, just by a different reader.
     """
     return get_object_or_404(
         MicroRegion.objects.select_related(
@@ -3869,15 +3842,6 @@ def _bulletin_detail_response(
         else ""
     )
 
-    # SNOW-761: the masthead's weather, read off the region's centroid
-    # Location for the day the page represents. A region with no centroid
-    # link, or a date before the estate's first fetch, yields None and the
-    # partial renders nothing — a historical bulletin simply has no panel.
-    weather_display = build_weather_display(
-        _weather_for_location(region.centroid_location, target_date),
-        timezone.now(),
-    )
-
     if selected is None:
         response = _render_bulletin_page(
             request,
@@ -3888,7 +3852,6 @@ def _bulletin_detail_response(
                 "region_id": region.region_id,
                 "slug": slugify(region.name),
                 "subregion_name": subregion_name,
-                "weather_display": weather_display,
                 "page_date": target_date,
                 "prev_date": prev_date,
                 "next_date": next_date,
@@ -4035,9 +3998,6 @@ def _bulletin_detail_response(
         # Masthead context.
         "day_windows": day_windows,
         "subregion_name": subregion_name,
-        # SNOW-761: the masthead's weather panel — the region centroid's
-        # Weather row for page_date, or None.
-        "weather_display": weather_display,
         # Hero rating badge — morning level + optional subdivision (SNOW-246).
         "morning_rating": morning_rating,
         # Period transition chip — rise/fall beside the hero badge (SNOW-248).
