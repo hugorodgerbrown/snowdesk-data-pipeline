@@ -428,3 +428,57 @@ class TestStatusPageChildren:
             assert "max-w-md" in html, f"{tpl}: missing max-w-md"
             assert "bg-card" in html, f"{tpl}: missing card chrome"
             assert "rounded-card" in html, f"{tpl}: missing card chrome"
+
+
+class TestComponentLibraryWeatherIcons:
+    """Every weather icon a library fixture names must be a real file.
+
+    SNOW-781: the forecast-panel fixture built its filename as
+    ``f"{icon_bucket}-day.svg"``, which is right for eleven of the twelve
+    icon buckets and wrong for ``cloudy`` — the one that ships a single
+    file rather than a day/night pair. The library rendered a broken image
+    for the Overcast column, and no test noticed because every assertion
+    was about markup rather than about whether the asset existed.
+
+    This walks the filenames the fixtures actually carry, so it covers the
+    hand-written ones as well as the derived ones.
+    """
+
+    def _icon_names(self) -> set[str]:
+        """Collect every icon filename the weather fixtures name.
+
+        Returns:
+            The set of basenames, e.g. ``{"cloudy.svg", "clear-day.svg"}``.
+
+        """
+        from apps.public._component_fixtures import (
+            FORECAST_PANEL_VARIANTS,
+            WEATHER_PANEL_VARIANTS,
+        )
+
+        names: set[str] = set()
+        for variant in FORECAST_PANEL_VARIANTS:
+            for day in variant["context"]["panel"]["days"]:
+                names.add(day["icon_filename"])
+        for variant in WEATHER_PANEL_VARIANTS:
+            display = variant["context"]["weather_display"]
+            if display.get("icon_filename"):
+                names.add(display["icon_filename"])
+        return names
+
+    def test_the_fixtures_name_icons_that_exist(self) -> None:
+        """No fixture asks for an icon that is not on disk."""
+        from django.conf import settings
+
+        names = self._icon_names()
+        assert names, "fixtures named no icons — the walk is broken, not clean"
+        icon_dir = settings.BASE_DIR / "static" / "icons" / "weather"
+        missing = sorted(name for name in names if not (icon_dir / name).is_file())
+        assert not missing, f"fixtures name icons that do not exist: {missing}"
+
+    def test_cloudy_resolves_to_its_single_file(self) -> None:
+        """``cloudy`` has no day variant, so the helper must not invent one."""
+        from apps.weather.services.weather_display import weather_icon_filename
+
+        assert weather_icon_filename("cloudy", "day") == "cloudy.svg"
+        assert weather_icon_filename("cloudy", "night") == "cloudy.svg"

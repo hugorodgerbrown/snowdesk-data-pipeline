@@ -27,6 +27,7 @@ from django import forms
 from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
+from apps.weather.services.weather_display import weather_icon_filename
 
 # String constants for elevation bound type — mirror ``apps.public.views`` so the
 # template filter (``elevation_icon``) sees the same strings without coupling
@@ -2961,7 +2962,12 @@ def _forecast_panel_day(
         "date": date,
         "weekday_label": date.strftime("%a"),
         "icon_bucket": icon_bucket,
-        "icon_filename": f"{icon_bucket}-day.svg",
+        # Through the real helper, not an f-string that rebuilds its logic:
+        # ``cloudy`` is the one bucket shipping a single file rather than a
+        # day/night pair, so ``f"{bucket}-day.svg"`` asked for a
+        # ``cloudy-day.svg`` that has never existed and the library rendered
+        # a broken image for the Overcast column (SNOW-781).
+        "icon_filename": weather_icon_filename(icon_bucket, "day"),
         "condition_label": condition_label,
         "temp_max": temp_max,
         "temp_min": temp_min,
