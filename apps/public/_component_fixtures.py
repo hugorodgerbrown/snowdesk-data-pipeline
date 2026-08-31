@@ -27,7 +27,10 @@ from django import forms
 from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
-from apps.weather.services.weather_display import build_hourly_chart
+from apps.weather.services.weather_display import (
+    build_hourly_chart,
+    weather_icon_filename,
+)
 
 # String constants for elevation bound type — mirror ``apps.public.views`` so the
 # template filter (``elevation_icon``) sees the same strings without coupling
@@ -2969,7 +2972,11 @@ def _forecast_panel_day(
         "date": date,
         "weekday_label": date.strftime("%a"),
         "icon_bucket": icon_bucket,
-        "icon_filename": f"{icon_bucket}-day.svg",
+        # Through the real helper, not an f-string: ``cloudy`` is the one
+        # bucket that ships a single file rather than a day/night pair, so
+        # ``f"{bucket}-day.svg"`` asked for a cloudy-day.svg that does not
+        # exist and the library rendered a broken image for it.
+        "icon_filename": weather_icon_filename(icon_bucket, "day"),
         "condition_label": condition_label,
         "temp_max": temp_max,
         "temp_min": temp_min,
@@ -2993,20 +3000,58 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
 
     """
     anchor = datetime.date(2026, 1, 12)
-    # A full 24 hours, because that is the shape the chart is drawn for: a
-    # four-entry series would show four bars adrift on a day-wide axis and
-    # say nothing about how the bands read.
+    # A REAL day, not a generated curve. This is Open-Meteo's record for
+    # Verbier village (46.0963 / 7.2286, 1494 m) on 2026-02-16 — 29 cm of
+    # snow, gusting to 62 km/h, and a temperature that crosses zero eleven
+    # times over the day, which is exactly the day an avalanche forecast is
+    # read on. The first cut of this fixture was an arithmetic ramp
+    # (``-6.0 + hour * 0.5``); every band drew as a straight diagonal and
+    # the component read as a test pattern rather than as weather, which is
+    # the whole reason a fixture exists.
+    #
+    # Freezing level is DERIVED from the station temperature at the standard
+    # 6.5 °C/km lapse rate — Open-Meteo's archive endpoint does not publish
+    # ``freezing_level_height``, only its forecast one does. It is a fair
+    # shape to draw against but it is not an observation, and it is why the
+    # dashed line tracks the bars so closely here and will not in production.
+    _storm_day = (
+        # temp, snow cm, precip mm, wind, gust, freezing m
+        (-0.0, 2.17, 3.2, 0.6, 41.4, 1490.0),
+        (0.5, 0.91, 1.3, 1.6, 29.9, 1570.0),
+        (0.8, 2.59, 3.7, 0.7, 45.7, 1620.0),
+        (1.2, 0.70, 1.0, 0.6, 42.1, 1680.0),
+        (1.2, 0.21, 0.3, 0.4, 43.6, 1680.0),
+        (0.7, 0.14, 0.3, 0.5, 32.8, 1600.0),
+        (0.0, 1.05, 1.5, 0.9, 49.3, 1490.0),
+        (-0.1, 1.68, 2.4, 2.2, 51.8, 1480.0),
+        (0.0, 1.89, 2.7, 0.6, 52.6, 1490.0),
+        (-0.6, 1.75, 2.5, 3.7, 45.7, 1400.0),
+        (-0.4, 2.17, 3.1, 4.4, 44.3, 1430.0),
+        (-0.1, 1.19, 1.7, 4.3, 46.1, 1480.0),
+        (0.3, 1.33, 1.9, 5.5, 48.2, 1540.0),
+        (0.2, 0.91, 1.3, 5.8, 55.1, 1520.0),
+        (0.8, 0.28, 0.4, 5.4, 48.6, 1620.0),
+        (1.5, 0.49, 0.7, 5.3, 61.6, 1720.0),
+        (1.2, 1.75, 2.5, 5.8, 60.1, 1680.0),
+        (0.5, 0.77, 1.1, 5.1, 59.8, 1570.0),
+        (-0.1, 1.12, 1.7, 4.3, 60.1, 1480.0),
+        (-0.8, 1.12, 1.6, 5.3, 58.0, 1370.0),
+        (-2.6, 1.19, 1.7, 2.7, 56.9, 1090.0),
+        (-2.4, 0.84, 1.2, 3.8, 50.8, 1120.0),
+        (-2.7, 1.26, 1.8, 3.9, 50.4, 1080.0),
+        (-2.8, 1.61, 2.3, 3.1, 54.7, 1060.0),
+    )
     hourly = tuple(
         {
             "time": f"2026-01-12T{hour:02d}:00",
-            "temperature_2m": -6.0 + hour * 0.5,
-            "wind_speed_10m": 12.0 + hour,
-            "wind_gusts_10m": 26.0 + hour * 1.4,
-            "precipitation": 0.9 if 4 <= hour <= 11 else 0.0,
-            "freezing_level_height": 1100.0 + hour * 45,
-            "snowfall": 0.7 if 4 <= hour <= 8 else 0.0,
+            "temperature_2m": temp,
+            "snowfall": snow,
+            "precipitation": precip,
+            "wind_speed_10m": wind,
+            "wind_gusts_10m": gust,
+            "freezing_level_height": freezing,
         }
-        for hour in range(24)
+        for hour, (temp, snow, precip, wind, gust, freezing) in enumerate(_storm_day)
     )
     # The same day with holes in it. Open-Meteo drops variables depending on
     # which model backs the coordinates, and 09:00–11:00 is missing outright

@@ -212,6 +212,24 @@ An empty series, a series whose every `time` is unparseable, and a day
 whose every value is null all produce **no chart** rather than an empty
 frame.
 
+**The viewBox is wide and the hour labels are outside it.** Both were
+corrected after the first cut was looked at in a browser. A 240×176 box
+stretched into a portrait block taller than the card holding it, so the
+box is 240×84 — a day is a long thin thing and a meteogram wants roughly
+3:1. And the hour ticks were `<text>` inside the drawing, which scales
+with the viewBox: `font-size="9"` rendered at about 28px on a desktop card
+and would have been unreadable on a phone. They are now HTML beneath the
+`<svg>`, absolutely positioned by the `x_percent` each `HourLabel` carries,
+so they stay over their own hour at every width while the type size stays
+fixed. **Do not move them back inside the SVG.**
+
+The component fixture is a real day — Open-Meteo's record for Verbier
+village on 2026-02-16, 29 cm of snow and 62 km/h gusts, temperature
+crossing zero eleven times. It replaced an arithmetic ramp
+(`-6.0 + hour * 0.5`) under which every band drew as a straight diagonal
+and the component read as a test pattern. A fixture for a chart has to be
+shaped like the data or it cannot show whether the chart works.
+
 Colours are `--color-chart-*` design tokens surfaced as `fill-*` /
 `stroke-*` utilities, so the SVG carries class names and no hex and follows
 the theme. `{% localize off %}` wraps the drawing and is load-bearing:

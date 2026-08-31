@@ -403,8 +403,12 @@ def build_weather_display(
 # hour parsed out of its ``time`` string, never from its index in the list.
 # A series missing 03:00 therefore leaves a gap at 03:00 rather than
 # shifting every later hour an hour to the left.
+#
+# The viewBox is deliberately WIDE — a day is a long thin thing, and the
+# first cut of this chart was 240x176, which stretched to a portrait block
+# taller than the card it sat in. A meteogram wants roughly 3:1.
 CHART_WIDTH = 240.0
-CHART_HEIGHT = 176.0
+CHART_HEIGHT = 84.0
 HOURS_PER_DAY = 24
 HOUR_WIDTH = CHART_WIDTH / HOURS_PER_DAY
 BAR_WIDTH = 6.0
@@ -416,15 +420,19 @@ MIN_BAR_HEIGHT = 1.0
 
 # The three bands, top to bottom: temperature (tall, it carries the
 # freezing-level overlay too), precipitation, wind.
-TEMPERATURE_TOP = 4.0
-TEMPERATURE_HEIGHT = 84.0
-PRECIPITATION_TOP = 96.0
-PRECIPITATION_HEIGHT = 26.0
-WIND_TOP = 130.0
-WIND_HEIGHT = 26.0
+TEMPERATURE_TOP = 3.0
+TEMPERATURE_HEIGHT = 46.0
+PRECIPITATION_TOP = 53.0
+PRECIPITATION_HEIGHT = 13.0
+WIND_TOP = 70.0
+WIND_HEIGHT = 13.0
 
-# Hour ticks under the wind band, every third hour.
-AXIS_LABEL_Y = 170.0
+# Hour ticks every third hour. They are rendered as HTML BENEATH the svg,
+# not as <text> inside it: text in a scaled viewBox scales with the chart,
+# so a font-size that reads correctly on a desktop card is enormous on a
+# wide one and unreadable on a phone. The ticks carry a percentage across
+# the chart's width so the HTML can sit each label exactly over the hour
+# centre the bars use.
 AXIS_LABEL_INTERVAL = 3
 
 # The variables a chart can draw. A day whose every hour is null across all
@@ -513,9 +521,16 @@ class WindBand(TypedDict):
 
 
 class HourLabel(TypedDict):
-    """One x-axis tick under the wind band."""
+    """One x-axis tick under the wind band.
+
+    ``x`` is the SVG user unit the hour's bars are centred on; ``x_percent``
+    is that same position as a percentage of the chart width, so the HTML
+    tick row beneath the drawing can place each label over its own hour
+    without knowing the viewBox.
+    """
 
     x: float
+    x_percent: float
     label: str  # "00", "03", … — numeric, so it needs no translation.
 
 
@@ -525,7 +540,6 @@ class HourlyChart(TypedDict):
     view_box: str
     width: float
     height: float
-    label_y: float  # Baseline the hour ticks sit on, under the wind band.
     temperature: TemperatureBand
     precipitation: PrecipitationBand
     wind: WindBand
@@ -662,9 +676,12 @@ def _temperature_band(by_hour: dict[int, HourlyRow]) -> TemperatureBand:
         bars.append(
             TemperatureBar(
                 x=round(_hour_centre(hour) - BAR_WIDTH / 2, 1),
-                y=min(value_y, zero_y),
+                # Rounded, like every other coordinate: an unrounded float
+                # reaches the attribute as height="40.099999999999994",
+                # which is bytes on every response for no drawn difference.
+                y=round(min(value_y, zero_y), 1),
                 width=BAR_WIDTH,
-                height=max(abs(value_y - zero_y), MIN_BAR_HEIGHT),
+                height=round(max(abs(value_y - zero_y), MIN_BAR_HEIGHT), 1),
                 is_warm=value >= 0,
             )
         )
@@ -826,12 +843,15 @@ def build_hourly_chart(hourly: list[HourlyRow]) -> HourlyChart | None:
         view_box=f"0 0 {CHART_WIDTH:.0f} {CHART_HEIGHT:.0f}",
         width=CHART_WIDTH,
         height=CHART_HEIGHT,
-        label_y=AXIS_LABEL_Y,
         temperature=_temperature_band(by_hour),
         precipitation=_precipitation_band(by_hour),
         wind=_wind_band(by_hour),
         hour_labels=[
-            HourLabel(x=_hour_centre(hour), label=f"{hour:02d}")
+            HourLabel(
+                x=_hour_centre(hour),
+                x_percent=round(_hour_centre(hour) / CHART_WIDTH * 100, 2),
+                label=f"{hour:02d}",
+            )
             for hour in range(0, HOURS_PER_DAY, AXIS_LABEL_INTERVAL)
         ],
     )

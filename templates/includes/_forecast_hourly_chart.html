@@ -152,20 +152,27 @@ Context:
                     class="stroke-chart-wind"
                 />
             {% endfor %}
-
-            {# X axis — one tick every three hours, shared by all three bands. #}
-            {% for tick in chart.hour_labels %}
-                <text
-                    x="{{ tick.x }}"
-                    y="{{ chart.label_y }}"
-                    font-size="9"
-                    text-anchor="middle"
-                    class="fill-chart-label"
-                >
-                    {{ tick.label }}
-                </text>
-            {% endfor %}
         </svg>
+
+        {# X axis — one tick every three hours, shared by all three bands.   #}
+        {# HTML rather than <text> inside the svg: text in a scaled viewBox  #}
+        {# scales with the drawing, so a size that reads on one card is      #}
+        {# enormous on a wider one. Each label is placed over its own hour   #}
+        {# centre by the percentage the geometry already computed, so it     #}
+        {# stays aligned with the bars at every width while the type size    #}
+        {# stays fixed.                                                      #}
+        <div
+            class="relative h-4 mt-1"
+            aria-hidden="true"
+            data-testid="{{ testid_prefix|default:'forecast' }}-chart-hours"
+        >
+            {% for tick in chart.hour_labels %}
+                <span
+                    class="absolute top-0 -translate-x-1/2 font-mono text-caption text-text-3 tabular-nums"
+                    style="left: {{ tick.x_percent }}%"
+                >{{ tick.label }}</span>
+            {% endfor %}
+        </div>
 
         {# Legend. The bands carry no axis titles, so this is what says which #}
         {# ink is which — and it is text, so a screen reader gets it too.     #}
