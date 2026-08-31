@@ -52,6 +52,14 @@ urlpatterns = [
     # Filtered by Location.objects.public(), never active(): the latter also
     # reaches favourites, and a public feed built from it leaks private pins.
     path("weather.geojson", api.weather_geojson, name="weather_geojson"),
+    # SNOW-761: the sheet body behind a tap on a weather symbol. Keyed on
+    # Location like the feed it is tapped from, and 404s for anything
+    # outside Location.objects.public() — see the view.
+    path(
+        "weather/<int:location_id>/detail/",
+        api.weather_detail,
+        name="weather_detail",
+    ),
     path(
         "major-regions.geojson",
         api.major_regions_geojson,

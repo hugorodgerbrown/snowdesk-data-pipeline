@@ -9,8 +9,10 @@
  *   - `iconForCode`, now that the feed serves the WMO code rather than a
  *     filename (the Python half of that table is guarded from pytest, in
  *     tests/weather/services/test_icon_table_parity.py);
- *   - `formatLabel`, which puts the station's altitude under the day's max
- *     temperature — the whole reason a map symbol is readable on a mountain;
+ *   - `formatTemp`, the day's max temperature as the symbol's caption;
+ *   - the elevation trio — `formatElevation`, `formatElevationBreak` and
+ *     `elevationMarkFor` — which have to agree on emptiness, because the
+ *     layer renders all three as fixed `format` sections;
  *   - `collapseToLowest`, the cluster-to-the-valley-station transform that
  *     MapLibre's own `clusterProperties` cannot express, having min/max but
  *     no argmin.
@@ -58,30 +60,66 @@ describe('iconForCode', () => {
   });
 });
 
-describe('formatLabel', () => {
-  it('puts the rounded temperature above the rounded elevation', () => {
-    expect(core.formatLabel(4.4, 3328)).toBe('4°\n3328 m');
-    expect(core.formatLabel(-3.2, 1500.6)).toBe('-3°\n1501 m');
+describe('formatTemp', () => {
+  it('rounds to a whole degree', () => {
+    expect(core.formatTemp(4.4)).toBe('4°');
+    expect(core.formatTemp(-3.2)).toBe('-3°');
   });
 
   it('renders zero degrees as 0°, not as nothing', () => {
-    expect(core.formatLabel(0, 1500)).toBe('0°\n1500 m');
+    // `0` is falsy, so a truthiness check here would silently drop the
+    // reading on exactly the day a skier cares most about.
+    expect(core.formatTemp(0)).toBe('0°');
   });
 
-  it('drops the elevation line when the station has no resolved height', () => {
-    // Elevation is resolved out of band, so a freshly imported location
-    // has none — the label falls back rather than printing a gap.
-    expect(core.formatLabel(4, null)).toBe('4°');
-    expect(core.formatLabel(4, undefined)).toBe('4°');
+  it('returns an empty caption when there is no finite reading', () => {
+    // The symbol still draws; only the caption goes. A stray character
+    // under an icon would read as a rendering fault.
+    expect(core.formatTemp(null)).toBe('');
+    expect(core.formatTemp(undefined)).toBe('');
+    expect(core.formatTemp(NaN)).toBe('');
   });
 
-  it('drops the temperature line when tmax is missing', () => {
-    expect(core.formatLabel(null, 2000)).toBe('2000 m');
+  it('does not carry the station elevation', () => {
+    // The label used to be "4°\n3328 m". Every marker carrying its own
+    // height made the map unreadable at any density, so elevation went —
+    // it earns its place on a resort page showing three points at three
+    // heights, not here. It still drives the cluster collapse.
+    expect(core.formatTemp(4)).not.toContain('m');
+    expect(core.formatLabel).toBeUndefined();
+  });
+});
+
+describe('the elevation trio', () => {
+  it('formats a rounded metre value', () => {
+    expect(core.formatElevation(3328)).toBe('3328 m');
+    expect(core.formatElevation(1500.6)).toBe('1501 m');
   });
 
-  it('returns an empty label when it has neither', () => {
-    expect(core.formatLabel(null, null)).toBe('');
-    expect(core.formatLabel(NaN, NaN)).toBe('');
+  it('carries the row break and the mark alongside a real elevation', () => {
+    expect(core.formatElevationBreak(3328)).toBe('\n');
+    expect(core.elevationMarkFor(3328)).toBe(core.ELEVATION_MARK_ID);
+  });
+
+  it('goes empty together when the elevation is unresolved', () => {
+    // THE POINT OF THE TRIO. A `format` expression is fixed at style time,
+    // so all three sections render for every symbol and the only lever is
+    // what each one contains. If the break survived an absent elevation
+    // the chip would render a blank second row and sit off its own point;
+    // if the mark survived it, a stray glyph would land on row one.
+    for (const missing of [null, undefined, NaN]) {
+      expect(core.formatElevation(missing)).toBe('');
+      expect(core.formatElevationBreak(missing)).toBe('');
+      expect(core.elevationMarkFor(missing)).toBe('');
+    }
+  });
+
+  it('treats sea level as a real elevation, not as absent', () => {
+    // `0` is falsy. A truthiness check here would drop the row for a
+    // coastal station and keep it for every other one.
+    expect(core.formatElevation(0)).toBe('0 m');
+    expect(core.formatElevationBreak(0)).toBe('\n');
+    expect(core.elevationMarkFor(0)).toBe(core.ELEVATION_MARK_ID);
   });
 });
 
@@ -92,7 +130,23 @@ describe('projectFeatureForDate', () => {
     const projected = core.projectFeatureForDate(feature, '2026-08-30');
 
     expect(projected.properties.icon).toBe('light_snow-day.svg');
-    expect(projected.properties.label).toBe('4°\n3328 m');
+    expect(projected.properties.label_temp).toBe('4°');
+    expect(projected.properties.label_break).toBe('\n');
+    expect(projected.properties.elev_mark).toBe(core.ELEVATION_MARK_ID);
+    expect(projected.properties.label_elev).toBe('3328 m');
+  });
+
+  it('projects an empty elevation row when the station has no height', () => {
+    const feature = makeFeature(
+      { '2026-08-30': { code: 71, tmax: 4 } }, { elevation: null },
+    );
+
+    const projected = core.projectFeatureForDate(feature, '2026-08-30');
+
+    expect(projected.properties.label_temp).toBe('4°');
+    expect(projected.properties.label_break).toBe('');
+    expect(projected.properties.elev_mark).toBe('');
+    expect(projected.properties.label_elev).toBe('');
   });
 
   it('projects an empty icon when the feature has no entry for the date', () => {
@@ -103,7 +157,12 @@ describe('projectFeatureForDate', () => {
     const projected = core.projectFeatureForDate(feature, '2026-09-30');
 
     expect(projected.properties.icon).toBe('');
-    expect(projected.properties.label).toBe('');
+    expect(projected.properties.label_temp).toBe('');
+    // The whole label goes with the day, elevation row included — the
+    // station's height is not news on a date it has no reading for.
+    expect(projected.properties.label_break).toBe('');
+    expect(projected.properties.elev_mark).toBe('');
+    expect(projected.properties.label_elev).toBe('');
   });
 
   it('does not mutate the input feature', () => {

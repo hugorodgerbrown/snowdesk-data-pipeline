@@ -1,0 +1,34 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_weather_surface.html — weather detail sheet and JS (SNOW-761).
+
+Included from home.html. Mirrors _report_surface.html and
+_favourites_surface.html: an empty sheet container plus the one script that
+fills it.
+
+There is no roundel and no trigger button here. The trigger is the weather
+symbol on the map itself — map.js binds the tap on the ``weather-point``
+layer and calls ``window.pwaWeatherDetail.open()``. That is why this sheet,
+unlike the three UGC ones, has nothing to render until something is tapped.
+
+``scroll_body=True``, as the other sheets use: the header stays pinned and
+only the body between it and the sheet's bottom edge scrolls. The body this
+sheet injects (public/partials/_weather_detail.html) therefore carries
+``flex-1 overflow-y-auto min-h-0`` on its own scroll region — a map overlay
+that grows with its content pushes its own footer off screen, which is the
+defect the bounded-height rule exists to stop.
+
+Context expected:
+  (None. map_weather_detail.js reads the endpoint template off #map's
+  data-weather-detail-url, which _map_embed.html renders.)
+{% endcomment %}
+{% trans "Weather detail" as weather_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label scroll_body=True %}
+<script defer src="{% static 'js/map_weather_detail.js' %}"></script>
+{# SNOW-620: the module's own user-facing strings. makemessages never scans #}
+{# JavaScript, so a literal in the module ships as English to every locale; #}
+{# read back with window.pwaStrings.read(). See docs/i18n.md.               #}
+<template id="weather-detail-strings-template">
+    <span data-string="loading">{% trans "Loading weather…" %}</span>
+    <span data-string="failed">{% trans "That weather couldn't be loaded — check your connection." %}</span>
+</template>

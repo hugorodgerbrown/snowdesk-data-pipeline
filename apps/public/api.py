@@ -81,6 +81,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import patch_cache_control, patch_vary_headers
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
@@ -108,7 +109,10 @@ from apps.regions.models import (
 )
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.weather.models import Weather
-from apps.weather.services.weather_display import build_point_weather_days
+from apps.weather.services.weather_display import (
+    build_point_weather_days,
+    build_weather_display,
+)
 
 from .decorators import lowercase_region_id
 from .views import (
@@ -1207,6 +1211,148 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
         generated_at=day_rating.updated_at if day_rating else timezone.now(),
     )
     return response
+
+
+def weather_detail(request: HttpRequest, location_id: int) -> JsonResponse:
+    """Return pre-rendered sheet HTML for a tapped weather symbol.
+
+    Response shape::
+
+        {"html": "<...>"}
+
+    Mirrors :func:`resort_popup`'s contract — a server-rendered snippet the
+    map injects — but the map puts this one in the weather SHEET rather than
+    an anchored popup. It is a CARD: today's conditions and a link out. The
+    outlook chart, the day strip and the hourly tables it briefly carried
+    belong to the full forecast, not to a surface reached by tapping a
+    symbol; the hourly rows alone were 79% of this response.
+
+    **Public, and only over the public estate.** ``Location.objects.public()``
+    is the same filter :func:`weather_geojson` uses, and it is load-bearing
+    twice over: a location outside it has no symbol on the map to tap, so
+    accepting one here would answer for a place the map never offered — and
+    ``public()`` excludes the locations a ``Favourite`` reaches, so without
+    it this endpoint would hand back the name and elevation of a stranger's
+    private pin to anyone who guessed its id. A favourite-only location is a
+    404 here, exactly as it is absent from the feed.
+
+    ``date`` is an optional ISO-8601 query parameter, so the sheet follows
+    the season scrubber rather than always answering for today. An absent,
+    malformed or out-of-range value falls back to today rather than 400-ing:
+    the scrubber is a slider and the cost of a bad value is the wrong day,
+    not a broken sheet.
+
+    A location with no row for the requested day still renders — the template
+    says so in a sentence. That is the normal state for a past date until the
+    historical backfill lands, and an error would misdescribe it.
+
+    Deliberately **not** cached. It is one row for one location on one day,
+    behind a tap rather than a page load, and the response embeds a
+    ``target_date`` that varies per request.
+
+    Errors:
+        404 — unknown ``location_id``, or one outside the public estate.
+
+    Args:
+        request: The incoming HTTP request.
+        location_id: The Location's primary key.
+
+    Returns:
+        A JsonResponse with a single ``html`` key containing the sheet body.
+
+    """
+    location = get_object_or_404(Location.objects.public(), pk=location_id)
+
+    target_date = timezone.localdate()
+    raw_date = request.GET.get("date", "")
+    if raw_date:
+        try:
+            target_date = date.fromisoformat(raw_date)
+        except ValueError:
+            logger.debug("weather_detail: ignoring unparseable date %r", raw_date)
+
+    weather = Weather.objects.filter(location=location, observed_on=target_date).first()
+    now = timezone.now()
+
+    return JsonResponse(
+        {
+            "html": render_to_string(
+                "public/partials/_weather_detail.html",
+                {
+                    "location": location,
+                    # A curated location has a name; an anonymous one (a
+                    # region centroid, which is most of the map) does not,
+                    # and Location.to_string() would print its raw
+                    # coordinates as a heading. Name the region it stands
+                    # for instead, and fall back to the generic only when
+                    # even that is missing.
+                    "heading": location.name or _weather_detail_heading(location),
+                    "weather": weather,
+                    "display": build_weather_display(weather, now),
+                    "target_date": target_date,
+                    "forecast_url": (
+                        f"{_weather_forecast_url(location)}"
+                        f"?date={target_date.isoformat()}"
+                    ),
+                },
+                request=request,
+            ),
+        }
+    )
+
+
+def _weather_forecast_url(location: Location) -> str:
+    """Build the URL of the page carrying this location's full forecast.
+
+    Always ``public:location_weather``, for every location alike. The resort
+    page also carries a full outlook, and pointing resort-linked locations
+    there was the first shape of this — but 461 of the estate's 540 public
+    locations are region centroids with no resort, so that version left the
+    card's only link missing on the large majority of taps. One destination
+    for every symbol is both the simpler rule and the one that holds.
+
+    The date rides along so the page opens on the day the map was showing
+    rather than snapping to today.
+
+    Args:
+        location: The location the card is describing.
+
+    Returns:
+        An absolute path.
+
+    """
+    return reverse("public:location_weather", kwargs={"location_id": location.pk})
+
+
+def _weather_detail_heading(location: Location) -> str:
+    """Name an unnamed location by what it stands for.
+
+    Most locations on the weather map carry no ``name``, and that is by
+    design rather than an omission: a named ``Location`` is part of the
+    curated estate ``import_locations`` owns, so region centroids and
+    resort pins are minted anonymous (see ``docs/locations.md``). The sheet
+    still needs a heading, and ``Location.to_string()`` would give it a
+    pair of raw coordinates.
+
+    Resort before region, because a location reaching both is standing at
+    the resort — the region is the area around it, and the more specific
+    answer is the one the tapper is looking at.
+
+    Args:
+        location: The location being described.
+
+    Returns:
+        The resort's or region's name, else a generic label. Never the
+        coordinates.
+
+    """
+    resort_location = location.resort_locations.select_related("resort").first()
+    if resort_location is not None:
+        return str(resort_location.resort.name)
+    region = location.micro_regions.first()
+    if region is not None:
+        return str(region.name)
+    return str(_("Weather station"))
 
 
 def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:

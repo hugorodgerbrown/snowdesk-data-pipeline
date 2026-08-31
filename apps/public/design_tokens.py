@@ -41,6 +41,7 @@ from apps.public._component_fixtures import (
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
+    FORECAST_CHART_VARIANTS,
     FORECAST_PANEL_VARIANTS,
     FORM_FIELD_VARIANTS,
     HOURLY_CHART_VARIANTS,
@@ -1359,17 +1360,46 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="forecast-chart",
+        label="Forecast chart",
+        description=(
+            "The daily high/low band across the outlook window (SNOW-761), "
+            "as one server-rendered SVG — no charting library, and the "
+            "geometry comes from "
+            "``apps.weather.services.weather_chart.build_forecast_chart`` "
+            "rather than from the template. It carries the SHAPE of the "
+            "week, which the day strip beside it cannot: a wide band is a "
+            "big diurnal swing, a narrow one a flat cloudy day. The 0 °C "
+            "line is drawn ONLY when the window crosses it — above or "
+            "below all week it would sit on the plot edge implying "
+            "something it does not mean, which is what the second variant "
+            "shows. Freezing level is deliberately absent: metres against "
+            "a degrees axis is two scales in one small chart, and it is "
+            "already a figure per column in the forecast panel. Colours "
+            "are ``currentColor`` off token classes, not ``fill`` "
+            "literals, so the chart follows the dark-mode override."
+        ),
+        kind="components",
+        partial="includes/_forecast_chart.html",
+        variants=FORECAST_CHART_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="hourly-chart",
         label="Hourly chart",
         description=(
-            "One day's weather as a meteogram (SNOW-723), replacing the "
-            "24-row hourly table. Temperature and freezing level as lines on "
-            "two derived scales, new snow and precipitation as bars, wind "
-            "speed and gusts beneath, all on one eight-block axis. Both "
-            "vertical scales come from the data rather than being fixed — "
-            "the three variants are real observed days chosen to disagree "
-            "with each other, and two of them fall entirely outside the "
-            "fixed domains the design was first drawn against."
+            "One day's weather in detail (SNOW-723) — three charts sharing "
+            "one time axis, each with its own header, summary, vertical "
+            "scale and resolution. Temperature (hourly) carries the air "
+            "temperature and the freezing level on two scales; "
+            "precipitation (hourly) carries new snow and rainfall on their "
+            "own baselines; wind (three-hourly) carries speed, gusts and "
+            "the direction the wind comes from. Both vertical scales are "
+            "derived per day rather than fixed — the three variants are "
+            "real observed days chosen to disagree with each other, and "
+            "two of them fall entirely outside the domains the design was "
+            "first drawn against. Distinct from the forecast chart above, "
+            "which carries the shape of a WEEK; this one is a single day."
         ),
         kind="components",
         partial="includes/_hourly_chart.html",
