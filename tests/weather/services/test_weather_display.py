@@ -272,6 +272,49 @@ class TestBuildWeatherDisplay:
         assert display["snowfall_sum"] == 14.0
         assert display["freezing_level_height"] == 1900.0
 
+    @freeze_time(MIDDAY)
+    def test_wind_fields_reach_the_panel(self) -> None:
+        """Speed, bearing and a qualifying gust are all handed over."""
+        weather = WeatherFactory.create(
+            wind_speed_10m_max=24.0,
+            wind_gusts_10m_max=41.0,
+            wind_direction_10m_dominant=270.0,
+        )
+
+        display = build_weather_display(weather, timezone.now())
+
+        assert display is not None
+        assert display["wind_speed_max"] == 24.0
+        assert display["wind_bearing"] == 270.0
+        assert display["wind_gusts_max"] == 41.0
+
+    @freeze_time(MIDDAY)
+    @pytest.mark.parametrize(
+        ("speed", "gusts"),
+        [
+            (24.0, 24.0),  # Equal — "24 gusting 24" says nothing.
+            (24.0, 20.0),  # Below the sustained max; not a gust worth naming.
+            (24.0, None),  # Open-Meteo omitted it.
+            (None, 41.0),  # No speed means no wind item to qualify.
+        ],
+    )
+    def test_gusts_are_dropped_when_they_add_nothing(
+        self, speed: float | None, gusts: float | None
+    ) -> None:
+        """A gust only renders when it exceeds the sustained speed.
+
+        The stat row already carries four other values, so a gust that
+        merely restates the maximum is dropped rather than shown.
+        """
+        weather = WeatherFactory.create(
+            wind_speed_10m_max=speed, wind_gusts_10m_max=gusts
+        )
+
+        display = build_weather_display(weather, timezone.now())
+
+        assert display is not None
+        assert display["wind_gusts_max"] is None
+
     @freeze_time("2026-08-30T23:00:00+00:00")
     def test_night_selects_the_night_icon(self) -> None:
         """After sunset the same code resolves to the night variant."""

@@ -1,4 +1,4 @@
-{% load i18n static %}
+{% load i18n static weather_tags %}
 {% comment %}
 templates/includes/_weather_panel.html — one day's weather at one location.
 
@@ -94,6 +94,42 @@ Context:
                         {% blocktrans with m=weather_display.freezing_level_height|floatformat:0 trimmed %}
                             {{ m }} m
                         {% endblocktrans %}
+                    </span>
+                {% endif %}
+                {% if weather_display.wind_speed_max is not None %}
+                    {# Direction rides with the speed rather than standing as its #}
+                    {# own item: a bearing modifies a speed, and alone it states  #}
+                    {# nothing. The arrow points DOWNWIND while the sr-only text  #}
+                    {# names the source, which is the aspect being loaded — same  #}
+                    {# convention as the hourly row, see weather_tags.           #}
+                    <span
+                        class="inline-flex items-center gap-x-1 whitespace-nowrap"
+                        data-testid="{{ testid_prefix|default:'weather' }}-wind"
+                    >
+                        <span class="sr-only">{% trans "Wind" %}</span>
+                        {% with bearing=weather_display.wind_bearing|compass_point %}
+                            {% if bearing %}
+                                <span
+                                    aria-hidden="true"
+                                    class="inline-block"
+                                    style="transform: rotate({{ weather_display.wind_bearing|wind_arrow_rotation|floatformat:0 }}deg)"
+                                >&uarr;</span>
+                                <span class="sr-only">
+                                    {% blocktrans %}from {{ bearing }},{% endblocktrans %}
+                                </span>
+                            {% endif %}
+                        {% endwith %}
+                        <span>
+                            {% if weather_display.wind_gusts_max is not None %}
+                                {% blocktrans with speed=weather_display.wind_speed_max|floatformat:0 gusts=weather_display.wind_gusts_max|floatformat:0 trimmed %}
+                                    {{ speed }} gusting {{ gusts }} km/h
+                                {% endblocktrans %}
+                            {% else %}
+                                {% blocktrans with speed=weather_display.wind_speed_max|floatformat:0 trimmed %}
+                                    {{ speed }} km/h
+                                {% endblocktrans %}
+                            {% endif %}
+                        </span>
                     </span>
                 {% endif %}
                 <span class="inline-flex items-center gap-x-1 whitespace-nowrap">
