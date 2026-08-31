@@ -98,7 +98,7 @@ from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
 from apps.core.freshness import apply_freshness_headers
-from apps.core.http import client_ip, is_speculative
+from apps.core.http import client_ip, is_top_level_navigation
 from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.gpx import GPXParseError
@@ -723,12 +723,16 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     ``Cache-Control: no-store`` for the same reason, and because the
     response's effect is per-session.
 
-    Speculative requests (HEAD, ``Sec-Purpose: prefetch``/``prerender``)
-    still redirect but write NOTHING to the session — a browser
-    prefetching a link in a chat window has not been given a route, and
-    writing a session for one would both mis-state intent and let a
-    scanner grow the session table by prefetch alone. The same rule, read
-    off the same helper, as ``apps.public.views.share_redirect``.
+    ONLY A REAL NAVIGATION WRITES TO THE SESSION. Speculative requests
+    (HEAD, ``Sec-Purpose: prefetch``/``prerender``) still redirect but
+    write NOTHING — a browser prefetching a link in a chat window has not
+    been given a route, and writing a session for one would both mis-state
+    intent and let a scanner grow the session table by prefetch alone.
+    Neither does a PASSIVE SUBRESOURCE load: an ``<img src="…">`` or
+    ``<iframe src="…">`` on any page anywhere would otherwise plant a token
+    in every visitor's session with no interaction at all. ``Sec-Fetch-Dest``
+    tells the two apart and ``apps.core.http.is_top_level_navigation``
+    reads it — including why an absent header is allowed through.
 
     Errors:
         404 — the token matches no share at all.
@@ -761,7 +765,7 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         gone["Cache-Control"] = "no-store"
         return gone
 
-    if not is_speculative(request):
+    if is_top_level_navigation(request):
         add_pending_token(request.session, token)
 
     destination = f"{reverse('public:home')}?route_share={token}"

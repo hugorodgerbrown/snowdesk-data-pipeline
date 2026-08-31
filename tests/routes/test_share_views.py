@@ -13,7 +13,10 @@ route_share_redirect:
   an expired share and one whose route was deleted → 410, no-store, and
     nothing written to the session;
   an unknown token → 404;
-  a speculative request (HEAD, Sec-Purpose) redirects but writes nothing;
+  a speculative request (HEAD, Sec-Purpose) redirects but writes nothing,
+    and neither does a passive subresource load (Sec-Fetch-Dest: image /
+    iframe / …) — only a top-level navigation, or a client sending no
+    fetch metadata at all, plants the token;
   POST → 405.
 
 route_share_claim:
@@ -243,6 +246,53 @@ class TestRouteShareRedirect:
         assert response.status_code == 302
         assert PENDING_SESSION_KEY not in client.session
 
+    @pytest.mark.parametrize("destination", ["image", "iframe", "script", "empty"])
+    def test_a_passive_subresource_load_writes_nothing(
+        self, client: Client, destination: str
+    ) -> None:
+        """An <img> or <iframe> pointed here is not a person accepting a route.
+
+        ``Sec-Purpose`` does not mark these — nothing does, except
+        ``Sec-Fetch-Dest``. Without this check any page on the web could
+        embed the share URL and plant a token in every visitor's session
+        with no interaction at all.
+        """
+        share = RouteShareFactory.create()
+
+        response = client.get(
+            _redirect_url(share.token), HTTP_SEC_FETCH_DEST=destination
+        )
+
+        assert response.status_code == 302
+        assert PENDING_SESSION_KEY not in client.session
+
+    def test_a_document_navigation_still_writes_the_token(self, client: Client) -> None:
+        """The header a real click carries — the case the feature is for."""
+        share = RouteShareFactory.create()
+
+        response = client.get(
+            _redirect_url(share.token), HTTP_SEC_FETCH_DEST="document"
+        )
+
+        assert response.status_code == 302
+        assert client.session[PENDING_SESSION_KEY] == [share.token]
+
+    def test_a_request_with_no_fetch_metadata_still_writes(
+        self, client: Client
+    ) -> None:
+        """An older browser sends no Sec-Fetch-Dest, and must still work.
+
+        The permissive fallback is deliberate: fetch metadata is a
+        hardening signal, not an authentication one, so its absence widens
+        the endpoint rather than closing it (apps.core.http).
+        """
+        share = RouteShareFactory.create()
+
+        response = client.get(_redirect_url(share.token))
+
+        assert response.status_code == 302
+        assert client.session[PENDING_SESSION_KEY] == [share.token]
+
     def test_post_is_not_allowed(self, client: Client) -> None:
         """A navigation, and only a navigation."""
         share = RouteShareFactory.create()
@@ -470,6 +520,72 @@ class TestShareControlRendering:
         response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
 
         assert "data-route-share" not in response.content.decode()
+
+
+# ---------------------------------------------------------------------------
+# The pending row's Save, and its authentication gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPendingRowClaimControl:
+    """Which control a pending row draws, and for whom.
+
+    The Save posts to ``route_share_claim``, which answers an anonymous
+    request 403 — and the panel's Save is an HTMX form, so that 403 is
+    swallowed and the press does nothing visible. An anonymous recipient
+    therefore gets the way in instead of the control, which is the same
+    pair the map popup already draws for the same visitor
+    (static/js/map.js's appendRouteClaimCta).
+    """
+
+    def test_a_signed_in_recipient_gets_the_claim_form(self, client: Client) -> None:
+        """They have an account to claim onto, so Save is real."""
+        client.force_login(UserFactory.create())
+        share = RouteShareFactory.create()
+
+        client.get(_redirect_url(share.token))
+        response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "data-row-claimed" in content
+        assert f"/routes/partials/share/{share.token}/claim/" in content
+
+    def test_an_anonymous_recipient_gets_a_sign_in_link(self, client: Client) -> None:
+        """A control whose only outcome is a swallowed 403 is a broken page."""
+        share = RouteShareFactory.create()
+
+        client.get(_redirect_url(share.token))
+        response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "Sign in to save this route" in content
+        assert 'href="/account/sign-in/"' in content
+
+    def test_an_anonymous_recipient_gets_no_claim_form(self, client: Client) -> None:
+        """Never both: the row has one control, and it is the usable one."""
+        share = RouteShareFactory.create()
+
+        client.get(_redirect_url(share.token))
+        response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "data-row-claimed" not in content
+        assert f"/routes/partials/share/{share.token}/claim/" not in content
+
+    def test_the_row_itself_still_renders_for_an_anonymous_recipient(
+        self, client: Client
+    ) -> None:
+        """The route is the thing they were sent — never hide it."""
+        route = RouteFactory.create(name="Vallée Blanche")
+        share = RouteShareFactory.create(route=route)
+
+        client.get(_redirect_url(share.token))
+        response = client.get("/routes/partials/list/?variant=map", **HTMX_HEADERS)
+
+        content = response.content.decode()
+        assert "Vallée Blanche" in content
+        assert f"route-share-{share.token}" in content
 
 
 # ---------------------------------------------------------------------------

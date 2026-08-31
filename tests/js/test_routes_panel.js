@@ -705,6 +705,137 @@ describe('forced-offline gating (SNOW-748)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// A refused claim, and a claim made somewhere else.
+//
+// Both are gaps between the panel and the two things it does not own: HTMX's
+// own default response handling, and the map popup's Save.
+// ---------------------------------------------------------------------------
+
+describe('a claim the server refused', () => {
+  /** Put one pending (unclaimed) row into the open panel.
+   *
+   * The shape routes:list renders for a followed-but-unclaimed share: the
+   * row's DOM id is `route-share-<token>`, which is also the `hx-target`
+   * its own Save form posts to.
+   *
+   * @param {string} token The share token, as the server writes it.
+   * @returns {HTMLElement} The row element.
+   */
+  function renderPendingRow(token) {
+    btn.click();
+    const rows = sheet.querySelector('[data-routes-rows]');
+    rows.innerHTML = `<ul><li id="route-share-${token}">
+      <form data-row-claimed hx-post="/routes/partials/share/${token}/claim/"
+            hx-target="#route-share-${token}" hx-swap="outerHTML"></form>
+    </li></ul>`;
+    return rows.querySelector(`#route-share-${token}`);
+  }
+
+  /** Fire htmx's own beforeSwap for a response aimed at `target`.
+   *
+   * `shouldSwap: false` is what htmx 2 puts in the detail for the whole
+   * 4xx/5xx range, which is the behaviour under test.
+   *
+   * @param {HTMLElement} target The element htmx would swap into.
+   * @param {number} status The response status.
+   * @returns {object} The detail, after every listener has seen it.
+   */
+  function beforeSwap(target, status) {
+    const detail = {
+      xhr: { status: status },
+      target: target,
+      shouldSwap: false,
+      isError: true,
+    };
+    document.dispatchEvent(new CustomEvent('htmx:beforeSwap', { detail: detail }));
+    return detail;
+  }
+
+  it('swaps the 409 limit body htmx would have discarded', () => {
+    // route_share_claim renders _route_limit.html on a 409 and htmx throws
+    // it away, so a user at their saved-route cap pressed Save and saw
+    // nothing happen at all.
+    const row = renderPendingRow('tok');
+
+    expect(beforeSwap(row, 409).shouldSwap).toBe(true);
+  });
+
+  it('does the same for every other status the endpoint explains', () => {
+    const row = renderPendingRow('tok');
+
+    for (const status of [403, 404, 429]) {
+      expect(beforeSwap(row, status).shouldSwap).toBe(true);
+    }
+  });
+
+  it('leaves a status the endpoint does not author alone', () => {
+    // A 5xx body is a proxy's error page, which explains less in a route
+    // row than the row the user was already looking at.
+    const row = renderPendingRow('tok');
+
+    expect(beforeSwap(row, 500).shouldSwap).toBe(false);
+  });
+
+  it('leaves another surface’s target alone', () => {
+    // Four panels share this document, and forcing the whole 4xx range to
+    // swap globally would push every one of their error bodies onto the
+    // page.
+    renderPendingRow('tok');
+    const other = document.createElement('div');
+    other.id = 'favourite-abc';
+    sheet.appendChild(other);
+
+    expect(beforeSwap(other, 409).shouldSwap).toBe(false);
+  });
+
+  it('leaves a row outside this panel alone', () => {
+    // The same id, rendered by the account page's own list — which has no
+    // claim form and no handler for one.
+    renderPendingRow('tok');
+    const elsewhere = document.createElement('li');
+    elsewhere.id = 'route-share-tok';
+
+    expect(beforeSwap(elsewhere, 409).shouldSwap).toBe(false);
+  });
+
+  it('keeps isError true, so the failure does not re-read the list', () => {
+    // htmx derives detail.successful from it, and window.pwaRowRemoved's
+    // claim watcher fires on a successful request — clearing it would
+    // refetch the list straight over the message just swapped in, leaving
+    // the user with no explanation again.
+    const row = renderPendingRow('tok');
+
+    expect(beforeSwap(row, 409).isError).toBe(true);
+  });
+});
+
+describe('a route claimed from the map popup', () => {
+  // The popup's Save (static/js/map.js's appendRouteClaimCta) claims with a
+  // plain fetch, so none of the HTMX mark-pairs above ever see it. A panel
+  // left open behind the popup went on listing the route as pending, with a
+  // Save that would 404, until it was closed and reopened.
+
+  it('re-reads the rows when the map announces the change', () => {
+    btn.click();
+    globalThis.htmx.ajax.mockClear();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(globalThis.htmx.ajax.mock.calls[0][1]).toBe(LIST_URL);
+  });
+
+  it('costs nothing while the panel is shut', () => {
+    // Closing hides the sheet without emptying it, so the rows container is
+    // still findable — and the next open re-clones the body and re-reads the
+    // list anyway.
+    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+
+    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+  });
+});
+
 describe('sharing a row (SNOW-764)', () => {
   // window.pwaShare is frozen, so its functions cannot be spied on (the
   // same property every window.pwa* bridge has). The platform APIs

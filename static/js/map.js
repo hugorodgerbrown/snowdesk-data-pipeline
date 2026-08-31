@@ -2370,14 +2370,45 @@
     );
   };
 
-  // Recompute what is drawn from whatever is cached — no fetch. No-op
-  // before the layer has been installed.
+  // Which call to ``refreshWeatherSourceData`` is the current one. The
+  // recompute is async — it waits on an icon decode before it writes — so
+  // two calls started by a rapid pan can settle in either order, and the
+  // slower FIRST one would then paint the previous viewport's collapse over
+  // the newer one. Every call takes the next number and only writes if it
+  // is still holding it.
+  let weatherRefreshToken = 0;
+
+  // Recompute what is drawn from whatever is cached — no fetch.
+  //
+  // Three reasons to do nothing, all of them cheap and all of them checked
+  // before the collapse, which walks every feature in the payload:
+  //
+  //   - the layer has not been installed yet;
+  //   - the overlay is switched off, so both its layers are
+  //     ``visibility: none`` and the result would be projected for nobody.
+  //     A date changed or a pan made while it is off is picked up by the
+  //     re-enable (see the ``snowdesk:overlay-load`` handler), which is the
+  //     same stale-day fix the bulletin boundary takes there. Read from
+  //     STORAGE rather than ``overlayState``, for the reason that handler
+  //     gives: the picker writes the key on every click, while
+  //     ``overlayState`` is only re-seeded from it at boot and after a
+  //     basemap swap — and a toggle-OFF takes the picker's direct
+  //     visibility path, which never reaches this module's copy at all;
+  //   - the camera is below ``WEATHER_MIN_ZOOM``, which both layers carry as
+  //     their own ``minzoom``, so nothing is drawn at this zoom either way.
+  //     ``moveend`` fires on the way back up, which is what repaints it.
   const refreshWeatherSourceData = () => {
     if (!map.getSource('weather')) return;
+    if (!readBoolStorage(OVERLAY_STORAGE_KEY.weather, overlayState.weather)) return;
+    if (map.getZoom() < WEATHER_MIN_ZOOM) return;
+    const token = ++weatherRefreshToken;
     const projected = weatherDataForCurrentView();
     ensureWeatherIconsRegistered(
       window.pwaWeatherCore.iconFilenamesForPayload(weatherGeojsonCache),
     ).then(() => {
+      // A newer call has started since; its projection is the one that
+      // matches what is on screen, so this one's is discarded.
+      if (token !== weatherRefreshToken) return;
       const src = map.getSource('weather');
       // The style may have swapped mid-decode, taking the source with it.
       if (src) src.setData(projected);
@@ -3233,6 +3264,30 @@
   // second enable onto the first fetch, so the merge happens exactly once.
   const overlayLoading = {};
 
+  // The ``?route_share=`` deep link's one-shot ``sourcedata`` listener, held
+  // out here so the failure branch of the routes load below can reach it.
+  //
+  // It is bound inside ``openRouteShareDeepLink`` and unbinds itself on the
+  // first routes load it sees — but a routes load that FAILS never installs
+  // the layer, so no ``sourcedata`` ever fires and the listener stays bound
+  // for the rest of the session, running on every subsequent source event
+  // the map makes. Null whenever nothing is waiting.
+  let routeShareSourceDataListener = null;
+
+  /**
+   * Unbind the route-share deep link's pending ``sourcedata`` listener.
+   *
+   * Idempotent, and safe to call when nothing is waiting — which is the
+   * common case, since a deep link is a small minority of arrivals.
+   *
+   * @returns {void}
+   */
+  const dropRouteShareSourceDataListener = () => {
+    if (!routeShareSourceDataListener) return;
+    map.off('sourcedata', routeShareSourceDataListener);
+    routeShareSourceDataListener = null;
+  };
+
   const _loadOverlay = async (key) => {
     if (key === 'l1') {
       if (!MAJOR_REGIONS_URL) return;
@@ -3394,6 +3449,11 @@
         const cached = await window.pwaMapOverlayCache?.getOverlay('routes');
         if (!cached) {
           revealOfflineToast('map-offline-toast-routes');
+          // Nothing will be installed, so the deep link's one-shot listener
+          // is waiting for an event that can no longer happen. Release it
+          // here rather than leaving it to run on every source event for the
+          // rest of the session.
+          dropRouteShareSourceDataListener();
           return;
         }
         installRoutesLayer(cached);
@@ -3552,6 +3612,17 @@
       // is chosen.
       if (key === 'l3' && stillEnabled && wasLoaded) {
         scheduleGroupingsForDate(currentDisplayedDate);
+      }
+      // SNOW-761: the weather symbols have exactly the l3 problem above, for
+      // exactly the l3 reason. ``refreshWeatherSourceData`` does nothing
+      // while the overlay is off, so a day scrubbed to — or a pan made —
+      // while it was hidden never reached the source, and a re-enable would
+      // reveal an earlier day's icons over the current choropleth. Only for
+      // a re-enable: a FIRST load installs the layer with the current day
+      // already projected, and the guard inside would refuse this call
+      // anyway until the fetch had installed the source.
+      if (key === 'weather' && stillEnabled && wasLoaded) {
+        refreshWeatherSourceData();
       }
       // SNOW-499: making the favourites overlay (re-)visible means any
       // favourited resort should hide its plain dot again, now the star is
@@ -5706,11 +5777,18 @@
       // bound would re-fire on every subsequent ``snowdesk:routes-changed``
       // setData — flying the map back to a route the user has since
       // claimed.
+      //
+      // It is ALSO unbound by the routes load's own failure branch (see
+      // ``dropRouteShareSourceDataListener``): an offline load with nothing
+      // cached installs no layer, so the event this waits for never arrives
+      // and nothing else would ever release it.
       const onRoutesSourceData = (e) => {
         if (e.sourceId !== 'routes' || !map.isSourceLoaded('routes')) return;
         map.off('sourcedata', onRoutesSourceData);
+        routeShareSourceDataListener = null;
         flyToShare();
       };
+      routeShareSourceDataListener = onRoutesSourceData;
       map.on('sourcedata', onRoutesSourceData);
     };
 

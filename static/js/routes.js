@@ -40,7 +40,12 @@
  * plain HTMX form. Nothing here handles that POST; what this module does is
  * notice it landing (window.pwaRowRemoved, keyed on the claim's own hook)
  * so the list can be re-read and the map told, exactly as it does for a
- * Remove.
+ * Remove. Two smaller pieces of that wiring sit further down and are
+ * easy to miss: an `htmx:beforeSwap` override that lets the claim
+ * endpoint's REFUSALS reach the page (htmx discards a 4xx body by
+ * default), and a `snowdesk:routes-changed` listener, because the map
+ * popup's own Save claims by plain fetch and no HTMX event ever fires
+ * for it.
  *
  * The anonymous branch is therefore no longer "sign-in CTA INSTEAD of the
  * list". A visitor who followed a share link has rows to see — that is the
@@ -336,6 +341,38 @@
     htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 
+  /** Announce that the set of routes has changed, whoever changed it.
+   *
+   * `snowdesk:routes-changed` is the one signal for "the server's idea of
+   * this user's routes has moved": map.js refetches the layer off it, and
+   * the listener below re-reads this panel's rows. Every writer in this
+   * module goes through here rather than dispatching by hand, so the two
+   * halves of the response can never drift apart.
+   *
+   * @returns {void}
+   */
+  function announceRoutesChanged() {
+    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+  }
+
+  // The panel LISTENS to that signal as well as raising it, because it is
+  // not the only thing that can change a route. The map popup's own Save
+  // (static/js/map.js's appendRouteClaimCta) claims through a plain fetch —
+  // no HTMX request, so none of the mark-pair watchers below ever see it —
+  // and a panel left open behind the popup went on listing the route as
+  // pending, with a Save that would 404, until it was closed and reopened.
+  //
+  // Only while the panel is OPEN. Closing the sheet hides it without
+  // emptying it (static/js/map_sheet.js's close), so the rows container is
+  // still there to be found — and a shut panel re-clones its body from the
+  // template on the next open anyway, which re-reads the list. Fetching for
+  // a surface nobody is looking at would be a request per change for
+  // nothing.
+  document.addEventListener('snowdesk:routes-changed', function () {
+    if (!controller.isOpen()) return;
+    loadRows();
+  });
+
   // The roundel TOGGLES, matching the layers pill and the other three UGC
   // roundels — a second tap on the control that opened the panel closes it.
   // Bound on the button, so it runs before MapSheet's own document-level
@@ -584,13 +621,13 @@
           return;
         }
         window.pwaTelemetry?.emit('map.route.created', {});
-        loadRows();
         // The map draws the same routes this panel lists, and an upload
         // that only reached the list is the defect this announcement
         // exists for: the overlay's source is already installed for
         // anybody who has the layer switched on, so nothing else would
-        // ever put the new line on the map. map.js owns what it costs.
-        document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+        // ever put the new line on the map. map.js owns what it costs, and
+        // this module's own listener re-reads the rows.
+        announceRoutesChanged();
       })
       .catch(function () {
         showToast(STRINGS['upload-failed']);
@@ -656,8 +693,51 @@
 
   window.pwaRowRemoved?.watch('[data-routes-rows]', function () {
     window.pwaTelemetry?.emit('map.route.deleted', {});
-    loadRows();
-    document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+    announceRoutesChanged();
+  });
+
+  // ---------------------------------------------------------------------------
+  // A claim the server refused, shown rather than swallowed.
+  //
+  // routes:share_claim answers every failure with a RENDERED BODY —
+  // _route_limit.html on a 409, a line of text on 403/404/429 — and HTMX
+  // throws all four away: its default `responseHandling` marks the whole
+  // 4xx/5xx range `swap: false`, so the pending row sat there unchanged and
+  // a user at their saved-route limit pressed Save and saw absolutely
+  // nothing happen.
+  //
+  // Forced back on for THIS form's swaps only. Making the whole range
+  // swappable globally would push every other surface's error body into
+  // whatever target it happened to name — the list-load failure below is
+  // handled by its own handler, and the favourites and report panels share
+  // this document.
+  //
+  // `isError` is deliberately LEFT TRUE. It is what htmx derives
+  // `detail.successful` from, and window.pwaRowRemoved's claim watcher
+  // fires on a successful request: clearing it would re-read the list on
+  // top of the message that has just been swapped in, wiping the only
+  // explanation the user gets. A failed claim is still a failure; the
+  // change here is that its body reaches the page.
+  // ---------------------------------------------------------------------------
+
+  // The statuses route_share_claim answers with something worth reading.
+  // Anything else (a 5xx, a proxy's own error page) keeps htmx's default
+  // and is left unswapped — an opaque body in a route row explains less
+  // than the row the user was already looking at.
+  const CLAIM_SWAP_STATUSES = [403, 404, 409, 429];
+
+  // The DOM id _route.html gives a pending row, and therefore the target
+  // the claim form posts to (`hx-target="#route-share-<token>"`).
+  const PENDING_ROW_ID_PREFIX = 'route-share-';
+
+  document.addEventListener('htmx:beforeSwap', function (event) {
+    const detail = event.detail;
+    if (!detail || !detail.xhr) return;
+    if (CLAIM_SWAP_STATUSES.indexOf(detail.xhr.status) === -1) return;
+    const target = detail.target;
+    if (!target || !target.id || !sheet.contains(target)) return;
+    if (target.id.indexOf(PENDING_ROW_ID_PREFIX) !== 0) return;
+    detail.shouldSwap = true;
   });
 
   // ---------------------------------------------------------------------------
@@ -686,8 +766,7 @@
     '[data-routes-rows]',
     function () {
       window.pwaTelemetry?.emit('map.route.claimed', {});
-      loadRows();
-      document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
+      announceRoutesChanged();
     },
     '[data-row-claimed]'
   );
