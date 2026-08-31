@@ -76,6 +76,7 @@ def _hourly(days: list[datetime.date]) -> dict[str, Any]:
         "precipitation": [0.0] * count,
         "wind_speed_10m": [10.0] * count,
         "wind_gusts_10m": [20.0] * count,
+        "wind_direction_10m": [270.0, 315.0] * len(days),
         "freezing_level_height": [2400.0, 2600.0] * len(days),
     }
 
@@ -325,6 +326,28 @@ class TestWrittenShape:
         weather, _ = result
         assert weather.hourly is not None
         assert {row["time"][:10] for row in weather.hourly} == {today.isoformat()}
+
+    def test_hourly_rows_carry_wind_direction(self) -> None:
+        """Direction is stored per hour, not only as the daily dominant.
+
+        A wind slab loads the aspects the wind blew onto, and a veering
+        wind loads several over one day — which the daily dominant
+        collapses into a single bearing. The hourly series is the one
+        that maps onto aspect, so it has to carry the direction too.
+        """
+        location = LocationFactory.create()
+        today = timezone.localdate()
+        days = _window(today, 2)
+        payload = {"daily": _daily(days), "hourly": _hourly(days)}
+
+        with mock.patch("requests.get", return_value=_response(payload)) as get:
+            result = fetch_weather_for_location(location, today, commit=True)
+
+        assert "wind_direction_10m" in get.call_args.kwargs["params"]["hourly"]
+        assert result is not None
+        weather, _ = result
+        assert weather.hourly is not None
+        assert [row["wind_direction_10m"] for row in weather.hourly] == [270.0, 315.0]
 
     def test_freezing_level_is_the_days_hourly_maximum(self) -> None:
         """Open-Meteo publishes no daily aggregate, so it is derived."""

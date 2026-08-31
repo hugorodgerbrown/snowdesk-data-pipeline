@@ -40,6 +40,7 @@ class HourlyRow(TypedDict):
     precipitation: float | None
     wind_speed_10m: float | None
     wind_gusts_10m: float | None
+    wind_direction_10m: float | None
     freezing_level_height: float | None
 
 

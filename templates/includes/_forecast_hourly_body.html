@@ -12,7 +12,16 @@ variable keeps the others aligned. Open-Meteo drops variables depending on
 which model backs the coordinates, so a null is ordinary rather than
 exceptional. Snowfall is the exception: it stays blank on zero, because a
 column of "0.0 cm" down a dry week is noise.
+
+Wind direction shares the wind cell rather than taking a column of its own —
+a bearing means nothing beside a speed it does not modify. The arrow points
+DOWNWIND (the way the air travels) while the accessible label names where the
+wind comes FROM, which is the aspect being loaded; see
+``apps.public.templatetags.weather_tags`` for why the two differ. Rows
+written before SNOW-778 have no direction key at all, so the arrow is
+presence-checked and the speed renders alone when it is absent.
 {% endcomment %}
+{% load i18n weather_tags %}
 <ul class="divide-y divide-border text-sm" data-testid="{{ testid_prefix|default:'forecast' }}-hourly-list">
     {% for hour in hourly %}
         <li class="flex items-center justify-between gap-3 py-1.5">
@@ -24,9 +33,30 @@ column of "0.0 cm" down a dry week is noise.
             <span class="flex-1 text-text-1">
                 {% if hour.temperature_2m is not None %}{{ hour.temperature_2m|floatformat:0 }}&deg;C{% else %}&mdash;{% endif %}
             </span>
-            <span class="text-text-3 w-16 text-right">
-                {% if hour.wind_speed_10m is not None %}{{ hour.wind_speed_10m|floatformat:0 }}
-                    km/h{% else %}&mdash;{% endif %}
+            <span
+                class="text-text-3 w-20 text-right"
+                data-testid="{{ testid_prefix|default:'forecast' }}-hourly-wind"
+            >
+                {% if hour.wind_speed_10m is not None %}
+                    {% with bearing=hour.wind_direction_10m|compass_point %}
+                        {% if bearing %}
+                            {# aria-hidden: the arrow is decorative, and its rotation #}
+                            {# reads as travel while the label names origin. The      #}
+                            {# sr-only text below is the accessible value.            #}
+                            <span
+                                aria-hidden="true"
+                                class="inline-block"
+                                style="transform: rotate({{ hour.wind_direction_10m|wind_arrow_rotation|floatformat:0 }}deg)"
+                            >&uarr;</span>
+                            <span class="sr-only">
+                                {% blocktrans %}wind from {{ bearing }},{% endblocktrans %}
+                            </span>
+                        {% endif %}
+                    {% endwith %}
+                    {{ hour.wind_speed_10m|floatformat:0 }} km/h
+                {% else %}
+                    &mdash;
+                {% endif %}
             </span>
             <span
                 class="text-text-3 w-16 text-right"
