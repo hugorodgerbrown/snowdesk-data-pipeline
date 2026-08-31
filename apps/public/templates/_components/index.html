@@ -30,6 +30,12 @@ Context:
     render with the same chrome users see on /map/.
     {% endcomment %}
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
+    {% comment %}
+    The hourly chart's only script: open/close for its legend sheet. The
+    chart itself is entirely server-rendered, so this is all the component
+    needs to be fully operable here.
+    {% endcomment %}
+    <script src="{% static 'js/hourly_chart_legend.js' %}" defer></script>
 {% endblock %}
 {% block nav %}{% endblock %}
 {% block site_footer %}{% endblock %}

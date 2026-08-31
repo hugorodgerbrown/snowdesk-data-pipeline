@@ -44,6 +44,7 @@ from apps.public._component_fixtures import (
     FORECAST_CHART_VARIANTS,
     FORECAST_PANEL_VARIANTS,
     FORM_FIELD_VARIANTS,
+    HOURLY_CHART_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
@@ -1381,6 +1382,28 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_forecast_chart.html",
         variants=FORECAST_CHART_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="hourly-chart",
+        label="Hourly chart",
+        description=(
+            "One day's weather in detail (SNOW-723) — three charts sharing "
+            "one time axis, each with its own header, summary, vertical "
+            "scale and resolution. Temperature (hourly) carries the air "
+            "temperature and the freezing level on two scales; "
+            "precipitation (hourly) carries new snow and rainfall on their "
+            "own baselines; wind (three-hourly) carries speed, gusts and "
+            "the direction the wind comes from. Both vertical scales are "
+            "derived per day rather than fixed — the three variants are "
+            "real observed days chosen to disagree with each other, and "
+            "two of them fall entirely outside the domains the design was "
+            "first drawn against. Distinct from the forecast chart above, "
+            "which carries the shape of a WEEK; this one is a single day."
+        ),
+        kind="components",
+        partial="includes/_hourly_chart.html",
+        variants=HOURLY_CHART_VARIANTS,
         panel_layout="stack",
     ),
 )

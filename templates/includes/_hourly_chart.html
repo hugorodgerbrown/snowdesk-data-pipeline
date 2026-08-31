@@ -1,0 +1,588 @@
+{% load i18n components %}
+{% comment %}
+templates/includes/_hourly_chart.html — one day's weather as a meteogram.
+
+Replaces the 24-row hourly table (_forecast_hourly_body.html) with a chart:
+temperature and freezing level as lines, new snow and precipitation as bars,
+wind speed and gusts beneath, all on one shared axis.
+
+Context:
+    chart          : HourlyChart — every coordinate, already formatted, from
+                     apps.weather.services.hourly_chart.build_hourly_chart.
+    testid_prefix  : str — data-testid namespace (default "hourly-chart").
+    about          : dict — optional legend metadata rows: elevation,
+                     freezing, updated, source. Absent rows don't render.
+
+Renders nothing when ``chart`` is absent — a day with no hourly series gets
+no empty chart frame. The caller tests for it.
+
+Four things about this template are load-bearing:
+
+1. **Three charts, one x-axis.** Temperature (hourly), precipitation
+   (hourly) and wind (three-hourly) each have their own header, summary and
+   vertical scale; they share the time axis and nothing else. Within that,
+   the axis ticks and labels mark clock INSTANTS while the wind's
+   three-hour aggregates sit at the CENTRE of the span they cover, so the
+   aggregates land between ticks rather than on them. The service keeps all
+   of it on one x-scale; see its docstring.
+
+2. **Every number is HTML, not <text>.** Text inside a viewBox scales with
+   the drawing, so an axis label sized to look right on a desktop card is
+   illegible on a phone and vice versa. All labels are absolutely positioned
+   HTML over the SVG, at a fixed px font-size, placed by the percentages the
+   service emits — so they track the scaling while their size does not.
+
+3. **Every coordinate arrives as a string.** Django localises floats on
+   output, so a bare float would render x="12,5" under a comma-decimal
+   locale and the whole drawing would vanish with no error. The service
+   formats in Python, which puts that beyond reach here.
+
+4. **Wind arrows point at the SOURCE** — where the weather is coming from,
+   which is what the legend says and what loads a slope. Note this is the
+   opposite of the ``wind_arrow_rotation`` filter used by _weather_panel and
+   _forecast_panel, which points downwind; see the service's docstring.
+
+A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
+0.0 mm" answers the question; two empty rulers under it would not.
+{% endcomment %}
+{% if chart %}
+    {% firstof testid_prefix "hourly-chart" as prefix %}
+    {% comment %}
+    max-w-narrow is the 640px content column the chart was drawn against. It
+    scales down below that with the viewBox and stops growing above it: the
+    drawing is authored at one width, and stretching it across a wide page
+    pulls the bands apart without adding a thing to read.
+    {% endcomment %}
+    {% card padding="p-0" extra="relative max-w-narrow overflow-hidden" %}
+    <div data-testid="{{ prefix }}" role="group" aria-label="{{ chart.aria_label }}">
+        {% comment %}
+        CHART 1 OF 3 — TEMPERATURE.
+
+        Every one of the three headers carries the SAME padding pair, so the
+        gap between a header and the plot under it is identical throughout.
+        That needs the info button pulled out of this row's height: at
+        size-11 (44px, the touch-target minimum) it is more than twice the
+        height of the text beside it, and left in flow it silently set this
+        header's height and gave the temperature plot 15px of clearance the
+        others did not get. The negative margin lets it keep its 44px hit
+        area while the row measures the text.
+
+        The button lives on the first header only — the legend it opens
+        explains all three charts, so one per card is right.
+        {% endcomment %}
+        <div class="flex items-center gap-2 px-4 pt-3 pb-2">
+            <span class="font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1">
+                {% translate "Temperature" %}
+            </span>
+            <span class="text-summary text-text-2" data-testid="{{ prefix }}-temp-summary">
+                {{ chart.temp_summary }}
+            </span>
+            <button
+                type="button"
+                class="-my-3 ml-auto flex size-11 shrink-0 items-center justify-center rounded-full text-text-2 hover:bg-chip focus:outline-2 focus:outline-accent focus:-outline-offset-2"
+                aria-label="{% translate 'How to read this forecast' %}"
+                aria-expanded="false"
+                data-hourly-chart-legend-open
+                data-testid="{{ prefix }}-legend-open"
+            >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9.25" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M12 10.5v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                    <circle cx="12" cy="7.4" r="1.05" fill="currentColor" />
+                </svg>
+            </button>
+        </div>
+
+        {# ── Temperature plot ─────────────────────────────────────── #}
+        <div class="relative mx-4">
+            <svg
+                viewBox="{{ chart.view_box_temp }}"
+                class="block h-auto w-full"
+                aria-hidden="true"
+                data-testid="{{ prefix }}-temp"
+            >
+                {% if chart.zero_line_y %}
+                    <line
+                        x1="40"
+                        y1="{{ chart.zero_line_y }}"
+                        x2="560"
+                        y2="{{ chart.zero_line_y }}"
+                        class="stroke-text-1"
+                        stroke-width="1"
+                        stroke-dasharray="3 3"
+                        opacity="0.35"
+                    />
+                {% endif %}
+
+                {% comment %}
+                The station's elevation and the current time are both
+                VARIABLES — one moves with the location, the other with the
+                clock — so they share one treatment: a solid hairline in the
+                strong border ink. 0 °C above is the only fixed value on the
+                chart and keeps the dashed reference-line treatment to
+                itself, so the reader can tell a constant from a variable
+                without consulting the legend.
+                {% endcomment %}
+                {% if chart.elevation_line_y %}
+                    <line
+                        x1="40"
+                        y1="{{ chart.elevation_line_y }}"
+                        x2="560"
+                        y2="{{ chart.elevation_line_y }}"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endif %}
+
+                {% if chart.cursor_x %}
+                    <line
+                        x1="{{ chart.cursor_x }}"
+                        y1="0"
+                        x2="{{ chart.cursor_x }}"
+                        y2="{{ chart.temp_height }}"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endif %}
+
+                {% for points in chart.freezing_segments %}
+                    <polyline
+                        points="{{ points }}"
+                        fill="none"
+                        class="stroke-accent"
+                        stroke-width="2"
+                        stroke-dasharray="7 4"
+                        stroke-linejoin="round"
+                    />
+                {% endfor %}
+
+                {% for points in chart.temp_segments %}
+                    <polyline
+                        points="{{ points }}"
+                        fill="none"
+                        class="stroke-text-1"
+                        stroke-width="2.25"
+                        stroke-linejoin="round"
+                        stroke-linecap="round"
+                    />
+                {% endfor %}
+
+                {% comment %}
+                Hour ticks at the foot of the temperature plot. Without them
+                a point on the curve has to be traced down past the wind band
+                to the axis to be placed in time, which is most of the card's
+                height away.
+
+                They sit on true clock instants, NOT on the centres of the
+                three-hour columns: a tick marks the moment an hour begins,
+                while a three-hour aggregate belongs between two of them. The
+                wind figures and arrows therefore sit between ticks rather
+                than on them, which is what they mean.
+
+                ALL THREE CHARTS CARRY THEM. A chart that has to borrow the
+                one below it to place a point in time is not standing on its
+                own, and these three are meant to.
+
+                The two hourly charts also carry a MINOR tick on every
+                unlabelled hour — half the length, lighter ink. The labelled
+                three-hourly grid alone said the data was three-hourly,
+                which for these two it is not: an hourly bar or an hourly
+                inflection sat between labels with nothing to place it
+                against. The wind chart has no minor ticks, because it IS
+                three-hourly and they would promise a resolution its figures
+                do not have.
+                {% endcomment %}
+                {% for x in chart.minor_ticks %}
+                    <line
+                        x1="{{ x }}"
+                        y1="{{ chart.temp_minor_top }}"
+                        x2="{{ x }}"
+                        y2="{{ chart.temp_height }}"
+                        class="stroke-border"
+                        stroke-width="1"
+                    />
+                {% endfor %}
+                {% for x in chart.hour_ticks %}
+                    <line
+                        x1="{{ x }}"
+                        y1="{{ chart.temp_tick_top }}"
+                        x2="{{ x }}"
+                        y2="{{ chart.temp_height }}"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endfor %}
+            </svg>
+
+            {% comment %}
+            The temperature chart's two scales: degrees down the left
+            gutter, metres down the right. Both are derived from the day,
+            and the freezing level is the only series reading against the
+            metres.
+            {% endcomment %}
+            <span class="absolute left-0 top-1 font-mono text-xs text-text-3">&deg;C</span>
+            <span class="absolute right-0 top-1 font-mono text-xs text-accent">m</span>
+
+            {% for tick in chart.temp_ticks %}
+                <span
+                    class="absolute left-0 font-mono text-xs text-text-3"
+                    style="top: {{ tick.top }}"
+                >{{ tick.text }}</span>
+            {% endfor %}
+            {% for tick in chart.freezing_ticks %}
+                <span
+                    class="absolute right-0 font-mono text-xs text-accent"
+                    style="top: {{ tick.top }}"
+                >{{ tick.text }}</span>
+            {% endfor %}
+
+            {% comment %}
+            The station's name and elevation are one caption inside the plot,
+            sitting on its own line — not a name at the left edge and a
+            figure out in the metre gutter. The card-coloured background is
+            what stops the elevation rule striking through it.
+            {% endcomment %}
+            {% if chart.station_caption %}
+                <span
+                    class="absolute bg-card px-1 text-caption text-text-2"
+                    style="left: {{ chart.station_caption.left }}; top: {{ chart.station_caption.top }}"
+                    data-testid="{{ prefix }}-station"
+                >{{ chart.station_caption.text }}</span>
+            {% endif %}
+        </div>
+
+        {% comment %}
+        Temperature hour axis. Each chart carries its own — ticks AND numbers.
+        Ticks alone told the reader that something was subdivided but not
+        what any of it was, so a point on this plot still had to be traced
+        down the card to a labelled axis to be placed in time. Three charts
+        that stand on their own each need the hours spelled out.
+        {% endcomment %}
+        <div class="relative mx-4 h-[22px]" data-testid="{{ prefix }}-temp-axis">
+            {% for label in chart.hour_labels %}
+                <span
+                    class="absolute top-0.5 -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-2"
+                    style="left: {{ label.left }}"
+                >{{ label.text }}</span>
+            {% endfor %}
+        </div>
+
+        {% comment %}
+        CHART 2 OF 3 — PRECIPITATION. Its own header carrying its own two
+        totals, because centimetres of snow and millimetres of water are not
+        the temperature chart's business and were only ever sharing that
+        header for want of one of their own.
+
+        On a dry day the header stays and the plot goes. "0.0 cm · 0.0 mm"
+        is the answer to the question, and two empty rulers underneath add
+        nothing to it.
+        {% endcomment %}
+        <div class="mt-3 flex items-center gap-2 border-t border-border px-4 pt-3 pb-2">
+            <span class="font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1">
+                {% translate "Precipitation" %}
+            </span>
+            <span
+                class="flex items-center gap-1 text-summary text-accent"
+                data-testid="{{ prefix }}-snow-total"
+            >
+                {% include "includes/_icon_snowflake.html" with size=15 %}
+                {{ chart.snow_total }}
+            </span>
+            <span class="text-summary text-text-3" aria-hidden="true">&middot;</span>
+            <span
+                class="flex items-center gap-1 text-summary text-chart-precip"
+                data-testid="{{ prefix }}-precip-total"
+            >
+                {% include "includes/_icon_raindrops.html" with size=15 %}
+                {{ chart.precip_total }}
+            </span>
+        </div>
+
+        {% if chart.has_precipitation %}
+            {# ── Precipitation plot ───────────────────────────────── #}
+            <div class="relative mx-4">
+                <svg
+                    viewBox="{{ chart.view_box_precip }}"
+                    class="block h-auto w-full"
+                    aria-hidden="true"
+                    data-testid="{{ prefix }}-precip"
+                >
+                    {% if chart.cursor_x %}
+                        <line
+                            x1="{{ chart.cursor_x }}"
+                            y1="0"
+                            x2="{{ chart.cursor_x }}"
+                            y2="{{ chart.precip_height }}"
+                            class="stroke-border-strong"
+                            stroke-width="1"
+                        />
+                    {% endif %}
+
+                    {% for bar in chart.snow_bars %}
+                        <rect
+                            x="{{ bar.x }}"
+                            y="{{ bar.y }}"
+                            width="{{ bar.width }}"
+                            height="{{ bar.height }}"
+                            class="fill-chart-snow"
+                        />
+                    {% endfor %}
+                    <line
+                        x1="40"
+                        y1="{{ chart.snow_baseline_y }}"
+                        x2="560"
+                        y2="{{ chart.snow_baseline_y }}"
+                        class="stroke-border"
+                        stroke-width="1"
+                    />
+
+                    {% for bar in chart.precip_bars %}
+                        <rect
+                            x="{{ bar.x }}"
+                            y="{{ bar.y }}"
+                            width="{{ bar.width }}"
+                            height="{{ bar.height }}"
+                            class="fill-chart-precip"
+                            opacity="0.75"
+                        />
+                    {% endfor %}
+                    <line
+                        x1="40"
+                        y1="{{ chart.precip_baseline_y }}"
+                        x2="560"
+                        y2="{{ chart.precip_baseline_y }}"
+                        class="stroke-chart-precip"
+                        stroke-width="1"
+                        opacity="0.5"
+                    />
+
+                    {% for x in chart.minor_ticks %}
+                        <line
+                            x1="{{ x }}"
+                            y1="{{ chart.precip_minor_top }}"
+                            x2="{{ x }}"
+                            y2="{{ chart.precip_height }}"
+                            class="stroke-border"
+                            stroke-width="1"
+                        />
+                    {% endfor %}
+                    {% for x in chart.hour_ticks %}
+                        <line
+                            x1="{{ x }}"
+                            y1="{{ chart.precip_tick_top }}"
+                            x2="{{ x }}"
+                            y2="{{ chart.precip_height }}"
+                            class="stroke-border-strong"
+                            stroke-width="1"
+                        />
+                    {% endfor %}
+                </svg>
+
+                {% comment %}
+                The band icons sit in the LEFT gutter, where "cm" and "mm"
+                unit labels would otherwise go. There are none: each band
+                carries exactly one figure, on its tallest bar, and that
+                figure spells its own unit — so a gutter unit would have no
+                series to govern and would only repeat the label. The icon
+                stays because it names the quantity, which a lone figure
+                does not.
+                {% endcomment %}
+                <span class="absolute left-0 text-accent" style="top: {{ chart.snow_icon_top }}">
+                    {% include "includes/_icon_snowflake.html" %}
+                </span>
+                <span class="absolute left-0 text-chart-precip" style="top: {{ chart.precip_icon_top }}">
+                    {% include "includes/_icon_raindrops.html" %}
+                </span>
+
+                {% for label in chart.snow_labels %}
+                    <span
+                        class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-accent"
+                        style="left: {{ label.left }}; top: {{ label.top }}"
+                    >{{ label.text }}</span>
+                {% endfor %}
+                {% for label in chart.precip_labels %}
+                    <span
+                        class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-chart-precip"
+                        style="left: {{ label.left }}; top: {{ label.top }}"
+                    >{{ label.text }}</span>
+                {% endfor %}
+            </div>
+
+            {% comment %}
+            Precipitation hour axis. Each chart carries its own — ticks AND numbers.
+            Ticks alone told the reader that something was subdivided but not
+            what any of it was, so a point on this plot still had to be traced
+            down the card to a labelled axis to be placed in time. Three charts
+            that stand on their own each need the hours spelled out.
+            {% endcomment %}
+            <div class="relative mx-4 h-[22px]" data-testid="{{ prefix }}-precip-axis">
+                {% for label in chart.hour_labels %}
+                    <span
+                        class="absolute top-0.5 -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-2"
+                        style="left: {{ label.left }}"
+                    >{{ label.text }}</span>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {# ── Wind header — chart 3 of 3 ───────────────────────────── #}
+        <div class="mt-3 flex items-center gap-2 border-t border-border px-4 pt-3 pb-2">
+            <span class="font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1">
+                {% translate "Wind" %}
+            </span>
+            <span class="text-summary text-text-2" data-testid="{{ prefix }}-wind-summary">
+                {{ chart.wind_summary }}
+            </span>
+        </div>
+
+        {% comment %}
+        Wind plot. The two lines are hourly; the figures sit on fixed rows —
+        gusts above, sustained below — so they align down the day and line
+        up with the arrows in the row beneath rather than chasing their own
+        lines around wherever the two converge.
+        {% endcomment %}
+        <div class="relative mx-4">
+            <svg viewBox="{{ chart.view_box_wind }}" class="block h-auto w-full" aria-hidden="true">
+                {% if chart.cursor_x %}
+                    <line
+                        x1="{{ chart.cursor_x }}"
+                        y1="0"
+                        x2="{{ chart.cursor_x }}"
+                        y2="92"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endif %}
+                {% for points in chart.gust_segments %}
+                    <polyline
+                        points="{{ points }}"
+                        fill="none"
+                        class="stroke-text-2"
+                        stroke-width="1.5"
+                        stroke-dasharray="5 4"
+                        stroke-linejoin="round"
+                    />
+                {% endfor %}
+                {% for points in chart.wind_segments %}
+                    <polyline
+                        points="{{ points }}"
+                        fill="none"
+                        class="stroke-chart-wind"
+                        stroke-width="1.75"
+                        stroke-linejoin="round"
+                    />
+                {% endfor %}
+
+                {% for x in chart.hour_ticks %}
+                    <line
+                        x1="{{ x }}"
+                        y1="{{ chart.wind_tick_top }}"
+                        x2="{{ x }}"
+                        y2="{{ 92 }}"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endfor %}
+            </svg>
+
+            <span class="absolute left-0 top-0 font-mono text-xs text-text-3">{% translate "km/h" %}</span>
+            {% for label in chart.gust_labels %}
+                <span
+                    class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-2"
+                    style="left: {{ label.left }}; top: {{ label.top }}"
+                >{{ label.text }}</span>
+            {% endfor %}
+            {% for label in chart.wind_labels %}
+                <span
+                    class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-1"
+                    style="left: {{ label.left }}; top: {{ label.top }}"
+                >{{ label.text }}</span>
+            {% endfor %}
+        </div>
+
+        {# ── Direction row ────────────────────────────────────────── #}
+        <div class="relative mx-4">
+            <svg viewBox="{{ chart.view_box_direction }}" class="block h-auto w-full" aria-hidden="true">
+                {% if chart.cursor_x %}
+                    <line
+                        x1="{{ chart.cursor_x }}"
+                        y1="0"
+                        x2="{{ chart.cursor_x }}"
+                        y2="30"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endif %}
+                {% for arrow in chart.arrows %}
+                    <path
+                        d="{{ arrow.d }}"
+                        transform="{{ arrow.transform }}"
+                        fill="none"
+                        class="stroke-chart-wind"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                {% endfor %}
+            </svg>
+        </div>
+
+        {% comment %}
+        Wind hour axis — the third of three, one per chart.
+
+        Note the mx-4 on every axis row and every plot: a percentage `left`
+        resolves against the containing block's PADDING box, while the SVG it
+        must align with occupies the CONTENT box. Under px-4 those differ by
+        32px, so labels drift across the drawing and cross it in the middle —
+        which is exactly how the wind figures came to sit off their own
+        arrows. Margin, not padding, keeps one percentage meaning one place.
+        Do not change these back.
+        {% endcomment %}
+        <div class="relative mx-4 h-[22px] pb-1" data-testid="{{ prefix }}-wind-axis">
+            {% for label in chart.hour_labels %}
+                <span
+                    class="absolute top-0.5 -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-2"
+                    style="left: {{ label.left }}"
+                >{{ label.text }}</span>
+            {% endfor %}
+        </div>
+
+        {% comment %}
+        Text equivalent. The table this chart replaces was readable row by
+        row. An aria-label alone would lose every figure, so they stay on
+        the page for assistive technology at the chart's own resolution.
+        {% endcomment %}
+        <table class="sr-only" data-testid="{{ prefix }}-table">
+            <caption>{% translate "Three-hourly forecast figures" %}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{% translate "Time" %}</th>
+                    <th scope="col">{% translate "Temperature" %}</th>
+                    <th scope="col">{% translate "Freezing level" %}</th>
+                    <th scope="col">{% translate "New snow" %}</th>
+                    <th scope="col">{% translate "Precipitation" %}</th>
+                    <th scope="col">{% translate "Wind" %}</th>
+                    <th scope="col">{% translate "Gusts" %}</th>
+                    <th scope="col">{% translate "From" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in chart.rows %}
+                    <tr>
+                        <th scope="row">{{ row.time }}</th>
+                        <td>{{ row.temperature }}</td>
+                        <td>{{ row.freezing_level }}</td>
+                        <td>{{ row.snowfall }}</td>
+                        <td>{{ row.precipitation }}</td>
+                        <td>{{ row.wind }}</td>
+                        <td>{{ row.gusts }}</td>
+                        <td>{{ row.direction }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% include "includes/_hourly_chart_legend.html" with prefix=prefix about=about %}
+    </div>
+    {% endcard %}
+{% endif %}
