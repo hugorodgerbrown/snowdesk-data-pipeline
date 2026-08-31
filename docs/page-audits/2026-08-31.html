@@ -1,0 +1,690 @@
+<title>Snowdesk page audit — 31 August 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --card:        #FFFFFF;
+  --card-sunk:   #EDF1F4;
+  --text-1:      #0F1519;
+  --text-2:      #48545E;
+  --text-3:      #7A8792;
+  --border:      #DDE3E8;
+  --border-soft: #E9EEF1;
+  --accent:      #0B6273;
+  --accent-soft: #E2F0F3;
+  --sev-broken:  #A32E27;
+  --sev-broken-bg: #F8EAE9;
+  --sev-orphan:  #8A6210;
+  --sev-orphan-bg: #F8F0DF;
+  --sev-thin:    #0B6273;
+  --sev-thin-bg: #E2F0F3;
+  --ok:          #2E6B4F;
+  --ok-bg:       #E4F0EA;
+  --new:         #5B4B9E;
+  --new-bg:      #ECE9F6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0C1013;
+    --card:        #141A1F;
+    --card-sunk:   #10161A;
+    --text-1:      #E7EDF1;
+    --text-2:      #A0ABB5;
+    --text-3:      #6B7781;
+    --border:      #222A31;
+    --border-soft: #1B2229;
+    --accent:      #4FC6DC;
+    --accent-soft: #0E2A31;
+    --sev-broken:  #EC7B72;
+    --sev-broken-bg: #2A1614;
+    --sev-orphan:  #DDA544;
+    --sev-orphan-bg: #271D0D;
+    --sev-thin:    #4FC6DC;
+    --sev-thin-bg: #0E2A31;
+    --ok:          #6FBF95;
+    --ok-bg:       #12241B;
+    --new:         #A99AE0;
+    --new-bg:      #1C1830;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0C1013;
+  --card:        #141A1F;
+  --card-sunk:   #10161A;
+  --text-1:      #E7EDF1;
+  --text-2:      #A0ABB5;
+  --text-3:      #6B7781;
+  --border:      #222A31;
+  --border-soft: #1B2229;
+  --accent:      #4FC6DC;
+  --accent-soft: #0E2A31;
+  --sev-broken:  #EC7B72;
+  --sev-broken-bg: #2A1614;
+  --sev-orphan:  #DDA544;
+  --sev-orphan-bg: #271D0D;
+  --sev-thin:    #4FC6DC;
+  --sev-thin-bg: #0E2A31;
+  --ok:          #6FBF95;
+  --ok-bg:       #12241B;
+  --new:         #A99AE0;
+  --new-bg:      #1C1830;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text-1);
+  font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+.col { max-width: 43rem; }
+
+.eyebrow {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 1px solid var(--border); }
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0.75rem 0 0;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+}
+.masthead-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; margin-top: 2rem; }
+.masthead-meta p { margin: 0; }
+
+section { padding-top: 3.5rem; }
+section > .eyebrow { margin-bottom: 0.6rem; }
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+h3 { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code, .mono { font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+code {
+  background: var(--card-sunk);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+strong { font-weight: 600; color: var(--text-1); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 2rem 0 0;
+}
+.metric { background: var(--card); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.metric .figure {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.metric .label { font-size: 0.8125rem; line-height: 1.35; color: var(--text-3); }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.875rem; }
+thead th {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody td:first-child {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.pill {
+  display: inline-block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-broken { background: var(--sev-broken-bg); color: var(--sev-broken); }
+.pill-orphan { background: var(--sev-orphan-bg); color: var(--sev-orphan); }
+.pill-thin   { background: var(--sev-thin-bg);   color: var(--sev-thin); }
+.pill-ok     { background: var(--ok-bg);         color: var(--ok); }
+.pill-gone   { background: var(--card-sunk);     color: var(--text-3); }
+.pill-new    { background: var(--new-bg);        color: var(--new); }
+
+.findings { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.finding {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stripe, var(--text-3));
+  border-radius: 0 10px 10px 0;
+  padding: 1.25rem 1.4rem;
+}
+.finding.broken { --stripe: var(--sev-broken); }
+.finding.orphan { --stripe: var(--sev-orphan); }
+.finding.thin   { --stripe: var(--sev-thin); }
+.finding.done   { --stripe: var(--ok); }
+.finding.newwork { --stripe: var(--new); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.7rem; }
+.finding-head .ref { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--text-3); letter-spacing: 0.02em; }
+.finding p { font-size: 0.9375rem; color: var(--text-2); }
+
+.evidence {
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.95rem;
+  background: var(--card-sunk);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.evidence li { padding-left: 1.1rem; position: relative; }
+.evidence li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 5px; height: 1px; background: var(--text-3); }
+.evidence .k { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.9em; color: var(--text-1); }
+
+.statement {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1.75rem;
+}
+.statement p { font-size: 1.0625rem; line-height: 1.55; color: var(--text-1); }
+.statement p + p { color: var(--text-2); font-size: 0.9375rem; }
+
+.qgroups { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.qgroup { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.35rem 1.5rem; }
+.qgroup h3 { margin-bottom: 0.65rem; }
+.qgroup p { font-size: 0.9375rem; color: var(--text-2); }
+
+.note { border-left: 2px solid var(--border); padding-left: 1rem; color: var(--text-3); font-size: 0.875rem; margin-top: 1.5rem; }
+
+@media (prefers-reduced-motion: no-preference) { a { transition: color 120ms ease; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Page audit · week of 25–30 August · 31 August 2026</p>
+    <h1>The busiest week yet, and the same lie survives it</h1>
+    <p class="standfirst">
+      68 commits, 541 files, six days — the biggest window this series has reviewed. Both of last
+      week's top recommendations shipped (the fidelity guard, the unscheduled-flag render), the
+      orphan-page pattern that recurred twice got a general fix, and a legal-pages pass corrected
+      the site's operator identity, its terms routing and half a dozen privacy claims. It left one
+      sentence exactly as this series first flagged it: the privacy policy still says Resend "sends
+      your bulletin notification emails." Nothing does.
+    </p>
+    <div class="masthead-meta">
+      <p class="eyebrow">Baseline <span class="mono">4fdb414e</span> → now <span class="mono">52c57eae</span></p>
+      <p class="eyebrow">68 commits · 541 files</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The short version</p>
+    <h2>Eight findings closed, including both top recommendations. One survives a rewrite built to fix it.</h2>
+    <div class="col">
+      <p>
+        SNOW-670 and SNOW-671 — last week's #1 recommendation, repeated two weeks running — both
+        shipped: the bulletin page now renders the <code>unscheduled</code> flag, and
+        <code>bin/fidelity-lint</code> plus <code>tests/sentinels/test_fidelity.py</code> now fail
+        the build if a CAAML field reaches no rendered surface. SNOW-668 generalised the nav fix
+        rather than patching the two pages the last audit caught: <em>every</em> account page —
+        Subscriptions, Favourites, Routes, Observations, Settings — is now one <code>&lt;a&gt;</code>
+        away from the menu, with a regression test guarding the whole list, not just the two names
+        this audit happened to check. The design-system rewrite (SNOW-672) and field guidance
+        (SNOW-673) both landed too, closing B1 and B2 outright.
+      </p>
+      <p>
+        A four-ticket legal pass (SNOW-769, SNOW-770, SNOW-772, SNOW-773–775) named the real
+        operator, merged <code>/terms/</code> into <code>/terms-of-service/</code>, and corrected
+        the location, retention and erasure claims in <code>privacy.html</code>. It did not touch
+        line 245: <em>"Resend (resend.com) — sends your bulletin notification emails."</em> That is
+        the same sentence flagged as D3 in the first two audits and folded into SNOW-7 last week —
+        and it is now the one privacy claim this pass left provably false, sitting inside a document
+        every other paragraph of which just got corrected around it.
+      </p>
+      <p>
+        A full weather-app rebuild (SNOW-759/761/762) landed end to end — bulletin and resort pages
+        render real per-location weather from a new immutable-row model, self-verified against 76
+        resorts. One new architectural detail deserves watching, not fixing: the command that links
+        a resort to its weather-bearing <code>Location</code> was deliberately pulled out of the
+        deploy pipeline (#758) and is now a manual step. A resort geocoded after this week gets no
+        weather panel until someone remembers to run it — the exact shape of gap this series exists
+        to catch, flagged here before it has had the chance to go stale.
+      </p>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><span class="figure">8</span><span class="label">findings closed this week</span></div>
+      <div class="metric"><span class="figure">7</span><span class="label">findings re-verified unchanged</span></div>
+      <div class="metric"><span class="figure">1</span><span class="label">line survives a rewrite meant to fix it</span></div>
+      <div class="metric"><span class="figure">13</span><span class="label">apps — weather rebuilt, downloads new</span></div>
+      <div class="metric"><span class="figure">46</span><span class="label">decision docs, up from 41</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Closed</p>
+    <h2>What actually got fixed</h2>
+
+    <div class="findings">
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">E1 / D4</span>
+          <h3>Every account page now has a door — not just the two this audit caught</h3>
+          <span class="pill pill-ok">SNOW-668</span>
+        </div>
+        <p>
+          The nav dropdown (<code>templates/includes/nav.html:434–476</code>) now lists
+          Subscriptions, Favourites, Routes, Observations, a rule, then Settings and Sign out —
+          the full account estate, not a patch for the two pages last week named. Favourites also
+          gained its own page at <code>/account/favourites/</code>, closing D4 (no favourites index)
+          as a side effect: the hub is now genuinely just Subscriptions, and its stale promise to
+          move things to a <code>/account/places/</code> URL that the cancelled SNOW-665 would have
+          created was corrected in the same pass.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">templates/includes/nav.html:434–476</span> — five <code>&lt;a&gt;</code> tags, one per account section, in SNOW-705's specified order</li>
+          <li><span class="k">tests/public/test_nav_partial.py</span> — asserts every entry individually, both states of the Routes waffle flag, described in its own commit as "the regression guard against a sixth page shipping orphaned"</li>
+          <li>Downloads (new this week, see N2 below) did not repeat the pattern — first evidence the fix generalised rather than being a one-off patch</li>
+        </ul>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">P1 / P2</span>
+          <h3>Both of last week's top recommendations shipped</h3>
+          <span class="pill pill-ok">SNOW-670, SNOW-671</span>
+        </div>
+        <p>
+          <code>bulletin.html</code> now renders the <code>unscheduled</code> flag. And the fidelity
+          guard exists: <code>bin/fidelity-lint</code> checks every dotted CAAML path against
+          <code>tests/sentinels/fidelity.py</code>'s classification (rendered-with-probe or
+          excluded-with-reason), and <code>tests/sentinels/test_fidelity.py</code> renders every
+          sentinel and confirms each rendered path actually arrives on the page. This is the guard
+          this series' own <code>metadata.unscheduled</code> miss (SNOW-670/671, first flagged two
+          audits ago) was written to prevent recurring.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">grep -rn unscheduled apps/public/templates</span> → <code>bulletin.html</code></li>
+          <li><span class="k">bin/fidelity-lint</span>, <span class="k">tests/sentinels/fidelity.py</span>, <span class="k">tests/sentinels/test_fidelity.py</span>, <span class="k">tests/sentinels/test_fidelity_lint.py</span> — all present, all new this window</li>
+        </ul>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">B1 / B2</span>
+          <h3>Design handover rewritten; field guidance now renders</h3>
+          <span class="pill pill-ok">SNOW-672, SNOW-673</span>
+        </div>
+        <p>
+          <code>docs/design-system.md</code> (now <code>last-reviewed: 2026-08-26</code>) explicitly
+          retires the replicate-then-subtract method: "That premise inverted: completeness <em>is</em>
+          the product." The archived phase plan is kept for the record, not as live guidance. Field
+          guidance now renders beneath every avalanche problem via
+          <code>_field_guidance_body.html</code>, included from <code>_rating_block.html</code>'s
+          <code>{% if card.field_guidance %}</code> block — the context <code>load_field_guidance()</code>
+          builds is no longer dead.
+        </p>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">C4 / P3</span>
+          <h3>Sitemap extended; bulletin page down to one public source link</h3>
+          <span class="pill pill-ok">SNOW-676</span>
+        </div>
+        <p>
+          The sitemap now covers more than today's bulletins (SNOW-676). Separately,
+          <code>bulletin.html:547–561</code> carries one public "Source" link in the metadata strip;
+          the former second link is now a superuser-only "View source PDF" debug affordance
+          (<code>bulletin.html:618–638</code>), not a second public link — P3 is resolved, not just
+          relocated.
+        </p>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">—</span>
+          <h3>Legal pages: operator named, terms merged, footer trimmed</h3>
+          <span class="pill pill-ok">SNOW-769, 770, 772, 773–775</span>
+        </div>
+        <p>
+          <code>privacy.html:59</code> now states "Snowdesk is operated by Hugo Rodger-Brown, an
+          individual based in London, UK" — the previously unnamed operator is named.
+          <code>/terms/</code> now 301s to <code>/terms-of-service/</code>
+          (<code>apps/public/urls.py:69–71</code>), registered ahead of the region-slug patterns so
+          it can't be swallowed as a region ID. The footer (SNOW-769) dropped a stale
+          provider-attribution block, leaving Help · Terms of Service · Privacy Policy · Colophon.
+          See Consequences below for the one line this pass didn't reach.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">New</p>
+    <h2>What the audit didn't anticipate</h2>
+
+    <div class="findings">
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">N1</span>
+          <h3>The weather app was rebuilt whole — and it renders</h3>
+          <span class="pill pill-new">SNOW-759 / 761 / 762</span>
+        </div>
+        <p>
+          The old <code>ForecastCell</code>-based weather app was stripped (SNOW-762) and replaced
+          with one immutable <code>Weather</code> row per (Location, day) (SNOW-759), then wired into
+          both public surfaces (SNOW-761): <code>apps/public/views.py:3876–3891</code> builds
+          <code>weather_display</code> via <code>build_weather_display()</code> for the bulletin
+          page's region-centroid panel, and <code>views.py:4246–4312</code> queries
+          <code>Weather.objects.filter(location__in=…, observed_on=…)</code> to render one panel per
+          resort-linked location. The commit that finished the resort side records its own check —
+          76 geocoded resorts, 0 unlinked, 30 of 30 sampled pages rendering a panel — the kind of
+          self-verification this audit exists to spot-check rather than repeat from scratch.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">apps/public/templates/includes/bulletin_header.html:88–90</span> → <code>includes/_weather_panel.html</code></li>
+          <li><span class="k">apps/public/templates/public/resort.html:132–139</span> — one panel per <code>location_forecasts</code> entry</li>
+          <li><span class="k">docs/decisions/weather-is-one-immutable-location-row.md</span>, <span class="k">docs/weather-surfaces.md</span> — both present and current</li>
+        </ul>
+      </article>
+
+      <article class="finding thin">
+        <div class="finding-head">
+          <span class="ref">N2</span>
+          <h3>…but the link between a resort and its weather is now a manual step</h3>
+          <span class="pill pill-orphan">watch, don't fix yet</span>
+        </div>
+        <p>
+          <code>link_resort_locations</code> — the command that creates the
+          <code>ResortLocation</code> a resort needs before it can show weather — was deliberately
+          taken out of the deploy pipeline this week ("Take the resort-location bulk write out of
+          the deploy," #758). That is a reasonable operational call on its own terms, but it changes
+          the shape of the guarantee N1 just established: a resort added or re-geocoded after this
+          week renders no weather panel until an operator remembers to run the command by hand.
+          Nothing currently tests for a resort silently missing its link. Not a finding against
+          working code — a note that the next audit should re-check whether this has already
+          happened to a resort added this week.
+        </p>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">N3</span>
+          <h3>Downloads shipped without repeating the orphan pattern</h3>
+          <span class="pill pill-ok">SNOW-749</span>
+        </div>
+        <p>
+          <code>apps/downloads/</code> is new this window and, unlike observations and routes two
+          weeks ago, was never built as a standalone account page in the first place — its UI is a
+          map overlay (<code>_map_download_control.html</code>, <code>_map_downloads_sheet.html</code>,
+          included from <code>home.html</code>), and its <code>urls.py</code> mounts only a JSON/HTMX
+          sync API. <code>nav.html</code> correctly has no "Downloads" entry, matching CLAUDE.md's
+          own description of the app. First evidence since SNOW-668 that the reachability discipline
+          is being designed in up front, not retrofitted after this series catches a gap.
+        </p>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">N4</span>
+          <h3>Route sharing shipped reachable, and fixed its own stale copy</h3>
+          <span class="pill pill-new">SNOW-764, SNOW-767</span>
+        </div>
+        <p>
+          The share button is a real control on every owned route row in both
+          <code>/account/routes/</code> and the map's routes panel, not a bare endpoint. SNOW-767
+          replaced "Routes are private and not shared" with a conditional "Routes are private unless
+          you share one" in both surfaces the moment sharing made the old line false — a same-cycle
+          self-correction rather than a claim left to drift, with a new context-strip test guarding
+          the copy going forward.
+        </p>
+      </article>
+
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N5</span>
+          <h3>A third cross-provider-normalisation competitor appears</h3>
+          <span class="pill pill-new">docs/competitors.md, 2026-08-30 scan</span>
+        </div>
+        <p>
+          AvalancheClarity and Skitourenguru &amp; Yéti were promoted to full profiles after three
+          corroborating scans. More consequential for the gap this series has tracked since
+          2026-08-19: a new entrant, Skida (Norway), was added as a third product doing cross-provider
+          bulletin normalisation with its own aspect/elevation diagram — a feature Snowdesk's own
+          gap list already names. Regobs/Varsom also added slope-angle overlay layers this pass.
+          See Consequences.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Unchanged</p>
+    <h2>What the re-run found exactly as it was</h2>
+    <div class="col">
+      <p>
+        Every item below was re-verified against current <code>main</code> (<code>52c57eae</code>),
+        not assumed from ticket state. One entry — D3 — moved from "unchanged" to "unchanged despite
+        direct pressure": the pass that would most plausibly have caught it (SNOW-772–775, a targeted
+        privacy-accuracy rewrite) ran this exact week and corrected the paragraphs around it.
+      </p>
+    </div>
+
+    <div class="table-scroll" style="margin-top:1.75rem">
+      <table>
+        <thead>
+          <tr><th>Finding</th><th>Re-verified state</th><th>Ticket</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>A1 · unsent email</td>
+            <td>Still no digest command. <code>apps/accounts/services/email.py</code> sends
+            account-access, verification, reset and subscription-confirmation mail — never a
+            bulletin digest. <code>home.html</code> and the three <code>subscribe_*.html</code>
+            partials still promise "daily bulletin updates".</td>
+            <td>SNOW-7 <span class="pill pill-orphan">Todo</span></td>
+          </tr>
+          <tr>
+            <td>A3 · user-journeys.md stale</td>
+            <td><code>last-reviewed: 2026-08-05</code>, now 26 days old. J4 still frames the token
+            email flow as live; J2 still asserts the (unrelated, real) account-access email send is
+            async as if it were describing the bulletin digest.</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>B3 · guide is SLF-only</td>
+            <td><code>docs/bulletin-guide.md</code> (<code>last-reviewed: 2026-06-10</code>) still
+            mentions only SLF/WSL — zero ALBINA or Météo-France references — despite the product
+            itself now documented as covering all three providers in the legal pages
+            (<code>ae08fb03</code>).</td>
+            <td>SNOW-679 <span class="pill pill-ok">Ready</span></td>
+          </tr>
+          <tr>
+            <td>C1 · <code>/observations/</code> orphaned</td>
+            <td>Still true. <code>public:observations</code> (<code>urls.py:92</code>) has zero
+            <code>href</code>/<code>{% url %}</code> references anywhere in templates or static; the
+            trimmed footer (SNOW-769) didn't add one.</td>
+            <td>SNOW-669 <span class="pill pill-ok">Ready</span></td>
+          </tr>
+          <tr>
+            <td>C2 · <code>/examples/</code> orphaned</td>
+            <td>Still true. <code>examples_random</code>/<code>examples_category</code> appear only
+            in <code>views.py</code>, <code>sitemaps.py</code> and tests — zero real links anywhere.</td>
+            <td>SNOW-678 <span class="pill pill-ok">Ready</span></td>
+          </tr>
+          <tr>
+            <td>C3 · no regions index</td>
+            <td><code>apps/regions/</code> still has no <code>views.py</code>, no <code>urls.py</code>.</td>
+            <td>SNOW-674 <span class="pill pill-ok">Ready</span></td>
+          </tr>
+          <tr>
+            <td>D3 · privacy still names Resend as the bulletin-email sender</td>
+            <td><code>privacy.html:245</code>, unchanged word for word: "Resend (resend.com) — sends
+            your bulletin notification emails." No Resend integration exists anywhere in
+            <code>apps/</code>. The third audit running to find this exact sentence, and the first to
+            find it survive a rewrite that fixed the paragraphs on either side of it.</td>
+            <td>folded into SNOW-7 <span class="pill pill-orphan">Todo</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Consequences</p>
+    <h2>Three things this week's work changes about the older tickets</h2>
+    <div class="col">
+      <p>
+        Connections between this cycle's decisions and tickets written before them — visible from
+        neither side alone.
+      </p>
+    </div>
+
+    <div class="qgroups">
+      <div class="qgroup">
+        <h3>D3 doesn't need SNOW-7 built — it needs SNOW-7 split</h3>
+        <p>
+          D3 has been tracked as "folded into SNOW-7" since last week, on the reasoning that fixing
+          the false claim and building the real digest are one piece of work. This week's legal
+          pass proves that reasoning wrong in practice: SNOW-772–775 rewrote <code>privacy.html</code>
+          extensively without touching line 245, almost certainly because the false Resend claim
+          isn't in that ticket cluster's scope — it's parked inside a ticket about building an entire
+          email pipeline. The fix is a one-line deletion or edit; it does not require SNOW-7 to ship.
+          Splitting it out is the only way it stops being invisible to whichever ticket cluster
+          touches <code>privacy.html</code> next.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3>The unsent-email gap is now three competitors deep</h3>
+        <p>
+          The 08-19 scan found AvalancheClarity had shipped push-on-new-bulletin alerts. 08-23 found
+          it had also shipped cross-provider consolidation, across all three of Snowdesk's own
+          provider geographies. This week's 08-30 scan adds a third product (Skida) built specifically
+          around cross-provider normalisation, plus Regobs/Varsom shipping slope-angle layers. SNOW-7
+          remains Todo, unassigned to a cycle, while the market position it would have staked out
+          keeps getting claimed by more parties in more ways.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3>SNOW-668's fix generalised — the discipline, not just the two pages</h3>
+        <p>
+          Downloads (N3) shipped this week without an orphan gap, unprompted by this audit. That is
+          the first positive evidence that SNOW-705's nav-ownership doc and SNOW-668's "adding one
+          section is adding one <code>&lt;a&gt;</code> to this list" comment changed how new account
+          surfaces get built, not just how the two already-caught ones got patched. Worth watching
+          on the next page that touches the account area, to see whether it holds a third time.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendation</p>
+    <h2>What I'd do next</h2>
+    <div class="col">
+      <p>
+        <strong>First, split the Resend line out of SNOW-7.</strong> This is now the cheapest
+        possible fix in the document — delete or correct one <code>&lt;li&gt;</code> in
+        <code>privacy.html</code> — and it just survived a targeted rewrite specifically because it
+        is bundled inside a much larger, unscheduled ticket. Give it its own one-line ticket so the
+        next pass through the legal pages actually sees it.
+      </p>
+      <p>
+        <strong>Then the orphan-page cluster: SNOW-669, SNOW-678, SNOW-674.</strong> Third audit
+        running for all three. Each is still a couple of hours, and SNOW-668 just proved the fix
+        pattern works cleanly when someone picks it up.
+      </p>
+      <p>
+        <strong>Then decide SNOW-7 itself, now three competitors deep.</strong> The stakes named
+        two weeks ago have only sharpened: AvalancheClarity, Skida and Regobs/Varsom all now offer
+        some version of what the unsent digest was meant to be Snowdesk's differentiator for.
+      </p>
+      <p>
+        <strong>New: put a check around <code>link_resort_locations</code>.</strong> Not urgent —
+        nothing is broken today — but N2 describes exactly the class of silent gap this series
+        exists to catch, and it is cheaper to guard against now than to find after a resort has
+        quietly gone weeks without a weather panel.
+      </p>
+    </div>
+
+    <p class="note">
+      Re-verified against <span class="mono">52c57eae</span> on 31 August 2026. Nothing was changed
+      and no tickets were created or edited in this pass — the branch was fast-forwarded to
+      <span class="mono">main</span> to read current state, and that is all.
+    </p>
+  </section>
+
+</div>

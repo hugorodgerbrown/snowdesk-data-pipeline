@@ -43,6 +43,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from apps.routes.models import Route, RouteShare
@@ -224,16 +225,26 @@ def claim_route_share(user: "User", token: str) -> Route:
             user=user,
             **{field: getattr(source, field) for field in _COPIED_FIELDS},
         )
-        # F() would be the race-free increment, but it also makes the
-        # in-memory value a CombinedExpression the caller cannot read, and
-        # this counter is a record rather than a limit — nothing branches
-        # on it, so a lost update under simultaneous claims costs an
-        # inaccurate count and nothing else.
-        share.claim_count += 1
-        share.last_claimed_at = timezone.now()
-        # updated_at is auto_now and applied in Python, so it must be named
-        # explicitly or save(update_fields=…) leaves the column stale.
-        share.save(update_fields=["claim_count", "last_claimed_at", "updated_at"])
+        # An atomic UPDATE rather than a read-modify-write. Two people
+        # claiming the same link at the same moment both read the same
+        # ``claim_count`` and both write it back plus one, so one of the two
+        # claims vanishes from the count — and the counter is the only
+        # record that the link was used at all. ``F()`` makes the increment
+        # the database's, so both land.
+        #
+        # Nothing after this point reads ``share.claim_count``, so the
+        # in-memory value is deliberately left stale rather than paying a
+        # refresh query for a number no caller asks for.
+        #
+        # ``updated_at`` is auto_now, which Django applies on save() and not
+        # on update(), so it is set by hand here — from the same instant as
+        # ``last_claimed_at``, which is what a save() would have done.
+        claimed_at = timezone.now()
+        RouteShare.objects.filter(pk=share.pk).update(
+            claim_count=F("claim_count") + 1,
+            last_claimed_at=claimed_at,
+            updated_at=claimed_at,
+        )
 
     logger.info(
         "Route share claimed: user=%s token=%s source=%s copy=%s",
@@ -284,7 +295,8 @@ def add_pending_token(session: "SessionBase", token: str) -> None:
     full the OLDEST entry is dropped rather than the new one refused —
     the link the visitor has just followed is the one they mean, and a
     silent refusal would show them a map with no sign of the route they
-    were sent.
+    were sent. A cap of zero means no pending list at all, which is what
+    turning the feature off looks like from here.
 
     Args:
         session: The request's session.
@@ -294,7 +306,14 @@ def add_pending_token(session: "SessionBase", token: str) -> None:
     tokens = pending_tokens(session)
     if token not in tokens:
         tokens.append(token)
-    session[PENDING_SESSION_KEY] = tokens[-settings.ROUTE_SHARE_MAX_PENDING :]
+    # The zero case is spelled out rather than left to the slice. Python
+    # reads ``tokens[-0:]`` as ``tokens[0:]`` — the WHOLE list — so a cap of
+    # zero would turn the bound off entirely instead of enforcing it, which
+    # is the opposite of what the setting says.
+    if settings.ROUTE_SHARE_MAX_PENDING > 0:
+        session[PENDING_SESSION_KEY] = tokens[-settings.ROUTE_SHARE_MAX_PENDING :]
+    else:
+        session[PENDING_SESSION_KEY] = []
     # The list is a mutable object inside the session dict; assigning it
     # back marks the session modified, but say so explicitly rather than
     # relying on that — the assignment above is easy to refactor away.

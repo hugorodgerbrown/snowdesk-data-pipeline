@@ -247,10 +247,11 @@ done
 
 # --- Restore what the clear released ----------------------------------------
 # Copy production's centroid links rather than recomputing them. The obvious
-# alternative, `manage.py link_region_centroid_locations --commit`, calls the
-# Open-Meteo elevation API *once per region* at roughly a second each — 461
-# live third-party calls on every nightly run, and it mints ForecastCell rows
-# after this script has just loaded and re-sequenced that table.
+# alternative, `manage.py link_region_centroid_locations --commit`, is cheap
+# now that it is wholly offline (SNOW-771 put the elevations in the fixture,
+# so it reads `centroid_elevation_m` and makes no third-party call), but it
+# would mint fresh Location rows in the ids this script has just loaded and
+# re-sequenced.
 #
 # Copying is also more faithful: staging ends up pointing at the same
 # centroids production does. It is safe because regions_microregion ids are

@@ -252,7 +252,6 @@ def test_settings_spec_check_is_registered() -> None:
 @override_settings(
     DEBUG=False,
     OPEN_METEO_API_BASE_URL="https://customer-api.open-meteo.com/v1",
-    OPEN_METEO_ARCHIVE_BASE_URL="https://customer-archive-api.open-meteo.com/v1",
     OPEN_METEO_API_KEY="",
 )
 def test_open_meteo_customer_host_without_key_fails() -> None:
@@ -265,7 +264,6 @@ def test_open_meteo_customer_host_without_key_fails() -> None:
 @override_settings(
     DEBUG=False,
     OPEN_METEO_API_BASE_URL="https://api.open-meteo.com/v1",
-    OPEN_METEO_ARCHIVE_BASE_URL="https://archive-api.open-meteo.com/v1",
     OPEN_METEO_API_KEY="sk-live-something",
 )
 def test_open_meteo_key_on_free_hosts_fails() -> None:
@@ -278,7 +276,6 @@ def test_open_meteo_key_on_free_hosts_fails() -> None:
 @override_settings(
     DEBUG=False,
     OPEN_METEO_API_BASE_URL="https://api.open-meteo.com/v1",
-    OPEN_METEO_ARCHIVE_BASE_URL="https://archive-api.open-meteo.com/v1",
     OPEN_METEO_API_KEY="",
 )
 def test_open_meteo_free_hosts_without_key_passes() -> None:
@@ -289,7 +286,6 @@ def test_open_meteo_free_hosts_without_key_passes() -> None:
 @override_settings(
     DEBUG=False,
     OPEN_METEO_API_BASE_URL="https://customer-api.open-meteo.com/v1",
-    OPEN_METEO_ARCHIVE_BASE_URL="https://archive-api.open-meteo.com/v1",
     OPEN_METEO_API_KEY="sk-live-something",
 )
 def test_open_meteo_split_tier_with_key_passes() -> None:

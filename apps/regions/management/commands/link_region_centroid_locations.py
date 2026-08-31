@@ -5,14 +5,20 @@ region's centroid — which is what anchors the region in the location estate,
 so any surface wanting to say something about the region has a place to hang
 it on (SNOW-696).
 
-**This runs on every deploy, and it must.** ``bin/build.sh`` reloads the EAWS
-fixtures on every deploy; ``loaddata`` writes back every field a fixture
-carries and resets the ones it does not to their model default. No fixture
-carries ``centroid_location``, so every deploy sets all 461 of them to NULL
-and orphans the ``Location`` rows behind them — silently, because nothing
-reads the column at deploy time. SNOW-771 made that harmless by making this
-command cheap enough to re-run immediately afterwards: ``build.sh`` calls it
-right after ``loaddata``, and the estate heals itself.
+**Run by an operator, never by a deploy.** It briefly ran from
+``bin/build.sh``, to repair what that script's own ``loaddata`` had just
+wiped: ``loaddata`` writes back every field a fixture carries and resets the
+ones it does not to their model default, and no fixture carries
+``centroid_location``, so every deploy NULLed all 461 of them and orphaned
+the ``Location`` rows behind them. Both halves are gone now — the deploy no
+longer reloads the fixtures, so nothing wipes the link and nothing needs to
+heal it. Bulk writes are management commands for the same reason they are
+not data migrations: a deploy that times out mid-run leaves the estate half
+linked, on three services that deploy concurrently against one database.
+
+Run it when you seed an environment or change a fixture — see
+``docs/runbooks/reset-live-db.md`` and
+``docs/runbooks/region-centroid-backfill.md``.
 
 **Wholly offline — no network at all.** Both halves of a centroid are known
 without asking anyone:
@@ -24,7 +30,7 @@ without asking anyone:
   against Open-Meteo by ``refresh_centroid_elevations`` and committed to the
   fixtures (SNOW-771).
 
-That is what makes a per-deploy run affordable. It also removes the
+That is what makes a re-run affordable at any time. It also removes the
 per-environment backfill entirely: no environment pays for elevation
 lookups, because the fixture already carries them.
 
@@ -39,13 +45,12 @@ null ``elevation_m``: weather does not need a height, and
 ``Location.objects.unresolved()`` exists to fill it in later. A region whose
 boundary cannot be read is logged and counted, never fatal.
 
-**Failure is per-region and almost never fatal, by design.** ``build.sh``
-runs this under ``set -o errexit`` on three services that share one
-database, so an escaping exception would take a whole deploy down. One
-region that cannot be linked is not worth that — it degrades to a region
-with no weather, which every surface already handles. The command exits
-non-zero only when *every* candidate failed, which means something systemic
-rather than one bad row.
+**Failure is per-region, and one bad row never aborts the batch.** A region
+that cannot be linked degrades to a region with no weather, which every
+surface already handles, so the walk carries on and the remaining regions
+still link. The failures are logged, counted and reported — and the command
+exits non-zero if there were any, so nobody mistakes a partial run for a
+clean one.
 
 Idempotent — regions that already have a ``centroid_location`` are excluded,
 so a second run in the same deploy selects zero.
@@ -54,7 +59,7 @@ Usage:
     # Preview — reports what it would link, writes nothing.
     uv run python manage.py link_region_centroid_locations
 
-    # Persist. This is what build.sh runs on every deploy.
+    # Persist.
     uv run python manage.py link_region_centroid_locations --commit
 """
 
@@ -71,7 +76,7 @@ from apps.core.command_iteration import (
     announce_link_run,
     iterate_rows,
 )
-from apps.locations.models import Location
+from apps.locations.services.anchor import anchor_location
 from apps.regions.fixture_utils import centre_from_bbox
 from apps.regions.models import MicroRegion
 
@@ -113,61 +118,6 @@ def _centre_of(region: MicroRegion) -> tuple[float, float] | None:
     return float(centre["lat"]), float(centre["lon"])
 
 
-def _centroid_location_for(
-    latitude: float, longitude: float, elevation: float | None
-) -> Location:
-    """Return the Location for a centroid, reusing the existing row if there is one.
-
-    **Reuse is the whole point, not an optimisation.** ``loaddata`` NULLs
-    every ``centroid_location`` on each deploy, and this command runs
-    straight afterwards to restore them. If it minted a fresh row each time,
-    the previous one would be orphaned along with every ``Weather`` row
-    hanging off it — so the map would go blank after every deploy until the
-    next ``fetch_weather``, and both tables would grow by 461 rows per
-    deploy, for ever. Staging reproduced exactly that on 2026-08-30: 467
-    locations carrying weather before a deploy, 6 after.
-
-    Rebinding to the same row instead keeps the weather attached and the
-    estate flat. The coordinate makes that safe: it is
-    ``centre_from_bbox(boundary)``, a pure function of fixture data, so it
-    is bit-identical on every run and the previous row is findable exactly.
-
-    The match is deliberately narrow. Only an **anonymous** location can be
-    reused — a curated, named place may legitimately sit at the same
-    coordinate, and rebinding a region's centroid onto it would put that
-    name on the map where a centroid belongs. Oldest id wins, so the row
-    with the longest weather history is the one that survives.
-
-    Args:
-        latitude: The centroid's latitude.
-        longitude: The centroid's longitude.
-        elevation: Ground elevation in metres, or ``None`` when unresolved.
-
-    Returns:
-        The reused or newly created ``Location``.
-
-    """
-    existing = (
-        Location.objects.anonymous()
-        .filter(latitude=latitude, longitude=longitude)
-        .order_by("id")
-        .first()
-    )
-    if existing is None:
-        # Anonymous: a centroid represents the region, not a place anyone
-        # goes, and naming it would put it in the curated estate that
-        # import_locations owns.
-        return Location.objects.create(
-            latitude=latitude, longitude=longitude, elevation_m=elevation
-        )
-    if existing.elevation_m != elevation:
-        # A fixture rebuild can move a centroid's elevation; keep the row
-        # (and its weather) and correct the height in place.
-        existing.elevation_m = elevation
-        existing.save(update_fields=["elevation_m", "updated_at"])
-    return existing
-
-
 class Command(BaseCommand):
     """Give every MicroRegion with a boundary a centroid Location.
 
@@ -178,7 +128,7 @@ class Command(BaseCommand):
 
     Offline: the coordinate comes from ``boundary`` and the elevation from
     ``centroid_elevation_m``, so this makes no network calls and is safe to
-    run on every deploy.
+    re-run at any time. An operator runs it, not a deploy.
     """
 
     help = (
@@ -232,16 +182,15 @@ class Command(BaseCommand):
 
         self._report_outcome(counts, commit=commit, verbosity=verbosity)
 
-        # Non-zero ONLY on a total failure — every candidate raised. That is
-        # systemic (a bad migration, an unreachable database) and worth
-        # blocking a deploy on. A partial failure is not: it logs loudly
-        # above, leaves the regions that did link working, and lets the
-        # deploy finish. Failing every deploy of every service because one
-        # of 461 regions could not be written would be the worse outcome.
-        if counts["failed"] > 0 and counts["linked"] == 0:
+        # Non-zero on ANY failure, partial batches included — the command
+        # contract in CLAUDE.md, so the operator or CI job that ran this
+        # sees a half-linked estate rather than a green exit. The batch has
+        # already finished by here: a failed region is logged, counted and
+        # stepped over, never allowed to abort the walk.
+        if counts["failed"] > 0:
             raise CommandError(
-                f"link_region_centroid_locations linked nothing: all "
-                f"{counts['failed']} candidate(s) failed. Check logs."
+                f"link_region_centroid_locations: {counts['failed']} of "
+                f"{total} candidate(s) failed to link. Check logs."
             )
 
     def _resolve_one(
@@ -309,15 +258,15 @@ class Command(BaseCommand):
                         # A concurrent build linked it while we queued.
                         counts["linked"] += 1
                         return
-                    location = _centroid_location_for(latitude, longitude, elevation)
+                    location = anchor_location(latitude, longitude, elevation)
                     locked.centroid_location = location
                     locked.save(update_fields=["centroid_location", "updated_at"])
-            except Exception:  # noqa: BLE001 — one region must not fail a deploy
-                # build.sh runs this under ``set -o errexit``, so an escaping
-                # exception takes the whole deploy down — of three services
-                # that share a database. One micro-region that cannot be
-                # linked is not worth that: it degrades to a region with no
-                # weather, which the surfaces already handle.
+            except Exception:  # noqa: BLE001 — one region must not fail the batch
+                # An escaping exception would abandon every region after
+                # this one. A micro-region that cannot be linked is not
+                # worth that: it degrades to a region with no weather,
+                # which the surfaces already handle. It is counted here and
+                # reported through the non-zero exit instead.
                 logger.exception(
                     "link_region_centroid_locations: failed to link region %s",
                     region.region_id,

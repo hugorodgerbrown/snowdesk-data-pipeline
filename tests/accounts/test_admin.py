@@ -9,12 +9,15 @@ Covers:
   - PasskeyCredentialAdmin search now goes via user__email (SNOW-334).
   - PushSubscriptionAdmin surfaces mechanism/inactive_at (SNOW-380).
   - AccountAdmin surfaces acquisition_request (SNOW-514).
+  - AccountAdmin's delete hooks erase through the shared deletion service,
+    so an admin delete removes as much as /account/ deletion does.
 """
 
 from typing import Any
 
 import pytest
 from django.contrib.admin.sites import AdminSite
+from django.contrib.auth.models import User
 from django.test import RequestFactory
 
 from apps.accounts.admin import (
@@ -29,8 +32,12 @@ from apps.accounts.models import (
     PushSubscription,
     Subscription,
 )
+from apps.core.models import RequestLog
+from apps.locations.models import Location
 from tests.factories import (
     AccountFactory,
+    FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     PasskeyCredentialFactory,
     RequestLogFactory,
@@ -132,6 +139,80 @@ class TestAccountAdminAcquisitionRequest:
         account = AccountFactory.create(acquisition_request=req_log)
         account.refresh_from_db()
         assert account.acquisition_request_id == req_log.pk
+
+
+@pytest.mark.django_db
+class TestAccountAdminDeletion:
+    """Deleting through the admin erases as much as the user-facing path.
+
+    ``AccountAdmin`` had no delete hooks, so an operator deleting an account
+    from the changelist removed the profile row and left behind everything a
+    CASCADE cannot reach: the sign-up ``RequestLog`` (holding an IP address,
+    city and coordinates), the favourites' minted Locations, and the
+    ``auth.User`` itself. Both hooks now route through ``erase_account`` —
+    the admin's bulk action calls ``delete_queryset``, single-object deletes
+    call ``delete_model``, and a fix to only one of them is half a fix.
+    """
+
+    def _admin(self) -> AccountAdmin:
+        """Return an AccountAdmin bound to the default admin site."""
+        return AccountAdmin(Account, AdminSite())
+
+    def _loaded_account(self) -> tuple[Account, RequestLog, Location]:
+        """Return an account with a sign-up request row and one favourite.
+
+        Returns:
+            The account, the RequestLog its ``acquisition_request`` points
+            at, and the Location its favourite is the only referent of.
+
+        """
+        signup = RequestLogFactory.create(account=None, ip_address="203.0.113.20")
+        account = AccountFactory.create(acquisition_request=signup)
+        location = LocationFactory.create(anonymous=True)
+        FavouriteFactory.create(user=account.user, location=location)
+        return account, signup, location
+
+    def test_delete_model_erases_everything(self) -> None:
+        """Single-object delete takes the user, the log row and the location."""
+        account, signup, location = self._loaded_account()
+        user_pk = account.user_id
+
+        self._admin().delete_model(_get_request(), account)
+
+        assert not Account.objects.filter(pk=account.pk).exists()
+        assert not User.objects.filter(pk=user_pk).exists()
+        assert not RequestLog.objects.filter(pk=signup.pk).exists()
+        assert not Location.objects.filter(pk=location.pk).exists()
+
+    def test_delete_queryset_erases_every_selected_account(self) -> None:
+        """The bulk action erases each row, not just the first."""
+        first, first_log, first_location = self._loaded_account()
+        second, second_log, second_location = self._loaded_account()
+
+        self._admin().delete_queryset(
+            _get_request(), Account.objects.filter(pk__in=[first.pk, second.pk])
+        )
+
+        assert not Account.objects.filter(pk__in=[first.pk, second.pk]).exists()
+        assert not RequestLog.objects.filter(
+            pk__in=[first_log.pk, second_log.pk]
+        ).exists()
+        assert not Location.objects.filter(
+            pk__in=[first_location.pk, second_location.pk]
+        ).exists()
+
+    def test_delete_queryset_leaves_unselected_accounts_alone(self) -> None:
+        """A bulk delete scoped to one row must not empty the table."""
+        target, _, _ = self._loaded_account()
+        bystander, bystander_log, bystander_location = self._loaded_account()
+
+        self._admin().delete_queryset(
+            _get_request(), Account.objects.filter(pk=target.pk)
+        )
+
+        assert Account.objects.filter(pk=bystander.pk).exists()
+        assert RequestLog.objects.filter(pk=bystander_log.pk).exists()
+        assert Location.objects.filter(pk=bystander_location.pk).exists()
 
 
 @pytest.mark.django_db

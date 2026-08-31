@@ -40,59 +40,28 @@ node bin/minify-css
 uv run --no-sync python manage.py collectstatic --no-input
 uv run --no-sync python manage.py migrate
 
-# Sync the committed fixtures into the database. ``loaddata`` upserts by
-# primary key (``region_id`` on MicroRegion, ``prefix`` on Major/SubRegion)
-# and never deletes rows. Without this step, fixture edits (e.g. corrected
-# region names) only reach production if an operator remembers to run
-# ``loaddata`` out of band — see ``docs/management-commands.md``.
+# NO BULK DATA WRITES ON DEPLOY.
 #
-# **It is NOT idempotent for columns the fixtures do not carry**, and this
-# comment claimed it was until SNOW-771. ``loaddata`` builds each instance
-# from the fixture's fields alone and saves the whole row, so any column
-# added to the model since the fixture was written is reset to its default
-# on every deploy. ``MicroRegion.centroid_location`` is the first one where
-# that mattered: it silently NULLed 461 links on staging, orphaning the
-# Location rows behind them, and nothing noticed until the weather map came
-# back empty. The re-link step below repairs it; a future nullable column
-# that something depends on will need the same treatment, or a fixture that
-# carries it.
+# This script used to run `loaddata` over the four EAWS fixtures (461 rows),
+# `compute_basemap_download --commit` (461 rows) and
+# `link_region_centroid_locations --commit` (461 rows) on every single
+# deploy. All three are gone.
 #
-# resorts.json is deliberately NOT in this list. Resort rows are editable
-# data owned by this database (admin + map editor), not reference data;
-# re-loading the fixture on every deploy would silently revert every edit.
-# The fixture seeds fresh local/CI databases only, and the curated sheet is
-# applied by hand with ``manage.py import_resorts --commit``. See
-# docs/decisions/resorts-are-editable-data.md.
-uv run --no-sync python manage.py loaddata \
-    apps/regions/fixtures/eaws_CH.json \
-    apps/regions/fixtures/eaws_FR.json \
-    apps/regions/fixtures/eaws_AT.json \
-    apps/regions/fixtures/eaws_IT.json \
-    apps/regions/fixtures/region_aliases.json
-
-# Precompute per-region offline-basemap tile coverage (SNOW-521) on every
-# tier — pure function of each region's (static) geometry, so recomputing
-# in full on every deploy is safe and idempotent. The eaws_CH fixture
-# above already ships basemap_download for CH; this also backfills the
-# FR/AT/IT fixtures, which don't (see docs/offline-map.md).
-uv run --no-sync python manage.py compute_basemap_download --commit
-
-# Re-link every micro-region to its centroid Location (SNOW-771). This is
-# NOT optional and NOT a backfill: the loaddata above writes back every
-# field its fixtures carry and resets the ones they do not to the model
-# default, and no fixture carries `centroid_location` — so that column is
-# NULL for all 461 regions by the time this line runs, every single deploy.
+# They were wrong for the reason data migrations are wrong: a deploy that
+# times out mid-write leaves the data half applied, and production deploys
+# THREE services concurrently against one shared database. Reference data
+# is seeded and refreshed by an operator running a command, the same way
+# `import_resorts` and `import_locations` already work.
 #
-# It went unnoticed because nothing reads the column at deploy time; the
-# symptom is a weather map that is empty for every region, hours later.
-# Staging lost 461 links this way on 2026-08-30.
+# The reload also caused real harm. `loaddata` writes back every field its
+# fixtures carry and resets every column they do not, so each deploy NULLed
+# all 461 `MicroRegion.centroid_location` values and orphaned the Location
+# rows behind them — silently, because nothing reads that column at deploy
+# time (SNOW-771). Removing the reload removes the wipe, which is why the
+# re-link step is gone too rather than merely moved.
 #
-# Affordable to run every time because it is wholly offline: the coordinate
-# is derived from each region's own boundary and the elevation is read from
-# `centroid_elevation_m`, which `refresh_centroid_elevations` resolved once
-# and committed to the fixtures. No Open-Meteo call, no per-environment
-# backfill.
-uv run --no-sync python manage.py link_region_centroid_locations --commit
+# Seeding a fresh database, or refreshing after a fixture change, is in
+# docs/runbooks/reset-live-db.md.
 
 # Sync waffle.Flag rows to apps/core/fixtures/waffle_flags.json — create + delete
 # only, never edit-in-place, so an operator's live admin-tuned targeting on

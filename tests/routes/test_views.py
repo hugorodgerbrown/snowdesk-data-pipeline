@@ -1184,7 +1184,16 @@ class TestRouteListPendingShares:
     def test_a_pending_row_offers_save_and_not_rename_or_remove(
         self, client: Client
     ) -> None:
-        """Its one control is the claim; the owner's three would all 404."""
+        """Its one control is the claim; the owner's three would all 404.
+
+        Signed in, because the claim itself is: an anonymous recipient gets
+        a sign-in link in that one control's place, since the claim endpoint
+        answers them 403 and an HTMX form swallows it. That branch is
+        covered by tests/routes/test_share_views.py's
+        TestPendingRowClaimControl; what is asserted here is that the OWNER's
+        three controls stay away either way.
+        """
+        client.force_login(UserFactory.create())
         share = RouteShareFactory.create()
         _follow(client, share.token)
 

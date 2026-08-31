@@ -234,7 +234,7 @@
     // the toggle-OFF path needs; without it that path throws
     // "OVERLAY_LAYER_IDS[overlayKey] is not iterable" before any of the
     // work happens, and the row goes aria-checked with nothing on the map.
-    weather: ['weather-point'],
+    weather: ['weather-plate', 'weather-point'],
   };
 
   for (const item of items) {

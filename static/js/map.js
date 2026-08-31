@@ -808,6 +808,7 @@
     // below the more personal pin layers, so a favourite star or a
     // community-report flag at the same point is never hidden behind a
     // weather icon.
+    'weather-plate',
     'weather-point',
     'community-reports-clusters',
     'community-reports-cluster-count',
@@ -2369,14 +2370,45 @@
     );
   };
 
-  // Recompute what is drawn from whatever is cached — no fetch. No-op
-  // before the layer has been installed.
+  // Which call to ``refreshWeatherSourceData`` is the current one. The
+  // recompute is async — it waits on an icon decode before it writes — so
+  // two calls started by a rapid pan can settle in either order, and the
+  // slower FIRST one would then paint the previous viewport's collapse over
+  // the newer one. Every call takes the next number and only writes if it
+  // is still holding it.
+  let weatherRefreshToken = 0;
+
+  // Recompute what is drawn from whatever is cached — no fetch.
+  //
+  // Three reasons to do nothing, all of them cheap and all of them checked
+  // before the collapse, which walks every feature in the payload:
+  //
+  //   - the layer has not been installed yet;
+  //   - the overlay is switched off, so both its layers are
+  //     ``visibility: none`` and the result would be projected for nobody.
+  //     A date changed or a pan made while it is off is picked up by the
+  //     re-enable (see the ``snowdesk:overlay-load`` handler), which is the
+  //     same stale-day fix the bulletin boundary takes there. Read from
+  //     STORAGE rather than ``overlayState``, for the reason that handler
+  //     gives: the picker writes the key on every click, while
+  //     ``overlayState`` is only re-seeded from it at boot and after a
+  //     basemap swap — and a toggle-OFF takes the picker's direct
+  //     visibility path, which never reaches this module's copy at all;
+  //   - the camera is below ``WEATHER_MIN_ZOOM``, which both layers carry as
+  //     their own ``minzoom``, so nothing is drawn at this zoom either way.
+  //     ``moveend`` fires on the way back up, which is what repaints it.
   const refreshWeatherSourceData = () => {
     if (!map.getSource('weather')) return;
+    if (!readBoolStorage(OVERLAY_STORAGE_KEY.weather, overlayState.weather)) return;
+    if (map.getZoom() < WEATHER_MIN_ZOOM) return;
+    const token = ++weatherRefreshToken;
     const projected = weatherDataForCurrentView();
     ensureWeatherIconsRegistered(
       window.pwaWeatherCore.iconFilenamesForPayload(weatherGeojsonCache),
     ).then(() => {
+      // A newer call has started since; its projection is the one that
+      // matches what is on screen, so this one's is discarded.
+      if (token !== weatherRefreshToken) return;
       const src = map.getSource('weather');
       // The style may have swapped mid-decode, taking the source with it.
       if (src) src.setData(projected);
@@ -2393,6 +2425,33 @@
     const projected = weatherDataForCurrentView();
     map.addSource('weather', { type: 'geojson', data: projected });
     map.addLayer({
+      id: 'weather-plate',
+      type: 'circle',
+      source: 'weather',
+      minzoom: WEATHER_MIN_ZOOM,
+      filter: ['!=', ['get', 'icon'], ''],
+      layout: {
+        visibility: overlayState.weather ? 'visible' : 'none',
+      },
+      paint: {
+        // Ground for the icon. The Meteocons set is pale and gradient-filled
+        // — a sun or a cloud is mostly white — so on the winter basemap the
+        // symbols were nearly invisible with nothing behind them. A raster
+        // icon cannot take icon-halo-*, which only applies to SDF images, so
+        // the contrast has to come from a layer underneath.
+        //
+        // --color-card over --color-border-strong, matched by value because
+        // MapLibre paint cannot read a CSS variable (see CLAUDE.md).
+        'circle-radius': 15,
+        'circle-color': '#ffffff',
+        'circle-opacity': 0.82,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': 'rgba(0, 0, 0, 0.16)',
+        'circle-translate': [0, -13],
+      },
+    });
+
+    map.addLayer({
       id: 'weather-point',
       type: 'symbol',
       source: 'weather',
@@ -2404,7 +2463,7 @@
       layout: {
         visibility: overlayState.weather ? 'visible' : 'none',
         'icon-image': ['get', 'icon'],
-        'icon-size': 0.85,
+        'icon-size': 1.05,
         'icon-anchor': 'bottom',
         'icon-allow-overlap': false,
         // Two lines: the day's max temperature, then the station's
@@ -2412,19 +2471,23 @@
         // anything on a mountain map — see map_weather_core.js.
         'text-field': ['get', 'label'],
         'text-font': overlayTextFont,
-        'text-size': 10,
+        'text-size': 12,
         'text-anchor': 'top',
-        'text-offset': [0, 0.3],
+        'text-offset': [0, 0.35],
         'text-allow-overlap': false,
         'text-padding': 4,
       },
       paint: {
-        // Neutral dark grey, matching resorts-label's muted-annotation
-        // treatment rather than introducing a new hue for a third kind of
-        // pin label.
-        'text-color': '#5a5a5a',
+        // --color-text-1. This label is the overlay's PRIMARY content, not
+        // an annotation beside a pin: it is the only place the temperature
+        // and altitude appear. It first shipped copying resorts-label's
+        // muted #5a5a5a at 10px, which is the right treatment for a name
+        // sitting next to a solid pin and the wrong one for two lines of
+        // figures that are the whole point of the layer — on the pale
+        // winter basemap they were close to unreadable.
+        'text-color': '#1a1916',
         'text-halo-color': 'rgba(255,255,255,0.95)',
-        'text-halo-width': 1.4,
+        'text-halo-width': 1.8,
       },
     });
     raiseMarkerLayers();
@@ -3201,6 +3264,30 @@
   // second enable onto the first fetch, so the merge happens exactly once.
   const overlayLoading = {};
 
+  // The ``?route_share=`` deep link's one-shot ``sourcedata`` listener, held
+  // out here so the failure branch of the routes load below can reach it.
+  //
+  // It is bound inside ``openRouteShareDeepLink`` and unbinds itself on the
+  // first routes load it sees — but a routes load that FAILS never installs
+  // the layer, so no ``sourcedata`` ever fires and the listener stays bound
+  // for the rest of the session, running on every subsequent source event
+  // the map makes. Null whenever nothing is waiting.
+  let routeShareSourceDataListener = null;
+
+  /**
+   * Unbind the route-share deep link's pending ``sourcedata`` listener.
+   *
+   * Idempotent, and safe to call when nothing is waiting — which is the
+   * common case, since a deep link is a small minority of arrivals.
+   *
+   * @returns {void}
+   */
+  const dropRouteShareSourceDataListener = () => {
+    if (!routeShareSourceDataListener) return;
+    map.off('sourcedata', routeShareSourceDataListener);
+    routeShareSourceDataListener = null;
+  };
+
   const _loadOverlay = async (key) => {
     if (key === 'l1') {
       if (!MAJOR_REGIONS_URL) return;
@@ -3362,6 +3449,11 @@
         const cached = await window.pwaMapOverlayCache?.getOverlay('routes');
         if (!cached) {
           revealOfflineToast('map-offline-toast-routes');
+          // Nothing will be installed, so the deep link's one-shot listener
+          // is waiting for an event that can no longer happen. Release it
+          // here rather than leaving it to run on every source event for the
+          // rest of the session.
+          dropRouteShareSourceDataListener();
           return;
         }
         installRoutesLayer(cached);
@@ -3419,7 +3511,7 @@
     // SNOW-761: one symbol layer, not a pin+label pair — the icon and the
     // label are two data-driven properties of the same symbol
     // ('icon-image' / 'text-field'), unlike favourites and resorts.
-    weather: ['weather-point'],
+    weather: ['weather-plate', 'weather-point'],
     // SNOW-687: the coloured line FIRST and the casing second — deliberately
     // the inverse of the order installRoutesLayer adds them in, where the
     // casing has to be added first to paint underneath. This list's order is
@@ -3520,6 +3612,17 @@
       // is chosen.
       if (key === 'l3' && stillEnabled && wasLoaded) {
         scheduleGroupingsForDate(currentDisplayedDate);
+      }
+      // SNOW-761: the weather symbols have exactly the l3 problem above, for
+      // exactly the l3 reason. ``refreshWeatherSourceData`` does nothing
+      // while the overlay is off, so a day scrubbed to — or a pan made —
+      // while it was hidden never reached the source, and a re-enable would
+      // reveal an earlier day's icons over the current choropleth. Only for
+      // a re-enable: a FIRST load installs the layer with the current day
+      // already projected, and the guard inside would refuse this call
+      // anyway until the fetch had installed the source.
+      if (key === 'weather' && stillEnabled && wasLoaded) {
+        refreshWeatherSourceData();
       }
       // SNOW-499: making the favourites overlay (re-)visible means any
       // favourited resort should hide its plain dot again, now the star is
@@ -5674,11 +5777,18 @@
       // bound would re-fire on every subsequent ``snowdesk:routes-changed``
       // setData — flying the map back to a route the user has since
       // claimed.
+      //
+      // It is ALSO unbound by the routes load's own failure branch (see
+      // ``dropRouteShareSourceDataListener``): an offline load with nothing
+      // cached installs no layer, so the event this waits for never arrives
+      // and nothing else would ever release it.
       const onRoutesSourceData = (e) => {
         if (e.sourceId !== 'routes' || !map.isSourceLoaded('routes')) return;
         map.off('sourcedata', onRoutesSourceData);
+        routeShareSourceDataListener = null;
         flyToShare();
       };
+      routeShareSourceDataListener = onRoutesSourceData;
       map.on('sourcedata', onRoutesSourceData);
     };
 

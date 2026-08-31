@@ -525,6 +525,46 @@ uv run python manage.py prune_orphan_locations           # preview
 uv run python manage.py prune_orphan_locations --commit  # delete
 ```
 
+### `link_resort_locations` — give every geocoded resort weather
+
+A resort's pin and a resort's weather used to be unconnected. The
+edit-resorts map overlay writes `Resort.latitude`/`longitude` and never
+touches `Location`; the resort page's weather section reads
+`ResortLocation` links, which only the separate edit-locations overlay
+creates. So a resort could sit on the map for months with a hand-placed pin
+and show no weather at all — production had **115 geocoded resorts and 4
+links**.
+
+This gives a geocoded resort with no link an anonymous `Location` at its own
+coordinate, height from `base_elevation_m`, marked `is_primary`. Curating
+named village / mid / peak points stays worthwhile and stays the editor's
+job; this is the floor, not a replacement.
+
+`role` is left blank on purpose: BASE/MID/TOP are claims about what a point
+*is*, and a hand-placed pin is only "where this resort is" — `is_primary`
+already carries that.
+
+**Run by an operator, not by a deploy.** It first shipped wired into
+`build.sh`, which was wrong: it writes up to 115 rows, and a deploy that
+times out mid-run leaves the estate half linked — on three services that
+deploy concurrently against one database. Bulk data writes are management
+commands for the same reason they are not data migrations. Nothing wipes
+`ResortLocation` on deploy either (`resorts.json` is excluded from the
+deploy-time `loaddata`), so there was never a reason for it to run there.
+
+Run it after geocoding resorts in the map editor, or after an
+`import_resorts` that adds coordinates.
+
+Offline (no Open-Meteo call) and idempotent. It reuses an existing
+anonymous `Location` at the coordinate rather than minting a new one, for
+the reason SNOW-771 records — a fresh row each deploy would orphan the
+previous one and every `Weather` row hanging off it.
+
+```bash
+uv run python manage.py link_resort_locations           # preview
+uv run python manage.py link_resort_locations --commit  # apply
+```
+
 ### `refresh_centroid_elevations` — resolve centroid heights into the fixtures
 
 The one manual half of the above, and the only part of a centroid that
