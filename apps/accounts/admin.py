@@ -19,8 +19,11 @@ import logging
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as _BaseUserAdmin
+from django.db.models import QuerySet
+from django.http import HttpRequest
 
 from .models import Account, PasskeyCredential, PushSubscription, Subscription
+from .services.deletion import erase_account
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +86,16 @@ admin.site.register(User, SnowdeskUserAdmin)
 
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
-    """Admin view for Account (identity profile linked to auth.User)."""
+    """Admin view for Account (identity profile linked to auth.User).
+
+    Deleting from here erases the person, not just the profile row: both
+    delete hooks route through
+    ``apps.accounts.services.deletion.erase_account``, the same service
+    ``accounts.views.delete_account`` uses. Without the overrides an admin
+    delete removed the ``Account`` and left the ``auth.User`` signed-in-able,
+    the favourites' minted Locations orphaned, and the sign-up ``RequestLog``
+    row — the one holding an IP address, city and coordinates — behind.
+    """
 
     list_display = [
         "account_email",
@@ -111,6 +123,35 @@ class AccountAdmin(admin.ModelAdmin):
     def account_email(self, obj: Account) -> str:
         """Return the linked User's email address."""
         return obj.user.email
+
+    def delete_model(self, request: HttpRequest, obj: Account) -> None:
+        """Erase the account through the shared deletion service.
+
+        Args:
+            request: The admin request performing the delete.
+            obj: The Account being deleted.
+
+        """
+        logger.info("Admin erasing account pk=%s", obj.pk)
+        erase_account(obj.user, obj)
+
+    def delete_queryset(
+        self, request: HttpRequest, queryset: QuerySet[Account]
+    ) -> None:
+        """Erase each selected account through the shared deletion service.
+
+        The admin's bulk delete action calls this instead of ``delete_model``,
+        and a ``queryset.delete()`` here would skip the cleanup for every row
+        at once — the same gap as the single-object path, multiplied.
+
+        Args:
+            request: The admin request performing the delete.
+            queryset: The selected Account rows.
+
+        """
+        for account in queryset.select_related("user"):
+            logger.info("Admin erasing account pk=%s (bulk)", account.pk)
+            erase_account(account.user, account)
 
 
 @admin.register(Subscription)

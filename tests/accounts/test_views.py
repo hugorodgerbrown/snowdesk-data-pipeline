@@ -23,7 +23,9 @@ Covers:
                         survive, no redirect; no session → 403; non-HTMX →
                         400; rate-limit 429.
   delete_account      — hard-deletes account; clears session; HX-Redirect to done;
-                        no session → 403; non-HTMX → 400.
+                        no session → 403; non-HTMX → 400; sweeps the Location
+                        a deleted favourite was the last referent of, while
+                        leaving shared and curated locations alone.
   unsubscribe_view    — valid token GET/POST; idempotent; bad token → 400;
                         last-subscription hard-delete; rate-limit 429.
   unsubscribe_done_view — GET renders done page.
@@ -56,8 +58,12 @@ from apps.accounts.services.token import (
     generate_token,
     generate_unsubscribe_token,
 )
+from apps.favourites.models import Favourite
+from apps.locations.models import Location
 from tests.factories import (
     AccountFactory,
+    FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     ResortFactory,
     SubscriptionFactory,
@@ -1728,6 +1734,47 @@ class TestDeleteAccount:
         client = _make_session_client(account)
         response = client.post(reverse("accounts:delete_account"))
         assert response.status_code == 400
+
+    def test_deletes_the_location_only_the_favourite_referenced(self) -> None:
+        """A favourite's minted Location is a saved item and goes with it.
+
+        ``Favourite.user`` is CASCADE, so the bulk cascade removes the
+        favourite rows without running any Python — which left the anonymous
+        Location behind holding the person's real coordinates and elevation,
+        referenced by nothing. Deletion now runs through the favourites
+        service so the orphan sweep happens.
+        """
+        account = AccountFactory.create()
+        location = LocationFactory.create(anonymous=True)
+        favourite = FavouriteFactory.create(user=account.user, location=location)
+
+        _make_session_client(account).post(
+            reverse("accounts:delete_account"), **_HTMX_HEADERS
+        )
+
+        assert not Favourite.objects.filter(pk=favourite.pk).exists()
+        assert not Location.objects.filter(pk=location.pk).exists()
+
+    def test_keeps_a_location_something_else_still_references(self) -> None:
+        """Erasure takes the person's rows, not everybody's.
+
+        A location another account's favourite also pins, and a curated
+        named location, both survive.
+        """
+        account = AccountFactory.create()
+        shared = LocationFactory.create(anonymous=True)
+        FavouriteFactory.create(user=account.user, location=shared)
+        bystander = FavouriteFactory.create(location=shared)
+        curated = LocationFactory.create(name="Mont Fort")
+        FavouriteFactory.create(user=account.user, location=curated)
+
+        _make_session_client(account).post(
+            reverse("accounts:delete_account"), **_HTMX_HEADERS
+        )
+
+        assert Location.objects.filter(pk=shared.pk).exists()
+        assert Location.objects.filter(pk=curated.pk).exists()
+        assert Favourite.objects.filter(pk=bystander.pk).exists()
 
     def test_rate_limit_returns_429(self) -> None:
         """Exceeding rate limit returns 429."""

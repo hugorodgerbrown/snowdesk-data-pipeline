@@ -13,6 +13,8 @@ Covers:
     ResortNotGeocoded; a second call for the same (user, resort) is
     idempotent; the cap is shared with plain-pin favourites.
   delete_favourite — owner-checked.
+  delete_favourites_for_user — the whole roster, with the same orphan
+    sweep, for account erasure.
 
 All Open-Meteo network calls are avoided by patching
 ``apps.favourites.services.fetch_elevation``.
@@ -35,10 +37,12 @@ from apps.favourites.services import (
     create_favourite,
     create_resort_favourite,
     delete_favourite,
+    delete_favourites_for_user,
 )
 from apps.locations.models import Location
 from tests.factories import (
     FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     ResortFactory,
     ResortLocationFactory,
@@ -550,3 +554,81 @@ class TestFavouriteLocation:
         delete_favourite(user, favourite.uuid)
 
         assert Location.objects.filter(pk=location.pk).exists()
+
+
+@pytest.mark.django_db
+class TestDeleteFavouritesForUser:
+    """delete_favourites_for_user — the whole roster, orphans included.
+
+    Account erasure cannot lean on ``Favourite.user``'s CASCADE: a bulk
+    cascade runs no Python, so every anonymous Location the favourites
+    minted would survive with the person's real coordinates on it.
+    """
+
+    def _pinned(self, favourite: Favourite) -> Location:
+        """Return a favourite's location, narrowing the nullable FK.
+
+        Args:
+            favourite: The favourite to read.
+
+        Returns:
+            Its location.
+
+        """
+        assert favourite.location is not None
+        return favourite.location
+
+    def test_deletes_every_favourite_and_its_location(self) -> None:
+        """Both rows of both favourites go."""
+        user = UserFactory.create()
+        first = self._pinned(FavouriteFactory.create(user=user))
+        second = self._pinned(FavouriteFactory.create(user=user))
+
+        assert delete_favourites_for_user(user) == 2
+
+        assert not Favourite.objects.for_user(user).exists()
+        assert not Location.objects.filter(pk__in=[first.pk, second.pk]).exists()
+
+    def test_leaves_another_users_favourites_alone(self) -> None:
+        """Erasure is scoped to one person."""
+        user = UserFactory.create()
+        FavouriteFactory.create(user=user)
+        bystander = FavouriteFactory.create()
+
+        delete_favourites_for_user(user)
+
+        assert Favourite.objects.filter(pk=bystander.pk).exists()
+        assert Location.objects.filter(pk=self._pinned(bystander).pk).exists()
+
+    def test_keeps_a_location_someone_else_still_holds(self) -> None:
+        """A shared location outlives the roster that referenced it."""
+        user = UserFactory.create()
+        location = self._pinned(FavouriteFactory.create(user=user))
+        FavouriteFactory.create(location=location)
+
+        delete_favourites_for_user(user)
+
+        assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_keeps_a_curated_location(self) -> None:
+        """A named location is curated data, whoever pinned it."""
+        user = UserFactory.create()
+        curated = LocationFactory.create(name="Mont Fort")
+        FavouriteFactory.create(user=user, location=curated)
+
+        delete_favourites_for_user(user)
+
+        assert Location.objects.filter(pk=curated.pk).exists()
+
+    def test_a_user_with_no_favourites_is_a_no_op(self) -> None:
+        """Nothing to delete is not an error — most accounts are this."""
+        assert delete_favourites_for_user(UserFactory.create()) == 0
+
+    def test_survives_a_pre_backfill_row_with_no_location(self) -> None:
+        """``Favourite.location`` is nullable; a null must not raise."""
+        user = UserFactory.create()
+        favourite = FavouriteFactory.create(user=user, location=None)
+
+        assert delete_favourites_for_user(user) == 1
+
+        assert not Favourite.objects.filter(pk=favourite.pk).exists()
