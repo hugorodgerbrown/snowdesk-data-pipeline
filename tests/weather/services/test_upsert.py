@@ -10,9 +10,11 @@ constraint stays correct.
 from __future__ import annotations
 
 import datetime
+from unittest import mock
 
 import pytest
 from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.weather.exceptions import ImmutableWeatherRowError
 from apps.weather.models import Weather
@@ -144,3 +146,34 @@ class TestUpsertWeather:
         second, _ = upsert_weather(location, today, **_fields())
 
         assert second.fetched_at > original
+
+    def test_a_midnight_straddle_between_the_check_and_the_save_fails_safe(
+        self,
+    ) -> None:
+        """A write spanning local midnight is still refused, not silently written.
+
+        upsert_weather checks ``observed_on < timezone.localdate()`` once,
+        then calls ``existing.save()``. ``Weather.save()`` re-checks the
+        same rule independently against the database (its backstop for
+        writes that never come through this service). If the day rolls
+        over in the gap between those two checks, they can disagree; this
+        forces that straddle and asserts the backstop still catches it
+        rather than the row silently getting rewritten past its day.
+        """
+        location = LocationFactory.create()
+        with freeze_time("2026-01-01 23:59:59.900") as frozen:
+            today = timezone.localdate()
+            WeatherFactory.create(location=location, observed_on=today, weather_code=3)
+            original_save = Weather.save
+
+            def save_after_midnight(
+                self: Weather, *args: object, **kwargs: object
+            ) -> None:
+                frozen.move_to("2026-01-02 00:00:00.100")
+                original_save(self, *args, **kwargs)
+
+            with (
+                mock.patch.object(Weather, "save", save_after_midnight),
+                pytest.raises(ImmutableWeatherRowError),
+            ):
+                upsert_weather(location, today, **_fields(weather_code=71))

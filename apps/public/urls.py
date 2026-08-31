@@ -67,7 +67,11 @@ urlpatterns = [
     # so existing reverse() calls still resolve.
     path(
         "terms/",
-        RedirectView.as_view(pattern_name="public:terms_of_service", permanent=True),
+        RedirectView.as_view(
+            pattern_name="public:terms_of_service",
+            permanent=True,
+            query_string=True,
+        ),
         name="terms",
     ),
     # Technology credits and attribution page (SNOW-122).

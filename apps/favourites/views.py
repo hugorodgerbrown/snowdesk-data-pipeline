@@ -169,25 +169,39 @@ def _parse_latlon(
 
 def _card_freshness(
     day_rating: RegionDayRating | None,
+    weather_fetched_at: datetime.datetime | None = None,
 ) -> tuple[datetime.datetime, int | None]:
     """Resolve the ``(generated_at, unsafe_after)`` freshness pair for a favourite.
 
-    ``generated_at`` is the rating's ``updated_at`` when a rating exists,
-    and ``timezone.now()`` otherwise — nothing to attach a real timestamp
-    to, so a "no coverage" favourite is trivially "current".
-    ``unsafe_after`` governs the safety-critical rating half: it is
-    ``DEFAULT_UNSAFE_AFTER_SECONDS`` whenever a rating exists, and
-    ``None`` otherwise.
+    Collects whichever of the rating / weather timestamps is present and
+    uses the OLDER one as ``generated_at`` — the card mixes both
+    constituents, so it is only as fresh as its stalest one. Falls back to
+    ``timezone.now()`` when neither is present (nothing to attach a real
+    timestamp to, so a "no coverage, no weather" favourite is trivially
+    "current"). ``unsafe_after`` governs the safety-critical rating half
+    only: it is ``DEFAULT_UNSAFE_AFTER_SECONDS`` whenever a rating exists
+    and ``None`` otherwise — weather is non-safety and never escalates a
+    card to "unsafe".
 
     Args:
         day_rating: Today's RegionDayRating for the favourite's region,
             or None.
+        weather_fetched_at: ``Weather.fetched_at`` for the row the card
+            renders, or None when the pin has no row for today.
 
     Returns:
         ``(generated_at, unsafe_after)``.
 
     """
-    generated_at = day_rating.updated_at if day_rating else timezone.now()
+    present = [
+        timestamp
+        for timestamp in (
+            day_rating.updated_at if day_rating else None,
+            weather_fetched_at,
+        )
+        if timestamp is not None
+    ]
+    generated_at = min(present) if present else timezone.now()
     unsafe_after = DEFAULT_UNSAFE_AFTER_SECONDS if day_rating else None
     return generated_at, unsafe_after
 
@@ -589,9 +603,10 @@ def _favourite_card_context(
         A ``(context, generated_at, unsafe_after)`` triple — the template
         context dict for ``_favourite_card.html``, and the freshness pair
         (SNOW-370 / SNOW-418) for the caller to stamp via
-        ``apply_freshness_headers``. ``generated_at`` is the rating's
-        ``updated_at``; ``unsafe_after`` is the 48h horizon only when a
-        safety-critical rating is present.
+        ``apply_freshness_headers``. ``generated_at`` is the older of the
+        rating's ``updated_at`` and the weather row's ``fetched_at``;
+        ``unsafe_after`` is the 48h horizon only when a safety-critical
+        rating is present.
 
     """
     day_rating = None
@@ -612,20 +627,26 @@ def _favourite_card_context(
             cards = problem_cards_for_bulletin(bulletin)
             problem_cards = annotate_problem_relevance(cards, favourite.elevation)
 
-    generated_at, unsafe_after = _card_freshness(day_rating)
-    state = compute_freshness_state(generated_at, unsafe_after=unsafe_after)
-    cache_payload = _build_favourite_cache_record(
-        favourite, day_rating, bulletin_url, generated_at, unsafe_after
-    )
-
     # SNOW-761: weather for the pin's own Location, read for today on the
     # (location, observed_on) unique constraint. A pre-SNOW-704 row with no
     # location, or a location with no row for today, yields None and the
     # card's weather section is simply absent.
+    #
+    # Read before the freshness pair, not after: the row's fetched_at is one
+    # of the two constituents _card_freshness takes the older of, so the card
+    # reports the staleness of the weather it actually renders.
     weather = (
         Weather.objects.for_location(favourite.location).on_date(today).first()
         if favourite.location_id
         else None
+    )
+
+    generated_at, unsafe_after = _card_freshness(
+        day_rating, weather.fetched_at if weather else None
+    )
+    state = compute_freshness_state(generated_at, unsafe_after=unsafe_after)
+    cache_payload = _build_favourite_cache_record(
+        favourite, day_rating, bulletin_url, generated_at, unsafe_after
     )
 
     context = {
