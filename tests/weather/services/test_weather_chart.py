@@ -56,6 +56,7 @@ def _panel(*bounds: tuple[float | None, float | None]) -> ForecastPanel:
                 wind_speed_max=None,
                 wind_bearing=None,
                 hourly=[],
+                selectable=False,
             )
             for index, (temp_max, temp_min) in enumerate(bounds)
         ]

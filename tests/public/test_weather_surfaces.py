@@ -25,6 +25,8 @@ an unfrozen assertion passes locally and fails in CI after sunset.
 from __future__ import annotations
 
 import datetime
+import pathlib
+import re
 
 import pytest
 from django.test import Client
@@ -50,17 +52,54 @@ SUNRISE = datetime.datetime(2026, 8, 30, 6, 30, tzinfo=datetime.UTC)
 SUNSET = datetime.datetime(2026, 8, 30, 20, 15, tzinfo=datetime.UTC)
 
 
-def _forecast_day(date: str, weather_code: int = 71) -> dict[str, object]:
-    """Build one ``forecast[]`` entry with no nested hourly series.
+def _hourly_series(date: str) -> list[dict[str, object]]:
+    """Build a full 24-hour series for one day.
+
+    Enough of a series for ``build_hourly_chart`` to return geometry —
+    it needs at least the temperatures to resolve a vertical scale.
+
+    Args:
+        date: The day's ISO date.
+
+    Returns:
+        Twenty-four hourly rows.
+
+    """
+    return [
+        {
+            "time": f"{date}T{hour:02d}:00",
+            "temperature_2m": -2.0 + hour * 0.25,
+            "precipitation": 0.2,
+            "snowfall": 0.5,
+            "wind_speed_10m": 12.0,
+            "wind_gusts_10m": 24.0,
+            "wind_direction_10m": 270.0,
+            "freezing_level_height": 2100.0,
+        }
+        for hour in range(24)
+    ]
+
+
+def _forecast_day(
+    date: str,
+    weather_code: int = 71,
+    hourly: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """Build one ``forecast[]`` entry, optionally with a nested hourly series.
 
     Args:
         date: The forward day's ISO date.
         weather_code: The day's WMO code.
+        hourly: The day's hourly rows. Omitted entirely when None, which is
+            the real shape past ``HOURLY_DAYS`` — the key is absent, not
+            null.
 
     Returns:
         The entry dict.
 
     """
+    if hourly is not None:
+        return {**_forecast_day(date, weather_code), "hourly": hourly}
     return {
         "date": date,
         "weather_code": weather_code,
@@ -334,3 +373,128 @@ class TestLocationForecastPage:
         assert stranger_client.get(url).status_code == 404
 
         assert Client().get(url).status_code == 404
+
+    @freeze_time(MIDDAY)
+    def test_the_strip_selects_the_hourly_chart(self) -> None:
+        """SNOW-787: one radio per selectable day, the first one checked."""
+        location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            hourly=_hourly_series("2026-08-30"),
+            forecast=[
+                _forecast_day("2026-08-31", hourly=_hourly_series("2026-08-31")),
+                _forecast_day("2026-09-01"),
+            ],
+        )
+
+        html = (
+            Client()
+            .get(reverse("public:location_weather", args=[location.pk]))
+            .content.decode()
+        )
+
+        # Two days carry an hourly series, so two controls and two panels.
+        assert html.count('name="location-weather-day"') == 2
+        assert html.count('data-testid="location-weather-hourly-panel"') == 2
+        # Exactly one is checked on load, so the page is never chartless.
+        # Counted on the input tag: "checked" also appears inside the
+        # peer-checked: utilities on every column's class string.
+        checked = re.findall(r"<input\b[^>]*\bchecked\b[^>]*>", html)
+        assert len(checked) == 1
+        assert 'data-day-index="0"' in html
+        assert 'data-day-index="1"' in html
+        # The third day has no series, so it is a column and not a control.
+        assert 'data-day-index="2"' not in html
+
+    @freeze_time(MIDDAY)
+    def test_a_day_past_the_horizon_is_a_column_not_a_dead_control(self) -> None:
+        """No input at all, rather than a disabled one that invites a click."""
+        location = LocationFactory.create()
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            hourly=_hourly_series("2026-08-30"),
+            forecast=[_forecast_day("2026-08-31")],
+        )
+
+        html = (
+            Client()
+            .get(reverse("public:location_weather", args=[location.pk]))
+            .content.decode()
+        )
+
+        # Both days are in the strip...
+        assert html.count('data-testid="location-weather-forecast-day"') == 2
+        # ...but only the one with a series is a control.
+        assert html.count('name="location-weather-day"') == 1
+        # And not a disabled one — there is no input on that column at all.
+        assert not re.findall(r"<input\b[^>]*\bdisabled\b[^>]*>", html)
+
+    def test_the_reveal_rule_is_adjacent_not_general_sibling(self) -> None:
+        """The regression the `~`-vs-`:has()` trap would produce.
+
+        Tailwind's ``peer-checked:`` compiles to the GENERAL sibling
+        combinator, so a naive reveal shows the checked panel and every
+        panel after it — right on day one, both charts on day two. The
+        rules are hand-written in ``src/css/main.css`` for that reason,
+        and this asserts nobody has swapped them back for the utility.
+        """
+        css = (
+            pathlib.Path(__file__).resolve().parents[2] / "src" / "css" / "main.css"
+        ).read_text()
+
+        selector_block = css[css.index(".forecast-hourly-panel {") :]
+        # Every reveal pairs an explicit day index on both ends.
+        assert 'input[data-day-index="0"]:checked' in selector_block
+        assert '.forecast-hourly-panel[data-hourly-day="0"]' in selector_block
+        # And the panels are hidden by default, so an unmatched index shows
+        # nothing rather than everything.
+        assert ".forecast-hourly-panel {\n  display: none;\n}" in css
+
+    @freeze_time(MIDDAY)
+    def test_each_control_is_wrapped_with_only_its_own_column(self) -> None:
+        """The other half of the general-sibling trap (SNOW-787).
+
+        ``peer-checked:`` is ``~``, so with every input and label flat in
+        the strip the checked day's input matches every LATER column's
+        label too and highlights the rest of the week. Wrapping each
+        input/label pair bounds the ``~`` to one pair. CSS is not
+        evaluated here, so this asserts the structure the rule depends on:
+        no wrapper may hold two controls.
+        """
+        location = LocationFactory.create()
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            hourly=_hourly_series("2026-08-30"),
+            forecast=[
+                _forecast_day("2026-08-31", hourly=_hourly_series("2026-08-31")),
+                _forecast_day("2026-09-01"),
+            ],
+        )
+
+        html = (
+            Client()
+            .get(reverse("public:location_weather", args=[location.pk]))
+            .content.decode()
+        )
+
+        strip = html[html.index("forecast-day-strip") :]
+        strip = strip[: strip.index('data-testid="location-weather-hourly-panel"')]
+        # One wrapper per column, and no wrapper holds two controls — so a
+        # checked input can never reach a second column's label.
+        wrappers = strip.split('<div class="shrink-0">')[1:]
+        assert len(wrappers) == 3
+        for wrapper in wrappers:
+            assert wrapper.count("<label") == 1
+            assert len(re.findall(r"<input\b", wrapper)) <= 1

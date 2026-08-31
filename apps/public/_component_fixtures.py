@@ -2982,6 +2982,11 @@ def _forecast_panel_day(
         "snowfall_sum": snowfall_sum,
         "freezing_level_height": freezing_level_height,
         "hourly": list(hourly),
+        # SNOW-787: presence of a series is what makes a column a control.
+        # The library renders the strip with no ``selector_name``, so
+        # nothing here is interactive — the flag is carried so the fixture
+        # stays the same shape as the real ForecastPanelDay.
+        "selectable": bool(hourly),
     }
 
 
@@ -3101,6 +3106,7 @@ def _chart_panel(
             wind_speed_max=None,
             wind_bearing=None,
             hourly=[],
+            selectable=False,
         )
         for index, (temp_max, temp_min) in enumerate(bounds)
     ]

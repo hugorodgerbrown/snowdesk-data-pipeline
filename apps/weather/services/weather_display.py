@@ -440,6 +440,13 @@ class ForecastPanelDay(TypedDict):
     wind_speed_max: float | None  # Daily max sustained wind at 10m, km/h.
     wind_bearing: float | None  # Dominant direction at 10m, degrees FROM.
     hourly: list[HourlyRow]  # That day's hourly rows, or [].
+    # SNOW-787: whether this column can act as the hourly chart's selector.
+    # Presence of an hourly series, NOT truthiness of some other field — a
+    # forward day past HOURLY_DAYS has no 'hourly' key at all, and an empty
+    # list is equally "no detail to select". Kept as its own field rather
+    # than left to the template testing ``day.hourly``, so the rule lives
+    # where it can be tested.
+    selectable: bool
 
 
 class ForecastPanel(TypedDict):
@@ -494,7 +501,8 @@ def _forecast_day_context(
         wind_bearing=entry.get("wind_direction_10m_dominant"),
         # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
         # 'hourly' key at all, so this is a presence check, not a null check.
-        hourly=list(entry.get("hourly") or []),
+        hourly=(hourly := list(entry.get("hourly") or [])),
+        selectable=bool(hourly),
     )
 
 
@@ -534,7 +542,8 @@ def build_point_forecast_panel(
             freezing_level_height=weather.freezing_level_height,
             wind_speed_max=weather.wind_speed_10m_max,
             wind_bearing=weather.wind_direction_10m_dominant,
-            hourly=list(weather.hourly or []),
+            hourly=(lead_hourly := list(weather.hourly or [])),
+            selectable=bool(lead_hourly),
         )
     ]
     for entry in weather.forecast or []:

@@ -169,6 +169,22 @@ entries carry one (`HOURLY_DAYS` in
 beyond that the key is **absent**, not null. `ForecastDay.hourly` is
 `NotRequired` for exactly that reason.
 
+The strip is also the **day selector** for the hourly charts beneath it
+(SNOW-787), when the page passes a `selector_name`. Only days carrying an
+hourly series become controls; the rest are inert columns with no input at
+all, because a disabled radio invites a click that does nothing.
+
+**The reveal is CSS-only and hand-written, twice, for the same reason.**
+Tailwind's `peer-checked:` compiles to the *general* sibling combinator, so
+a checked input matches every later sibling — the panel stack would show
+the selected chart and every one after it, and a flat strip would highlight
+the selected column and every one after it. The fix is the same on both
+sides: bound the `~`. Each input/label pair gets its own wrapper, and the
+cross-container reveal is written out per day index in
+[`src/css/main.css`](../src/css/main.css). `tests/public/test_weather_surfaces.py`
+asserts both structures, because pytest renders HTML and never evaluates
+the CSS that depends on it.
+
 ### `includes/_hourly_chart.html`
 
 One day, hour by hour: three charts on one x-axis — temperature,

@@ -4289,12 +4289,16 @@ def _location_forecast_context(
     plots the daily bounds the panel already resolved, so deriving it twice
     would let the two disagree about which days made the cut.
 
-    ``hourly_chart`` is the SNOW-723 chart for the day being shown, and it
-    replaced the 24-row table the forecast panel used to carry (SNOW-786).
-    It is built from the panel's leading day, which is ``observed_on``
-    itself. ``HOURLY_DAYS`` is 2, so a forward day past that horizon has no
-    ``hourly`` key at all and the chart is ``None`` — the page renders no
-    chart rather than an empty frame.
+    ``hourly_charts`` is one SNOW-723 chart per **selectable** day, indexed
+    by that day's position in the strip so the two line up (SNOW-787): the
+    strip is the selector and the charts are what it selects between.
+    ``HOURLY_DAYS`` is 2, so in practice this is the row's own day and one
+    forward day; the rest of the week has no ``hourly`` key at all and
+    contributes no chart rather than an empty frame.
+
+    The index is the panel position, not an enumeration of the charts. A
+    day that drops out of the strip for a malformed date would otherwise
+    shift every later chart off its column.
 
     Args:
         location: The location to describe.
@@ -4303,28 +4307,30 @@ def _location_forecast_context(
 
     Returns:
         A dict of ``weather``, ``display``, ``panel``, ``chart`` and
-        ``hourly_chart``. Every value is ``None`` when the location has no
-        row for the day.
+        ``hourly_charts``. The first four are ``None`` when the location
+        has no row for the day; ``hourly_charts`` is then empty.
 
     """
     weather = Weather.objects.filter(location=location, observed_on=observed_on).first()
     panel = build_point_forecast_panel(weather, now)
-    days = panel["days"] if panel else []
+    hourly_charts = []
+    for index, day in enumerate(panel["days"] if panel else []):
+        if not day["selectable"]:
+            continue
+        chart = build_hourly_chart(
+            day,
+            elevation=location.elevation_m,
+            location_label=location.name or "",
+            now=now,
+        )
+        if chart is not None:
+            hourly_charts.append({"index": index, "chart": chart})
     return {
         "weather": weather,
         "display": build_weather_display(weather, now),
         "panel": panel,
         "chart": build_forecast_chart(panel),
-        "hourly_chart": (
-            build_hourly_chart(
-                days[0],
-                elevation=location.elevation_m,
-                location_label=location.name or "",
-                now=now,
-            )
-            if days
-            else None
-        ),
+        "hourly_charts": hourly_charts,
     }
 
 
