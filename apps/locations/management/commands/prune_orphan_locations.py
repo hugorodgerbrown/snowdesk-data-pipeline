@@ -38,6 +38,7 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from apps.core.command_iteration import iterate_rows
 from apps.locations.models import Location
 from apps.weather.models import Weather
 
@@ -102,11 +103,18 @@ class Command(BaseCommand):
 
         if commit and location_count:
             with transaction.atomic():
-                # Re-filter by pk: the queryset above spans four joins, and
-                # a delete() over it would emit a DELETE with those joins on
-                # some backends. The pk list is what we counted.
-                pks = list(orphans.values_list("pk", flat=True))
-                Location.objects.filter(pk__in=pks).delete()
+                # Streamed, not materialised. The queryset above spans four
+                # joins, so a delete() over it would emit a DELETE carrying
+                # those joins on some backends — but collecting every pk
+                # first, to delete WHERE pk IN (...), holds the whole orphan
+                # estate in memory to build a clause the database then has
+                # to parse. A first production run clears three deploy
+                # generations at once, so that list is exactly the one worth
+                # not building. Walking newest id first and deleting each row
+                # by its own pk needs neither, and prints the countdown the
+                # command contract asks for.
+                for orphan in iterate_rows(self, orphans, verbosity=verbosity):
+                    Location.objects.filter(pk=orphan.pk).delete()
 
         if verbosity >= 1:
             self.stdout.write(

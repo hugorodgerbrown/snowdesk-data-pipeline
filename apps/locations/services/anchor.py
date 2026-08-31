@@ -25,6 +25,14 @@ from apps.locations.models import Location
 
 logger = logging.getLogger(__name__)
 
+# Metres. An elevation reaches this function as a float, from a fixture
+# column on one run and from an Open-Meteo resolution on another, so two
+# runs can disagree in the last bits of the mantissa for a height that has
+# not actually moved. A difference below this is floating-point noise, not a
+# correction: treating it as one would re-save every anchored row on every
+# deploy and churn ``updated_at`` for nothing.
+ELEVATION_TOLERANCE_M = 1e-6
+
 
 def anchor_location(
     latitude: float, longitude: float, elevation: float | None
@@ -53,6 +61,27 @@ def anchor_location(
         The reused or newly created ``Location``.
 
     """
+    # Read-then-create, and deliberately **not** ``get_or_create`` behind a
+    # unique constraint on ``(latitude, longitude)``. Duplicate anonymous
+    # rows at one coordinate are legitimate elsewhere in the estate:
+    # ``submit_report`` mints one location per field observation precisely so
+    # that two reports at the same point are not merged into one place
+    # (SNOW-709), and two users may pin the same coordinate as a favourite.
+    # Even a partial unique index scoped to anonymous rows would turn both of
+    # those into an ``IntegrityError`` on a request path — and would fail to
+    # apply at all on an environment still carrying the pre-SNOW-771 orphan
+    # generations, which are by construction repeated anonymous rows at one
+    # centroid.
+    #
+    # What is left is a narrow create-create race: two callers resolving the
+    # same coordinate while no row exists yet both create one. The caller
+    # that actually runs concurrently — three services running
+    # ``link_region_centroid_locations`` from one release — is already
+    # serialised by the ``select_for_update()`` it takes on the parent
+    # region, so the race needs two *different* parents landing on one
+    # coordinate at one instant. Its cost is a single duplicate anonymous
+    # row, which the oldest-id-wins read below makes invisible to every
+    # subsequent call and which ``prune_orphan_locations`` collects.
     existing = (
         Location.objects.anonymous()
         .filter(latitude=latitude, longitude=longitude)
@@ -63,7 +92,14 @@ def anchor_location(
         return Location.objects.create(
             latitude=latitude, longitude=longitude, elevation_m=elevation
         )
-    if elevation is not None and existing.elevation_m != elevation:
+    # Compared with a tolerance rather than for exact float equality: the
+    # same height arriving twice can differ in its last bits, and only a real
+    # move is worth a write. A row that has no height yet always takes one.
+    moved = elevation is not None and (
+        existing.elevation_m is None
+        or abs(existing.elevation_m - elevation) > ELEVATION_TOLERANCE_M
+    )
+    if moved:
         # A fixture rebuild can move a centroid, and a resort's recorded base
         # elevation can be corrected. Keep the row — and its weather — and
         # write the new height onto it. A null incoming elevation never

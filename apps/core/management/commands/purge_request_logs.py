@@ -58,7 +58,6 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.core.command_iteration import iterate_rows
 from apps.core.models import RequestLog
 
 logger = logging.getLogger(__name__)
@@ -128,23 +127,14 @@ class Command(BaseCommand):
         cutoff = timezone.now() - timedelta(days=days)
         expired = RequestLog.objects.filter(created_at__lt=cutoff)
 
-        # Count during the walk rather than accumulating ids. The first
-        # production run purges everything older than a year in one go, and
-        # the obvious shape — collect every pk, then delete WHERE pk IN
-        # (...) — holds the whole set in memory to build an IN clause the
-        # database then has to parse. Deleting on the same ``created_at``
-        # predicate the walk used needs neither: the cutoff is fixed before
-        # the walk starts, and a row created during it has ``created_at``
-        # of now, so it cannot fall inside the window. The two are
-        # equivalent, and only one of them scales.
-        expired_count = 0
-        for _ in iterate_rows(
-            self,
-            expired.values_list("pk", flat=True),
-            verbosity=verbosity,
-            describe=lambda pk: f"RequestLog {pk}",
-        ):
-            expired_count += 1
+        # One aggregate, not a walk. This number exists only to decide
+        # whether there is anything to do and to phrase the report line —
+        # nothing here is per-row work, so streaming the pks to arrive at it
+        # would read every expired row out of the database, and print one
+        # line each, to compute a single integer the database can produce on
+        # its own. The first production run purges a year of rows in one go,
+        # which is precisely when that output is least wanted.
+        expired_count = expired.count()
 
         if not expired_count:
             if verbosity >= 1:
@@ -167,6 +157,17 @@ class Command(BaseCommand):
                 )
             return
 
+        # **Deliberate exemption from the row-streaming rule** (see
+        # docs/management-commands.md, rule 5: "derived, non-row unit of
+        # work"). The unit of work here is one retention sweep, not one row:
+        # a single bulk DELETE on the same ``created_at`` predicate, issued
+        # inside one statement so the window either clears or does not. The
+        # cutoff is fixed before this line, and a row created meanwhile
+        # carries ``created_at`` of now and so cannot fall inside it, which
+        # is what makes the set-based delete equivalent to a walk. Streaming
+        # it would mean a year of individual DELETEs, and a year of stdout,
+        # to reach the same state more slowly and less atomically.
+        #
         # ``delete()`` returns (total, {label: count}) where the total counts
         # cascaded rows too. Reporting that total would overstate the purge —
         # a RequestLog with one BulletinShareClick behind it reads as two
