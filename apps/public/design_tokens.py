@@ -1348,11 +1348,12 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="Forecast panel",
         description=(
             "The multi-day outlook for one location (SNOW-761): a scrolling "
-            "day strip, then one collapsible hourly panel per day that "
-            "carries an hourly series. Only the first few days do — the "
-            "stored ``forecast[]`` entries beyond that horizon have no "
-            "``hourly`` key at all — so the second variant is the sparse "
-            "shape rather than a degraded version of the first."
+            "day strip, one column per day. It carried a collapsible "
+            "24-row hourly table per day until SNOW-786, which replaced "
+            "that with the hourly chart below — both answered the same "
+            "question and the table only existed because there was no "
+            "chart. The strip is now figures only; the second variant is a "
+            "single day rather than a week."
         ),
         kind="components",
         partial="includes/_forecast_panel.html",

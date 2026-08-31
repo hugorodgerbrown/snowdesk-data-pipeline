@@ -154,16 +154,33 @@ the palette in place.
 
 ### `includes/_forecast_panel.html`
 
-The week ahead: a scrolling day strip, then one
-`includes/_collapsible_panel.html` per day that carries an hourly series,
-bodied by `includes/_forecast_hourly_body.html`.
+The week ahead: a scrolling day strip, one column per day.
 
-**`hourly` is optional per forward day.** Only the first few entries carry
-one (`HOURLY_DAYS` in
+It carried a second part — one `includes/_collapsible_panel.html` per day
+holding a 24-row table, bodied by `_forecast_hourly_body.html` — until
+SNOW-786 deleted both. That table and `includes/_hourly_chart.html`
+answer the same question, and the table only existed because there was no
+chart; the chart replaced it rather than joining it.
+
+**`hourly` is still optional per forward day**, and now it decides whether
+a chart is drawn rather than whether a collapsible is. Only the first few
+entries carry one (`HOURLY_DAYS` in
 [`apps/weather/services/fetch.py`](../apps/weather/services/fetch.py));
 beyond that the key is **absent**, not null. `ForecastDay.hourly` is
-`NotRequired` for exactly that reason, and both the service and the
-template test for presence rather than assuming.
+`NotRequired` for exactly that reason.
+
+### `includes/_hourly_chart.html`
+
+One day, hour by hour: three charts on one x-axis — temperature,
+precipitation and wind — built by
+[`apps/weather/services/hourly_chart.py`](../apps/weather/services/hourly_chart.py)
+(SNOW-723, placed by SNOW-786). Temperature and precipitation are hourly;
+wind is three-hourly, because a gust is a peak over a span and a bearing
+is only meaningful averaged over one.
+
+Its wind arrows point at the **source**, and since SNOW-785 so does
+`_weather_panel.html` — the two share the location forecast page, and
+`tests/public/test_weather_tags.py` asserts they cannot drift apart.
 
 ## The map overlay
 

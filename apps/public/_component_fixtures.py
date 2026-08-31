@@ -3034,7 +3034,7 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
     ]
     return (
         {
-            "caption": "Five days, hourly detail on the first two",
+            "caption": "Five days across the outlook window",
             "solo": True,
             "context": {
                 "panel": {"days": full_days},
@@ -3042,7 +3042,7 @@ def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
             },
         },
         {
-            "caption": "One day, no hourly series and no freezing level",
+            "caption": "One day, no freezing level",
             "solo": True,
             "context": {
                 "panel": {

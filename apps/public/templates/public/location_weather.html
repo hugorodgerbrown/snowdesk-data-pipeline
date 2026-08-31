@@ -20,9 +20,11 @@ Sections, top to bottom:
      region it stands for. Never its coordinates (see the view).
   2. Today — includes/_weather_panel.html.
   3. The shape of the week — includes/_forecast_chart.html.
-  4. The figures behind it — includes/_forecast_panel.html, with hourly
-     detail unthinned. The map card thins its hourly series to three-hourly
-     because it is a tap away; this page is a destination and shows all 24.
+  4. The figures behind it — includes/_forecast_panel.html, the day strip.
+  5. Today, hour by hour — includes/_hourly_chart.html (SNOW-786). This
+     replaced the 24-row table the strip used to carry per day: both
+     answered the same question, and the table only existed because there
+     was no chart.
   5. Onward links — the resort page and the region bulletin, where either
      exists. A centroid has only the second.
 
@@ -36,6 +38,9 @@ Context:
     display     — WeatherDisplay, or None.
     panel       — ForecastPanel, or None.
     chart       — ForecastChart, or None.
+    hourly_chart — HourlyChart for observed_on, or None. HOURLY_DAYS is 2,
+                  so a row whose leading day carries no hourly series
+                  renders no chart rather than an empty frame.
 {% endcomment %}
 
 {% block page_meta %}
@@ -75,12 +80,20 @@ Context:
                 </section>
             {% endif %}
 
-            {# 4. The figures behind it, hourly detail included. #}
+            {# 4. The figures behind it — the day strip. #}
             {% if panel %}
                 <section class="mt-6" aria-labelledby="location-weather-forecast-heading">
                     {% translate "Forecast" as forecast_heading_label %}
                     {% include "includes/_eyebrow.html" with tag="h2" heading_id="location-weather-forecast-heading" text=forecast_heading_label class_extra="mb-2" only %}
                     {% include "includes/_forecast_panel.html" with panel=panel testid_prefix="location-weather-forecast" only %}
+                </section>
+            {% endif %}
+            {# 5. Today, hour by hour. #}
+            {% if hourly_chart %}
+                <section class="mt-6" aria-labelledby="location-weather-hourly-heading">
+                    {% translate "Hour by hour" as hourly_heading_label %}
+                    {% include "includes/_eyebrow.html" with tag="h2" heading_id="location-weather-hourly-heading" text=hourly_heading_label class_extra="mb-2" only %}
+                    {% include "includes/_hourly_chart.html" with chart=hourly_chart testid_prefix="location-weather-hourly" only %}
                 </section>
             {% endif %}
         {% else %}

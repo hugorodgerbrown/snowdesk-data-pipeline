@@ -2,24 +2,26 @@
 {% comment %}
 templates/includes/_forecast_panel.html — multi-day outlook for one location.
 
-Two parts:
+One part: a compact day strip — one column per day, carrying the weekday
+label, condition icon, hi/lo temperature, that day's freezing level, its
+wind, and a snowfall chip when the day's ``snowfall_sum`` is non-zero. The
+column is ``w-24`` rather than ``w-20`` so the wind value keeps its unit —
+a bare number sitting under "2400 m" says nothing about which is which.
+Gusts are deliberately absent: ``_weather_panel.html`` has a wrapping row
+to spend on them and this column does not (SNOW-780).
 
-  1. A compact day strip — one column per day: weekday label, condition
-     icon, hi/lo temperature, that day's freezing level, its wind, and a
-     snowfall chip when the day's ``snowfall_sum`` is non-zero. The column
-     is ``w-24`` rather than ``w-20`` so the wind value keeps its unit — a
-     bare number sitting under "2400 m" says nothing about which is which.
-     Gusts are deliberately absent: ``_weather_panel.html`` has a wrapping
-     row to spend on them and this column does not (SNOW-780).
-  2. Expandable hourly detail — one ``_collapsible_panel.html`` per day that
-     carries an hourly series, listing it via ``_forecast_hourly_body.html``.
+**The hourly half is gone (SNOW-786).** It was a second part here: one
+``_collapsible_panel.html`` per day carrying a 24-row table, via
+``_forecast_hourly_body.html``. Both that table and the SNOW-723 hourly
+chart answer "what happens through this day", and the table only existed
+because there was no chart. The chart replaced it rather than joining it,
+and it is rendered by the page beneath this strip rather than from inside
+it — see ``public/location_weather.html``.
 
 SNOW-761: the days come from ONE ``Weather`` row — its own ``observed_on``
 leads, and the rest are the entries in its ``forecast`` column
 (``build_point_forecast_panel``). Before the rebuild they were N sibling
-rows from a second table. **``hourly`` is present on only the first few
-forward days**, so part 2 tests each day for one rather than assuming; a day
-past that horizon simply contributes no panel.
+rows from a second table.
 
 Consumer: the location forecast page (``/weather/<location_id>/``), and
 nothing else. SNOW-783 took this strip off the resort page and the
@@ -101,14 +103,4 @@ Context:
             </div>
         {% endfor %}
     </div>
-
-    {# 2. Expandable hourly detail — only the days that carry a series #}
-    {% for day in panel.days %}
-        {% if day.hourly %}
-            {% blocktrans with weekday=day.weekday_label trimmed asvar hourly_title %}
-                Hourly detail — {{ weekday }}
-            {% endblocktrans %}
-            {% include "includes/_collapsible_panel.html" with title=hourly_title data_testid=testid_prefix|default:'forecast'|add:'-hourly' body_template="includes/_forecast_hourly_body.html" hourly=day.hourly %}
-        {% endif %}
-    {% endfor %}
 </div>
