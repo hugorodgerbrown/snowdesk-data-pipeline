@@ -36,10 +36,23 @@ function makeFeature(days, { lon = 7.4, lat = 46.1, elevation = 1500, id = 1 } =
 }
 
 describe('iconForCode', () => {
-  it('maps a known code to its day-variant Meteocons file', () => {
+  it('suffixes -day only for the buckets drawn with a sun', () => {
     expect(core.iconForCode(0)).toBe('clear-day.svg');
-    expect(core.iconForCode(71)).toBe('light_snow-day.svg');
-    expect(core.iconForCode(95)).toBe('thunder-day.svg');
+    expect(core.iconForCode(1)).toBe('partly_cloudy-day.svg');
+  });
+
+  it('resolves every other bucket to a bare, suffix-free filename', () => {
+    // The icon set draws day/night variants only where a sun or a moon
+    // appears; weather in front of a cloud is one drawing (SNOW-791).
+    expect(core.iconForCode(45)).toBe('fog.svg');
+    expect(core.iconForCode(51)).toBe('drizzle.svg');
+    expect(core.iconForCode(61)).toBe('light_rain.svg');
+    expect(core.iconForCode(63)).toBe('moderate_rain.svg');
+    expect(core.iconForCode(65)).toBe('heavy_rain.svg');
+    expect(core.iconForCode(71)).toBe('light_snow.svg');
+    expect(core.iconForCode(73)).toBe('moderate_snow.svg');
+    expect(core.iconForCode(75)).toBe('heavy_snow.svg');
+    expect(core.iconForCode(95)).toBe('thunder.svg');
   });
 
   it('never returns a night variant', () => {
@@ -51,6 +64,17 @@ describe('iconForCode', () => {
 
   it('ships cloudy without a day/night suffix', () => {
     expect(core.iconForCode(3)).toBe('cloudy.svg');
+  });
+
+  it('suffixes at most two of the twelve buckets', () => {
+    // Guards the inversion: the rule used to add `-day` to everything but
+    // one bucket, so a regression that re-inverted it would still pass
+    // every single-code assertion above that happens to be a pair.
+    const suffixed = Array.from({ length: 100 }, (_, code) => core.iconForCode(code))
+      .filter((name) => name.includes('-day'));
+    expect(new Set(suffixed)).toEqual(
+      new Set(['clear-day.svg', 'partly_cloudy-day.svg']),
+    );
   });
 
   it('falls back to cloudy for an unknown, null or missing code', () => {
@@ -129,7 +153,7 @@ describe('projectFeatureForDate', () => {
 
     const projected = core.projectFeatureForDate(feature, '2026-08-30');
 
-    expect(projected.properties.icon).toBe('light_snow-day.svg');
+    expect(projected.properties.icon).toBe('light_snow.svg');
     expect(projected.properties.label_temp).toBe('4°');
     expect(projected.properties.label_break).toBe('\n');
     expect(projected.properties.elev_mark).toBe(core.ELEVATION_MARK_ID);
@@ -198,7 +222,7 @@ describe('projectFeatureCollectionForDate', () => {
     expect(projected.type).toBe('FeatureCollection');
     expect(projected.features.map((f) => f.properties.icon)).toEqual([
       'clear-day.svg',
-      'moderate_snow-day.svg',
+      'moderate_snow.svg',
     ]);
   });
 
@@ -249,7 +273,7 @@ describe('iconFilenamesForPayload', () => {
 
     expect(core.iconFilenamesForPayload(fc)).toEqual([
       'clear-day.svg',
-      'light_snow-day.svg',
+      'light_snow.svg',
     ]);
   });
 
