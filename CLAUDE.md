@@ -623,8 +623,9 @@ Read these when working in the relevant area:
 | Day character rules (original spec) | [`docs/day_character_rules_spec.md`](docs/day_character_rules_spec.md) |
 | Location is the primitive (Location model, ForecastPoint is a fetch cell, apps/locations/) | [`docs/decisions/location-is-the-primitive.md`](docs/decisions/location-is-the-primitive.md) |
 | Weather is one immutable row per location per day (Weather model, upsert_weather, Location.objects.active()) | [`docs/decisions/weather-is-one-immutable-location-row.md`](docs/decisions/weather-is-one-immutable-location-row.md) |
-| Weather UI (_weather_panel/_forecast_panel, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js) | [`docs/weather-surfaces.md`](docs/weather-surfaces.md) |
+| Weather UI (_weather_panel/_weather_day_picker/_weather_day_line, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js) | [`docs/weather-surfaces.md`](docs/weather-surfaces.md) |
 | Why the weather backfill is a capped inline admin action, and why a backfilled row has no forecast[] | [`docs/decisions/weather-backfill-is-an-admin-action.md`](docs/decisions/weather-backfill-is-an-admin-action.md) |
+| Why the weather day picker is a CSS radio group, not seven dated links (`?date=` picks the row, the picker picks inside it) | [`docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`](docs/decisions/weather-day-picker-is-a-selector-not-navigation.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a followed-but-unclaimed route share lives in the session (and what it widens) | [`docs/decisions/route-share-pending-claim-in-session.md`](docs/decisions/route-share-pending-claim-in-session.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |

@@ -10,7 +10,8 @@ THIS IS A CARD, NOT A PAGE. It briefly carried the outlook chart, the
 seven-day strip and per-day hourly tables; that was too much for a surface
 reached by tapping a symbol, and it was the wrong place for all three. What
 is left answers one question — what is it doing there, now — and hands the
-rest to the full forecast behind a link.
+rest to the full forecast behind a link. (None of those three components
+still exists: SNOW-789 rebuilt that page around a day picker.)
 
 The trim is also what the payload wanted: the hourly tables alone were 79%
 of this response.
@@ -98,8 +99,8 @@ Context:
                     </div>
                 {% endif %}
             </dl>
-            {# 3. Out to the full forecast — the outlook, the day strip and #}
-            {# the hourly detail all live there rather than here.            #}
+            {# 3. Out to the full forecast — the week and the hourly     #}
+            {# detail both live there rather than here.                    #}
             {% if forecast_url %}
                 {% trans "View forecast →" as weather_forecast_cta %}
                 {% include "includes/_button.html" with label=weather_forecast_cta href=forecast_url variant="secondary" size="compact" %}

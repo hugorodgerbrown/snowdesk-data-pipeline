@@ -12,6 +12,9 @@ Three consumers, one derivation:
                                  the resort page and the favourite card.
   ``build_point_forecast_panel`` the multi-day outlook: the row's own day
                                  followed by every entry in ``forecast``.
+                                 Drives both the day picker and the
+                                 selected-day line on the location
+                                 forecast page.
   ``build_point_weather_days``   the map feed's ``{date: {code, tmax}}``
                                  projection (``apps.public.api``).
 
@@ -439,18 +442,33 @@ class ForecastPanelDay(TypedDict):
     freezing_level_height: float | None
     wind_speed_max: float | None  # Daily max sustained wind at 10m, km/h.
     wind_bearing: float | None  # Dominant direction at 10m, degrees FROM.
+    # SNOW-789: the day's daylight window, "HH:MM" in the day's OWN stored
+    # offset — the same rule as ``WeatherDisplay.sunrise_local``. The day
+    # picker's selected-day line states the daylight for whichever day is
+    # chosen, so every column has to carry its own pair rather than the
+    # lead day's.
+    sunrise_local: str
+    sunset_local: str
     hourly: list[HourlyRow]  # That day's hourly rows, or [].
-    # SNOW-787: whether this column can act as the hourly chart's selector.
-    # Presence of an hourly series, NOT truthiness of some other field — a
-    # forward day past HOURLY_DAYS has no 'hourly' key at all, and an empty
-    # list is equally "no detail to select". Kept as its own field rather
-    # than left to the template testing ``day.hourly``, so the rule lives
-    # where it can be tested.
+    # SNOW-787, narrowed by SNOW-789: whether this day has a meteogram.
+    # Every column in the day picker is a control now, so this no longer
+    # decides which ones are; it decides only whether selecting this day
+    # reveals an ``_hourly_chart.html`` beneath the picker. Presence of an
+    # hourly series, NOT truthiness of some other field — a forward day
+    # past HOURLY_DAYS has no 'hourly' key at all, and an empty list is
+    # equally "no detail to show". Kept as its own field rather than left
+    # to the template testing ``day.hourly``, so the rule lives where it
+    # can be tested.
     selectable: bool
 
 
 class ForecastPanel(TypedDict):
-    """Context dict consumed by ``includes/_forecast_panel.html``."""
+    """The outlook window: one entry per day, the row's own day leading.
+
+    Read by ``includes/_weather_day_picker.html`` (the seven cells) and by
+    ``includes/_weather_day_line.html`` (the selected day's own line) — the
+    same list, drawn twice on the location forecast page.
+    """
 
     days: list[ForecastPanelDay]
 
@@ -499,6 +517,11 @@ def _forecast_day_context(
         freezing_level_height=entry.get("freezing_level_height"),
         wind_speed_max=entry.get("wind_speed_10m_max"),
         wind_bearing=entry.get("wind_direction_10m_dominant"),
+        # Formatted off the already-parsed locals, so the offset shown is
+        # the one the provider stamped on THAT day — not the Django-active
+        # TIME_ZONE, and not the lead day's.
+        sunrise_local=sunrise.strftime("%H:%M"),
+        sunset_local=sunset.strftime("%H:%M"),
         # NotRequired on ForecastDay — a forward day past HOURLY_DAYS has no
         # 'hourly' key at all, so this is a presence check, not a null check.
         hourly=(hourly := list(entry.get("hourly") or [])),
@@ -542,6 +565,10 @@ def build_point_forecast_panel(
             freezing_level_height=weather.freezing_level_height,
             wind_speed_max=weather.wind_speed_10m_max,
             wind_bearing=weather.wind_direction_10m_dominant,
+            # Same rule as WeatherDisplay: the wall-clock time AT THE
+            # LOCATION, in the row's stored offset.
+            sunrise_local=weather.sunrise.strftime("%H:%M"),
+            sunset_local=weather.sunset.strftime("%H:%M"),
             hourly=(lead_hourly := list(weather.hourly or [])),
             selectable=bool(lead_hourly),
         )

@@ -1,0 +1,54 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_weather_masthead.html — region 1 of the location
+forecast page (SNOW-789).
+
+One baseline row: what this place is called, how high it is, and where a
+reader can go from here. Nothing about the weather — the day picker under
+it opens with today, and every number belongs to whichever day is selected.
+
+**The onward links live here, not in a bottom nav.** The handoff put only
+"View resort →" in the masthead, but 461 of the 540 public locations are
+``MicroRegion`` centroids whose only onward link is the bulletin: naming
+just the resort would leave the large majority of this page's visitors
+with nothing to follow. Both links are kept and both sit in the masthead,
+so the page ends on the provenance line rather than on navigation.
+
+They are accent text links rather than ``_button.html`` includes: a button
+pair under an ``<h1>`` competes with the day picker directly beneath it for
+the reader's first action, and the first action on this page is choosing a
+day.
+
+Context:
+    heading  : str — the location's own name if curated, else the resort or
+               region it stands for. Never its coordinates; the view
+               resolves the precedence.
+    location : locations.Location — read only for ``elevation_m``.
+    resort   : regions.Resort, or None. Renders "View resort →".
+    region   : regions.MicroRegion, or None. Renders "View bulletin →".
+{% endcomment %}
+<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1" data-testid="weather-masthead">
+    <h1 class="text-2xl font-semibold tracking-tight text-text-1">{{ heading }}</h1>
+    {% if location.elevation_m is not None %}
+        <span class="font-mono text-sm text-text-3" data-testid="weather-masthead-elevation">
+            {% blocktrans with m=location.elevation_m|floatformat:0 trimmed %}
+                {{ m }} m
+            {% endblocktrans %}
+        </span>
+    {% endif %}
+    <div class="flex-1"></div>
+    {% if resort %}
+        <a
+            href="{{ resort.get_absolute_url }}"
+            class="text-sm text-accent hover:underline"
+            data-testid="weather-masthead-resort-link"
+        >{% trans "View resort →" %}</a>
+    {% endif %}
+    {% if region %}
+        <a
+            href="{{ region.get_absolute_url }}"
+            class="text-sm text-accent hover:underline"
+            data-testid="weather-masthead-region-link"
+        >{% trans "View bulletin →" %}</a>
+    {% endif %}
+</header>

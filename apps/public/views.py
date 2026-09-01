@@ -117,7 +117,6 @@ from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
-from apps.weather.services.weather_chart import build_forecast_chart
 from apps.weather.services.weather_display import (
     WeatherDisplay,
     build_point_forecast_panel,
@@ -4285,20 +4284,22 @@ def _location_forecast_context(
     it returns is the answer to "what does a full forecast consist of" and
     the view around it is otherwise all HTTP.
 
-    The outlook chart is built from the panel rather than from the row: it
-    plots the daily bounds the panel already resolved, so deriving it twice
-    would let the two disagree about which days made the cut.
+    ``hourly_charts`` is one SNOW-723 meteogram per **selectable** day,
+    indexed by that day's position in the picker so the two line up
+    (SNOW-787): the picker is the selector and the meteograms are what it
+    selects between. ``HOURLY_DAYS`` is 2, so in practice this is the row's
+    own day and one forward day; the rest of the week has no ``hourly`` key
+    at all and contributes no meteogram rather than an empty frame.
 
-    ``hourly_charts`` is one SNOW-723 chart per **selectable** day, indexed
-    by that day's position in the strip so the two line up (SNOW-787): the
-    strip is the selector and the charts are what it selects between.
-    ``HOURLY_DAYS`` is 2, so in practice this is the row's own day and one
-    forward day; the rest of the week has no ``hourly`` key at all and
-    contributes no chart rather than an empty frame.
+    The index is the panel position, not an enumeration of the meteograms.
+    A day that drops out of the picker for a malformed date would otherwise
+    shift every later meteogram off its cell.
 
-    The index is the panel position, not an enumeration of the charts. A
-    day that drops out of the strip for a malformed date would otherwise
-    shift every later chart off its column.
+    ``show_day_picker`` is the page's shape discriminator, precomputed here
+    rather than left to a ``|length`` test in the template (SNOW-789). A
+    backfilled row carries ``forecast=None`` and therefore exactly one day,
+    so the whole "live week vs one recovered day" distinction is this one
+    comparison, in the one place it can be tested.
 
     Args:
         location: The location to describe.
@@ -4306,9 +4307,10 @@ def _location_forecast_context(
         now: The reference instant for each day/night icon decision.
 
     Returns:
-        A dict of ``weather``, ``display``, ``panel``, ``chart`` and
-        ``hourly_charts``. The first four are ``None`` when the location
-        has no row for the day; ``hourly_charts`` is then empty.
+        A dict of ``weather``, ``panel``, ``show_day_picker`` and
+        ``hourly_charts``. The first two are ``None`` when the location has
+        no row for the day; ``hourly_charts`` is then empty and
+        ``show_day_picker`` is ``False``.
 
     """
     weather = Weather.objects.filter(location=location, observed_on=observed_on).first()
@@ -4327,9 +4329,8 @@ def _location_forecast_context(
             hourly_charts.append({"index": index, "chart": chart})
     return {
         "weather": weather,
-        "display": build_weather_display(weather, now),
         "panel": panel,
-        "chart": build_forecast_chart(panel),
+        "show_day_picker": panel is not None and len(panel["days"]) > 1,
         "hourly_charts": hourly_charts,
     }
 
@@ -4340,8 +4341,24 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
     THE PAGE THE MAP CARD HANDS OFF TO. Tapping a weather symbol opens a
     card with today's conditions and a "View forecast" link; this is what
     that link opens. It carries what the card deliberately does not — the
-    outlook chart, the seven-day strip, and the hourly detail at full
-    resolution.
+    week, and the hourly detail at full resolution.
+
+    **The page is built around one question: which day are you planning
+    for** (SNOW-789). Five regions, top to bottom — masthead, day picker,
+    selected-day line, meteogram, provenance — where the picker is
+    navigation and everything under it describes the one selected day. It
+    replaced a layout that stated the same high and low three times over:
+    once in the "Today" panel, once in the day cells, once in the outlook
+    chart's shape.
+
+    Three page shapes, discriminated by ``show_day_picker`` and never by
+    the date:
+
+      * a **live** row carries a full ``forecast[]``, so seven cells with a
+        meteogram behind the first two;
+      * a **backfilled** row (``forecast=None``) is one day: no picker, and
+        its day line and meteogram render plainly;
+      * **no row at all** is the "nothing recorded" message.
 
     It exists because most weather symbols had nowhere to point. A location
     linked to a resort could hand off to the resort page, but 461 of the

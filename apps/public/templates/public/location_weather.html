@@ -1,5 +1,5 @@
 {% extends "public/base.html" %}
-{% load i18n components %}
+{% load i18n static components %}
 {% comment %}
 apps/public/templates/public/location_weather.html — full forecast for one
 Location (SNOW-761), rendered by ``apps.public.views.location_weather``.
@@ -7,31 +7,48 @@ Location (SNOW-761), rendered by ``apps.public.views.location_weather``.
 THE PAGE THE MAP CARD HANDS OFF TO. Tapping a weather symbol opens a card
 carrying today's conditions and a "View forecast" link; this is what that
 link opens, and it holds everything the card deliberately drops — the
-outlook chart, the seven-day strip, and the hourly detail at full
-resolution. The card is a glance; this is the read.
+week, and the hourly detail at full resolution. The card is a glance; this
+is the read.
 
 It is keyed on ``Location`` rather than on a resort or a region because most
 of the estate is neither. 461 of the 540 public locations are ``MicroRegion``
 centroids: before this page they had no destination at all, so the card's
 link would have been missing on the large majority of taps.
 
-Sections, top to bottom:
-  1. Heading — the location's own name if curated, else the resort or
-     region it stands for. Never its coordinates (see the view).
-  2. Today — includes/_weather_panel.html.
-  3. The shape of the week — includes/_forecast_chart.html.
-  4. The week's figures and the day's hours, as ONE section — the day
-     strip (includes/_forecast_panel.html) selects which
-     includes/_hourly_chart.html shows beneath it (SNOW-787). The chart
-     replaced the 24-row table the strip used to carry per day (SNOW-786):
-     both answered the same question, and the table only existed because
-     there was no chart.
+**Built around one question: which day are you planning for** (SNOW-789).
+Five hairline-separated regions, top to bottom:
 
-     Only the days carrying an hourly series are selectable — HOURLY_DAYS
-     is 2, so five of the seven columns are inert markup with no radio at
-     all rather than a disabled one.
-  5. Onward links — the resort page and the region bulletin, where either
-     exists. A centroid has only the second.
+  1. Masthead        includes/_weather_masthead.html — name, elevation,
+                     onward links.
+  2. Day picker      includes/_weather_day_picker.html — the week as
+                     NAVIGATION: seven cells carrying weekday, icon and
+                     high/low, nothing else.
+  3. Selected day    includes/_weather_day_line.html — date, condition,
+                     freezing level, daylight.
+  4. Meteogram       includes/_hourly_chart.html — that day's hours, when
+                     the day has an hourly series.
+  5. Provenance      includes/_weather_provenance.html — updated, source.
+
+Everything below region 2 describes the ONE day the picker has selected.
+The layout this replaces stated the same high and low three times — in a
+"Today" panel, in the day cells, and as the shape of an outlook chart —
+and named the location again in every sub-header. ``includes/_weather_panel.html``
+and ``includes/_forecast_chart.html`` are gone from this page for that
+reason; the panel keeps its other three consumers, the chart was deleted.
+
+Three page shapes, discriminated by ``show_day_picker`` and NEVER by the
+date:
+
+  live row        7 cells; days 1–2 reveal a day line AND a meteogram,
+                  days 3–7 reveal a day line alone.
+  backfilled row  ``forecast=None`` is one day, so no picker: the day line
+                  and its meteogram render plainly, with no hiding class —
+                  with no radio the ``:has()`` reveal could never match.
+  no row at all   the "nothing recorded" message.
+
+The reveal is CSS-only — see the "Forecast day selector" block in
+src/css/main.css and the note there about why the rules are written by
+hand rather than with Tailwind's ``peer-checked:``.
 
 Context:
     location    — locations.Location.
@@ -40,12 +57,12 @@ Context:
     region      — regions.MicroRegion the location is the centroid of, or None.
     observed_on — datetime.date being shown.
     weather     — weather.Weather row, or None.
-    display     — WeatherDisplay, or None.
     panel       — ForecastPanel, or None.
-    chart       — ForecastChart, or None.
-    hourly_charts — list of {"index", "chart"}, one per selectable day.
+    show_day_picker — bool, precomputed by the view: the row carries more
+                  than one day.
+    hourly_charts — list of {"index", "chart"}, one per day with a series.
                   ``index`` is the day's position in panel.days, which is
-                  what ties a chart to the column that selects it.
+                  what ties a meteogram to the cell that selects it.
 {% endcomment %}
 
 {% block page_meta %}
@@ -62,45 +79,20 @@ Context:
         data-testid="location-weather"
         data-location-id="{{ location.pk }}"
     >
-        <header class="mb-4">
-            <h1 class="text-2xl font-bold text-text-1">{{ heading }}</h1>
-            <p class="text-sm text-text-3 mt-1">
-                {% if location.elevation_m is not None %}
-                    {{ location.elevation_m|floatformat:0 }}&nbsp;m &middot;
-                {% endif %}
-                {{ observed_on|date:"l j F Y" }}
-            </p>
-        </header>
+        {# 1. Masthead. #}
+        {% include "includes/_weather_masthead.html" with heading=heading location=location resort=resort region=region only %}
 
-        {% if display %}
-            {# 2. Today. #}
-            {% include "includes/_weather_panel.html" with weather_display=display location_label=heading testid_prefix="location-weather" only %}
-
-            {# 3. The shape of the week. #}
-            {% if chart %}
-                <section class="mt-6" aria-labelledby="location-weather-outlook-heading">
-                    {% translate "Outlook" as outlook_heading_label %}
-                    {% include "includes/_eyebrow.html" with tag="h2" heading_id="location-weather-outlook-heading" text=outlook_heading_label class_extra="mb-2" only %}
-                    {% include "includes/_forecast_chart.html" %}
-                </section>
-            {% endif %}
-
-            {# 4 + 5. The day strip IS the hourly chart's selector          #}
-            {# (SNOW-787), so the two are one section: pick a day above,     #}
-            {# read its hours below. The reveal is CSS-only — see the        #}
-            {# .forecast-hourly-panel rules in src/css/main.css and the note #}
-            {# there about why they are written by hand.                    #}
-            {% if panel %}
-                <section
-                    class="forecast-selector mt-6"
-                    aria-labelledby="location-weather-forecast-heading"
-                >
-                    {% translate "Forecast" as forecast_heading_label %}
-                    {% include "includes/_eyebrow.html" with tag="h2" heading_id="location-weather-forecast-heading" text=forecast_heading_label class_extra="mb-2" only %}
-                    {% include "includes/_forecast_panel.html" with panel=panel testid_prefix="location-weather-forecast" selector_name="location-weather-day" only %}
+        {% if panel %}
+            {% if show_day_picker %}
+                {# 2–4. The picker IS the selector for everything under it. #}
+                <section class="forecast-selector mt-5 space-y-4">
+                    {% include "includes/_weather_day_picker.html" with panel=panel testid_prefix="location-weather-forecast" selector_name="location-weather-day" only %}
+                    {% for day in panel.days %}
+                        {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix="location-weather-day-line" only %}
+                    {% endfor %}
                     {% for entry in hourly_charts %}
                         <div
-                            class="forecast-hourly-panel mt-4"
+                            class="forecast-hourly-panel"
                             data-hourly-day="{{ entry.index }}"
                             data-testid="location-weather-hourly-panel"
                         >
@@ -108,28 +100,51 @@ Context:
                         </div>
                     {% endfor %}
                 </section>
+            {% else %}
+                {# A backfilled row is one day. No picker, so no radio, so #}
+                {# no hiding class — the reveal rules could never match it. #}
+                {% with day=panel.days.0 %}
+                    <section class="mt-5 space-y-4">
+                        {% include "includes/_weather_day_line.html" with day=day testid_prefix="location-weather-day-line" only %}
+                        {% for entry in hourly_charts %}
+                            {% include "includes/_hourly_chart.html" with chart=entry.chart testid_prefix="location-weather-hourly" only %}
+                        {% endfor %}
+                    </section>
+                {% endwith %}
             {% endif %}
+
+            {# 5. Provenance. #}
+            <div class="mt-4">
+                {% include "includes/_weather_provenance.html" with weather=weather testid_prefix="location-weather-provenance" only %}
+            </div>
         {% else %}
             {# No row for this day. Normal for a past date until the         #}
             {# historical backfill lands — say so rather than rendering an   #}
             {# empty page that reads as a failure.                           #}
-            <p class="text-sm text-text-2" data-testid="location-weather-empty">
+            <p class="mt-5 text-sm text-text-2" data-testid="location-weather-empty">
                 {% trans "No weather was recorded here for this day." %}
             </p>
         {% endif %}
-
-        {# 5. Onward. A centroid has only the region link. #}
-        {% if resort or region %}
-            <nav class="mt-8 flex flex-wrap gap-2" aria-label="{% trans 'Related pages' %}">
-                {% if resort %}
-                    {% trans "View resort →" as resort_cta %}
-                    {% include "includes/_button.html" with label=resort_cta href=resort.get_absolute_url variant="secondary" size="compact" %}
-                {% endif %}
-                {% if region %}
-                    {% trans "View bulletin →" as region_cta %}
-                    {% include "includes/_button.html" with label=region_cta href=region.get_absolute_url variant="secondary" size="compact" %}
-                {% endif %}
-            </nav>
-        {% endif %}
     </main>
 {% endblock content %}
+
+{% block extra_js %}
+    {% comment %}
+    The meteogram's info button opens its legend, and that one panel is the
+    only thing in the component that needs JavaScript. The script was loaded
+    by /_components/ alone, so the button rendered on this page — the only
+    page that ships the chart — with nothing listening: it carried
+    ``aria-expanded="false"`` for its whole life and never changed it.
+
+    Not in base.html, because this is the only page that renders a chart.
+    The handler delegates from the document and scopes each open to the
+    chart's own ``role="group"`` root, so the two meteograms a live row
+    produces get one legend each rather than fighting over the first.
+
+    Everything else on this page — the day picker, the day-line reveal — is
+    CSS only and needs no script. The legend degrades the way its own module
+    says it should: the chart stays readable, and the key explaining its
+    marks is what is lost.
+    {% endcomment %}
+    <script src="{% static 'js/hourly_chart_legend.js' %}" defer></script>
+{% endblock extra_js %}

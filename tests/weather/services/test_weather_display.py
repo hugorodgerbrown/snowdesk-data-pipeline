@@ -461,6 +461,33 @@ class TestBuildPointForecastPanel:
         ]
 
     @freeze_time(MIDDAY)
+    def test_daylight_reaches_the_lead_day_and_the_forward_days(self) -> None:
+        """SNOW-789: every column carries its OWN daylight window.
+
+        The selected-day line states the daylight for whichever day the
+        picker has chosen, so a pair set only on the lead day would print
+        today's sunrise under Friday's date. The two build sites are
+        separate constructor calls, which is why this asserts across the
+        strip rather than on ``days[0]``.
+
+        Both are formatted in the entry's own stored offset — the forward
+        day's ``+02:00`` sunrise reads 06:30 whatever the active
+        ``TIME_ZONE`` is.
+        """
+        weather = WeatherFactory.create(
+            observed_on=datetime.date(2026, 8, 30),
+            sunrise=datetime.datetime(2026, 8, 30, 7, 5, tzinfo=datetime.UTC),
+            sunset=datetime.datetime(2026, 8, 30, 19, 40, tzinfo=datetime.UTC),
+            forecast=[_forecast_day(date="2026-08-31")],
+        )
+
+        panel = build_point_forecast_panel(weather, timezone.now())
+
+        assert panel is not None
+        assert [day["sunrise_local"] for day in panel["days"]] == ["07:05", "06:30"]
+        assert [day["sunset_local"] for day in panel["days"]] == ["19:40", "20:15"]
+
+    @freeze_time(MIDDAY)
     def test_forward_day_scalars_reach_the_column(self) -> None:
         """A forward day renders its own temps, snowfall and freezing level."""
         weather = WeatherFactory.create(forecast=[_forecast_day(weather_code=73)])

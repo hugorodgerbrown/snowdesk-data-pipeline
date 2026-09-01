@@ -41,8 +41,6 @@ from apps.public._component_fixtures import (
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
-    FORECAST_CHART_VARIANTS,
-    FORECAST_PANEL_VARIANTS,
     FORM_FIELD_VARIANTS,
     HOURLY_CHART_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
@@ -76,7 +74,11 @@ from apps.public._component_fixtures import (
     TOAST_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
+    WEATHER_DAY_LINE_VARIANTS,
+    WEATHER_DAY_PICKER_VARIANTS,
+    WEATHER_MASTHEAD_VARIANTS,
     WEATHER_PANEL_VARIANTS,
+    WEATHER_PROVENANCE_VARIANTS,
 )
 
 
@@ -1344,45 +1346,91 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="two-col",
     ),
     FoundationCategory(
-        slug="forecast-panel",
-        label="Forecast panel",
+        slug="weather-masthead",
+        label="Weather masthead",
         description=(
-            "The multi-day outlook for one location (SNOW-761): a scrolling "
-            "day strip, one column per day. It carried a collapsible "
-            "24-row hourly table per day until SNOW-786, which replaced "
-            "that with the hourly chart below — both answered the same "
-            "question and the table only existed because there was no "
-            "chart. The strip is now figures only; the second variant is a "
-            "single day rather than a week."
+            "Region 1 of the location forecast page (SNOW-789) — what the "
+            "place is called, how high it is, and where a reader goes "
+            "next. No weather at all: the day picker under it opens on "
+            "today, and every number belongs to whichever day is "
+            "selected. Both onward links live here rather than in a "
+            "bottom nav, because 461 of the estate's 540 public locations "
+            "are region centroids whose ONLY way on is the bulletin — a "
+            "masthead naming just the resort would strand the majority of "
+            "this page's visitors. They are accent text links, not "
+            "buttons: a button pair under the heading competes with the "
+            "picker for the reader's first action, and the first action "
+            "here is choosing a day."
         ),
         kind="components",
-        partial="includes/_forecast_panel.html",
-        variants=FORECAST_PANEL_VARIANTS,
+        partial="includes/_weather_masthead.html",
+        variants=WEATHER_MASTHEAD_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="forecast-chart",
-        label="Forecast chart",
+        slug="weather-day-picker",
+        label="Weather day picker",
         description=(
-            "The daily high/low band across the outlook window (SNOW-761), "
-            "as one server-rendered SVG — no charting library, and the "
-            "geometry comes from "
-            "``apps.weather.services.weather_chart.build_forecast_chart`` "
-            "rather than from the template. It carries the SHAPE of the "
-            "week, which the day strip beside it cannot: a wide band is a "
-            "big diurnal swing, a narrow one a flat cloudy day. The 0 °C "
-            "line is drawn ONLY when the window crosses it — above or "
-            "below all week it would sit on the plot edge implying "
-            "something it does not mean, which is what the second variant "
-            "shows. Freezing level is deliberately absent: metres against "
-            "a degrees axis is two scales in one small chart, and it is "
-            "already a figure per column in the forecast panel. Colours "
-            "are ``currentColor`` off token classes, not ``fill`` "
-            "literals, so the chart follows the dark-mode override."
+            "The week as NAVIGATION (SNOW-789) — seven cells carrying a "
+            "weekday, a condition icon and a high/low, and nothing else. "
+            "Freezing level, wind and the snowfall chip were in the strip "
+            "this replaces and are gone: they are per-day facts, so they "
+            "belong to the selected day's own line rather than to seven "
+            "columns at once. EVERY cell is a radio, which is the change "
+            "at the heart of the ticket — the old strip gave one only to "
+            "the two days carrying an hourly series, so five columns were "
+            "inert. Selection changes the border colour and nothing else, "
+            "so stepping along the week cannot shift a cell's contents. "
+            "The reveal beneath it is CSS-only and hand-written in "
+            "``src/css/main.css``; each input/label pair keeps its own "
+            "wrapper because ``peer-checked:`` is the general sibling "
+            "combinator."
         ),
         kind="components",
-        partial="includes/_forecast_chart.html",
-        variants=FORECAST_CHART_VARIANTS,
+        partial="includes/_weather_day_picker.html",
+        variants=WEATHER_DAY_PICKER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-day-line",
+        label="Weather day line",
+        description=(
+            "The selected day, stated once (SNOW-789) — date and "
+            "condition, then the two figures that decide whether a plan "
+            "holds: where it is freezing, and how long there is light. "
+            "High and low are deliberately ABSENT; they are in the cell "
+            "the reader just pressed and in the meteogram below, and a "
+            "third statement is the duplication this ticket removed. "
+            "Freezing level is tested ``is not None`` rather than for "
+            "truthiness, because 0 m means freezing at the valley floor. "
+            "Visibility lives on this row's own root element rather than "
+            "on a wrapper: the reveal resolves to ``display: flex`` and "
+            "this row IS the flex container, so a wrapper would leave it "
+            "shrunk to its content with the hairline rule pulled in with "
+            "it."
+        ),
+        kind="components",
+        partial="includes/_weather_day_line.html",
+        variants=WEATHER_DAY_LINE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-provenance",
+        label="Weather provenance",
+        description=(
+            "One line closing the location forecast page (SNOW-789): when "
+            "the row was last fetched, and who it came from. A TIME, not "
+            "a date — today's row is rewritten in place across four "
+            "fetches a day, so how recent it is is the whole point, and "
+            "the day it belongs to is already on the day line above. It "
+            "credits Open-Meteo rather than naming a forecast model: "
+            "Open-Meteo picks the backing model per coordinate and does "
+            "not report which, so a page naming one would be inventing "
+            "it."
+        ),
+        kind="components",
+        partial="includes/_weather_provenance.html",
+        variants=WEATHER_PROVENANCE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

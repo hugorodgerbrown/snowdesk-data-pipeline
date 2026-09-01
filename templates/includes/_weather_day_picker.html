@@ -1,0 +1,141 @@
+{% load i18n static %}
+{% comment %}
+templates/includes/_weather_day_picker.html — region 2 of the location
+forecast page (SNOW-789).
+
+THE WEEK AS NAVIGATION. Seven cells carrying a weekday, a condition icon
+and a high/low, and nothing else: the cells answer "which day am I
+planning for", and everything below the picker describes the day the
+reader picked. Freezing level, wind and the snowfall chip were in the old
+strip's cells and are gone from here — they are per-day facts, so they
+belong to the selected day's own line and its meteogram, not to seven
+columns at once.
+
+**Every cell is a radio, which is the change at the heart of SNOW-789.**
+The strip this replaces gave a radio only to days carrying an hourly
+series (two of seven), so five columns were inert markup and the week was
+mostly undisplayable. ``day.selectable`` survives, but it decides only
+whether that day has a meteogram — the page reads it, this partial does
+not.
+
+CSS-only: there is no JavaScript, and the reveal below the picker is
+hand-written ``:has()`` in src/css/main.css. See the "Forecast day
+selector" block there for why it cannot be Tailwind's ``peer-checked:``.
+
+EACH INPUT/LABEL PAIR GETS ITS OWN WRAPPER, AND THAT IS LOAD-BEARING.
+``peer-checked:`` compiles to the GENERAL sibling combinator, so with
+every input and label flat in one grid the checked day's input matches
+every LATER cell's label too and highlights the rest of the week. The
+wrapper bounds the ``~`` to one pair. Same trap as the reveal rules.
+
+SELECTION HAS TWO CHANNELS, AND NEITHER MOVES THE CELL. The border turns
+accent, and a marker bar under the low temperature goes from transparent
+to filled. The handoff asked for the border alone and argued colour was
+not the only channel because ``aria-current`` moved with the selection —
+but it cannot: the attribute means THE CURRENT DATE, so it is static on
+day 0, and a reader who cannot separate the accent border from the
+ordinary one had nothing left. The bar is the fix, and it is a bar rather
+than a ring or a weight change because those two resize the cell's
+contents as the reader steps along the week, which reads as the layout
+twitching rather than as a selection moving. The bar is always in the
+DOM at a fixed size, so only its fill changes.
+
+The rule that fills it is hand-written in src/css/main.css beside the
+reveal rules: the bar is a DESCENDANT of the label, not a sibling of the
+input, so no ``peer-*`` variant can reach it.
+
+Context:
+    panel         : ForecastPanel — ``{"days": [ForecastPanelDay, ...]}``
+                    from
+                    ``apps.weather.services.weather_display.build_point_forecast_panel``.
+    selector_name : str — the radio group's ``name``. Per-page, so two
+                    pickers on one page can never share a group.
+    testid_prefix : str — prefix for every ``data-testid`` here. Defaults
+                    to ``weather-day-picker``.
+{% endcomment %}
+{% firstof testid_prefix "weather-day-picker" as prefix %}
+{% firstof selector_name "weather-day" as group_name %}
+<fieldset class="forecast-day-picker" data-testid="{{ prefix }}-picker">
+    <legend class="sr-only">{% trans "Forecast days" %}</legend>
+    <div class="grid grid-cols-7 gap-1.5">
+        {% for day in panel.days %}
+            {% with day_name=day.date|date:"l j F" condition=day.condition_label %}
+                {% if day.temp_max is not None and day.temp_min is not None %}
+                    {% blocktrans with high=day.temp_max|floatformat:0 low=day.temp_min|floatformat:0 trimmed asvar cell_label %}
+                        {{ day_name }}, {{ condition }}, high {{ high }} degrees, low {{ low }} degrees
+                    {% endblocktrans %}
+                {% else %}
+                    {% blocktrans trimmed asvar cell_label %}
+                        {{ day_name }}, {{ condition }}
+                    {% endblocktrans %}
+                {% endif %}
+                {# ``data-day-cell`` names the wrapper so the structural  #}
+                {# test can assert no wrapper holds two controls without #}
+                {# splitting the page on a bare ``<div>``.                #}
+                <div data-day-cell="{{ forloop.counter0 }}">
+                    <input
+                        type="radio"
+                        name="{{ group_name }}"
+                        id="{{ group_name }}-{{ forloop.counter0 }}"
+                        data-day-index="{{ forloop.counter0 }}"
+                        class="peer sr-only"
+                        aria-label="{{ cell_label }}"
+                        {% if forloop.first %}checked{% endif %}
+                    >
+                    {% comment %}
+                    ``aria-current="date"`` is static on the first cell and
+                    that is the correct semantics, not a compromise for the
+                    CSS-only selector: it means THE CURRENT DATE, which is
+                    always day 0 of a window that starts on the row's own
+                    day. It is not "the selected cell" — the radio's own
+                    checked state carries that, and moving the attribute
+                    with the selection would claim Friday is today.
+                    {% endcomment %}
+                    <label
+                        for="{{ group_name }}-{{ forloop.counter0 }}"
+                        class="flex flex-col items-center gap-1 bg-card border border-border rounded-card px-1.5 py-2.5 cursor-pointer peer-checked:border-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+                        data-testid="{{ prefix }}-day"
+                        data-date="{{ day.date|date:'Y-m-d' }}"
+                        {% if forloop.first %}aria-current="date"{% endif %}
+                    >
+                        <span
+                            class="text-xs font-mono uppercase tracking-widest text-text-3"
+                        >{{ day.weekday_label }}</span>
+                        {# The icon repeats the condition already in the radio's #}
+                        {# aria-label, so it is decorative to a screen reader.   #}
+                        <img
+                            src="{% static 'icons/weather/'|add:day.icon_filename %}"
+                            class="w-7 h-7"
+                            alt=""
+                            aria-hidden="true"
+                        >
+                        <span class="text-sm font-semibold text-text-1">
+                            {% if day.temp_max is not None %}
+                                {{ day.temp_max|floatformat:0 }}&deg;
+                            {% else %}
+                                &mdash;
+                            {% endif %}
+                        </span>
+                        <span class="text-xs text-text-2">
+                            {% if day.temp_min is not None %}
+                                {{ day.temp_min|floatformat:0 }}&deg;
+                            {% else %}
+                                &mdash;
+                            {% endif %}
+                        </span>
+                        {# The second channel. Rendered in every cell at a  #}
+                        {# fixed size and filled only in the checked one,   #}
+                        {# so selection cannot change the cell's height.    #}
+                        {# Decorative: the radio's checked state is what a  #}
+                        {# screen reader reads.                             #}
+                        <span
+                            class="weather-day-marker mt-0.5 h-1 w-5 rounded-pill bg-transparent"
+                            data-testid="{{ prefix }}-marker"
+                            aria-hidden="true"
+                        ></span>
+                    </label>
+                </div>
+            {% endwith %}
+        {% endfor %}
+    </div>
+</fieldset>
