@@ -346,12 +346,18 @@ a gust whether the sun is up; that finding still holds for the plots. What
 changed is where the light belongs — it answers *when*, which is the axis's
 question, not the series'.
 
-Two marks are deliberately absent from the legend. The dashed **0 °C rule**
-is still drawn on the temperature plot but has no key row: it meets a
-labelled °C axis at zero and says what it is. The **daylight bar** has none
-either, sitting under the hours it describes. The key is for marks a reader
-cannot place. The bar is `aria-hidden`, so its pair is spoken in the chart's
-own `aria_label` — not in the legend's "About this forecast" block, which is
+One mark is deliberately absent from the legend: the dashed **0 °C rule**,
+still drawn on the temperature plot but with no key row, because it meets a
+labelled °C axis at zero and says what it is. The key is for marks a reader
+cannot place.
+
+The **daylight bar** does get a row — last, and the only entry naming
+something on the axis rather than a series — drawn with the bar's own two
+fills so it is matchable by colour. The notch at the current time has no row
+of its own: it is the one mark whose position is its meaning, and a reader
+who has found the bar has found it. The times themselves are not in the key;
+the bar is `aria-hidden`, so the pair is spoken in the chart's own
+`aria_label` — not in the legend's "About this forecast" block, which is
 supplied by the component library alone and never renders on the page that
 ships the chart.
 

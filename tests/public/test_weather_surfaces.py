@@ -719,21 +719,37 @@ class TestMeteogramMarks:
         assert "0&deg;C" not in legend
         assert "The time now" not in legend
 
-    def test_the_key_is_eight_labelled_rows(self) -> None:
+    def test_the_key_is_nine_labelled_rows(self) -> None:
         """
-        Eight marks, one bare label each.
+        Nine marks, one bare label each.
 
         Ten rows of prose made a sheet tall enough to cover the chart it
-        was explaining.
+        was explaining. The daylight bar is the ninth and last, the only
+        entry that names something on the axis rather than a series.
         """
         html = self._render()
 
         legend = html[html.index('data-testid="location-weather-hourly-legend"') :]
         legend = legend[: legend.index("</dl>")]
-        assert legend.count("<dt") == 8
-        assert legend.count("<dd") == 8
+        assert legend.count("<dt") == 9
+        assert legend.count("<dd") == 9
         assert "Freezing level (m)" in legend
         assert "Location elevation (m)" in legend
+        assert "Sunrise to sunset" in legend
+
+    def test_the_daylight_swatch_uses_the_axis_bars_own_fills(self) -> None:
+        """
+        A key drawn in approximations teaches a mark that is not there.
+
+        The swatch has to be matchable by colour against the bar it
+        explains, so it takes the same two tokens.
+        """
+        html = self._render()
+
+        legend = html[html.index('data-testid="location-weather-hourly-legend"') :]
+        legend = legend[: legend.index("</dl>")]
+        assert "fill-chart-night" in legend
+        assert "fill-chart-daylight" in legend
 
     def test_the_daylight_pair_is_spoken_for_a_reader_who_cannot_see_it(self) -> None:
         """

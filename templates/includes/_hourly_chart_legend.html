@@ -2,7 +2,7 @@
 {% comment %}
 templates/includes/_hourly_chart_legend.html — the chart's key.
 
-Opened by the info button in _hourly_chart.html's header. Names the eight
+Opened by the info button in _hourly_chart.html's header. Names the nine
 marks a reader cannot place unaided, warns about the one thing a freezing
 level is routinely mistaken for, and gives the forecast's own provenance.
 
@@ -79,20 +79,23 @@ chart later lands inside a map popup, that is the moment to revisit it.
     </div>
 
     {% comment %}
-    Eight rows, one bare label each (SNOW-790). Every row used to carry a
+    Nine rows, one bare label each (SNOW-790). Every row used to carry a
     sentence — what a freezing level is, when a rule is drawn, which hour
-    gets the figure — and eight sentences made a sheet tall enough to cover
+    gets the figure — and ten sentences made a sheet tall enough to cover
     the chart it was explaining. A key is read while looking at the mark it
     names, so it has to leave the mark visible.
 
-    Two marks on the chart are deliberately NOT listed. The dashed 0 °C rule
-    meets a labelled °C axis at zero and says what it is; the daylight bar
-    sits under the hours it describes and is named by its own axis. The key
-    is for marks a reader cannot place, and neither of those is one. The
-    daylight pair is spoken instead in the chart's aria-label — see
-    ``_aria_label`` in the service, and note that the "About this forecast"
-    block below is supplied by the component library alone, so it is not a
-    place anything load-bearing can live.
+    One mark is deliberately NOT listed: the dashed 0 °C rule, which meets a
+    labelled °C axis at zero and says what it is. The key is for marks a
+    reader cannot place, and that is not one.
+
+    The daylight bar IS listed, at the end, even though it sits under the
+    hours it describes — a two-tone bar is a new mark on this chart and
+    naming it costs one row. The times themselves are not here; they are
+    spoken in the chart's aria-label (see ``_aria_label`` in the service).
+    Note that the "About this forecast" block below is supplied by the
+    component library alone, so it is not a place anything load-bearing
+    can live.
     {% endcomment %}
     <dl class="mt-4 grid grid-cols-[56px_1fr] items-center gap-x-4 gap-y-2">
         <dt>
@@ -174,6 +177,24 @@ chart later lands inside a map popup, that is the moment to revisit it.
             </svg>
         </dt>
         <dd class="text-sm text-text-1">{% translate "Wind direction" %}</dd>
+
+        {% comment %}
+        The daylight bar — last, because it is the only entry here that is
+        not a series. It belongs to the hour axis, and the swatch is drawn
+        with the axis bar's own two fills so a reader matches it by colour
+        rather than by reading a caption.
+
+        The notch at the current time is a mark ON this bar and has no row
+        of its own: it is the one thing on the chart whose position IS its
+        meaning, and a reader who has found the bar has found it.
+        {% endcomment %}
+        <dt>
+            <svg width="56" height="10" viewBox="0 0 56 10" aria-hidden="true" class="block">
+                <rect x="2" y="2" width="52" height="6" rx="1" class="fill-chart-night" />
+                <rect x="20" y="2" width="22" height="6" class="fill-chart-daylight" />
+            </svg>
+        </dt>
+        <dd class="text-sm text-text-1">{% translate "Sunrise to sunset" %}</dd>
     </dl>
 
     {% if about %}
