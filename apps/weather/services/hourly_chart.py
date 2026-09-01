@@ -112,7 +112,7 @@ data, so it belongs in the axis furniture rather than over the series. The
 precipitation and wind axes keep their bare label rows, their charts having
 no more use for the sun than they had for the wash.
 
-The current time joins it there as a notch cut into the same bar. It used to
+The current time joins it there as a pin crossing the same bar. It used to
 be a full-height hairline through all four plots, crossing every series —
 the one mark on the drawing that was not data but was drawn like it.
 
@@ -1336,10 +1336,13 @@ def build_hourly_chart(
         # sit on even on a day whose sunrise cannot be read.
         "axis_track": _axis_track(),
         "daylight_band": _within_track(*daylight) if daylight is not None else None,
+        # Against the DRAWING, not the track — unlike the lit segment. The
+        # marker is a pin whose ends stand clear of the bar above and
+        # below, so it cannot live inside the track element (whose
+        # overflow-hidden clips the lit segment's corners) and is a sibling
+        # of it instead. Different containing block, different denominator.
         "now_marker": (
-            _pct(_instant_x(now_hour) - PAD_LEFT, PLOT_WIDTH)
-            if now_hour is not None
-            else None
+            _pct(_instant_x(now_hour), CHART_WIDTH) if now_hour is not None else None
         ),
         "rows": _sr_rows(temps, freezing, snow, precip, winds, gusts, bearings),
     }

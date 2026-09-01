@@ -336,7 +336,7 @@ tick half a line out.
 **The clock lives in the axis, not on the plots.** Sunrise, sunset and the
 current time are drawn in the **temperature hour axis**, which thickens into
 a bar: a night ground, a lit segment between sunrise and sunset, and a
-card-coloured notch at the time now. Before SNOW-790 the time was a
+pin crossing it at the time now. Before SNOW-790 the time was a
 full-height hairline through all four SVGs, crossing every series — the one
 mark on the drawing that was not data but was drawn like it.
 
@@ -353,9 +353,14 @@ cannot place.
 
 The **daylight bar** does get a row — last, and the only entry naming
 something on the axis rather than a series — drawn with the bar's own two
-fills so it is matchable by colour. The notch at the current time has no row
+fills so it is matchable by colour. The pin at the current time has no row
 of its own: it is the one mark whose position is its meaning, and a reader
-who has found the bar has found it. The times themselves are not in the key;
+who has found the bar has found it. It **crosses** the bar rather than
+sitting inside it, because night and day are only 3.5:1 apart and no single
+ink reads on both fills — the pin's ends stand on the card instead, at
+better than 15:1. That is also why it is a sibling of the track element and
+measured against the drawing, while the lit segment is a child measured
+against the track. The times themselves are not in the key;
 the bar is `aria-hidden`, so the pair is spoken in the chart's own
 `aria_label` — not in the legend's "About this forecast" block, which is
 supplied by the component library alone and never renders on the page that

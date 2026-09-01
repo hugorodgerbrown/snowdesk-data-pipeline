@@ -203,14 +203,23 @@ class TestAxisBar:
         assert chart is not None
         assert chart["daylight_band"] == {"left": "25.00%", "width": "50.00%"}
 
-    def test_the_marker_is_measured_against_the_track_too(self) -> None:
-        """Midday is halfway along the bar, on the same scale as the band."""
+    def test_the_marker_is_measured_against_the_drawing_not_the_track(self) -> None:
+        """
+        The pin is a sibling of the track, so its denominator differs.
+
+        It crosses the bar with its ends standing clear above and below, so
+        it cannot live inside the track — whose overflow-hidden clips the
+        lit segment's corners and would clip the ends off. Midday is
+        halfway along the *plot*, which is 49.50% of the 606-unit drawing
+        and would be 50.00% of the track. Reading one as the other is a
+        silent misplacement, which is what this pins.
+        """
         chart = build_hourly_chart(
             _day(),
             now=datetime.datetime(2026, 2, 16, 12, 0, tzinfo=datetime.UTC),
         )
         assert chart is not None
-        assert chart["now_marker"] == "50.00%"
+        assert chart["now_marker"] == "49.50%"
 
     def test_a_day_without_a_readable_pair_keeps_its_chart(self) -> None:
         """The band is the only thing a missing sunrise costs the day."""

@@ -324,15 +324,17 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
         crossing the data. A bar is a bar and a gust is a gust whether the
         sun is up, so the other two axes stay bare.
 
-        The lit segment and the marker are nested INSIDE the track, and the
-        service measures them as per-cent of the track for exactly that
-        reason — a percentage resolves against its own containing block. The
-        track's own overflow-hidden is what lets its rounded ends clip a lit
-        segment that runs to midnight.
+        The lit segment is nested INSIDE the track and measured as a per-cent
+        of the track; the now-pin is a sibling of the track and measured
+        against the drawing. A percentage resolves against its own
+        containing block, so the two denominators are not interchangeable —
+        swapping them puts sunrise most of two hours out. The split is not
+        cosmetic: the track's overflow-hidden clips the lit segment's
+        corners, and would clip the pin's ends off too.
         {% endcomment %}
         <div class="relative mx-4" data-testid="{{ prefix }}-temp-axis">
             {% if chart.daylight_band or chart.now_marker %}
-                <div class="relative h-2" aria-hidden="true">
+                <div class="relative h-1.5" aria-hidden="true">
                     <div
                         class="absolute inset-y-0 overflow-hidden rounded-sm bg-chart-night"
                         style="left: {{ chart.axis_track.left }}; width: {{ chart.axis_track.width }}"
@@ -346,21 +348,31 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                             >
                             </div>
                         {% endif %}
-                        {% comment %}
-                        The time now, as a notch cut out of the bar rather
-                        than a line drawn on it. Card-coloured because it has
-                        to read against both the night ground and the lit
-                        segment, and no single ink does that on both.
-                        {% endcomment %}
-                        {% if chart.now_marker %}
-                            <div
-                                class="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-card"
-                                style="left: {{ chart.now_marker }}"
-                                data-testid="{{ prefix }}-now"
-                            >
-                            </div>
-                        {% endif %}
                     </div>
+
+                    {% comment %}
+                    The time now, as a pin that CROSSES the bar rather than
+                    a notch inside it. No single ink reads on both fills:
+                    night and day are only 3.5:1 apart, so an ink dark
+                    enough for the lit segment sits close to the night
+                    ground, and the card colour is the same trade the other
+                    way round. The pin's ends solve it — they stand on the
+                    card at better than 15:1, so the mark is locatable
+                    whatever it crosses.
+
+                    Which is why it is a SIBLING of the track and not a
+                    child: the track's overflow-hidden, there to clip the
+                    lit segment's corners, would cut the ends off. Its left
+                    is a per-cent of the drawing to match.
+                    {% endcomment %}
+                    {% if chart.now_marker %}
+                        <div
+                            class="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-pill bg-text-1"
+                            style="left: {{ chart.now_marker }}"
+                            data-testid="{{ prefix }}-now"
+                        >
+                        </div>
+                    {% endif %}
                 </div>
             {% endif %}
 

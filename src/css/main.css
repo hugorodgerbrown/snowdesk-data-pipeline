@@ -286,24 +286,41 @@
      system's hex rule has an SVG fill/stroke exception, but a token that
      tracks the theme is better than an exception that doesn't.
 
-     Light values only. Dark was explicitly out of scope for the first cut
-     and these need real decisions on a dark ground rather than an
-     inversion. */
+     SNOW-723 shipped these light-only, with dark explicitly out of scope
+     on the grounds that they need real decisions on a dark ground rather
+     than an inversion. SNOW-790 made three of those decisions — the two
+     axis-bar fills below, and the legend note, which is a filled panel
+     rather than a hairline and could not be left to inherit. The three
+     series colours above still have no dark value. */
   --color-chart-precip:   #0f766e;                 /* teal-700: rain, mm    */
   --color-chart-wind:     #4a4740;                 /* sustained wind line   */
   --color-chart-snow:     rgba(37, 99, 235, 0.35); /* accent @ 35%: new snow */
+  /* The legend's freezing-level caution. --color-chart-note-text holds what
+     was a bare text-accent until SNOW-790: accent's dark value (#3b82f6)
+     scores 3.6-4.2:1 on every plausible dark panel, so giving the note a
+     dark background without also giving it its own ink would have shipped
+     a contrast failure in the name of fixing dark mode. The light value is
+     accent's own, so nothing changes in the light theme. */
   --color-chart-note-bg:  #eef2ff;                 /* indigo-50: legend note */
+  --color-chart-note-text: #2563eb;                /* = --color-accent, light */
 
   /* The temperature axis bar (SNOW-790) — night ground and the lit segment
      between sunrise and sunset.
 
      UNLIKE THE FOUR ABOVE, these two DO get dark values (below). The note
      above says dark needs real decisions rather than an inversion, and that
-     is exactly why: a hairline or a 6-unit bar can be squinted at on the
-     wrong ground, but this is a solid band the width of the card, and one
-     left un-thought-through would either vanish into the dark card or glare
-     off it. */
-  --color-chart-night:    #1f2937;                 /* slate-800: hours before
+     is exactly why: a hairline can be squinted at on the wrong ground, but
+     this is a solid band the width of the card, and one left
+     un-thought-through would either vanish into the dark card or glare off
+     it.
+
+     The pair is chosen together, not separately. Night and day are adjacent
+     fills carrying different meanings, so WCAG 1.4.11 asks 3:1 BETWEEN
+     them, and toning one down eats into that budget: slate-600 against
+     amber-500 is 3.53:1, and the next step down (slate-500) would drop the
+     pair to 2.22:1. Night also has to separate from the card it sits on —
+     7.58:1 here. Move either value and check both numbers. */
+  --color-chart-night:    #475569;                 /* slate-600: hours before
                                                       sunrise / after sunset */
   --color-chart-daylight: #f59e0b;                 /* amber-500: the lit day  */
 
@@ -671,12 +688,23 @@
   --color-popup-glass:    rgba(20, 22, 26, 0.6);
 
   /* Temperature axis bar — see the light-mode definition above for why
-     these two carry a dark pair when the other chart tokens do not. Night
-     lifts OFF the dark card (#2a2825) rather than sinking into it, which is
-     the opposite move to the light value; daylight drops a step so a band
-     the width of the card does not glare. */
-  --color-chart-night:    #55606f;
-  --color-chart-daylight: #d97706;
+     these two carry a dark pair, and for the two numbers that constrain
+     them. Night lifts OFF the dark card rather than sinking into it, which
+     is the opposite move to the light value: slate-500 is 3.09:1 against
+     #2a2825 where slate-600 would be 1.94:1 and read as a hole. Daylight
+     then has to climb to amber-300 to keep 3.3:1 against that lighter
+     night — the first values tried here (#55606f / #d97706) held only
+     2.0:1 and the two segments were hard to tell apart. */
+  --color-chart-night:    #64748b;
+  --color-chart-daylight: #fcd34d;
+
+  /* Legend note. A filled panel, so it cannot be left to inherit: light
+     indigo-50 on the dark card read as a hole punched in it. Separated
+     from the card by HUE rather than luminance (1.05:1), the same idiom
+     --color-status-info-bg already uses on dark. The ink is blue-300 at
+     7.8:1 on this ground — accent's dark #3b82f6 manages only 3.8:1. */
+  --color-chart-note-bg:   #252a44;
+  --color-chart-note-text: #93c5fd;
 }
 
 
