@@ -7,8 +7,8 @@ is capped, and bin/e2e-lint enforces the cap.
 This is here for the one thing jsdom cannot answer. Every pure part of the
 overlay — the WMO code → icon mapping, the label, the date projection, the
 cluster-to-lowest collapse — is covered in tests/js/test_map_weather_core.js.
-What is NOT is the round trip through a real canvas: a Meteocons SVG is
-multi-path and gradient-filled, so it cannot be registered as an SDF mask
+What is NOT is the round trip through a real canvas: a condition SVG is
+multi-path and image-shaded, so it cannot be registered as an SDF mask
 like the favourite star; map.js decodes it through an ``<img>`` and a 2D
 context and hands the raw ImageData to ``map.addImage``. Whether that
 decode actually yields a registered MapLibre image needs a browser.
@@ -25,10 +25,11 @@ from django.utils import timezone
 from playwright.sync_api import Page
 from pytest_django.live_server_helper import LiveServer
 
-# WMO 71 — light snowfall. Its day variant is the icon the payload below
-# forces the map to decode and register.
+# WMO 71 — light snowfall. Its icon is the one the payload below forces the
+# map to decode and register. No `-day` suffix: the set draws a day/night
+# pair only where a sun or a moon appears (SNOW-791), and snow is neither.
 _WEATHER_CODE = 71
-_ICON = "light_snow-day.svg"
+_ICON = "light_snow.svg"
 
 
 def _seed_public_weather(django_db_blocker: Any) -> None:

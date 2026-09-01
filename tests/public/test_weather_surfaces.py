@@ -143,7 +143,7 @@ class TestBulletinMasthead:
         assert response.status_code == 200
         content = response.content.decode()
         assert 'data-testid="bulletin-weather-panel"' not in content
-        assert "light_snow-day.svg" not in content
+        assert "light_snow.svg" not in content
 
 
 @pytest.mark.django_db

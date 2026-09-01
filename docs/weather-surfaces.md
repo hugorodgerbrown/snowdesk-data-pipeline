@@ -119,12 +119,42 @@ can never take a page out.
 
 * `WEATHER_BUCKETS` (7) — the coarse grouping the `--color-weather-*`
   design tokens are named for.
-* `WEATHER_ICON_BUCKETS` (12) — the finer grouping that picks a Meteocons
-  SVG. Rain splits into drizzle / light / moderate / heavy, snow into
-  light / moderate / heavy.
+* `WEATHER_ICON_BUCKETS` (12) — the finer grouping that picks a Yr /
+  MET Norway SVG. Rain splits into drizzle / light / moderate / heavy, snow
+  into light / moderate / heavy.
 
-Every bucket but `cloudy` ships a day and a night variant;
-`weather_icon_filename` picks between them.
+Only `clear` and `partly_cloudy` ship a day and a night variant
+(`WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT`); `weather_icon_filename` picks
+between them and returns a bare `<bucket>.svg` for everything else. The set
+draws a day/night pair only where a sun or a moon appears — weather in
+front of a cloud is one drawing (SNOW-791), so twelve buckets resolve to
+fourteen files. `drizzle` and `light_rain` are the same drawing under two
+names, since Yr publishes no drizzle icon and `lightrainshowers_*` is wrong
+for continuous drizzle; the two stay distinct in text.
+
+The set was Meteocons until SNOW-791. It measured 1.07–1.16:1 for its
+cloud bodies on the light card and separated rain from light snow by 3.3
+greyscale levels out of 255 at 27 px — on an avalanche site rain-vs-snow is
+a freezing-level judgement. Yr measures 21.2 ink presence against 7.9, with
+a worst confusable pair of 13.0 (fog vs overcast, after darkening and
+thickening fog's bars — see `static/icons/weather/LICENSE.md`).
+
+### The icon halo
+
+Yr draws its cloud at `#dddddd`, 1.28:1 on white, so the symbol reads by
+its silhouette and the silhouette needs an edge on a light surface. All
+four surfaces darken one:
+
+* the three server-rendered `<img>`s carry `.weather-icon`
+  (`src/css/main.css`), two chained zero-offset `drop-shadow`s reading
+  `--color-weather-icon-halo`;
+* the map dilates the same edge in canvas, two filtered `drawImage` passes
+  under the same literal followed by one unfiltered pass to restore the
+  interior.
+
+The token is `transparent` in dark mode. The pale cloud is already the
+lightest thing on `--color-card`, and an edge there reads as grime rather
+than as a border.
 
 ### `is_day`
 
@@ -374,9 +404,10 @@ infinitely high, so it only ever wins a cluster it is alone in.
 
 In [`static/js/map.js`](../static/js/map.js), around `installWeatherLayer`:
 
-* **Icons are rasterised, not SDF.** Meteocons are multi-path and
-  gradient-filled; an SDF registration keeps only the alpha mask and would
-  discard the colour. They are decoded through an `<img>` and a 2D canvas
+* **Icons are rasterised, not SDF.** The condition SVGs are multi-path and
+  image-shaded (every file but `clearsky_*` embeds a base64 PNG for cloud
+  shading); an SDF registration keeps only the alpha mask and would discard
+  the colour. They are decoded through an `<img>` and a 2D canvas
   into raw `ImageData` and registered with `map.addImage`, memoised per
   filename so the re-register after a basemap `setStyle` is synchronous.
   This is the one thing jsdom cannot check, and the one Playwright test

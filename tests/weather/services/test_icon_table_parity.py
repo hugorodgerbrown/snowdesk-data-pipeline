@@ -22,7 +22,7 @@ parses both JS tables and asserts each matches its Python counterpart.
 
 It lives in pytest rather than Vitest because the assertion is about a
 PYTHON constant; Vitest cannot see one. The JS side's own behaviour —
-``iconForCode``'s fallback and its day-variant rule — is covered in
+``iconForCode``'s fallback and its suffix rule — is covered in
 ``tests/js/test_map_weather_core.js``.
 """
 

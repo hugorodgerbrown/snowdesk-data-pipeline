@@ -4,7 +4,7 @@ tests/weather/services/test_weather_display.py — Tests for the display service
 Covers the four things this module actually decides:
 
 * the two WMO bucket maps and their unknown-code fallback;
-* ``weather_icon_filename``'s day/night split and the one bucket exempt
+* ``weather_icon_filename``'s day/night split and the ten buckets exempt
   from it;
 * ``is_day``'s sunrise-inclusive / sunset-exclusive boundary, compared
   time-of-day only;
@@ -137,17 +137,23 @@ class TestBuckets:
 
 
 class TestIconFilename:
-    """Tests for the Meteocons filename derivation."""
+    """Tests for the weather icon filename derivation."""
 
     def test_day_night_bucket_takes_a_suffix(self) -> None:
         """A bucket with two variants renders the matching one."""
-        assert weather_icon_filename("light_snow", "day") == "light_snow-day.svg"
-        assert weather_icon_filename("light_snow", "night") == "light_snow-night.svg"
+        assert weather_icon_filename("clear", "day") == "clear-day.svg"
+        assert weather_icon_filename("clear", "night") == "clear-night.svg"
 
-    def test_cloudy_ships_one_file(self) -> None:
-        """``cloudy`` reads the same in any light, so it takes no suffix."""
+    def test_precipitation_buckets_ship_one_file(self) -> None:
+        """Weather in front of a cloud looks the same by either light.
+
+        The icon set draws a day/night pair only where a sun or a moon
+        appears (SNOW-791), so ten of the twelve buckets take no suffix.
+        """
         assert weather_icon_filename("cloudy", "day") == "cloudy.svg"
         assert weather_icon_filename("cloudy", "night") == "cloudy.svg"
+        assert weather_icon_filename("light_snow", "day") == "light_snow.svg"
+        assert weather_icon_filename("light_snow", "night") == "light_snow.svg"
 
     def test_every_referenced_icon_file_exists(self) -> None:
         """Every derivable filename is a file actually shipped under static/."""
@@ -263,7 +269,7 @@ class TestBuildWeatherDisplay:
         assert display["bucket"] == "snow"
         assert display["icon_bucket"] == "light_snow"
         assert display["condition_label"] == "Light snow"
-        assert display["icon_filename"] == "light_snow-day.svg"
+        assert display["icon_filename"] == "light_snow.svg"
         assert display["time_of_day"] == "day"
         assert display["sunrise_local"] == "06:30"
         assert display["sunset_local"] == "20:15"
@@ -497,7 +503,7 @@ class TestBuildPointForecastPanel:
         assert panel is not None
         forward = panel["days"][1]
         assert forward["weekday_label"] == "Mon"
-        assert forward["icon_filename"] == "moderate_snow-day.svg"
+        assert forward["icon_filename"] == "moderate_snow.svg"
         assert forward["condition_label"] == "Snow"
         assert forward["temp_max"] == 3.0
         assert forward["temp_min"] == -4.0
