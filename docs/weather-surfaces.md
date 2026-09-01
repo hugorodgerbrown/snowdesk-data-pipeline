@@ -132,12 +132,26 @@ fourteen files. `drizzle` and `light_rain` are the same drawing under two
 names, since Yr publishes no drizzle icon and `lightrainshowers_*` is wrong
 for continuous drizzle; the two stay distinct in text.
 
-The set was Meteocons until SNOW-791. It measured 1.07–1.16:1 for its
-cloud bodies on the light card and separated rain from light snow by 3.3
-greyscale levels out of 255 at 27 px — on an avalanche site rain-vs-snow is
-a freezing-level judgement. Yr measures 21.2 ink presence against 7.9, with
-a worst confusable pair of 13.0 (fog vs overcast, after darkening and
-thickening fog's bars — see `static/icons/weather/LICENSE.md`).
+The set was Meteocons until SNOW-791, and the reason for the swap is
+**legibility, not ambiguity**. Meteocons' cloud bodies measured 1.07–1.16:1
+against the light card and its outline 2.56:1 — every one of those passes on
+a dark card, which is what the set was drawn for. Rendered at 27 px on white
+across the twelve buckets, Yr carries 23.9 mean ink to Meteocons' 8.9. Fog
+gained most: Meteocons drew
+it as a sun behind haze, which reads as a sunrise, and Yr's bars are
+unmistakable (127 px differing from overcast at mean ΔE 68, against 107 at
+38 — and only after darkening and thickening them, see
+`static/icons/weather/LICENSE.md`).
+
+> **Rain versus snow was never the defect, and the metric that said it was
+> is unsound.** A mean taken over the whole 27×27 tile measures how much ink
+> an icon carries, not whether two icons differ: twenty strongly-differing
+> pixels average away to nearly nothing against seven hundred identical ones.
+> On the pixels that actually differ, both sets separate rain from snow
+> about equally — Meteocons 24 px at mean ΔE 51, Yr 25 px at 53. Score a
+> future candidate on the differing pixels (count and mean ΔE among them),
+> and keep the whole-tile mean for the question it does answer, which is
+> presence.
 
 ### The icon halo
 

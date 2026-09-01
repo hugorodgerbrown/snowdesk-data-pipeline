@@ -38,8 +38,10 @@ wrong for WMO 51–57 — continuous drizzle is not a shower. The two buckets
 stay distinct in text (`_ICON_BUCKET_LABEL`) and share a drawing.
 
 **Modification.** `fog.svg` carries two edits against upstream, both made so
-fog separates from overcast at map-symbol size (they differed by 6.6
-greyscale levels out of 255 at 27 px, against 13.0 after):
+fog separates from overcast at map-symbol size. Upstream's bars are already
+the right size — 124 pixels differ from `cloudy.svg` at 27 px — but too light,
+at mean ΔE 34. The edits leave the size alone (127 px) and double the contrast
+(ΔE 68):
 
 - the fog bars' fill `#999999` → `#666666`;
 - the fog `<use>` transform `translate(0,76) scale(1,1)` →

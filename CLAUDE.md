@@ -626,6 +626,7 @@ Read these when working in the relevant area:
 | Weather UI (_weather_panel/_weather_day_picker/_weather_day_line, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js) | [`docs/weather-surfaces.md`](docs/weather-surfaces.md) |
 | Why the weather backfill is a capped inline admin action, and why a backfilled row has no forecast[] | [`docs/decisions/weather-backfill-is-an-admin-action.md`](docs/decisions/weather-backfill-is-an-admin-action.md) |
 | Why the weather day picker is a CSS radio group, not seven dated links (`?date=` picks the row, the picker picks inside it) | [`docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`](docs/decisions/weather-day-picker-is-a-selector-not-navigation.md) |
+| Why the weather icons are Yr / MET Norway and not MeteoSwiss, AccuWeather or the Met Office (legibility measurements + the licence position for each set) | [`docs/decisions/weather-icons-are-yr-not-meteoswiss.md`](docs/decisions/weather-icons-are-yr-not-meteoswiss.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a followed-but-unclaimed route share lives in the session (and what it widens) | [`docs/decisions/route-share-pending-claim-in-session.md`](docs/decisions/route-share-pending-claim-in-session.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
