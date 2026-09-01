@@ -355,12 +355,21 @@ The **daylight bar** does get a row — last, and the only entry naming
 something on the axis rather than a series — drawn with the bar's own two
 fills so it is matchable by colour. The pin at the current time has no row
 of its own: it is the one mark whose position is its meaning, and a reader
-who has found the bar has found it. It **crosses** the bar rather than
-sitting inside it, because night and day are only 3.5:1 apart and no single
-ink reads on both fills — the pin's ends stand on the card instead, at
-better than 15:1. That is also why it is a sibling of the track element and
-measured against the drawing, while the lit segment is a child measured
-against the track. The times themselves are not in the key;
+who has found the bar has found it.
+
+The pin is **two tones, and that is not decoration**: no single flat colour
+can clear 3:1 against both fills in light mode, which is arithmetic rather
+than taste. Separating from slate-600 needs a relative luminance of at least
+0.358; separating from amber-500 needs either 1.54 — brighter than white —
+or at most 0.127. No number satisfies both. So it is a `text-1` core inside
+a card-coloured outline, and whichever fill it crosses one of the two
+carries it: 8.2:1 on the lit segment, 7.6:1 on the night ground, mirrored at
+10.2:1 and 4.0:1 in dark. Change either fill and re-check both.
+
+It also **crosses** the bar rather than sitting inside it, which is why it
+is a sibling of the track element and measured against the drawing, while
+the lit segment is a child measured against the track — the track's
+`overflow-hidden` would clip the pin's ends. The times themselves are not in the key;
 the bar is `aria-hidden`, so the pair is spoken in the chart's own
 `aria_label` — not in the legend's "About this forecast" block, which is
 supplied by the component library alone and never renders on the page that

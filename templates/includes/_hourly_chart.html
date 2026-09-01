@@ -351,23 +351,32 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                     </div>
 
                     {% comment %}
-                    The time now, as a pin that CROSSES the bar rather than
-                    a notch inside it. No single ink reads on both fills:
-                    night and day are only 3.5:1 apart, so an ink dark
-                    enough for the lit segment sits close to the night
-                    ground, and the card colour is the same trade the other
-                    way round. The pin's ends solve it — they stand on the
-                    card at better than 15:1, so the mark is locatable
-                    whatever it crosses.
+                    The time now, as a pin that CROSSES the bar.
 
-                    Which is why it is a SIBLING of the track and not a
-                    child: the track's overflow-hidden, there to clip the
-                    lit segment's corners, would cut the ends off. Its left
-                    is a per-cent of the drawing to match.
+                    TWO TONES, AND THAT IS NOT DECORATION. No single flat
+                    colour can clear 3:1 against both fills in light mode,
+                    and the arithmetic says so rather than the eye: to
+                    separate from slate-600 an ink needs a relative
+                    luminance of at least 0.358, while to separate from
+                    amber-500 it needs either 1.54 — brighter than white —
+                    or at most 0.127. There is no number satisfying both.
+
+                    So the pin is a text-1 core inside a card-coloured
+                    outline, and whichever fill it crosses, one of the two
+                    carries it: on the lit segment the core reads at 8.2:1,
+                    on the night ground the outline reads at 7.6:1, and the
+                    dark theme mirrors it at 10.2:1 and 4.0:1. The two are
+                    17:1 apart from each other, so they still read as one
+                    mark rather than two.
+
+                    It is a SIBLING of the track and not a child: the
+                    track's overflow-hidden, there to clip the lit
+                    segment's corners, would cut the pin's ends off. Its
+                    left is a per-cent of the drawing to match.
                     {% endcomment %}
                     {% if chart.now_marker %}
                         <div
-                            class="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-pill bg-text-1"
+                            class="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-pill bg-text-1 outline-1 outline-card"
                             style="left: {{ chart.now_marker }}"
                             data-testid="{{ prefix }}-now"
                         >
