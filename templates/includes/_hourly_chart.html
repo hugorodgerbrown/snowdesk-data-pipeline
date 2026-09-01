@@ -194,13 +194,20 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 do not have.
                 {% endcomment %}
                 {% comment %}
-                    The plot's left and right edges. SNOW-723's night
-                    shading had been carrying these for free — a reader
-                    took the plot's bounds from where the shaded blocks
-                    stopped, and removing the blocks left the series
-                    floating in the card with only the hour ticks below
-                    them. These are frame, not data, which is why they sit
-                    at fixed x rather than at any value.
+                    The plot's left and right edges, and THIS PLOT ONLY.
+                    SNOW-723's night shading had been carrying them for
+                    free — a reader took the plot's bounds from where the
+                    shaded blocks stopped — and removing the wash left this
+                    chart's two vertical scales with nothing closing them
+                    off at either end.
+
+                    They earn their place here because there is something to
+                    anchor: °C down the left gutter and metres down the
+                    right, each label joined to the plot by its own tick.
+                    The precipitation and wind charts have no vertical scale
+                    and no gutter labels, so an edge there would be a box
+                    drawn round nothing. These are frame, not data, which is
+                    why they sit at fixed x rather than at any value.
                 {% endcomment %}
                 {% for x in chart.plot_edges %}
                     <line
@@ -407,26 +414,6 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                     aria-hidden="true"
                     data-testid="{{ prefix }}-precip"
                 >
-                    {% comment %}
-                        The plot's left and right edges. SNOW-723's night
-                        shading had been carrying these for free — a reader
-                        took the plot's bounds from where the shaded blocks
-                        stopped, and removing the blocks left the series
-                        floating in the card with only the hour ticks below
-                        them. These are frame, not data, which is why they sit
-                        at fixed x rather than at any value.
-                    {% endcomment %}
-                    {% for x in chart.plot_edges %}
-                        <line
-                            x1="{{ x }}"
-                            y1="{{ chart.precip_edge_top }}"
-                            x2="{{ x }}"
-                            y2="{{ chart.precip_height }}"
-                            class="stroke-border-strong"
-                            stroke-width="1"
-                        />
-                    {% endfor %}
-
                     {% for bar in chart.snow_bars %}
                         <rect
                             x="{{ bar.x }}"
@@ -552,26 +539,6 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
         {% endcomment %}
         <div class="relative mx-4">
             <svg viewBox="{{ chart.view_box_wind }}" class="block h-auto w-full" aria-hidden="true">
-                {% comment %}
-                    The plot's left and right edges. SNOW-723's night
-                    shading had been carrying these for free — a reader
-                    took the plot's bounds from where the shaded blocks
-                    stopped, and removing the blocks left the series
-                    floating in the card with only the hour ticks below
-                    them. These are frame, not data, which is why they sit
-                    at fixed x rather than at any value.
-                {% endcomment %}
-                {% for x in chart.plot_edges %}
-                    <line
-                        x1="{{ x }}"
-                        y1="{{ chart.wind_edge_top }}"
-                        x2="{{ x }}"
-                        y2="{{ chart.wind_height }}"
-                        class="stroke-border-strong"
-                        stroke-width="1"
-                    />
-                {% endfor %}
-
                 {% for points in chart.gust_segments %}
                     <polyline
                         points="{{ points }}"

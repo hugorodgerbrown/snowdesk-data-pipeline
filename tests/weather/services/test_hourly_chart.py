@@ -252,9 +252,10 @@ class TestGutterTicks:
         The night shading used to carry these for free.
 
         A reader took the plot's bounds from where the shaded blocks
-        stopped; removing the blocks left the series floating in the card.
-        The edges are frame, so they sit at the plot's fixed x rather than
-        at any value.
+        stopped; removing them left the temperature chart's two vertical
+        scales with nothing closing them off. The edges are frame, so they
+        sit at the plot's fixed x rather than at any value — and only on
+        this chart, the one with scales to close.
         """
         chart = build_hourly_chart(_day())
         assert chart is not None

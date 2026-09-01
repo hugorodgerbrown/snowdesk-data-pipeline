@@ -671,22 +671,38 @@ class TestMeteogramMarks:
         # A tick sits at its value's own height, not at the label's offset.
         assert len(set(left)) == len(left)
 
-    def test_all_three_plots_carry_the_same_left_and_right_edges(self) -> None:
+    def test_only_the_temperature_plot_carries_left_and_right_edges(self) -> None:
         """
-        The three share an x-axis, so they share a frame.
+        An edge closes off a scale, and one chart has scales.
 
-        Edges on one chart alone would draw a box round it; on all three
-        the stack reads as one column.
+        Temperature carries °C down one gutter and metres down the other,
+        each label joined to the plot by its own tick, so the edges finish
+        that frame. Precipitation and wind have no vertical scale and no
+        gutter labels, and an edge there would be a box drawn round
+        nothing.
+
+        **Matched by span, not by x.** The edges stand at 40 and 560, which
+        is exactly where the hour-0 and hour-24 ticks stand — a vertical
+        line at either x proves nothing, and an earlier version of this
+        test passed by matching those ticks whether the edges were drawn or
+        not. An edge runs most of the plot's height; a tick runs seven
+        units.
         """
         html = self._render()
 
-        for testid in ("temp", "precip"):
+        def tall_verticals(testid: str) -> list[str]:
             chart = html[
                 html.index(f'data-testid="location-weather-hourly-{testid}"') :
             ]
             chart = chart[: chart.index("</svg>")]
-            assert re.search(r'<line\s+x1="40"\s+y1="[^"]*"\s+x2="40"', chart)
-            assert re.search(r'<line\s+x1="560"\s+y1="[^"]*"\s+x2="560"', chart)
+            found = re.findall(
+                r'<line\s+x1="(40|560)"\s+y1="([\d.]+)"\s+x2="\1"\s+y2="([\d.]+)"',
+                chart,
+            )
+            return [x for x, y1, y2 in found if float(y2) - float(y1) > 50]
+
+        assert sorted(tall_verticals("temp")) == ["40", "560"]
+        assert tall_verticals("precip") == []
 
     def test_the_zero_rule_stays_on_the_plot_but_not_in_the_key(self) -> None:
         """

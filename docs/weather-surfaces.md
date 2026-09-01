@@ -312,13 +312,18 @@ plot read as a second series, and the pattern is what keeps it reference
 furniture beside the freezing level's long dash — a fixed property of the
 location rather than something the day is doing.
 
-**All three plots carry left and right edges.** SNOW-723's night shading
-had been supplying them for free — a reader took the plot's bounds from
-where the shaded blocks stopped — and removing the wash left the series
-floating in the card with only the hour ticks beneath them. The edges are
-frame rather than data, so they sit at the plot's fixed x (40 and 560) on
-every chart: the three share an x-axis, and edges on one alone would draw a
-box round it instead of a column.
+**The temperature plot carries left and right edges**, and it alone.
+SNOW-723's night shading had been supplying them for free — a reader took
+the plot's bounds from where the shaded blocks stopped — and removing the
+wash left this chart's two vertical scales with nothing closing them off.
+They are frame rather than data, so they sit at the plot's fixed x, 40 and
+560. The precipitation and wind charts have no vertical scale and no gutter
+labels, so an edge there would be a box drawn round nothing.
+
+Note that 40 and 560 are also where the hour-0 and hour-24 ticks stand, so
+a test that looks for a vertical line at either x proves nothing about the
+edges. Match on the span: an edge runs most of the plot's height, a tick
+runs seven units.
 
 **Both vertical scales carry gutter ticks.** One short mark per label,
 drawn outward from the plot's own edges. Without them the °C and metre

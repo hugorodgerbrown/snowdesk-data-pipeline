@@ -345,9 +345,6 @@ class HourlyChart(TypedDict):
     right_tick_x2: str
     plot_edges: list[str]
     temp_edge_top: str
-    precip_edge_top: str
-    wind_edge_top: str
-    wind_height: str
     temp_tick_top: str
     precip_tick_top: str
     wind_tick_top: str
@@ -1307,16 +1304,13 @@ def build_hourly_chart(
         "left_tick_x2": _num(PAD_LEFT),
         "right_tick_x1": _num(PLOT_RIGHT),
         "right_tick_x2": _num(PLOT_RIGHT + AXIS_TICK_LENGTH),
-        # The plot's own left and right edges, drawn on all three charts.
-        # The night shading SNOW-723 removed had been carrying these for
-        # free: a reader took the plot's bounds from where the shaded
-        # blocks stopped. Take the blocks away and the series float in the
-        # card, so the edges go back explicitly as furniture.
+        # The temperature plot's own left and right edges. The night
+        # shading SNOW-723 removed had been carrying them for free: a
+        # reader took the plot's bounds from where the shaded blocks
+        # stopped. They go back only on this chart, which is the only one
+        # with vertical scales for them to close off.
         "plot_edges": [_num(PAD_LEFT), _num(PLOT_RIGHT)],
         "temp_edge_top": _num(LINE_TOP - _EDGE_HEADROOM),
-        "precip_edge_top": _num(SNOW_BASELINE - SNOW_MAX_HEIGHT - _EDGE_HEADROOM),
-        "wind_edge_top": _num(GUST_ROW_Y),
-        "wind_height": str(WIND_HEIGHT),
         "temp_tick_top": _num(TEMP_HEIGHT - TICK_LENGTH),
         "precip_tick_top": _num(PRECIP_HEIGHT - TICK_LENGTH),
         "wind_tick_top": _num(WIND_HEIGHT - TICK_LENGTH),
@@ -1376,8 +1370,9 @@ MINOR_TICK_LENGTH = 3.5
 # trust that "1,600" lines up with where they think it does.
 AXIS_TICK_LENGTH = 5
 
-# How far above its topmost mark each plot's left/right edge begins, so the
-# edge clears the highest gridline rather than starting flush with it.
+# How far above its topmost tick the temperature plot's left/right edge
+# begins, so the edge clears the highest gridline rather than starting flush
+# with it.
 _EDGE_HEADROOM = 10
 
 
