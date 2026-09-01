@@ -127,6 +127,32 @@ def resort_location() -> Location:
 
 
 @pytest.fixture
+def backfilled_location() -> Location:
+    """A public location whose day was written by the backfill (SNOW-731).
+
+    The distinguishing feature is ``forecast=None``: the historical endpoint
+    serves a stitched timeline, not the outlook as issued that morning, so
+    the backfill deliberately leaves the column null. ``hourly`` is present,
+    which is what makes the day strip's one column selectable.
+    """
+    location = LocationFactory.create(anonymous=True, elevation_m=1450.0)
+    ResortLocationFactory.create(
+        resort=ResortFactory.create(name="Nendaz"), location=location
+    )
+    WeatherFactory.create(
+        location=location,
+        observed_on=TODAY,
+        temperature_2m_max=1.5,
+        temperature_2m_min=-5.5,
+        freezing_level_height=1800.0,
+        snowfall_sum=3.0,
+        hourly=_hourly(TODAY),
+        forecast=None,
+    )
+    return location
+
+
+@pytest.fixture
 def favourite_only_location() -> Location:
     """A location reachable only from a Favourite — billable, never public."""
     location = LocationFactory.create(anonymous=True, elevation_m=2000.0)
@@ -284,6 +310,26 @@ class TestForecastPage:
         assert 'data-testid="forecast-chart"' in html
         assert "location-weather-forecast-day" in html
         assert 'data-testid="location-weather-hourly' in html
+
+    def test_a_backfilled_day_renders_everything_but_the_outlook(
+        self, client: Client, backfilled_location: Location
+    ) -> None:
+        """SNOW-731: a null ``forecast`` costs the chart, and nothing else.
+
+        The missing chart is correct — ``build_forecast_chart`` returns None
+        below two days, and one point is not a line. The row, the
+        one-column strip and the meteogram must all still be there, because
+        that is the whole value of backfilling a historical day.
+        """
+        response = client.get(
+            _page_url(backfilled_location), {"date": TODAY.isoformat()}
+        )
+
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert "location-weather-forecast-day" in html
+        assert 'data-testid="location-weather-hourly' in html
+        assert 'data-testid="forecast-chart"' not in html
 
     def test_the_hourly_table_is_gone(
         self, client: Client, resort_location: Location

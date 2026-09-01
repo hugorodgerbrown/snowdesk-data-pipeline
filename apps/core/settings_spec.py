@@ -281,6 +281,12 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         secret=True,
         note="Customer apikey; empty means the free tier",
     ),
+    SettingSpec(
+        "OPEN_METEO_HISTORY_BASE_URL",
+        validator=absolute_url,
+        required_in_production=True,
+        note="Historical forecast host (SNOW-731 backfill)",
+    ),
     # --- Third-party services ---------------------------------------------
     SettingSpec("POSTHOG_HOST", validator=absolute_url, note="PostHog ingest host"),
     SettingSpec("POSTHOG_API_KEY", secret=True, note="PostHog project key"),
@@ -345,6 +351,10 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     ),
     # --- Feature flags and toggles (already cast by python-decouple) ------
     SettingSpec("SEASON_START_DATE", note="Season boundary (ISO date)"),
+    SettingSpec(
+        "WEATHER_BACKFILL_FLOOR",
+        note="Earliest day the weather backfill will request (ISO date)",
+    ),
     SettingSpec("SW_DEV_SHELL_BYPASS", note="Dev-only SW shell bypass (SNOW-585)"),
     SettingSpec("QUERY_COUNT_HEADER_ENABLED", note="X-Query-Count debug header"),
     SettingSpec("CSP_ENABLED", note="Content-Security-Policy on/off"),
@@ -362,7 +372,18 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
 
 # Free-tier Open-Meteo hosts. A key sent to these is silently ignored; a
 # customer host reached without one 401s on every request.
-FREE_OPEN_METEO_HOSTS: frozenset[str] = frozenset({"api.open-meteo.com"})
+#
+# Must stay in step with ``apps.locations.services.open_meteo.FREE_HOSTNAMES``
+# and with the shipped ``OPEN_METEO_*_BASE_URL`` defaults: a default host
+# absent from this set reads as a customer host, and
+# ``check_open_meteo_key_host_pairing`` would then fail every production
+# boot that has no key.
+FREE_OPEN_METEO_HOSTS: frozenset[str] = frozenset(
+    {
+        "api.open-meteo.com",
+        "historical-forecast-api.open-meteo.com",
+    }
+)
 
 
 def spec_by_name() -> dict[str, SettingSpec]:

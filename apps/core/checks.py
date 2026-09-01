@@ -279,7 +279,10 @@ def check_open_meteo_key_host_pairing(app_configs: Any, **kwargs: Any) -> list[E
     if settings.DEBUG:
         return []
 
-    hosts = (settings.OPEN_METEO_API_BASE_URL,)
+    hosts = (
+        settings.OPEN_METEO_API_BASE_URL,
+        settings.OPEN_METEO_HISTORY_BASE_URL,
+    )
     hostnames = {urlsplit(host).hostname for host in hosts if host}
     # A hostname we do not recognise is treated as a customer host: that is
     # the fail-safe direction, since the cost of a false positive is a
@@ -292,10 +295,10 @@ def check_open_meteo_key_host_pairing(app_configs: Any, **kwargs: Any) -> list[E
             Error(
                 "Open-Meteo is pointed at a customer host with no API key.",
                 hint=(
-                    "OPEN_METEO_API_BASE_URL is set to a non-free host, but "
-                    "OPEN_METEO_API_KEY is empty — every request will 401. "
-                    "Set the key, or point the host back at "
-                    "https://api.open-meteo.com/v1."
+                    "OPEN_METEO_API_BASE_URL or OPEN_METEO_HISTORY_BASE_URL "
+                    "is set to a non-free host, but OPEN_METEO_API_KEY is "
+                    "empty — every request to it will 401. Set the key, or "
+                    "point the host back at its free default."
                 ),
                 id=f"{OPEN_METEO_CHECK_ID_PREFIX}.E002",
             )
@@ -309,8 +312,8 @@ def check_open_meteo_key_host_pairing(app_configs: Any, **kwargs: Any) -> list[E
                     "The key is only attached to a host that has been moved off "
                     "its free default (SNOW-579), so this key is never sent and "
                     "the deploy is still on the shared per-IP quota. Point "
-                    "OPEN_METEO_API_BASE_URL at the customer host, or unset "
-                    "OPEN_METEO_API_KEY."
+                    "OPEN_METEO_API_BASE_URL or OPEN_METEO_HISTORY_BASE_URL "
+                    "at the customer host, or unset OPEN_METEO_API_KEY."
                 ),
                 id=f"{OPEN_METEO_CHECK_ID_PREFIX}.E001",
             )
