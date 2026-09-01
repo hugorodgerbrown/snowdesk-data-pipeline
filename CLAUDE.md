@@ -48,7 +48,10 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  that day is past. Plus ``services/upsert.py`` (the write
                  rule), ``services/fetch.py`` (one walk over
                  ``Location.objects.active()``) and the ``fetch_weather``
-                 command, scheduled 4×/day. Migrations 0001–0006 belong to
+                 command, scheduled 4×/day. ``services/backfill.py``
+                 (SNOW-731) fills *past* days from the historical forecast
+                 API — never today — behind both the ``backfill_weather``
+                 command and the LocationAdmin action. Migrations 0001–0006 belong to
                  the estate SNOW-762 stripped and are retained because six
                  migrations in four other apps depend on them; 0007 creates
                  the new table. Read
@@ -621,6 +624,7 @@ Read these when working in the relevant area:
 | Location is the primitive (Location model, ForecastPoint is a fetch cell, apps/locations/) | [`docs/decisions/location-is-the-primitive.md`](docs/decisions/location-is-the-primitive.md) |
 | Weather is one immutable row per location per day (Weather model, upsert_weather, Location.objects.active()) | [`docs/decisions/weather-is-one-immutable-location-row.md`](docs/decisions/weather-is-one-immutable-location-row.md) |
 | Weather UI (_weather_panel/_forecast_panel, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js) | [`docs/weather-surfaces.md`](docs/weather-surfaces.md) |
+| Why the weather backfill is a capped inline admin action, and why a backfilled row has no forecast[] | [`docs/decisions/weather-backfill-is-an-admin-action.md`](docs/decisions/weather-backfill-is-an-admin-action.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a followed-but-unclaimed route share lives in the session (and what it widens) | [`docs/decisions/route-share-pending-claim-in-session.md`](docs/decisions/route-share-pending-claim-in-session.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |

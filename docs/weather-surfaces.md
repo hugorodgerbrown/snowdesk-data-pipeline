@@ -66,10 +66,30 @@ eventually write a query that picks the wrong one.
 `None` is an ordinary answer, not an error:
 
 * a region with no `centroid_location` has nowhere to read from;
-* a **historical date has no row at all**. Rows begin on the day the estate
-  was first fetched, and SNOW-731's backfill is deferred. Every surface
-  must degrade to *no panel* — not an empty shell, not a "no data" notice,
-  and certainly not an exception.
+* a **historical date may have no row**. Rows begin on the day the estate
+  was first fetched; earlier days exist only where the backfill has been
+  run (see below). Every surface must degrade to *no panel* — not an empty
+  shell, not a "no data" notice, and certainly not an exception.
+
+### A backfilled row is one day, not a week
+
+`backfill_weather` and the `LocationAdmin` "Backfill missing weather"
+action (SNOW-731) fill missing past days. A row they write carries its
+daily scalars and its 24 hourly readings, but its `forecast[]` is **null on
+purpose** — the historical endpoint serves a stitched timeline, not the
+outlook as issued that morning, and that column means the latter.
+
+What that looks like on `public/location_weather.html`:
+
+| Surface | Backfilled day |
+|---|---|
+| `_weather_panel.html` row | renders |
+| Day strip | **one** column, selectable (it has `hourly`) |
+| `_hourly_chart.html` meteogram | renders |
+| `_forecast_chart.html` outlook | **absent** — `build_forecast_chart` returns `None` below two days |
+
+The missing chart is correct, and already guarded by `{% if chart %}`. Do
+not close it by inventing forward days.
 
 ## The display service
 
@@ -292,6 +312,9 @@ In [`static/js/map.js`](../static/js/map.js), around `installWeatherLayer`:
 
 * [`docs/decisions/weather-is-one-immutable-location-row.md`](decisions/weather-is-one-immutable-location-row.md)
   — the model.
+* [`docs/decisions/weather-backfill-is-an-admin-action.md`](decisions/weather-backfill-is-an-admin-action.md)
+  — why history arrives through a capped admin action, and why a
+  backfilled row carries no outlook.
 * [`docs/decisions/location-is-the-primitive.md`](decisions/location-is-the-primitive.md)
   — why everything anchors on `Location`.
 * [`docs/map-and-api.md`](map-and-api.md) — the endpoint table.

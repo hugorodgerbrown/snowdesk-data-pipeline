@@ -443,8 +443,8 @@ does that job inside the row.
 
 **Historical days are not this command's business.** A day is written once,
 on the day it is current, and `upsert_weather` then refuses to rewrite it.
-Filling a day this command missed is a backfill against the archive
-endpoint (SNOW-731), a different job with a different upstream.
+Filling a day this command missed is `backfill_weather` (below), a different
+job against a different upstream.
 
 Streams the estate through `iterate_rows`, so stdout reads as a countdown.
 A per-location failure is logged and counted, never aborts the batch, and
@@ -458,6 +458,49 @@ which also carries the Open-Meteo cost this command's cadence implies.
 ```bash
 uv run python manage.py fetch_weather           # preview (calls the API)
 uv run python manage.py fetch_weather --commit  # persist
+```
+
+### `backfill_weather` — fill the missing days for every active location
+
+The complement of `fetch_weather` (SNOW-731). Walks the same
+`Location.objects.active()` estate and fills every day between
+`settings.WEATHER_BACKFILL_FLOOR` and **yesterday** that has no `Weather`
+row, against the Open-Meteo historical forecast API
+(`settings.OPEN_METEO_HISTORY_BASE_URL`).
+
+**Not scheduled, and not a re-fetch.** It diffs first: it reads each
+location's existing `observed_on` set, subtracts it, and requests only the
+gaps — so a complete location costs no call at all. That diff is what makes
+a re-run safe, because `upsert_weather` *raises* on an existing past row
+rather than skipping it. Idempotence here belongs to the caller, not to the
+write rule.
+
+**It never touches today.** Today is `fetch_weather`'s row, and
+`upsert_weather` permits a rewrite of it — so a backfill that reached today
+would silently overwrite the live forecast. The window ends at yesterday,
+and the write loop additionally skips any provider day outside the set it
+asked for.
+
+A backfilled row carries its daily scalars and its 24 hourly readings, and
+**no `forecast[]`** — see
+[`decisions/weather-backfill-is-an-admin-action.md`](decisions/weather-backfill-is-an-admin-action.md)
+for why, and for what that means on the page.
+
+One request per contiguous gap (a whole season came back in one 287 KB
+response when probed), split at 366 days. `--delay` paces the walk between
+locations, because Open-Meteo blocks a misusing IP without notice and the IP
+is production's.
+
+The same service backs the **"Backfill missing weather" action on
+`LocationAdmin`**, which is where a curator fixes one location they spotted
+in the changelist's weather-coverage column. That action is capped per run;
+this command is the one to reach for when filling the estate.
+
+```bash
+uv run python manage.py backfill_weather                        # preview
+uv run python manage.py backfill_weather --commit               # persist
+uv run python manage.py backfill_weather --commit --limit 10 --delay 5
+uv run python manage.py backfill_weather --commit --floor 2026-01-01
 ```
 
 ### `link_region_centroid_locations` — anchor each region to a Location

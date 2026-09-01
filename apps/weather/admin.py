@@ -16,13 +16,26 @@ Today's and forward rows stay editable, because a live row is legitimately
 rewritten four times a day and a manual correction to one is a normal thing
 to want. Deletion is off everywhere: a row is the record that we said
 something, and removing it is not a correction.
+
+**The two JSON series are read-only on every row, and pretty-printed.**
+``hourly`` is 24 objects of seven variables and ``forecast`` is up to six
+days of the same shape again; in a ``Textarea`` they render as one
+unbroken line thousands of characters long, which is unreadable and — since
+the only way to edit it is to hand-write valid JSON into that line — not
+usefully editable either. They are provider output, written by
+``services/fetch.py`` and ``services/backfill.py``; correcting one by hand
+is not a workflow the surface should offer. So they are shown as indented
+JSON instead, on every row rather than only past ones.
 """
 
+import json
 import logging
 from typing import Any
 
 from django.contrib import admin
 from django.http import HttpRequest
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 
 from .models import Weather
 
@@ -50,8 +63,26 @@ _DAILY_FIELDS = [
     "freezing_level_height",
 ]
 
-# Never editable, on any row: identity and the two audit timestamps.
-_ALWAYS_READONLY = ["id", "uuid", "created_at", "updated_at"]
+# Never editable, on any row: identity, the two audit timestamps, and the
+# two JSON series (see the module docstring — they are rendered by the
+# display methods below rather than by a Textarea).
+_ALWAYS_READONLY = [
+    "id",
+    "uuid",
+    "created_at",
+    "updated_at",
+    "hourly_json",
+    "forecast_json",
+]
+
+# Bounded height with its own scrollbar: a season's ``forecast`` runs to
+# hundreds of lines, and letting it push the Metadata fieldset off the
+# bottom of the page would trade one readability problem for another.
+_JSON_STYLE = (
+    "max-height:24rem;overflow:auto;white-space:pre;"
+    "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;"
+    "font-size:0.75rem;line-height:1.5;margin:0;"
+)
 
 
 @admin.register(Weather)
@@ -77,8 +108,21 @@ class WeatherAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {"fields": ("location", "observed_on", "fetched_at")}),
         ("Conditions", {"fields": tuple(_DAILY_FIELDS)}),
-        ("Series", {"fields": ("hourly", "forecast")}),
-        ("Metadata", {"fields": tuple(_ALWAYS_READONLY)}),
+        (
+            "Series",
+            {
+                "fields": ("hourly_json", "forecast_json"),
+                "description": (
+                    "Provider output, shown as formatted JSON. Not editable "
+                    "here on any row — see apps/weather/services/fetch.py and "
+                    "services/backfill.py, which write them."
+                ),
+            },
+        ),
+        (
+            "Metadata",
+            {"fields": ("id", "uuid", "created_at", "updated_at")},
+        ),
     )
 
     def get_readonly_fields(
@@ -99,11 +143,60 @@ class WeatherAdmin(admin.ModelAdmin):
                 "location",
                 "observed_on",
                 "fetched_at",
-                "hourly",
-                "forecast",
                 *_DAILY_FIELDS,
             ]
         return list(_ALWAYS_READONLY)
+
+    @admin.display(description="Hourly")
+    def hourly_json(self, obj: Weather) -> SafeString | str:
+        """Render this day's hourly series as indented JSON.
+
+        Args:
+            obj: The row being viewed.
+
+        Returns:
+            A scrollable ``<pre>`` block, or an em dash when the column is
+            null — which is what a response carrying no hourly block leaves.
+
+        """
+        return self._as_json(obj.hourly)
+
+    @admin.display(description="Forecast")
+    def forecast_json(self, obj: Weather) -> SafeString | str:
+        """Render the forward days as indented JSON.
+
+        Args:
+            obj: The row being viewed.
+
+        Returns:
+            A scrollable ``<pre>`` block, or an em dash when the column is
+            null — which is what every backfilled row carries, deliberately
+            (see docs/decisions/weather-backfill-is-an-admin-action.md).
+
+        """
+        return self._as_json(obj.forecast)
+
+    @staticmethod
+    def _as_json(value: Any) -> SafeString | str:
+        """Return ``value`` as an indented, scrollable ``<pre>`` block.
+
+        ``format_html`` escapes the payload, so provider strings cannot
+        reach the page as markup.
+
+        Args:
+            value: The decoded JSON column, or None.
+
+        Returns:
+            The rendered block, or an em dash for a null or empty column.
+
+        """
+        if not value:
+            return "—"
+        return format_html(
+            '<pre style="{}">{}</pre>',
+            _JSON_STYLE,
+            json.dumps(value, indent=2, sort_keys=False),
+        )
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         """Refuse deletion — a row is the record that we said something.

@@ -671,6 +671,46 @@ OPEN_METEO_API_BASE_URL = config(
 OPEN_METEO_API_KEY = config("OPEN_METEO_API_KEY", default="")
 
 # ---------------------------------------------------------------------------
+# Open-Meteo historical forecast API — apps/weather backfill (SNOW-731)
+# ---------------------------------------------------------------------------
+# Live endpoint:
+#   GET {OPEN_METEO_HISTORY_BASE_URL}/forecast?start_date=…&end_date=…
+#
+# Named *history*, not *archive*, on purpose. This is the historical
+# **forecast** API — the model's own past runs, stitched into a continuous
+# timeline. It is not ERA5 (``archive-api.open-meteo.com``), which was
+# probed on 2026-09-01 and returns ``freezing_level_height`` as a key whose
+# values are null throughout. Freezing level is the figure that decides
+# rain against snow, so ERA5 is ruled out; pointing a variable called
+# "archive" at a non-archive host would be the quiet lie.
+#
+# The default is the free public host, which takes no key. As with the
+# forecast host above, the key is sent only to a host that has been moved
+# off its free default (SNOW-579), so cutting over to
+# ``customer-historical-forecast-api.open-meteo.com`` is an environment
+# change on Render rather than a deploy.
+OPEN_METEO_HISTORY_BASE_URL = config(
+    "OPEN_METEO_HISTORY_BASE_URL",
+    default="https://historical-forecast-api.open-meteo.com/v1",
+)
+
+# The earliest day ``backfill_weather`` and the LocationAdmin action will
+# ask the upstream for. The API reaches back to roughly 2021 (probed), but
+# one full season across the estate is already ~95,000 rows against the
+# ~1,000 held today, so the floor is a season start rather than "everything
+# there is".
+#
+# Deliberately NOT ``SEASON_START_DATE``, despite sharing today's value:
+# that setting is ``fetch_bulletins``' start date, and folding the two
+# together would mean moving the bulletin window silently moved the weather
+# one too.
+WEATHER_BACKFILL_FLOOR = config(
+    "WEATHER_BACKFILL_FLOOR",
+    default="2025-11-01",
+    cast=date.fromisoformat,
+)
+
+# ---------------------------------------------------------------------------
 # GeoIP
 # ---------------------------------------------------------------------------
 # Path to the MaxMind GeoLite2-City mmdb database file. Used by

@@ -38,15 +38,28 @@ from django.conf import settings
 # Endpoint path segment, appended to the resolved base URL.
 ELEVATION = "elevation"
 
-# The free public host. A configured host that is still this one is on the
-# free tier, which takes no key. Matching on hostname rather than the whole
-# base URL means a trailing slash, an ``http://`` scheme, or a different
-# path version cannot defeat the comparison.
+# The free public hosts. A configured host that is still one of these is on
+# the free tier, which takes no key. Matching on hostname rather than the
+# whole base URL means a trailing slash, an ``http://`` scheme, or a
+# different path version cannot defeat the comparison.
 #
-# This must stay in step with the ``OPEN_METEO_API_BASE_URL`` default in
-# ``config/settings/base.py``; the "shipped defaults send no key" test in
-# tests/locations/services/test_open_meteo.py fails if they drift apart.
-FREE_HOSTNAMES = frozenset({"api.open-meteo.com"})
+# This must stay in step with the ``OPEN_METEO_*_BASE_URL`` defaults in
+# ``config/settings/base.py`` (and with
+# ``apps.core.settings_spec.FREE_OPEN_METEO_HOSTS``); the "shipped defaults
+# send no key" test in tests/locations/services/test_open_meteo.py fails if
+# they drift apart.
+FREE_HOSTNAMES = frozenset(
+    {
+        "api.open-meteo.com",
+        "historical-forecast-api.open-meteo.com",
+    }
+)
+
+# The settings a configured host can come from. Each is resolved
+# independently: an operator can move one tier onto the paid subscription
+# and leave the other on the free public host, and the key follows the
+# host rather than the deploy.
+_BASE_URL_SETTINGS = ("OPEN_METEO_API_BASE_URL", "OPEN_METEO_HISTORY_BASE_URL")
 
 
 def request_url(endpoint: str, base_url: str | None = None) -> str:
@@ -74,7 +87,7 @@ def _hostname(url: str) -> str:
 
 def _customer_hostnames() -> frozenset[str]:
     """
-    Return the configured host when it is not the free public host.
+    Return the configured hosts that are not free public ones.
 
     A host the operator has moved off its free default is, by definition,
     the paid tier they hold the key for. Deriving the set this way needs
@@ -82,15 +95,23 @@ def _customer_hostnames() -> frozenset[str]:
     convention, which Open-Meteo documents but which should not be taken
     on trust.
 
+    Both base-URL settings are considered, so the forecast tier and the
+    historical tier (SNOW-731) can be moved independently — pointing one
+    at the customer host does not start sending the key to the other.
+
     Returns:
         The hostnames the ``apikey`` parameter may be sent to. Empty on
         the free tier, which is the shipped default.
 
     """
-    configured = _hostname(settings.OPEN_METEO_API_BASE_URL)
-    if configured and configured not in FREE_HOSTNAMES:
-        return frozenset({configured})
-    return frozenset()
+    return frozenset(
+        {
+            hostname
+            for name in _BASE_URL_SETTINGS
+            if (hostname := _hostname(getattr(settings, name, "")))
+            and hostname not in FREE_HOSTNAMES
+        }
+    )
 
 
 def with_api_key(params: dict[str, str], url: str) -> dict[str, str]:
