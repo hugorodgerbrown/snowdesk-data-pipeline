@@ -84,17 +84,10 @@ daily scalars and its 24 hourly readings, but its `forecast[]` is **null on
 purpose** — the historical endpoint serves a stitched timeline, not the
 outlook as issued that morning, and that column means the latter.
 
-What that looks like on `public/location_weather.html`:
-
-| Surface | Backfilled day |
-|---|---|
-| `_weather_panel.html` row | renders |
-| Day strip | **one** column, selectable (it has `hourly`) |
-| `_hourly_chart.html` meteogram | renders |
-| `_forecast_chart.html` outlook | **absent** — `build_forecast_chart` returns `None` below two days |
-
-The missing chart is correct, and already guarded by `{% if chart %}`. Do
-not close it by inventing forward days.
+One day is the location forecast page's second shape — no day picker at
+all; see [Three page shapes](#three-page-shapes) below, which states what
+renders rather than repeating it here. The missing week is correct. Do not
+close it by inventing forward days from the stitched timeline.
 
 ## The display service
 

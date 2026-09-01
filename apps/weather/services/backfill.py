@@ -40,11 +40,15 @@ serves a continuous stitched timeline — one value per day, each as issued
 near that day. That is not the same object as ``forecast[]``, which records
 what the following week looked like *on one particular morning*. Writing a
 stitched timeline into that column would be a quiet lie, and the surfaces
-that read it would present it as one. The visible consequence is that a
-historical location page renders its weather row, a one-column day strip and
-the hourly meteogram, but no outlook chart (``build_forecast_chart`` returns
-None below two days). That is correct, and already guarded by
-``{% if chart %}`` — see docs/decisions/weather-backfill-is-an-admin-action.md.
+that read it would present it as one. The visible consequence is the
+location forecast page's SECOND SHAPE (SNOW-789): with one day and no
+forward days there is nothing to pick between, so the page renders the
+masthead, that day's line, its meteogram and the provenance — and no day
+picker at all. The week is what a backfilled day costs, and only the week.
+See docs/decisions/weather-backfill-is-an-admin-action.md for why this
+column stays null, and
+docs/decisions/weather-day-picker-is-a-selector-not-navigation.md for why
+the missing picker is permanent rather than a gap waiting to be filled.
 
 **The upstream is the historical forecast API, not ERA5.** Probed
 2026-09-01: ERA5 returns ``freezing_level_height`` as a key whose values are

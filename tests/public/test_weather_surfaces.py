@@ -328,10 +328,10 @@ class TestLocationForecastPage:
 
     @freeze_time(MIDDAY)
     def test_the_outlook_comes_from_the_same_rows_forecast_column(self) -> None:
-        """The multi-day strip is one row's ``forecast[]``, not N rows.
+        """The picker's cells are one row's ``forecast[]``, not N rows.
 
         Moved here from the resort page by SNOW-783, which is where the
-        week now lives.
+        week now lives; the cells are the day picker's since SNOW-789.
         """
         location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
         # public(), so the page is reachable anonymously.

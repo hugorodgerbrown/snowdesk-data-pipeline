@@ -1223,9 +1223,11 @@ def weather_detail(request: HttpRequest, location_id: int) -> JsonResponse:
     Mirrors :func:`resort_popup`'s contract — a server-rendered snippet the
     map injects — but the map puts this one in the weather SHEET rather than
     an anchored popup. It is a CARD: today's conditions and a link out. The
-    outlook chart, the day strip and the hourly tables it briefly carried
-    belong to the full forecast, not to a surface reached by tapping a
-    symbol; the hourly rows alone were 79% of this response.
+    week and the hourly detail it briefly carried belong to the full
+    forecast, not to a surface reached by tapping a symbol; the hourly rows
+    alone were 79% of this response. (What it shed was an outlook chart, a
+    seven-day strip and per-day hourly tables; SNOW-789 rebuilt the
+    destination around a day picker, so none of those three still exist.)
 
     **Public, and only over the public estate.** ``Location.objects.public()``
     is the same filter :func:`weather_geojson` uses, and it is load-bearing

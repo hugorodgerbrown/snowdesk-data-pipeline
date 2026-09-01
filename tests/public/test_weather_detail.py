@@ -477,11 +477,19 @@ class TestForecastPage:
     ) -> None:
         """The second page shape: one day, recovered, and nothing to pick.
 
-        ``forecast=None`` yields exactly one day, so there is no picker
-        and therefore no radio — which means the day line MUST render with
-        no ``.forecast-day-line`` hiding class, because the ``:has()``
-        reveal could never match and the page would be blank below the
+        SNOW-731 leaves ``forecast`` null on a backfilled row on purpose —
+        the upstream serves a stitched timeline, which is not the same
+        object as "what the following week looked like on one particular
+        morning". A null column yields exactly one day, so there is no
+        picker and therefore no radio, which means the day line MUST
+        render with no ``.forecast-day-line`` hiding class: the ``:has()``
+        reveal could never match it and the page would be blank below the
         masthead.
+
+        The week is what the backfill costs, and only the week. The day
+        line and the meteogram are the whole value of recovering a
+        historical day, so they are asserted present rather than merely
+        assumed.
         """
         response = client.get(
             _page_url(backfilled_location), {"date": TODAY.isoformat()}
@@ -520,26 +528,6 @@ class TestForecastPage:
         assert "forecast-chart" not in html
         assert "-forecast-panel" not in html
         assert "forecast-day-strip" not in html
-
-    def test_a_backfilled_day_renders_everything_but_the_outlook(
-        self, client: Client, backfilled_location: Location
-    ) -> None:
-        """SNOW-731: a null ``forecast`` costs the chart, and nothing else.
-
-        The missing chart is correct — ``build_forecast_chart`` returns None
-        below two days, and one point is not a line. The row, the
-        one-column strip and the meteogram must all still be there, because
-        that is the whole value of backfilling a historical day.
-        """
-        response = client.get(
-            _page_url(backfilled_location), {"date": TODAY.isoformat()}
-        )
-
-        assert response.status_code == 200
-        html = response.content.decode()
-        assert "location-weather-forecast-day" in html
-        assert 'data-testid="location-weather-hourly' in html
-        assert 'data-testid="forecast-chart"' not in html
 
     def test_the_hourly_table_is_gone(
         self, client: Client, resort_location: Location

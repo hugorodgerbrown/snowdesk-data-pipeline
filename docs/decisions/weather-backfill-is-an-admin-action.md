@@ -58,12 +58,19 @@ account of a day rather than a cache of it is that nothing afterwards can
 tell a rewrite from a record — so the column stays empty rather than
 plausible.
 
-**Consequences.** A historical location page renders its weather row, a
-one-column day strip and the hourly meteogram, and **no outlook chart** —
-`build_forecast_chart` returns `None` below two days, and the template
-already guards on `{% if chart %}`. That absence is correct. Do not "fix" it
-by inventing forward days from the stitched timeline.
+**Consequences.** A null `forecast` yields exactly one day, which is the
+location forecast page's **second shape** (SNOW-789): masthead, that day's
+line, its meteogram, provenance — and **no day picker at all**. There is
+nothing to pick between, so the page renders the day line with no
+`.forecast-day-line` hiding class, because with no picker there is no radio
+and the `:has()` reveal could never match it. The week is what a backfilled
+day costs, and only the week. That absence is correct; do not "fix" it by
+inventing forward days from the stitched timeline. Why the missing picker is
+permanent rather than a gap:
+[`weather-day-picker-is-a-selector-not-navigation.md`](weather-day-picker-is-a-selector-not-navigation.md).
 
-The day strip's columns are selectable exactly when `hourly` is present, so
-backfilling `hourly` — which this does, all 24 hours per day — is what makes
-a historical meteogram work at all.
+`ForecastPanelDay.selectable` is true exactly when `hourly` is present. It
+no longer decides whether a day is a control — every cell in the picker is
+one — but it still decides whether a day has a meteogram, so backfilling
+`hourly` (which this does, all 24 hours per day) is what makes a historical
+meteogram work at all.
