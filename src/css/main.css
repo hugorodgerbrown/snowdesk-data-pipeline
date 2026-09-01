@@ -294,6 +294,19 @@
   --color-chart-snow:     rgba(37, 99, 235, 0.35); /* accent @ 35%: new snow */
   --color-chart-note-bg:  #eef2ff;                 /* indigo-50: legend note */
 
+  /* The temperature axis bar (SNOW-790) — night ground and the lit segment
+     between sunrise and sunset.
+
+     UNLIKE THE FOUR ABOVE, these two DO get dark values (below). The note
+     above says dark needs real decisions rather than an inversion, and that
+     is exactly why: a hairline or a 6-unit bar can be squinted at on the
+     wrong ground, but this is a solid band the width of the card, and one
+     left un-thought-through would either vanish into the dark card or glare
+     off it. */
+  --color-chart-night:    #1f2937;                 /* slate-800: hours before
+                                                      sunrise / after sunset */
+  --color-chart-daylight: #f59e0b;                 /* amber-500: the lit day  */
+
   /* Floating overlays — frosted glass surface used by the map utility
      cluster (SNOW-36) and any future overlay pinned above content. */
   --color-glass:          rgba(255, 255, 255, 0.85);
@@ -656,6 +669,14 @@
 
   /* MapLibre Popup glass — see the light-mode definition above. */
   --color-popup-glass:    rgba(20, 22, 26, 0.6);
+
+  /* Temperature axis bar — see the light-mode definition above for why
+     these two carry a dark pair when the other chart tokens do not. Night
+     lifts OFF the dark card (#2a2825) rather than sinking into it, which is
+     the opposite move to the light value; daylight drops a step so a band
+     the width of the card does not glare. */
+  --color-chart-night:    #55606f;
+  --color-chart-daylight: #d97706;
 }
 
 

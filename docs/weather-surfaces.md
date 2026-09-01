@@ -300,6 +300,63 @@ Its wind arrows point at the **source**, and since SNOW-785 so does
 `_weather_panel.html` — the two share the location forecast page, and
 `tests/public/test_weather_tags.py` asserts they cannot drift apart.
 
+#### What the chart draws, and where (SNOW-790)
+
+**Anything measured in metres is blue.** The freezing-level line, the metre
+ticks in the right gutter, their `m` unit, and the location's own elevation
+rule all take `accent`. The elevation rule was `border-strong` until
+SNOW-790, which left the one mark drawn against the metre scale as the only
+metre-scale mark not coloured like one. **The elevation rule is dotted**
+(`1 3`, round caps): blue alone made a solid hairline the full width of the
+plot read as a second series, and the pattern is what keeps it reference
+furniture beside the freezing level's long dash — a fixed property of the
+location rather than something the day is doing.
+
+**All three plots carry left and right edges.** SNOW-723's night shading
+had been supplying them for free — a reader took the plot's bounds from
+where the shaded blocks stopped — and removing the wash left the series
+floating in the card with only the hour ticks beneath them. The edges are
+frame rather than data, so they sit at the plot's fixed x (40 and 560) on
+every chart: the three share an x-axis, and edges on one alone would draw a
+box round it instead of a column.
+
+**Both vertical scales carry gutter ticks.** One short mark per label,
+drawn outward from the plot's own edges. Without them the °C and metre
+figures floated beside the drawing with nothing joining them to the height
+they name. The tick sits at the value's own height (`AxisTick["y"]`, in
+viewBox units), not at the label's `top`, which carries the offset that
+centres a line of text on that value — using one for the other puts every
+tick half a line out.
+
+**The clock lives in the axis, not on the plots.** Sunrise, sunset and the
+current time are drawn in the **temperature hour axis**, which thickens into
+a bar: a night ground, a lit segment between sunrise and sunset, and a
+card-coloured notch at the time now. Before SNOW-790 the time was a
+full-height hairline through all four SVGs, crossing every series — the one
+mark on the drawing that was not data but was drawn like it.
+
+The bar is on the temperature axis **alone**. SNOW-723 had shaded all three
+plots and removed the wash on the grounds that a bar is a bar and a gust is
+a gust whether the sun is up; that finding still holds for the plots. What
+changed is where the light belongs — it answers *when*, which is the axis's
+question, not the series'.
+
+Two marks are deliberately absent from the legend. The dashed **0 °C rule**
+is still drawn on the temperature plot but has no key row: it meets a
+labelled °C axis at zero and says what it is. The **daylight bar** has none
+either, sitting under the hours it describes. The key is for marks a reader
+cannot place. The bar is `aria-hidden`, so its pair is spoken in the chart's
+own `aria_label` — not in the legend's "About this forecast" block, which is
+supplied by the component library alone and never renders on the page that
+ships the chart.
+
+The sunrise/sunset pair is read by `_daylight`, which accepts both shapes
+its callers hold: `sunrise_local`/`sunset_local` as `"HH:MM"` (what
+`build_point_forecast_panel` puts on a `ForecastPanelDay`) and
+`sunrise`/`sunset` as an ISO string or a `datetime` (the committed sample
+days, and a `Weather` row). Both are read as **times of day** — see the
+function's docstring for the latitude limit that implies.
+
 ## The map overlay
 
 ### `GET /api/weather.geojson`

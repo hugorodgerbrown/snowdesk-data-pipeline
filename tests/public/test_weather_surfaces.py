@@ -546,3 +546,187 @@ class TestLocationForecastPage:
         for wrapper in wrappers:
             assert wrapper.count("<label") == 1
             assert len(re.findall(r"<input\b", wrapper)) == 1
+
+
+@pytest.mark.django_db
+class TestMeteogramMarks:
+    """SNOW-790 — what the chart draws, and where each mark lives."""
+
+    @freeze_time(MIDDAY)
+    def _render(self) -> str:
+        """
+        Render the location forecast page with one charted day.
+
+        Returns:
+            The page HTML.
+
+        """
+        location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            hourly=_hourly_series("2026-08-30"),
+            forecast=[],
+        )
+        return (
+            Client()
+            .get(reverse("public:location_weather", args=[location.pk]))
+            .content.decode()
+        )
+
+    def test_the_daylight_bar_is_on_the_temperature_axis_alone(self) -> None:
+        """
+        One axis thickens; the other two keep their bare label rows.
+
+        The band answers "when", which is the axis's own question. Over the
+        precipitation and wind plots it would say nothing a bar or a gust
+        depends on — the SNOW-723 finding this ticket kept.
+        """
+        html = self._render()
+
+        assert 'data-testid="location-weather-hourly-axis-track"' in html
+        assert 'data-testid="location-weather-hourly-daylight"' in html
+        temp_axis = html.index('data-testid="location-weather-hourly-temp-axis"')
+        precip_axis = html.index('data-testid="location-weather-hourly-precip-axis"')
+        assert (
+            html.index('data-testid="location-weather-hourly-daylight"') < precip_axis
+        )
+        assert (
+            html.index('data-testid="location-weather-hourly-axis-track"') > temp_axis
+        )
+        # One bar on the card, not one per axis.
+        assert html.count('data-testid="location-weather-hourly-axis-track"') == 1
+
+    def test_the_clock_is_a_notch_in_the_bar_not_a_rule_through_the_plots(
+        self,
+    ) -> None:
+        """
+        The cursor left all four SVGs and became a marker on the axis.
+
+        It used to be a full-height hairline crossing every series — the
+        one mark on the drawing that was not data but was drawn like it.
+        """
+        html = self._render()
+
+        assert 'data-testid="location-weather-hourly-now"' in html
+        assert html.count('data-testid="location-weather-hourly-now"') == 1
+
+    def test_the_elevation_rule_is_drawn_in_the_metre_scales_own_ink(self) -> None:
+        """
+        Anything measured in metres is blue.
+
+        The rule exists to be read against the freezing level, and was the
+        only metre-scale mark not coloured like one.
+        """
+        html = self._render()
+
+        chart = html[html.index('data-testid="location-weather-hourly-temp"') :]
+        chart = chart[: chart.index("</svg>")]
+        # The full-width horizontal rules only. The hour ticks keep
+        # border-strong and are not what this is about — one of them shares
+        # the elevation rule's x1, which is why the match runs to x2.
+        rules = re.findall(
+            r'<line\s+x1="40"\s+y1="[^"]*"\s+x2="560"\s+y2="[^"]*"\s+class="([^"]+)"',
+            chart,
+        )
+        assert "stroke-accent" in rules
+        assert "stroke-border-strong" not in rules
+
+    def test_the_elevation_rule_is_dotted_so_it_reads_as_furniture(self) -> None:
+        """
+        Blue alone made a solid full-width hairline read as a series.
+
+        The dots put it back beside the freezing level's long dash as a
+        fixed property of the location rather than something the day does.
+        """
+        html = self._render()
+
+        chart = html[html.index('data-testid="location-weather-hourly-temp"') :]
+        chart = chart[: chart.index("</svg>")]
+        rule = re.search(
+            r'<line\s+x1="40"\s+y1="[^"]*"\s+x2="560"\s+y2="[^"]*"'
+            r'\s+class="stroke-accent"[^/]*?stroke-dasharray="1 3"',
+            chart,
+        )
+        assert rule is not None
+
+    def test_both_vertical_scales_carry_tick_marks(self) -> None:
+        """
+        SNOW-790: the °C and metre figures were floating beside the plot.
+
+        One mark per label on each gutter, drawn outward from the plot's
+        own edges at 40 and 560.
+        """
+        html = self._render()
+
+        chart = html[html.index('data-testid="location-weather-hourly-temp"') :]
+        chart = chart[: chart.index("</svg>")]
+        left = re.findall(r'<line\s+x1="35"\s+y1="([^"]*)"\s+x2="40"', chart)
+        right = re.findall(r'<line\s+x1="560"\s+y1="([^"]*)"\s+x2="565"', chart)
+        assert left
+        assert right
+        # A tick sits at its value's own height, not at the label's offset.
+        assert len(set(left)) == len(left)
+
+    def test_all_three_plots_carry_the_same_left_and_right_edges(self) -> None:
+        """
+        The three share an x-axis, so they share a frame.
+
+        Edges on one chart alone would draw a box round it; on all three
+        the stack reads as one column.
+        """
+        html = self._render()
+
+        for testid in ("temp", "precip"):
+            chart = html[
+                html.index(f'data-testid="location-weather-hourly-{testid}"') :
+            ]
+            chart = chart[: chart.index("</svg>")]
+            assert re.search(r'<line\s+x1="40"\s+y1="[^"]*"\s+x2="40"', chart)
+            assert re.search(r'<line\s+x1="560"\s+y1="[^"]*"\s+x2="560"', chart)
+
+    def test_the_zero_rule_stays_on_the_plot_but_not_in_the_key(self) -> None:
+        """
+        It meets a labelled °C axis at zero and says what it is.
+
+        A key is for marks a reader cannot place. The rule is still drawn —
+        removing the row must not take the line with it.
+        """
+        html = self._render()
+
+        assert 'stroke-dasharray="3 3"' in html
+        legend = html[html.index('data-testid="location-weather-hourly-legend"') :]
+        legend = legend[: legend.index("</dl>")]
+        assert "0&deg;C" not in legend
+        assert "The time now" not in legend
+
+    def test_the_key_is_eight_labelled_rows(self) -> None:
+        """
+        Eight marks, one bare label each.
+
+        Ten rows of prose made a sheet tall enough to cover the chart it
+        was explaining.
+        """
+        html = self._render()
+
+        legend = html[html.index('data-testid="location-weather-hourly-legend"') :]
+        legend = legend[: legend.index("</dl>")]
+        assert legend.count("<dt") == 8
+        assert legend.count("<dd") == 8
+        assert "Freezing level (m)" in legend
+        assert "Location elevation (m)" in legend
+
+    def test_the_daylight_pair_is_spoken_for_a_reader_who_cannot_see_it(self) -> None:
+        """
+        The bar is aria-hidden, so the chart's own label carries the pair.
+
+        The legend's "About this forecast" block is the other candidate
+        home and never renders on this page — it is supplied by the
+        component library alone.
+        """
+        html = self._render()
+
+        assert "daylight 06:30 to 20:15" in html

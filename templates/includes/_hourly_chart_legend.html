@@ -2,9 +2,19 @@
 {% comment %}
 templates/includes/_hourly_chart_legend.html — the chart's key.
 
-Opened by the info button in _hourly_chart.html's header. Names every mark
-the chart draws, states the two things a reader can get wrong about a
-freezing level, and gives the forecast's own provenance.
+Opened by the info button in _hourly_chart.html's header. Names the eight
+marks a reader cannot place unaided, warns about the one thing a freezing
+level is routinely mistaken for, and gives the forecast's own provenance.
+
+IT IS A KEY, NOT A GLOSSARY (SNOW-790). One bare label per row, and on
+anything wider than a phone a card in the corner rather than a band across
+the whole width. It is read WITH the chart in view: a panel big enough to
+explain itself hides what it is explaining, which is how ten rows of prose
+across the full width came to cover the entire drawing.
+
+Below sm: it stays a full-width bottom sheet with a drag handle, because at
+a phone's width there is no corner to sit in and the sheet is the treatment
+the design asks for.
 
 Context:
     prefix : str  — data-testid namespace, passed down by the chart.
@@ -31,7 +41,7 @@ chart later lands inside a map popup, that is the moment to revisit it.
 >
 </div>
 <div
-    class="absolute inset-x-0 bottom-0 z-20 hidden rounded-card border border-border bg-card px-6 pt-5 pb-5.5"
+    class="absolute inset-x-0 bottom-0 z-20 hidden rounded-card border border-border bg-card px-5 pt-4 pb-5 sm:inset-x-auto sm:right-3 sm:bottom-3 sm:w-80"
     role="dialog"
     aria-modal="true"
     aria-label="{% translate 'How to read this forecast' %}"
@@ -68,107 +78,93 @@ chart later lands inside a map popup, that is the moment to revisit it.
         </button>
     </div>
 
-    <dl class="mt-4.5 grid grid-cols-[84px_1fr] items-center gap-x-5 gap-y-3.5">
+    {% comment %}
+    Eight rows, one bare label each (SNOW-790). Every row used to carry a
+    sentence — what a freezing level is, when a rule is drawn, which hour
+    gets the figure — and eight sentences made a sheet tall enough to cover
+    the chart it was explaining. A key is read while looking at the mark it
+    names, so it has to leave the mark visible.
+
+    Two marks on the chart are deliberately NOT listed. The dashed 0 °C rule
+    meets a labelled °C axis at zero and says what it is; the daylight bar
+    sits under the hours it describes and is named by its own axis. The key
+    is for marks a reader cannot place, and neither of those is one. The
+    daylight pair is spoken instead in the chart's aria-label — see
+    ``_aria_label`` in the service, and note that the "About this forecast"
+    block below is supplied by the component library alone, so it is not a
+    place anything load-bearing can live.
+    {% endcomment %}
+    <dl class="mt-4 grid grid-cols-[56px_1fr] items-center gap-x-4 gap-y-2">
         <dt>
-            <svg width="84" height="10" viewBox="0 0 84 10" aria-hidden="true" class="block">
-                <line x1="2" y1="5" x2="82" y2="5" class="stroke-text-1" stroke-width="2.25" stroke-linecap="round" />
+            <svg width="56" height="10" viewBox="0 0 56 10" aria-hidden="true" class="block">
+                <line x1="2" y1="5" x2="54" y2="5" class="stroke-text-1" stroke-width="2.25" stroke-linecap="round" />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">{% translate "Temperature" %}</dd>
+        <dd class="text-sm text-text-1">{% translate "Temperature (&deg;C)" %}</dd>
 
         <dt>
-            <svg width="84" height="10" viewBox="0 0 84 10" aria-hidden="true" class="block">
-                <line x1="2" y1="5" x2="82" y2="5" class="stroke-accent" stroke-width="2" stroke-dasharray="7 4" />
+            <svg width="56" height="10" viewBox="0 0 56 10" aria-hidden="true" class="block">
+                <line x1="2" y1="5" x2="54" y2="5" class="stroke-accent" stroke-width="2" stroke-dasharray="7 4" />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">
-            {% translate "Freezing level &middot; altitude where air reaches 0&deg;C" %}
-        </dd>
+        <dd class="text-sm text-text-1">{% translate "Freezing level (m)" %}</dd>
 
         {% comment %}
-        The three rules. They are not series, and the chart distinguishes
-        them by stroke: 0 °C is the one FIXED value on the drawing and is
-        dashed; the station's elevation and the current time are both
-        VARIABLES and share a solid hairline. Naming all three here is what
-        makes that convention readable rather than decorative.
-
-        Each row also states the condition under which the rule appears at
-        all, because all three are conditional and a reader who does not see
-        one should know whether it is missing or simply not applicable.
+        Blue, because both are read against the metre scale and SNOW-790
+        made that the rule: anything in metres is blue. DOTTED, because blue
+        alone made a solid full-width hairline read as a second series — the
+        pattern is what keeps it reference furniture beside the freezing
+        level's long dash.
         {% endcomment %}
         <dt>
-            <svg width="84" height="10" viewBox="0 0 84 10" aria-hidden="true" class="block">
+            <svg width="56" height="10" viewBox="0 0 56 10" aria-hidden="true" class="block">
                 <line
                     x1="2"
                     y1="5"
-                    x2="82"
+                    x2="54"
                     y2="5"
-                    class="stroke-text-1"
+                    class="stroke-accent"
                     stroke-width="1"
-                    stroke-dasharray="3 3"
-                    opacity="0.35"
+                    stroke-dasharray="1 3"
+                    stroke-linecap="round"
                 />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">
-            {% translate "0&deg;C &middot; drawn when the day's range crosses freezing" %}
-        </dd>
+        <dd class="text-sm text-text-1">{% translate "Location elevation (m)" %}</dd>
 
         <dt>
-            <svg width="84" height="10" viewBox="0 0 84 10" aria-hidden="true" class="block">
-                <line x1="2" y1="5" x2="82" y2="5" class="stroke-border-strong" stroke-width="1" />
+            <svg width="56" height="14" viewBox="0 0 56 14" aria-hidden="true" class="block">
+                <rect x="2" y="0" width="52" height="14" class="fill-chart-snow" />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">
-            {% translate "This location's elevation &middot; on the metre scale, when the freezing level runs near it" %}
-        </dd>
+        <dd class="text-sm text-text-1">{% translate "New snow (cm)" %}</dd>
 
         <dt>
-            <svg width="84" height="18" viewBox="0 0 84 18" aria-hidden="true" class="block">
-                <line x1="42" y1="1" x2="42" y2="17" class="stroke-border-strong" stroke-width="1" />
+            <svg width="56" height="10" viewBox="0 0 56 10" aria-hidden="true" class="block">
+                <rect x="2" y="2" width="52" height="6" class="fill-chart-precip" opacity="0.75" />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">
-            {% translate "The time now &middot; drawn only when this chart is today" %}
-        </dd>
+        <dd class="text-sm text-text-1">{% translate "Precipitation (mm)" %}</dd>
 
         <dt>
-            <svg width="84" height="14" viewBox="0 0 84 14" aria-hidden="true" class="block">
-                <rect x="2" y="0" width="80" height="14" class="fill-chart-snow" />
+            <svg width="56" height="10" viewBox="0 0 56 10" aria-hidden="true" class="block">
+                <line x1="2" y1="5" x2="54" y2="5" class="stroke-chart-wind" stroke-width="1.75" />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">
-            {% translate "New snow &middot; cm in the hour; the heaviest hour is labelled" %}
-        </dd>
+        <dd class="text-sm text-text-1">{% translate "Sustained wind (km/h)" %}</dd>
 
         <dt>
-            <svg width="84" height="10" viewBox="0 0 84 10" aria-hidden="true" class="block">
-                <rect x="2" y="2" width="80" height="6" class="fill-chart-precip" opacity="0.75" />
+            <svg width="56" height="10" viewBox="0 0 56 10" aria-hidden="true" class="block">
+                <line x1="2" y1="5" x2="54" y2="5" class="stroke-text-2" stroke-width="1.5" stroke-dasharray="5 4" />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">
-            {% translate "Precipitation &middot; mm in the hour; the heaviest hour is labelled" %}
-        </dd>
+        <dd class="text-sm text-text-1">{% translate "Wind gusts (km/h)" %}</dd>
 
         <dt>
-            <svg width="84" height="10" viewBox="0 0 84 10" aria-hidden="true" class="block">
-                <line x1="2" y1="5" x2="82" y2="5" class="stroke-chart-wind" stroke-width="1.75" />
-            </svg>
-        </dt>
-        <dd class="text-sm text-text-1">{% translate "Sustained wind" %}</dd>
-
-        <dt>
-            <svg width="84" height="10" viewBox="0 0 84 10" aria-hidden="true" class="block">
-                <line x1="2" y1="5" x2="82" y2="5" class="stroke-text-2" stroke-width="1.5" stroke-dasharray="5 4" />
-            </svg>
-        </dt>
-        <dd class="text-sm text-text-1">{% translate "Wind gusts" %}</dd>
-
-        <dt>
-            <svg width="84" height="18" viewBox="0 0 84 18" aria-hidden="true" class="block">
+            <svg width="56" height="18" viewBox="0 0 56 18" aria-hidden="true" class="block">
                 <path
-                    d="M42 16 L42 2 M38.5 6 L42 2 L45.5 6"
-                    transform="rotate(315 42 9)"
+                    d="M28 16 L28 2 M24.5 6 L28 2 L31.5 6"
+                    transform="rotate(315 28 9)"
                     fill="none"
                     class="stroke-chart-wind"
                     stroke-width="1.5"
@@ -177,9 +173,7 @@ chart later lands inside a map popup, that is the moment to revisit it.
                 />
             </svg>
         </dt>
-        <dd class="text-sm text-text-1">
-            {% translate "Wind direction &middot; arrows point where the wind comes from" %}
-        </dd>
+        <dd class="text-sm text-text-1">{% translate "Wind direction" %}</dd>
     </dl>
 
     {% if about %}
