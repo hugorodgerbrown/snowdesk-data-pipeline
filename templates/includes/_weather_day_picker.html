@@ -28,10 +28,21 @@ every input and label flat in one grid the checked day's input matches
 every LATER cell's label too and highlights the rest of the week. The
 wrapper bounds the ``~`` to one pair. Same trap as the reveal rules.
 
-Selection changes the BORDER COLOUR and nothing else. A ring or a weight
-change would move the cell's contents by a pixel as the reader steps
-along the week, which reads as the layout twitching rather than as a
-selection moving.
+SELECTION HAS TWO CHANNELS, AND NEITHER MOVES THE CELL. The border turns
+accent, and a marker bar under the low temperature goes from transparent
+to filled. The handoff asked for the border alone and argued colour was
+not the only channel because ``aria-current`` moved with the selection —
+but it cannot: the attribute means THE CURRENT DATE, so it is static on
+day 0, and a reader who cannot separate the accent border from the
+ordinary one had nothing left. The bar is the fix, and it is a bar rather
+than a ring or a weight change because those two resize the cell's
+contents as the reader steps along the week, which reads as the layout
+twitching rather than as a selection moving. The bar is always in the
+DOM at a fixed size, so only its fill changes.
+
+The rule that fills it is hand-written in src/css/main.css beside the
+reveal rules: the bar is a DESCENDANT of the label, not a sibling of the
+input, so no ``peer-*`` variant can reach it.
 
 Context:
     panel         : ForecastPanel — ``{"days": [ForecastPanelDay, ...]}``
@@ -112,6 +123,16 @@ Context:
                                 &mdash;
                             {% endif %}
                         </span>
+                        {# The second channel. Rendered in every cell at a  #}
+                        {# fixed size and filled only in the checked one,   #}
+                        {# so selection cannot change the cell's height.    #}
+                        {# Decorative: the radio's checked state is what a  #}
+                        {# screen reader reads.                             #}
+                        <span
+                            class="weather-day-marker mt-0.5 h-1 w-5 rounded-pill bg-transparent"
+                            data-testid="{{ prefix }}-marker"
+                            aria-hidden="true"
+                        ></span>
                     </label>
                 </div>
             {% endwith %}

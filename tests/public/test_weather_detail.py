@@ -505,6 +505,40 @@ class TestForecastPage:
         assert 'data-testid="location-weather-day-line"' in html
         assert 'data-testid="location-weather-hourly"' in html
 
+    def test_every_cell_carries_the_selection_marker(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The second channel is markup in all seven cells, not just one.
+
+        Only the CSS fills the checked cell's bar, so the bar has to exist
+        everywhere or selecting a day would add an element and change that
+        cell's height — the twitch the handoff's "nothing else changes"
+        rule is there to prevent.
+        """
+        html = _main(_page(client, resort_location))
+
+        assert html.count('data-testid="location-weather-forecast-marker"') == 7
+
+    def test_the_legend_script_reaches_the_page_that_ships_the_chart(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The meteogram's info button needs a listener to do anything.
+
+        ``hourly_chart_legend.js`` was loaded by ``/_components/`` alone,
+        so on the one page that actually ships the chart the button sat
+        there inert with ``aria-expanded="false"`` and nothing bound to
+        it. It is the only script this page needs; everything else here
+        is CSS.
+
+        Both halves matter: the tag alone would pass on a page with no
+        chart to bind to, and the button alone is what the bug already
+        looked like.
+        """
+        html = _page(client, resort_location)
+
+        assert "js/hourly_chart_legend.js" in html
+        assert "data-hourly-chart-legend-open" in html
+
     def test_the_page_states_when_it_was_fetched_and_who_from(
         self, client: Client, resort_location: Location
     ) -> None:

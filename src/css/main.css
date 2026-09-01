@@ -1597,3 +1597,39 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   .forecast-day-line[data-day-line="6"] {
   display: flex;
 }
+
+/* —————————————————————————————————————————
+   Selected day, second channel (SNOW-789)
+
+   The checked cell's border turns accent, and
+   this fills the marker bar under its
+   temperatures. Two channels, because the
+   border alone is colour alone: the handoff
+   argued `aria-current` was the second one,
+   but that attribute means THE CURRENT DATE,
+   so it is static on day 0 and says nothing
+   about what is selected.
+
+   Hand-written for the same reason as the
+   rules above, but a different mechanism. The
+   bar is a DESCENDANT of the label rather than
+   a sibling of the input, so no `peer-*`
+   variant reaches it at all — Tailwind's
+   peer-checked: only ever emits
+   `.peer:checked ~ .target`.
+
+   `~` is safe here without a :has() dance
+   because each input/label pair sits in its
+   own [data-day-cell] wrapper: the general
+   sibling combinator cannot leave the cell,
+   which is the whole reason that wrapper
+   exists.
+
+   The bar is always rendered at a fixed size
+   and only its fill changes, so stepping along
+   the week never resizes a cell.
+   ————————————————————————————————————————— */
+
+.forecast-day-picker input:checked ~ label .weather-day-marker {
+  background-color: var(--color-accent);
+}

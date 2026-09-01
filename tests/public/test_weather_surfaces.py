@@ -479,6 +479,30 @@ class TestLocationForecastPage:
         assert ".forecast-hourly-panel {\n  display: none;\n}" in css
         assert ".forecast-day-line {\n  display: none;\n}" in css
 
+    def test_the_selected_day_is_not_signalled_by_colour_alone(self) -> None:
+        """The checked cell carries a filled bar as well as an accent border.
+
+        The handoff specified the border alone and justified it by saying
+        ``aria-current`` moved with the selection. It does not — the
+        attribute means THE CURRENT DATE, so it is static on day 0 — which
+        left a reader who cannot separate the two border colours with no
+        signal at all.
+
+        Asserted against the rule rather than a rendered page because the
+        fill is CSS: the marker is in the markup either way, and only the
+        rule says which cell gets it. The bar is a fixed-size element whose
+        FILL changes, so stepping along the week never resizes a cell.
+        """
+        css = (
+            pathlib.Path(__file__).resolve().parents[2] / "src" / "css" / "main.css"
+        ).read_text()
+
+        assert (
+            ".forecast-day-picker input:checked ~ label .weather-day-marker {\n"
+            "  background-color: var(--color-accent);\n"
+            "}"
+        ) in css
+
     @freeze_time(MIDDAY)
     def test_each_control_is_wrapped_with_only_its_own_cell(self) -> None:
         """The other half of the general-sibling trap (SNOW-787).

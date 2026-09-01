@@ -1,5 +1,5 @@
 {% extends "public/base.html" %}
-{% load i18n components %}
+{% load i18n static components %}
 {% comment %}
 apps/public/templates/public/location_weather.html — full forecast for one
 Location (SNOW-761), rendered by ``apps.public.views.location_weather``.
@@ -127,3 +127,24 @@ Context:
         {% endif %}
     </main>
 {% endblock content %}
+
+{% block extra_js %}
+    {% comment %}
+    The meteogram's info button opens its legend, and that one panel is the
+    only thing in the component that needs JavaScript. The script was loaded
+    by /_components/ alone, so the button rendered on this page — the only
+    page that ships the chart — with nothing listening: it carried
+    ``aria-expanded="false"`` for its whole life and never changed it.
+
+    Not in base.html, because this is the only page that renders a chart.
+    The handler delegates from the document and scopes each open to the
+    chart's own ``role="group"`` root, so the two meteograms a live row
+    produces get one legend each rather than fighting over the first.
+
+    Everything else on this page — the day picker, the day-line reveal — is
+    CSS only and needs no script. The legend degrades the way its own module
+    says it should: the chart stays readable, and the key explaining its
+    marks is what is lost.
+    {% endcomment %}
+    <script src="{% static 'js/hourly_chart_legend.js' %}" defer></script>
+{% endblock extra_js %}

@@ -230,7 +230,12 @@ columns were inert markup. `ForecastPanelDay.selectable` survives, but it
 now decides only whether the selected day reveals a meteogram — the page
 reads it, the picker does not.
 
-Selection changes the **border colour and nothing else**. A ring or a
+Selection has **two channels**: the border turns accent, and a marker bar
+under the cell's temperatures goes from transparent to filled. The border
+alone would be colour alone — the handoff argued `aria-current` was the
+second channel, but that attribute means *the current date*, so it is
+static on day 0 and says nothing about what is selected. The bar is always
+rendered at a fixed size, so filling it cannot resize the cell. A ring or a
 weight change would shift a cell's contents by a pixel as the reader steps
 along the week, which reads as the layout twitching rather than as a
 selection moving.
