@@ -34,6 +34,10 @@ from __future__ import annotations
 import pytest
 
 from apps.public.design_tokens import FOUNDATION_CATEGORIES, Token
+from tests.public._contrast import (
+    contrast_ratio as _contrast_ratio,
+    relative_luminance as _relative_luminance,
+)
 
 # WCAG 2.1 AA for normal-size text. Every surface consuming these tokens is
 # normal-size (tiles are 14–15px at 600–700, calendar cells smaller), so the
@@ -86,40 +90,6 @@ def _token_values() -> dict[str, str]:
             if isinstance(token, Token):
                 values[token.name] = token.light
     return values
-
-
-def _relative_luminance(hex_colour: str) -> float:
-    """Return the WCAG relative luminance of a ``#rrggbb`` colour.
-
-    Args:
-        hex_colour: A six-digit hex colour, with or without the leading #.
-
-    Returns:
-        Relative luminance in the range 0.0–1.0.
-
-    """
-    raw = hex_colour.lstrip("#")
-    channels = [int(raw[i : i + 2], 16) / 255 for i in (0, 2, 4)]
-    linear = [
-        c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels
-    ]
-    red, green, blue = linear
-    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
-
-
-def _contrast_ratio(foreground: str, background: str) -> float:
-    """Return the WCAG contrast ratio between two ``#rrggbb`` colours.
-
-    Args:
-        foreground: Text colour.
-        background: Surface colour behind the text.
-
-    Returns:
-        Contrast ratio from 1.0 (identical) to 21.0 (black on white).
-
-    """
-    lums = sorted((_relative_luminance(foreground), _relative_luminance(background)))
-    return (lums[1] + 0.05) / (lums[0] + 0.05)
 
 
 def test_relative_luminance_matches_known_values() -> None:
