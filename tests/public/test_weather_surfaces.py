@@ -375,8 +375,15 @@ class TestLocationForecastPage:
         assert Client().get(url).status_code == 404
 
     @freeze_time(MIDDAY)
-    def test_the_strip_selects_the_hourly_chart(self) -> None:
-        """SNOW-787: one radio per selectable day, the first one checked."""
+    def test_every_day_is_a_control_and_only_two_carry_a_meteogram(self) -> None:
+        """SNOW-789: seven cells, seven radios, two meteograms.
+
+        The strip this replaces gave a radio only to the days carrying an
+        hourly series, so five of seven columns were inert and the week
+        could not be browsed. ``selectable`` survives, but it now decides
+        only whether the selected day reveals a meteogram — which is why
+        the control count and the panel count deliberately disagree here.
+        """
         location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
         ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
         WeatherFactory.create(
@@ -388,6 +395,7 @@ class TestLocationForecastPage:
             forecast=[
                 _forecast_day("2026-08-31", hourly=_hourly_series("2026-08-31")),
                 _forecast_day("2026-09-01"),
+                _forecast_day("2026-09-02"),
             ],
         )
 
@@ -397,22 +405,28 @@ class TestLocationForecastPage:
             .content.decode()
         )
 
-        # Two days carry an hourly series, so two controls and two panels.
-        assert html.count('name="location-weather-day"') == 2
+        # Four days in the row, so four cells and four controls.
+        assert html.count('data-testid="location-weather-forecast-day"') == 4
+        assert html.count('name="location-weather-day"') == 4
+        for index in range(4):
+            assert f'data-day-index="{index}"' in html
+            assert f'data-day-line="{index}"' in html
+        # Only the two carrying a series get a meteogram.
         assert html.count('data-testid="location-weather-hourly-panel"') == 2
-        # Exactly one is checked on load, so the page is never chartless.
+        # Exactly one is checked on load, so the page is never blank.
         # Counted on the input tag: "checked" also appears inside the
-        # peer-checked: utilities on every column's class string.
+        # peer-checked: utilities on every cell's class string.
         checked = re.findall(r"<input\b[^>]*\bchecked\b[^>]*>", html)
         assert len(checked) == 1
-        assert 'data-day-index="0"' in html
-        assert 'data-day-index="1"' in html
-        # The third day has no series, so it is a column and not a control.
-        assert 'data-day-index="2"' not in html
 
     @freeze_time(MIDDAY)
-    def test_a_day_past_the_horizon_is_a_column_not_a_dead_control(self) -> None:
-        """No input at all, rather than a disabled one that invites a click."""
+    def test_a_day_past_the_horizon_renders_no_chart_region_at_all(self) -> None:
+        """An absent meteogram is absent markup, not an empty frame.
+
+        Selecting day 3 leaves the page with a day line and nothing under
+        it. A hidden-but-present panel would ship a chart's worth of SVG
+        for a day that has no hours to draw.
+        """
         location = LocationFactory.create()
         ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
         WeatherFactory.create(
@@ -421,7 +435,7 @@ class TestLocationForecastPage:
             sunrise=SUNRISE,
             sunset=SUNSET,
             hourly=_hourly_series("2026-08-30"),
-            forecast=[_forecast_day("2026-08-31")],
+            forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
         )
 
         html = (
@@ -430,11 +444,15 @@ class TestLocationForecastPage:
             .content.decode()
         )
 
-        # Both days are in the strip...
-        assert html.count('data-testid="location-weather-forecast-day"') == 2
-        # ...but only the one with a series is a control.
-        assert html.count('name="location-weather-day"') == 1
-        # And not a disabled one — there is no input on that column at all.
+        # Three cells, three controls, three day lines...
+        assert html.count('name="location-weather-day"') == 3
+        assert html.count('data-day-line="2"') == 1
+        # ...and one meteogram, for the only day carrying a series. The
+        # panel for day 2 is ABSENT, not present-and-empty.
+        assert html.count('data-testid="location-weather-hourly-panel"') == 1
+        assert 'data-hourly-day="0"' in html
+        assert 'data-hourly-day="2"' not in html
+        # No disabled control anywhere: every cell is pressable now.
         assert not re.findall(r"<input\b[^>]*\bdisabled\b[^>]*>", html)
 
     def test_the_reveal_rule_is_adjacent_not_general_sibling(self) -> None:
@@ -451,23 +469,29 @@ class TestLocationForecastPage:
         ).read_text()
 
         selector_block = css[css.index(".forecast-hourly-panel {") :]
-        # Every reveal pairs an explicit day index on both ends.
+        # Every reveal pairs an explicit day index on both ends — for the
+        # meteogram (SNOW-787) and for the day line (SNOW-789).
         assert 'input[data-day-index="0"]:checked' in selector_block
         assert '.forecast-hourly-panel[data-hourly-day="0"]' in selector_block
-        # And the panels are hidden by default, so an unmatched index shows
+        assert '.forecast-day-line[data-day-line="6"]' in selector_block
+        # And both are hidden by default, so an unmatched index shows
         # nothing rather than everything.
         assert ".forecast-hourly-panel {\n  display: none;\n}" in css
+        assert ".forecast-day-line {\n  display: none;\n}" in css
 
     @freeze_time(MIDDAY)
-    def test_each_control_is_wrapped_with_only_its_own_column(self) -> None:
+    def test_each_control_is_wrapped_with_only_its_own_cell(self) -> None:
         """The other half of the general-sibling trap (SNOW-787).
 
         ``peer-checked:`` is ``~``, so with every input and label flat in
-        the strip the checked day's input matches every LATER column's
+        the picker the checked day's input matches every LATER cell's
         label too and highlights the rest of the week. Wrapping each
         input/label pair bounds the ``~`` to one pair. CSS is not
         evaluated here, so this asserts the structure the rule depends on:
         no wrapper may hold two controls.
+
+        SNOW-789 made this sharper — every cell has a control now, so
+        every wrapper holds exactly one rather than at most one.
         """
         location = LocationFactory.create()
         ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
@@ -489,12 +513,12 @@ class TestLocationForecastPage:
             .content.decode()
         )
 
-        strip = html[html.index("forecast-day-strip") :]
-        strip = strip[: strip.index('data-testid="location-weather-hourly-panel"')]
-        # One wrapper per column, and no wrapper holds two controls — so a
-        # checked input can never reach a second column's label.
-        wrappers = strip.split('<div class="shrink-0">')[1:]
+        picker = html[html.index("forecast-day-picker") :]
+        picker = picker[: picker.index("</fieldset>")]
+        # One wrapper per cell, and no wrapper holds two controls — so a
+        # checked input can never reach a second cell's label.
+        wrappers = re.split(r"<div data-day-cell=", picker)[1:]
         assert len(wrappers) == 3
         for wrapper in wrappers:
             assert wrapper.count("<label") == 1
-            assert len(re.findall(r"<input\b", wrapper)) <= 1
+            assert len(re.findall(r"<input\b", wrapper)) == 1

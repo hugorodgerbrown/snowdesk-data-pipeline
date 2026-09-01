@@ -30,12 +30,7 @@ from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
 from apps.weather.services.hourly_chart import build_hourly_chart
-from apps.weather.services.weather_chart import build_forecast_chart
-from apps.weather.services.weather_display import (
-    ForecastPanel,
-    ForecastPanelDay,
-    weather_icon_filename,
-)
+from apps.weather.services.weather_display import weather_icon_filename
 
 # String constants for elevation bound type — mirror ``apps.public.views`` so the
 # template filter (``elevation_icon``) sees the same strings without coupling
@@ -2837,7 +2832,7 @@ FAVOURITE_PROBLEM_VARIANTS: tuple[dict[str, Any], ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Weather panel + forecast panel (SNOW-761)
+# Weather panel + day picker (SNOW-761, rebuilt by SNOW-789)
 # ---------------------------------------------------------------------------
 
 # Contexts here are hand-built ``WeatherDisplay`` / ``ForecastPanel`` dicts
@@ -2947,6 +2942,8 @@ def _forecast_panel_day(
     temp_min: float | None,
     snowfall_sum: float | None,
     freezing_level_height: float | None,
+    sunrise_local: str = "07:12",
+    sunset_local: str = "17:04",
     hourly: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
     """Build one ForecastPanelDay-shaped context column.
@@ -2959,8 +2956,10 @@ def _forecast_panel_day(
         temp_min: Daily min air temperature, °C, or None.
         snowfall_sum: Daily snowfall total, cm, or None.
         freezing_level_height: Day's freezing level, m, or None.
+        sunrise_local: Sunrise as "HH:MM" in the day's own offset.
+        sunset_local: Sunset as "HH:MM" in the day's own offset.
         hourly: That day's hourly rows. Empty for a day past the horizon
-            that carries no series — which is most of the strip.
+            that carries no series — which is most of the week.
 
     Returns:
         The context dict.
@@ -2981,152 +2980,159 @@ def _forecast_panel_day(
         "temp_min": temp_min,
         "snowfall_sum": snowfall_sum,
         "freezing_level_height": freezing_level_height,
+        "sunrise_local": sunrise_local,
+        "sunset_local": sunset_local,
         "hourly": list(hourly),
-        # SNOW-787: presence of a series is what makes a column a control.
-        # The library renders the strip with no ``selector_name``, so
-        # nothing here is interactive — the flag is carried so the fixture
+        # SNOW-789: every cell in the picker is a control, so this decides
+        # only whether the day has a meteogram — presence of a series. The
+        # library renders the picker and the day line separately, so
+        # nothing here reveals anything; the flag is carried so the fixture
         # stays the same shape as the real ForecastPanelDay.
         "selectable": bool(hourly),
     }
 
 
-def _build_forecast_panel_variants() -> tuple[dict[str, Any], ...]:
-    """Build the forecast-panel variants.
+def _build_weather_masthead_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-masthead variants.
 
-    A function rather than a literal because every column is derived from
-    one anchor date, so the strip reads as consecutive days whenever the
-    library is opened.
+    Three, because the onward links are what the variants are FOR. A
+    curated point linked to a resort and standing as a region centroid
+    offers both links; a bare centroid offers only the bulletin, and that
+    is 461 of the estate's 540 public locations rather than an edge case;
+    an anonymous point with neither is named by nothing but itself.
+
+    Returns:
+        The variant tuple.
+
+    """
+    resort = {"get_absolute_url": "/resorts/12/verbier/"}
+    region = {"get_absolute_url": "/ch-4115/martigny-verbier/"}
+    return (
+        {
+            "caption": "A curated point reaching both a resort and a region",
+            "solo": True,
+            "context": {
+                "heading": "Mont Fort",
+                "location": {"elevation_m": 3328.0},
+                "resort": resort,
+                "region": region,
+            },
+        },
+        {
+            "caption": "A region centroid — the bulletin is its only way on",
+            "solo": True,
+            "context": {
+                "heading": "Val Ferret",
+                "location": {"elevation_m": 2410.0},
+                "resort": None,
+                "region": region,
+            },
+        },
+        {
+            "caption": "No elevation, nowhere onward",
+            "solo": True,
+            "context": {
+                "heading": "Weather station",
+                "location": {"elevation_m": None},
+                "resort": None,
+                "region": None,
+            },
+        },
+    )
+
+
+WEATHER_MASTHEAD_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_masthead_variants()
+)
+
+
+def _build_weather_day_picker_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-day-picker variants.
+
+    A full seven-day week, because seven is the grid the picker is built
+    on (``FORECAST_DAYS``) and a shorter fixture would leave the library
+    showing empty cells the real page never has. The second variant is the
+    same week with the temperatures missing, which is Open-Meteo dropping
+    a variable for the model backing those coordinates — the cells fall
+    back to em-dashes rather than collapsing.
+
+    Every cell is a control, so each library variant needs its own
+    ``selector_name``: two pickers sharing a group name would let a click
+    in one deselect the other.
 
     Returns:
         The variant tuple.
 
     """
     anchor = datetime.date(2026, 1, 12)
-    hourly = tuple(
-        {
-            "time": f"2026-01-12T{hour:02d}:00",
-            "temperature_2m": -3.0 + hour * 0.4,
-            "wind_speed_10m": 12.0 + hour,
-            "wind_gusts_10m": 28.0 + hour,
-            "precipitation": 0.4,
-            "freezing_level_height": 1100.0 + hour * 20,
-            "snowfall": 0.6,
-        }
-        for hour in (6, 9, 12, 15)
-    )
     conditions = (
-        ("moderate_snow", "Snow", -1.0, -8.0, 22.0, 1200.0),
-        ("light_snow", "Light snow", -2.0, -9.0, 6.0, 1000.0),
-        ("cloudy", "Overcast", 0.0, -6.0, 0.0, 1500.0),
-        ("clear", "Clear", 3.0, -4.0, 0.0, 2200.0),
-        ("light_rain", "Light rain", 6.0, 1.0, None, 2800.0),
+        ("moderate_snow", "Snow", -1.0, -8.0),
+        ("light_snow", "Light snow", -2.0, -9.0),
+        ("cloudy", "Overcast", 0.0, -6.0),
+        ("clear", "Clear", 3.0, -4.0),
+        ("light_rain", "Light rain", 6.0, 1.0),
+        ("thunder", "Thunderstorm", 8.0, 2.0),
+        ("fog", "Fog", 4.0, -1.0),
     )
-    full_days = [
+    week = [
         _forecast_panel_day(
             date=anchor + datetime.timedelta(days=index),
             icon_bucket=bucket,
             condition_label=label,
-            temp_max=tmax,
-            temp_min=tmin,
-            snowfall_sum=snow,
-            freezing_level_height=freezing,
-            # Only the first two days carry an hourly series — that is the
-            # real shape (``ForecastDay.hourly`` is NotRequired), and a
-            # library that showed one per column would misrepresent it.
-            hourly=hourly if index < 2 else (),
+            temp_max=temp_max,
+            temp_min=temp_min,
+            snowfall_sum=None,
+            freezing_level_height=1200.0,
+            # Only the first two days carry a series — the real shape
+            # (``HOURLY_DAYS`` is 2), and what decides which cells have a
+            # meteogram behind them. It changes nothing here: every cell
+            # is a control regardless (SNOW-789).
+            hourly=({"time": "2026-01-12T09:00"},) if index < 2 else (),
         )
-        for index, (bucket, label, tmax, tmin, snow, freezing) in enumerate(conditions)
+        for index, (bucket, label, temp_max, temp_min) in enumerate(conditions)
     ]
     return (
         {
-            "caption": "Five days across the outlook window",
+            "caption": "A full week — the first cell opens selected",
             "solo": True,
             "context": {
-                "panel": {"days": full_days},
-                "testid_prefix": "component-library-forecast",
+                "panel": {"days": week},
+                "testid_prefix": "component-library-day-picker",
+                "selector_name": "component-library-day-picker",
             },
         },
         {
-            "caption": "One day, no freezing level",
+            "caption": "No temperatures — Open-Meteo dropped the variable",
             "solo": True,
             "context": {
                 "panel": {
                     "days": [
-                        _forecast_panel_day(
-                            date=anchor,
-                            icon_bucket="fog",
-                            condition_label="Fog",
-                            temp_max=None,
-                            temp_min=None,
-                            snowfall_sum=None,
-                            freezing_level_height=None,
-                        )
+                        {**day, "temp_max": None, "temp_min": None} for day in week
                     ]
                 },
-                "testid_prefix": "component-library-forecast-sparse",
+                "testid_prefix": "component-library-day-picker-sparse",
+                "selector_name": "component-library-day-picker-sparse",
             },
         },
     )
 
 
-FORECAST_PANEL_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_panel_variants()
+WEATHER_DAY_PICKER_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_day_picker_variants()
+)
 
 
-def _chart_panel(
-    anchor: datetime.date, bounds: tuple[tuple[float, float], ...]
-) -> ForecastPanel:
-    """Build a ForecastPanel carrying one column per bounds pair.
+def _build_weather_day_line_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-day-line variants.
 
-    The chart reads only ``weekday_label``, ``temp_max`` and ``temp_min``,
-    but ``ForecastPanelDay`` is a total TypedDict — a dict of just those
-    three is not one, and casting would be a claim about the contract
-    rather than a use of it. The remaining fields are filled with ordinary
-    values that no part of the chart looks at.
+    Neither variant passes ``reveal_index``: the library has no picker, so
+    a row that opted into the hiding class would render as a blank panel.
+    That is the same shape the backfilled one-day page uses.
 
-    Args:
-        anchor: The first day of the window.
-        bounds: One ``(temp_max, temp_min)`` pair per consecutive day.
-
-    Returns:
-        A panel the chart builder accepts.
-
-    """
-    days = [
-        ForecastPanelDay(
-            date=anchor + datetime.timedelta(days=index),
-            weekday_label=(anchor + datetime.timedelta(days=index)).strftime("%a"),
-            icon_bucket="cloudy",
-            icon_filename="cloudy.svg",
-            condition_label="Overcast",
-            temp_max=temp_max,
-            temp_min=temp_min,
-            snowfall_sum=None,
-            freezing_level_height=None,
-            # Neither is read by the chart; ForecastPanelDay is total.
-            wind_speed_max=None,
-            wind_bearing=None,
-            hourly=[],
-            selectable=False,
-        )
-        for index, (temp_max, temp_min) in enumerate(bounds)
-    ]
-    return ForecastPanel(days=days)
-
-
-def _build_forecast_chart_variants() -> tuple[dict[str, Any], ...]:
-    """Build the forecast-chart variants.
-
-    Four shapes, chosen for the decisions the geometry actually makes rather
-    than for visual variety:
-
-      1. A midwinter week that CROSSES freezing — the only case that draws
-         the 0 °C reference line, and the case the chart is most useful in.
-      2. A summer week wholly above it, where that line is deliberately
-         absent rather than pinned to the plot floor.
-      3. A flat week, which has no range of its own to scale against — the
-         padding on both ends is what keeps the scale from collapsing.
-      4. The two-day minimum. One day fewer returns ``None`` and renders
-         nothing, which is why this variant sits at the boundary.
+    The second variant drops the freezing level, which Open-Meteo does
+    per model. It is tested ``is not None`` rather than for truthiness on
+    the page, so a genuine 0 m still prints — that is a reading, not a
+    gap.
 
     Returns:
         The variant tuple.
@@ -3135,68 +3141,63 @@ def _build_forecast_chart_variants() -> tuple[dict[str, Any], ...]:
     anchor = datetime.date(2026, 1, 12)
     return (
         {
-            "caption": "A week crossing zero — the 0° reference line is drawn",
+            "caption": "Freezing level and daylight",
             "solo": True,
             "context": {
-                "chart": build_forecast_chart(
-                    _chart_panel(
-                        anchor,
-                        (
-                            (-1.0, -8.0),
-                            (-2.0, -9.0),
-                            (0.0, -6.0),
-                            (3.0, -4.0),
-                            (6.0, 1.0),
-                            (4.0, -1.0),
-                            (2.0, -5.0),
-                        ),
-                    )
-                )
+                "day": _forecast_panel_day(
+                    date=anchor,
+                    icon_bucket="moderate_snow",
+                    condition_label="Snow",
+                    temp_max=-1.0,
+                    temp_min=-8.0,
+                    snowfall_sum=22.0,
+                    freezing_level_height=1200.0,
+                    sunrise_local="08:14",
+                    sunset_local="17:02",
+                ),
+                "testid_prefix": "component-library-day-line",
             },
         },
         {
-            "caption": "Wholly above freezing — no zero line",
+            "caption": "No freezing level — daylight alone",
             "solo": True,
             "context": {
-                "chart": build_forecast_chart(
-                    _chart_panel(
-                        datetime.date(2026, 7, 6),
-                        (
-                            (18.0, 9.0),
-                            (21.0, 11.0),
-                            (24.0, 13.0),
-                            (22.0, 12.0),
-                            (19.0, 10.0),
-                        ),
-                    )
-                )
-            },
-        },
-        {
-            "caption": "A flat week — the scale is spread to a floor, not collapsed",
-            "solo": True,
-            "context": {
-                "chart": build_forecast_chart(
-                    _chart_panel(
-                        anchor,
-                        ((2.0, 2.0), (2.0, 2.0), (2.0, 2.0), (2.0, 2.0)),
-                    )
-                )
-            },
-        },
-        {
-            "caption": "Two days — the shortest window that still draws",
-            "solo": True,
-            "context": {
-                "chart": build_forecast_chart(
-                    _chart_panel(anchor, ((-1.0, -7.0), (4.0, -2.0)))
-                )
+                "day": _forecast_panel_day(
+                    date=anchor + datetime.timedelta(days=3),
+                    icon_bucket="clear",
+                    condition_label="Clear",
+                    temp_max=3.0,
+                    temp_min=-4.0,
+                    snowfall_sum=None,
+                    freezing_level_height=None,
+                    sunrise_local="08:11",
+                    sunset_local="17:07",
+                ),
+                "testid_prefix": "component-library-day-line-sparse",
             },
         },
     )
 
 
-FORECAST_CHART_VARIANTS: tuple[dict[str, Any], ...] = _build_forecast_chart_variants()
+WEATHER_DAY_LINE_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_day_line_variants()
+)
+
+
+# ``weather`` is a plain dict rather than a model instance: the partial
+# reads one field off it, and the library renders without a database.
+WEATHER_PROVENANCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "The last of four daily fetches",
+        "solo": True,
+        "context": {
+            "weather": {
+                "fetched_at": datetime.datetime(2026, 1, 12, 18, 5, tzinfo=datetime.UTC)
+            },
+            "testid_prefix": "component-library-provenance",
+        },
+    },
+)
 
 
 # ── Hourly chart (SNOW-723) ──────────────────────────────────────────────

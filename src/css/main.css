@@ -1476,13 +1476,23 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 
 /* —————————————————————————————————————————
-   Forecast day selector (SNOW-787)
+   Forecast day selector (SNOW-787, SNOW-789)
 
-   The day strip on /weather/<location_id>/ picks
-   which hourly chart shows beneath it. CSS only:
+   The day picker on /weather/<location_id>/ picks
+   which day the page below it describes. CSS only:
    JS is progressive enhancement in this codebase
    and this is core content, the same call SNOW-723
    made for the chart itself.
+
+   TWO THINGS ARE REVEALED, not one. SNOW-787 built
+   this to swap the hourly chart; SNOW-789 rebuilt
+   the page around the picker, so the selected day's
+   own LINE — date, condition, freezing level,
+   daylight — is revealed by the same rule set. Only
+   the first two days have a chart (HOURLY_DAYS),
+   but all seven have a line, which is why the two
+   blocks below are the same shape with different
+   counts of matching markup behind them.
 
    WHY THESE ARE HAND-WRITTEN. Tailwind's
    `peer-checked:` compiles to the GENERAL sibling
@@ -1490,24 +1500,32 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    stack of panels reveals the checked one AND
    every panel after it — the selector would look
    right on the first day and show both on the
-   second. The strip's own highlight can still use
-   `peer-checked:` because each radio sits directly
-   before the single label it styles; only the
-   cross-container reveal below needs writing out.
+   second. The picker's own cell highlight can still
+   use `peer-checked:` because each radio sits
+   directly before the single label it styles; only
+   the cross-container reveals below need writing
+   out.
 
-   The radios live inside the strip (so the
+   The radios live inside the picker (so the
    highlight is adjacent) while the panels sit
    after it, so `+` cannot reach across. `:has()`
    can, and needs the day index on both ends to
    pair them — hence one rule per column rather
    than one generic rule. Seven is FORECAST_DAYS
-   in apps/weather/services/fetch.py: the strip
-   cannot be longer than the window it renders,
-   and HOURLY_DAYS (2) means only the first two
-   ever match in practice. A longer window with no
-   matching rule here fails visibly — the chart
-   simply does not appear — rather than silently
-   showing the wrong day.
+   in apps/weather/services/fetch.py: the picker
+   cannot be longer than the window it renders.
+   A longer window with no matching rule here fails
+   visibly — the day simply does not appear —
+   rather than silently showing the wrong one.
+
+   BOTH DEFAULTS ARE `display: none`, so an
+   unmatched index shows nothing rather than
+   everything. That is also why the ONE-DAY page (a
+   backfilled row, `forecast=None`) renders its day
+   line with no `.forecast-day-line` class at all:
+   it has no picker, so no radio, so nothing here
+   could ever match and the line would be hidden
+   forever.
    ————————————————————————————————————————— */
 
 .forecast-hourly-panel {
@@ -1515,32 +1533,67 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 
 .forecast-selector:has(
-    .forecast-day-strip input[data-day-index="0"]:checked
+    .forecast-day-picker input[data-day-index="0"]:checked
   )
   .forecast-hourly-panel[data-hourly-day="0"],
 .forecast-selector:has(
-    .forecast-day-strip input[data-day-index="1"]:checked
+    .forecast-day-picker input[data-day-index="1"]:checked
   )
   .forecast-hourly-panel[data-hourly-day="1"],
 .forecast-selector:has(
-    .forecast-day-strip input[data-day-index="2"]:checked
+    .forecast-day-picker input[data-day-index="2"]:checked
   )
   .forecast-hourly-panel[data-hourly-day="2"],
 .forecast-selector:has(
-    .forecast-day-strip input[data-day-index="3"]:checked
+    .forecast-day-picker input[data-day-index="3"]:checked
   )
   .forecast-hourly-panel[data-hourly-day="3"],
 .forecast-selector:has(
-    .forecast-day-strip input[data-day-index="4"]:checked
+    .forecast-day-picker input[data-day-index="4"]:checked
   )
   .forecast-hourly-panel[data-hourly-day="4"],
 .forecast-selector:has(
-    .forecast-day-strip input[data-day-index="5"]:checked
+    .forecast-day-picker input[data-day-index="5"]:checked
   )
   .forecast-hourly-panel[data-hourly-day="5"],
 .forecast-selector:has(
-    .forecast-day-strip input[data-day-index="6"]:checked
+    .forecast-day-picker input[data-day-index="6"]:checked
   )
   .forecast-hourly-panel[data-hourly-day="6"] {
   display: block;
+}
+
+.forecast-day-line {
+  display: none;
+}
+
+.forecast-selector:has(
+    .forecast-day-picker input[data-day-index="0"]:checked
+  )
+  .forecast-day-line[data-day-line="0"],
+.forecast-selector:has(
+    .forecast-day-picker input[data-day-index="1"]:checked
+  )
+  .forecast-day-line[data-day-line="1"],
+.forecast-selector:has(
+    .forecast-day-picker input[data-day-index="2"]:checked
+  )
+  .forecast-day-line[data-day-line="2"],
+.forecast-selector:has(
+    .forecast-day-picker input[data-day-index="3"]:checked
+  )
+  .forecast-day-line[data-day-line="3"],
+.forecast-selector:has(
+    .forecast-day-picker input[data-day-index="4"]:checked
+  )
+  .forecast-day-line[data-day-line="4"],
+.forecast-selector:has(
+    .forecast-day-picker input[data-day-index="5"]:checked
+  )
+  .forecast-day-line[data-day-line="5"],
+.forecast-selector:has(
+    .forecast-day-picker input[data-day-index="6"]:checked
+  )
+  .forecast-day-line[data-day-line="6"] {
+  display: flex;
 }

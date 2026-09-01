@@ -1,0 +1,29 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_weather_provenance.html — region 5 of the location
+forecast page (SNOW-789).
+
+One line closing the page: when this row was last fetched, and who it came
+from.
+
+**"Open-Meteo", not "Forecast model".** The handoff's literal names a value
+this codebase does not store — Open-Meteo picks the backing model per
+coordinate and does not report which, so a page claiming to name one would
+be inventing it. Open-Meteo is the source, and is what ``colophon.html``
+and ``privacy.html`` already credit.
+
+``fetched_at`` is a time, not a date: today's row is rewritten in place
+through the day (four fetches), so how recent it is is the whole point,
+and the day it belongs to is already on the day line above.
+
+Context:
+    weather : weather.Weather — read only for ``fetched_at``.
+    testid_prefix : str — data-testid namespace. Defaults to
+              ``weather-provenance``.
+{% endcomment %}
+{% firstof testid_prefix "weather-provenance" as prefix %}
+<p class="border-t border-border pt-3.5 font-mono text-xs text-text-3" data-testid="{{ prefix }}">
+    {% blocktrans with updated=weather.fetched_at|time:"H:i" trimmed %}
+        Updated {{ updated }} &middot; Open-Meteo
+    {% endblocktrans %}
+</p>

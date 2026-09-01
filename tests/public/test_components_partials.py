@@ -433,12 +433,14 @@ class TestStatusPageChildren:
 class TestComponentLibraryWeatherIcons:
     """Every weather icon a library fixture names must be a real file.
 
-    SNOW-781: the forecast-panel fixture built its filename as
+    SNOW-781: the day-strip fixture built its filename as
     ``f"{icon_bucket}-day.svg"``, which is right for eleven of the twelve
     icon buckets and wrong for ``cloudy`` — the one that ships a single
     file rather than a day/night pair. The library rendered a broken image
     for the Overcast column, and no test noticed because every assertion
-    was about markup rather than about whether the asset existed.
+    was about markup rather than about whether the asset existed. That
+    strip is now the day picker and the day line (SNOW-789); the helper
+    the fixtures share is the same one, so the trap is too.
 
     This walks the filenames the fixtures actually carry, so it covers the
     hand-written ones as well as the derived ones.
@@ -452,14 +454,17 @@ class TestComponentLibraryWeatherIcons:
 
         """
         from apps.public._component_fixtures import (
-            FORECAST_PANEL_VARIANTS,
+            WEATHER_DAY_LINE_VARIANTS,
+            WEATHER_DAY_PICKER_VARIANTS,
             WEATHER_PANEL_VARIANTS,
         )
 
         names: set[str] = set()
-        for variant in FORECAST_PANEL_VARIANTS:
+        for variant in WEATHER_DAY_PICKER_VARIANTS:
             for day in variant["context"]["panel"]["days"]:
                 names.add(day["icon_filename"])
+        for variant in WEATHER_DAY_LINE_VARIANTS:
+            names.add(variant["context"]["day"]["icon_filename"])
         for variant in WEATHER_PANEL_VARIANTS:
             display = variant["context"]["weather_display"]
             if display.get("icon_filename"):

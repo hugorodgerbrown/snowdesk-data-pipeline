@@ -1,0 +1,68 @@
+{% load i18n static %}
+{% comment %}
+templates/includes/_weather_day_line.html — region 3 of the location
+forecast page (SNOW-789).
+
+The selected day, stated once: its date and condition, then the two
+figures that decide whether a plan holds — where it is freezing, and how
+long there is light to be out in.
+
+**High and low are deliberately absent.** They are in the cell the reader
+just pressed, directly above this line, and in the meteogram directly
+below it. Stating them a third time is the duplication this ticket
+removed.
+
+Freezing level is tested ``is not None`` rather than for truthiness: 0 m
+means freezing at the valley floor, which is a real reading on an
+avalanche page and not a blank to hide.
+
+**Visibility is a property of this root element, not of a wrapper.** The
+reveal rule resolves to ``display: flex``, and this row IS the flex
+container — put ``.forecast-day-line`` on a wrapper instead and the row
+becomes a lone flex item that shrinks to its content, taking the ``border-t``
+with it. So ``reveal_index`` is passed in and lands here.
+
+Omit ``reveal_index`` and the row carries neither the hiding class nor the
+index, and simply renders. That is the backfilled one-day page: with no
+picker there is no radio, so no ``:has()`` rule could ever match and a row
+that opted into the hiding class would be hidden forever.
+
+Context:
+    day : ForecastPanelDay — one entry from
+          ``build_point_forecast_panel``'s ``days``.
+    reveal_index : int — optional. This day's position in the picker. Set
+          it and the row is hidden until that day's radio is checked; omit
+          it and the row is always visible.
+    testid_prefix : str — data-testid namespace. Defaults to
+          ``weather-day-line``.
+{% endcomment %}
+{% firstof testid_prefix "weather-day-line" as prefix %}
+<div
+    class="flex items-center gap-3.5 border-t border-border pt-4{% if reveal_index is not None %} forecast-day-line{% endif %}"
+    {% if reveal_index is not None %}data-day-line="{{ reveal_index }}"{% endif %}
+    data-testid="{{ prefix }}"
+>
+    {# Decorative: the condition is spelled out in the line beside it. #}
+    <img
+        src="{% static 'icons/weather/'|add:day.icon_filename %}"
+        class="w-10 h-10 shrink-0"
+        alt=""
+        aria-hidden="true"
+    >
+    <div>
+        <p class="text-lg font-medium tracking-tight text-text-1">
+            {{ day.date|date:"l j F" }} &middot; {{ day.condition_label }}
+        </p>
+        <p class="font-mono text-sm text-text-2" data-testid="{{ prefix }}-detail">
+            {% if day.freezing_level_height is not None %}
+                {% blocktrans with m=day.freezing_level_height|floatformat:0 trimmed %}
+                    Freezing {{ m }} m
+                {% endblocktrans %}
+                &middot;
+            {% endif %}
+            {% blocktrans with sunrise=day.sunrise_local sunset=day.sunset_local trimmed %}
+                daylight {{ sunrise }}&ndash;{{ sunset }}
+            {% endblocktrans %}
+        </p>
+    </div>
+</div>
