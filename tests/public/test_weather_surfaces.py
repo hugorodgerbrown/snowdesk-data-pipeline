@@ -546,3 +546,67 @@ class TestLocationForecastPage:
         for wrapper in wrappers:
             assert wrapper.count("<label") == 1
             assert len(re.findall(r"<input\b", wrapper)) == 1
+
+
+@pytest.mark.django_db
+class TestIconHalo:
+    """The ``.weather-icon`` hook reaches every server-rendered icon.
+
+    SNOW-791: Yr draws its cloud at ``#dddddd``, 1.28:1 on the light card,
+    so the symbol reads by its silhouette rather than its fill. The map
+    dilates a dark edge in canvas; the three server-rendered surfaces get
+    the same edge from ``.weather-icon`` in ``src/css/main.css``.
+
+    The class is the whole mechanism on this side, and it lives in a
+    template attribute where nothing else would miss it: a refactor that
+    dropped it would leave a pale cloud on a near-white plate with every
+    other assertion — filename, testid, layout — still passing. So it is
+    asserted per surface, the same way the filenames are.
+    """
+
+    @freeze_time(MIDDAY)
+    def test_the_resort_pages_panel_carries_the_hook(self) -> None:
+        """``_weather_panel.html``, via the resort page."""
+        resort = ResortFactory.create()
+        location = LocationFactory.create(elevation_m=1500.0)
+        ResortLocationFactory.create(resort=resort, location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-weather"' in content
+        assert 'class="weather-icon' in content
+
+    @freeze_time(MIDDAY)
+    def test_the_picker_and_the_day_line_both_carry_the_hook(self) -> None:
+        """``_weather_day_picker.html`` and ``_weather_day_line.html``.
+
+        Both live on the location forecast page and both draw an icon, so
+        one assertion over the whole page would pass on either alone. The
+        page is sliced at the picker's ``</fieldset>`` to tell them apart.
+        """
+        location = LocationFactory.create(elevation_m=2200.0)
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            forecast=[_forecast_day("2026-08-31")],
+        )
+
+        html = (
+            Client()
+            .get(reverse("public:location_weather", args=[location.pk]))
+            .content.decode()
+        )
+
+        split = html.index("</fieldset>")
+        picker, below = html[:split], html[split:]
+        assert 'class="weather-icon' in picker
+        assert 'class="weather-icon' in below
