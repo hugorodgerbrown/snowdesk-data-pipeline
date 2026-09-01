@@ -375,6 +375,34 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="chart",
+        label="Meteogram",
+        description=(
+            "The hourly chart's own marks — two series colours, the "
+            "accumulation fill, the day/night axis bar and the legend "
+            "note. The other four series reuse foundations above: "
+            "temperature is text-1, freezing level and the metre scale are "
+            "accent, gusts are text-2, axis furniture is border."
+        ),
+        kind="swatches",
+        tokens=(
+            Token("--color-chart-precip", "Precipitation · mm", "#0f766e", None),
+            Token("--color-chart-wind", "Sustained wind", "#4a4740", None),
+            Token(
+                "--color-chart-snow",
+                "New snow · cm",
+                "rgba(37, 99, 235, 0.35)",
+                None,
+            ),
+            Token("--color-chart-night", "Axis bar · night", "#475569", "#64748b"),
+            Token(
+                "--color-chart-daylight", "Axis bar · daylight", "#f59e0b", "#fcd34d"
+            ),
+            Token("--color-chart-note-bg", "Legend note · fill", "#eef2ff", "#252a44"),
+            Token("--color-chart-note-text", "Legend note · ink", "#2563eb", "#93c5fd"),
+        ),
+    ),
+    FoundationCategory(
         slug="radius",
         label="Radius",
         description="Corner-radius scale for cards, tags and pills.",

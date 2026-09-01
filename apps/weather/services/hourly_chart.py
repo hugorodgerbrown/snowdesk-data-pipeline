@@ -97,17 +97,31 @@ Three consequences of deriving the scale, all deliberate:
   drawing two empty rulers, and says so in words instead. See
   ``_precipitation_layer``.
 
-No night wash
--------------
-An earlier version shaded the hours before sunrise and after sunset across
-all three plots. It was removed: it is the one element that only makes sense
-as context shared down the whole stack, which is exactly what these three
-charts are not. It earned its place on the temperature plot, where the
-overnight low is a consequence of darkness, and earned nothing on the other
-two — a bar is a bar and a gust is a gust whether the sun is up or not. The
-hour ticks carry the axis on every chart without it.
+The light lives in the axis
+---------------------------
+SNOW-723 shaded the hours before sunrise and after sunset across all three
+plots, then removed the wash: a bar is a bar and a gust is a gust whether
+the sun is up or not, so the shading earned its place on the temperature
+plot and earned nothing on the other two.
 
-``sunrise`` and ``sunset`` are consequently no longer read from the day.
+SNOW-790 brings sunrise and sunset back, in the one row that answers *when*
+rather than *how much* — the temperature chart's **hour axis**, thickened
+into a bar carrying a lit segment between them. This is the same finding
+read the other way round: the light is a property of the axis, not of the
+data, so it belongs in the axis furniture rather than over the series. The
+precipitation and wind axes keep their bare label rows, their charts having
+no more use for the sun than they had for the wash.
+
+The current time joins it there as a pin crossing the same bar. It used to
+be a full-height hairline through all four plots, crossing every series —
+the one mark on the drawing that was not data but was drawn like it.
+
+Both are read from the day by ``_daylight`` and ``_now_hour``, which between
+them tolerate every shape a caller passes: ``sunrise_local``/``sunset_local``
+as ``"HH:MM"`` (what ``apps.weather.services.weather_display`` puts on a
+``ForecastPanelDay``) and ``sunrise``/``sunset`` as an ISO string or a
+``datetime`` (what the committed sample days and a ``Weather`` row carry).
+A day that supplies neither loses its band, not its chart.
 
 Wind arrows point at the source
 -------------------------------
@@ -232,10 +246,19 @@ class ChartLabel(TypedDict):
 
 
 class AxisTick(TypedDict):
-    """A gutter axis tick: the value, and its height within the band."""
+    """
+    A gutter axis tick: the value, its label position, and the mark itself.
+
+    ``top`` is a per-cent of the band, for the HTML label; ``y`` is the same
+    height in viewBox units, for the tick line drawn in the SVG beside it.
+    The two differ by more than their units — ``top`` carries the offset
+    that centres a text line on the value, while ``y`` is the value's own
+    height. Using one for the other puts every tick half a line out.
+    """
 
     text: str
     top: str
+    y: str
 
 
 class ChartBar(TypedDict):
@@ -245,6 +268,19 @@ class ChartBar(TypedDict):
     y: str
     width: str
     height: str
+
+
+class ChartBand(TypedDict):
+    """
+    A horizontal run along the hour axis, in per-cent of the drawing's width.
+
+    Percentages rather than viewBox units because the axis bar is HTML laid
+    over the same x-scale as the SVG, on the same footing as the hour labels
+    — see the module docstring on why every label here is HTML.
+    """
+
+    left: str
+    width: str
 
 
 class ChartArrow(TypedDict):
@@ -301,15 +337,28 @@ class HourlyChart(TypedDict):
     arrows: list[ChartArrow]
 
     # Shared
-    cursor_x: str | None
     hour_ticks: list[str]
     minor_ticks: list[str]
+    left_tick_x1: str
+    left_tick_x2: str
+    right_tick_x1: str
+    right_tick_x2: str
+    plot_edges: list[str]
+    temp_edge_top: str
     temp_tick_top: str
     precip_tick_top: str
     wind_tick_top: str
     temp_minor_top: str
     precip_minor_top: str
     hour_labels: list[ChartLabel]
+
+    # The temperature axis alone thickens into a daylight bar (SNOW-790).
+    # ``daylight_band`` is None when the day carries no readable sunrise and
+    # sunset; ``now_marker`` is None unless the chart is today.
+    axis_track: ChartBand
+    daylight_band: ChartBand | None
+    now_marker: str | None
+
     rows: list[dict[str, str]]
 
 
@@ -621,24 +670,99 @@ def _arrow_path(x: float, y: float, length: float) -> str:
 # ── Time ─────────────────────────────────────────────────────────────────
 
 
-def _cursor(
+def _hour_of_day(value: Any) -> float | None:
+    """
+    Read a time of day as fractional hours from whichever shape it arrives in.
+
+    Three shapes reach here and all three are legitimate, because the chart
+    is deliberately transportable and its callers hold different objects:
+    a ``datetime`` (a ``Weather`` row's own ``sunrise``), an ISO timestamp
+    string (the committed sample days), and a bare ``"HH:MM"`` (what
+    ``weather_display`` formats onto a ``ForecastPanelDay``, already in the
+    location's own offset).
+
+    Args:
+        value: The candidate, of any type — anything unreadable is ``None``.
+
+    Returns:
+        Hours past midnight as a float, or ``None``.
+
+    """
+    if isinstance(value, datetime.datetime):
+        return value.hour + value.minute / 60
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    for parse in (datetime.datetime.fromisoformat, datetime.time.fromisoformat):
+        try:
+            parsed = parse(text)
+        except ValueError:
+            continue
+        return parsed.hour + parsed.minute / 60
+    return None
+
+
+def _daylight(day: Mapping[str, Any]) -> tuple[float, float] | None:
+    """
+    Return the day's sunrise and sunset as fractional hours.
+
+    ``sunrise_local``/``sunset_local`` are tried first because they are what
+    the production caller supplies and they are already in the location's
+    own offset; ``sunrise``/``sunset`` are the fallback for a raw day mapping.
+    Never mix the two pairs — a day is read from one or the other.
+
+    Args:
+        day: The day being charted.
+
+    **Both values are read as times of day, and the date is discarded.**
+    ``sunrise_local`` is a bare ``"HH:MM"`` and carries no date to read, so
+    the raw pair is treated the same way for consistency. The consequence is
+    a real one and worth stating: a sunset falling on the FOLLOWING date —
+    which Open-Meteo returns above the Arctic Circle in summer — reads as an
+    early-morning hour and would draw a short band at the start of the day
+    instead of a full one. Snowdesk covers the Alps and the Pyrenees, where
+    every sunset shares its sunrise's date, so this is a limit rather than a
+    bug; a ticket that takes the product north needs to carry the date
+    through here.
+
+    Both values are inside the drawn day by construction — every shape
+    ``_hour_of_day`` accepts is a time of day, so nothing it returns can
+    fall outside ``0..24`` and there is nothing to clamp.
+
+    Returns:
+        ``(sunrise, sunset)`` in hours past midnight, or ``None`` when the
+        day carries neither pair readably or the two do not bracket any
+        daylight. A polar night has no lit segment to draw, and a malformed
+        day loses its band rather than its chart.
+
+    """
+    for rise_key, set_key in (("sunrise_local", "sunset_local"), ("sunrise", "sunset")):
+        rise = _hour_of_day(day.get(rise_key))
+        fall = _hour_of_day(day.get(set_key))
+        if rise is None or fall is None:
+            continue
+        return (rise, fall) if fall > rise else None
+    return None
+
+
+def _now_hour(
     day: Mapping[str, Any],
     now: datetime.datetime | None,
-) -> str | None:
+) -> float | None:
     """
-    Return the time-of-day cursor's x, when the day being charted is today.
+    Return the current time as a fractional hour, when the chart is today's.
 
-    The cursor carries no clock of its own. Its position against the hour
-    axis already says what time it is to the precision the chart works at,
-    and a label there had to fight the axis label underneath it.
+    The marker this feeds carries no clock of its own. Its position against
+    the hour axis says what time it is to the precision the chart works at,
+    and a label there would fight the axis label beneath it.
 
     Args:
         day: The day being charted, read for its ``date``.
-        now: The current time, or ``None`` to suppress the cursor.
+        now: The current time, or ``None`` to suppress the marker.
 
     Returns:
-        The x coordinate in viewBox units, or ``None`` — a forecast for
-        tomorrow has no current hour to mark.
+        Hours past midnight, or ``None`` — a forecast for tomorrow has no
+        current hour to mark.
 
     """
     if now is None:
@@ -651,7 +775,69 @@ def _cursor(
             return None
     if not isinstance(date, datetime.date) or date != now.date():
         return None
-    return _num(PAD_LEFT + HOUR_WIDTH * (now.hour + now.minute / 60))
+    return now.hour + now.minute / 60
+
+
+def _axis_track() -> ChartBand:
+    """
+    Return the axis bar's ground — the plot's width, placed in the drawing.
+
+    The one band measured against ``CHART_WIDTH``, because it is the only
+    one positioned in the drawing. Everything drawn ON the bar is measured
+    against the bar; see ``_within_track``.
+
+    Returns:
+        The track, as CSS percentages of the drawing's width.
+
+    """
+    return {
+        "left": _pct(PAD_LEFT, CHART_WIDTH),
+        "width": _pct(PLOT_WIDTH, CHART_WIDTH),
+    }
+
+
+def _within_track(start_hour: float, end_hour: float) -> ChartBand:
+    """
+    Return the run between two clock instants, in per-cent OF THE TRACK.
+
+    Of the track and not of the drawing, because the lit segment is nested
+    inside the track element so the track's rounded ends can clip it — a
+    sibling with square corners would otherwise overhang them on a day whose
+    sun is up at midnight. A percentage resolves against its own containing
+    block, so nesting changes the denominator, and mixing the two would put
+    sunrise most of two hours early.
+
+    Built on ``_instant_x``, not ``_hour_x``: a run starts at the moment an
+    hour begins, where a value measured over that hour would sit half a slot
+    later.
+
+    Args:
+        start_hour: The opening instant, in hours past midnight.
+        end_hour: The closing instant, in hours past midnight.
+
+    Returns:
+        The run, as CSS percentages of the track's width.
+
+    """
+    return {
+        "left": _pct(_instant_x(start_hour) - PAD_LEFT, PLOT_WIDTH),
+        "width": _pct(_instant_x(end_hour) - _instant_x(start_hour), PLOT_WIDTH),
+    }
+
+
+def _clock(hour: float) -> str:
+    """
+    Format a fractional hour as ``HH:MM``, for the spoken summary.
+
+    Args:
+        hour: Hours past midnight.
+
+    Returns:
+        The wall-clock time, e.g. ``"08:32"``.
+
+    """
+    minutes = int(round(hour * 60))
+    return f"{(minutes // 60) % DAY_HOURS:02d}:{minutes % 60:02d}"
 
 
 # ── Layers ───────────────────────────────────────────────────────────────
@@ -719,7 +905,11 @@ def _freezing_layer(
     at = _projector(low, high, LINE_TOP, LINE_BOTTOM)
     segments = _line(slots, at)
     ticks: list[AxisTick] = [
-        {"text": f"{value:.0f}", "top": _pct(at(value) - 8, TEMP_HEIGHT)}
+        {
+            "text": f"{value:.0f}",
+            "top": _pct(at(value) - 8, TEMP_HEIGHT),
+            "y": _num(at(value)),
+        }
         for value in _ticks(low, high, 200)
     ]
 
@@ -1010,14 +1200,15 @@ def build_hourly_chart(
 
     Args:
         day: The day's mapping — its ``hourly`` list, and optionally
-            ``date`` for the accessible summary and the time cursor. Any
-            mapping with those keys will do; this function never reaches for
-            the ORM.
+            ``date`` for the accessible summary and the now-marker, plus a
+            sunrise/sunset pair for the axis band (see ``_daylight`` for the
+            shapes accepted). Any mapping with those keys will do; this
+            function never reaches for the ORM.
         elevation: The location's own elevation in metres, marked on the
             freezing-level scale when the day's freezing levels run near it.
         location_label: The station's name, e.g. "Verbier village".
-        now: The current time. The time-of-day cursor is drawn only when
-            this falls on the day being charted.
+        now: The current time. The marker on the hour axis is drawn only
+            when this falls on the day being charted.
 
     Returns:
         The geometry, or ``None`` when the day carries no usable hourly
@@ -1048,6 +1239,7 @@ def build_hourly_chart(
         {
             "text": f"+{value:.0f}" if value > 0 else f"{value:.0f}",
             "top": _pct(t_at(value) - 8, TEMP_HEIGHT),
+            "y": _num(t_at(value)),
         }
         for value in _ticks(t_low, t_high, 2)
     ]
@@ -1055,7 +1247,8 @@ def build_hourly_chart(
     freeze = _freezing_layer(freezing, elevation, location_label)
     wet = _precipitation_layer(snow, precip)
     wind = _wind_layer(winds, gusts)
-    cursor_x = _cursor(day, now)
+    daylight = _daylight(day)
+    now_hour = _now_hour(day, now)
 
     return {
         "view_box_temp": f"0 0 {CHART_WIDTH} {TEMP_HEIGHT}",
@@ -1068,7 +1261,9 @@ def build_hourly_chart(
         "snow_total": wet["snow_total"],
         "precip_total": wet["precip_total"],
         "wind_summary": _wind_summary(winds, gusts),
-        "aria_label": _aria_label(day, known_temps, snow, freezing, winds, gusts, wet),
+        "aria_label": _aria_label(
+            day, known_temps, snow, freezing, winds, gusts, wet, daylight
+        ),
         "zero_line_y": _num(t_at(0)) if t_low <= 0 <= t_high else None,
         "elevation_line_y": freeze["elevation_line_y"],
         "station_caption": freeze["station_caption"],
@@ -1090,7 +1285,6 @@ def build_hourly_chart(
         "wind_labels": wind["wind_labels"],
         "gust_labels": wind["gust_labels"],
         "arrows": _direction_arrows(_block_bearings(bearings)),
-        "cursor_x": cursor_x,
         # Every chart gets its own foot ticks. They are the only thing the
         # three share besides the axis itself, and a chart that has to
         # borrow the one below it to place a point in time is not standing
@@ -1105,6 +1299,18 @@ def build_hourly_chart(
         "minor_ticks": [
             _num(_instant_x(hour)) for hour in range(DAY_HOURS) if hour % BLOCK_HOURS
         ],
+        # Where a gutter tick starts and stops on each side of the plot.
+        "left_tick_x1": _num(PAD_LEFT - AXIS_TICK_LENGTH),
+        "left_tick_x2": _num(PAD_LEFT),
+        "right_tick_x1": _num(PLOT_RIGHT),
+        "right_tick_x2": _num(PLOT_RIGHT + AXIS_TICK_LENGTH),
+        # The temperature plot's own left and right edges. The night
+        # shading SNOW-723 removed had been carrying them for free: a
+        # reader took the plot's bounds from where the shaded blocks
+        # stopped. They go back only on this chart, which is the only one
+        # with vertical scales for them to close off.
+        "plot_edges": [_num(PAD_LEFT), _num(PLOT_RIGHT)],
+        "temp_edge_top": _num(LINE_TOP - _EDGE_HEADROOM),
         "temp_tick_top": _num(TEMP_HEIGHT - TICK_LENGTH),
         "precip_tick_top": _num(PRECIP_HEIGHT - TICK_LENGTH),
         "wind_tick_top": _num(WIND_HEIGHT - TICK_LENGTH),
@@ -1125,6 +1331,19 @@ def build_hourly_chart(
             # reader to look for a value there.
             for hour in _AXIS_HOURS[:-1]
         ],
+        # The temperature axis bar. The track spans the plot whether or not
+        # the day yields a lit segment, because the marker needs a ground to
+        # sit on even on a day whose sunrise cannot be read.
+        "axis_track": _axis_track(),
+        "daylight_band": _within_track(*daylight) if daylight is not None else None,
+        # Against the DRAWING, not the track — unlike the lit segment. The
+        # marker is a pin whose ends stand clear of the bar above and
+        # below, so it cannot live inside the track element (whose
+        # overflow-hidden clips the lit segment's corners) and is a sibling
+        # of it instead. Different containing block, different denominator.
+        "now_marker": (
+            _pct(_instant_x(now_hour), CHART_WIDTH) if now_hour is not None else None
+        ),
         "rows": _sr_rows(temps, freezing, snow, precip, winds, gusts, bearings),
     }
 
@@ -1147,6 +1366,17 @@ _AXIS_HOURS = tuple(range(0, DAY_HOURS + 1, BLOCK_HOURS))
 # on stays the one the eye counts by.
 TICK_LENGTH = 7
 MINOR_TICK_LENGTH = 3.5
+
+# Gutter ticks on the temperature chart's two vertical scales (SNOW-790).
+# Without them the °C and metre figures float beside the plot with nothing
+# joining them to the height they name, and a reader has to take it on
+# trust that "1,600" lines up with where they think it does.
+AXIS_TICK_LENGTH = 5
+
+# How far above its topmost tick the temperature plot's left/right edge
+# begins, so the edge clears the highest gridline rather than starting flush
+# with it.
+_EDGE_HEADROOM = 10
 
 
 def _instant_x(hour: float) -> float:
@@ -1219,6 +1449,35 @@ def _wind_summary(
     return text
 
 
+def _wind_clause(
+    winds: Sequence[float | None],
+    gusts: Sequence[float | None],
+) -> str | None:
+    """
+    Return the spoken wind phrase for the accessible summary.
+
+    Its own function only to keep ``_aria_label`` under the complexity
+    ceiling; the gust half is a clause of the wind sentence rather than a
+    sentence of its own, so the two are built together.
+
+    Args:
+        winds: The hourly sustained speeds.
+        gusts: The hourly gusts.
+
+    Returns:
+        The phrase, or ``None`` when the day carries no wind figures.
+
+    """
+    speed = _extremes(winds)
+    if speed is None:
+        return None
+    text = f"wind {speed[0]:.0f} to {speed[1]:.0f} kilometres per hour"
+    gust = _extremes(gusts)
+    if gust is not None:
+        text += f", gusting {gust[1]:.0f}"
+    return text
+
+
 def _aria_label(
     day: Mapping[str, Any],
     temps: Sequence[float],
@@ -1227,6 +1486,7 @@ def _aria_label(
     winds: Sequence[float | None],
     gusts: Sequence[float | None],
     wet: _PrecipitationLayer,
+    daylight: tuple[float, float] | None,
 ) -> str:
     """
     Return the chart's spoken summary.
@@ -1234,6 +1494,13 @@ def _aria_label(
     The chart is one image to a screen reader, so this sentence carries the
     day at the same altitude a sighted reader takes from the shape. The
     per-block numbers stay reachable in the visually-hidden table beneath.
+
+    **This is where the daylight band is spoken.** The bar itself is
+    ``aria-hidden`` decoration over the hour axis, and the legend's "About
+    this forecast" block — the other candidate home for the pair — is
+    supplied by the component library alone and never renders on the page
+    that ships the chart. Saying it here is what puts it in front of a
+    reader who cannot see the band.
 
     Args:
         day: The day being charted, read for its ``date``.
@@ -1243,6 +1510,7 @@ def _aria_label(
         winds: The hourly wind speeds.
         gusts: The hourly gusts.
         wet: The precipitation layer, for whether the day was dry.
+        daylight: The sunrise/sunset pair in fractional hours, or ``None``.
 
     Returns:
         The label text.
@@ -1265,13 +1533,11 @@ def _aria_label(
     levels = _extremes(freezing)
     if levels is not None:
         parts.append(f"freezing level {levels[0]:.0f} to {levels[1]:.0f} metres")
-    speed = _extremes(winds)
-    if speed is not None:
-        text = f"wind {speed[0]:.0f} to {speed[1]:.0f} kilometres per hour"
-        gust = _extremes(gusts)
-        if gust is not None:
-            text += f", gusting {gust[1]:.0f}"
-        parts.append(text)
+    wind = _wind_clause(winds, gusts)
+    if wind is not None:
+        parts.append(wind)
+    if daylight is not None:
+        parts.append(f"daylight {_clock(daylight[0])} to {_clock(daylight[1])}")
     return ", ".join(parts)
 
 

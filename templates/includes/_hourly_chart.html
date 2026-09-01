@@ -115,13 +115,23 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 {% endif %}
 
                 {% comment %}
-                The station's elevation and the current time are both
-                VARIABLES — one moves with the location, the other with the
-                clock — so they share one treatment: a solid hairline in the
-                strong border ink. 0 °C above is the only fixed value on the
-                chart and keeps the dashed reference-line treatment to
-                itself, so the reader can tell a constant from a variable
-                without consulting the legend.
+                ANYTHING MEASURED IN METRES IS BLUE (SNOW-790). This rule is
+                the only mark on the chart drawn against the metre scale
+                besides the freezing level itself, and it exists to be read
+                against it — so it takes the same accent ink as that line,
+                as the metre ticks in the right gutter, and as their "m".
+                It was border-strong until SNOW-790, which made the one
+                metre-scale rule the only metre-scale mark not coloured like
+                one.
+
+                DOTTED, NOT SOLID. Blue alone made it read as a second
+                series — a solid hairline the full width of the plot
+                competes with the freezing level it is supposed to be
+                measured against. The dot pattern puts it back where it
+                belongs, as reference furniture: a fixed property of the
+                location rather than something the day is doing. Round caps
+                on a 1-unit stroke are what make it dots rather than a
+                fainter dash.
                 {% endcomment %}
                 {% if chart.elevation_line_y %}
                     <line
@@ -129,19 +139,10 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                         y1="{{ chart.elevation_line_y }}"
                         x2="560"
                         y2="{{ chart.elevation_line_y }}"
-                        class="stroke-border-strong"
+                        class="stroke-accent"
                         stroke-width="1"
-                    />
-                {% endif %}
-
-                {% if chart.cursor_x %}
-                    <line
-                        x1="{{ chart.cursor_x }}"
-                        y1="0"
-                        x2="{{ chart.cursor_x }}"
-                        y2="{{ chart.temp_height }}"
-                        class="stroke-border-strong"
-                        stroke-width="1"
+                        stroke-dasharray="1 3"
+                        stroke-linecap="round"
                     />
                 {% endif %}
 
@@ -192,6 +193,64 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 three-hourly and they would promise a resolution its figures
                 do not have.
                 {% endcomment %}
+                {% comment %}
+                    The plot's left and right edges, and THIS PLOT ONLY.
+                    SNOW-723's night shading had been carrying them for
+                    free — a reader took the plot's bounds from where the
+                    shaded blocks stopped — and removing the wash left this
+                    chart's two vertical scales with nothing closing them
+                    off at either end.
+
+                    They earn their place here because there is something to
+                    anchor: °C down the left gutter and metres down the
+                    right, each label joined to the plot by its own tick.
+                    The precipitation and wind charts have no vertical scale
+                    and no gutter labels, so an edge there would be a box
+                    drawn round nothing. These are frame, not data, which is
+                    why they sit at fixed x rather than at any value.
+                {% endcomment %}
+                {% for x in chart.plot_edges %}
+                    <line
+                        x1="{{ x }}"
+                        y1="{{ chart.temp_edge_top }}"
+                        x2="{{ x }}"
+                        y2="{{ chart.temp_height }}"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endfor %}
+
+                {% comment %}
+                Gutter ticks on the two vertical scales (SNOW-790). The °C
+                and metre figures sat beside the plot with nothing joining
+                them to the height they name, so they read as floating —
+                a reader had to take on trust that "1,600" lined up where
+                they thought. Each tick is the mark that anchors one label,
+                drawn from the plot edge outward into the gutter the label
+                sits in.
+                {% endcomment %}
+                {% for tick in chart.temp_ticks %}
+                    <line
+                        x1="{{ chart.left_tick_x1 }}"
+                        y1="{{ tick.y }}"
+                        x2="{{ chart.left_tick_x2 }}"
+                        y2="{{ tick.y }}"
+                        class="stroke-border-strong"
+                        stroke-width="1"
+                    />
+                {% endfor %}
+                {% for tick in chart.freezing_ticks %}
+                    <line
+                        x1="{{ chart.right_tick_x1 }}"
+                        y1="{{ tick.y }}"
+                        x2="{{ chart.right_tick_x2 }}"
+                        y2="{{ tick.y }}"
+                        class="stroke-accent"
+                        stroke-width="1"
+                        opacity="0.55"
+                    />
+                {% endfor %}
+
                 {% for x in chart.minor_ticks %}
                     <line
                         x1="{{ x }}"
@@ -257,14 +316,83 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
         what any of it was, so a point on this plot still had to be traced
         down the card to a labelled axis to be placed in time. Three charts
         that stand on their own each need the hours spelled out.
+
+        THIS ONE ALSO CARRIES THE DAYLIGHT BAR (SNOW-790), and it is the only
+        one of the three that does. Sunrise, sunset and the time now all live
+        here rather than on the plots: they answer "when", which is this
+        row's question, and drawn over the series they were three more marks
+        crossing the data. A bar is a bar and a gust is a gust whether the
+        sun is up, so the other two axes stay bare.
+
+        The lit segment is nested INSIDE the track and measured as a per-cent
+        of the track; the now-pin is a sibling of the track and measured
+        against the drawing. A percentage resolves against its own
+        containing block, so the two denominators are not interchangeable —
+        swapping them puts sunrise most of two hours out. The split is not
+        cosmetic: the track's overflow-hidden clips the lit segment's
+        corners, and would clip the pin's ends off too.
         {% endcomment %}
-        <div class="relative mx-4 h-[22px]" data-testid="{{ prefix }}-temp-axis">
-            {% for label in chart.hour_labels %}
-                <span
-                    class="absolute top-0.5 -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-2"
-                    style="left: {{ label.left }}"
-                >{{ label.text }}</span>
-            {% endfor %}
+        <div class="relative mx-4" data-testid="{{ prefix }}-temp-axis">
+            {% if chart.daylight_band or chart.now_marker %}
+                <div class="relative h-1.5" aria-hidden="true">
+                    <div
+                        class="absolute inset-y-0 overflow-hidden rounded-sm bg-chart-night"
+                        style="left: {{ chart.axis_track.left }}; width: {{ chart.axis_track.width }}"
+                        data-testid="{{ prefix }}-axis-track"
+                    >
+                        {% if chart.daylight_band %}
+                            <div
+                                class="absolute inset-y-0 bg-chart-daylight"
+                                style="left: {{ chart.daylight_band.left }}; width: {{ chart.daylight_band.width }}"
+                                data-testid="{{ prefix }}-daylight"
+                            >
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    {% comment %}
+                    The time now, as a pin that CROSSES the bar.
+
+                    TWO TONES, AND THAT IS NOT DECORATION. No single flat
+                    colour can clear 3:1 against both fills in light mode,
+                    and the arithmetic says so rather than the eye: to
+                    separate from slate-600 an ink needs a relative
+                    luminance of at least 0.358, while to separate from
+                    amber-500 it needs either 1.54 — brighter than white —
+                    or at most 0.127. There is no number satisfying both.
+
+                    So the pin is a text-1 core inside a card-coloured
+                    outline, and whichever fill it crosses, one of the two
+                    carries it: on the lit segment the core reads at 8.2:1,
+                    on the night ground the outline reads at 7.6:1, and the
+                    dark theme mirrors it at 10.2:1 and 4.0:1. The two are
+                    17:1 apart from each other, so they still read as one
+                    mark rather than two.
+
+                    It is a SIBLING of the track and not a child: the
+                    track's overflow-hidden, there to clip the lit
+                    segment's corners, would cut the pin's ends off. Its
+                    left is a per-cent of the drawing to match.
+                    {% endcomment %}
+                    {% if chart.now_marker %}
+                        <div
+                            class="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-pill bg-text-1 outline-1 outline-card"
+                            style="left: {{ chart.now_marker }}"
+                            data-testid="{{ prefix }}-now"
+                        >
+                        </div>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            <div class="relative h-[22px]">
+                {% for label in chart.hour_labels %}
+                    <span
+                        class="absolute top-0.5 -translate-x-1/2 font-mono text-xs whitespace-nowrap text-text-2"
+                        style="left: {{ label.left }}"
+                    >{{ label.text }}</span>
+                {% endfor %}
+            </div>
         </div>
 
         {% comment %}
@@ -307,17 +435,6 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                     aria-hidden="true"
                     data-testid="{{ prefix }}-precip"
                 >
-                    {% if chart.cursor_x %}
-                        <line
-                            x1="{{ chart.cursor_x }}"
-                            y1="0"
-                            x2="{{ chart.cursor_x }}"
-                            y2="{{ chart.precip_height }}"
-                            class="stroke-border-strong"
-                            stroke-width="1"
-                        />
-                    {% endif %}
-
                     {% for bar in chart.snow_bars %}
                         <rect
                             x="{{ bar.x }}"
@@ -443,16 +560,6 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
         {% endcomment %}
         <div class="relative mx-4">
             <svg viewBox="{{ chart.view_box_wind }}" class="block h-auto w-full" aria-hidden="true">
-                {% if chart.cursor_x %}
-                    <line
-                        x1="{{ chart.cursor_x }}"
-                        y1="0"
-                        x2="{{ chart.cursor_x }}"
-                        y2="92"
-                        class="stroke-border-strong"
-                        stroke-width="1"
-                    />
-                {% endif %}
                 {% for points in chart.gust_segments %}
                     <polyline
                         points="{{ points }}"
@@ -503,16 +610,6 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
         {# ── Direction row ────────────────────────────────────────── #}
         <div class="relative mx-4">
             <svg viewBox="{{ chart.view_box_direction }}" class="block h-auto w-full" aria-hidden="true">
-                {% if chart.cursor_x %}
-                    <line
-                        x1="{{ chart.cursor_x }}"
-                        y1="0"
-                        x2="{{ chart.cursor_x }}"
-                        y2="30"
-                        class="stroke-border-strong"
-                        stroke-width="1"
-                    />
-                {% endif %}
                 {% for arrow in chart.arrows %}
                     <path
                         d="{{ arrow.d }}"
