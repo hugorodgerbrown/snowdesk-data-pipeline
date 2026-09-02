@@ -1,4 +1,5 @@
 {% load i18n static %}
+{% load weather_icons %}
 {% comment %}
 templates/includes/_weather_day_picker.html — region 2 of the location
 forecast page (SNOW-789).
@@ -104,8 +105,8 @@ Context:
                         {# The icon repeats the condition already in the radio's #}
                         {# aria-label, so it is decorative to a screen reader.   #}
                         <img
-                            src="{% static 'icons/weather/'|add:day.icon_filename %}"
-                            class="w-7 h-7"
+                            src="{% weather_icon_url day.icon_filename %}"
+                            class="{% weather_icon_class %} w-7 h-7"
                             alt=""
                             aria-hidden="true"
                         >

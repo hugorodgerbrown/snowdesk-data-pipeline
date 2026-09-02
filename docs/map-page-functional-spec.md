@@ -265,7 +265,7 @@ of reports — always shows the viewer's own reports plus other users'
 reports.)
 
 > **Weather overlay — removed by SNOW-762.** Section 3.4 described a
-> Meteocons condition symbol plus the day's max temperature at each
+> weather condition symbol plus the day's max temperature at each
 > resort- and favourite-anchored forecast point. The whole weather domain
 > was stripped ahead of the SNOW-757 rebuild; nothing on the map draws
 > weather today. SNOW-761 decides what comes back and writes this section

@@ -261,6 +261,10 @@ MIDDLEWARE = [
     # the forced-update verdict is now a server decision returned by
     # /api/version, never a client-side version comparison.
     "apps.core.middleware.AppVersionHeaderMiddleware",
+    # SNOW-791: honours ?icons=<name> in DEBUG so the candidate weather icon
+    # sets can be compared against real data without a restart. Inert when
+    # DEBUG is off.
+    "apps.core.middleware.WeatherIconSetMiddleware",
     # django-csp-plus. NonceMiddleware populates request.csp_nonce (used by
     # inline <script nonce="…"> tags in templates); HeaderMiddleware emits
     # the Content-Security-Policy(-Report-Only) header. The nonce middleware
@@ -291,6 +295,9 @@ TEMPLATES = [
                 # principal — never the sequential auth.User PK.
                 "apps.accounts.context_processors.pwa_user_identity",
                 # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
+                # SNOW-791: injects WEATHER_ICON_DIR so the weather partials and
+                # the map layer resolve icon paths against the active set.
+                "apps.public.context_processors.weather_icon_set",
                 "apps.public.context_processors.site_base_url",
                 # Injects APP_VERSION into every template so base.html can
                 # bake it into a <meta> tag for the client-side version
@@ -1141,6 +1148,14 @@ BASEMAP_STYLES = {
 }
 
 BASEMAP = config("BASEMAP", default="openfreemap_liberty")
+
+# SNOW-791: which drawing of the weather icons to serve. Snowdesk draws its
+# own (bin/build-weather-icons) and that is the default; the other sets are
+# kept for comparison at /_icon-sets/. See apps/weather/icon_sets.py for the
+# registry and why every set shares one filename scheme. In DEBUG a
+# ``?icons=<name>`` query parameter overrides this for the session, so the
+# sets can be flipped against real data without a restart.
+WEATHER_ICON_SET = config("WEATHER_ICON_SET", default="snowdesk")
 
 try:
     BASEMAP_STYLE_URL = BASEMAP_STYLES[BASEMAP]

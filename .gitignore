@@ -109,3 +109,7 @@ design-canvas.pen
 # which runs on deploy and before a Lighthouse run. Never committed — the
 # sources they map back to are the tracked files themselves.
 static/js/*.js.map
+
+# Icon sets we may not redistribute (this repo is public). Populated
+# locally for the icon-set switch; see docs on WEATHER_ICON_SET.
+static/icons/weather/_local/

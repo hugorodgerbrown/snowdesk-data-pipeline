@@ -28,6 +28,10 @@ longer compares versions at all: whether a build is acceptable is a server
 decision, returned as ``update_required`` in the ``/api/version`` body.
 Dropping the header also disarms already-deployed shells, which read a
 missing floor as "no floor enforced".
+
+``WeatherIconSetMiddleware`` (SNOW-791) honours ``?icons=<name>`` in DEBUG,
+pinning one of the candidate weather icon sets for the session so they can
+be compared against real data. Inert when DEBUG is off.
 """
 
 from __future__ import annotations
@@ -37,6 +41,8 @@ from collections.abc import Callable
 from django.conf import settings
 from django.db import connection
 from django.http import HttpRequest, HttpResponse
+
+from apps.weather.icon_sets import set_active_icon_set_resolver
 
 
 class QueryCountMiddleware:
@@ -144,3 +150,70 @@ class AppVersionHeaderMiddleware:
         response = self.get_response(request)
         response[self._CURRENT_HEADER] = str(getattr(settings, "APP_VERSION", ""))
         return response
+
+
+class WeatherIconSetMiddleware:
+    """Let ``?icons=<name>`` pin a weather icon set for the session (DEBUG only).
+
+    SNOW-791 is choosing between four candidate icon sets, and the only way
+    to judge them is against real data on the real surfaces. An environment
+    variable would mean a restart per comparison; this makes it a click.
+
+    The parameter is honoured **only when ``DEBUG`` is on**. On a deployed
+    site the middleware is inert, so a crafted query string cannot change
+    what any visitor is served — ``settings.WEATHER_ICON_SET`` is then the
+    only input. An unknown name is stored as-is and resolved by
+    ``apps.weather.icon_sets.icon_set_dir``, which falls back rather than
+    raising.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        """Store the next handler in the chain.
+
+        Args:
+            get_response: The next middleware or view.
+
+        """
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        """Pin the requested set, then defer to the rest of the chain.
+
+        Args:
+            request: The incoming request.
+
+        Returns:
+            The downstream response, unmodified.
+
+        """
+        set_active_icon_set_resolver(lambda: self._pinned_set(request))
+        try:
+            return self.get_response(request)
+        finally:
+            set_active_icon_set_resolver(None)
+
+    @staticmethod
+    def _pinned_set(request: HttpRequest) -> str | None:
+        """Return the set pinned for this request, touching the session only if needed.
+
+        **Reading the session at all adds ``Vary: Cookie`` to the response**,
+        which defeats ``Cache-Control: public`` on the CDN-cacheable
+        endpoints (`/robots.txt`, `/llms.txt` — SNOW-338). A request with no
+        session cookie cannot have a pinned set, so there is nothing to read
+        and the session is left alone.
+
+        Args:
+            request: The incoming request.
+
+        Returns:
+            The pinned set name, or ``None``.
+
+        """
+        if not settings.DEBUG or not hasattr(request, "session"):
+            return None
+        if choice := request.GET.get("icons"):
+            request.session["weather_icon_set"] = choice
+            return choice
+        if settings.SESSION_COOKIE_NAME not in request.COOKIES:
+            return None
+        return request.session.get("weather_icon_set")

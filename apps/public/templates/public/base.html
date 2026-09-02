@@ -188,6 +188,7 @@ extra_js        : scripts loaded at end of <body>. Used by
             {% include "includes/nav.html" %}
         {% endblock %}
         {% block content %}{% endblock %}
+        {% include "includes/_icon_set_switcher.html" %}
         {% block site_footer %}
             {% include "public/_site_footer.html" %}
         {% endblock %}

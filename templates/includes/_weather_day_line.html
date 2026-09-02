@@ -1,4 +1,5 @@
 {% load i18n static %}
+{% load weather_icons %}
 {% comment %}
 templates/includes/_weather_day_line.html — region 3 of the location
 forecast page (SNOW-789).
@@ -44,8 +45,8 @@ Context:
 >
     {# Decorative: the condition is spelled out in the line beside it. #}
     <img
-        src="{% static 'icons/weather/'|add:day.icon_filename %}"
-        class="w-10 h-10 shrink-0"
+        src="{% weather_icon_url day.icon_filename %}"
+        class="{% weather_icon_class %} w-10 h-10 shrink-0"
         alt=""
         aria-hidden="true"
     >

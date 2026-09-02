@@ -18,19 +18,22 @@
  * Three things this module owns that the old one did not:
  *
  *   1. THE ICON IS DERIVED HERE, NOT SERVED. The feed carries the WMO
- *      weather code and the day's max temperature and nothing else. The
- *      code → bucket table below mirrors `_WMO_CODE_TO_ICON_BUCKET` in
- *      `apps/weather/services/weather_display.py`, and the two are held
- *      together by `tests/weather/services/test_icon_table_parity.py`,
- *      which parses this file. A mirror with no guard is drift waiting to
- *      happen.
+ *      weather code and the day's max temperature and nothing else. TWO
+ *      tables below mirror the server: the code → bucket map mirrors
+ *      `_WMO_CODE_TO_ICON_BUCKET` and `DAY_NIGHT_BUCKETS` mirrors
+ *      `WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT`, both in
+ *      `apps/weather/services/weather_display.py`. Both are held to their
+ *      Python counterpart by
+ *      `tests/weather/services/test_icon_table_parity.py`, which parses
+ *      this file. A mirror with no guard is drift waiting to happen.
  *
- *      The map always draws the DAY variant. A map symbol summarises a
- *      whole calendar day — a daily maximum temperature and a daily
- *      condition — so switching every station on the map to night icons
- *      because the reader happens to be up late says something about the
- *      reader, not about the day. The server-rendered panels, which show
- *      one place at a time, still make the day/night call (`is_day`).
+ *      Where the set draws a day/night pair the map always takes the DAY
+ *      variant. A map symbol summarises a whole calendar day — a daily
+ *      maximum temperature and a daily condition — so switching every
+ *      station on the map to night icons because the reader happens to be
+ *      up late says something about the reader, not about the day. The
+ *      server-rendered panels, which show one place at a time, still make
+ *      the day/night call (`is_day`).
  *
  *   2. THE LABEL IS THE SYMBOL, CAPTIONED. The WMO condition icon leads and
  *      the temperature sits under it; the station's ground elevation is
@@ -61,8 +64,8 @@
  * Public API — attached to `window.pwaWeatherCore`:
  *
  *   iconForCode(code)
- *     WMO weather interpretation code → Meteocons SVG basename, e.g.
- *     `'light_snow-day.svg'`. Unknown codes fall back to `'cloudy.svg'`,
+ *     WMO weather interpretation code → weather SVG basename, e.g.
+ *     `'light_snow.svg'`. Unknown codes fall back to `'cloudy.svg'`,
  *     matching the server's own neutral default.
  *   formatElevation(elevationM)
  *     The station's ground elevation as the label's second line.
@@ -132,8 +135,16 @@
     99: 'thunder',
   };
 
-  // The one bucket shipping a single file rather than a day/night pair.
-  var NO_DAY_NIGHT_BUCKET = 'cloudy';
+  // The buckets shipping a day/night PAIR rather than a single file — the
+  // two the icon set draws a sun or a moon in. Mirrors
+  // WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT in
+  // apps/weather/services/weather_display.py; parsed by
+  // tests/weather/services/test_icon_table_parity.py, so keep the literal
+  // shape (one quoted bucket per line) or that guard stops reading it.
+  var DAY_NIGHT_BUCKETS = [
+    'clear',
+    'partly_cloudy',
+  ];
   var DEFAULT_BUCKET = 'cloudy';
 
   // The registered MapLibre image id of the elevation mark. Declared here
@@ -143,17 +154,20 @@
   var ELEVATION_MARK_ID = 'weather-elevation-mark';
 
   /**
-   * WMO weather interpretation code → Meteocons SVG basename.
+   * WMO weather interpretation code → weather SVG basename.
+   *
+   * Only `DAY_NIGHT_BUCKETS` take the `-day` suffix; every other bucket
+   * ships one file whatever the light, so its filename is the bare bucket.
    *
    * @param {number|null|undefined} code
-   * @returns {string} e.g. `'light_snow-day.svg'`; `'cloudy.svg'` for an
-   *   unrecognised or missing code.
+   * @returns {string} e.g. `'light_snow.svg'`, `'clear-day.svg'`;
+   *   `'cloudy.svg'` for an unrecognised or missing code.
    */
   function iconForCode(code) {
     var bucket = WMO_ICON_BUCKET[code];
     if (!bucket) bucket = DEFAULT_BUCKET;
-    if (bucket === NO_DAY_NIGHT_BUCKET) return bucket + '.svg';
-    return bucket + '-day.svg';
+    if (DAY_NIGHT_BUCKETS.indexOf(bucket) !== -1) return bucket + '-day.svg';
+    return bucket + '.svg';
   }
 
   /**

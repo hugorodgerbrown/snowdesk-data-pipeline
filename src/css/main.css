@@ -513,6 +513,13 @@
   --color-weather-thunder-night:       #101220;
   --color-weather-fallback:            #3a3733;   /* no-snapshot neutral (theme-invariant) */
 
+  /* The condition icon's halo (SNOW-791). The set draws cloud bodies at
+     #dddddd — 1.28:1 on white — so on a light card the symbol reads by its
+     silhouette and the silhouette needs an edge. The map already darkened
+     one in canvas; this is the same value, so all four weather surfaces
+     carry one treatment. See `.weather-icon` below. */
+  --color-weather-icon-halo: rgba(41, 45, 54, 0.85);
+
   /* Border radius */
   --radius-card:   12px;   /* outer card shell                    */
   --radius-tag:    8px;    /* problem tag, inner chips             */
@@ -705,6 +712,12 @@
      7.8:1 on this ground — accent's dark #3b82f6 manages only 3.8:1. */
   --color-chart-note-bg:   #252a44;
   --color-chart-note-text: #93c5fd;
+
+  /* No halo on dark. The pale cloud the light halo exists to outline has
+     nothing to hide against #2a2825 — it is already the lightest thing on
+     the card — and a dark edge there would read as grime around the
+     symbol rather than as a border. */
+  --color-weather-icon-halo: transparent;
 }
 
 
@@ -1645,6 +1658,40 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   )
   .forecast-day-line[data-day-line="6"] {
   display: flex;
+}
+
+
+/* —— Weather condition icon halo (SNOW-791) ——
+   Outlines the symbol so it survives a light
+   card.
+
+   The icon set draws cloud bodies in a pale
+   grey (#dddddd) that reads on a dark plate
+   and dissolves on --color-card, which is
+   near-white. A zero-offset drop-shadow is a
+   halo around the alpha channel, so it follows
+   the symbol's real silhouette rather than
+   boxing it, and the artist's colours are
+   untouched — only the perimeter darkens.
+
+   TWO chained shadows, not one: this mirrors
+   the two filtered draws map.js makes into
+   canvas before its unfiltered pass, and one
+   alone is too faint to separate a cloud edge
+   from the card. No third pass is needed here
+   — CSS drop-shadow paints BEHIND its source,
+   where the canvas filter replaces it.
+
+   Cannot be a Tailwind utility: the value is a
+   pair of chained filter functions reading a
+   token, which arbitrary `drop-shadow-[…]`
+   syntax cannot express as one class.
+   ————————————————————————————————————————— */
+
+.weather-icon {
+  filter:
+    drop-shadow(0 0 1px var(--color-weather-icon-halo))
+    drop-shadow(0 0 1px var(--color-weather-icon-halo));
 }
 
 /* —————————————————————————————————————————
