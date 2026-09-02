@@ -407,12 +407,20 @@ describe('picking a day', () => {
   it('does nothing when the day is in the future', async () => {
     const { commits } = await loadCalendar();
     openPopup();
+    // SNOW-793: boot commits today when the URL names no day, so `commits`
+    // is not empty by the time the popup opens. What "does nothing" means
+    // is that the CLICK adds nothing — a disabled day dispatches no event —
+    // so the baseline is taken here rather than assumed to be zero. The
+    // stale-instance caveat above still does not apply: nothing is
+    // dispatched at all, so there is no second instance to go stale.
+    const committedBeforeClick = commits.length;
 
     dayButton('2026-05-20').click();
 
-    // Nothing at all was announced — a disabled day dispatches no event, so
-    // the stale-instance caveat above does not apply here.
-    expect(commits).toEqual([]);
+    expect(commits.length).toBe(committedBeforeClick);
+    // Unchanged by SNOW-793, and worth keeping for its own reason: the boot
+    // commit is silent, so a bare URL stays bare. A future day must not
+    // write one either.
     expect(location.search).toBe('');
     expect(document.getElementById('map-calendar').hidden).toBe(false);
   });
