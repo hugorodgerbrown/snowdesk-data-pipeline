@@ -1,8 +1,14 @@
 # .github/workflows/release.yml — Tag and record a production release.
 #
-# Fires when the `release` branch advances, which happens when `release` is
-# fast-forwarded to `main` (see bin/cut-release) — the same event that
-# triggers the production deploy on Render. The job computes a CalVer tag for today
+# Runs when the `release` branch advances — the same event that triggers the
+# production deploy on Render. That normally happens inside release-sync.yml,
+# which fast-forwards `release` after a release PR merges and then dispatches
+# this workflow; it dispatches rather than relying on the `push` trigger
+# because a push made with GITHUB_TOKEN does not trigger other workflows, so
+# a released commit would otherwise go untagged. The `push` trigger still
+# covers a human pushing `release` by hand.
+#
+# The job computes a CalVer tag for today
 # (YYYY.MM.DD, with a `.N` suffix when more than one release ships in a
 # single day) and creates a GitHub Release with auto-generated notes.
 #
@@ -14,9 +20,15 @@
 name: Release
 
 on:
+  # A human pushing `release` directly — the manual fallback.
   push:
     branches:
       - release
+
+  # The normal path: release-sync.yml dispatches this once it has
+  # fast-forwarded `release`. `github.sha` is the tip of the dispatched ref,
+  # so the tag lands on the released commit either way.
+  workflow_dispatch:
 
 # Never run two release jobs at once, and never cancel one mid-flight —
 # cancelling after a tag is created would leave a tag with no Release.
