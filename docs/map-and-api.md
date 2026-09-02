@@ -51,6 +51,45 @@ scope but **not** on `window`, which is how `map_layer_sync_status.js` read
 would otherwise evaluate each file as an ES module and module-scope every
 one of those shared bindings.
 
+### The scrubber's calendar popup (SNOW-792)
+
+`map_scrubber_calendar.js` is the tenth surface, loading after
+`map_scrubber.js`. It renders a month grid above the scrubber pill so a
+visitor can name a day instead of hitting it with a drag — the track spans
+a seven-month season in a few hundred pixels, so a pixel is about a day and
+a release snaps to whichever rated day is nearest.
+
+**It owns no commit path.** Picking a day dispatches `snowdesk:scrub-to`
+`{date, source}`; `map_scrubber.js` listens, checks the date is inside the
+season window, and passes it to `commitDate` — the same function a drag
+release calls, so the repaint, the `?d=` write and the outgoing
+`snowdesk:date-changed` are identical either way. Two surfaces writing the
+URL is two places for the URL and the paint to drift apart.
+
+That event name is a revival. It was the season ribbon's click-to-scrub
+contract until SNOW-615 retired it: the ribbon cells stopped carrying click
+handlers when they moved into the scrubber track, leaving `map.js` with a
+listener no one dispatched to.
+
+**Which days it offers** comes from the season-ratings payload the scrubber
+already fetches. A day with no frame in that cache cannot be painted, so
+offering it would be offering a click that lands silently somewhere else —
+the exact imprecision the control exists to remove. Days outside the season
+window are disabled by the same rule.
+
+The grid is built client-side (`calendar_core.js` holds the maths,
+unit-tested in `tests/js/test_calendar_core.js`), so every word in it is
+handed over by the server: `_base_map_context` supplies Django's own lazy
+month and weekday tables, and the popup partial carries them as a
+pipe-separated `data-months` attribute plus a rendered weekday row. Nothing
+user-facing is a JavaScript literal — see [`i18n.md`](i18n.md).
+
+One wrinkle worth knowing about: the popup is a child of `#season-scrubber`
+(z-index 2) and cannot escape that stacking context, but it opens upward
+into `.map-controls-br` (z-index 4). So the open state is mirrored onto the
+pill as `data-calendar="open"` and the CSS lifts the pill itself while it
+holds.
+
 **The order is enforced, not hand-maintained** (SNOW-647).
 `tests/public/test_map_script_order.py` renders the homepage and asserts its
 script sequence matches `MAP_BUNDLE`, that the bundle loads as one
@@ -62,13 +101,14 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Nine surfaces float over the map, and only one is ever meaningful at once:
+Ten surfaces float over the map, and only one is ever meaningful at once:
 the layers menu, the four UGC panels (downloads, favourites, field
 observations, and routes since SNOW-686), the anchored detail popup a resort
 pin, a favourite pin or (since SNOW-687) a saved route's line opens, the
 legend card (`#map-legend-card`), the help
-tour's coachmark (`#map-help-overlay`) and the bulletin fill-strength flyout
-(`#map-fill-flyout`). Each registers with `window.pwaMapOverlays`
+tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
+(`#map-fill-flyout`) and the scrubber's calendar popup
+(`scrubber-calendar`, SNOW-792). Each registers with `window.pwaMapOverlays`
 (`static/js/map_overlay_exclusivity.js`) — a name plus `isOpen()` and
 `close()` — and calls `opening(name)` before it reveals itself; the
 registry closes the rest. `MapSheet.attach` registers on a caller's behalf,

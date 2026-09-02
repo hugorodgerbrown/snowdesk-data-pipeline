@@ -838,9 +838,13 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "Floating media-player transport at the bottom of /map/. Four circular "
             "buttons (skip-to-start, play-reverse, play-forward, skip-to-end) "
             "bracketing a draggable track; the two play buttons flank the track as a "
-            "symmetric pair. The library variants pin the thumb at season start, "
-            "mid-season, and season end so the thumb positioning is visible at the "
-            "extremes; interaction is non-functional on this page (JS lives in map.js)."
+            "symmetric pair. A fifth button closes the row — the calendar toggle "
+            "(SNOW-792), which is not a transport step: it opens a month grid above "
+            "the pill for jumping to a named day. That popup is built in JavaScript "
+            "and so renders empty here. The library variants pin the thumb at season "
+            "start, mid-season, and season end so the thumb positioning is visible at "
+            "the extremes; interaction is non-functional on this page (JS lives in "
+            "map.js and map_scrubber_calendar.js)."
         ),
         kind="components",
         partial="public/partials/_season_scrubber_demo.html",

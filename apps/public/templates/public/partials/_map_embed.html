@@ -1146,6 +1146,10 @@ Optional context:
     >
         <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
         {% include "public/partials/_season_scrubber_controls.html" %}
+        {# SNOW-792: the calendar popup. Inside the pill because the pill is #}
+        {# the containing block it anchors to, and because the control that  #}
+        {# opens it is one of the transport buttons above.                   #}
+        {% include "public/partials/_scrubber_calendar.html" %}
     </div>
     {# SNOW-333: the field-report / observations roundel now lives inside        #}
     {# #map-controls-br (folded into the bottom-right stack above); its sheet    #}
@@ -1230,6 +1234,12 @@ Optional context:
         </li>
         <li data-help-target="#season-scrubber" data-help-title='{% trans "Timeline scrubber" %}'>
             {% trans "Run through the season day by day." %}
+        </li>
+        {# SNOW-792. map_help.js drops any step whose target selector matches #}
+        {# nothing, so this needs no guard for the pages that render the map  #}
+        {# without the scrubber.                                              #}
+        <li data-help-target="#scrubber-calendar-toggle" data-help-title='{% trans "Jump to a date" %}'>
+            {% trans "Pick a day from a calendar instead of dragging to it." %}
         </li>
         <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
             {% trans "View attribution and EAWS danger level key." %}

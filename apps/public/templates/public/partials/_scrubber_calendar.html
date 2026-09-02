@@ -1,0 +1,106 @@
+{% load i18n %}
+{% comment %}
+public/partials/_scrubber_calendar.html — the scrubber's date picker
+(SNOW-792): a month grid that opens above the season scrubber and commits a
+chosen day through the scrubber's own commit point.
+
+The scrubber track is a few hundred pixels wide and spans a seven-month
+season, so a pixel is about a day and hitting a chosen date by drag is a
+fiddle. This is the precise route to the same place — it does not replace
+the scrubber, and it owns no commit path of its own: picking a day
+dispatches ``snowdesk:scrub-to`` and map_scrubber.js does the rest.
+
+Included by _map_embed.html INSIDE #season-scrubber, which is
+``position: absolute`` and so is the containing block this popup anchors
+to. It is also included by the component-library demo, which renders the
+same markup inert.
+
+Context expected:
+* season_start           — datetime.date: first selectable day.
+* season_end             — datetime.date: last selectable day.
+* today                  — datetime.date: for the today marker.
+* calendar_month_names   — 12 localised month names, January first.
+* calendar_weekday_abbrs — 7 localised weekday abbreviations, Monday first.
+
+The grid itself is built by static/js/map_scrubber_calendar.js rather than
+server-rendered: seven months of a season is ~245 day buttons, and putting
+all of them in the home page's DOM for a control most visits never open is
+a cost every visitor pays for a few who don't. What the server DOES supply
+is every translated word — the month names below travel as a data attribute
+and the weekday header is rendered here — so no user-facing string is a
+JavaScript literal (see docs/i18n.md).
+{% endcomment %}
+<div
+    id="scrubber-calendar"
+    class="scrubber-calendar"
+    data-state="closed"
+    data-season-start="{{ season_start|date:'Y-m-d' }}"
+    data-season-end="{{ season_end|date:'Y-m-d' }}"
+    data-today="{{ today|date:'Y-m-d' }}"
+    {# Pipe-separated because a month name cannot contain a pipe in any #}
+    {# locale, and one attribute beats twelve. Read back by             #}
+    {# map_scrubber_calendar.js to label the header and the day cells.  #}
+    data-months="{{ calendar_month_names|join:'|' }}"
+    role="dialog"
+    aria-modal="false"
+    aria-labelledby="scrubber-calendar-month"
+    hidden
+>
+    <div class="scrubber-calendar-header">
+        <button
+            id="scrubber-calendar-prev"
+            type="button"
+            class="scrubber-calendar-step"
+            aria-label='{% trans "Previous month" %}'
+        >
+            <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="m15 18-6-6 6-6" />
+            </svg>
+        </button>
+        {# Filled by map_scrubber_calendar.js from data-months above. #}
+        {# aria-live so a month step is announced without moving focus. #}
+        <span
+            id="scrubber-calendar-month"
+            class="scrubber-calendar-month"
+            aria-live="polite"
+        ></span>
+        <button
+            id="scrubber-calendar-next"
+            type="button"
+            class="scrubber-calendar-step"
+            aria-label='{% trans "Next month" %}'
+        >
+            <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="m9 18 6-6-6-6" />
+            </svg>
+        </button>
+    </div>
+    {# Weekday header, Monday first to match buildMonthGrid's cell order.   #}
+    {# aria-hidden: each day button carries its own full date label, so the #}
+    {# column headers would only add noise to a screen reader walking the   #}
+    {# grid. #}
+    <div class="scrubber-calendar-weekdays" aria-hidden="true">
+        {% for abbr in calendar_weekday_abbrs %}<span>{{ abbr }}</span>{% endfor %}
+    </div>
+    <div id="scrubber-calendar-grid" class="scrubber-calendar-grid"></div>
+</div>

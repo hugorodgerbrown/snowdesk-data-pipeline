@@ -313,6 +313,29 @@
     }));
   });
 
+  // ---- SNOW-792: jump to a date chosen elsewhere ----
+  //
+  // The calendar popup (static/js/map_scrubber_calendar.js) picks a day and
+  // dispatches it here rather than committing it, so ``commitDate`` above
+  // stays the one place a date is applied — repaint, ``?d=`` write and
+  // ``snowdesk:date-changed`` all happen exactly as they do for a drag
+  // release.
+  //
+  // ``snowdesk:scrub-to`` is the name the season ribbon's click-to-scrub
+  // contract used until SNOW-615 retired it as dead (its cells had stopped
+  // carrying click handlers when they moved into the track, leaving the
+  // listener with no dispatcher). It is the right name for this, and
+  // reviving it is cheaper than inventing a second one that means the same.
+  //
+  // Guarded on the season window: a date outside it has no thumb position,
+  // so committing it would put the thumb at a clamped percentage that no
+  // longer matches the date the URL then claims.
+  document.addEventListener('snowdesk:scrub-to', (e) => {
+    const dateKey = e.detail && e.detail.date;
+    if (!dateKey || !isInSeason(dateKey)) return;
+    commitDate(dateKey);
+  });
+
   // ---- SNOW-236: Re-derive effective today on country ratings load ----
   // ensureCountryLoaded dispatches this event after merging a new country's
   // ratings into the shared cache. Re-run the effective-last computation so

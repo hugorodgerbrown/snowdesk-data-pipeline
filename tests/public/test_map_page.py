@@ -1109,3 +1109,166 @@ def test_slope_legend_section_renders_with_its_caveat() -> None:
     # still be the way to reach them, or a reader gets five colours and no
     # warning that the layer averages the ground and stops at a border.
     assert "#help-topic-slope" in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-792 — the scrubber's calendar popup
+# ---------------------------------------------------------------------------
+
+
+def _one(pattern: str, content: str, what: str) -> str:
+    """The first capture group of ``pattern`` in ``content``, or fail saying what.
+
+    A bare ``re.search(...).group(1)`` in a test reports an ``AttributeError``
+    on ``None`` when the markup it is looking for has gone, which names the
+    test's own line rather than the thing that disappeared.
+
+    Args:
+        pattern: A regex with at least one capture group.
+        content: The rendered page.
+        what: What is being looked for, for the failure message.
+
+    Returns:
+        The first capture group.
+
+    """
+    match = re.search(pattern, content, re.S)
+    assert match is not None, f"{what} is missing from the map page"
+    return match.group(1)
+
+
+@pytest.mark.django_db
+def test_scrubber_calendar_toggle_is_a_transport_button() -> None:
+    """
+    The calendar toggle carries ``.scrubber-transport-button``.
+
+    That class is not cosmetic here: the ``data-state="loading"`` and
+    ``"error"`` rules in static/css/map.css hide the transport buttons as a
+    set, and this is what keeps the toggle out of reach until the
+    season-ratings data that decides which days are selectable has arrived.
+    A styling-only class string would leave a button that opens a grid of
+    days none of which the map can paint.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    toggle = _one(
+        r'(<button[^>]*id="scrubber-calendar-toggle"[^>]*>)',
+        content,
+        "the calendar toggle",
+    )
+    assert "scrubber-transport-button" in toggle
+
+
+@pytest.mark.django_db
+def test_scrubber_calendar_toggle_points_at_the_popup() -> None:
+    """The toggle is wired to the popup for assistive technology.
+
+    ``aria-controls`` has to name an element that exists, and
+    ``aria-expanded`` has to ship in its closed state — map_scrubber_calendar.js
+    only ever flips it.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    toggle = _one(
+        r'(<button[^>]*id="scrubber-calendar-toggle"[^>]*>)',
+        content,
+        "the calendar toggle",
+    )
+    assert 'aria-controls="scrubber-calendar"' in toggle
+    assert 'aria-expanded="false"' in toggle
+    assert 'id="scrubber-calendar"' in content
+
+
+@pytest.mark.django_db
+def test_scrubber_calendar_ships_hidden() -> None:
+    """The popup is closed at first paint.
+
+    Server-rendered rather than hidden by JS on boot: a grid that flashes
+    over the map before the module runs is a visible defect, and the module
+    is deferred.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    popup = _one(
+        r'(<div[^>]*id="scrubber-calendar"[^>]*>)', content, "the calendar popup"
+    )
+    assert "hidden" in popup
+    assert 'data-state="closed"' in popup
+
+
+@pytest.mark.django_db
+def test_scrubber_calendar_carries_the_season_window() -> None:
+    """
+    The popup's own season bounds match the scrubber's.
+
+    They are read independently by two modules, and a disagreement would
+    let the calendar offer a day the scrubber then refuses to commit.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    popup = _one(
+        r'(<div[^>]*id="scrubber-calendar"[^>]*>)', content, "the calendar popup"
+    )
+    scrubber = _one(r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the scrubber")
+    for attribute in ("data-season-start", "data-season-end", "data-today"):
+        value = _one(rf'{attribute}="([^"]*)"', popup, attribute)
+        assert value, f"{attribute} is empty on the calendar popup"
+        assert f'{attribute}="{value}"' in scrubber
+
+
+@pytest.mark.django_db
+def test_scrubber_calendar_carries_translated_labels() -> None:
+    """
+    Every word in the grid comes from the server.
+
+    ``makemessages`` never scans JavaScript, so a month name written as a JS
+    literal ships as English to every locale (docs/i18n.md). The popup
+    builds its grid client-side, which makes this attribute and the weekday
+    row the only route those words have onto the page.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    popup = _one(
+        r'(<div[^>]*id="scrubber-calendar"[^>]*>)', content, "the calendar popup"
+    )
+    months = _one(r'data-months="([^"]*)"', popup, "data-months").split("|")
+    assert len(months) == 12
+    assert months[0] == "January"
+    assert months[11] == "December"
+
+    weekdays = _one(
+        r'<div class="scrubber-calendar-weekdays"[^>]*>(.*?)</div>',
+        content,
+        "the weekday header",
+    )
+    # Monday first, matching buildMonthGrid's cell order — a Sunday-first
+    # header over a Monday-first grid mislabels every column.
+    assert re.findall(r"<span>([^<]*)</span>", weekdays)[0] == "Mon"
+
+
+@pytest.mark.django_db
+def test_scrubber_calendar_is_in_the_help_tour() -> None:
+    """The toggle carries a coachmark step, straight after the scrubber's.
+
+    The two are one idea — the scrubber runs through the season, the
+    calendar jumps to a day in it — so the tour introduces them together.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    steps = re.findall(r'data-help-target="([^"]+)"', content)
+    assert "#scrubber-calendar-toggle" in steps
+    assert (
+        steps.index("#scrubber-calendar-toggle") == steps.index("#season-scrubber") + 1
+    )

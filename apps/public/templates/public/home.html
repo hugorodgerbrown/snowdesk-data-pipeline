@@ -233,6 +233,11 @@ in addition to the shared map assets.
     {# unit-tested directly (tests/js/test_scrubber_core.js) — map.js's own  #}
     {# IIFEs delegate to window.pwaScrubberCore. Must load before map.js.    #}
     <script defer src="{% static 'js/scrubber_core.js' %}"></script>
+    {# SNOW-792: pure month-grid math for the scrubber's calendar popup      #}
+    {# (window.pwaCalendarCore), unit-tested in tests/js/test_calendar_core. #}
+    {# Must load before map_scrubber_calendar.js, which reads it at parse    #}
+    {# time and stays shut without it.                                       #}
+    <script defer src="{% static 'js/calendar_core.js' %}"></script>
     {# SNOW-505: layers-popover sync-status dots (window.pwaLayerSyncStatus). #}
     {# Loads before map.js, whose basemapPickerInit calls refresh() from     #}
     {# setMenuOpen on every popover open.                                    #}
@@ -338,6 +343,9 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_autozoom.js' %}"></script>
     <script defer src="{% static 'js/map_geolocate.js' %}"></script>
     <script defer src="{% static 'js/map_season_ribbon.js' %}"></script>
+    {# SNOW-792: the scrubber's calendar popup. After map_scrubber.js, which #}
+    {# owns the snowdesk:scrub-to listener it dispatches into.                #}
+    <script defer src="{% static 'js/map_scrubber_calendar.js' %}"></script>
     {# SNOW-658: the three overlay roundels' shared "my overlay is on the    #}
     {# map" state (data-overlay-shown). Reads window.pwaDownloadedOverlay /  #}
     {# pwaFavouritesOverlay / pwaCommunityReportsOverlay, which map.js       #}
