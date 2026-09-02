@@ -1,0 +1,126 @@
+# .github/workflows/release-sync.yml — Ship `main` to production when VERSION moves.
+#
+# The release is a pull request (see bin/cut-release): one commit bumping the
+# `VERSION` ordinal, with the release note in the description. Merging it is
+# the only human step. This workflow is what makes that true — it watches
+# `main` for `VERSION` changing and, when it does, fast-forwards `release` to
+# that commit, which is what Render deploys production from.
+#
+# It waits by *retrying the ref update*, rather than by enumerating the checks
+# it expects. The "Release branch" ruleset already requires a specific set of
+# green contexts on the target commit and rejects the update until they
+# report, so retrying leaves the ruleset as the single source of truth for
+# what gates a release. Enumerating the contexts here would duplicate that
+# list and silently rot the day someone edits the ruleset — and waiting on
+# *all* check runs instead would block on this very job, and on non-gating
+# ones like `Dependency audit (dev + npm)`, which CLAUDE.md marks
+# detection-only.
+#
+# Merge method does not matter. Squash and merge-commit both leave the bump
+# on `main`, and `release` is always an ancestor of `main`, so advancing it to
+# whatever `main`'s tip is remains a fast-forward either way.
+#
+# The final step dispatches release.yml rather than relying on its `push`
+# trigger: a push made with GITHUB_TOKEN does not trigger other workflows, so
+# release.yml would never fire and production would deploy with no CalVer tag
+# and no GitHub Release. Its `push` trigger is still the right one for a
+# manual push to `release` by a human, so both paths stay covered and only
+# one of them ever runs for a given release.
+
+name: Release sync
+
+on:
+  push:
+    branches:
+      - main
+
+# One release at a time, and never cancel one in flight — a cancellation
+# between the push to `release` and the dispatch would deploy production
+# without tagging it.
+concurrency:
+  group: release-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write # advance the `release` ref
+  actions: write # dispatch release.yml
+
+jobs:
+  sync:
+    name: Fast-forward release to main
+    runs-on: ubuntu-latest
+    # Generous: the gating checks include Playwright and the security audit,
+    # and the wait loop below is capped well inside this.
+    timeout-minutes: 75
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          # HEAD and its first parent, which is the previous `main` tip for a
+          # squash and for a merge commit alike — enough to see whether this
+          # push changed VERSION.
+          fetch-depth: 2
+
+      - name: Did this push change VERSION?
+        id: bumped
+        run: |
+          if ! git rev-parse --verify --quiet HEAD^ >/dev/null; then
+            echo "No parent commit to compare against."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only HEAD^ HEAD | grep -qx 'VERSION'; then
+            echo "VERSION changed — this commit is a release."
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION unchanged — nothing to release."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Confirm the advance is a fast-forward
+        if: steps.bumped.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          status=$(gh api "repos/${GITHUB_REPOSITORY}/compare/release...${GITHUB_SHA}" --jq '.status')
+          echo "release...main is '${status}'"
+          case "$status" in
+            ahead) ;;
+            identical) echo "release already points at this commit." ;;
+            *)
+              echo "::error::release is '${status}' relative to main, so the advance would not be a fast-forward. Reconcile release with main by hand."
+              exit 1
+              ;;
+          esac
+
+      - name: Fast-forward release to this commit
+        if: steps.bumped.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A server-side ref update, not a push: `actions/checkout` leaves a
+          # shallow clone, which git can refuse to push from, and the remote
+          # already has every object since this commit is on `main`. Omitting
+          # `force` makes the API itself reject a non-fast-forward, so that
+          # invariant holds even if the check above is ever wrong.
+          #
+          # The ruleset rejects the update until this commit's required checks
+          # are green, so a rejection early on means "not yet", not "no".
+          for attempt in $(seq 1 60); do
+            if gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/release" \
+                 -f "sha=${GITHUB_SHA}" >/dev/null; then
+              echo "release now points at ${GITHUB_SHA}."
+              exit 0
+            fi
+            echo "Rejected (attempt ${attempt}/60) — required checks are probably still running. Retrying in 60s."
+            sleep 60
+          done
+          echo "::error::release did not accept ${GITHUB_SHA} within 60 minutes. Check whether a required check failed on main."
+          exit 1
+
+      - name: Tag the release and publish the notes
+        if: steps.bumped.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --ref release

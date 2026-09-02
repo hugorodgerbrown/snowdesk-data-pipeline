@@ -1,8 +1,8 @@
 ---
 name: deployment
-description: Path-to-live: main→staging, release→production, Render topology, fast-forward release to main, CalVer tags, /livez + /healthz health checks
+description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, release-sync fast-forward, Render topology, CalVer tags
 status: current
-last-reviewed: 2026-07-31
+last-reviewed: 2026-09-02
 ---
 
 # Deployment / path-to-live
@@ -14,14 +14,15 @@ and production only on an explicit release.
 ```
 feature/SNOW-xxx ──PR──▶ main ──────────────▶ Staging   (auto, 1 web dyno)
                           │
+ release PR (VERSION) ────┤
                           └──fast-forward──▶ release ───▶ Production (3 services)
-                                                          + GitHub Release (CalVer tag)
+                            (release-sync)                + GitHub Release (CalVer tag)
 ```
 
 | Branch    | Deploys to | When                                   | Services |
 |-----------|------------|----------------------------------------|----------|
 | `main`    | Staging    | every merge (the default branch)       | 1 web    |
-| `release` | Production | when `release` fast-forwards to `main` | web + scheduler + task worker |
+| `release` | Production | when the release PR merges to `main`   | web + scheduler + task worker |
 
 `main` is the GitHub default branch; feature PRs target it. `release`
 behaves like a tag that moves with `main`: it advances **only** by a
@@ -182,7 +183,7 @@ Two settings exist only to keep the probes answerable, both derived from
 env var, so if Render's prober sends a `Host` that isn't listed, Django answers
 400 and every later deploy fails its health check. Staging auto-deploys from
 `main`, which gives a free gate: confirm the staging deploy goes healthy and
-both paths answer 200, then fast-forward `release`.
+both paths answer 200, then merge the release PR.
 
 ## Renaming or moving an authentication backend logs everyone out
 
@@ -206,44 +207,83 @@ to measure by session continuity.
 
 ## Cutting a release
 
-1. Confirm `main` is green and what is on `main` has been verified on
-   staging.
-2. **Bump `VERSION`** on `main` (via a PR, like any other change) — one
-   line holding the release ordinal, e.g. `24` → `25`. This is what the
-   account menu shows as "v25"; see "Two version numbers" below for why it
-   is a tracked file rather than something derived. `bin/cut-release`
-   refuses to release when it has not moved, so a forgotten bump stops the
-   release rather than shipping a menu that names the previous one.
+Releasing is two commands and one click.
 
-   **Name only one release number in that commit.** Render's deploy list
-   renders the subject and body flattened onto a single line, so a bump
-   whose body opens by describing what the *previous* release shipped
-   produces "Bump VERSION to 27 … Release 26 shipped …" against the live
-   deploy, and a reader cannot tell which version is running. That happened
-   on 2026-08-30. Keep the body to why this bump exists; what the last
-   release contained belongs in the PR description or the GitHub Release,
-   both of which are read on their own.
-3. Fast-forward `release` to `main`. Use the helper, which lists the
-   `SNOW-xx` tickets that are on `main` but not yet on `release` and then
-   advances the ref:
+```bash
+bin/cut-release            # dry run — prints the version, tickets and PR body
+bin/cut-release --commit   # pushes release-vNN and opens the release PR
+```
 
-   ```bash
-   bin/cut-release            # dry run — prints the target SHA and ticket list
-   bin/cut-release --commit   # fast-forwards origin/release to origin/main
-   ```
+The script opens a PR against `main` carrying a single commit — the `VERSION`
+bump — with the release note in the description: every `SNOW-xx` ticket on
+`main` that production has not yet seen, each under its own commit subject.
+Nothing has shipped at that point; read the list, confirm staging is healthy,
+and merge when you want to ship.
 
-   The push carries the exact `main` commit, so no new CI run is needed: the
-   ruleset reuses that commit's already-green checks, and the push is
-   rejected if they are not green. There is no release PR.
-4. Render redeploys the three production services from the new `release`
-   tip.
-5. The [`release.yml`](../.github/workflows/release.yml) workflow fires on
-   the push to `release`, tags the commit, and creates a GitHub Release.
+**Merging the PR is the release.**
+[`release-sync.yml`](../.github/workflows/release-sync.yml) sees `VERSION`
+change on `main` and then:
 
-### One-time migration off the PR flow
+1. waits for that commit's required checks — by retrying the ref update,
+   since the "Release branch" ruleset rejects it until they are green;
+2. fast-forwards `release` to the commit, which redeploys all three
+   production services on Render;
+3. dispatches [`release.yml`](../.github/workflows/release.yml), which tags
+   the commit CalVer and creates the GitHub Release.
+
+Staging gets only the `VERSION` diff (it already has everything else);
+production gets the bump and every commit since the last release; and the two
+refs end up identical.
+
+**Squash or merge-commit both work.** `release` is always an ancestor of
+`main`, so advancing it to `main`'s tip is a fast-forward whichever way the PR
+lands. (Rebase merging is disabled on `main` by the ruleset.)
+
+The script derives the next ordinal itself, so `VERSION` can no longer be
+forgotten or mistyped — the bump and the release are now the same act. It
+refuses to open a second release while `VERSION` differs between `main` and
+`release`, which is the signature of a release PR that merged while the sync
+had not finished.
+
+**The bump commit names only one release number.** Render's deploy list
+renders subject and body flattened onto a single line, so a message that also
+described what the *previous* release shipped produced "Bump VERSION to 27 …
+Release 26 shipped …" against the live deploy, and a reader could not tell
+which was running. That happened on 2026-08-30. What the last release
+contained belongs in the PR description and the GitHub Release, both of which
+are read on their own.
+
+### Why the sync dispatches rather than relying on a push
+
+A push made with `GITHUB_TOKEN` does not trigger other workflows. If
+`release-sync.yml` left `release.yml` to fire on its `push:` trigger,
+production would deploy with no CalVer tag and no GitHub Release, and nothing
+would report the omission. So it dispatches `release.yml` explicitly.
+`release.yml` keeps its `push:` trigger for a human pushing `release` by hand;
+only one of the two paths runs for any given release.
+
+### Why the sync waits by retrying the ref update
+
+The "Release branch" ruleset already names the contexts that gate a release.
+Listing them again in the workflow would duplicate that list and rot the day
+someone edits the ruleset, so the workflow retries the update and lets the
+ruleset decide. Waiting on *all* check runs instead would deadlock on the sync
+job's own check run, and would block on non-gating ones such as `Dependency
+audit (dev + npm)`, which is detection-only.
+
+The advance is a GitHub ref update rather than a `git push`: `actions/checkout`
+leaves a shallow clone that git can refuse to push from, the remote already
+holds every object (the commit is on `main`), and the API rejects a
+non-fast-forward unless `force` is passed, which it is not.
+
+### One-time reset after the old merge-into-release flow (historical)
+
+This was done once, before `release` began fast-forwarding; it is recorded
+here for the case where `release` ever diverges again.
 
 The fast-forward only works when `release` is an ancestor of `main`. The
-old PR-based flow left merge commits on `release` that are not on `main`, so
+old flow merged into `release` directly, leaving merge commits on it that are
+not on `main`, so
 the first switch needs a one-time reset of `release` to the `main` tip. This
 is a non-fast-forward update, which the ruleset blocks for everyone except a
 bypass actor (a repo admin), so it must be done deliberately by an admin:
@@ -295,8 +335,9 @@ deriving it at build time:
 
 A file in the tree has none of those problems: present, identical and
 unambiguous at build time on every tier, and reviewable in the PR that
-changes it. The cost is that it is bumped by hand, which is exactly the
-failure the `bin/cut-release` guard covers — a forgotten bump has no other
+changes it. The cost is that it is a hand-maintained number, which is why
+`bin/cut-release` derives the next ordinal and writes it into the release PR
+rather than leaving it to be remembered — a forgotten bump has no other
 symptom, since the deploy is green either way and only the menu is wrong.
 
 ## Versioning and Releases

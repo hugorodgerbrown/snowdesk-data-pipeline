@@ -1,23 +1,30 @@
 """
-tests/bin/test_cut_release.py — the release-number guard in ``bin/cut-release``.
+tests/bin/test_cut_release.py — the release PR opened by ``bin/cut-release``.
 
-``VERSION`` holds the release ordinal the account menu shows as "v24". It is
-the one part of a release nothing else in the pipeline can compute: Render's
-build gets ``RENDER_GIT_COMMIT`` and no tags, and ``release.yml`` creates the
-CalVer tag only after the deploy has already started. So it is bumped by
-hand, and a forgotten bump has no other symptom — the deploy is green, the
-tests pass, and every user reading the menu is told they are on the previous
-release for as long as nobody notices.
+A release is one pull request: a single commit bumping ``VERSION``, with the
+release note in the description. Merging it is the release —
+``release-sync.yml`` sees ``VERSION`` change on ``main``, fast-forwards
+``release``, and tags the commit. The script therefore has to get three
+things right before anyone can review them, because merging is irreversible
+in the way a deploy is:
 
-``bin/cut-release`` is the one point every production release passes
-through, so the check lives there. These tests drive the real script against
-a throwaway repository rather than parsing it, because what matters is the
-exit code: a guard that prints a warning and returns zero would let the
-release through and is indistinguishable from no guard at all.
+* the **ordinal**, which nothing else in the pipeline can compute (Render's
+  build gets ``RENDER_GIT_COMMIT`` and no tags, and ``release.yml`` tags only
+  after the deploy has started) — it is derived here rather than remembered;
+* the **preconditions**, since a release opened while ``release`` has
+  diverged, or while an earlier release is still syncing, would either be
+  rejected on push or skip an ordinal;
+* the **release note**, which is the only summary of what is shipping that a
+  human reads before clicking merge.
 
-The script is exercised in dry-run mode. The guard runs before the
-``--commit`` branch, so no push is ever attempted and the test needs no
-writable remote beyond the local bare repo it makes for itself.
+These tests drive the real script against a throwaway repository rather than
+parsing it, because what matters is the exit code: a check that prints a
+warning and returns zero would let the release through and is
+indistinguishable from no check at all.
+
+The script is exercised in dry-run mode throughout. Every precondition runs
+before the ``--commit`` branch, so no push is attempted and the tests need no
+writable remote beyond the local bare repo they make for themselves.
 """
 
 from __future__ import annotations
@@ -158,70 +165,141 @@ def _run(repo: Path) -> subprocess.CompletedProcess[str]:
     return _exec([BASH, str(SCRIPT)], cwd=repo, check=False)
 
 
-def test_refuses_when_the_release_number_has_not_moved(repo: Path) -> None:
-    """A release shipping the previous release's number is blocked.
+def test_derives_the_next_release_number(repo: Path) -> None:
+    """The ordinal is computed from ``release``, not asked for.
 
-    This is the whole point of the guard: the deploy would be perfectly
-    healthy and the menu would still be wrong.
+    The old flow bumped ``VERSION`` by hand in a separate PR and refused
+    the release when it had not moved. Deriving it removes the failure
+    the guard existed to catch.
     """
-    (repo / "shipped.txt").write_text("work\n", encoding="utf-8")
-    _git(repo, "add", "shipped.txt")
-    _git(repo, "commit", "-m", "SNOW-2: ship something, forget the bump")
+    _git(repo, "commit", "--allow-empty", "-m", "SNOW-2: ship something")
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert "Release:      v23 → v24" in result.stdout
+    assert "Branch:       release-v24" in result.stdout
+    assert "DRY RUN" in result.stdout
+
+
+def test_release_branch_is_not_a_path_under_release(repo: Path) -> None:
+    """The branch is ``release-vNN``, which git can actually create.
+
+    ``refs/heads/release`` and ``refs/heads/release/v24`` cannot coexist,
+    so the slashed form would fail at push time — after the commit had
+    been built, and only on a real release.
+    """
+    _git(repo, "commit", "--allow-empty", "-m", "SNOW-3: ship something")
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert "release-v24" in result.stdout
+    assert "release/v24" not in result.stdout
+
+
+def test_reports_nothing_to_release_when_the_refs_match(repo: Path) -> None:
+    """Production is already on ``main`` — that is success, not an error."""
+    result = _run(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert "nothing to release" in result.stdout
+
+
+def test_refuses_while_an_earlier_release_is_still_syncing(repo: Path) -> None:
+    """A bump on ``main`` that ``release`` has not taken blocks a new release.
+
+    That state means a release PR merged and ``release-sync.yml`` has not
+    finished. Opening a second one would skip an ordinal and race the
+    first workflow to advance ``release``.
+    """
+    _commit_version(repo, "24", "Bump VERSION to 24")
     _git(repo, "push", "origin", "main")
 
     result = _run(repo)
 
     assert result.returncode == 1, result.stdout
-    assert "VERSION is still 23" in result.stderr
+    assert "already in flight" in result.stderr
 
 
-def test_names_the_bump_it_wants(repo: Path) -> None:
-    """The refusal says what to do, not just that something is wrong.
+def test_refuses_when_release_has_diverged_from_main(repo: Path) -> None:
+    """A non-fast-forward advance is refused rather than forced.
 
-    A guard that blocks a release at the moment someone is trying to ship
-    owes them the next command.
+    ``release`` carrying a commit that is not on ``main`` means someone
+    advanced it out of band; the sync workflow's ref update would be
+    rejected, so say so now instead of at merge time.
     """
-    _git(repo, "commit", "--allow-empty", "-m", "SNOW-3: no bump")
+    _git(repo, "checkout", "-B", "diverged", "origin/release")
+    _git(repo, "commit", "--allow-empty", "-m", "out of band")
+    _git(repo, "push", "--force", "origin", "diverged:refs/heads/release")
+    _git(repo, "checkout", "main")
+    _git(repo, "commit", "--allow-empty", "-m", "SNOW-4: ship something")
     _git(repo, "push", "origin", "main")
 
     result = _run(repo)
 
-    assert "> VERSION" in result.stderr
-    assert "24" in result.stderr
+    assert result.returncode == 1, result.stdout
+    assert "not an ancestor" in result.stderr
 
 
-def test_allows_a_release_whose_number_moved(repo: Path) -> None:
-    """The ordinary case still goes through, and reports the transition."""
-    _commit_version(repo, "24", "SNOW-4: bump to 24")
+def test_refuses_when_the_release_branch_already_exists(repo: Path) -> None:
+    """An open release PR is not silently replaced."""
+    _git(repo, "commit", "--allow-empty", "-m", "SNOW-5: ship something")
+    _git(repo, "push", "origin", "main")
+    _git(repo, "push", "origin", "main:refs/heads/release-v24")
+
+    result = _run(repo)
+
+    assert result.returncode == 1, result.stdout
+    assert "already exists" in result.stderr
+
+
+def test_refuses_when_the_release_ordinal_is_unreadable(repo: Path) -> None:
+    """A ``VERSION`` that is not a number stops the release loudly.
+
+    Guessing an ordinal from an unreadable one would put a wrong number
+    in front of every user in the account menu.
+    """
+    # `release` must stay an ancestor of `main`, or the fast-forward check
+    # fires first and this test would pass for the wrong reason.
+    _commit_version(repo, "not-a-number", "break VERSION")
+    _git(repo, "push", "origin", "main")
+    _git(repo, "push", "--force", "origin", "main:refs/heads/release")
+    _git(repo, "commit", "--allow-empty", "-m", "SNOW-6: ship something")
+    _git(repo, "push", "origin", "main")
+
+    result = _run(repo)
+
+    assert result.returncode == 1, result.stdout
+    assert "does not hold a release ordinal" in result.stderr
+
+
+def test_lists_each_ticket_under_its_own_subject(repo: Path) -> None:
+    """The note gives one line per ticket, from that ticket's own commit.
+
+    Matching a ticket anywhere in a subject picks up a merge commit that
+    names three of them — repeating one line under each — and a
+    ``Merge pull request #768 from …/fix/SNOW-781-…`` whose subject says
+    nothing about what shipped. Both happened on the v28 range.
+    """
+    for subject in (
+        "SNOW-778: capture and render hourly wind direction",
+        "SNOW-779: show daily wind on the weather panel",
+        "Merge pull request #767: wind everywhere (SNOW-778, SNOW-779)",
+        "Merge pull request #768 from hugorodgerbrown/fix/SNOW-781-icon",
+        "SNOW-781: stop the library asking for an icon that does not exist",
+    ):
+        _git(repo, "commit", "--allow-empty", "-m", subject)
     _git(repo, "push", "origin", "main")
 
     result = _run(repo)
 
     assert result.returncode == 0, result.stderr
-    assert "Release number: v23 → v24" in result.stdout
-    assert "DRY RUN" in result.stdout
-
-
-def test_does_not_block_a_release_predating_the_version_file(
-    tmp_path: Path,
-) -> None:
-    """A ref with no ``VERSION`` at all is "cannot compare", not "stale".
-
-    Every release cut before this file existed is in that position. The
-    guard exists to catch a forgotten bump, and refusing to release
-    against history it cannot read would be a different, unhelpful rule.
-    """
-    origin = _bare_origin(tmp_path)
-    work = tmp_path / "work"
-    _exec([GIT, "clone", str(origin), str(work)], cwd=tmp_path)
-    (work / "readme.txt").write_text("no VERSION here\n", encoding="utf-8")
-    _git(work, "add", "readme.txt")
-    _git(work, "commit", "-m", "SNOW-5: before VERSION existed")
-    _git(work, "push", "origin", "main")
-    _git(work, "push", "origin", "main:refs/heads/release")
-    _commit_version(work, "24", "SNOW-6: introduce VERSION")
-    _git(work, "push", "origin", "main")
-
-    result = _run(work)
-
-    assert result.returncode == 0, result.stderr
+    assert "- SNOW-778: capture and render hourly wind direction" in result.stdout
+    assert "- SNOW-779: show daily wind on the weather panel" in result.stdout
+    assert (
+        "- SNOW-781: stop the library asking for an icon that does not exist"
+        in result.stdout
+    )
+    assert "Merge pull request" not in result.stdout
