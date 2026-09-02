@@ -5,7 +5,7 @@ for the currently-focused region (SNOW-521; relocated to the bottom-right
 utility stack, then SNOW-522 relocated it again).
 
 Lives in the ribbon header (public/partials/_season_ribbon.html), between
-#region-readout and #region-readout-action — its original SNOW-314 home.
+#region-readout — its original SNOW-314 home.
 SNOW-521 moved it into the bottom-right control stack beside the layers
 pill; SNOW-522 moved it back and handed that bottom-right slot to the new
 custom-area download control (public/partials/_map_custom_download_control.html)
@@ -17,7 +17,7 @@ tier and took a ``tier`` argument; only the micro (leaf) tier survived —
 Major/Minor were dropped because their per-tier detail floors made the
 sizes non-monotonic with containment, which read as a bug.
 
-SNOW-642: always displayed, like its neighbour #region-readout-action. Both
+SNOW-642: always displayed. It and the since-removed view-bulletin roundel
 were hidden until a region was focused (``#region-readout.has-region ~ …``
 sibling rules in static/css/map.css), which meant they and the readout
 disappeared together and the ribbon header collapsed to an empty row — read

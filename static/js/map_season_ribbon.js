@@ -44,7 +44,6 @@
     readoutEl && readoutEl.querySelector('.region-readout-leaf');
   // The "view bulletin" action is now a separate roundel (sibling of the
   // readout pill), not the pill itself; it carries the bulletin href.
-  const readoutAction = document.getElementById('region-readout-action');
 
   // Convert the int rating from the ratings cache to a key string.
   // SNOW-496: thin delegator — see scrubber_core.js's module header.
@@ -265,21 +264,6 @@
       // SNOW-660: a bulletin is one region on one DAY, so with no day chosen
       // there is no URL to build — the roundel sits disabled, exactly as it
       // does for a region with no slug below.
-      if (readoutAction) {
-        if (regionSlug && dateKey) {
-          readoutAction.setAttribute(
-            'href',
-            '/' + regionId.toLowerCase() + '/' + regionSlug + '/' + dateKey + '/',
-          );
-          _setActionEnabled(readoutAction, true);
-        } else {
-          // Focused, but with no slug (or no day) there is still no bulletin
-          // URL to build — so the roundel is as dead as it is with nothing
-          // selected, and says so the same way.
-          readoutAction.removeAttribute('href');
-          _setActionEnabled(readoutAction, false);
-        }
-      }
     } else {
       // SNOW-642: the empty state. The leaf carries the message rather than
       // a new element, so the chip keeps its shape and there is one place
@@ -290,40 +274,8 @@
       // selected" would read as a region called that, inside those parents.
       if (readoutCrumbs) readoutCrumbs.textContent = '';
       if (readoutSwatch) readoutSwatch.style.background = 'transparent';
-      if (readoutAction) {
-        readoutAction.removeAttribute('href');
-        _setActionEnabled(readoutAction, false);
-      }
     }
   };
-
-  /**
-   * Enable or disable the view-bulletin roundel (SNOW-642).
-   *
-   * It stays on screen with nothing selected, so "no bulletin to open" has
-   * to be a state rather than an absence. An <a> with no href is already
-   * inert and untabbable, but that is invisible to a screen reader and to
-   * the eye — this makes it legible to both, and the CSS keys its dimming
-   * off the same aria-disabled a screen reader announces, so the two
-   * cannot drift apart.
-   *
-   * tabindex is set explicitly rather than left to the missing href: the
-   * roundel is a real tab stop the moment a region IS selected, and an
-   * element that silently enters and leaves the tab order is harder to
-   * reason about than one that states where it is.
-   *
-   * @param {HTMLElement} el
-   * @param {boolean} enabled
-   */
-  function _setActionEnabled(el, enabled) {
-    if (enabled) {
-      el.removeAttribute('aria-disabled');
-      el.removeAttribute('tabindex');
-    } else {
-      el.setAttribute('aria-disabled', 'true');
-      el.setAttribute('tabindex', '-1');
-    }
-  }
 
   const refresh = () => {
     paintTrack();

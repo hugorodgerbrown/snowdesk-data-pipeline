@@ -79,6 +79,8 @@ Optional context:
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
     data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
+    {# SNOW-801: read by map_region_panel.js for the region panel's resorts.  #}
+    data-resorts-by-region-url="{% url 'api:resorts_by_region' %}"
     {# SNOW-499: resort-pin popup URL — public endpoint, always emitted. #}
     {# The '0' resort_id is a placeholder the JS string-replaces with the  #}
     {# tapped resort's real id before each fetch (mirrors the region-      #}
@@ -1253,18 +1255,16 @@ Optional context:
     {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
     <ul id="map-help-steps" hidden>
         <li data-help-target="#region-readout" data-help-title='{% trans "Region name" %}'>
-            {% trans "Display the name of the selected region and its risk level on the displayed date." %}
+            {% trans "Names the selected region and its risk level on the displayed date. Tap it for the region's details and a link to the bulletin." %}
         </li>
         {# SNOW-522: reworded for the ribbon-header position (it briefly lived  #}
         {# in the bottom-right stack under SNOW-521) and moved next to          #}
-        {# #region-readout — it now sits between that pill and                 #}
-        {# #region-readout-action in the DOM, so walking the tour top-to-       #}
-        {# bottom no longer zig-zags top-left → bottom-right → top-left.        #}
+        {# #region-readout — it follows that chip in the DOM, so walking the    #}
+        {# tour top-to-bottom no longer zig-zags top-left → bottom-right →      #}
+        {# top-left. It is the only roundel left in the header since the        #}
+        {# view-bulletin one was removed.                                       #}
         <li data-help-target="#map-download-control" data-help-title='{% trans "Download region" %}'>
             {% trans "Make the selected region available offline." %}
-        </li>
-        <li data-help-target="#region-readout-action" data-help-title='{% trans "View bulletin" %}'>
-            {% trans "View the selected region bulletin detail page." %}
         </li>
         <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region or resort" %}'>
             {% trans "Search regions and resorts by name." %}

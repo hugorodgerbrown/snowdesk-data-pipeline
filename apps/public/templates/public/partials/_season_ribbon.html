@@ -49,8 +49,7 @@ for it was dead.
             Persistent focused-region readout (SNOW-314, redesigned SNOW-342):
             names the region whose season is painted into the scrubber track and
             shows its danger swatch for the currently-scrubbed day. The chip is
-            info-only (a <div>); the bulletin link is the separate
-            #region-readout-action roundel below. map.js fills the swatch/
+            the disclosure for the region panel below it. map.js fills the swatch/
             breadcrumb text and toggles .has-region; cache-fed so it survives
             playback. The scrubbed date lives in the #map-date-ribbon beside the
             scrubber (bottom-left), leaving the top bar to name the region the
@@ -69,21 +68,82 @@ for it was dead.
             {# colour for the scrubbed day and leads the chip; map.js fills the  #}
             {# name text and the swatch background. The pill is an info display; #}
             {# the bulletin link is the separate action roundel below.           #}
-            <div id="region-readout" class="region-readout" aria-live="polite">
-                <span class="region-readout-swatch" aria-hidden="true"></span>
-                {# region name as a Major › Minor › Micro breadcrumb: the    #}
-                {# crumbs prefix (L1/L2) mirrors the visible map overlays and #}
-                {# is hidden on mobile; the leaf (L4 micro) is always shown.  #}
-                {# SNOW-642: the leaf is server-rendered with the empty-state #}
-                {# text rather than left blank. Nothing IS selected at first  #}
-                {# paint, so this is the true state, not a placeholder — and  #}
-                {# leaving it blank would show an empty pill for as long as   #}
-                {# map.js takes to run. Same msgid as map-strings-template's  #}
-                {# `no-region`, which is what map.js writes here afterwards,  #}
-                {# so the two cannot say different things in any locale.      #}
-                <span class="region-readout-name"><span class="region-readout-crumbs"></span><span
-                        class="region-readout-leaf"
-                    >{% trans "No region selected" %}</span></span>
+            {# SNOW-801: the chip is a DISCLOSURE, not an info display. It     #}
+            {# opens                                                            #}
+            {# #region-panel below it — the region + date surface, and the     #}
+            {# header of the same box. The view-bulletin roundel that used to  #}
+            {# sit beside it is gone: the panel carries an "Open bulletin for  #}
+            {# <date>" link, so the roundel was a second control to one        #}
+            {# destination. aria-live stays: map.js writes the region name     #}
+            {# here on selection and that announcement is still wanted.        #}
+            {# SNOW-801: chip and panel share one column so they share an edge  #}
+            {# and                                                              #}
+            {# a width — joined, they are one surface rather than two boxes    #}
+            {# that happen to be stacked.                                      #}
+            <div id="region-surface" class="region-surface">
+                <button
+                    id="region-readout"
+                    type="button"
+                    class="region-readout"
+                    aria-live="polite"
+                    aria-expanded="false"
+                    aria-controls="region-panel"
+                >
+                    <span class="region-readout-swatch" aria-hidden="true"></span>
+                    {# region name as a Major › Minor › Micro breadcrumb: the    #}
+                    {# crumbs prefix (L1/L2) mirrors the visible map overlays and #}
+                    {# is hidden on mobile; the leaf (L4 micro) is always shown.  #}
+                    {# SNOW-642: the leaf is server-rendered with the empty-state #}
+                    {# text rather than left blank. Nothing IS selected at first  #}
+                    {# paint, so this is the true state, not a placeholder — and  #}
+                    {# leaving it blank would show an empty pill for as long as   #}
+                    {# map.js takes to run. Same msgid as map-strings-template's  #}
+                    {# `no-region`, which is what map.js writes here afterwards,  #}
+                    {# so the two cannot say different things in any locale.      #}
+                    <span class="region-readout-name"><span class="region-readout-crumbs"></span><span
+                            class="region-readout-leaf"
+                        >{% trans "No region selected" %}</span></span>
+                    {# Chevron marks the pill as expandable. Rotates on open, via #}
+                    {# .region-readout[aria-expanded="true"] in map.css.           #}
+                    <svg
+                        class="region-readout-chevron"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="m6 9 6 6 6-6" />
+                    </svg>
+                </button>
+
+                {% comment %}
+            SNOW-801: the region + date surface. Opened by the #region-readout chip
+            above, filled by static/js/map_region_panel.js from
+            /api/region/<id>/summary/ (the same server-rendered HTML the map
+            popup used) plus the resorts in the region.
+
+            It sits INSIDE #season-ribbon, which is already a column flex
+            container at the map's top-left, so it drops directly under the
+            chip without any anchoring maths.
+
+            `hidden` at rest, and height-bounded with its own scroll: a surface
+            floating over the map must never grow with its content
+            (docs/decisions — the #home-intro / _overlay_sheet rule). dvh, not
+            vh, so a mobile URL bar does not push the bottom off screen.
+            {% endcomment %}
+                <div
+                    id="region-panel"
+                    class="region-panel"
+                    role="group"
+                    aria-labelledby="region-readout"
+                    hidden
+                >
+                </div>
             </div>
             {# SNOW-522: the "Download basemap" roundel for the focused        #}
             {# region moves back here, between the readout and the            #}
@@ -91,53 +151,18 @@ for it was dead.
             {# bottom-right control stack (_map_embed.html), but that slot is  #}
             {# now the new custom-area download control's home (partial:      #}
             {# public/partials/_map_custom_download_control.html).             #}
-            {# SNOW-642: like #region-readout-action below it, it is now       #}
-            {# always present and shows its own "no-region" disabled state     #}
-            {# with nothing selected, rather than being hidden by a            #}
-            {# `.has-region` sibling rule. The three controls in this header   #}
-            {# are consistent either way — the change is that consistency now  #}
-            {# means all three stay put instead of all three vanishing.        #}
+            {# SNOW-642: always present, showing its own "no-region" disabled  #}
+            {# state with nothing selected rather than being hidden by a       #}
+            {# `.has-region` sibling rule. It is the only roundel left in this #}
+            {# header now that the view-bulletin one has gone.                 #}
             {% include "public/partials/_map_download_control.html" %}
-            {# View-bulletin action: a roundel holding just an arrow, with a   #}
-            {# "View bulletin" tooltip. map.js sets its href to the dated      #}
-            {# bulletin once a region is focused.                              #}
-            {# SNOW-642: always present. It ships DISABLED, matching the       #}
-            {# download control beside it, because with nothing selected there #}
-            {# is no bulletin to open and the href map.js would set does not   #}
-            {# exist yet — a bare hrefless anchor would look live and do       #}
-            {# nothing. map.js's _setActionEnabled clears both attributes on   #}
-            {# the first selection and restores them if it is ever cleared.    #}
-            {# role="link" is load-bearing, not decorative: an <a> with no href #}
-            {# has no implicit role, and aria-label is prohibited on a roleless #}
-            {# element — so the label below was being dropped and the roundel   #}
-            {# announced itself as nothing at all. Stating the role explicitly  #}
-            {# holds in both states, since it matches the implicit role once    #}
-            {# map_season_ribbon.js sets href, and _setActionEnabled only ever  #}
-            {# touches aria-disabled and tabindex.                              #}
-            <a
-                id="region-readout-action"
-                class="region-readout-action hover-affordance"
-                role="link"
-                title="{% trans 'View bulletin' %}"
-                aria-label="{% trans 'View bulletin' %}"
-                aria-disabled="true"
-                tabindex="-1"
-            >
-                <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                >
-                    <path d="M5 12h14" />
-                    <path d="m13 6 6 6-6 6" />
-                </svg>
-            </a>
         </div>
+        {# Strings the panel writes from JS. makemessages does not scan JS,   #}
+        {# so every user-facing string is a trans tag here and is read back   #}
+        {# via window.pwaStrings.read (static/js/i18n_strings.js).            #}
+        <template id="region-panel-strings-template">
+            <span data-string="resorts">{% trans "Resorts in this region" %}</span>
+            <span data-string="unavailable">{% trans "Region details are unavailable offline." %}</span>
+        </template>
     </div>
 {% endif %}

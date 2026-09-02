@@ -103,6 +103,9 @@ export const MAP_BUNDLE = [
   'map_autozoom.js',
   'map_geolocate.js',
   'map_season_ribbon.js',
+  // SNOW-801: the region + date panel. After `map_season_ribbon.js`, which owns
+  // the #region-readout chip it hangs off.
+  'map_region_panel.js',
   // SNOW-792: the map's date picker. After `map_scrubber.js`, which owns the
   // `snowdesk:scrub-to` listener it dispatches into.
   'map_calendar.js',

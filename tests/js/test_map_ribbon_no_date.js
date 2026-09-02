@@ -50,7 +50,6 @@ function buildFixture() {
         <span class="region-readout-leaf">No region selected</span>
       </span>
     </div>
-    <a id="region-readout-action" href="#"></a>
     <div id="map-date-ribbon" hidden></div>
     <div class="season-scrubber">
       <div class="season-scrubber-track">
@@ -205,29 +204,4 @@ describe('#region-readout with no ?d=', () => {
       .toBe('transparent');
   });
 
-  it('leaves the bulletin roundel disabled, there being no dated bulletin', async () => {
-    await loadRibbon('/');
-
-    selectRegion();
-
-    const action = document.getElementById('region-readout-action');
-    expect(action.hasAttribute('href')).toBe(false);
-    expect(action.getAttribute('aria-disabled')).toBe('true');
-  });
-
-  it('arms the roundel as soon as a day is chosen', async () => {
-    // The disabled state must be the missing DATE, not a roundel that has
-    // stopped working — so pin the transition, not just the resting state.
-    await loadRibbon('/');
-    selectRegion();
-
-    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
-      detail: { date: DATED, source: 'scrubber' },
-    }));
-
-    const action = document.getElementById('region-readout-action');
-    expect(action.getAttribute('href'))
-      .toBe(`/ch-4115/martigny-verbier/${DATED}/`);
-    expect(action.hasAttribute('aria-disabled')).toBe(false);
-  });
 });
