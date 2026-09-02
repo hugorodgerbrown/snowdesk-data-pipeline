@@ -6,7 +6,7 @@
  * The menu is absolutely positioned inside the bottom-right roundel column.
  * SNOW-511 capped its height so its top rows could not slide behind the nav
  * and the conditional off-season banner; SNOW-656 then dropped its lower edge
- * to just above the season scrubber, because the CSS baseline it inherited
+ * to just above the map's bottom row, because the CSS baseline it inherited
  * left a third of the map unused.
  *
  * SNOW-664 changed the box those offsets are measured from. The menu used to
@@ -35,13 +35,13 @@ function setRect(el, { top, bottom }) {
 
 /**
  * The geometry of a 375x812 phone: the nav and the off-season banner push
- * `#map` down to y=114, the scrubber owns the foot at y=707, and the roundel
+ * `#map` down to y=114, the bottom row owns the foot at y=707, and the roundel
  * column is bottom-anchored 60px above the viewport foot, so its lower edge
  * sits at y=752 whatever height the collapsible group is standing at.
  *
  * `stackTop` is what varies with that height — the column grows upward.
  */
-function buildFixture({ stackTop = 319, scrubber = true } = {}) {
+function buildFixture({ stackTop = 319, bottomRow = true } = {}) {
   document.body.innerHTML = `
     <div id="map"></div>
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
@@ -56,11 +56,11 @@ function buildFixture({ stackTop = 319, scrubber = true } = {}) {
         <li><button class="basemap-menu-item" data-basemap-key="a"></button></li>
       </ul>
     </div>
-    ${scrubber ? '<div id="season-scrubber"></div>' : ''}`;
+    ${bottomRow ? '<div id="map-date-row"></div>' : ''}`;
 
   setRect(document.getElementById('map'), { top: 114, bottom: 812 });
   setRect(document.getElementById('map-controls-br'), { top: stackTop, bottom: 752 });
-  if (scrubber) setRect(document.getElementById('season-scrubber'), { top: 707, bottom: 812 });
+  if (bottomRow) setRect(document.getElementById('map-date-row'), { top: 707, bottom: 739 });
 }
 
 /** Load the picker fresh and open the menu through its own toggle. */
@@ -95,7 +95,7 @@ afterEach(() => {
 });
 
 describe('where the layers menu opens', () => {
-  it('drops its baseline to just above the scrubber', async () => {
+  it('drops its baseline to just above the bottom row', async () => {
     const menu = await openMenu();
 
     // `bottom` is measured from the stack. Its lower edge is at 752 and the
@@ -122,10 +122,10 @@ describe('where the layers menu opens', () => {
     expect(menu.style.maxHeight).toBe('577px');
   });
 
-  it('falls back to the map\'s own bottom edge when there is no scrubber', async () => {
-    // The map partial is embedded without a scrubber on some surfaces; the
+  it('falls back to the map\'s own bottom edge when there is no bottom row', async () => {
+    // The map partial is embedded without the bottom row on some surfaces; the
     // menu must still be placed rather than left at the CSS default.
-    buildFixture({ scrubber: false });
+    buildFixture({ bottomRow: false });
     const menu = await openMenu();
 
     // map bottom (812) - 8 = 804 floor, which is BELOW the stack's own foot,
@@ -177,7 +177,7 @@ describe('the fixture itself', () => {
     // was measured, the assertions stop meaning what they say.
     buildFixture();
     expect(document.getElementById('map').getBoundingClientRect().top).toBe(114);
-    expect(document.getElementById('season-scrubber').getBoundingClientRect().top).toBe(707);
+    expect(document.getElementById('map-date-row').getBoundingClientRect().top).toBe(707);
     expect(document.getElementById('map-controls-br').getBoundingClientRect().bottom).toBe(752);
   });
 });

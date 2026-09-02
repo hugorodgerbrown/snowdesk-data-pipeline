@@ -11,10 +11,16 @@ shared surface.
 
 Context expected from the including template:
   default_basemap_key — str: settings.BASEMAP fallback key.
-  season_start        — datetime.date: season window start.
-  season_end          — datetime.date: season window end.
+  season_start        — datetime.date: first day of the avalanche season.
+  season_end          — datetime.date: last day of it. The pair is drawn as
+                        a band on the scrubber track and tinted in the
+                        calendar grid — it is NOT the track's own span.
+  window_start        — datetime.date: first day of the scrubber's track
+                        (twelve months back from today).
+  window_end          — datetime.date: last day of it (today).
+  season_band_left_pct / season_band_width_pct
+                      — float: where the season sits on that track.
   today               — datetime.date: current date.
-  today_pct           — float: scrubber thumb starting position 0..100.
   basemaps            — list of {key, label, url} dicts for the picker.
   ribbon              — SeasonRibbon or None (from build_season_ribbon).
   default_region_id   — str: region whose ribbon is server-rendered (CH-4115).
@@ -64,8 +70,6 @@ Optional context:
     {% endblocktrans %}
     {% include "includes/_overlay_banner.html" with id="map-offseason-bar" variant="strip" icon="calendar" body=map_offseason_bar_body dismissible=True %}
 {% endif %}
-{# SNOW-236: data-season-end is read by map.js at boot to clamp the cold-open #}
-{# fetch to the last populated date when today is past the season end.       #}
 <div
     id="map"
     data-regions-url="{% url 'api:regions_geojson' %}"
@@ -83,7 +87,6 @@ Optional context:
     data-resort-popup-url="{% url 'api:resort_popup' resort_id=0 %}"
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
-    data-season-end="{{ season_end|date:'Y-m-d' }}"
     {% if favourites_eligible %}data-favourites-url="{{ favourites_geojson_url }}"{% endif %}
     {% if favourites_eligible %}data-resort-create-url="{% url 'favourites:resort_create' %}"{% endif %}
     data-favourites-eligible="{{ favourites_eligible|yesno:'true,false' }}"
@@ -484,33 +487,12 @@ Optional context:
                         {% include "includes/_icon_route.html" with size=18 only %}
                     </button>
                 </div>
-                {# SNOW-457: help / coachmark tour roundel — the "how to use the map"    #}
-                {# affordance, moved to the BOTTOM of the stack so it sits level with    #}
-                {# the bottom-left (i) legend toggle on the shared bottom baseline.      #}
-                <div class="map-utility-pill map-utility-pill--help">
-                    <button
-                        id="map-help-toggle"
-                        type="button"
-                        class="map-utility-button hover-affordance"
-                        aria-label='{% trans "How to use the map" %}'
-                    >
-                        <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2.5-3 4" />
-                            <line x1="12" y1="17" x2="12.01" y2="17" />
-                        </svg>
-                    </button>
-                </div>
+                {# SNOW-794: the help roundel LEFT this stack. Everything in the       #}
+                {# bottom-right column changes what the map is showing — layers,       #}
+                {# basemap, fill strength, downloads, the UGC pins. Help changes       #}
+                {# nothing; it explains. It now sits in the bottom-left row with the   #}
+                {# legend and the date, which is the other thing there that describes  #}
+                {# the map rather than altering it.                                     #}
             </div>
         </div>
         {# SNOW-664: the layers menu is a child of .map-controls-br, NOT of the #}
@@ -1087,6 +1069,47 @@ Optional context:
                 </p>
             </section>
         </div>
+        {# SNOW-794: the date picker. Moved in here from the top level, where  #}
+        {# it was a fixed bottom-RIGHT sheet — its trigger is now the date     #}
+        {# control two lines below, and a panel opening on the opposite side   #}
+        {# of the map from the button that opened it is worse than the rule it #}
+        {# was following. It is `position: absolute` and needs this row as its #}
+        {# containing block, so it must live inside .map-legend rather than    #}
+        {# beside it.                                                          #}
+        {% include "public/partials/_map_calendar.html" %}
+        {# SNOW-794: the help roundel, moved here from the bottom-right stack — #}
+        {# see the note at its old site for why. It TOPS this stack: both it and #}
+        {# the legend describe the map rather than change it, and of the two the #}
+        {# legend is the one whose card wants the corner, so the legend sits     #}
+        {# directly above the date row and this sits above it.                   #}
+        {# SNOW-794: the help roundel, moved here from the bottom-right stack — #}
+        {# see the note at its old site for why. It sits after the date so the  #}
+        {# row reads left to right as legend, date, help: what the colours mean, #}
+        {# which day they are for, how to use any of it.                        #}
+        <button
+            id="map-help-toggle"
+            type="button"
+            class="map-legend-toggle hover-affordance"
+            aria-label='{% trans "How to use the map" %}'
+        >
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2.5-3 4" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+        </button>
+        {# Directly above the date row, so its card opens into the crook the  #}
+        {# row and this column make — nearest control to the corner it uses.   #}
         <button
             id="map-legend-toggle"
             type="button"
@@ -1111,17 +1134,103 @@ Optional context:
                 <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
         </button>
-        {# Scrubbed-date ribbon — sits to the right of the (i) legend toggle in   #}
-        {# the bottom-left cluster, close to the season scrubber that drives it.   #}
-        {# map.js fills the text on every date-changed / preview / playback frame; #}
-        {# it ships `hidden` until the map has an answer to give (the date moved   #}
-        {# here from the top #region-readout). The legend card opens upward,       #}
-        {# above this row, so it never overlaps the toggle or the date.            #}
-        {# SNOW-660: once it has one, it stays visible even with NO day chosen —   #}
-        {# it then reads map-strings-template's `map-date-none`. A cold boot no    #}
-        {# longer paints a day nobody asked for, so an uncoloured map needs this   #}
-        {# to say why rather than to disappear along with the colours.             #}
-        <div id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></div>
+        {% comment %}
+        The stack's bottom line: the date, and the season scrubber beside it.
+
+        SNOW-794 turned this cluster from a row into a column so these two can
+        share a line while the legend and help sit above them. The row is
+        `align-self: stretch`, so the scrubber fills everything from the date
+        control out to the bottom-right chevron — the empty strip left once
+        both clusters dropped to the map's own bottom edge.
+        {% endcomment %}
+        <div id="map-date-row" class="map-date-row">
+            {% comment %}
+            The date control (SNOW-794) — the map's one date affordance, and the
+            merge of two that had drifted apart. #map-date-ribbon SAID the date;
+            #map-calendar-toggle, over in the scrubber's transport row, CHANGED
+            it. A readout you cannot press sitting a screen-width away from a
+            button that does not say what it will show is two halves of one
+            control, and on a phone — where the scrubber is now gone entirely —
+            the half that acts was going with it.
+
+            Both ids survive, nested, so neither JS contract moves: map.js still
+            writes the date into #map-date-ribbon on every date-changed /
+            preview / playback frame, and map_calendar.js still binds
+            #map-calendar-toggle for open/close and aria-expanded.
+
+            The readout keeps its own `hidden` (SNOW-660): until the map has a
+            day to report the control is the calendar glyph alone, and gains the
+            date beside it once there is one. The button is always pressable —
+            it is how you choose the day in the first place.
+            {% endcomment %}
+            <button
+                id="map-calendar-toggle"
+                type="button"
+                class="map-date-control hover-affordance"
+                aria-label='{% trans "Jump to a date" %}'
+                aria-expanded="false"
+                aria-controls="map-calendar"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <rect x="3" y="5" width="18" height="16" rx="2" />
+                    <path d="M3 10h18" />
+                    <path d="M8 3v4" />
+                    <path d="M16 3v4" />
+                </svg>
+                <span id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></span>
+            </button>
+            {% comment %}
+            The season scrubber (SNOW-47), now a member of this stack rather
+            than a full-width bar of its own. It fills the line beside the
+            date control, out to the bottom-right column — the strip that
+            was empty once the clusters dropped to the map's bottom edge.
+
+            SNOW-794: its track is the SEASON, and the calendar is its
+            reveal. `data-in-season` is false when the day the map is showing
+            falls outside the season, and CSS then hides this: there is no
+            stretch of track that day belongs to, and a scrubber whose thumb
+            has nowhere true to sit is the defect this ticket opened with.
+            The calendar answers for those days instead.
+
+            Also desktop-only, by CSS (static/css/map.css). At 148px a
+            season is under a pixel a day, and a 40px fingertip covers 57 of
+            them — it was never a date control on a phone, and the calendar
+            now is.
+            {% endcomment %}
+            <div
+                id="season-scrubber"
+                class="season-scrubber"
+                role="slider"
+                aria-label='{% trans "Season scrubber" %}'
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="{{ today_pct }}"
+                data-season-start="{{ season_start|date:'Y-m-d' }}"
+                data-season-end="{{ season_end|date:'Y-m-d' }}"
+                data-today="{{ today|date:'Y-m-d' }}"
+                data-today-pct="{{ today_pct }}"
+                {# CSS hides it when this is false. Server-rendered so first #}
+                {# paint is already right; static/js/map_scrubber_reveal.js  #}
+                {# keeps it current as the day changes. Always RENDERED, not #}
+                {# behind an {% templatetag openblock %} if {% templatetag closeblock %} — an element that is not in the DOM #}
+                {# cannot come back when the visitor picks an in-season day.  #}
+                data-in-season="{{ scrubber_in_season|yesno:'true,false' }}"
+                data-state="loading"
+            >
+                <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
+                {% include "public/partials/_season_scrubber_controls.html" %}
+            </div>
+        </div>
     </div>
     {# SNOW-445: the persistent off-season archive notice (SNOW-343) moved out #}
     {# of #map to a full-width bar above the map (see #map-offseason-bar at the #}
@@ -1130,31 +1239,16 @@ Optional context:
     {# coloured by peak danger for the selected region (default CH-4115). #}
     {# Positioned above the scrubber. Requires ribbon context from view.  #}
     {% include "public/partials/_season_ribbon.html" with default_region_id=default_region_id %}
-    <div
-        id="season-scrubber"
-        class="season-scrubber"
-        role="slider"
-        aria-label='{% trans "Season scrubber" %}'
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow="{{ today_pct }}"
-        data-season-start="{{ season_start|date:'Y-m-d' }}"
-        data-season-end="{{ season_end|date:'Y-m-d' }}"
-        data-today="{{ today|date:'Y-m-d' }}"
-        data-today-pct="{{ today_pct }}"
-        data-state="loading"
-    >
-        <div class="season-scrubber-loading">{% trans "Season data loading…" %}</div>
-        {% include "public/partials/_season_scrubber_controls.html" %}
-    </div>
     {# SNOW-333: the field-report / observations roundel now lives inside        #}
     {# #map-controls-br (folded into the bottom-right stack above); its sheet    #}
     {# + scripts stay in _report_surface.html.                                   #}
     {# SNOW-457: help / coachmark tour — step definitions are server-rendered   #}
     {# as hidden <li> nodes so every string is translatable via {% trans %};   #}
     {# static/js/map_help.js reads them, drops any step whose data-help-target #}
-    {# selector matches nothing in the DOM, then sequences a highlight ring +  #}
-    {# tooltip over each one.                                                  #}
+    {# is not on screen — no match at all, or matched but not rendered         #}
+    {# (SNOW-794: the scrubber below 640px) — then sequences a highlight ring  #}
+    {# + tooltip over each one. The list is rebuilt on every open, so a step   #}
+    {# the visitor has since collapsed away is re-measured rather than stale.  #}
     {# localStorage key 'snowdesk.map.help' persists the dismissed state,      #}
     {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
     <ul id="map-help-steps" hidden>
@@ -1216,33 +1310,36 @@ Optional context:
         <li data-help-target="#route-add-btn" data-help-title='{% trans "Your routes" %}'>
             {% trans "Upload a GPX track, see the ones you've saved, and show or hide them on the map." %}
         </li>
-        {# The tour explains its own trigger. It was the only control in the   #}
-        {# stack with no step, which read as an oversight once every           #}
-        {# neighbour had one — and this is where a user who has just been      #}
-        {# shown the tour learns how to get back to it.                        #}
-        <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
-            {% trans "Reopen this tour." %}
-        </li>
         {# The tour force-opens the collapsible group while it runs, so this   #}
         {# step lands on a toggle whose chevron is pointing "close".           #}
         <li data-help-target="#map-controls-toggle" data-help-title='{% trans "Hide the controls" %}'>
             {% trans "Collapse the controls to clear the map." %}
         </li>
-        <li data-help-target="#season-scrubber" data-help-title='{% trans "Timeline scrubber" %}'>
-            {% trans "Run through the season day by day." %}
+        {# SNOW-794: the season scrubber. Absent from the walk in both cases  #}
+        {# where it is absent from the map — off-season (not rendered at all)  #}
+        {# and below 640px (rendered, not drawn) — the first because the <li>  #}
+        {# target matches nothing, the second because map_help.js's buildSteps #}
+        {# now also drops targets with no box.                                 #}
+        <li data-help-target="#season-scrubber" data-help-title='{% trans "Season scrubber" %}'>
+            {% trans "Run through the season day by day. It appears while the map is showing a day inside the season." %}
         </li>
-        {# SNOW-792. map_help.js drops any step whose target selector matches #}
-        {# nothing, so this needs no guard for pages rendering the map        #}
-        {# without the scrubber.                                              #}
-        <li data-help-target="#map-calendar-toggle" data-help-title='{% trans "Jump to a date" %}'>
-            {% trans "Pick a day from a calendar instead of dragging the timeline to it." %}
+        {# The bottom-left stack, walked top to bottom in DOM order — which is #}
+        {# also the order the tour reaches them on screen.                      #}
+        {# The tour explains its own trigger, and this is where a user who has  #}
+        {# just been shown it learns how to get back to it.                     #}
+        <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
+            {% trans "Reopen this tour." %}
         </li>
-
         <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
             {% trans "View attribution and EAWS danger level key." %}
         </li>
-        <li data-help-target="#map-date-ribbon" data-help-title='{% trans "Map display date" %}'>
-            {% trans "The date currently shown on the map." %}
+        {# SNOW-794: ONE step where there were two. #map-date-ribbon had its   #}
+        {# own ("The date currently shown on the map") while                   #}
+        {# #map-calendar-toggle had another — and the two ids now name the     #}
+        {# same control, so keeping both would have highlighted the same pill  #}
+        {# twice in one walk. The copy says both halves of what it does.       #}
+        <li data-help-target="#map-calendar-toggle" data-help-title='{% trans "Map display date" %}'>
+            {% trans "The day the map is showing. Tap it to pick another from a calendar, coloured by the selected region's danger." %}
         </li>
     </ul>
     {# SNOW-457 (review): aria-describedby points at the step title + body so #}
@@ -1539,7 +1636,6 @@ Optional context:
 {# fixed element is still confined by any ancestor that creates a stacking  #}
 {# context — which .map-controls-br (z-index 4) does. Its tap target is the #}
 {# calendar button in the season-scrubber row.                              #}
-{% include "public/partials/_map_calendar.html" %}
 {% include "includes/_toast.html" with id="map-offline-toast-layer" kind="warning" body=offline_toast_layer_body dismissible=True timeout=6000 %}
 {% trans "Favourites aren't available offline yet — view them online first." as offline_toast_favourites_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-favourites" kind="warning" body=offline_toast_favourites_body dismissible=True timeout=6000 %}

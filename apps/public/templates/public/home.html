@@ -361,6 +361,12 @@ in addition to the shared map assets.
     {# so it is listening for snowdesk:map-help-open by the time an           #}
     {# auto-starting tour fires it.                                           #}
     <script defer src="{% static 'js/map_controls_collapse.js' %}"></script>
+    {# SNOW-794: shows and hides the season scrubber as the shown day moves  #}
+    {# in and out of the season. Loads AFTER map_scrubber.js, which is what   #}
+    {# dispatches the snowdesk:date-changed it listens for — order is not     #}
+    {# load-bearing for a document listener, but reading the pair in the      #}
+    {# order they talk is.                                                    #}
+    <script defer src="{% static 'js/map_scrubber_reveal.js' %}"></script>
     {# SNOW-457: map help / coachmark tour #}
     <script defer src="{% static 'js/map_help.js' %}"></script>
     {# SNOW-344: edit-resorts JS (moved from map.html). #}

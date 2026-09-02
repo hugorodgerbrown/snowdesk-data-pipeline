@@ -5,7 +5,7 @@
  * The three sheets (#map-downloads-sheet, #favourite-sheet, #report-sheet)
  * are `position: fixed` and includes/_overlay_sheet.html can only put them in
  * a viewport corner (`sm:bottom-4 sm:right-4`). That corner knows nothing
- * about the season scrubber along the foot of the map or the roundel column
+ * about the bottom row along the foot of the map or the roundel column
  * at its right edge, so a sheet opened over both.
  *
  * static/js/map_overlay_bounds.js answers the same question the layers menu
@@ -61,15 +61,22 @@ function setViewport(width, height) {
 }
 
 /**
- * A 1024x768 desktop: the nav puts `#map` at y=64, the scrubber owns the foot
- * at y=680, and the bottom-right roundel column's left edge is at x=944.
+ * A 1024x768 desktop: the nav puts `#map` at y=64, the bottom-left stack's
+ * last line owns the foot at y=680, and the bottom-right roundel column's
+ * left edge is at x=944.
+ *
+ * SNOW-794: the floor is `.map-date-row`, not `#season-scrubber`. The
+ * scrubber is a member of that row rather than a bar of its own now, and it
+ * is absent entirely off-season and below 640px — the row is what is always
+ * present and always lowest. The `bottomRow` flag stands in for "this page
+ * has no map chrome at the foot at all".
  */
-function buildFixture({ scrubber = true, controls = true, width = 1024 } = {}) {
+function buildFixture({ bottomRow = true, controls = true, width = 1024 } = {}) {
   setViewport(width, 768);
   document.body.innerHTML = `
     <div id="map"></div>
     ${controls ? '<div class="map-controls-br" id="map-controls-br"></div>' : ''}
-    ${scrubber ? '<div id="season-scrubber"></div>' : ''}
+    ${bottomRow ? '<div id="map-date-row"></div>' : ''}
     <div id="favourite-sheet" hidden></div>`;
 
   setRect(document.getElementById('map'), {
@@ -80,9 +87,9 @@ function buildFixture({ scrubber = true, controls = true, width = 1024 } = {}) {
       top: 400, bottom: 680, left: 944, right: 1008,
     });
   }
-  if (scrubber) {
-    setRect(document.getElementById('season-scrubber'), {
-      top: 680, bottom: 768, left: 0, right: width,
+  if (bottomRow) {
+    setRect(document.getElementById('map-date-row'), {
+      top: 680, bottom: 712, left: 0, right: width,
     });
   }
   return document.getElementById('favourite-sheet');
@@ -104,11 +111,11 @@ describe('where a UGC sheet opens on desktop', () => {
     buildFixture();
   });
 
-  it('stops above the season scrubber', async () => {
+  it('stops above the bottom-left stack last line', async () => {
     const sheet = await positionSheet(document.getElementById('favourite-sheet'));
 
     // `bottom` is measured from the viewport, the sheet being fixed: the
-    // floor is the scrubber's top (680) less the 8px gap, so 768 - 672.
+    // floor is the bottom row's top (680) less the 8px gap, so 768 - 672.
     expect(sheet.style.bottom).toBe('96px');
   });
 
@@ -128,8 +135,8 @@ describe('where a UGC sheet opens on desktop', () => {
 });
 
 describe('what it falls back to', () => {
-  it("uses the map's own bottom edge when there is no scrubber", async () => {
-    const sheet = buildFixture({ scrubber: false });
+  it("uses the map's own bottom edge when there is no bottom row", async () => {
+    const sheet = buildFixture({ bottomRow: false });
     await positionSheet(sheet);
 
     // map bottom (768) - 8 = 760 floor, so the sheet's own bottom is 8.
@@ -192,7 +199,7 @@ describe('the fixture itself', () => {
   it('reproduces the desktop geometry the assertions are stated in', () => {
     buildFixture();
     expect(document.getElementById('map').getBoundingClientRect().top).toBe(64);
-    expect(document.getElementById('season-scrubber').getBoundingClientRect().top)
+    expect(document.getElementById('map-date-row').getBoundingClientRect().top)
       .toBe(680);
     expect(document.getElementById('map-controls-br').getBoundingClientRect().left)
       .toBe(944);

@@ -70,11 +70,21 @@ def test_map_page_injects_api_urls() -> None:
 
 @pytest.mark.django_db
 @freeze_time("2026-02-15")
-def test_map_element_has_season_end_attribute() -> None:
+def test_map_element_carries_no_season_end_attribute() -> None:
     """
-    SNOW-236: data-season-end must appear on the #map element itself
-    (not just on #season-scrubber) so that map.js can read it at module
-    scope during the cold-open boot path — before the scrubber IIFE runs.
+    ``#map`` must NOT carry ``data-season-end`` — nothing reads it.
+
+    SNOW-236 put it there for a cold-open boot path in map.js that read it
+    at module scope, before the scrubber IIFE ran. SNOW-660 deleted that
+    path along with ``bootDateKey``, leaving the attribute rendered on every
+    page load with no reader anywhere — and a test asserting its presence
+    "so that map.js can read it", which is behaviour that had stopped
+    existing. SNOW-794 dropped both.
+
+    Asserted rather than simply deleted because the attribute is the sort of
+    thing a later ticket re-adds by reflex when it wants season bounds in
+    JS. They are on ``#season-scrubber``, ``#season-ribbon`` and
+    ``#map-calendar``, each read by the module that owns that element.
     """
     region = MicroRegionFactory.create(region_id="CH-5500")
     RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 3, 5))
@@ -83,11 +93,11 @@ def test_map_element_has_season_end_attribute() -> None:
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    # Verify the attribute sits on the #map div, not only on #season-scrubber.
     map_div_start = content.index('id="map"')
-    map_div_close_tag = content.index(">", map_div_start)
-    map_div_attrs = content[map_div_start:map_div_close_tag]
-    assert 'data-season-end="2026-03-05"' in map_div_attrs
+    map_div_attrs = content[map_div_start : content.index(">", map_div_start)]
+    assert "data-season-end" not in map_div_attrs
+    # The elements that DO need the bounds still carry them.
+    assert 'data-season-end="2026-03-05"' in content
 
 
 @pytest.mark.django_db
@@ -1216,16 +1226,27 @@ def _one(pattern: str, content: str, what: str) -> str:
 
 
 @pytest.mark.django_db
-def test_map_calendar_toggle_is_a_transport_button() -> None:
+def test_map_calendar_toggle_is_the_date_control() -> None:
     """
-    The calendar toggle carries ``.scrubber-transport-button``.
+    The calendar toggle IS the date readout — one control, not two.
 
-    That class is not cosmetic here: the ``data-state="loading"`` and
-    ``"error"`` rules in static/css/map.css hide the transport buttons as a
-    set, and this is what keeps the toggle out of reach until the
-    season-ratings data that decides which days are selectable has arrived.
-    A styling-only class string would leave a button that opens a grid of
-    days none of which the map can paint.
+    SNOW-794 merged them. ``#map-date-ribbon`` said the day and
+    ``#map-calendar-toggle``, a transport button over in the scrubber's row,
+    changed it: two halves of one job, a screen apart. They are now one pill
+    in the bottom-left stack, with the readout nested inside the button.
+
+    Both ids survive, and that is the point of this test: ``map.js`` writes
+    the date into ``#map-date-ribbon`` on every date-changed / preview /
+    playback frame, and ``map_calendar.js`` binds ``#map-calendar-toggle``
+    for open/close and aria-expanded. Nesting is what let the merge happen
+    without either module knowing.
+
+    It deliberately no longer carries ``.scrubber-transport-button``. That
+    class is hidden by the scrubber's ``loading`` and ``error`` states, and
+    since SNOW-794 the calendar is the map's ONLY date control below 640px
+    and whenever the day shown is out of season — gating it on the
+    scrubber's data would leave those visitors with no way to change the
+    date at all.
     """
     client = Client()
     response = client.get(reverse("public:home"))
@@ -1236,7 +1257,10 @@ def test_map_calendar_toggle_is_a_transport_button() -> None:
         content,
         "the calendar toggle",
     )
-    assert "scrubber-transport-button" in toggle
+    assert "map-date-control" in toggle
+    assert "scrubber-transport-button" not in toggle
+    # The readout lives INSIDE the button — that nesting is the merge.
+    assert "map-calendar-toggle" in _ancestor_ids(content, "map-date-ribbon")
 
 
 @pytest.mark.django_db
@@ -1331,23 +1355,128 @@ def test_map_calendar_carries_translated_labels() -> None:
 
 
 @pytest.mark.django_db
-def test_map_calendar_panel_is_outside_the_map_and_the_control_stack() -> None:
+@freeze_time("2026-02-15")
+def test_scrubber_track_spans_the_season_not_a_rolling_window() -> None:
     """
-    The panel renders at top level, not inside #map or .map-controls-br.
+    ``#season-scrubber``'s bounds are the season, and nothing wider.
 
-    It is ``position: fixed`` and positioned by
-    ``window.pwaOverlayBounds.positionSheet`` like the three UGC sheets, and
-    a fixed element is still confined by any ancestor that creates a
-    stacking context — which .map-controls-br (z-index 4) does. Nested, it
-    would be trapped behind the roundel column with no error anywhere.
+    SNOW-794's first pass gave it a twelve-month rolling window with the
+    season drawn on it as a band, so it could place any day the calendar
+    offers. That made one control try to be two. The calendar is "pick a
+    date, any date"; this is a season scrubber, and it is simply not shown
+    for a day outside the season.
+    """
+    region = MicroRegionFactory.create(region_id="CH-5500")
+    for day in (datetime.date(2026, 2, 10), datetime.date(2026, 2, 20)):
+        RegionDayRatingFactory.create(region=region, date=day)
+
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    scrubber = _one(
+        r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the season scrubber"
+    )
+    # Narrowed to the data inside the season (SNOW-173), not today-minus-a-year.
+    assert 'data-season-start="2026-02-10"' in scrubber
+    assert 'data-season-end="2026-02-20"' in scrubber
+    assert "data-window-start" not in scrubber
+    assert "data-window-end" not in scrubber
+
+
+@pytest.mark.django_db
+@freeze_time("2026-02-15")
+def test_scrubber_is_revealed_only_for_a_day_inside_the_season() -> None:
+    """
+    ``data-in-season`` follows the day the map is showing.
+
+    The calendar is the scrubber's reveal. A day outside the season has no
+    position on a track that IS the season, and a thumb clamped to whichever
+    end it is past was the defect this ticket opened with.
+
+    Server-rendered from ``?d=`` so first paint is already right rather than
+    correcting itself a frame later; static/js/map_scrubber_reveal.js keeps
+    it current afterwards. The element is always rendered — one that is not
+    in the DOM could not come back when the visitor picks an in-season day.
+    """
+    region = MicroRegionFactory.create(region_id="CH-5500")
+    for day in (datetime.date(2026, 2, 1), datetime.date(2026, 2, 28)):
+        RegionDayRatingFactory.create(region=region, date=day)
+
+    client = Client()
+
+    def in_season(url: str) -> str:
+        scrubber = _one(
+            r'(<div[^>]*id="season-scrubber"[^>]*>)',
+            client.get(url).content.decode(),
+            "the season scrubber",
+        )
+        return _one(r'data-in-season="(\w+)"', scrubber, "the in-season flag")
+
+    home = reverse("public:home")
+    # No ?d= — today stands in, and today is inside this season.
+    assert in_season(home) == "true"
+    assert in_season(f"{home}?d=2026-02-14") == "true"
+    # Both edges are inclusive.
+    assert in_season(f"{home}?d=2026-02-01") == "true"
+    assert in_season(f"{home}?d=2026-02-28") == "true"
+    # Outside it, either side.
+    assert in_season(f"{home}?d=2026-01-31") == "false"
+    assert in_season(f"{home}?d=2025-07-15") == "false"
+    # A malformed ?d= is no choice at all, so today decides — the same
+    # reading the map itself takes, so the two cannot disagree.
+    assert in_season(f"{home}?d=not-a-date") == "true"
+
+
+@pytest.mark.django_db
+def test_help_roundel_moved_out_of_the_overlay_column() -> None:
+    """
+    ``#map-help-toggle`` sits in the bottom-left stack, not the right column.
+
+    Everything in ``.map-controls-br`` changes what the map SHOWS — layers,
+    basemap, fill strength, downloads, the UGC pins. Help changes nothing;
+    it explains, which is what the bottom-left stack is for.
+
+    The move also drops the collapsible group's child count by one, and
+    map.css computes that group's open height from a hardcoded fallback —
+    see ``test_collapsible_group_css_fallback_matches_the_rendered_child_count``,
+    which is what catches the two going out of step.
+    """
+    client = Client()
+    content = client.get(reverse("public:home")).content.decode()
+
+    ancestors = _ancestor_ids(content, "map-help-toggle")
+    assert "map-legend" in ancestors, (
+        f"help should be in the bottom-left stack. Ancestors: {ancestors}"
+    )
+    assert "map-controls-collapsible" not in ancestors
+    assert "map-controls-br" not in ancestors
+
+
+@pytest.mark.django_db
+def test_map_calendar_panel_lives_in_the_bottom_left_stack() -> None:
+    """
+    The panel renders inside ``#map-legend``, beside the legend card.
+
+    SNOW-794 moved it. It was a ``position: fixed`` sheet at top level, in
+    the bottom-RIGHT slot with the UGC panels — but its trigger moved to the
+    bottom-left stack, and a panel that opens on the far side of the map
+    from the button that opened it is a worse rule than the one it obeyed.
+
+    It is now ``position: absolute``, anchored to that stack's own box, so
+    the nesting is load-bearing rather than incidental: outside
+    ``#map-legend`` it has no containing block to open from, and it would
+    land in the viewport's corner instead of the map's.
+
+    Still out of ``.map-controls-br`` — that column is z-index 4 and would
+    trap it — which is the half of the old contract that survives.
     """
     client = Client()
     response = client.get(reverse("public:home"))
 
     ancestors = _ancestor_ids(response.content.decode(), "map-calendar")
-    assert "map" not in ancestors, (
-        "#map-calendar is nested inside #map. It is position:fixed and would "
-        f"be trapped by that stacking context. Ancestors: {ancestors}"
+    assert "map-legend" in ancestors, (
+        "#map-calendar must be inside #map-legend — it is position:absolute "
+        f"and that stack is its containing block. Ancestors: {ancestors}"
     )
     assert "map-controls-br" not in ancestors, (
         "#map-calendar is nested inside the bottom-right control stack "
@@ -1356,34 +1485,38 @@ def test_map_calendar_panel_is_outside_the_map_and_the_control_stack() -> None:
 
 
 @pytest.mark.django_db
-def test_map_calendar_toggle_sits_in_the_scrubber_row() -> None:
+def test_map_calendar_toggle_sits_on_the_bottom_row_beside_the_scrubber() -> None:
     """
-    The tap target is one of the scrubber's controls, between skip-to-end
-    and the end of the row.
+    The tap target is on the bottom-left stack's last line, ahead of the
+    season scrubber that shares it.
 
-    The panel moved to the bottom-right overlay slot; the button did not.
-    It belongs with the other date affordances, which is where a visitor
-    already is when they want a different day.
+    SNOW-794 took it out of the scrubber's transport row. The transport
+    moves you ALONG the season; this jumps to a named day, and on the
+    viewports where the scrubber is not drawn at all it is the only date
+    control there is — so it cannot live inside the thing that disappears.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    assert content.index('id="scrubber-skip-end"') < content.index(
-        'id="map-calendar-toggle"'
+    assert "map-date-row" in _ancestor_ids(content, "map-calendar-toggle")
+    # Ahead of the scrubber on that line, and out of the transport row.
+    assert content.index('id="map-calendar-toggle"') < content.index(
+        'id="season-scrubber"'
     )
     assert content.index('id="map-calendar-toggle"') < content.index(
-        'id="map-calendar"'
+        'id="scrubber-skip-end"'
     )
 
 
 @pytest.mark.django_db
 def test_map_calendar_is_in_the_help_tour() -> None:
-    """The toggle carries a coachmark step, straight after the scrubber's.
+    """The toggle carries a coachmark step, in bottom-left stack order.
 
-    The two are one idea — the scrubber runs through the season, the
-    calendar jumps to a day — and the toggle sits in the scrubber's own row,
-    so the tour introduces them together.
+    The tour walks the map's chrome in DOM order, so once SNOW-794 moved the
+    calendar into the bottom-left stack its step moved with it: the scrubber
+    is introduced with the rest of the map, then the stack is walked from
+    the top down — help, legend, and the date control on the bottom line.
     """
     client = Client()
     response = client.get(reverse("public:home"))
@@ -1391,4 +1524,9 @@ def test_map_calendar_is_in_the_help_tour() -> None:
 
     steps = re.findall(r'data-help-target="([^"]+)"', content)
     assert "#map-calendar-toggle" in steps
-    assert steps.index("#map-calendar-toggle") == steps.index("#season-scrubber") + 1
+    # SNOW-794: the walk follows the bottom-left stack top to bottom — help,
+    # legend, then the date row the calendar toggle sits on. The scrubber
+    # step comes before all three, with the rest of the map chrome.
+    assert steps.index("#season-scrubber") < steps.index("#map-calendar-toggle")
+    assert steps.index("#map-help-toggle") < steps.index("#map-legend-toggle")
+    assert steps.index("#map-legend-toggle") < steps.index("#map-calendar-toggle")

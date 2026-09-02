@@ -124,6 +124,21 @@
    #basemap-toggle, …), so picking a resort toggled a basemap instead.
    The two clusters occupy opposite corners and only ever intersect via
    this dropdown, so raising the whole cluster costs nothing elsewhere. */
+/* —— The bottom row's offset (SNOW-794) ————————————————————————
+   How far the bottom-left stack and the bottom-right column sit above the
+   map's bottom edge. It was a bare `+ 60px` written out in both, and 60px
+   was the room the scrubber needed as a full-width bar beneath them.
+
+   The scrubber is now a member of the left stack's own bottom line, so
+   there is nothing under either cluster and both sit on the map's edge
+   gap like everything else. Held as one token rather than the same
+   expression twice, because the two must not drift: they share a baseline
+   by design, and #map-controls-toggle lands at the right-hand end of the
+   very line the scrubber fills. */
+#map {
+    --map-bottom-row-offset: var(--map-edge-inset-bottom);
+}
+
 .map-utility-cluster {
     position: absolute;
     top: calc(env(safe-area-inset-top, 0px) + 12px);
@@ -143,7 +158,7 @@
 .map-controls-br {
     position: absolute;
     right: var(--map-edge-inset-right);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+    bottom: var(--map-bottom-row-offset);
     z-index: 4;
     display: flex;
     flex-direction: column;
@@ -165,12 +180,19 @@
    is pressing it, and the revealed controls appear directly beneath layers
    and locate in their existing stack order.
 
+   SNOW-794: help is no longer one of them. Everything in this column
+   changes what the map SHOWS — layers, basemap, fill strength, downloads,
+   the UGC pins. Help changes nothing; it explains. It sits in the
+   bottom-left stack now, with the legend and the date.
+
    Height is COMPUTED, not measured. The control scale above guarantees
    every child is exactly --map-control-lg tall with an 8px gap, so n
    children occupy n*lg + (n-1)*8. --map-controls-count is set from the
    live child count by mapControlsCollapseInit, which keeps this correct if
    a control ever becomes conditional again — SNOW-724 made the routes
-   roundel unconditional, taking the count from six to seven. Measuring
+   roundel unconditional, taking the count from six to seven, and SNOW-794
+   moved the help roundel out to the bottom-left stack, taking it back to
+   six. Measuring
    instead would mean
    reading offsetHeight off an already-clipped box (it returns 0) or
    un-clipping to measure and forcing a reflow on every toggle.
@@ -204,8 +226,8 @@
 
 .map-controls-br[data-expanded="true"] #map-controls-collapsible {
     height: calc(
-        var(--map-controls-count, 7) * var(--map-control-lg) +
-            (var(--map-controls-count, 7) - 1) * 8px
+        var(--map-controls-count, 6) * var(--map-control-lg) +
+            (var(--map-controls-count, 6) - 1) * 8px
     );
     opacity: 1;
     margin-bottom: 0;
@@ -978,22 +1000,54 @@
 
 .map-legend {
     position: absolute;
-    /* PROTOTYPE (homepage rework): (i) legend moves to the bottom-left corner,
-       horizontally level with the report roundel (bottom:60px). The scrubbed-
-       date ribbon sits to the right of the (i) toggle on the same row; the
-       legend card opens upward (above the row), so it clears both. */
+    /* SNOW-794: a COLUMN, not a row. It holds four things now — the legend
+       toggle, help, the date control and the season scrubber — and they do
+       not all belong on one line: the first two describe the map, the last
+       two are about the day it is showing. So the date and the scrubber
+       share the bottom line (.map-date-row) and the other two stack above
+       it, the way the bottom-right column stacks.
+
+       `right` is what lets that bottom line reach across the map: the stack
+       stops one roundel-and-a-gap short of the right edge, which is exactly
+       where #map-controls-toggle sits on the same baseline. The scrubber
+       then flexes into everything the date control leaves.
+
+       Bottom-anchored, so a hidden member shortens the stack from the TOP
+       and the bottom line never moves — the same property the bottom-right
+       column relies on, and it matters more here because the scrubber comes
+       and goes with the season. */
     left: var(--map-edge-inset-left);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+    right: calc(var(--map-edge-inset-right) + var(--map-control-lg) + 8px);
+    bottom: var(--map-bottom-row-offset);
     z-index: 3;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 8px;
+    /* The container must not swallow map clicks. Setting `right` above turned
+       this from a content-width row into a box the width of the map — 828px
+       by 112px on a 900px viewport — sitting over the bottom-left of the
+       canvas. Every tap in that strip hit this element instead of MapLibre:
+       three e2e tests (region select, weather icons, the favourite add flow)
+       failed on it, and they were right to.
+
+       The controls take their events back individually below. #map-date-row
+       needs the same treatment for the same reason — it is `align-self:
+       stretch`, so it spans the full width even when the scrubber that
+       normally fills it is not rendered. */
+    pointer-events: none;
     /* SNOW-645 review: held as a custom property so .map-legend-card's own
        max-height, below, can reuse the exact figure this element is
        already offset from the viewport bottom by, plus the card's own
        8px gap — see that rule's own comment for why this now has a
        bound at all. */
-    --map-legend-card-bottom-offset: calc(env(safe-area-inset-bottom, 0px) + 60px + 8px);
+    /* How far the two cards in this stack sit above the viewport bottom:
+       the cluster's own offset, plus the date row they now clear, plus the
+       8px gap. Both read it for their max-height, so neither can overrun
+       the top of the map. */
+    --map-legend-card-bottom-offset: calc(
+        var(--map-bottom-row-offset) + var(--map-control-sm) + 8px
+    );
 }
 
 /* ``.map-date-pill`` (the 28px readout that floated above the scrubber thumb)
@@ -1020,13 +1074,11 @@
     cursor: pointer;
 }
 
-/* Scrubbed-date ribbon — the timeline's own readout, sitting to the right of
-   the (i) legend toggle in the bottom-left cluster (a flex sibling on the same
-   row), close to the season scrubber that drives it. Moved here from the top
-   #region-readout so the timeline and the date it controls share the bottom
-   edge, leaving the top bar to name the region. The legend card opens upward
-   (above this row), so the two never overlap. Glass pill matching the (i)
-   toggle idiom; map.js fills the text and toggles [hidden]. */
+/* Scrubbed-date readout. SNOW-794 folded it INSIDE .map-date-control — it is
+   no longer a free-standing pill beside the (i) toggle but the text half of
+   the button that also opens the picker. map.js still fills it and still
+   toggles [hidden], unchanged; only its box moved. Its type and the pill
+   treatment that used to be here are further down, with that control. */
 .map-date-ribbon[hidden] {
     display: none;
 }
@@ -1124,10 +1176,63 @@
         0 0 0 4.5px var(--color-text-2);
 }
 
-.map-date-ribbon {
+/* The stack's controls take their pointer events back — see the
+   `pointer-events: none` on .map-legend above for why it is off there.
+
+   Listed by class rather than as a blanket `> *`, which was the first
+   attempt and was wrong twice over. `.map-legend > *:not(#map-date-row)`
+   scores (1,1,0) because `:not()` inherits its argument's specificity, so
+   it beat `.map-legend-card`'s own `pointer-events: none` and re-armed the
+   CLOSED legend card — an invisible panel swallowing clicks over a third of
+   the map, the same defect being fixed here, moved somewhere subtler.
+
+   So the two panels are left out entirely. Each already owns its own
+   answer: the card is `none` closed and `auto` under
+   `[data-state="expanded"]`, and #map-calendar is `hidden` when shut. */
+.map-legend > .map-legend-toggle,
+#map-date-row > * {
+    pointer-events: auto;
+}
+
+/* Stretched to the stack's full width, so it spans the map even when the
+   scrubber that normally fills it is not rendered. Its children above take
+   their own events back. */
+#map-date-row {
+    pointer-events: none;
+}
+
+/* SNOW-794: the stack's bottom line — the date control, and the season
+   scrubber filling everything to its right. `align-self: stretch` is what
+   makes it span the column's full width while the legend and help roundels
+   above stay at their own size. */
+.map-date-row {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* The stack is bottom-anchored and this is its last child, so it holds
+       the baseline whatever comes and goes above it. */
+    min-width: 0;
+}
+
+/* SNOW-794: the date control — one pill that both SAYS the day and OPENS
+   the picker. The glass pill treatment moved from .map-date-ribbon (which
+   was the readout half) onto the button that now wraps it; the readout
+   inside is bare text.
+
+   The two used to be separate controls a screen-width apart: this said the
+   date, and #map-calendar-toggle over in the scrubber's transport row
+   changed it. Merging them is what let the transport row shed a control it
+   never belonged to, and what leaves a phone with a date control at all
+   once the scrubber stops rendering there. */
+.map-date-control {
     display: inline-flex;
     align-items: center;
+    gap: 6px;
     height: var(--map-control-sm);
+    /* Tighter on the right when the readout is hidden, so the control is a
+       round glyph button rather than a stretched empty pill — see the
+       :has() rule below. */
     padding: 0 12px;
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
@@ -1136,21 +1241,71 @@
     border-radius: 999px;
     box-shadow: var(--shadow-glass);
     color: var(--color-text-1);
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Before the map has a day to report, #map-date-ribbon inside is still
+   `hidden` (SNOW-660) and the control is the calendar glyph alone. Square
+   the padding so it reads as a roundel beside its neighbours rather than as
+   a pill with its text missing. */
+.map-date-control:has(> .map-date-ribbon[hidden]) {
+    padding: 0;
+    width: var(--map-control-sm);
+    justify-content: center;
+}
+
+/* The date readout itself — now the text inside that control rather than a
+   free-standing pill, so it carries type and nothing else. */
+.map-date-ribbon {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.06em;
     white-space: nowrap;
-    user-select: none;
+    /* SNOW-794: a floor at the width of the longest date this can hold, so
+       the pill does not resize as the day crosses 9→10.
+
+       It shares a flex line with the scrubber, so a one-character change in
+       here was a ~7px change in the TRACK — measured 700.2px on "9 Apr 2026"
+       against 692.9px on "15 Apr 2026". That is not only a twitch: the track
+       maps pixels to dates, so it re-scaled under the pointer mid-drag every
+       time playback or a scrub crossed the boundary.
+
+       Fixed here rather than by zero-padding the day, because the string
+       comes from ``formatDatePopup`` (static/js/map_shared.js), which is
+       deliberately identical to the server's ``date:"j M Y"`` in
+       _region_tooltip.html and the popup card — padding it here would make
+       the same date read two ways on one page.
+
+       11 characters is "30 Sep 2026". ``ch`` is exact in a monospace face —
+       every glyph carries the "0" advance — but it does NOT include
+       ``letter-spacing``, and this rule sets 0.06em of it. At 11px that is
+       0.66px a character, so a bare 11ch came out ~7px short and changed
+       nothing. The second term adds the eleven gaps back.
+
+       A floor, not a clamp: a locale whose format runs longer simply gets a
+       wider pill, and the empty-state "No date selected" already exceeds
+       this. */
+    min-width: calc(11ch + 11 * 0.06em);
 }
 
 .map-legend-card {
     position: absolute;
-    /* Open upward: anchor the card above the (i)-toggle + date-ribbon row
-       (100% = row height) with an 8px gap, left-aligned to the toggle, so it
-       clears both controls instead of expanding over them. */
-    left: 0;
-    bottom: calc(100% + 8px);
+    /* SNOW-794: into the crook of the corner, mirroring how the bottom-right
+       menus open. The two edges of this cluster are the roundel column going
+       up the left and the date row going along the bottom; the card sits
+       inside the angle they make — clear of the roundels horizontally, clear
+       of the date row vertically — rather than floating above the whole
+       stack as it did when this was a single row.
+
+       Both offsets are one control plus the 8px gap, which is the same
+       arithmetic .basemap-menu uses on the other side (right: 48px clears a
+       40px lg roundel; these clear a 32px sm one). Unlike that menu these
+       need no JS to find their floor: the date row's height IS
+       --map-control-sm, so the gap is exact and static. */
+    left: calc(var(--map-control-sm) + 8px);
+    bottom: calc(var(--map-control-sm) + 8px);
     min-width: 200px;
     max-width: 260px;
     padding: 10px 12px;
@@ -1433,7 +1588,18 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 16px;
+    /* SNOW-794: the pill is one control on a line of controls now, not a bar
+       of its own, so it takes the same height as the date pill and the two
+       roundels it shares that line with — 45px against their 32px read as a
+       misalignment, because it was one.
+
+       Height stated rather than left to the padding: the tallest child is a
+       24px transport button, so padding alone would land on 32px only by
+       coincidence and drift the moment a child changed. With an explicit
+       height, `align-items: center` does the vertical work and the padding
+       is purely horizontal — the same arrangement .map-date-control uses. */
+    height: var(--map-control-sm);
+    padding: 0 12px;
     background: var(--color-glass);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
@@ -1445,13 +1611,20 @@
     user-select: none;
 }
 
-/* On the map page, the scrubber is pinned over the MapLibre viewport. */
+/* SNOW-794: on the map page the scrubber is a member of the bottom-left
+   stack's last line, not a bar pinned across the foot of the viewport. It
+   used to own the full width at `bottom: 5px` with the legend and control
+   clusters floating 60px above it; when the clusters dropped to the map's
+   own bottom edge, the strip between the date control and the bottom-right
+   chevron was the space it now fills.
+
+   `flex: 1 1 auto` with `min-width: 0` — the track inside is itself
+   `flex: 1 1 auto`, and without the zero minimum the transport buttons
+   would set a floor that stops the pill shrinking on a narrow desktop. */
 .season-scrubber {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: calc(5px + env(safe-area-inset-bottom, 0px));
-    z-index: 2;
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 /* On the component-library page, the demo pill flows in normal document
@@ -1488,7 +1661,10 @@
 
 /* Decorative season-ribbon fill inside the track. One flex cell per day,
    no pointer events (the track beneath handles scrubbing), clipped to the
-   track's rounded rail. */
+   track's rounded rail. Spans the whole track because the track IS the
+   season — SNOW-794 briefly gave the scrubber a twelve-month window with the
+   season inset inside it, and reverted: two ranges in one control is what
+   made the thumb and the URL disagree. */
 .scrubber-ribbon {
     position: absolute;
     inset: 0;
@@ -1537,6 +1713,31 @@
     touch-action: none;
     /* Ride over the decorative ribbon fill. */
     z-index: 2;
+}
+
+/* SNOW-794: the drag target is the full height of the pill, not the height
+   of the painted rail.
+
+   The rail is 3px at rest and 14px with a region's ribbon on it — both well
+   under the 24px WCAG 2.2 SC 2.5.8 asks of a target, and the scrubber now
+   sits on a line of 32px controls where it was visibly the odd one out to
+   hit. This pseudo-element carries no paint; it exists only to extend the
+   track's hit area to the same 32px, so the whole pill is grabbable while
+   the rail stays as thin as it should look.
+
+   Sized from --map-control-sm and centred, rather than a negative inset, so
+   it stays 32px whether or not the ribbon has grown the rail underneath it.
+   The ribbon fill and the thumb above are unaffected: both are
+   pointer-events:none / z-indexed over this, and a hit on a pseudo-element
+   dispatches to its own element either way. */
+.season-scrubber-track::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: var(--map-control-sm);
+    transform: translateY(-50%);
 }
 
 .season-scrubber-track.dragging {
@@ -1612,6 +1813,30 @@
     background: rgba(0, 0, 0, 0.06);
 }
 
+
+/* —— When the scrubber is on screen (SNOW-794) ————————————————
+   Two conditions, both of them absences rather than preferences.
+
+   1. OFF-SEASON. The track is the avalanche season; a day outside it has no
+      position on that track, and a thumb clamped to whichever end it is past
+      is the lie this ticket opened with. `data-in-season` is server-rendered
+      for first paint and kept current by static/js/map_scrubber_reveal.js.
+      The calendar covers those days — it is "pick a date, any date", this is
+      a season scrubber, and the calendar is what reveals it.
+
+   2. NARROW VIEWPORTS. At 148px a season is under a pixel a day and a 40px
+      fingertip covers 57 of them. It was never a date control on a phone;
+      since SNOW-794 the calendar grid carries the danger-by-day colour that
+      was the only other thing it offered, so nothing is lost with it gone. */
+.season-scrubber[data-in-season="false"] {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .season-scrubber {
+        display: none;
+    }
+}
 
 /* Season scrubber loading state (SNOW-234).
    While the season-ratings fetch is in flight the scrubber carries
@@ -3305,6 +3530,26 @@ body.map-framing #map-legend {
    through it. Chrome can be translucent; something you have to read
    cannot. */
 .map-calendar {
+    /* SNOW-794: an absolutely-positioned card inside .map-legend, opening
+       UPWARD into the crook of the corner, on the same two offsets as
+       #map-legend-card beside it — clear of the roundel column to its left
+       and the date row beneath it. It used to be a fixed bottom-RIGHT sheet;
+       its trigger now lives in this row, and a panel that opens across the
+       map from its own button is a worse rule than the one that put it
+       there. Same anchor, so the two cards in this row cannot disagree
+       about where "above the row" is. */
+    position: absolute;
+    left: calc(var(--map-control-sm) + 8px);
+    bottom: calc(var(--map-control-sm) + 8px);
+    /* Bounded and scrolling, like every surface that floats over the map.
+       Six rows of dates fit easily today — but the anchor is low, the card
+       opens into the viewport, and nothing else here would stop it. Same
+       two terms as .map-legend-card's own bound: the shared top gap, and
+       this row's distance from the viewport bottom (which since SNOW-794
+       shortens when the scrubber is not drawn, so the card grows to match).
+       `dvh` not `vh`, for the reason .home-intro-card's comment gives. */
+    max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset));
+    overflow-y: auto;
     /* Stated rather than inherited: nothing above this element sets it now.
        A month grid is five or six rows of one- and two-digit numbers that
        have to line up in seven columns, which is the one thing a monospace
@@ -3312,6 +3557,14 @@ body.map-framing #map-legend {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 12px;
     color: var(--color-text-1);
+}
+
+/* `hidden` is how map_calendar.js closes it, and the row is a flex
+   container — display:flex on a [hidden] child would override the UA's
+   display:none. The card is absolutely positioned so it is not a flex item,
+   but state that plainly rather than rely on it. */
+.map-calendar[hidden] {
+    display: none;
 }
 
 /* Below `sm` the panel is docked full-width like the sheets, and a 210px
@@ -3433,6 +3686,60 @@ body.map-framing #map-legend {
 
 .map-calendar-day.in-season:hover:not(:disabled) {
     background: var(--color-chip-strong);
+}
+
+/* SNOW-794: the focused region's danger, per day. This is the fact the
+   scrubber ribbon painted into its track, and moving it here is what lets
+   the scrubber be dropped entirely below 640px — at 0.4px per day the
+   ribbon was never readable on a phone, and here each day is a 28px target
+   carrying its own date.
+
+   The saturated EAWS colour with its matching -fg ink, NOT the -tint/-text
+   pair. That is what the bulletin page's own season calendar does
+   (.calendar-cell in src/css/main.css), and these two grids already claim to
+   read the same way — the today/selected ring rules below say so. The -fg
+   tokens exist for exactly this: dark ink through considerable, white on
+   high and very-high, where the scale's own #ff0000 and #820100 admit
+   nothing else. The tints are for large text-bearing surfaces like
+   .danger-band, not for a numeral in a 28px disc that has to match a
+   ribbon cell beside it.
+
+   Each rule doubles the class deliberately: `.map-calendar-day.in-season`
+   above is a COMPOUND selector, so a single-class rating rule loses to it
+   however late it appears, and every rated day would keep the neutral
+   in-season chip. Matching its specificity lets document order decide, which
+   is what "the danger colour is the stronger statement" needs — a rated day
+   is in season by definition. */
+.map-calendar-day.map-calendar-day--low {
+    background: var(--color-eaws-low);
+    color: var(--color-eaws-low-fg);
+}
+
+.map-calendar-day.map-calendar-day--moderate {
+    background: var(--color-eaws-moderate);
+    color: var(--color-eaws-moderate-fg);
+}
+
+.map-calendar-day.map-calendar-day--considerable {
+    background: var(--color-eaws-considerable);
+    color: var(--color-eaws-considerable-fg);
+}
+
+.map-calendar-day.map-calendar-day--high {
+    background: var(--color-eaws-high);
+    color: var(--color-eaws-high-fg);
+}
+
+.map-calendar-day.map-calendar-day--very_high {
+    background: var(--color-eaws-very-high);
+    color: var(--color-eaws-very-high-fg);
+}
+
+/* Hover on a rated day keeps its own colour — swapping to the neutral chip
+   would read as the danger changing under the cursor. A ring is the
+   affordance instead, inset so it does not grow the cell. */
+.map-calendar-day[class*="map-calendar-day--"]:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 2px var(--color-text-1);
 }
 
 /* Today and the selected day use the same two markers as the bulletin

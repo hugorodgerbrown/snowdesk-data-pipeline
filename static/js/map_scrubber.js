@@ -45,6 +45,7 @@
   const seasonStartMs = Date.parse(scrubber.dataset.seasonStart);
   const seasonEndMs = Date.parse(scrubber.dataset.seasonEnd);
   const seasonSpanMs = seasonEndMs - seasonStartMs;
+  const todayMs = Date.parse(todayKey);
 
   // Convert between a thumb percentage (0..100 along the track) and an
   // ISO date string. Both use the season bounds parsed above and round
@@ -277,21 +278,44 @@
   document.addEventListener('pointercancel', release);
 
   // ---- Boot from URL ----
-  // Read ?d= once on init. If parseable and inside the season window,
-  // commit it (which positions the thumb + queues the repaint once the
-  // ratings cache resolves). Otherwise fall back to today (SNOW-793).
-  const isInSeason = (dateKey) => {
-    if (window.pwaScrubberCore) return window.pwaScrubberCore.isInSeason(dateKey, seasonStartMs, seasonEndMs);
+  // Read ?d= once on init. If it names a day the map can answer for, commit
+  // it (which positions the thumb + queues the repaint once the ratings
+  // cache resolves). Otherwise fall back to today (SNOW-793).
+  //
+  // SNOW-794: the test is the CALENDAR's — parseable and not in the future.
+  // It was ``isInSeason``, which is narrower than what the picker offers:
+  // the ratings payload is the whole archive, so the calendar pages back
+  // years, and a day it offered — and committed — was then refused on
+  // reload, leaving the map uncoloured while the URL and the grid both
+  // named it.
+  //
+  // The season still decides one thing, just not this one: whether the
+  // SCRUBBER is on screen at all (``data-in-season``, see
+  // static/js/map_scrubber_reveal.js). A day outside it has no position on
+  // a track that is the season, so the control is hidden rather than
+  // pointed somewhere false — which is also what became of the clamped
+  // off-season thumb SNOW-793's own boot fallback describes below. The
+  // clamp still happens; there is simply nothing on screen to see it.
+  const isSelectable = (dateKey) => {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.isSelectableDate(dateKey, todayMs);
     const ms = Date.parse(dateKey);
-    return Number.isFinite(ms) && ms >= seasonStartMs && ms <= seasonEndMs;
+    return Number.isFinite(ms) && ms <= todayMs;
   };
   const bootDate = readUrlDateParam();
-  if (bootDate && isInSeason(bootDate)) {
+  if (bootDate && isSelectable(bootDate)) {
     // Defer until both the map style and the ratings cache are ready —
     // commitDate calls repaintRegionsForDate which needs MAP and the
     // regions source up. The thumb position can be set immediately so
     // the boot UI is correct even before paint.
-    thumb.style.left = dateKeyToPct(bootDate) + '%';
+    // aria-valuenow moves WITH the thumb, not later with the commit. The
+    // deferred commit below waits on the map style, which can be slow or
+    // (offline, or a failed style fetch) never arrive — and until it lands
+    // the server-rendered "100" would be announcing a position the thumb is
+    // not in. Same disagreement this ticket is about, reached through the
+    // accessibility layer.
+    const bootPct = dateKeyToPct(bootDate);
+    thumb.style.left = bootPct + '%';
+    scrubber.setAttribute('aria-valuenow', String(Math.round(bootPct)));
     Promise.all([MAP_READY_PROMISE, getSeasonRatings().catch(() => null)]).then(() => {
       commitDate(bootDate, { silent: true });
     });
@@ -318,11 +342,15 @@
     // a bare URL means today, and writing ``?d=`` here would freeze a
     // shared link onto the day it was copied.
     //
-    // No ``isInSeason`` guard. Off season today sits past the narrowed
-    // season end, ``dateKeyToPct`` clamps the thumb to the end of the
-    // track, and the map is uncoloured with the ribbon naming today —
-    // which is the honest reading of an off-season day, and the one
-    // thing SNOW-660's last-populated-day default could not give.
+    // No season guard. Off season today sits past the narrowed season end
+    // and ``dateKeyToPct`` clamps the thumb to the end of the track — but
+    // since SNOW-794 there is nothing on screen to see that clamp: the
+    // scrubber is not rendered at all for a day outside the season
+    // (``data-in-season``, static/js/map_scrubber_reveal.js). What remains
+    // is the half that was always right — an uncoloured map with the
+    // ribbon naming today, which is the honest reading of an off-season
+    // day and the one thing SNOW-660's last-populated-day default could
+    // not give.
     commitDate(todayKey, { silent: true });
   }
 
@@ -341,7 +369,7 @@
   // history, and the bare URL it restores already means today.
   window.addEventListener('popstate', () => {
     const d = readUrlDateParam();
-    if (d && isInSeason(d)) {
+    if (d && isSelectable(d)) {
       commitDate(d, { silent: true });
       return;
     }

@@ -635,9 +635,22 @@ basemap" and "Manage downloads" sections for the mechanism.
 
 ## 5. The timeline scrubber
 
-The scrubber is a horizontal timeline along the bottom of the map that
+The scrubber is a horizontal timeline on the map's bottom-left row that
 turns the map from "today" into "any day this season". The thumb defaults
 to today's position within the **November–May** avalanche season window.
+
+**It is a season scrubber, and only that** (SNOW-794). Its track spans the
+season and nothing wider, so it is shown only while the day the map is
+showing falls inside one — the calendar is its reveal. A day outside the
+season has no position on that track, and a thumb clamping to whichever end
+it is past is a lie: the URL says July and the thumb says April. The
+calendar answers for those days instead. Two controls, each honest about
+its own job.
+
+**It is desktop-only.** At 148px a season is under a pixel a day and a 40px
+fingertip covers 57 of them; it was never a date control on a phone. Below
+640px it is not rendered, and nothing is lost with it — the calendar grid
+carries the danger-by-day colour that was the only other thing it offered.
 
 - **Scrubbing.** Dragging the thumb to a date re-colours every region
   from that day's ratings, so the visitor can see how danger evolved
@@ -666,11 +679,21 @@ to today's position within the **November–May** avalanche season window.
   because the map carries weather as well as bulletins and a day in
   September has something to show even though no bulletin covers it. The
   season is drawn as a highlight inside that range, so the grid tells you
-  where the bulletins are without refusing the days either side. That
-  highlight is the only marking a day gets: whether a particular in-season
-  day actually has a bulletin is not shown, because landing on one that
-  does not already shows an uncoloured map. The future is the one thing the
-  calendar will not offer.
+  where the bulletins are without refusing the days either side. The future
+  is the one thing the calendar will not offer.
+
+  **The grid carries the danger colour too** (SNOW-794). Once a region is
+  focused, each day is filled with that region's rating in the EAWS palette
+  — the same fact the scrubber paints into its track, and the same
+  saturated colours the bulletin page's own season calendar uses. A day
+  inside the season with no bulletin keeps the plain season tint, so a gap
+  still reads as a gap. This is what makes dropping the scrubber on a phone
+  honest rather than a loss.
+
+  **The date control is one control.** The readout that says which day the
+  map is showing and the button that changes it are the same pill, in the
+  bottom-left row. They were two, a screen apart — a readout you could not
+  press beside a button that did not say what it would show.
 - **Shareable.** The scrubbed date is reflected in the URL (`/?d=YYYY-MM-DD`),
   so a specific day's map can be linked and reloaded, today included. An
   empty querystring means **today** (SNOW-793): the map opens painted for

@@ -22,7 +22,13 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
     """Navigate to / and wait for the map to finish its boot fetch."""
     page.goto(f"{live_server_url}/")
     page.wait_for_load_state("domcontentloaded")
-    page.wait_for_selector('#season-scrubber[data-state="ready"]')
+    # SNOW-794: `state="attached"`, not the default "visible". The scrubber
+    # is a SEASON scrubber and is not rendered at all while the day the map
+    # is showing falls outside the season — which a bare `/` in the
+    # off-season is, since the default day is today. `data-state="ready"` is
+    # still set on the hidden element, and it is the season-data signal this
+    # wait actually wants; visibility never was.
+    page.wait_for_selector('#season-scrubber[data-state="ready"]', state="attached")
     page.wait_for_function(
         "() => typeof MAP !== 'undefined' && MAP !== null && MAP.loaded()"
     )

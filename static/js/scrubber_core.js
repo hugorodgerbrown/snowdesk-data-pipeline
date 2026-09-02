@@ -21,6 +21,14 @@
  * the rating-int→key lookup table are all passed in explicitly rather than
  * read from module-scope globals.
  *
+ * SNOW-794: the span these functions map percentages over is the avalanche
+ * season, and only that. The ticket briefly gave the scrubber a twelve-month
+ * window with the season inset inside it as a band, so it could place any day
+ * the calendar offers — and reverted: one control trying to be two is what
+ * let the thumb and ``?d=`` disagree in the first place. The calendar is
+ * "pick a date, any date"; this is a season scrubber, and it is simply not
+ * shown for a day outside the season (static/js/map_scrubber_reveal.js).
+ *
  * Public API — attached to ``window.pwaScrubberCore``:
  *
  *   pctToDateKey(pct, seasonStartMs, seasonSpanMs)
@@ -50,9 +58,9 @@
  *     if none match, or to ``fallbackKey`` if ``dates`` is empty. Logs an
  *     unexpected-prefix warning (deduped per call) exactly as the original
  *     inline version did.
- *   isInSeason(dateKey, seasonStartMs, seasonEndMs)
- *     True when ``dateKey`` parses to a timestamp within
- *     ``[seasonStartMs, seasonEndMs]`` inclusive.
+ *   isSelectableDate(dateKey, todayMs)
+ *     True when ``dateKey`` parses and is not in the future — the same set
+ *     of days the calendar offers (SNOW-794).
  *   intToKey(n, ratingTable)
  *     Rating int → EAWS key string via ``ratingTable`` (index lookup);
  *     ``'no_rating'`` for ``null``/``undefined``/out-of-range ``n``.
@@ -211,17 +219,27 @@
   }
 
   /**
-   * True when ``dateKey`` parses to a timestamp within
-   * ``[seasonStartMs, seasonEndMs]`` inclusive.
+   * True when ``dateKey`` is a date the map can answer for: parseable, and
+   * not in the future.
+   *
+   * SNOW-794: this replaced an ``isInSeason`` guard on the scrubber's boot
+   * and popstate paths. That guard was narrower than what the calendar
+   * offers — the ratings payload is the whole archive, so the picker pages
+   * back years — and a ``?d=`` it refused left the map uncoloured while the
+   * URL and the calendar grid both named a day. The future is the only hard
+   * stop, which is the calendar's own rule (see ``buildMonthGrid``'s
+   * ``max``), so the two surfaces now accept exactly the same set of days.
+   * A date outside the track's twelve-month window still parks the thumb at
+   * whichever end it is past — ``dateKeyToPct`` clamps — which is the honest
+   * reading of "that is before this track starts".
    *
    * @param {string} dateKey
-   * @param {number} seasonStartMs
-   * @param {number} seasonEndMs
+   * @param {number} todayMs Timestamp of today, UTC midnight.
    * @returns {boolean}
    */
-  function isInSeason(dateKey, seasonStartMs, seasonEndMs) {
+  function isSelectableDate(dateKey, todayMs) {
     var ms = Date.parse(dateKey);
-    return Number.isFinite(ms) && ms >= seasonStartMs && ms <= seasonEndMs;
+    return Number.isFinite(ms) && ms <= todayMs;
   }
 
   /**
@@ -243,7 +261,7 @@
     nearestFrameIndex: nearestFrameIndex,
     nextFrame: nextFrame,
     deriveEffectiveTodayKey: deriveEffectiveTodayKey,
-    isInSeason: isInSeason,
+    isSelectableDate: isSelectableDate,
     intToKey: intToKey,
   });
 })();

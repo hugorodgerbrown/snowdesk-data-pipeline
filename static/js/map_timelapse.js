@@ -35,6 +35,10 @@
   // Drive the scrubber thumb so playback position is visible.
   const scrubber = document.getElementById('season-scrubber');
   const scrubberThumb = scrubber ? scrubber.querySelector('.season-scrubber-thumb') : null;
+  // SNOW-794: the scrubber's TRACK span (twelve months ending today), not the
+  // avalanche season — the two used to be one pair under one name. Playback
+  // still steps through ``sortedDates``, real data days; this is only how a
+  // frame becomes a thumb position.
   const seasonStartMs = scrubber ? Date.parse(scrubber.dataset.seasonStart) : NaN;
   const seasonEndMs = scrubber ? Date.parse(scrubber.dataset.seasonEnd) : NaN;
   const seasonSpanMs = seasonEndMs - seasonStartMs;
