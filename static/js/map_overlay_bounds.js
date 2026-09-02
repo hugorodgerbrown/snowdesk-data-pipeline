@@ -128,11 +128,21 @@
     if (!mapEl) return null;
     var mapBox = mapEl.getBoundingClientRect();
 
-    // The scrubber owns the foot of the map, so stop above it; with no
-    // scrubber on the page, the map's own bottom edge is the floor.
-    var scrubber = document.getElementById('season-scrubber');
-    var floorY =
-      (scrubber ? scrubber.getBoundingClientRect().top : mapBox.bottom) - BOTTOM_GAP;
+    // Stop above the bottom-left stack's last line — the date control, and
+    // the season scrubber beside it when the season is showing. That line is
+    // the lowest chrome on the map and it holds the baseline whatever comes
+    // and goes above it, so it is the floor every sheet has to clear.
+    //
+    // SNOW-794: this used to measure #season-scrubber, which was then a
+    // full-width bar across the foot. Two things broke that. The scrubber
+    // now shares a line rather than owning one, so it is no longer the
+    // lowest thing; and it is absent entirely off-season and below 640px,
+    // where its rect reads all zeros and put the floor at -8, sending every
+    // sheet on the map to the top of the viewport. Measuring the row fixes
+    // both — it is always present, and it is always the bottom.
+    var bottomRow = document.getElementById('map-date-row');
+    var rowBox = bottomRow ? bottomRow.getBoundingClientRect() : null;
+    var floorY = (rowBox && rowBox.height > 0 ? rowBox.top : mapBox.bottom) - BOTTOM_GAP;
 
     var controls = document.getElementById('map-controls-br');
     var controlsBox = controls ? controls.getBoundingClientRect() : null;

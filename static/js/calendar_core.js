@@ -198,6 +198,8 @@
    *       day: 16,               // for the visible label
    *       selectable: true,      // inside [min, max] — i.e. not the future
    *       inSeason: true,        // inside the avalanche season: a HIGHLIGHT
+   *       rating: 3,             // EAWS danger int for the focused region,
+   *                              // or null — SNOW-794
    *       selected: false,       // the date the map is currently showing
    *       isToday: false,
    *     }
@@ -215,6 +217,12 @@
    * @param {string} [opts.seasonEnd] Season end ``YYYY-MM-DD``.
    * @param {string} [opts.selected] The currently-showing date, or ''.
    * @param {string} [opts.today] Today's date key, for the today marker.
+   * @param {Object<string, number>} [opts.ratings] SNOW-794: date key →
+   *   EAWS danger int for the focused region. Days absent from it get
+   *   ``rating: null``. This is what lets the grid carry the danger colour
+   *   the scrubber ribbon paints into its track — the one thing the
+   *   scrubber gave a phone that the calendar did not, which is why the
+   *   scrubber can now be dropped entirely below 640px.
    * @returns {Array<Object>} Cells, length a multiple of 7.
    */
   function buildMonthGrid(monthKey, opts) {
@@ -227,6 +235,7 @@
     var seasonEnd = options.seasonEnd || '';
     var selected = options.selected || '';
     var today = options.today || '';
+    var ratings = options.ratings || null;
 
     var firstMs = Date.parse(monthKey + '-01T00:00:00Z');
     if (!Number.isFinite(firstMs)) return [];
@@ -250,6 +259,7 @@
         selectable: (!min || dateKey >= min) && (!max || dateKey <= max),
         inSeason:
           (!seasonStart || dateKey >= seasonStart) && (!seasonEnd || dateKey <= seasonEnd),
+        rating: ratings && ratings[dateKey] != null ? ratings[dateKey] : null,
         selected: dateKey === selected,
         isToday: dateKey === today,
       });

@@ -846,7 +846,7 @@ def home(request: HttpRequest) -> HttpResponse:
 
     """
     today = datetime.date.today()
-    base_ctx = _base_map_context(today)
+    base_ctx = _base_map_context(today, _shown_date(request))
     ribbon = _build_default_ribbon(today)
     # Name + slug + L2/L1 parents of the pre-selected default region (CH-4115)
     # for the readout chip, its "view bulletin" link, and its breadcrumb.
@@ -1378,27 +1378,80 @@ def _basemaps_for_picker() -> list[dict[str, Any]]:
 _DEFAULT_RIBBON_REGION_ID = "CH-4115"
 
 
-def _base_map_context(today: datetime.date) -> dict[str, Any]:
+def _shown_date(request: HttpRequest) -> datetime.date | None:
+    """
+    Return the day the map is being asked to show, from ``?d=``.
+
+    SNOW-660 made ``?d=`` the single home of the chosen day, written and read
+    by the client. This is a READ, not a second writer: the server needs it
+    only to decide whether the season scrubber renders at all (SNOW-794), so
+    that first paint is already correct instead of correcting itself a frame
+    later.
+
+    Anything unparseable is treated as no choice at all rather than raising —
+    the map itself already ignores a malformed ``?d=``, and the two must not
+    disagree about a querystring a visitor can type by hand.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The parsed date, or ``None`` when the parameter is absent or invalid.
+
+    """
+    raw = request.GET.get("d")
+    if not raw:
+        return None
+    try:
+        return datetime.date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _base_map_context(
+    today: datetime.date,
+    shown_date: datetime.date | None = None,
+) -> dict[str, Any]:
     """
     Build the shared map context for the season scrubber and ribbon.
 
     Shared between ``home()`` (the canonical map page) and any other view
     that embeds the full map surface.
 
-    The season window is narrowed to the actual ``RegionDayRating`` data
-    bounds when rows exist (SNOW-173), and falls back to the calendar Nov 1 /
-    May 31 window when the season has not yet started or the DB is empty.
-    ``today_pct`` is clamped to [0, 100] so the scrubber thumb always sits
-    inside the track.
+    The scrubber's track IS the avalanche season, and nothing else — the
+    Nov 1 / May 31 calendar bounds narrowed to the actual ``RegionDayRating``
+    data when rows exist (SNOW-173), falling back to the calendar window when
+    the season has not started or the DB is empty. The same pair is what the
+    calendar grid tints as ``in-season`` and what ``home()`` reads for its
+    off-season bar.
+
+    SNOW-794 briefly gave the scrubber a twelve-month window of its own so it
+    could place any day the calendar offers. That was the wrong shape: it
+    made one control try to be two. The calendar is "pick a date, any date";
+    the scrubber is a SEASON scrubber, and a day outside the season is
+    simply not its business — ``scrubber_in_season`` below is how it says so.
+
+    ``today_pct`` is clamped to [0, 100] so the thumb always sits inside the
+    track; off-season it pins to whichever end today is past, which nothing
+    reads while the scrubber is hidden but keeps the markup coherent.
+
+    ``scrubber_in_season`` decides whether the scrubber renders at all: the
+    calendar is its reveal. In season it is there to drag; out of season
+    there is no stretch of track the shown day belongs to, and a control
+    that cannot answer is better absent than lying. Computed server-side so
+    first paint is already right rather than correcting itself.
 
     Args:
         today: Current date — passed in so callers can freeze time in tests.
+        shown_date: The day the map is displaying (a validated ``?d=``), or
+            ``None`` when the visitor has chosen none — in which case today
+            stands in, since that is the day the scrubber would rest on.
 
     Returns:
         A dict with ``basemaps``, ``default_basemap_key``, ``season_start``,
-        ``season_end``, ``today``, ``today_pct``, and ``data_end``
-        (the latest ``RegionDayRating.date`` in the window, or ``None`` when
-        the season has not started or the DB is empty).
+        ``season_end``, ``today``, ``today_pct``, ``scrubber_in_season``, and
+        ``data_end`` (the latest ``RegionDayRating.date`` in the window, or
+        ``None`` when the season has not started or the DB is empty).
 
     """
     season_start, season_end = _season_date_range(today)
@@ -1411,6 +1464,8 @@ def _base_map_context(today: datetime.date) -> dict[str, Any]:
     span = (season_end - season_start).days
     elapsed = max(0, min((today - season_start).days, span))
     today_pct = round(elapsed / span * 100, 2) if span else 100.0
+    effective_date = shown_date or today
+    scrubber_in_season = season_start <= effective_date <= season_end
     return {
         "basemaps": _basemaps_for_picker(),
         "default_basemap_key": settings.BASEMAP,
@@ -1424,6 +1479,7 @@ def _base_map_context(today: datetime.date) -> dict[str, Any]:
         "season_end": season_end,
         "today": today,
         "today_pct": today_pct,
+        "scrubber_in_season": scrubber_in_season,
         "data_end": data_end,
         # SNOW-792: the scrubber's calendar popup builds its month grid in
         # JavaScript, so every word in it has to be handed over from here —

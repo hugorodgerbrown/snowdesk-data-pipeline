@@ -1,33 +1,36 @@
 {% load i18n %}
 {% comment %}
 public/partials/_map_calendar.html — the map's date picker (SNOW-792): a
-month grid that opens from the bottom-right control stack and commits a
-chosen day through the season scrubber's own commit point.
+month grid that opens from the bottom-left date control and commits a chosen
+day through the season scrubber's own commit point.
 
-The scrubber track is a few hundred pixels wide and spans a seven-month
-season, so a pixel is about a day and hitting a chosen date by drag is a
-fiddle. This is the precise route to the same place — it does not replace
-the scrubber, and it owns no commit path of its own: picking a day
+The scrubber track is a few hundred pixels wide and spans twelve months, so
+a pixel is well under a day and hitting a chosen date by drag is a fiddle —
+and below 640px the scrubber does not render at all, which makes this the
+only date control there. It owns no commit path of its own: picking a day
 dispatches ``snowdesk:scrub-to`` and map_scrubber.js does the rest.
 
-The tap target is the calendar button in the season-scrubber row, with the
-other date affordances. This surface is not next to it: it is a bottom-right
-overlay, in the same slot and with the same geometry as the favourites,
-observations and routes panels, so every panel over the map appears in one
-place regardless of which control opened it.
+SNOW-794 MOVED THIS SURFACE. It used to be a ``position: fixed`` sheet in
+the bottom-RIGHT slot, sharing geometry with the favourites, observations
+and routes panels, on the reasoning that every panel over the map should
+appear in one place. Its trigger then moved to the bottom-left row, merged
+into the date readout — and a panel opening on the far side of the map from
+the control that opened it is a worse rule than the one it was obeying.
 
-That means the layout below is includes/_overlay_sheet.html's, deliberately
-duplicated rather than shared: a month grid is a fixed 7×6 block, not a
-scrolling list, so it needs none of that partial's header, scroll body or
-height bounding. What it does need is the same positioning — inset and
-docked to the bottom edge below `sm`, a bottom-right corner above it — and
-the same refinement, ``window.pwaOverlayBounds.positionSheet``, which
-measures the room the scrubber and the roundel column leave (see
-static/js/map_overlay_bounds.js).
+So it now behaves like its neighbour instead: an absolutely-positioned card
+inside .map-legend, opening UPWARD from the row with an 8px gap and
+left-aligned to it, exactly as #map-legend-card does. That also means it is
+no longer handed to ``window.pwaOverlayBounds.positionSheet`` — it is not a
+fixed sheet with a floor to find, it is anchored to the row's own top edge,
+which moves with the row. (The bottom-right sheets still use that module.)
 
-Included by _map_embed.html at TOP LEVEL — not inside #map or the control
-stack. It is ``position: fixed``, and a fixed element is still confined by
-any ancestor that creates a stacking context, which .map-controls-br does.
+Height-bounded and scrolling, like every surface that floats over the map:
+a six-row grid fits easily today, but the anchor is low and the card opens
+into the viewport with nothing else to stop it.
+
+Included by _map_embed.html INSIDE #map-legend, as a sibling of the legend
+card and the row's buttons — it is ``position: absolute`` and needs that row
+as its containing block.
 
 Context expected:
 * season_start           — datetime.date: first day of the highlighted season.
@@ -50,12 +53,13 @@ server DOES supply is every translated word — the month names below travel
 as a data attribute and the weekday header is rendered here — so no
 user-facing string is a JavaScript literal (see docs/i18n.md).
 {% endcomment %}
-{# Layout classes mirror includes/_overlay_sheet.html — see the note above  #}
-{# for why they are copied rather than shared. The map-calendar class        #}
-{# carries the grid's own rules from static/css/map.css.                     #}
+{# Card treatment matches #map-legend-card, its sibling in this row — the  #}
+{# positioning lives in .map-calendar (static/css/map.css) rather than in    #}
+{# utilities here, because it needs the same bounded-height calc the legend  #}
+{# card uses and that cannot be expressed as a class string.                 #}
 <div
     id="map-calendar"
-    class="map-calendar fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] rounded-card border border-border bg-card p-3 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 sm:w-auto"
+    class="map-calendar rounded-card border border-border bg-card p-3 shadow-glass"
     data-state="closed"
     data-season-start="{{ season_start|date:'Y-m-d' }}"
     data-season-end="{{ season_end|date:'Y-m-d' }}"

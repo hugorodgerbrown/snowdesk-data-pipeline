@@ -97,8 +97,23 @@
 
   /**
    * Build the active step list from the server-rendered <li> nodes,
-   * filtering out any whose target selector matches nothing in the DOM
-   * (the flag-gated favourite/report controls).
+   * dropping any whose target is not on screen — either because the
+   * selector matches nothing (the flag-gated favourite/report controls) or
+   * because it matches an element CSS is not drawing.
+   *
+   * SNOW-794 added the second half. The season scrubber is ``display: none``
+   * in two states — below 640px, and whenever the shown day is outside the
+   * season — and in neither is it a control at all; existence alone would
+   * have kept its step and pointed the ring at a zero box.
+   *
+   * ``checkVisibility()`` is the right question: it is false for
+   * ``display: none`` on the element OR any ancestor, and TRUE for something
+   * merely clipped — which matters, because the collapsible control group
+   * shrinks to height 0 rather than hiding and its steps must survive so the
+   * force-open below can reveal them. Where it is missing (older browsers,
+   * and jsdom, which has no layout at all) the fallback reads the element's
+   * own computed ``display``. That catches both cases this filter exists
+   * for, since each is a rule on the scrubber itself.
    *
    * @returns {Array<{target: string, title: string, body: string}>}
    */
@@ -110,11 +125,19 @@
         title: li.getAttribute('data-help-title') || '',
         body: li.textContent.trim(),
       }))
-      .filter((step) => step.target && document.querySelector(step.target));
+      .filter((step) => {
+        if (!step.target) return false;
+        const el = document.querySelector(step.target);
+        if (!el) return false;
+        if (typeof el.checkVisibility === 'function') return el.checkVisibility();
+        return getComputedStyle(el).display !== 'none';
+      });
   };
 
-  const steps = buildSteps();
-  if (steps.length === 0) return;
+  // Re-derived on every open (see ``open`` below), because what is on screen
+  // is not fixed at parse time: the visitor can collapse the scrubber, and
+  // the tour itself force-opens the control group a step before measuring it.
+  let steps = buildSteps();
 
   let currentIndex = 0;
   let lastFocused = null;
@@ -282,12 +305,24 @@
     // card inside #map-legend, and stays on screen when the card collapses.)
     window.pwaMapOverlays?.opening(OVERLAY_NAME);
     // Several step targets live in the collapsible control group, which clips
-    // to height 0 when collapsed. They still match document.querySelector, so
-    // the absent-target filter does not drop them and the highlight ring would
-    // be positioned against a clipped box. Announce the tour so
-    // mapControlsCollapseInit can force the group open (and restore the user's
-    // preference on close).
+    // to height 0 when collapsed; since SNOW-794 the season scrubber can be
+    // collapsed too, and it hides outright rather than clipping. Both still
+    // match document.querySelector. Announce the tour so
+    // mapControlsCollapseInit and mapScrubberCollapseInit can force their
+    // surfaces open (and restore the user's preference on close).
     document.dispatchEvent(new CustomEvent('snowdesk:map-help-open'));
+    // Rebuild AFTER the force-open, not before: those two surfaces are now
+    // drawn, so buildSteps measures what the visitor will actually see. At
+    // parse time a collapsed scrubber would have been dropped from a tour
+    // that is about to reveal it — and on a phone, where CSS drops the
+    // scrubber for good, it is dropped here and stays dropped.
+    steps = buildSteps();
+    if (steps.length === 0) return;
+    // Clamp rather than reset: `fromStart` above owns whether the tour
+    // resumes where it left off, and the list can be SHORTER than it was on
+    // the previous open (a resize across the breakpoint), which would leave
+    // currentIndex past the end.
+    currentIndex = Math.min(currentIndex, steps.length - 1);
     overlay.removeAttribute('hidden');
     overlay.setAttribute('aria-hidden', 'false');
     render();

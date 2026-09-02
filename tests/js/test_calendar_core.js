@@ -256,6 +256,43 @@ describe('buildMonthGrid', () => {
     expect(grid('')).toEqual([]);
   });
 
+  it('carries the focused region\'s danger rating onto each day', () => {
+    // SNOW-794: the fact the scrubber ribbon painted into its track. Moving
+    // it here is what lets the scrubber be dropped entirely below 640px —
+    // at 0.4px a day the ribbon was unreadable on a phone, and here each
+    // day is a 28px target carrying its own date.
+    const cells = grid('2026-02', {
+      ratings: { '2026-02-10': 3, '2026-02-11': 1 },
+    });
+    const byKey = Object.fromEntries(
+      cells.filter((c) => !c.blank).map((c) => [c.dateKey, c.rating]),
+    );
+    expect(byKey['2026-02-10']).toBe(3);
+    expect(byKey['2026-02-11']).toBe(1);
+  });
+
+  it('leaves a day with no bulletin null, so a gap still reads as a gap', () => {
+    const cells = grid('2026-02', { ratings: { '2026-02-10': 3 } });
+    const byKey = Object.fromEntries(
+      cells.filter((c) => !c.blank).map((c) => [c.dateKey, c.rating]),
+    );
+    expect(byKey['2026-02-11']).toBe(null);
+  });
+
+  it('leaves every day null when no region is focused', () => {
+    // No ratings passed at all — an uncoloured grid says "nothing chosen".
+    const cells = grid('2026-02');
+    expect(cells.filter((c) => !c.blank).every((c) => c.rating === null)).toBe(true);
+  });
+
+  it('reads a rating of 0 as a rating, not as absent', () => {
+    // 0 is `no_rating` in the EAWS int table — a real value the payload
+    // carries, and `||` would swallow it.
+    const cells = grid('2026-02', { ratings: { '2026-02-10': 0 } });
+    const cell = cells.find((c) => c.dateKey === '2026-02-10');
+    expect(cell.rating).toBe(0);
+  });
+
   it('does not shift a day across a DST boundary', () => {
     // European clocks go forward on the last Sunday of March. Building the
     // grid from local-time Dates would slide the days either side of it —

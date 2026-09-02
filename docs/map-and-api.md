@@ -59,24 +59,50 @@ a drag — the scrubber track spans a seven-month season in a few hundred
 pixels, so a pixel is about a day and a release snaps to whichever rated day
 is nearest.
 
-**The button and the panel are in different places, deliberately.** The tap
-target is a sixth control in the season-scrubber row, with the other date
-affordances. The panel opens in the bottom-right overlay slot with the same
-geometry as the favourites, observations and routes sheets, so every panel
-over the map appears in one place whichever control opened it. It is
-therefore `position: fixed`, rendered at top level rather than inside the
-scrubber (a fixed element is still confined by any ancestor that creates a
-stacking context), and handed to `window.pwaOverlayBounds.positionSheet` on
-open — the same call `map_sheet.js` makes, which measures the room the
-scrubber and the roundel column leave. Below `sm` that call writes nothing
-and the panel docks to the bottom edge, as the sheets do.
+**The button and the panel are in the same place** — SNOW-794 moved both.
+
+The tap target is the map's date control: one pill in the bottom-left stack
+that both SAYS the day and OPENS the picker. It used to be two things a
+screen apart — `#map-date-ribbon` in the bottom-left row said the date, and
+`#map-calendar-toggle`, a transport button in the scrubber's row, changed
+it. Both ids survive, nested, so `map.js` still writes the date into the
+readout and `map_calendar.js` still binds the toggle; only the boxes moved.
+
+The panel followed its trigger. It was a `position: fixed` sheet in the
+bottom-RIGHT slot, sharing geometry with the favourites, observations and
+routes sheets on the reasoning that every panel over the map should appear
+in one place. Once the trigger moved left, that rule cost more than it paid:
+a panel opening on the far side of the map from the button that opened it.
+
+It is now an absolutely-positioned card inside `#map-legend`, opening into
+the crook of the corner that stack and its bottom row make — clear of the
+roundel column to its left and the date row beneath it, on the same two
+offsets `#map-legend-card` uses. It is no longer handed to
+`window.pwaOverlayBounds.positionSheet`: there is no floor to measure when
+the anchor is the row's own box, and the anchor moves with the row. The
+bottom-right sheets still use that module.
+
+**What `positionSheet` measures changed with it.** The floor was
+`#season-scrubber`, back when that was a full-width bar across the foot. The
+scrubber now shares the bottom row rather than owning a bar, and is absent
+entirely off-season and below 640px — where its rect reads all zeros and put
+the floor at `-8`, sending every sheet on the map to the top of the
+viewport. It measures `#map-date-row` instead: always present, always
+lowest.
 
 **It owns no commit path.** Picking a day dispatches `snowdesk:scrub-to`
-`{date, source}`; `map_scrubber.js` listens, checks the date is inside the
-season window, and passes it to `commitDate` — the same function a drag
-release calls, so the repaint, the `?d=` write and the outgoing
-`snowdesk:date-changed` are identical either way. Two surfaces writing the
-URL is two places for the URL and the paint to drift apart.
+`{date, source}`; `map_scrubber.js` listens and passes it to `commitDate` —
+the same function a drag release calls, so the repaint, the `?d=` write and
+the outgoing `snowdesk:date-changed` are identical either way. Two surfaces
+writing the URL is two places for the URL and the paint to drift apart.
+
+**The boot guard is the calendar's rule, not the scrubber's** (SNOW-794).
+`map_scrubber.js` used to refuse a `?d=` outside the season on boot and on
+back-navigation. The ratings payload is the whole archive, so the picker
+pages back years — and a day it offered was committed on the click, then
+refused on reload, leaving the map uncoloured while the URL and the grid
+both named it. `isSelectableDate` replaced `isInSeason`: parseable, and not
+in the future, which is exactly what `buildMonthGrid`'s `max` enforces.
 
 That event name is a revival. It was the season ribbon's click-to-scrub
 contract until SNOW-615 retired it: the ribbon cells stopped carrying click
@@ -91,10 +117,22 @@ a highlight inside that range, not a fence around it.
 That distinction is the second thing this ticket got wrong and fixed. The
 first draft made the season the selectable range, which stopped being right
 the moment the map grew a weather layer: weather has an answer for a day in
-September, and the picker could not reach it at all. `map_scrubber.js`'s
-`snowdesk:scrub-to` listener therefore does **not** guard on the season
-window; an out-of-season date parks the thumb at whichever end of the track
-it is past, which is the honest reading of "the season ran out".
+September, and the picker could not reach it at all.
+
+SNOW-794 finished the thought. An out-of-season date used to park the thumb
+at whichever end of the track it was past — called "the honest reading of
+the season ran out" at the time, and it was not: the URL said July and the
+thumb said April. The scrubber is now simply **not shown** for such a day
+(`data-in-season`, server-rendered and kept current by
+`static/js/map_scrubber_reveal.js`), so the calendar is its reveal. A
+control that cannot answer is better absent than wrong.
+
+**The grid carries the danger colour.** `buildMonthGrid` takes a
+`ratings` map — date key to EAWS int for the focused region — and each day
+cell is filled from it, in the saturated palette with the `--color-eaws-*-fg`
+ink the bulletin page's own season calendar uses. That is the fact the
+scrubber ribbon paints into its track, and moving it here is what lets the
+scrubber be dropped entirely below 640px.
 
 **The season tint is the only per-day mark.** A dot on the days actually
 carrying a bulletin was built and removed: the thing it distinguished — a

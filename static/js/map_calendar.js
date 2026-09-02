@@ -95,11 +95,68 @@
 
   let visibleMonth = core.clampMonthKey(core.monthKeyOf(todayKey), minKey, maxKey);
 
-  // The cache is read for one thing: how far back the arrows may page. The
-  // fetch is the scrubber's, memoised and already in flight, so this costs
-  // nothing beyond the callback.
+  // SNOW-794: which region the grid is coloured for, and the cache it reads
+  // the colours from. The scrubber's ribbon painted danger-by-day into its
+  // track; below 640px there is no scrubber any more, so the grid carries
+  // that fact instead — it is the reason the scrubber can go at all.
+  //
+  // Seeded from nothing, exactly as map_season_ribbon.js seeds its own focus
+  // (SNOW-656): an uncoloured grid says "no region chosen", and colouring it
+  // for an arbitrary default would present one region as though the visitor
+  // had picked it.
+  let ratingsCache = null;
+  let regionId = null;
+
+  // ``INT_TO_RATING`` is map_shared.js's, shared as a bare identifier by the
+  // classic-script bundle. The typeof guard mirrors ``readUrlDateParam``
+  // above: the Vitest harness loads this module on its own, and a grid that
+  // threw on a missing global would be worse than one drawn without colour.
+  const RATING_KEYS =
+    typeof INT_TO_RATING !== 'undefined'
+      ? INT_TO_RATING
+      : ['no_rating', 'low', 'moderate', 'considerable', 'high', 'very_high'];
+
+  /**
+   * EAWS key for a danger int, via scrubber_core's shared lookup.
+   *
+   * @param {number|null} n
+   * @returns {string} ``'no_rating'`` for null / out of range.
+   */
+  function ratingKey(n) {
+    if (window.pwaScrubberCore) return window.pwaScrubberCore.intToKey(n, RATING_KEYS);
+    if (n == null || n < 0 || n >= RATING_KEYS.length) return 'no_rating';
+    return RATING_KEYS[n];
+  }
+
+  /**
+   * The focused region's ratings as ``{dateKey: int}``, for buildMonthGrid.
+   *
+   * @returns {Object<string, number>|null} Null with no region or no cache,
+   *   which leaves every cell's ``rating`` null and the grid uncoloured.
+   */
+  function ratingsForRegion() {
+    if (!ratingsCache || !regionId) return null;
+    const out = {};
+    for (const dateKey of Object.keys(ratingsCache)) {
+      const value = ratingsCache[dateKey][regionId];
+      if (value != null) out[dateKey] = value;
+    }
+    return out;
+  }
+
+  // Tap a region → the grid is coloured for it. Same event the season ribbon
+  // listens to, so the two surfaces are always showing the same region.
+  document.addEventListener('snowdesk:region-selected', (e) => {
+    regionId = (e.detail && e.detail.region_id) || null;
+    if (isOpen()) render();
+  });
+
+  // The cache is read for two things: how far back the arrows may page, and
+  // the per-day danger colour. The fetch is the scrubber's, memoised and
+  // already in flight, so this costs nothing beyond the callback.
   getSeasonRatings()
     .then((data) => {
+      ratingsCache = data || null;
       minKey = core.earliestKnownDate(data, seasonStart);
       if (isOpen()) render();
     })
@@ -144,6 +201,7 @@
       seasonEnd: seasonEnd,
       selected: currentDateKey(),
       today: todayKey,
+      ratings: ratingsForRegion(),
     });
 
     const monthIndex = parseInt(visibleMonth.slice(5, 7), 10) - 1;
@@ -180,6 +238,19 @@
       if (!cell.selectable) button.disabled = true;
       // The season band — "bulletins run here". It does not gate the click.
       if (cell.inSeason) button.classList.add('in-season');
+      // SNOW-794: the focused region's danger for this day — the fact the
+      // scrubber ribbon painted into its track, which is why the scrubber
+      // can go entirely on a phone. Null — no region chosen, or no bulletin
+      // that day — leaves the cell on its in-season tint, so a gap inside
+      // the season still reads as a gap.
+      //
+      // The class drives the eaws-*-TINT/-TEXT token pair, not the saturated
+      // ribbon fill: these cells carry a numeral, and #ff0000 admits no
+      // readable ink. The tints are the measured, contrast-checked pair
+      // (src/css/main.css) built for exactly this.
+      if (cell.rating != null) {
+        button.classList.add('map-calendar-day--' + ratingKey(cell.rating));
+      }
       if (cell.selected) {
         button.classList.add('is-selected');
         button.setAttribute('aria-current', 'date');
@@ -217,9 +288,11 @@
     // gone by the time this is on screen.
     window.pwaMapOverlays?.opening(OVERLAY_NAME);
     setOpen(true);
-    // AFTER the reveal: positionSheet measures the element, and a `hidden`
-    // element measures zero. Same ordering as map_sheet.js's open().
-    window.pwaOverlayBounds?.positionSheet(root);
+    // SNOW-794: no positionSheet call any more. That module places a FIXED
+    // sheet by measuring the floor the scrubber and the roundel column
+    // leave; this is now an absolutely-positioned card anchored to the
+    // bottom-left row's own top edge (static/css/map.css), which moves with
+    // the row and needs no measuring. The bottom-right sheets still use it.
   }
 
   /** @returns {void} */

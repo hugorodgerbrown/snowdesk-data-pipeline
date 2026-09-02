@@ -454,3 +454,71 @@ describe('the date moving underneath it', () => {
     expect(dayButton('2026-02-11').classList.contains('is-selected')).toBe(true);
   });
 });
+
+describe('the focused region\'s danger, per day (SNOW-794)', () => {
+  // The scrubber ribbon painted danger-by-day into its track. Below 640px
+  // there is no scrubber any more, so the grid carries that fact instead —
+  // it is the reason the scrubber can be dropped there at all.
+  const ratingClass = (key) => {
+    const cls = dayButton(key).className;
+    const m = cls.match(/map-calendar-day--(\w+)/);
+    return m ? m[1] : null;
+  };
+
+  // The popup opens on TODAY's month (May, off-season); the rated days are
+  // in February, three steps back.
+  const pageToFebruary = () => {
+    for (let i = 0; i < 3; i++) document.getElementById('map-calendar-prev').click();
+  };
+
+  const focusRegion = (regionId) =>
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:region-selected', { detail: { region_id: regionId } }),
+    );
+
+  it('leaves the grid uncoloured until a region is chosen', async () => {
+    await loadCalendar();
+    openPopup();
+    pageToFebruary();
+    // Seeded from nothing, exactly as map_season_ribbon.js seeds its own
+    // focus (SNOW-656): colouring for an arbitrary default would present a
+    // region as though the visitor had picked it.
+    expect(ratingClass('2026-02-10')).toBe(null);
+  });
+
+  it('colours the rated days once a region is selected', async () => {
+    await loadCalendar();
+    focusRegion('CH-4115');
+    openPopup();
+    pageToFebruary();
+
+    // RATINGS puts CH-4115 at 2 (`moderate`) on every rated day.
+    expect(ratingClass('2026-02-10')).toBe('moderate');
+    expect(ratingClass('2026-02-11')).toBe('moderate');
+  });
+
+  it('leaves a day inside the season with no bulletin uncoloured', async () => {
+    await loadCalendar();
+    focusRegion('CH-4115');
+    openPopup();
+    pageToFebruary();
+
+    // The 12th is the gap in RATED. It keeps its in-season tint and no
+    // danger fill, so a gap inside the season still reads as a gap.
+    expect(ratingClass('2026-02-12')).toBe(null);
+    expect(dayButton('2026-02-12').classList.contains('in-season')).toBe(true);
+  });
+
+  it('recolours in place when the focus moves to another region', async () => {
+    await loadCalendar();
+    focusRegion('CH-4115');
+    openPopup();
+    pageToFebruary();
+    expect(ratingClass('2026-02-10')).toBe('moderate');
+
+    // A region the payload carries nothing for: the grid empties rather
+    // than keeping the previous region's colours.
+    focusRegion('CH-9999');
+    expect(ratingClass('2026-02-10')).toBe(null);
+  });
+});

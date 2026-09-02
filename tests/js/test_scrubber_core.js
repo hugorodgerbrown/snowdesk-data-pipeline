@@ -217,23 +217,36 @@ describe('deriveEffectiveTodayKey', () => {
   });
 });
 
-describe('isInSeason', () => {
-  it('is true for the season boundaries inclusive', () => {
-    expect(core.isInSeason('2025-11-01', SEASON_START_MS, SEASON_END_MS)).toBe(true);
-    expect(core.isInSeason('2026-05-01', SEASON_START_MS, SEASON_END_MS)).toBe(true);
+describe('isSelectableDate', () => {
+  // SNOW-794 replaced `isInSeason`. The scrubber's boot and popstate paths
+  // used to refuse any ?d= outside the season, which meant a day the
+  // CALENDAR offered — it pages back over the whole archive — was committed
+  // on the click and then refused on reload, leaving the map uncoloured
+  // while the URL and the grid both named it. The future is the only hard
+  // stop, which is the calendar's own rule.
+  const TODAY_MS = Date.parse('2026-04-30T00:00:00Z');
+
+  it('accepts today', () => {
+    expect(core.isSelectableDate('2026-04-30', TODAY_MS)).toBe(true);
   });
 
-  it('is true for a date strictly inside the season', () => {
-    expect(core.isInSeason('2026-01-15', SEASON_START_MS, SEASON_END_MS)).toBe(true);
+  it('accepts a day inside the season', () => {
+    expect(core.isSelectableDate('2026-01-15', TODAY_MS)).toBe(true);
   });
 
-  it('is false for a date outside the season', () => {
-    expect(core.isInSeason('2025-10-31', SEASON_START_MS, SEASON_END_MS)).toBe(false);
-    expect(core.isInSeason('2026-05-02', SEASON_START_MS, SEASON_END_MS)).toBe(false);
+  it('accepts a past day OUTSIDE the season', () => {
+    // The case that regressed: the map has archive and weather for these,
+    // and the calendar reaches them, so the scrubber must not refuse them.
+    expect(core.isSelectableDate('2025-09-04', TODAY_MS)).toBe(true);
+    expect(core.isSelectableDate('2024-07-01', TODAY_MS)).toBe(true);
   });
 
-  it('is false for an unparseable date key', () => {
-    expect(core.isInSeason('not-a-date', SEASON_START_MS, SEASON_END_MS)).toBe(false);
+  it('refuses the future', () => {
+    expect(core.isSelectableDate('2026-05-01', TODAY_MS)).toBe(false);
+  });
+
+  it('refuses an unparseable date key', () => {
+    expect(core.isSelectableDate('not-a-date', TODAY_MS)).toBe(false);
   });
 });
 

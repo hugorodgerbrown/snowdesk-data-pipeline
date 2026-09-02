@@ -2589,6 +2589,11 @@ PERIOD_TRANSITION_VARIANTS: tuple[dict[str, Any], ...] = (
 # thumb position at a different point in the season so the library shows
 # the pill at season start, mid-season, and season end. The buttons are
 # not wired to JS on the library page — pressing them is a no-op.
+#
+# SNOW-794 moved the calendar button out of this row and into the map's
+# bottom-left stack, so what the library shows here is the transport alone.
+# The pill's own width comes from the flex line it sits on over the map;
+# the demo wrapper gives it one of its own.
 SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Season start — thumb at 0%",
