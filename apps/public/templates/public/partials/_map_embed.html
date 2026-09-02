@@ -1231,6 +1231,13 @@ Optional context:
         <li data-help-target="#season-scrubber" data-help-title='{% trans "Timeline scrubber" %}'>
             {% trans "Run through the season day by day." %}
         </li>
+        {# SNOW-792. map_help.js drops any step whose target selector matches #}
+        {# nothing, so this needs no guard for pages rendering the map        #}
+        {# without the scrubber.                                              #}
+        <li data-help-target="#map-calendar-toggle" data-help-title='{% trans "Jump to a date" %}'>
+            {% trans "Pick a day from a calendar instead of dragging the timeline to it." %}
+        </li>
+
         <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
             {% trans "View attribution and EAWS danger level key." %}
         </li>
@@ -1527,6 +1534,12 @@ Optional context:
 {# the copy differs. overlays.js's data-toast-timeout auto-dismiss and    #}
 {# shared "×" handler do the rest — no bespoke JS needed beyond the reveal. #}
 {% trans "This map layer isn't available offline yet — view it online first." as offline_toast_layer_body %}
+{# SNOW-792: the date picker's surface. Top level, NOT inside #map or the  #}
+{# control stack: it is `position: fixed` like the three UGC sheets, and a  #}
+{# fixed element is still confined by any ancestor that creates a stacking  #}
+{# context — which .map-controls-br (z-index 4) does. Its tap target is the #}
+{# calendar button in the season-scrubber row.                              #}
+{% include "public/partials/_map_calendar.html" %}
 {% include "includes/_toast.html" with id="map-offline-toast-layer" kind="warning" body=offline_toast_layer_body dismissible=True timeout=6000 %}
 {% trans "Favourites aren't available offline yet — view them online first." as offline_toast_favourites_body %}
 {% include "includes/_toast.html" with id="map-offline-toast-favourites" kind="warning" body=offline_toast_favourites_body dismissible=True timeout=6000 %}

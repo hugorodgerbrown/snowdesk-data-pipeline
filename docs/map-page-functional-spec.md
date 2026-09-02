@@ -654,6 +654,23 @@ to today's position within the **November–May** avalanche season window.
   single round-trip; every later scrub and all playback render instantly.
   A cold map load fetches one day's ratings when the URL names one, and
   none at all when it does not, keeping first paint small.
+- **Jumping to a day.** Dragging is fine for "show me the storm week" and
+  poor for "show me the 16th": the track is a few hundred pixels wide and
+  the season is seven months long, so a pixel is about a day. A calendar
+  button at the end of the transport row opens a month grid — in the
+  bottom-right overlay slot, with the favourites, observations and routes
+  panels — and picking a day goes there exactly.
+
+  **The calendar reaches further than the scrubber does.** The scrubber is a
+  season; the calendar runs from the start of the archive up to today,
+  because the map carries weather as well as bulletins and a day in
+  September has something to show even though no bulletin covers it. The
+  season is drawn as a highlight inside that range, so the grid tells you
+  where the bulletins are without refusing the days either side. That
+  highlight is the only marking a day gets: whether a particular in-season
+  day actually has a bulletin is not shown, because landing on one that
+  does not already shows an uncoloured map. The future is the one thing the
+  calendar will not offer.
 - **Shareable.** The scrubbed date is reflected in the URL (`/?d=YYYY-MM-DD`),
   so a specific day's map can be linked and reloaded, today included. An
   empty querystring means **today** (SNOW-793): the map opens painted for

@@ -61,6 +61,7 @@ from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
+from django.utils.dates import MONTHS, WEEKDAYS_ABBR
 from django.utils.functional import Promise
 from django.utils.html import strip_tags
 from django.utils.http import quote_etag
@@ -1424,6 +1425,14 @@ def _base_map_context(today: datetime.date) -> dict[str, Any]:
         "today": today,
         "today_pct": today_pct,
         "data_end": data_end,
+        # SNOW-792: the scrubber's calendar popup builds its month grid in
+        # JavaScript, so every word in it has to be handed over from here —
+        # ``makemessages`` never scans JS, and a month name written as a JS
+        # literal would ship as English to every locale (docs/i18n.md).
+        # Django's own lazy-translated tables, in the order the grid needs
+        # them: months January-first, weekdays Monday-first.
+        "calendar_month_names": [MONTHS[i] for i in range(1, 13)],
+        "calendar_weekday_abbrs": [WEEKDAYS_ABBR[i] for i in range(7)],
     }
 
 

@@ -3272,3 +3272,177 @@ body.map-framing #map-legend {
     min-width: 0;
     padding: 10px 34px 10px 14px;
 }
+
+
+/* —————————————————————————————————————————————————————————
+   SNOW-792 — the map's date picker
+
+   A month grid that jumps the map to a chosen day. The season scrubber
+   spans a seven-month season in a few hundred pixels, so a pixel is about
+   a day; this is the precise route to the same date, not a replacement for
+   the drag.
+
+   It began inside the scrubber pill and moved here: it is the same kind of
+   thing as the favourites, observations and routes controls — a roundel
+   that opens one surface over the map — so it sits with them, and the
+   popup is positioned against .map-controls-br exactly as .basemap-menu
+   and .map-fill-flyout are. The roundel itself is inside
+   #map-controls-collapsible, which is `overflow: hidden` for its height
+   animation and would clip a popup opening leftward out of it.
+   ————————————————————————————————————————————————————————— */
+
+/* Position, surface and z-index come from the utility classes in the
+   partial, copied from includes/_overlay_sheet.html so this panel lands in
+   the same bottom-right slot as the three UGC sheets — and, on desktop,
+   from window.pwaOverlayBounds.positionSheet, which refines that corner to
+   clear the scrubber and the roundel column. What is left here is the grid
+   itself, which no sheet has.
+
+   Note what the card treatment is NOT: the frosted --color-glass the
+   scrubber pill and the legend use. `bg-card` is opaque, matching the
+   sheets. Those chrome pills hold a handful of large words; this is a grid
+   of two-digit numbers, and at 0.85 alpha the terrain reads straight
+   through it. Chrome can be translucent; something you have to read
+   cannot. */
+.map-calendar {
+    /* Stated rather than inherited: nothing above this element sets it now.
+       A month grid is five or six rows of one- and two-digit numbers that
+       have to line up in seven columns, which is the one thing a monospace
+       face is for. */
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    color: var(--color-text-1);
+}
+
+/* Below `sm` the panel is docked full-width like the sheets, and a 210px
+   grid pinned to its left edge would look dropped rather than placed. */
+.map-calendar-inner {
+    display: inline-block;
+}
+
+.map-calendar-body {
+    display: flex;
+    justify-content: center;
+}
+
+.map-calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.map-calendar-month {
+    flex: 1 1 auto;
+    text-align: center;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.map-calendar-step {
+    flex: 0 0 auto;
+    width: var(--map-control-xs);
+    height: var(--map-control-xs);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    color: var(--color-text-1);
+    border: 0.5px solid var(--color-border);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.map-calendar-step:hover:not(:disabled) {
+    background: var(--color-chip);
+}
+
+/* Disabled rather than hidden at the range bounds — see render() in
+   map_calendar.js for why the header must not reflow there. */
+.map-calendar-step:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.map-calendar-weekdays,
+.map-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 28px);
+    gap: 2px;
+}
+
+.map-calendar-weekdays {
+    margin-bottom: 4px;
+    font-size: 10px;
+    color: var(--color-text-3);
+}
+
+.map-calendar-weekdays span {
+    text-align: center;
+}
+
+.map-calendar-day {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    color: var(--color-text-1);
+    border: 2px solid transparent;
+    border-radius: 50%;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.map-calendar-day:hover:not(:disabled) {
+    background: var(--color-chip);
+}
+
+/* The future — the only thing this control refuses. Nothing on the map can
+   answer for a day that has not happened. Days outside the SEASON are not
+   in this state: the map has weather for them, and treating the season as
+   the selectable range is the bug this replaced. */
+.map-calendar-day:disabled {
+    color: var(--color-text-3);
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* Blank padding cells that square the first and last rows off. */
+.map-calendar-day.is-blank {
+    pointer-events: none;
+}
+
+/* The avalanche season — a tint behind the days bulletins run for. A
+   highlight, not a fence: every day here is selectable either way, and this
+   only says where the bulletins are. Deliberately quieter than the two ring
+   states below, which mark ONE day each.
+
+   It is the only per-day mark. A dot on the days actually carrying a
+   bulletin was here briefly and went: the gap it revealed inside the season
+   is an operator's concern, and a visitor who lands on such a day already
+   sees an uncoloured map. */
+.map-calendar-day.in-season {
+    background: var(--color-chip);
+}
+
+.map-calendar-day.in-season:hover:not(:disabled) {
+    background: var(--color-chip-strong);
+}
+
+/* Today and the selected day use the same two markers as the bulletin
+   page's season calendar — ink ring for today, blue ring for the day being
+   shown — so the two grids read the same way. */
+.map-calendar-day.is-today {
+    border-color: var(--color-text-1);
+}
+
+.map-calendar-day.is-selected {
+    border-color: var(--color-ring-selected);
+    font-weight: 700;
+}
