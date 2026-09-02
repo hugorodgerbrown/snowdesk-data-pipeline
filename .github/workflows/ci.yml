@@ -48,7 +48,7 @@ permissions:
 
 jobs:
   changes:
-    name: Detect docs-only diff
+    name: Detect skippable diff
     runs-on: ubuntu-latest
     # The docs-only filter lists PR files via the REST API, which needs
     # pull-requests:read on top of the default contents:read.
@@ -56,8 +56,9 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      # "true" unless this is a docs-only pull request; push runs skip the
-      # filter step and fall through to "true".
+      # "true" unless this pull request has nothing to test — docs-only, or
+      # a release PR whose only diff is VERSION; push runs skip the filter
+      # step and fall through to "true".
       code: ${{ steps.filter.outputs.code || 'true' }}
     steps:
       - name: Check the PR diff for non-docs files
@@ -72,11 +73,15 @@ jobs:
           [ -n "$files" ] || code=true
           while IFS= read -r f; do
             case "$f" in
-              "" | *.md | docs/* | .claude/*) ;;
+              # `VERSION` alone is a release PR (bin/cut-release): the same
+              # tree main was tested on, plus the release ordinal. The push
+              # run on the merged commit tests it again, and that is the run
+              # the "Release branch" ruleset actually reads.
+              "" | *.md | docs/* | .claude/* | VERSION) ;;
               *) code=true ;;
             esac
           done <<< "$files"
-          echo "docs-only filter -> code=$code"
+          echo "skippable-diff filter -> code=$code"
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
   # This job is gated at STEP level, not job level — the one place in the
