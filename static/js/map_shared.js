@@ -7,8 +7,9 @@
  * all share, and which each would otherwise be tempted to re-declare.
  * Three of the duplications the SNOW-606 review found were exactly that.
  *
- * What lives here: the rating wire-format table, the date-key regex and
- * the `?d=` reader/writer pair, the try/catch localStorage trio, the popup date and
+ * What lives here: the rating wire-format table, the date-key regex, the
+ * `?d=` reader/writer pair and the `readDisplayDate` default-to-today read
+ * on top of it (SNOW-793), the try/catch localStorage trio, the popup date and
  * relative-time formatters, the memoised season-ratings and
  * bulletin-groupings fetches, and `repaintRegionsForDate` — the one
  * choropleth repaint every date-changing surface calls.
@@ -36,6 +37,43 @@ const readUrlDateParam = () => {
   const d = new URL(location.href).searchParams.get('d');
   return d && DATE_KEY_RE.test(d) ? d : null;
 };
+
+// SNOW-793: today, as the server rendered it onto ``#season-scrubber``'s
+// ``data-today``. Read from the DOM rather than from ``new Date()`` because
+// the scrubber, the ribbon track and the season bounds are all placed
+// against the SERVER's day — deriving a second "today" from the client
+// clock would put the thumb and the painted day on different dates for
+// anyone whose device is a timezone (or a wrong clock) away from it.
+//
+// Lazily, on every call: this file is a classic script that runs at parse
+// time, and the unit tests build their fixture after importing it.
+const readTodayDateParam = () => {
+  const el = document.getElementById('season-scrubber');
+  const d = el && el.dataset.today;
+  return d && DATE_KEY_RE.test(d) ? d : null;
+};
+
+// SNOW-793: the day the map should be showing — the one the URL asked for,
+// and today when it asked for none.
+//
+// This is the read that reverses half of SNOW-660. That ticket made a bare
+// querystring mean "no day chosen" and left the map uncoloured, because the
+// boot default it removed was ``effectiveTodayKey`` — the last date in the
+// ratings cache carrying a visible country, which off season is one
+// arbitrary day that nothing on screen names. Today is not that: it is the
+// day a visitor opening an avalanche map means, and #map-date-ribbon can
+// report it. So the default is back, and it is today specifically — never
+// the last populated day, which is the date that bug was actually about.
+//
+// ``?d=`` still wins outright, so a deep link is unaffected. Null is still
+// possible — a page with no scrubber, or a malformed ``data-today`` — and
+// every caller still handles it as "no day known", which is what keeps
+// SNOW-660's uncoloured state reachable as the honest fallback.
+//
+// Nothing WRITES the default to the URL: a bare URL means today, so a
+// shared bare link shows the current day rather than the day it was
+// copied. ``writeUrlDateParam`` stays the caller-driven commit path.
+const readDisplayDate = () => readUrlDateParam() || readTodayDateParam();
 
 // SNOW-660: write ``?d=YYYY-MM-DD`` for the day now on screen.
 //

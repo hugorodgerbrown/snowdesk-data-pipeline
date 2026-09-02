@@ -15,12 +15,20 @@
 // a ``?d=YYYY-MM-DD`` so the page is linkable. Loading ``/map/?d=…``
 // on page boot drops the thumb on that date.
 //
-// SNOW-660: the scrubber no longer commits a date the visitor did not ask
-// for. An empty querystring means no day has been chosen, and this module
-// leaves it that way — the thumb rests at today's position over an
-// uncoloured map until a drag, a playback frame or a ``?d=`` link chooses
-// one. Every commit writes ``?d=``, today included, so the URL always says
-// which day is showing and a reload comes back to it.
+// SNOW-660: the scrubber no longer commits the LAST POPULATED date on boot.
+// That date was picked by the map, not the visitor, and off season it is one
+// arbitrary day that nothing on screen names.
+//
+// SNOW-793: it does commit TODAY on boot, when the URL names no day. Today
+// is the day someone opening an avalanche map means, and #map-date-ribbon
+// reports it — so the map opens coloured for a day that is both defaulted
+// and stated, which is what SNOW-660's date was not. Precedence is ``?d=``
+// first, today behind it (``readDisplayDate`` in map_shared.js).
+//
+// The default is committed SILENTLY: a bare URL means today, so a shared
+// bare link shows the current day rather than the day it was copied. Every
+// commit the VISITOR makes still writes ``?d=``, today included, so a
+// chosen day survives a reload.
 //
 // The scrubber owns no data of its own — it consumes the same
 // season-ratings payload as the timelapse via getSeasonRatings(), and
@@ -271,7 +279,7 @@
   // ---- Boot from URL ----
   // Read ?d= once on init. If parseable and inside the season window,
   // commit it (which positions the thumb + queues the repaint once the
-  // ratings cache resolves). Otherwise leave the thumb at today's pct.
+  // ratings cache resolves). Otherwise fall back to today (SNOW-793).
   const isInSeason = (dateKey) => {
     if (window.pwaScrubberCore) return window.pwaScrubberCore.isInSeason(dateKey, seasonStartMs, seasonEndMs);
     const ms = Date.parse(dateKey);
@@ -287,24 +295,65 @@
     Promise.all([MAP_READY_PROMISE, getSeasonRatings().catch(() => null)]).then(() => {
       commitDate(bootDate, { silent: true });
     });
+  } else if (todayKey) {
+    // SNOW-793: no day asked for, so show today.
+    //
+    // Deliberately NOT behind the deferred Promise.all the ``?d=`` branch
+    // uses, and the difference is what happens when that promise is slow or
+    // never settles. The default's job here is the thumb, the aria value and
+    // the ``date-changed`` announcement that puts today into
+    // #map-date-ribbon — none of which needs the season payload, because
+    // map.js's own boot separately fetches and paints today's single-date
+    // frame. Waiting would leave the ribbon reading "No date selected" over
+    // an already-coloured choropleth for the length of that fetch, and
+    // reading it forever if the fetch fails. (The season payload is fetched
+    // regardless — the init call above pulls it to leave the loading state
+    // — so this is about ordering and failure, not about saving a request.)
+    //
+    // The repaint inside ``commitDate`` is a no-op while ``ratingsCache`` is
+    // still null, which at this point it is. That is the intended division:
+    // map.js paints the boot day, the scrubber announces it.
+    //
+    // ``silent`` because the default is not a choice the visitor made:
+    // a bare URL means today, and writing ``?d=`` here would freeze a
+    // shared link onto the day it was copied.
+    //
+    // No ``isInSeason`` guard. Off season today sits past the narrowed
+    // season end, ``dateKeyToPct`` clamps the thumb to the end of the
+    // track, and the map is uncoloured with the ribbon naming today —
+    // which is the honest reading of an off-season day, and the one
+    // thing SNOW-660's last-populated-day default could not give.
+    commitDate(todayKey, { silent: true });
   }
 
   // ---- Browser back/forward ----
   //
-  // SNOW-660: a step back onto a URL with no valid ``?d=`` restores the
-  // UNCHOSEN state rather than committing effectiveTodayKey. That fallback
-  // made back-nav out of a chosen day land on a day the map picked itself —
-  // the same invented-date problem the boot path had, reached by a different
-  // route. Every region goes to ``no_rating`` (``repaintRegionsForDate``
-  // clears the ones the empty frame omits), the thumb returns to today's
-  // position, and the ``date: null`` commit tells the ribbon and the
-  // groupings boundary to stand down with it.
+  // SNOW-660 made a step back onto a URL with no valid ``?d=`` restore the
+  // UNCHOSEN state rather than commit effectiveTodayKey, because that
+  // fallback landed back-nav on a day the map picked itself.
+  //
+  // SNOW-793: it lands on today instead, for the same reason the boot path
+  // does — and, more to the point, so that back-nav agrees with what a
+  // fresh load of that same bare URL shows. Two routes to one URL rendering
+  // two different maps is its own bug.
+  //
+  // Still ``silent``: re-applying a browser-restored URL must not write
+  // history, and the bare URL it restores already means today.
   window.addEventListener('popstate', () => {
     const d = readUrlDateParam();
     if (d && isInSeason(d)) {
       commitDate(d, { silent: true });
       return;
     }
+    if (todayKey) {
+      commitDate(todayKey, { silent: true });
+      return;
+    }
+    // No readable ``data-today`` — the honest answer is still "no day".
+    // Every region goes to ``no_rating`` (``repaintRegionsForDate`` clears
+    // the ones the empty frame omits), the thumb returns to today's
+    // position, and the ``date: null`` commit tells the ribbon and the
+    // groupings boundary to stand down with it.
     if (ratingsCache) repaintRegionsForDate(null, ratingsCache);
     thumb.style.left = todayPct + '%';
     scrubber.setAttribute('aria-valuenow', String(Math.round(todayPct)));

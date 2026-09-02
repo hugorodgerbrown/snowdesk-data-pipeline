@@ -10,13 +10,20 @@
  * season meant a single coloured polygon and no explanation.
  *
  * The commit is gone; the derived date stays as the snap target for a
- * release without a drag, because a release IS a user action. So the three
- * cases here are the rule in full: nothing is announced or written on boot,
- * a real interaction announces and writes normally — including for today,
- * which now has to write `?d=` because a bare querystring means "no day
- * chosen" and a reload must not silently blank the map — and a back step
- * onto a dateless URL returns to the unchosen state instead of committing
- * the derived date by the back door.
+ * release without a drag, because a release IS a user action.
+ *
+ * SNOW-793 then gave boot a default again — TODAY, and the distinction from
+ * LAST_RATED below is the entire point of this file. `effectiveTodayKey` is
+ * a day the map derives from its own data; today is a day the visitor can
+ * be told, and #map-date-ribbon tells them. So the rule is now: boot
+ * announces TODAY and writes nothing, a real interaction announces and
+ * writes normally — including for today, which still has to write `?d=`
+ * because a chosen day must survive a reload even when it happens to be the
+ * default — and a back step onto a dateless URL lands on today too, because
+ * that URL means today whichever way it is reached.
+ *
+ * LAST_RATED must never be committed by any of them. That is the assertion
+ * this file was built for and it is unchanged.
  *
  * `map_scrubber.js` is loaded on its own against a stubbed scope rather than
  * through the whole bundle: every binding it reads across files is listed
@@ -36,6 +43,11 @@ const TODAY_PCT = 50;
 // The last day carrying ratings, and deliberately NOT today: a boot-time
 // snap would commit this one, so its absence from the URL is the assertion.
 const LAST_RATED = '2026-01-09';
+// 2026-01-09 is day 8 of the ten-day span, so the thumb sits at 80% — and
+// with a 100px track (see buildFixture) that is also the pointer x. Used to
+// leave a day OTHER than today committed before a back step, so "landed on
+// today" cannot be satisfied by simply never having moved.
+const LAST_RATED_PCT = 80;
 
 /** Two rated days, both inside the season window. */
 const RATINGS = {
@@ -69,15 +81,20 @@ function buildFixture() {
  * Load the scrubber against a stubbed scope, with the season-ratings fetch
  * already resolved.
  *
+ * @param {Function} [seasonRatings] Stands in for `getSeasonRatings`.
+ *   Defaults to a resolved two-day season.
  * @returns {Promise<{commits: Array<Object>, repaints: Array<?string>}>}
  *   Every `snowdesk:date-changed` detail and every repaint's date key.
  */
-async function loadScrubber() {
+async function loadScrubber(seasonRatings) {
   const repaints = [];
   globalThis.COUNTRY_STATE = { ch: true, fr: false, at: false, it: false };
   globalThis.MAP_READY_PROMISE = Promise.resolve();
   globalThis.MAP_STRINGS = { 'season-unavailable': 'Season data unavailable' };
-  globalThis.getSeasonRatings = () => Promise.resolve(RATINGS);
+  // Overridable so a test can make the season fetch hang or fail — the
+  // scrubber pulls it at init to leave its loading state, and the SNOW-793
+  // default must not be hostage to it.
+  globalThis.getSeasonRatings = seasonRatings || (() => Promise.resolve(RATINGS));
   globalThis.readUrlDateParam = () => {
     const d = new URL(location.href).searchParams.get('d');
     return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
@@ -121,27 +138,59 @@ afterEach(() => {
   delete globalThis.MAP_STRINGS;
   delete globalThis.getSeasonRatings;
   delete globalThis.readUrlDateParam;
+  delete globalThis.readDisplayDate;
   delete globalThis.repaintRegionsForDate;
   delete globalThis.writeUrlDateParam;
 });
 
 describe('boot with no ?d=', () => {
-  it('announces no date, so nothing downstream paints one', async () => {
+  it('announces today, and specifically not the last rated day', async () => {
+    // SNOW-793. Both halves matter: the first is the feature, the second is
+    // SNOW-660's bug, and a boot that reached for `effectiveTodayKey` would
+    // satisfy neither this nor the ribbon that has to name what is painted.
     const { commits } = await loadScrubber();
 
-    expect(commits).toEqual([]);
+    expect(commits).toEqual([{ date: TODAY, source: 'scrubber' }]);
+    expect(commits.map((c) => c.date)).not.toContain(LAST_RATED);
   });
 
   it('leaves the URL exactly as the visitor arrived at it', async () => {
+    // The default is not a choice, so it is not written. A bare URL means
+    // today; writing `?d=` here would pin a shared link to the day it was
+    // copied.
     await loadScrubber();
 
     expect(location.search).toBe('');
   });
 
-  it('repaints nothing, so the choropleth stays uncoloured', async () => {
-    // The commit is what used to repaint. Asserted separately because a
-    // repaint without the event would still colour the map — the failure
-    // this ticket is about is what is ON SCREEN, not what was announced.
+  it('announces today even if the season ratings never arrive', async () => {
+    // The `?d=` branch defers its commit until the season payload resolves,
+    // because it repaints from it. The default must NOT: its whole output is
+    // the thumb and the announcement that puts today into #map-date-ribbon,
+    // and map.js's own single-date boot leg paints the choropleth
+    // separately. Deferring would leave the ribbon reading "No date
+    // selected" over an already-coloured map for the length of that fetch —
+    // and, on a fetch that never settles, permanently.
+    const { commits } = await loadScrubber(() => new Promise(() => {}));
+
+    expect(commits).toEqual([{ date: TODAY, source: 'scrubber' }]);
+  });
+
+  it('announces today even if the season ratings fail outright', async () => {
+    // Same property at the other failure mode. The scrubber goes to its
+    // error state here (SNOW-234) and the map has no colours to show, but
+    // the date readout is still answerable and must still be answered.
+    const { commits } = await loadScrubber(() => Promise.reject(new Error('nope')));
+
+    expect(commits).toEqual([{ date: TODAY, source: 'scrubber' }]);
+    expect(document.getElementById('season-scrubber').dataset.state).toBe('error');
+  });
+
+  it('repaints nothing itself, leaving the boot frame to map.js', async () => {
+    // The division of labour, pinned. `commitDate`'s repaint is a no-op
+    // while `ratingsCache` is null, which on a cold boot it is — so the
+    // colours on screen are map.js's single-date boot frame, and there is
+    // no second, later paint from the season payload racing it.
     const { repaints } = await loadScrubber();
 
     expect(repaints).toEqual([]);
@@ -153,6 +202,20 @@ describe('boot with no ?d=', () => {
     await loadScrubber();
 
     expect(document.getElementById('season-scrubber').dataset.state).toBe('ready');
+  });
+});
+
+describe('boot with no ?d= and no readable data-today', () => {
+  it('announces nothing, leaving SNOW-660s uncoloured map', async () => {
+    // The fallback. With no day knowable the honest answer is still no day
+    // — the alternative is the map deriving one from its own data, which is
+    // what both tickets exist to prevent.
+    document.getElementById('season-scrubber').removeAttribute('data-today');
+
+    const { commits, repaints } = await loadScrubber();
+
+    expect(commits).toEqual([]);
+    expect(repaints).toEqual([]);
   });
 });
 
@@ -185,27 +248,45 @@ describe('a commit the visitor makes', () => {
 });
 
 describe('a back step onto a URL with no ?d=', () => {
-  it('returns to the unchosen state rather than committing a date', async () => {
-    // The old handler fell back to the effective last date here, which
-    // reached the same invented-date bug by a different route: navigating
-    // back OUT of a chosen day landed on a day the map picked itself.
+  it('lands on today, the same day a fresh load of that URL shows', async () => {
+    // The original handler fell back to the effective last date here, which
+    // reached the invented-date bug by a different route: navigating back
+    // OUT of a chosen day landed on a day the map picked itself. SNOW-660
+    // answered that with the unchosen state; SNOW-793 answers it with
+    // today, which keeps the stronger property — one URL, one map. Two
+    // routes to the bare URL rendering two different maps is its own bug.
     const { commits } = await loadScrubber();
-    releaseAt(TODAY_PCT);
+    releaseAt(LAST_RATED_PCT);
 
     history.replaceState(null, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
 
-    expect(commits.at(-1)).toEqual({ date: null, source: 'scrubber' });
+    expect(commits.at(-1)).toEqual({ date: TODAY, source: 'scrubber' });
   });
 
-  it('clears the choropleth by repainting for no date', async () => {
+  it('repaints the choropleth for today rather than clearing it', async () => {
+    // Asserted separately from the announcement because a commit without a
+    // repaint would leave the previous day's colours on screen under a
+    // ribbon reading today — the two disagreeing is worse than either.
     const { commits, repaints } = await loadScrubber();
-    releaseAt(TODAY_PCT);
+    releaseAt(LAST_RATED_PCT);
 
     history.replaceState(null, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
 
-    expect(repaints.at(-1)).toBeNull();
-    expect(commits.at(-1).date).toBeNull();
+    expect(repaints.at(-1)).toBe(TODAY);
+    expect(commits.at(-1).date).toBe(TODAY);
+  });
+
+  it('does not write the restored URL back to history', async () => {
+    // A browser-restored URL is already the address bar's content; writing
+    // it again would push a second entry and make Back a no-op.
+    await loadScrubber();
+    releaseAt(LAST_RATED_PCT);
+
+    history.replaceState(null, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+
+    expect(location.search).toBe('');
   });
 });

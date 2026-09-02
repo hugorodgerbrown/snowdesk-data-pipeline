@@ -147,10 +147,18 @@
   // polygon and no explanation.
   //
   // The one answer to "which day" is now ``currentDisplayedDate`` (declared
-  // further down, seeded from ``?d=`` and kept current by
-  // ``snowdesk:date-changed``), and ``null`` means no day has been asked
-  // for. Nothing reconstructs a substitute — a path with no date paints
-  // nothing rather than guessing.
+  // further down, seeded via ``readDisplayDate()`` and kept current by
+  // ``snowdesk:date-changed``), and ``null`` means no day is known at all.
+  // Nothing reconstructs a substitute — a path with no date paints nothing
+  // rather than guessing.
+  //
+  // SNOW-793 gave that seed a default again, and the distinction from the
+  // removed ``bootDateKey`` is the whole point: the default is TODAY, read
+  // from the server-rendered ``data-today``, never the last day carrying a
+  // rating. Today is nameable and #map-date-ribbon names it; the date this
+  // block is about was neither. ``null`` is now only reachable where the
+  // scrubber is absent or its ``data-today`` is malformed, and every path
+  // below still treats it as "paint nothing".
 
   // SNOW-58: Basemap layer picker — resolve the active style URL.
   //
@@ -3320,7 +3328,7 @@
           // rather than invented — and only the paint, so the sync-dot
           // bookkeeping below still runs.
           const paintDate = self.pwaChoroplethCore.repaintDateForStyleSwap(
-            currentDisplayedDate, readUrlDateParam(),
+            currentDisplayedDate, readDisplayDate(),
           );
           if (MAP && paintDate) {
             const frame = countryRatings[paintDate] || {};
@@ -4766,13 +4774,14 @@
     }
   });
 
-  // Most recent date the choropleth is showing — seeded from any ``?d=`` on
-  // the URL, then kept in sync by every ``snowdesk:date-changed`` event.
+  // Most recent date the choropleth is showing — seeded from the ``?d=`` on
+  // the URL, falling back to today (SNOW-793), then kept in sync by every
+  // ``snowdesk:date-changed`` event.
   // Hoisted to outer-IIFE scope so the date-changed listener below can be
   // registered synchronously (before the map's 'load' event fires), making
   // it active in environments where the map never loads (e.g. Playwright
   // offline headless tests).
-  let currentDisplayedDate = readUrlDateParam();
+  let currentDisplayedDate = readDisplayDate();
 
   // SNOW-318: Forward reference to the refreshPopupForDate function defined
   // inside map.on('load'). Default no-op so the date-changed listener below
@@ -4900,9 +4909,15 @@
     // shared Promise.all, it was the unguarded legs; don't re-collapse
     // them into a single failure domain by dropping a .catch(), and don't
     // pull any leg out of this Promise.all to "fix" this again.
-    // SNOW-660: the day the URL asked for, or null. Read once here so the
-    // fetch and the frame it is unpacked from cannot disagree.
-    const requestedDate = readUrlDateParam();
+    // SNOW-660: the day the URL asked for — or, since SNOW-793, today when
+    // it asked for none. Read once here so the fetch and the frame it is
+    // unpacked from cannot disagree.
+    //
+    // This is the cold-load cost of the default: one single-date ratings
+    // leg (~2 KB), already in this Promise.all and already parallel with
+    // the regions fetch. The full-season payload stays lazy — the scrubber
+    // does NOT reach for it to apply the default (see map_scrubber.js).
+    const requestedDate = readDisplayDate();
     const [geojson, bootRatingsPayload, resorts] =
       await Promise.all([
         fetch(REGIONS_URL + '?country=ch').then(r => {
@@ -5010,10 +5025,12 @@
     // as such, and now it paints only the day the URL asked for — so the old
     // name described the one behaviour this ticket removed.
     const paintBootRatings = () => {
-      // Nothing was asked for, so there is nothing to paint: the choropleth
-      // stays uncoloured until the visitor chooses a day. #map-date-ribbon
-      // says so on screen (map_season_ribbon.js), so the blank map is a
-      // stated state rather than a page that looks broken.
+      // No day is known at all — no ``?d=`` and no readable ``data-today``
+      // — so there is nothing to paint and the choropleth stays uncoloured.
+      // #map-date-ribbon says so on screen (map_season_ribbon.js), so the
+      // blank map is a stated state rather than a page that looks broken.
+      // Since SNOW-793 the ordinary cold boot does not reach this branch:
+      // it has today.
       if (!requestedDate) return;
       // SNOW-656: do not paint this frame over a LATER commit. It lands
       // asynchronously — gated on the source's 'data' event — and the
@@ -7041,7 +7058,7 @@
      */
     const repaintAfterStyleSwap = () => {
       const dateKey = self.pwaChoroplethCore.repaintDateForStyleSwap(
-        currentDisplayedDate, readUrlDateParam(),
+        currentDisplayedDate, readDisplayDate(),
       );
       if (!dateKey) return;
       getSeasonRatings()

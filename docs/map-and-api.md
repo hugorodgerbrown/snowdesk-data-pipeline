@@ -154,26 +154,39 @@ deploy. Live self-hosting — CORS, PMTiles range requests, and the
 subdomain — is tracked in SNOW-485.
 
 **Season scrubber and timelapse**: a horizontal scrubber sits at the
-bottom of the map. The thumb rests at today's position within the
-Nov–May window, but rests there **without committing a date** (SNOW-660):
-an empty querystring means no day has been asked for, so the map opens
-uncoloured and `#map-date-ribbon` reads "No date selected" until a drag,
-a playback frame or a `?d=` link chooses one. Every commit writes `?d=`,
-today included, so a chosen day survives a reload — the scrubber on every
-commit, the timelapse only where playback *settles* (a stop, and the
-skip-to-start/skip-to-end jumps), because Safari throttles
-`history.replaceState` by throwing and five frames a second would hit that
-limit inside half a minute. Both go through `writeUrlDateParam` in
+bottom of the map. The thumb rests at today's position within the Nov–May
+window, and since SNOW-793 it **commits today** when the URL names no day:
+a bare querystring means today, so the map opens coloured for it and
+`#map-date-ribbon` names it. SNOW-660 had left that case uncommitted
+because the default it removed was the season's *last populated* day — a
+date the map derived and nothing on screen named. Today is neither, which
+is why it is back and why it must never be swapped for the derived date
+again. The uncoloured "No date selected" state survives as the fallback
+for a page with no readable `data-today`. Precedence is `?d=` first, today
+behind it, in `readDisplayDate()` (`static/js/map_shared.js`).
+
+The boot default is **not** written to the URL: a bare link keeps meaning
+"today" rather than pinning to the day it was copied. Every commit the
+visitor makes still writes `?d=`, today included, so a chosen day survives
+a reload — the scrubber on every commit, the timelapse only where playback
+*settles* (a stop, and the skip-to-start/skip-to-end jumps), because Safari
+throttles `history.replaceState` by throwing and five frames a second would
+hit that limit inside half a minute. Both go through `writeUrlDateParam` in
 `static/js/map_shared.js`. Dragging recolours every region from the
 `/api/ratings/?country=ch` payload to show how danger evolved on the
 selected date, and pressing the play button steps through the season as
 a timelapse. The drawer (when open) follows the scrubber via the
 `snowdesk:date-changed` event, fetching `/api/region/<id>/summary/?d=…`
 so the bulletin shown matches the scrubbed-to date. The full-season
-payload is fetched lazily on first scrubber interaction and cached for
-the session via `getSeasonRatings()` in `static/js/map_shared.js` — first scrub
-pays the round-trip; subsequent scrubs and timelapse playback render
-from the in-memory cache.
+payload is fetched by the scrubber's own init — it needs the date range to
+leave its loading state (`map_scrubber.js`, SNOW-234) — and cached for the
+session via `getSeasonRatings()` in `static/js/map_shared.js`, so scrubs and
+timelapse playback render from the in-memory cache. It is **not** lazy until
+first interaction; this paragraph said so until SNOW-793 measured it. The
+SNOW-793 default deliberately does not wait on that promise: its output is
+the thumb and the date announcement, and map.js's separate single-date boot
+leg paints the choropleth, so a slow or failed season fetch must not hold
+the ribbon at "No date selected" over an already-coloured map.
 
 **Favourites overlay (SNOW-414)**: an eligible (authenticated) visitor
 sees an "Add favourite" pill in the bottom-right
@@ -440,7 +453,7 @@ appeared first.
 
 | URL | Name | Response |
 |-----|------|----------|
-| `GET /api/ratings/` | `api:ratings` | `{date_iso: {region_id: rating_int}}` — unified ratings endpoint (SNOW-239). Accepts optional `?d=YYYY-MM-DD` (restrict to one date) and `?country=ch\|fr\|at\|it` (restrict by country). A cold open with a `?d=` uses `?d=<that date>&country=ch` (~2 KB); a cold open without one issues no ratings request at all (SNOW-660 — no day asked for, nothing to paint); first scrubber interaction uses `?country=ch` (full CH season, ~40 KB). Compact int encoding: `0=no_rating, 1=low, 2=moderate, 3=considerable, 4=high, 5=very_high`. Server-side `cache.get_or_set` keyed on `(country, date)` keeps DB hits to one per cache window (5 min for single-date, 1 h for full-season). |
+| `GET /api/ratings/` | `api:ratings` | `{date_iso: {region_id: rating_int}}` — unified ratings endpoint (SNOW-239). Accepts optional `?d=YYYY-MM-DD` (restrict to one date) and `?country=ch\|fr\|at\|it` (restrict by country). A cold open uses `?d=<the day readDisplayDate() resolves>&country=ch` (~2 KB) — the `?d=` day, or today since SNOW-793 — and issues no single-date request at all only when neither is known (SNOW-660 — no day asked for, nothing to paint); the scrubber's init separately pulls `?country=ch` (full CH season, ~40 KB). Compact int encoding: `0=no_rating, 1=low, 2=moderate, 3=considerable, 4=high, 5=very_high`. Server-side `cache.get_or_set` keyed on `(country, date)` keeps DB hits to one per cache window (5 min for single-date, 1 h for full-season). |
 | `GET /api/resorts-by-region/` | `api:resorts_by_region` | `{region_id: [resort_name, …]}` — alphabetical; regions without resorts omitted |
 | `GET /api/resorts.geojson` | `api:resorts_geojson` | GeoJSON FeatureCollection of geocoded resorts (Points; `[lon, lat]` per RFC 7946); properties `id`, `name`, `region_id`, `needs_review`, `tier` (SNOW-543 — `CORE`/`STANDARD`/`MINOR`, the curated map-prominence verdict the pin radius is interpolated from) |
 | `GET /api/regions.geojson` | `api:regions_geojson` | GeoJSON FeatureCollection from `Region.boundary` (L4 fixture regions); each feature has `properties.id` + `properties.name`, plus `properties.download` (SNOW-521 — see below) when the region has a precomputed offline-basemap size. |
@@ -485,10 +498,13 @@ after a deploy. See [`offline-map.md`](offline-map.md) for the full
 client-side download flow.
 
 The data flow on map load is: `map.js` fetches `regions.geojson?country=ch`
-and — **only when the URL carries a `?d=`** (SNOW-660) — `?d=<that
-date>&country=ch`, in parallel. With no `?d=` the ratings leg is skipped
-entirely and nothing is painted: the map has not been asked for a day, and
-inventing one is the bug that ticket removed. Once both resolve, it calls
+and the single-date ratings leg for `readDisplayDate()` — the `?d=` day, or
+today (SNOW-793) — in parallel. The leg is skipped only when neither is
+known, which needs a page with no readable `data-today`; nothing is painted
+then, because the map has not been asked for a day and inventing one is the
+bug SNOW-660 removed. "Inventing" means the season's last populated day
+specifically: today is a default, not an invention, because
+`#map-date-ribbon` names it. Once both resolve, it calls
 `map.setFeatureState({source: 'regions', id: numericFeatureId}, {rating})` for
 each region, so the choropleth fill layer reads exclusively from feature-state
 (no property-based fallback). Regions with no bulletin today are absent from the
@@ -499,11 +515,11 @@ Because rating is feature-state, and `MAP.setStyle()` (the basemap picker)
 wipes feature-state along with the source, **every basemap swap has to
 repaint the whole choropleth** — otherwise every region falls through to
 `no_rating` and the map goes grey. `map.js`'s `repaintAfterStyleSwap` does
-that, taking the date from `currentDisplayedDate` in preference to `?d=`
-(the two can differ mid-session — a timelapse frame commits a date without
-writing one). When neither is known, no day has been asked for and the swap
-repaints **nothing**: the wiped feature-state is the correct, uncoloured map
-(SNOW-660).
+that, taking the date from `currentDisplayedDate` in preference to
+`readDisplayDate()` (the two can differ mid-session — a timelapse frame
+commits a date without writing one). When neither is known — no committed
+date, no `?d=`, no readable `data-today` — the swap repaints **nothing**:
+the wiped feature-state is the correct, uncoloured map (SNOW-660).
 
 The fill itself is painted **opaque**, with the translucency baked into the
 colours by `compositeOverBackdrop()` in `static/js/choropleth_core.js` — a

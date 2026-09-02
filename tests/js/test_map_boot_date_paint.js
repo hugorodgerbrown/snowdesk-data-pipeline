@@ -11,13 +11,22 @@
  * invisible without a per-region comparison against the frame, and nothing
  * else in the suite makes one.
  *
- * SNOW-660 removed the boot day itself. There is no date but the one the
- * URL asked for, so the two cases below are the two halves of that rule:
- * `?d=` is the day fetched and painted, and an empty querystring paints
- * nothing at all rather than a day the map picked for the visitor. The
- * second case is the one this ticket changed — it used to assert the
- * opposite, which is what "the map opens showing Martigny-Verbier coloured
- * for a day nobody asked for" looked like from here.
+ * SNOW-660 removed the boot day itself, and SNOW-793 gave it one back —
+ * deliberately not the same one. The three cases below are that rule in
+ * full:
+ *
+ *   - `?d=` is the day fetched and painted, and it still wins outright.
+ *   - An empty querystring fetches and paints TODAY, read from the
+ *     scrubber's server-rendered `data-today`. Never the season's last
+ *     populated day, which is the date SNOW-660 was actually about: today
+ *     is nameable and #map-date-ribbon names it, so the map opens coloured
+ *     for a day that is both defaulted and stated.
+ *   - With no readable `data-today` there is no day at all, and SNOW-660's
+ *     uncoloured map is what remains. That is the fallback, not the norm.
+ *
+ * The middle case has now asserted three different things across two
+ * tickets, which is the honest history of this surface — so each one says
+ * which day it expects AND which days it must not touch.
  */
 
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,6 +39,11 @@ import { loadMapBundle } from './_load_map_bundle.js';
 // `bootDateKey` it used to seed.
 const SEASON_END_DATE = '2026-04-30';
 const DEEP_LINK_DATE = '2026-02-09';
+// SNOW-793's default. Deliberately neither of the two above: a boot that
+// reached for the season's last day, or that leaked the deep link across
+// cases, has to look different from a boot that reached for today.
+const TODAY_DATE = '2026-03-15';
+const TODAY_PCT = 50;
 
 /**
  * The season's last day covers ONE region; the deep-linked day covers three.
@@ -41,6 +55,10 @@ const DEEP_LINK_DATE = '2026-02-09';
 const RATINGS = {
   [SEASON_END_DATE]: { 'CH-4115': 1 },
   [DEEP_LINK_DATE]: { 'CH-4115': 3, 'CH-4114': 4, 'CH-4113': 2 },
+  // Two regions, and both ratings differ from every other day's — so a
+  // frame for the wrong day cannot pass for today's, and today's cannot
+  // pass for anyone else's.
+  [TODAY_DATE]: { 'CH-4115': 5, 'CH-4114': 2 },
 };
 
 // The API emits the region identifier as `properties.id`; map.js normalises
@@ -121,7 +139,12 @@ function stubMapLibre() {
   return map;
 }
 
-function buildFixture() {
+/**
+ * @param {{today?: string}} [opts] `today` omitted renders the scrubber
+ *   with NO `data-today`, which is the no-day-knowable fallback.
+ */
+function buildFixture(opts = {}) {
+  const today = 'today' in opts ? opts.today : TODAY_DATE;
   document.body.innerHTML = `
     <div id="map"
          data-regions-url="/api/regions.geojson"
@@ -133,21 +156,34 @@ function buildFixture() {
       <button id="search-toggle" aria-expanded="false"></button>
       <input id="search-input">
     </div>
-    <ul id="search-results" hidden></ul>`;
+    <ul id="search-results" hidden></ul>
+    <div id="season-scrubber"
+         ${today ? `data-today="${today}"` : ''}
+         data-today-pct="${TODAY_PCT}"
+         data-season-start="${DEEP_LINK_DATE}"
+         data-season-end="${SEASON_END_DATE}"
+         data-state="loading">
+      <div class="season-scrubber-track">
+        <div class="season-scrubber-thumb"></div>
+      </div>
+      <div class="season-scrubber-loading"></div>
+    </div>`;
 }
 
 /**
  * Boot the bundle at `url`, run the map's load handlers, and return the
  * rating painted onto each region plus every URL fetched.
  *
- * The fetches matter as much as the paint: SNOW-660 skips the ratings leg
- * entirely when no day was asked for, so "painted nothing" and "asked for
+ * The fetches matter as much as the paint: the ratings leg is skipped
+ * entirely when no day is known, so "painted nothing" and "asked for
  * nothing" are two separate assertions, and a request for a day the visitor
  * never chose would be a bug even if its answer were dropped on the floor.
+ * The same pairing proves the SNOW-793 default is a real fetch for today
+ * rather than a stale frame relabelled.
  */
-async function bootAt(url) {
+async function bootAt(url, fixtureOpts) {
   window.history.replaceState({}, '', url);
-  buildFixture();
+  buildFixture(fixtureOpts);
   const mapStub = stubMapLibre();
   vi.stubGlobal('fetch', vi.fn((input) => {
     const href = String(input);
@@ -213,17 +249,45 @@ describe('the boot ratings paint', () => {
     expect(ratingsFetches.join(' ')).not.toContain(SEASON_END_DATE);
   });
 
-  it('paints nothing when no ?d= asks for a day', async () => {
-    // SNOW-660. This case used to assert the opposite — that the map paints
-    // the season's last populated day on a cold boot — and that assertion
-    // WAS the bug: one coloured polygon, off season, standing for a day the
-    // visitor never chose and which nothing on screen named.
-    //
-    // Both halves are asserted because either alone can pass while the
-    // behaviour is wrong: a paint with no fetch would mean a stale frame
-    // leaked through, and a fetch with no paint would still cost the request
-    // and leave the answer one line away from being painted.
+  it('paints today when no ?d= asks for a day', async () => {
+    // SNOW-793. CH-4113 has no rating today and must stay grey: the default
+    // is one specific day's frame, not a licence to colour the map in.
     const { painted, ratingsFetches } = await bootAt('/');
+
+    expect(painted).toEqual({
+      'CH-4115': 'very_high',
+      'CH-4114': 'moderate',
+      'CH-4113': 'no_rating',
+    });
+    // The day is FETCHED, not recovered from a season payload that happens
+    // to be in hand — a frame lifted out of the full-season response would
+    // paint identically here while skipping the cheap single-date leg the
+    // cold path is budgeted for.
+    expect(ratingsFetches).toContain(`/api/ratings/?d=${TODAY_DATE}&country=ch`);
+    // And no other day is asked for. The season's last populated day is the
+    // one SNOW-660 removed; seeing it here again would be that regression.
+    expect(ratingsFetches.join(' ')).not.toContain(SEASON_END_DATE);
+    expect(ratingsFetches.join(' ')).not.toContain(DEEP_LINK_DATE);
+  });
+
+  it('leaves the URL bare, so a shared link still means "today"', async () => {
+    // SNOW-793 decision 2. The default is not a choice the visitor made, so
+    // it is not written to the URL: a link copied off a defaulted map has to
+    // keep meaning "today" when it is opened next week, rather than pinning
+    // to the day it was copied. Visitor-driven commits still write `?d=` —
+    // test_map_scrubber_no_boot_snap.js owns that half.
+    await bootAt('/');
+
+    expect(window.location.search).toBe('');
+  });
+
+  it('paints nothing when no day is knowable at all', async () => {
+    // SNOW-660's state, now reached only where the scrubber is absent or
+    // its `data-today` is unreadable. It is still the right answer there:
+    // the alternative is the map inventing a day again, which is the whole
+    // history of this file. #map-date-ribbon reads "No date selected" in
+    // this state (test_map_ribbon_no_date.js).
+    const { painted, ratingsFetches } = await bootAt('/', { today: null });
 
     expect(painted).toEqual({
       'CH-4115': 'no_rating',

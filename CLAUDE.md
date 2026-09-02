@@ -639,6 +639,7 @@ Read these when working in the relevant area:
 | Why the weather icons are Yr / MET Norway and not MeteoSwiss, AccuWeather or the Met Office (legibility measurements + the licence position for each set) | [`docs/decisions/weather-icons-are-yr-not-meteoswiss.md`](docs/decisions/weather-icons-are-yr-not-meteoswiss.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a followed-but-unclaimed route share lives in the session (and what it widens) | [`docs/decisions/route-share-pending-claim-in-session.md`](docs/decisions/route-share-pending-claim-in-session.md) |
+| Why a bare `/` on the map shows today, never the last rated day (readDisplayDate, data-today, the SNOW-660 distinction) | [`docs/decisions/map-defaults-to-today-not-the-last-rated-day.md`](docs/decisions/map-defaults-to-today-not-the-last-rated-day.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
