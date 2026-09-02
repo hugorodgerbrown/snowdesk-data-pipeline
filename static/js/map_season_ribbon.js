@@ -74,22 +74,30 @@
   // ``data-default-region-id`` is still rendered and is still read by
   // ``map_region_download.js``'s own seed — see the note there.
   //
-  // SNOW-660: the DATE now starts empty too. It was seeded from
+  // SNOW-660 emptied the DATE too. It had been seeded from
   // ``data-default-date`` (server-rendered today) on the reasoning that the
   // timeline has a day whether or not a region is focused — but the map was
-  // painting that day's choropleth to match, so a visitor who had asked for
-  // nothing arrived at a coloured map explained by a date they never chose.
-  // The one source for "which day" is ``?d=``, and null means none yet.
+  // painting the LAST POPULATED day's choropleth, not that one, so a
+  // visitor who had asked for nothing arrived at a coloured map explained
+  // by a date that was neither chosen nor the one being shown.
+  //
+  // SNOW-793 seeds it again, and this time the readout and the choropleth
+  // are the same day by construction: both go through
+  // ``readDisplayDate()``, whose answer is ``?d=`` first and today behind
+  // it. Null survives only where no day is knowable at all (no scrubber,
+  // or a malformed ``data-today``), which is what still reaches the "No
+  // date selected" empty state below.
   let cache = null;
   let regionId = null;
   let regionName = null;
   let regionSlug = null;
-  // ``readUrlDateParam`` is map_shared.js's, shared as a bare identifier by
+  // ``readDisplayDate`` is map_shared.js's, shared as a bare identifier by
   // the classic-script bundle. The typeof guard is for the unit tests, which
   // load this module on its own against a stubbed scope: map_shared.js owns
-  // the ``?d=`` validation and this file must not grow a second copy of it,
-  // so standalone it reads "no date" rather than reimplementing the parse.
-  let dateKey = typeof readUrlDateParam === 'function' ? readUrlDateParam() : null;
+  // both the ``?d=`` validation and the today fallback, and this file must
+  // not grow a second copy of either, so standalone it reads "no date"
+  // rather than reimplementing the parse.
+  let dateKey = typeof readDisplayDate === 'function' ? readDisplayDate() : null;
   // SNOW-314 prototype: L2 (sub) + L1 (major) names for the breadcrumb.
   // Populated on every region-selected event, which carries the full
   // hierarchy; empty until the visitor picks a region.
@@ -207,10 +215,13 @@
     // Bottom date ribbon — day-first, title-case date ("18 May 2026") matching
     // the popup card; deliberately not the uppercase scrubber format.
     //
-    // SNOW-660: with no day chosen it says "No date selected" rather than
+    // SNOW-660: with no day known it says "No date selected" rather than
     // hiding. The map is uncoloured in that state, and a blank choropleth
     // beside a ribbon that has silently disappeared reads as a broken page;
-    // the prompt names the state and points at the timeline that resolves it.
+    // the prompt names the state and points at the timeline that resolves
+    // it. SNOW-793 made this the fallback rather than the cold-boot norm —
+    // an ordinary load now has today — but it is still reachable, so it
+    // still has to read as a state rather than as a fault.
     if (dateRibbonEl) {
       dateRibbonEl.hidden = false;
       dateRibbonEl.textContent = dateKey

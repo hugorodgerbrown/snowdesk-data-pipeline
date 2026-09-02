@@ -672,10 +672,13 @@ to today's position within the **November–May** avalanche season window.
   does not already shows an uncoloured map. The future is the one thing the
   calendar will not offer.
 - **Shareable.** The scrubbed date is reflected in the URL (`/?d=YYYY-MM-DD`),
-  so a specific day's map can be linked and reloaded. Since SNOW-660 that
-  includes today: an empty querystring means "no day chosen", and the map
-  opens uncoloured with the date ribbon saying so, rather than painting a
-  day the visitor never asked for.
+  so a specific day's map can be linked and reloaded, today included. An
+  empty querystring means **today** (SNOW-793): the map opens painted for
+  it and the date ribbon names it, so a bare link keeps meaning "today"
+  rather than pinning to the day it was copied. What SNOW-660 removed and
+  what must not come back is the *derived* default — the season's last
+  populated day, which off-season painted one polygon that nothing on
+  screen explained.
 
 ---
 
