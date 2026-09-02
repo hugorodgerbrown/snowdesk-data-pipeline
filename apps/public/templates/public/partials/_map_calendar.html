@@ -1,0 +1,133 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_calendar.html — the map's date picker (SNOW-792): a
+month grid that opens from the bottom-right control stack and commits a
+chosen day through the season scrubber's own commit point.
+
+The scrubber track is a few hundred pixels wide and spans a seven-month
+season, so a pixel is about a day and hitting a chosen date by drag is a
+fiddle. This is the precise route to the same place — it does not replace
+the scrubber, and it owns no commit path of its own: picking a day
+dispatches ``snowdesk:scrub-to`` and map_scrubber.js does the rest.
+
+The tap target is the calendar button in the season-scrubber row, with the
+other date affordances. This surface is not next to it: it is a bottom-right
+overlay, in the same slot and with the same geometry as the favourites,
+observations and routes panels, so every panel over the map appears in one
+place regardless of which control opened it.
+
+That means the layout below is includes/_overlay_sheet.html's, deliberately
+duplicated rather than shared: a month grid is a fixed 7×6 block, not a
+scrolling list, so it needs none of that partial's header, scroll body or
+height bounding. What it does need is the same positioning — inset and
+docked to the bottom edge below `sm`, a bottom-right corner above it — and
+the same refinement, ``window.pwaOverlayBounds.positionSheet``, which
+measures the room the scrubber and the roundel column leave (see
+static/js/map_overlay_bounds.js).
+
+Included by _map_embed.html at TOP LEVEL — not inside #map or the control
+stack. It is ``position: fixed``, and a fixed element is still confined by
+any ancestor that creates a stacking context, which .map-controls-br does.
+
+Context expected:
+* season_start           — datetime.date: first day of the highlighted season.
+* season_end             — datetime.date: last day of it.
+* today                  — datetime.date: the today marker, and the latest
+                           selectable day — the future is the one hard stop.
+* calendar_month_names   — 12 localised month names, January first.
+* calendar_weekday_abbrs — 7 localised weekday abbreviations, Monday first.
+
+The season bounds are a HIGHLIGHT, not a limit. The map carries weather as
+well as bulletins, so a day in September has something to show even though
+no bulletin covers it; an earlier draft made the season the selectable range
+and could not reach those days at all.
+
+The grid itself is built by static/js/map_calendar.js rather than
+server-rendered: a season alone is ~245 day buttons and the reachable range
+is longer still, so putting them in the home page's DOM for a control most
+visits never open is a cost every visitor pays for a few who don't. What the
+server DOES supply is every translated word — the month names below travel
+as a data attribute and the weekday header is rendered here — so no
+user-facing string is a JavaScript literal (see docs/i18n.md).
+{% endcomment %}
+{# Layout classes mirror includes/_overlay_sheet.html — see the note above  #}
+{# for why they are copied rather than shared. The map-calendar class        #}
+{# carries the grid's own rules from static/css/map.css.                     #}
+<div
+    id="map-calendar"
+    class="map-calendar fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] rounded-card border border-border bg-card p-3 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 sm:w-auto"
+    data-state="closed"
+    data-season-start="{{ season_start|date:'Y-m-d' }}"
+    data-season-end="{{ season_end|date:'Y-m-d' }}"
+    data-today="{{ today|date:'Y-m-d' }}"
+    {# Pipe-separated because a month name cannot contain a pipe in any #}
+    {# locale, and one attribute beats twelve. Read back by             #}
+    {# map_calendar.js to label the header and the day cells.  #}
+    data-months="{{ calendar_month_names|join:'|' }}"
+    role="dialog"
+    aria-modal="false"
+    aria-labelledby="map-calendar-month"
+    hidden
+>
+    <div class="map-calendar-body">
+        <div class="map-calendar-inner">
+            <div class="map-calendar-header">
+                <button
+                    id="map-calendar-prev"
+                    type="button"
+                    class="map-calendar-step"
+                    aria-label='{% trans "Previous month" %}'
+                >
+                    <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="m15 18-6-6 6-6" />
+                    </svg>
+                </button>
+                {# Filled by map_calendar.js from data-months above. #}
+                {# aria-live so a month step is announced without moving focus. #}
+                <span
+                    id="map-calendar-month"
+                    class="map-calendar-month"
+                    aria-live="polite"
+                ></span>
+                <button
+                    id="map-calendar-next"
+                    type="button"
+                    class="map-calendar-step"
+                    aria-label='{% trans "Next month" %}'
+                >
+                    <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="m9 18 6-6-6-6" />
+                    </svg>
+                </button>
+            </div>
+            {# Weekday header, Monday first to match buildMonthGrid's cell order.   #}
+            {# aria-hidden: each day button carries its own full date label, so the #}
+            {# column headers would only add noise to a screen reader walking the   #}
+            {# grid. #}
+            <div class="map-calendar-weekdays" aria-hidden="true">
+                {% for abbr in calendar_weekday_abbrs %}<span>{{ abbr }}</span>{% endfor %}
+            </div>
+            <div id="map-calendar-grid" class="map-calendar-grid"></div>
+        </div>
+    </div>
+</div>

@@ -1112,8 +1112,86 @@ def test_slope_legend_section_renders_with_its_caveat() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SNOW-792 — the scrubber's calendar popup
+# SNOW-792 — the map's date picker
 # ---------------------------------------------------------------------------
+
+
+class _AncestorIdFinder(HTMLParser):
+    """Collect the ``id`` of every open element enclosing a target id.
+
+    Stdlib rather than a parser dependency, matching ``_CollapsibleChildCounter``
+    above. ``_VOID`` keeps self-closing tags from opening a level, which would
+    otherwise leave the stack permanently too deep and report ancestors that
+    closed long ago.
+    """
+
+    _VOID = frozenset(
+        {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+            "path",
+            "polygon",
+            "polyline",
+            "circle",
+            "rect",
+            "line",
+            "use",
+            "stop",
+        }
+    )
+
+    def __init__(self, target_id: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self._target = target_id
+        self._stack: list[str | None] = []
+        #: ``None`` until the target is seen — distinguishes "not found"
+        #: from "found at top level", which are different failures.
+        self.ancestors: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Push a level, recording the enclosing ids if this is the target."""
+        if tag in self._VOID:
+            return
+        element_id = dict(attrs).get("id")
+        if element_id == self._target and self.ancestors is None:
+            self.ancestors = [i for i in self._stack if i is not None]
+        self._stack.append(element_id)
+
+    def handle_endtag(self, tag: str) -> None:
+        """Pop a level."""
+        if tag in self._VOID:
+            return
+        if self._stack:
+            self._stack.pop()
+
+
+def _ancestor_ids(content: str, target_id: str) -> list[str]:
+    """The ids of every element enclosing ``target_id``, outermost first.
+
+    Args:
+        content: The rendered page.
+        target_id: The ``id`` to locate.
+
+    Returns:
+        The enclosing ids that carry one.
+
+    """
+    finder = _AncestorIdFinder(target_id)
+    finder.feed(content)
+    assert finder.ancestors is not None, f"#{target_id} is not on the page"
+    return finder.ancestors
 
 
 def _one(pattern: str, content: str, what: str) -> str:
@@ -1138,7 +1216,7 @@ def _one(pattern: str, content: str, what: str) -> str:
 
 
 @pytest.mark.django_db
-def test_scrubber_calendar_toggle_is_a_transport_button() -> None:
+def test_map_calendar_toggle_is_a_transport_button() -> None:
     """
     The calendar toggle carries ``.scrubber-transport-button``.
 
@@ -1154,7 +1232,7 @@ def test_scrubber_calendar_toggle_is_a_transport_button() -> None:
     content = response.content.decode()
 
     toggle = _one(
-        r'(<button[^>]*id="scrubber-calendar-toggle"[^>]*>)',
+        r'(<button[^>]*id="map-calendar-toggle"[^>]*>)',
         content,
         "the calendar toggle",
     )
@@ -1162,11 +1240,11 @@ def test_scrubber_calendar_toggle_is_a_transport_button() -> None:
 
 
 @pytest.mark.django_db
-def test_scrubber_calendar_toggle_points_at_the_popup() -> None:
+def test_map_calendar_toggle_points_at_the_popup() -> None:
     """The toggle is wired to the popup for assistive technology.
 
     ``aria-controls`` has to name an element that exists, and
-    ``aria-expanded`` has to ship in its closed state — map_scrubber_calendar.js
+    ``aria-expanded`` has to ship in its closed state — map_calendar.js
     only ever flips it.
     """
     client = Client()
@@ -1174,17 +1252,17 @@ def test_scrubber_calendar_toggle_points_at_the_popup() -> None:
     content = response.content.decode()
 
     toggle = _one(
-        r'(<button[^>]*id="scrubber-calendar-toggle"[^>]*>)',
+        r'(<button[^>]*id="map-calendar-toggle"[^>]*>)',
         content,
         "the calendar toggle",
     )
-    assert 'aria-controls="scrubber-calendar"' in toggle
+    assert 'aria-controls="map-calendar"' in toggle
     assert 'aria-expanded="false"' in toggle
-    assert 'id="scrubber-calendar"' in content
+    assert 'id="map-calendar"' in content
 
 
 @pytest.mark.django_db
-def test_scrubber_calendar_ships_hidden() -> None:
+def test_map_calendar_ships_hidden() -> None:
     """The popup is closed at first paint.
 
     Server-rendered rather than hidden by JS on boot: a grid that flashes
@@ -1195,28 +1273,26 @@ def test_scrubber_calendar_ships_hidden() -> None:
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    popup = _one(
-        r'(<div[^>]*id="scrubber-calendar"[^>]*>)', content, "the calendar popup"
-    )
+    popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
     assert "hidden" in popup
     assert 'data-state="closed"' in popup
 
 
 @pytest.mark.django_db
-def test_scrubber_calendar_carries_the_season_window() -> None:
+def test_map_calendar_carries_the_season_window() -> None:
     """
     The popup's own season bounds match the scrubber's.
 
-    They are read independently by two modules, and a disagreement would
-    let the calendar offer a day the scrubber then refuses to commit.
+    They are read independently by two modules. The calendar uses them as a
+    HIGHLIGHT rather than a limit — every day up to today is selectable —
+    but the two surfaces still have to agree on where the season is, or the
+    band the calendar draws sits somewhere the scrubber's track does not.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    popup = _one(
-        r'(<div[^>]*id="scrubber-calendar"[^>]*>)', content, "the calendar popup"
-    )
+    popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
     scrubber = _one(r'(<div[^>]*id="season-scrubber"[^>]*>)', content, "the scrubber")
     for attribute in ("data-season-start", "data-season-end", "data-today"):
         value = _one(rf'{attribute}="([^"]*)"', popup, attribute)
@@ -1225,7 +1301,7 @@ def test_scrubber_calendar_carries_the_season_window() -> None:
 
 
 @pytest.mark.django_db
-def test_scrubber_calendar_carries_translated_labels() -> None:
+def test_map_calendar_carries_translated_labels() -> None:
     """
     Every word in the grid comes from the server.
 
@@ -1238,16 +1314,14 @@ def test_scrubber_calendar_carries_translated_labels() -> None:
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
-    popup = _one(
-        r'(<div[^>]*id="scrubber-calendar"[^>]*>)', content, "the calendar popup"
-    )
+    popup = _one(r'(<div[^>]*id="map-calendar"[^>]*>)', content, "the calendar popup")
     months = _one(r'data-months="([^"]*)"', popup, "data-months").split("|")
     assert len(months) == 12
     assert months[0] == "January"
     assert months[11] == "December"
 
     weekdays = _one(
-        r'<div class="scrubber-calendar-weekdays"[^>]*>(.*?)</div>',
+        r'<div class="map-calendar-weekdays"[^>]*>(.*?)</div>',
         content,
         "the weekday header",
     )
@@ -1257,18 +1331,64 @@ def test_scrubber_calendar_carries_translated_labels() -> None:
 
 
 @pytest.mark.django_db
-def test_scrubber_calendar_is_in_the_help_tour() -> None:
+def test_map_calendar_panel_is_outside_the_map_and_the_control_stack() -> None:
+    """
+    The panel renders at top level, not inside #map or .map-controls-br.
+
+    It is ``position: fixed`` and positioned by
+    ``window.pwaOverlayBounds.positionSheet`` like the three UGC sheets, and
+    a fixed element is still confined by any ancestor that creates a
+    stacking context — which .map-controls-br (z-index 4) does. Nested, it
+    would be trapped behind the roundel column with no error anywhere.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+
+    ancestors = _ancestor_ids(response.content.decode(), "map-calendar")
+    assert "map" not in ancestors, (
+        "#map-calendar is nested inside #map. It is position:fixed and would "
+        f"be trapped by that stacking context. Ancestors: {ancestors}"
+    )
+    assert "map-controls-br" not in ancestors, (
+        "#map-calendar is nested inside the bottom-right control stack "
+        f"(z-index 4), which would trap it. Ancestors: {ancestors}"
+    )
+
+
+@pytest.mark.django_db
+def test_map_calendar_toggle_sits_in_the_scrubber_row() -> None:
+    """
+    The tap target is one of the scrubber's controls, between skip-to-end
+    and the end of the row.
+
+    The panel moved to the bottom-right overlay slot; the button did not.
+    It belongs with the other date affordances, which is where a visitor
+    already is when they want a different day.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    assert content.index('id="scrubber-skip-end"') < content.index(
+        'id="map-calendar-toggle"'
+    )
+    assert content.index('id="map-calendar-toggle"') < content.index(
+        'id="map-calendar"'
+    )
+
+
+@pytest.mark.django_db
+def test_map_calendar_is_in_the_help_tour() -> None:
     """The toggle carries a coachmark step, straight after the scrubber's.
 
     The two are one idea — the scrubber runs through the season, the
-    calendar jumps to a day in it — so the tour introduces them together.
+    calendar jumps to a day — and the toggle sits in the scrubber's own row,
+    so the tour introduces them together.
     """
     client = Client()
     response = client.get(reverse("public:home"))
     content = response.content.decode()
 
     steps = re.findall(r'data-help-target="([^"]+)"', content)
-    assert "#scrubber-calendar-toggle" in steps
-    assert (
-        steps.index("#scrubber-calendar-toggle") == steps.index("#season-scrubber") + 1
-    )
+    assert "#map-calendar-toggle" in steps
+    assert steps.index("#map-calendar-toggle") == steps.index("#season-scrubber") + 1

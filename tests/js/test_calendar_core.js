@@ -5,11 +5,22 @@
  * `calendar_core.js` is a plain browser IIFE that assigns a frozen
  * `window.pwaCalendarCore` — importing it for side effects is enough.
  *
- * The season window used throughout is the real shape of one: it starts
- * mid-month and ends mid-month, because the scrubber's bounds are narrowed
- * to the actual RegionDayRating data (see `_base_map_context`). A window
- * that happened to align to month boundaries would hide every off-by-one
- * in the clamping.
+ * Two ranges run through every case here, and keeping them apart is the
+ * point of most of it:
+ *
+ *   the REACHABLE range — [min, max], where max is today. The only thing
+ *   the picker refuses is the future.
+ *   the SEASON — a highlight inside it. Days outside the season are still
+ *   selectable, because the map has weather for them.
+ *
+ * The season used throughout starts and ends mid-month, which is the real
+ * shape of one: the scrubber's bounds are narrowed to the actual
+ * RegionDayRating data (see `_base_map_context`). A window that happened to
+ * align to month boundaries would hide every off-by-one in the clamping.
+ *
+ * `TODAY` is deliberately months AFTER the season ends — the off-season
+ * case, which is when the season-as-a-fence bug was reachable and when the
+ * weather layer is the only thing the map has to show.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -20,6 +31,9 @@ const core = window.pwaCalendarCore;
 
 const SEASON_START = '2025-11-12';
 const SEASON_END = '2026-04-20';
+// Out of season, as the site is for half the year.
+const TODAY = '2026-09-02';
+const RANGE_MIN = SEASON_START;
 
 /** The date keys of every non-blank cell in a grid. */
 const dayKeys = (cells) => cells.filter((c) => !c.blank).map((c) => c.dateKey);
@@ -70,70 +84,76 @@ describe('shiftMonth', () => {
 });
 
 describe('clampMonthKey', () => {
-  it('leaves a month inside the window alone', () => {
-    expect(core.clampMonthKey('2026-01', SEASON_START, SEASON_END)).toBe('2026-01');
+  it('leaves a month inside the range alone', () => {
+    expect(core.clampMonthKey('2026-01', RANGE_MIN, TODAY)).toBe('2026-01');
   });
 
-  it('pulls a month before the window up to the first month', () => {
-    expect(core.clampMonthKey('2025-08', SEASON_START, SEASON_END)).toBe('2025-11');
+  it('pulls a month before the range up to the first month', () => {
+    expect(core.clampMonthKey('2025-08', RANGE_MIN, TODAY)).toBe('2025-11');
   });
 
-  it('pulls a month after the window back to the last month', () => {
-    expect(core.clampMonthKey('2026-09', SEASON_START, SEASON_END)).toBe('2026-04');
+  it('pulls a month past today back to this month', () => {
+    expect(core.clampMonthKey('2026-12', RANGE_MIN, TODAY)).toBe('2026-09');
   });
 
-  it('keeps the partial first and last months, which are in the window', () => {
-    // The season starts on the 12th and ends on the 20th, so both boundary
-    // months are half outside it — but the MONTH is still reachable, and
-    // buildMonthGrid is what disables the days either side.
-    expect(core.clampMonthKey('2025-11', SEASON_START, SEASON_END)).toBe('2025-11');
-    expect(core.clampMonthKey('2026-04', SEASON_START, SEASON_END)).toBe('2026-04');
+  it('reaches the months between the season end and today', () => {
+    // The season ends in April and today is September. Every month in
+    // between has to be reachable — the map has weather for those days,
+    // and clamping them back to April is the bug this replaced.
+    for (const month of ['2026-05', '2026-06', '2026-07', '2026-08']) {
+      expect(core.clampMonthKey(month, RANGE_MIN, TODAY)).toBe(month);
+    }
+  });
+
+  it('keeps the partial first and last months, which are in the range', () => {
+    expect(core.clampMonthKey('2025-11', RANGE_MIN, TODAY)).toBe('2025-11');
+    expect(core.clampMonthKey('2026-09', RANGE_MIN, TODAY)).toBe('2026-09');
   });
 });
 
-describe('selectableDates', () => {
-  it('takes the date keys of the ratings cache', () => {
-    const set = core.selectableDates(
-      { '2026-01-05': {}, '2026-01-06': {} },
-      SEASON_START,
-      SEASON_END
-    );
-    expect([...set].sort()).toEqual(['2026-01-05', '2026-01-06']);
+describe('earliestKnownDate', () => {
+  it('takes the earliest key in the ratings cache', () => {
+    // The fallback here is LATER than every key, so the cache is what the
+    // answer must come from. (Passing SEASON_START would prove nothing —
+    // it is earlier than these, and the next case is what covers that.)
+    const cache = { '2026-01-06': {}, '2025-12-30': {}, '2026-01-05': {} };
+    expect(core.earliestKnownDate(cache, '2026-02-01')).toBe('2025-12-30');
   });
 
-  it('drops keys outside the season window', () => {
-    // The cache is a merged, multi-country payload; nothing guarantees
-    // every key in it belongs to the window this scrubber was rendered for.
-    const set = core.selectableDates(
-      { '2025-11-01': {}, '2026-01-05': {}, '2026-05-30': {} },
-      SEASON_START,
-      SEASON_END
-    );
-    expect([...set]).toEqual(['2026-01-05']);
+  it('prefers the season start when it is earlier', () => {
+    // The archive can begin after the season window opens; the floor must
+    // not cut the highlight off at its own first rated day.
+    const cache = { '2025-12-30': {} };
+    expect(core.earliestKnownDate(cache, SEASON_START)).toBe(SEASON_START);
   });
 
-  it('keeps the exact boundary days', () => {
-    const set = core.selectableDates(
-      { [SEASON_START]: {}, [SEASON_END]: {} },
-      SEASON_START,
-      SEASON_END
-    );
-    expect(set.size).toBe(2);
-  });
-
-  it('returns an empty set for a missing cache', () => {
-    expect(core.selectableDates(null, SEASON_START, SEASON_END).size).toBe(0);
-    expect(core.selectableDates(undefined, SEASON_START, SEASON_END).size).toBe(0);
+  it('falls back when the cache is missing or has no usable key', () => {
+    expect(core.earliestKnownDate(null, SEASON_START)).toBe(SEASON_START);
+    expect(core.earliestKnownDate({}, SEASON_START)).toBe(SEASON_START);
+    expect(core.earliestKnownDate({ nonsense: {} }, SEASON_START)).toBe(SEASON_START);
   });
 });
 
 describe('buildMonthGrid', () => {
   const grid = (monthKey, opts) => core.buildMonthGrid(monthKey, opts || {});
 
-  it('returns whole weeks', () => {
-    for (const month of ['2025-11', '2025-12', '2026-01', '2026-02', '2026-04']) {
-      expect(grid(month).length % 7).toBe(0);
+  it('is always six weeks, whatever the month needs', () => {
+    // Constant height: the panel is bottom-anchored, so a five-row month
+    // next to a six-row one moved the popup's top edge on every step.
+    // February 2026 is the extreme — 28 days starting on a Sunday.
+    for (const month of ['2025-11', '2025-12', '2026-01', '2026-02', '2026-04', '2024-02']) {
+      expect(grid(month).length, month).toBe(42);
     }
+  });
+
+  it('never needs a seventh week, even in the worst case', () => {
+    // A 31-day month starting on a Sunday: six leading blanks + 31 days.
+    // March 2025 starts on a Saturday; August 2026 starts on a Saturday.
+    // 2026-03 starts on a Sunday and has 31 days — the maximum.
+    const cells = grid('2026-03');
+    expect(dayKeys(cells).length).toBe(31);
+    expect(cells.length).toBe(42);
+    expect(cells[cells.length - 1].blank).toBe(true);
   });
 
   it('holds every day of the month, in order', () => {
@@ -160,38 +180,65 @@ describe('buildMonthGrid', () => {
     expect(grid('2025-12')[0].dateKey).toBe('2025-12-01');
   });
 
-  it('pads the last row out to a full week', () => {
+  it('pads the tail with blanks', () => {
     const cells = grid('2026-02');
     expect(cells[cells.length - 1].blank).toBe(true);
   });
 
-  it('marks days outside the season window unselectable', () => {
-    const cells = grid('2025-11', { seasonStart: SEASON_START, seasonEnd: SEASON_END });
-    expect(cellFor(cells, '2025-11-11').selectable).toBe(false);
-    expect(cellFor(cells, '2025-11-12').selectable).toBe(true);
+  it('refuses the future, and only the future', () => {
+    const cells = grid('2026-09', { min: RANGE_MIN, max: TODAY });
+    expect(cellFor(cells, '2026-09-02').selectable).toBe(true);
+    expect(cellFor(cells, '2026-09-03').selectable).toBe(false);
+    expect(cellFor(cells, '2026-09-30').selectable).toBe(false);
   });
 
-  it('marks days after the season end unselectable', () => {
-    const cells = grid('2026-04', { seasonStart: SEASON_START, seasonEnd: SEASON_END });
-    expect(cellFor(cells, '2026-04-20').selectable).toBe(true);
-    expect(cellFor(cells, '2026-04-21').selectable).toBe(false);
-  });
-
-  it('marks in-season days with no data unselectable', () => {
-    // The whole point of the control: a day the map cannot paint must not
-    // be offerable, or the click lands silently somewhere else.
-    const cells = grid('2026-01', {
+  it('offers days outside the season, because the map has weather for them', () => {
+    // The season ended in April; these are June days. Refusing them was the
+    // bug — a picker fenced to the season cannot reach a day the weather
+    // layer can answer for.
+    const cells = grid('2026-06', {
+      min: RANGE_MIN,
+      max: TODAY,
       seasonStart: SEASON_START,
       seasonEnd: SEASON_END,
-      available: new Set(['2026-01-05']),
     });
-    expect(cellFor(cells, '2026-01-05').selectable).toBe(true);
-    expect(cellFor(cells, '2026-01-06').selectable).toBe(false);
+    const days = cells.filter((c) => !c.blank);
+    expect(days.every((c) => c.selectable)).toBe(true);
+    expect(days.every((c) => !c.inSeason)).toBe(true);
   });
 
-  it('treats an absent data set as "do not filter"', () => {
-    const cells = grid('2026-01', { seasonStart: SEASON_START, seasonEnd: SEASON_END });
-    expect(cells.filter((c) => !c.blank).every((c) => c.selectable)).toBe(true);
+  it('offers in-season days with no bulletin', () => {
+    // A gap in the archive is a day with no choropleth, not a day the map
+    // cannot show. It loses its dot, not its click.
+    const cells = grid('2026-01', {
+      min: RANGE_MIN,
+      max: TODAY,
+      seasonStart: SEASON_START,
+      seasonEnd: SEASON_END,
+      rated: new Set(['2026-01-05']),
+    });
+    expect(cellFor(cells, '2026-01-05').hasRatings).toBe(true);
+    expect(cellFor(cells, '2026-01-06').hasRatings).toBe(false);
+    expect(cellFor(cells, '2026-01-06').selectable).toBe(true);
+  });
+
+  it('marks the season boundary days as in-season and the ones outside as not', () => {
+    const cells = grid('2025-11', { seasonStart: SEASON_START, seasonEnd: SEASON_END });
+    expect(cellFor(cells, '2025-11-11').inSeason).toBe(false);
+    expect(cellFor(cells, '2025-11-12').inSeason).toBe(true);
+
+    const april = grid('2026-04', { seasonStart: SEASON_START, seasonEnd: SEASON_END });
+    expect(cellFor(april, '2026-04-20').inSeason).toBe(true);
+    expect(cellFor(april, '2026-04-21').inSeason).toBe(false);
+  });
+
+  it('reports no ratings at all when the cache has not resolved', () => {
+    const cells = grid('2026-01', { min: RANGE_MIN, max: TODAY });
+    const days = cells.filter((c) => !c.blank);
+    expect(days.every((c) => !c.hasRatings)).toBe(true);
+    // …and every one of them is still selectable. The dots are decoration;
+    // losing the fetch must not lock the picker.
+    expect(days.every((c) => c.selectable)).toBe(true);
   });
 
   it('marks the selected day and today, and only those', () => {

@@ -10,7 +10,10 @@ skip-to-end, calendar.
 
 The calendar is the odd one out and is placed last for that reason: the four
 transport controls move you ALONG the season, it jumps you to a named day
-(SNOW-792).
+(SNOW-792). Its tap target belongs here, with the other date affordances —
+the surface it opens does not, and sits in the bottom-right overlay slot with
+the favourites, observations and routes panels
+(public/partials/_map_calendar.html).
 
 Context expected:
 * today        — a date (used to label the floating date pill).
@@ -150,24 +153,27 @@ the season. Falls back to data-season-end before cache.
 </button>
 
 {% comment %}
-Calendar transport button (SNOW-792) — opens the month-grid date picker
-above the pill. Last in the row, after the transport pair, because it is
-not a transport step: the other four move you along the season, this one
-jumps you to a named day. Carries .scrubber-transport-button so the
-existing data-state="loading"/"error" rules hide it with the rest — it
-must not be tappable before the season-ratings data that decides which
-days are selectable has arrived.
+Calendar button (SNOW-792) — opens the month grid that jumps the map to a
+chosen day. Last in the row, after the transport pair, because it is not a
+transport step: the other four move you along the season, this one jumps you
+to a named day.
 
-The popup itself is public/partials/_scrubber_calendar.html, included by
-_map_embed.html as a sibling of this row inside #season-scrubber.
+Carries .scrubber-transport-button so the existing data-state="loading" and
+"error" rules hide it with the rest — it must not be tappable before the
+season data behind it has arrived.
+
+The surface it opens is public/partials/_map_calendar.html, which is NOT a
+sibling of this row: it is a bottom-right overlay positioned alongside the
+favourites, observations and routes panels, so every panel over the map
+appears in the same place regardless of which control opened it.
 {% endcomment %}
 <button
-    id="scrubber-calendar-toggle"
+    id="map-calendar-toggle"
     type="button"
-    class="scrubber-transport-button scrubber-calendar-toggle"
+    class="scrubber-transport-button scrubber-skip"
     aria-label='{% trans "Jump to a date" %}'
     aria-expanded="false"
-    aria-controls="scrubber-calendar"
+    aria-controls="map-calendar"
 >
     <svg
         width="14"

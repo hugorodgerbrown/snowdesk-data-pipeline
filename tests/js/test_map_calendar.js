@@ -1,6 +1,5 @@
 /*
- * tests/js/test_map_scrubber_calendar.js — the scrubber's calendar popup
- * (SNOW-792).
+ * tests/js/test_map_calendar.js — the map's date picker (SNOW-792).
  *
  * The grid maths is covered in `test_calendar_core.js`; this is the DOM
  * half — what the popup renders, what it refuses to offer, and the one
@@ -12,7 +11,7 @@
  * the chosen day actually lives (SNOW-660), and a picker that renders a
  * selection without moving it would look right and do nothing.
  *
- * `map_scrubber.js` and `map_scrubber_calendar.js` are loaded on their own
+ * `map_scrubber.js` and `map_calendar.js` are loaded on their own
  * rather than through the whole bundle — every cross-file binding they read
  * is stubbed below, which makes what these two surfaces actually depend on
  * legible (the idiom is `test_map_scrubber_no_boot_snap.js`'s).
@@ -28,11 +27,14 @@ import '../../static/js/calendar_core.js';
 // so both boundary months are half outside the window.
 const SEASON_START = '2026-01-05';
 const SEASON_END = '2026-03-20';
-const TODAY = '2026-02-10';
-const TODAY_PCT = 50;
+// Today is TWO MONTHS PAST the season end — the off-season case, which is
+// when the map has only weather to show and when a picker fenced to the
+// season could not reach the day the visitor is actually looking at.
+const TODAY = '2026-05-14';
+const TODAY_PCT = 100;
 
-// February has a gap in it: the 12th carries no ratings, so the map cannot
-// paint it and the calendar must not offer it.
+// February has a gap in it: the 12th carries no ratings. It stays
+// selectable — it just loses its dot.
 const RATED = ['2026-01-05', '2026-02-10', '2026-02-11', '2026-02-13', '2026-03-20'];
 const RATINGS = Object.fromEntries(RATED.map((d) => [d, { 'CH-4115': 2 }]));
 
@@ -53,21 +55,21 @@ function buildFixture() {
         <div class="season-scrubber-thumb"></div>
       </div>
       <div class="season-scrubber-loading"></div>
-      <button id="scrubber-calendar-toggle" aria-expanded="false"></button>
-      <div id="scrubber-calendar"
+      <button id="map-calendar-toggle" aria-expanded="false"></button>
+    </div>
+    <div id="map-calendar"
            data-state="closed"
            data-season-start="${SEASON_START}"
            data-season-end="${SEASON_END}"
            data-today="${TODAY}"
            data-months="${MONTHS.join('|')}"
            hidden>
-        <div class="scrubber-calendar-header">
-          <button id="scrubber-calendar-prev"></button>
-          <span id="scrubber-calendar-month"></span>
-          <button id="scrubber-calendar-next"></button>
+        <div class="map-calendar-header">
+          <button id="map-calendar-prev"></button>
+          <span id="map-calendar-month"></span>
+          <button id="map-calendar-next"></button>
         </div>
-        <div id="scrubber-calendar-grid"></div>
-      </div>
+        <div id="map-calendar-grid"></div>
     </div>`;
   const track = document.querySelector('.season-scrubber-track');
   track.getBoundingClientRect = () => ({
@@ -114,20 +116,20 @@ async function loadCalendar() {
 
   vi.resetModules();
   await import('../../static/js/map_scrubber.js');
-  await import('../../static/js/map_scrubber_calendar.js');
+  await import('../../static/js/map_calendar.js');
   // Both modules resolve the ratings fetch in a microtask.
   await new Promise((r) => setTimeout(r, 20));
-  return { registered: registry['scrubber-calendar'], commits };
+  return { registered: registry['map-calendar'], commits };
 }
 
 /** Open the popup by pressing its toggle. */
 function openPopup() {
-  document.getElementById('scrubber-calendar-toggle').click();
+  document.getElementById('map-calendar-toggle').click();
 }
 
 /** Every day button currently in the grid. */
 function dayButtons() {
-  return [...document.querySelectorAll('#scrubber-calendar-grid button[data-date]')];
+  return [...document.querySelectorAll('#map-calendar-grid button[data-date]')];
 }
 
 /** The day button for one date key, or undefined. */
@@ -137,7 +139,7 @@ function dayButton(dateKey) {
 
 /** The header's month label. */
 function monthLabel() {
-  return document.getElementById('scrubber-calendar-month').textContent;
+  return document.getElementById('map-calendar-month').textContent;
 }
 
 beforeEach(() => {
@@ -162,7 +164,7 @@ describe('opening and closing', () => {
   it('starts shut', async () => {
     await loadCalendar();
 
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(true);
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
   });
 
   it('opens on the toggle and reports it on the toggle', async () => {
@@ -170,8 +172,8 @@ describe('opening and closing', () => {
 
     openPopup();
 
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(false);
-    expect(document.getElementById('scrubber-calendar-toggle').getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById('map-calendar').hidden).toBe(false);
+    expect(document.getElementById('map-calendar-toggle').getAttribute('aria-expanded')).toBe('true');
   });
 
   it('closes on a second press', async () => {
@@ -180,20 +182,20 @@ describe('opening and closing', () => {
     openPopup();
     openPopup();
 
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(true);
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
   });
 
   it('closes on a click away, but not on a click inside it', async () => {
     await loadCalendar();
     openPopup();
 
-    document.getElementById('scrubber-calendar-month').dispatchEvent(
+    document.getElementById('map-calendar-month').dispatchEvent(
       new MouseEvent('click', { bubbles: true })
     );
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(false);
+    expect(document.getElementById('map-calendar').hidden).toBe(false);
 
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(true);
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
   });
 
   it('closes on Escape', async () => {
@@ -202,22 +204,7 @@ describe('opening and closing', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(true);
-  });
-
-  it('lifts the pill while it is open, so it clears the bottom-right stack', async () => {
-    // The popup is a child of #season-scrubber and cannot escape its
-    // stacking context; the CSS keys off this attribute. Asserted here
-    // because the symptom of losing it — a popup drawn UNDER the roundels —
-    // is invisible to every other test in this file.
-    await loadCalendar();
-    const scrubber = document.getElementById('season-scrubber');
-
-    openPopup();
-    expect(scrubber.dataset.calendar).toBe('open');
-
-    openPopup();
-    expect(scrubber.dataset.calendar).toBeUndefined();
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
   });
 
   it('registers with the map-overlay registry', async () => {
@@ -228,7 +215,7 @@ describe('opening and closing', () => {
     openPopup();
     expect(registered.isOpen()).toBe(true);
     registered.close();
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(true);
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
   });
 
   it('announces itself to the registry before it is revealed', async () => {
@@ -236,17 +223,19 @@ describe('opening and closing', () => {
 
     openPopup();
 
-    expect(window.pwaMapOverlays.opening).toHaveBeenCalledWith('scrubber-calendar');
+    expect(window.pwaMapOverlays.opening).toHaveBeenCalledWith('map-calendar');
   });
 });
 
 describe('the month it opens on', () => {
   it("opens on today's month when no day has been chosen", async () => {
+    // Today is out of season, and it still opens there — the picker's home
+    // is the present, not the last month a bulletin was issued in.
     await loadCalendar();
 
     openPopup();
 
-    expect(monthLabel()).toBe('February 2026');
+    expect(monthLabel()).toBe('May 2026');
   });
 
   it('opens on the month of the day currently showing', async () => {
@@ -270,56 +259,109 @@ describe('the month it opens on', () => {
 });
 
 describe('which days it offers', () => {
-  it('disables an in-season day the ratings cache has no frame for', async () => {
-    // The imprecision this control exists to fix: a click that lands on a
-    // day the map cannot paint would silently end up somewhere else.
+  it('refuses the future, and only the future', async () => {
+    // The one hard stop: nothing on the map can answer for a day that has
+    // not happened.
     await loadCalendar();
     openPopup();
 
-    expect(dayButton('2026-02-11').disabled).toBe(false);
-    expect(dayButton('2026-02-12').disabled).toBe(true);
+    expect(dayButton(TODAY).disabled).toBe(false);
+    expect(dayButton('2026-05-15').disabled).toBe(true);
+    expect(dayButton('2026-05-31').disabled).toBe(true);
   });
 
-  it('disables the days before the season starts in its first month', async () => {
-    history.replaceState(null, '', '/?d=2026-01-05');
+  it('offers days outside the season, because the map has weather for them', async () => {
+    // April is past the season end and before today. Every day in it is
+    // pickable, and none of them is marked in-season.
+    history.replaceState(null, '', '/?d=2026-03-20');
+    await loadCalendar();
+    openPopup();
+    document.getElementById('map-calendar-next').click();
+
+    expect(monthLabel()).toBe('April 2026');
+    const days = dayButtons();
+    expect(days.length).toBe(30);
+    expect(days.every((b) => !b.disabled)).toBe(true);
+    expect(days.every((b) => !b.classList.contains('in-season'))).toBe(true);
+  });
+
+  it('offers an in-season day with no bulletin, marking only the ones that have one', async () => {
+    // A gap in the archive costs the day its dot, not its click.
+    history.replaceState(null, '', '/?d=2026-02-11');
     await loadCalendar();
     openPopup();
 
-    expect(dayButton('2026-01-04').disabled).toBe(true);
-    expect(dayButton('2026-01-05').disabled).toBe(false);
+    expect(dayButton('2026-02-12').disabled).toBe(false);
+    expect(dayButton('2026-02-12').classList.contains('has-ratings')).toBe(false);
+    expect(dayButton('2026-02-11').classList.contains('has-ratings')).toBe(true);
+  });
+
+  it('highlights the season without fencing it', async () => {
+    // The season closes on 20 March. The 21st loses the highlight and keeps
+    // the click — which is the whole distinction between the two.
+    //
+    // Asserted at the season's END rather than its start because the paging
+    // floor and the season start coincide in this fixture, so the day before
+    // the season is out of RANGE and would prove nothing about the season.
+    history.replaceState(null, '', '/?d=2026-03-20');
+    await loadCalendar();
+    openPopup();
+
+    expect(dayButton('2026-03-20').classList.contains('in-season')).toBe(true);
+    expect(dayButton('2026-03-21').classList.contains('in-season')).toBe(false);
+    expect(dayButton('2026-03-21').disabled).toBe(false);
   });
 });
 
 describe('month navigation', () => {
   it('steps back and forward', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
     await loadCalendar();
     openPopup();
 
-    document.getElementById('scrubber-calendar-prev').click();
+    document.getElementById('map-calendar-prev').click();
     expect(monthLabel()).toBe('January 2026');
 
-    document.getElementById('scrubber-calendar-next').click();
+    document.getElementById('map-calendar-next').click();
     expect(monthLabel()).toBe('February 2026');
   });
 
-  it('stops at the season bounds rather than walking into an empty month', async () => {
+  it('reaches every month between the season end and today', async () => {
+    // The season ends in March and today is in May. April is the month a
+    // season-fenced picker could not reach at all.
+    history.replaceState(null, '', '/?d=2026-01-05');
     await loadCalendar();
     openPopup();
 
-    document.getElementById('scrubber-calendar-prev').click();
-    expect(document.getElementById('scrubber-calendar-prev').disabled).toBe(true);
-    document.getElementById('scrubber-calendar-prev').click();
-    expect(monthLabel()).toBe('January 2026');
+    const seen = [monthLabel()];
+    for (let i = 0; i < 4; i++) {
+      document.getElementById('map-calendar-next').click();
+      seen.push(monthLabel());
+    }
+    expect(seen).toEqual([
+      'January 2026', 'February 2026', 'March 2026', 'April 2026', 'May 2026',
+    ]);
+  });
 
-    document.getElementById('scrubber-calendar-next').click();
-    document.getElementById('scrubber-calendar-next').click();
-    expect(monthLabel()).toBe('March 2026');
-    expect(document.getElementById('scrubber-calendar-next').disabled).toBe(true);
+  it('stops at today going forward and at the archive floor going back', async () => {
+    await loadCalendar();
+    openPopup();
+
+    // Opens on today's month, so forward is already spent.
+    expect(document.getElementById('map-calendar-next').disabled).toBe(true);
+    document.getElementById('map-calendar-next').click();
+    expect(monthLabel()).toBe('May 2026');
+
+    // The floor is the earliest rated day (2026-01-05), not the year dot.
+    for (let i = 0; i < 6; i++) document.getElementById('map-calendar-prev').click();
+    expect(monthLabel()).toBe('January 2026');
+    expect(document.getElementById('map-calendar-prev').disabled).toBe(true);
   });
 });
 
 describe('picking a day', () => {
   it('commits it through the scrubber, so the URL and the paint move together', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
     const { commits } = await loadCalendar();
     openPopup();
 
@@ -334,9 +376,9 @@ describe('picking a day', () => {
   });
 
   it('moves the scrubber thumb to the day it picked', async () => {
+    history.replaceState(null, '', '/?d=2026-01-20');
     await loadCalendar();
     openPopup();
-    document.getElementById('scrubber-calendar-prev').click();
 
     dayButton('2026-01-05').click();
 
@@ -345,30 +387,46 @@ describe('picking a day', () => {
   });
 
   it('closes once a day is picked', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
     await loadCalendar();
     openPopup();
 
     dayButton('2026-02-13').click();
 
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(true);
+    expect(document.getElementById('map-calendar').hidden).toBe(true);
   });
 
-  it('does nothing when the day cannot be painted', async () => {
+  it('does nothing when the day is in the future', async () => {
     const { commits } = await loadCalendar();
     openPopup();
 
-    dayButton('2026-02-12').click();
+    dayButton('2026-05-20').click();
 
     // Nothing at all was announced — a disabled day dispatches no event, so
     // the stale-instance caveat above does not apply here.
     expect(commits).toEqual([]);
     expect(location.search).toBe('');
-    expect(document.getElementById('scrubber-calendar').hidden).toBe(false);
+    expect(document.getElementById('map-calendar').hidden).toBe(false);
+  });
+
+  it('commits a day outside the season, thumb clamped to the track end', async () => {
+    // The scrubber's guard on the season window is gone: an out-of-season
+    // date parks the thumb at whichever end it is past, which is the honest
+    // reading of "the season ran out" rather than a refusal.
+    const { commits } = await loadCalendar();
+    openPopup();
+
+    dayButton('2026-05-01').click();
+
+    expect(commits.at(-1).date).toBe('2026-05-01');
+    expect(location.search).toBe('?d=2026-05-01');
+    expect(document.querySelector('.season-scrubber-thumb').style.left).toBe('100%');
   });
 });
 
 describe('the date moving underneath it', () => {
   it('follows a scrub while open, so the marker never lies', async () => {
+    history.replaceState(null, '', '/?d=2026-02-10');
     await loadCalendar();
     openPopup();
 

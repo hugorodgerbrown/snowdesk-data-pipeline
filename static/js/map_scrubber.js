@@ -315,7 +315,7 @@
 
   // ---- SNOW-792: jump to a date chosen elsewhere ----
   //
-  // The calendar popup (static/js/map_scrubber_calendar.js) picks a day and
+  // The calendar popup (static/js/map_calendar.js) picks a day and
   // dispatches it here rather than committing it, so ``commitDate`` above
   // stays the one place a date is applied — repaint, ``?d=`` write and
   // ``snowdesk:date-changed`` all happen exactly as they do for a drag
@@ -327,12 +327,16 @@
   // listener with no dispatcher). It is the right name for this, and
   // reviving it is cheaper than inventing a second one that means the same.
   //
-  // Guarded on the season window: a date outside it has no thumb position,
-  // so committing it would put the thumb at a clamped percentage that no
-  // longer matches the date the URL then claims.
+  // NOT guarded on the season window. The picker reaches every day up to
+  // today, season or not, because the map carries weather as well as
+  // bulletins and September has an answer even though no bulletin covers
+  // it. An out-of-season date parks the thumb at whichever end of the track
+  // it is past — `dateKeyToPct` clamps to [0, 100] — which is the honest
+  // reading of "the season ran out", not a mismatch to hide by refusing the
+  // date. The ribbon and the choropleth report the same thing: no ratings.
   document.addEventListener('snowdesk:scrub-to', (e) => {
     const dateKey = e.detail && e.detail.date;
-    if (!dateKey || !isInSeason(dateKey)) return;
+    if (!dateKey) return;
     commitDate(dateKey);
   });
 

@@ -1,15 +1,32 @@
 /*
- * static/js/map_scrubber_calendar.js — the scrubber's month-grid date picker
- * (SNOW-792).
+ * static/js/map_calendar.js — the map's date picker (SNOW-792).
  *
  * The DOM half of the control; the maths is in calendar_core.js
  * (window.pwaCalendarCore), which is where the grid construction, the month
- * clamping and the selectable-day derivation are unit-tested.
+ * clamping and the range derivation are unit-tested.
  *
  * Loads AFTER map_scrubber.js — document order is execution order for
  * deferred classic scripts — because the ``snowdesk:scrub-to`` listener it
  * dispatches into is bound there. Shared helpers (``getSeasonRatings``,
  * ``readUrlDateParam``) come from static/js/map_shared.js.
+ *
+ * ## The button and the panel live in different places, on purpose
+ *
+ * The tap target is a sixth control in the season-scrubber row, with the
+ * other date affordances — that is where a visitor already is when they
+ * want a different day.
+ *
+ * The panel is not next to it. It opens in the bottom-right overlay slot,
+ * with the same geometry as the favourites, observations and routes
+ * sheets, so every panel over the map appears in one place whichever
+ * control opened it. That means it is ``position: fixed`` and rendered at
+ * top level rather than inside the scrubber — a fixed element is still
+ * confined by any ancestor that creates a stacking context — and it is
+ * handed to ``window.pwaOverlayBounds.positionSheet`` on open, the same
+ * call ``map_sheet.js`` and ``map_downloads_manager.js`` make, which
+ * measures the room the scrubber and the roundel column leave. Below the
+ * ``sm`` breakpoint that call deliberately writes nothing and the panel
+ * docks to the bottom edge, exactly as the sheets do.
  *
  * ## It has no commit path of its own
  *
@@ -24,30 +41,23 @@
  * stopped carrying click handlers when they moved into the scrubber track,
  * so the listener had no dispatcher left. This gives it one.
  *
- * ## Which days are selectable
+ * ## What it offers, and what it refuses
  *
- * The same season-ratings payload the scrubber snaps releases to. A day the
- * cache has no frame for cannot be painted, so offering it would be
- * offering a click that silently lands somewhere else — which is the
- * imprecision this control exists to fix. Days outside the season window
- * are disabled by the same rule.
+ * Every day from the earliest the site holds data for up to TODAY. The
+ * future is the only hard stop: nothing on the map can answer for a day
+ * that has not happened.
  *
- * The toggle carries ``.scrubber-transport-button``, whose existing
- * ``data-state="loading"`` rule hides it along with the transport controls,
- * so the button cannot be pressed before the data behind it has arrived.
- *
- * ## Stacking
- *
- * The popup is a child of #season-scrubber (z-index 2) but has to draw over
- * the bottom-right control stack (z-index 4), which sits exactly where a
- * popup opening upward from this pill lands. A child cannot escape its
- * parent's stacking context, so the OPEN state is mirrored onto the pill as
- * ``data-calendar="open"`` and the CSS lifts the whole pill while it holds.
+ * The avalanche season is a highlight inside that range, not a fence around
+ * it. An earlier draft refused every day outside it, which was wrong the
+ * moment the map grew a weather layer — weather has an answer for a day in
+ * September, and the picker could not reach it. Days carrying a danger
+ * rating get a second, quieter mark, so the grid still shows where the
+ * bulletins are without making that the price of admission.
  */
 
-(function scrubberCalendarInit() {
-  const root = document.getElementById('scrubber-calendar');
-  const toggle = document.getElementById('scrubber-calendar-toggle');
+(function mapCalendarInit() {
+  const root = document.getElementById('map-calendar');
+  const toggle = document.getElementById('map-calendar-toggle');
   if (!root || !toggle) return;
 
   const core = window.pwaCalendarCore;
@@ -58,11 +68,10 @@
   // scrubber is untouched and remains the way to change the date.
   if (!core) return;
 
-  const scrubber = document.getElementById('season-scrubber');
-  const grid = document.getElementById('scrubber-calendar-grid');
-  const monthLabel = document.getElementById('scrubber-calendar-month');
-  const prevButton = document.getElementById('scrubber-calendar-prev');
-  const nextButton = document.getElementById('scrubber-calendar-next');
+  const grid = document.getElementById('map-calendar-grid');
+  const monthLabel = document.getElementById('map-calendar-month');
+  const prevButton = document.getElementById('map-calendar-prev');
+  const nextButton = document.getElementById('map-calendar-next');
 
   const seasonStart = root.dataset.seasonStart || '';
   const seasonEnd = root.dataset.seasonEnd || '';
@@ -71,28 +80,32 @@
   // travel as one pipe-separated attribute rather than twelve.
   const MONTH_NAMES = (root.dataset.months || '').split('|');
 
-  const OVERLAY_NAME = 'scrubber-calendar';
+  const OVERLAY_NAME = 'map-calendar';
 
-  const firstMonth = core.monthKeyOf(seasonStart);
-  const lastMonth = core.monthKeyOf(seasonEnd);
+  // The reachable range. The ceiling is fixed at today and never moves; the
+  // floor starts at the season and drops to the archive's first day once
+  // the ratings fetch resolves, so paging back is bounded by real data
+  // rather than by an arbitrary constant.
+  const maxKey = todayKey;
+  let minKey = seasonStart;
 
-  // The set of days carrying ratings, once the season fetch resolves.
-  // ``null`` until then, which buildMonthGrid reads as "no data set to
-  // filter by" — but the toggle is hidden while the scrubber is loading,
-  // so the popup cannot actually be opened in that state.
-  let available = null;
-  let visibleMonth = firstMonth;
+  // Days carrying a danger rating — the quieter of the two marks. Empty
+  // until the fetch resolves, which only costs the grid its dots.
+  let rated = null;
+  let visibleMonth = core.clampMonthKey(core.monthKeyOf(todayKey), minKey, maxKey);
 
   getSeasonRatings()
     .then((data) => {
-      available = core.selectableDates(data, seasonStart, seasonEnd);
+      rated = new Set(Object.keys(data || {}));
+      minKey = core.earliestKnownDate(data, seasonStart);
       if (isOpen()) render();
     })
     .catch(() => {
-      // The scrubber shows the failure in its own loading strip and the
-      // data-state="error" rule hides this toggle with the rest, so there
-      // is nothing for this module to say that would not be a second copy
-      // of the same message.
+      // The picker still works without ratings: every day up to today stays
+      // selectable, the season highlight is server-rendered data, and only
+      // the rated-day marks and the paging floor are lost. The scrubber
+      // reports the fetch failure in its own loading strip, so saying it
+      // again here would be a second copy of one message.
     });
 
   /** @returns {boolean} Whether the popup is on screen. */
@@ -121,22 +134,26 @@
    * @returns {void}
    */
   function render() {
-    const selected = currentDateKey();
     const cells = core.buildMonthGrid(visibleMonth, {
-      available: available,
+      min: minKey,
+      max: maxKey,
+      rated: rated,
       seasonStart: seasonStart,
       seasonEnd: seasonEnd,
-      selected: selected,
+      selected: currentDateKey(),
       today: todayKey,
     });
 
     const monthIndex = parseInt(visibleMonth.slice(5, 7), 10) - 1;
     const monthName = MONTH_NAMES[monthIndex] || '';
-    monthLabel.textContent = monthName + ' ' + visibleMonth.slice(0, 4);
+    const year = visibleMonth.slice(0, 4);
+    monthLabel.textContent = monthName + ' ' + year;
 
-    // Both steps are disabled rather than hidden at the season bounds: a
+    // Both steps are disabled rather than hidden at the range bounds: a
     // control that vanishes at an edge moves the two beside it, and the
-    // header would reflow every time the visitor reached November.
+    // header would reflow every time the visitor reached the current month.
+    const firstMonth = core.monthKeyOf(minKey);
+    const lastMonth = core.monthKeyOf(maxKey);
     prevButton.disabled = !firstMonth || visibleMonth <= firstMonth;
     nextButton.disabled = !lastMonth || visibleMonth >= lastMonth;
 
@@ -144,21 +161,25 @@
     for (const cell of cells) {
       if (cell.blank) {
         const filler = document.createElement('span');
-        filler.className = 'scrubber-calendar-day is-blank';
+        filler.className = 'map-calendar-day is-blank';
         grid.appendChild(filler);
         continue;
       }
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'scrubber-calendar-day';
+      button.className = 'map-calendar-day';
       button.textContent = String(cell.day);
       button.dataset.date = cell.dateKey;
       // The visible text is a bare number, so the accessible name has to
       // carry the month and year or every cell in the grid announces as
       // "16". Composed from the server's own month names — no English
       // literal reaches the DOM (docs/i18n.md).
-      button.setAttribute('aria-label', cell.day + ' ' + monthName + ' ' + visibleMonth.slice(0, 4));
+      button.setAttribute('aria-label', cell.day + ' ' + monthName + ' ' + year);
       if (!cell.selectable) button.disabled = true;
+      // Two marks, two meanings: the season band says "bulletins run here",
+      // the rated dot says "this day has one". Neither gates the click.
+      if (cell.inSeason) button.classList.add('in-season');
+      if (cell.hasRatings) button.classList.add('has-ratings');
       if (cell.selected) {
         button.classList.add('is-selected');
         button.setAttribute('aria-current', 'date');
@@ -169,7 +190,7 @@
   }
 
   /**
-   * Reflect the open/closed state onto the popup, the toggle and the pill.
+   * Reflect the open/closed state onto the popup and the roundel.
    *
    * @param {boolean} open Whether the popup should be on screen.
    * @returns {void}
@@ -178,31 +199,27 @@
     root.dataset.state = open ? 'open' : 'closed';
     root.hidden = !open;
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    // See the stacking note in the header: the pill has to outrank the
-    // bottom-right control stack while this is up.
-    if (scrubber) {
-      if (open) scrubber.dataset.calendar = 'open';
-      else delete scrubber.dataset.calendar;
-    }
   }
 
   /**
    * Open the popup on the month holding the current date.
    *
-   * With no day chosen it opens on today's month, clamped into the season —
-   * out of season that is the last month with data rather than an empty
-   * August the visitor would have to page back out of.
+   * With no day chosen it opens on today's month — the top of the range,
+   * and the month a visitor is most likely to want.
    *
    * @returns {void}
    */
   function open() {
     const anchor = currentDateKey() || todayKey;
-    visibleMonth = core.clampMonthKey(core.monthKeyOf(anchor) || firstMonth, seasonStart, seasonEnd);
+    visibleMonth = core.clampMonthKey(core.monthKeyOf(anchor), minKey, maxKey);
     render();
     // Announced before the popup is revealed, so whatever it replaces is
     // gone by the time this is on screen.
     window.pwaMapOverlays?.opening(OVERLAY_NAME);
     setOpen(true);
+    // AFTER the reveal: positionSheet measures the element, and a `hidden`
+    // element measures zero. Same ordering as map_sheet.js's open().
+    window.pwaOverlayBounds?.positionSheet(root);
   }
 
   /** @returns {void} */
@@ -220,17 +237,13 @@
   });
 
   /**
-   * Step the visible month, staying inside the season window.
+   * Step the visible month, staying inside the reachable range.
    *
    * @param {number} delta Months to move; negative goes back.
    * @returns {void}
    */
   function step(delta) {
-    const next = core.clampMonthKey(
-      core.shiftMonth(visibleMonth, delta),
-      seasonStart,
-      seasonEnd
-    );
+    const next = core.clampMonthKey(core.shiftMonth(visibleMonth, delta), minKey, maxKey);
     if (!next || next === visibleMonth) return;
     visibleMonth = next;
     render();
