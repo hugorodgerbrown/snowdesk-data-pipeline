@@ -1024,6 +1024,18 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
+    /* The container must not swallow map clicks. Setting `right` above turned
+       this from a content-width row into a box the width of the map — 828px
+       by 112px on a 900px viewport — sitting over the bottom-left of the
+       canvas. Every tap in that strip hit this element instead of MapLibre:
+       three e2e tests (region select, weather icons, the favourite add flow)
+       failed on it, and they were right to.
+
+       The controls take their events back individually below. #map-date-row
+       needs the same treatment for the same reason — it is `align-self:
+       stretch`, so it spans the full width even when the scrubber that
+       normally fills it is not rendered. */
+    pointer-events: none;
     /* SNOW-645 review: held as a custom property so .map-legend-card's own
        max-height, below, can reuse the exact figure this element is
        already offset from the viewport bottom by, plus the card's own
@@ -1162,6 +1174,31 @@
     box-shadow:
         0 0 0 3px var(--color-card),
         0 0 0 4.5px var(--color-text-2);
+}
+
+/* The stack's controls take their pointer events back — see the
+   `pointer-events: none` on .map-legend above for why it is off there.
+
+   Listed by class rather than as a blanket `> *`, which was the first
+   attempt and was wrong twice over. `.map-legend > *:not(#map-date-row)`
+   scores (1,1,0) because `:not()` inherits its argument's specificity, so
+   it beat `.map-legend-card`'s own `pointer-events: none` and re-armed the
+   CLOSED legend card — an invisible panel swallowing clicks over a third of
+   the map, the same defect being fixed here, moved somewhere subtler.
+
+   So the two panels are left out entirely. Each already owns its own
+   answer: the card is `none` closed and `auto` under
+   `[data-state="expanded"]`, and #map-calendar is `hidden` when shut. */
+.map-legend > .map-legend-toggle,
+#map-date-row > * {
+    pointer-events: auto;
+}
+
+/* Stretched to the stack's full width, so it spans the map even when the
+   scrubber that normally fills it is not rendered. Its children above take
+   their own events back. */
+#map-date-row {
+    pointer-events: none;
 }
 
 /* SNOW-794: the stack's bottom line — the date control, and the season
