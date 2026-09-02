@@ -262,6 +262,31 @@ would report the omission. So it dispatches `release.yml` explicitly.
 `release.yml` keeps its `push:` trigger for a human pushing `release` by hand;
 only one of the two paths runs for any given release.
 
+### Why the release PR runs no tests
+
+A release PR's diff is one line of `VERSION`, on a tree `main` has already
+been tested on. Without a gate the same code would be tested three times: on
+the push that merged the last feature PR, again on the release PR, and again
+on the push of the merged release commit.
+
+The middle run is the redundant one. The `Detect skippable diff` job in
+[`ci`](../.github/workflows/ci.yml), [`e2e`](../.github/workflows/e2e.yml),
+[`js`](../.github/workflows/js.yml),
+[`security-audit`](../.github/workflows/security-audit.yml) and
+[`lighthouse`](../.github/workflows/lighthouse.yml) treats a `VERSION`-only
+diff the way it already treats a docs-only one: the expensive jobs skip and
+report skipped check runs, which satisfies the "Main branch rules" ruleset
+exactly as it does for docs-only PRs today. A PR touching `VERSION` *and*
+anything else still runs the full suite — one non-ignored path in the diff is
+enough to set `code=true`.
+
+The other two runs both earn their place. `strict_required_status_checks_policy`
+is `false`, so a PR can merge without being current with `main`, which makes
+the push run the first test of the actually-merged state. And the push run on
+the merged release commit produces the check runs the "Release branch" ruleset
+reads when `release-sync.yml` advances `release` — skipping those would leave
+every production release gated on nothing.
+
 ### Why the sync waits by retrying the ref update
 
 The "Release branch" ruleset already names the contexts that gate a release.
