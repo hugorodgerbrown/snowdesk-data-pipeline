@@ -98,7 +98,7 @@ class TestMapScriptOrder:
         This is the assertion that stops that.
         """
         bundle = _map_bundle()
-        assert len(bundle) == 14, f"expected 14 bundle entries, parsed {bundle}"
+        assert len(bundle) == 15, f"expected 15 bundle entries, parsed {bundle}"
         assert BOOT_FILE in bundle
         assert DECLARATION_FILES <= set(bundle)
 

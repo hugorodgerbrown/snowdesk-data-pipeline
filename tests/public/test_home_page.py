@@ -30,7 +30,6 @@ Covers:
     auto-start on the homepage (SNOW-535).
   - A crossorigin <link rel="preconnect"> warms the active basemap's origin,
     and follows BASEMAP_ORIGIN rather than being hardcoded.
-  - #region-readout-action declares role="link" so its aria-label is not
     discarded while the anchor is still hrefless.
   - base.html preloads only the Latin DM Sans subset; the Latin-ext subset is
     left to unicode-range, which a preload would have bypassed.
@@ -480,10 +479,16 @@ class TestHomePageReadoutData:
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_region_readout_is_div_element(self) -> None:
-        """#region-readout is rendered as a <div> (info-only chip; SNOW-342).
+    def test_region_readout_is_a_disclosure_button(self) -> None:
+        """#region-readout is a <button> that discloses #region-panel (SNOW-801).
 
-        The bulletin link is the separate #region-readout-action roundel.
+        SNOW-342 made it a <div>: an info-only chip, with the bulletin link
+        split out into the separate #region-readout-action roundel. That
+        split survives — the roundel still goes straight to the bulletin —
+        but the chip itself is now the control that opens the region + date
+        panel, so it has to be a real button carrying the disclosure
+        attributes.
+
         Requires CH-4115 and a RegionDayRating row so the ribbon block renders.
         """
         region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
@@ -496,8 +501,16 @@ class TestHomePageReadoutData:
         client = Client()
         response = client.get(reverse("public:home"))
         content = response.content.decode()
-        assert '<div id="region-readout"' in content
-        assert 'id="region-readout-action"' in content
+        assert "<button" in content
+        assert 'id="region-readout"' in content
+        assert 'aria-expanded="false"' in content
+        assert 'aria-controls="region-panel"' in content
+        assert 'id="region-panel"' in content
+        # The view-bulletin roundel is gone: the panel carries an "Open
+        # bulletin" link, so the roundel was a second control to one
+        # destination. The download roundel beside it stays.
+        assert 'id="region-readout-action"' not in content
+        assert "map-download-control" in content
 
 
 @pytest.mark.django_db
@@ -962,54 +975,6 @@ class TestHomePageBasemapPreconnect:
             '<link rel="preconnect" href="https://vectortiles.geo.admin.ch" '
             "crossorigin>"
         ]
-
-
-@pytest.mark.django_db
-class TestHomePageReadoutActionRole:
-    """#region-readout-action states a role so its aria-label survives.
-
-    It ships without an href — map_season_ribbon.js sets one on the first
-    region selection — and an <a> with no href has no implicit role. ARIA
-    prohibits aria-label on a roleless element, so without role="link" the
-    label is discarded and the roundel announces itself as nothing.
-    """
-
-    @staticmethod
-    def _readout_action_markup() -> str:
-        """Render / with ribbon data and return the action anchor's open tag.
-
-        The ribbon — and so this anchor — is only rendered once CH-4115 has a
-        rating for the day, which is why the rows below are created first.
-        """
-        region = MicroRegionFactory.create(region_id="CH-4115")
-        bulletin = BulletinFactory.create()
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2026, 2, 17),
-            max_rating="high",
-            source_bulletin=bulletin,
-        )
-        client = Client(SERVER_NAME="localhost")
-        content = client.get(reverse("public:home")).content.decode()
-        anchor = re.search(r"<a[^>]*id=\"region-readout-action\"[^>]*>", content)
-        assert anchor is not None, "#region-readout-action was not rendered"
-        return anchor.group(0)
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    @freeze_time("2026-02-17")
-    def test_action_declares_the_link_role(self) -> None:
-        """The anchor carries role="link" in its hrefless initial state."""
-        assert 'role="link"' in self._readout_action_markup()
-
-    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    @freeze_time("2026-02-17")
-    def test_action_ships_disabled_and_labelled(self) -> None:
-        """The label and the disabled state travel together with the role."""
-        markup = self._readout_action_markup()
-        assert 'aria-label="View bulletin"' in markup
-        assert 'aria-disabled="true"' in markup
-        # No href yet: the role is what makes the label legal until JS sets one.
-        assert "href=" not in markup
 
 
 @pytest.mark.django_db

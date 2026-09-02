@@ -47,7 +47,6 @@ const DISMISSED_VALUE = 'seen';
 // 11 of the 13 steps stay active.
 const STEP_DEFS = [
   { target: '#region-readout', title: 'Status ribbon', body: 'Names the region selected and its danger for the day.' },
-  { target: '#region-readout-action', title: 'View bulletin', body: 'Click through to the bulletin detail page.' },
   { target: '#search-toggle', title: 'Find a region or resort', body: 'Search regions and resorts by name.' },
   { target: '#basemap-toggle', title: 'Basemap and layers', body: 'Switch base maps and toggle country outlines, region overlays and resorts.' },
   { target: '#locate-toggle', title: 'Locate me', body: 'Centre the map on your current position.' },

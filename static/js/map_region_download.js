@@ -51,7 +51,7 @@
 // state), independent of which overlay tiers (L1/L2) are toggled on.
 // SNOW-642: it is always VISIBLE, holding the inert 'no-region' state until
 // then. It used to be hidden until focus by the same CSS sibling rule as its
-// neighbour #region-readout-action (#region-readout.has-region ~ …), which
+// neighbour, the since-removed view-bulletin roundel, which
 // meant those two and the readout all disappeared together and the ribbon
 // header collapsed to an empty row. 'no-region' also covers the rarer case
 // of a focused region with no computed download summary

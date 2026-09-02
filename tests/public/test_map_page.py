@@ -889,34 +889,6 @@ def test_every_map_control_carries_the_shared_hover_affordance(
         assert "hover-affordance" in classes.split(), classes
 
 
-@pytest.mark.django_db
-@override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-@freeze_time("2026-02-17")
-def test_ribbon_action_carries_the_shared_hover_affordance() -> None:
-    """The ribbon's "view bulletin" roundel takes the same treatment.
-
-    It sits in the ribbon header beside the per-region download roundel, so
-    the two disagreeing on hover would be a new inconsistency in the very
-    row this ticket set out to make consistent. It renders only with a
-    focused region's season data, which is why it is not in the
-    parametrised sweep above.
-    """
-    region = MicroRegionFactory.create(region_id="CH-4115")
-    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 17))
-    client = Client()
-
-    content = client.get(reverse("public:home")).content.decode()
-
-    action = [
-        classes
-        for classes in _CLASS_ATTR_RE.findall(content)
-        if "region-readout-action" in classes.split()
-    ]
-    assert action, "the ribbon did not render — has its data gate changed?"
-    for classes in action:
-        assert "hover-affordance" in classes.split(), classes
-
-
 class _CollapsibleChildCounter(HTMLParser):
     """Count the direct element children of ``.map-controls-collapsible-inner``.
 

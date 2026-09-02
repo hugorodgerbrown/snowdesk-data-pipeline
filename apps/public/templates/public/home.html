@@ -343,6 +343,9 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_autozoom.js' %}"></script>
     <script defer src="{% static 'js/map_geolocate.js' %}"></script>
     <script defer src="{% static 'js/map_season_ribbon.js' %}"></script>
+    {# SNOW-801: the region + date panel the #region-readout chip discloses. #}
+    {# After map_season_ribbon.js, which owns the chip this hangs off.       #}
+    <script defer src="{% static 'js/map_region_panel.js' %}"></script>
     {# SNOW-792: the map's date picker. After map_scrubber.js, which owns    #}
     {# the snowdesk:scrub-to listener it dispatches into.                     #}
     <script defer src="{% static 'js/map_calendar.js' %}"></script>

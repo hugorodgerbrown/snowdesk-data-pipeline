@@ -59,8 +59,8 @@
        needed the exception.
 
        WHY THE RIBBON-HEADER ROUNDELS ARE sm, NOT lg. #map-download-control
-       and #region-readout-action sit in .ribbon-header immediately beside
-       the #region-readout chip, which is sm. At lg they stood 8px taller
+       sits in .ribbon-header immediately beside the #region-readout chip,
+       which is sm. At lg they stood 8px taller
        than the chip they annotate, and a row of three controls read as one
        label with two oversized buttons bolted on. They are the only tap
        targets in this file that share a row with an sm element — every
@@ -1999,7 +1999,7 @@
     border-radius: 999px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     /* PROTOTYPE (homepage rework): the pill is now an info display (a <div>);
-       the bulletin link is the separate .region-readout-action roundel. */
+       it is the header of the region panel it discloses. */
     color: var(--ink);
     /* Truncate rather than overflow the .season-ribbon cap above. */
     min-width: 0;
@@ -2045,70 +2045,6 @@
    matches its height rather than the floating roundels'. See the control
    scale's "WHY THE RIBBON-HEADER ROUNDELS ARE sm" paragraph at the top of
    this file; the 16px glyph inside is unchanged and still centres. */
-.region-readout-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--map-control-sm);
-    height: var(--map-control-sm);
-    flex: 0 0 auto;
-    border-radius: 999px;
-    color: var(--ink);
-    /* Review (post-SNOW-645, Hugo's dark-mode report): was a hardcoded
-       rgba(255, 255, 255, …) with no dark-mode counterpart — see
-       --color-glass's own comment in src/css/main.css. */
-    background: var(--color-glass);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 0.5px solid var(--border);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-    text-decoration: none;
-}
-
-/* This control has had three hover treatments. It began with a bespoke
-   lighter rgba(255, 255, 255, …) background plus a bigger box-shadow, with
-   no dark-mode counterpart; the post-SNOW-645 review matched it to the
-   roundel family's filter: brightness(1.04); SNOW-658 replaced that family
-   idiom, here and everywhere, with the shared `.hover-affordance` class the
-   markup now carries — see the note above `.map-download-control`, the
-   roundel this one sits beside in the same ribbon header. */
-
-/* SNOW-642: disabled — nothing is focused, so there is no bulletin to open.
-   map.js sets aria-disabled and drops the href; this is the matching visual.
-   Keyed on [aria-disabled] rather than on a sibling .has-region rule so the
-   styling and the accessibility state cannot drift apart — the attribute a
-   screen reader reads is the same one that dims it.
-
-   The glyph dims and the glass shell stays at full strength, which is the
-   treatment .map-download-control's own unavailable states already use and
-   for the same reason: these roundels float over open basemap, where a
-   40%-opacity glass circle is close to invisible, and a control the user
-   cannot see reads as a missing feature rather than a disabled one. Dimming
-   the whole roundel here would have re-introduced exactly the disappearance
-   this ticket exists to remove.
-
-   Declared AFTER the hover/focus rules above and restating what they change
-   — filter: none, now that hover/focus is a brightness filter rather than a
-   background/box-shadow swap (see that rule's own comment) — so an
-   equally-specific later rule cannot leave a disabled roundel looking
-   hovered; :focus-visible survives pointer-events: none. */
-.region-readout-action[aria-disabled="true"],
-.region-readout-action[aria-disabled="true"]:hover,
-.region-readout-action[aria-disabled="true"]:focus-visible {
-    color: var(--muted);
-    cursor: not-allowed;
-    filter: none;
-}
-
-.region-readout-action[aria-disabled="true"] svg {
-    opacity: 0.45;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .region-readout-action {
-        transition: none;
-    }
-}
 
 /* PROTOTYPE (homepage rework): on narrow viewports the breadcrumb prefix
    (Major › Minor ›) is dropped below 640px so the chip clears the search
@@ -2135,9 +2071,9 @@
    shifted as the user selected and deselected regions.
 
    SNOW-522 moved it BACK into the ribbon header (between #region-readout and
-   #region-readout-action) — the bottom-right slot became the new
+   the ribbon header) — the bottom-right slot became the new
    custom-area download control's home instead. Back in the header it is
-   hidden-until-focused again, exactly like #region-readout-action beside it
+   hidden-until-focused again, exactly like the ribbon chip beside it
    (the sibling rule below): a permanently-present roundel next to two other
    hidden-until-focused controls would be the odd one out, which was only
    true while it stood alone in the bottom-right stack. The class keeps its
@@ -2235,7 +2171,7 @@
 
 /* Review (post-SNOW-645): was a lighter rgba(255, 255, 255, …) background +
    a bigger box-shadow — the same bespoke, no-dark-counterpart hover
-   treatment .region-readout-action's own comment describes, and the same
+   treatment the removed view-bulletin roundel used, and the same
    fix: matched to the .map-utility-pill idiom (brightness filter, no
    background/box-shadow change) instead of inventing a parallel one. Also
    drops the now-nothing-to-transition `transition: box-shadow …, background
@@ -2257,7 +2193,7 @@
 /* Review (post-SNOW-645, Hugo's dark-mode report): --ink/--muted-coloured
    TEXT and glyphs sitting directly on top of the glass surfaces just above
    and around here (.season-scrubber, .region-readout and its children,
-   .region-readout-action, .map-download-control) — surfaces this same
+   .map-download-control) — surfaces this same
    review moved onto --color-glass, which now genuinely goes dark under
    .dark. Before that fix their background was a hardcoded
    rgba(255, 255, 255, …), unaffected by theme, so --ink (a fixed
@@ -2293,7 +2229,6 @@
 .dark .region-readout,
 .dark .region-readout-name,
 .dark .region-readout-leaf,
-.dark .region-readout-action,
 .dark .map-download-control {
     color: var(--color-text-1);
 }
@@ -2301,9 +2236,6 @@
 .dark .season-scrubber-loading,
 .dark .region-readout:not(.has-region) .region-readout-leaf,
 .dark .region-readout-crumbs,
-.dark .region-readout-action[aria-disabled="true"],
-.dark .region-readout-action[aria-disabled="true"]:hover,
-.dark .region-readout-action[aria-disabled="true"]:focus-visible,
 .dark .map-download-control[data-download-state="no-region"],
 .dark .map-download-control[data-download-state="disabled"],
 .dark .map-download-control[data-download-state="offline"],
@@ -3752,4 +3684,176 @@ body.map-framing #map-legend {
 .map-calendar-day.is-selected {
     border-color: var(--color-ring-selected);
     font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+   SNOW-801: region + date panel
+   ---------------------------------------------------------------------------
+   The #region-readout chip became a disclosure button; this is what it opens.
+   Filled by static/js/map_region_panel.js.
+
+   The chip's own rules above already set background, border, radius, padding
+   and height, so the button needs only the resets a <button> does not inherit.
+   -------------------------------------------------------------------------- */
+
+.region-readout {
+    font: inherit;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    /* The chip is now a control, so it needs a visible focus state. */
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.region-readout:disabled {
+    cursor: default;
+}
+
+.region-readout-chevron {
+    flex: 0 0 auto;
+    /* Pushed to the trailing edge: the header stretches to the panel's width,
+       and a chevron trailing the text mid-row reads as punctuation rather
+       than as the control's affordance. */
+    margin-left: auto;
+    color: var(--muted);
+    transition: transform 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .region-readout-chevron {
+        transition: none;
+    }
+}
+
+.region-readout[aria-expanded="true"] .region-readout-chevron {
+    transform: rotate(180deg);
+}
+
+.region-panel {
+    /* Matches the chip's frosted-pill idiom rather than inventing a second
+       surface treatment over the map. */
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    color: var(--ink);
+    padding: 12px 14px;
+    /* A surface floating over the map declares a height bound and scrolls.
+       dvh, not vh, so a mobile URL bar cannot push the bottom off screen.
+       The subtraction leaves room for the header above and the scrubber
+       below. */
+    max-height: calc(100dvh - 260px);
+    overflow-y: auto;
+    /* Without this a flex child refuses to shrink below its content and the
+       max-height above never bites. */
+    min-height: 0;
+    /* BOUNDED, and that is the point. The surface's width is shared with the
+       ribbon header above it, so whatever the panel needs, the header gets —
+       and the breadcrumb is the longest thing in here by far. Unbounded, a
+       region like Schwarzenberg (short name, "Northern and Central Grisons ›
+       Central Grisons and Anterior Rhine" above it) stretched the header to
+       372px and left the region's name marooned beside a distant chevron.
+
+       Capped, the breadcrumb wraps and the header stays close to the width
+       the name needs. The collapsed state is unaffected either way: the
+       panel is `hidden`, so it contributes no width and the ribbon sizes to
+       the micro-region name alone — measured at 163px for that same region. */
+    width: max-content;
+    /* The surface above owns the cap; this only has to not exceed it. */
+    max-width: 100%;
+    min-width: min(260px, 100%);
+    box-sizing: border-box;
+}
+
+.region-panel[hidden] {
+    display: none;
+}
+
+.region-panel-section + .region-panel-section {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 0.5px solid var(--border);
+}
+
+.region-panel-eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+}
+
+.region-panel-resorts {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    font-size: 13px;
+}
+
+.region-panel-empty {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+/* SNOW-801: open state — the ribbon row and the panel read as ONE surface.
+
+   The chip used to be a standalone pill that named the region, with the
+   panel repeating that name below it. It is now the panel's header: same
+   element and same id, so map.js's writes into .region-readout-name and
+   .has-region are untouched, but it drops its pill radius and closes the
+   gap to the body so the two stop looking like two boxes that happen to be
+   stacked. The panel's own copy of the name is removed on the JS side. */
+
+/* Chip and panel share one column, so they share a left edge and a width.
+   Without it the chip sits inside .ribbon-header's 2px padding and sizes to
+   its own text, and the panel sits outside it at its own min-width — two
+   boxes 2px and ~80px apart, which no amount of corner-squaring joins. */
+.region-surface {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    /* Let the pair shrink inside .season-ribbon's max-width rather than
+       overflowing it, matching what the chip did alone. */
+    min-width: 0;
+    /* THE CAP LIVES HERE, not on the panel. A column flex container takes
+       its automatic width from its children's MAX-CONTENT contribution, and
+       a max-width on the child limits only what that child then renders at.
+       Capping the panel alone left the container sized to the unwrapped
+       breadcrumb (372px) with the panel rendering at 320 inside it — and the
+       chip, being `align-items: stretch`, took the full 372 and overhung the
+       body it is supposed to be joined to. */
+    max-width: min(320px, 100%);
+}
+
+/* Open: the row's children align to the TOP, because the panel makes the
+   surface taller than the roundels beside it and centring would push those
+   down the screen as the panel grows. The 4px replaces what .ribbon-header's
+   `align-items: center` was contributing inside its lg min-height, so the
+   collapsed and open rows sit on the same line as the search roundel. */
+.season-ribbon.is-open .ribbon-header {
+    align-items: flex-start;
+    padding-top: 4px;
+}
+
+.season-ribbon.is-open .region-readout {
+    /* Pill -> the panel's own corner, top only, so the seam disappears. */
+    border-radius: 12px 12px 0 0;
+    border-bottom-color: transparent;
+    /* The shadow would otherwise fall across the panel joined below it. */
+    box-shadow: none;
+}
+
+.season-ribbon.is-open .region-panel {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-top: none;
 }

@@ -53,7 +53,6 @@ function buildFixture() {
         <span class="region-readout-leaf">No region selected</span>
       </span>
     </div>
-    <a id="region-readout-action" href="#"></a>
     <div id="map-date-ribbon" hidden></div>
     <div class="season-scrubber">
       <div class="season-scrubber-track">
