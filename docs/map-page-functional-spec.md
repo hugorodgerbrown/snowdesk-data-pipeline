@@ -665,10 +665,12 @@ to today's position within the **November–May** avalanche season window.
   season; the calendar runs from the start of the archive up to today,
   because the map carries weather as well as bulletins and a day in
   September has something to show even though no bulletin covers it. The
-  season is drawn as a highlight inside that range and days carrying a
-  rating get a dot, so the grid tells you where the bulletins are — and
-  where one is missing — without refusing the days either side. The future
-  is the one thing it will not offer.
+  season is drawn as a highlight inside that range, so the grid tells you
+  where the bulletins are without refusing the days either side. That
+  highlight is the only marking a day gets: whether a particular in-season
+  day actually has a bulletin is not shown, because landing on one that
+  does not already shows an uncoloured map. The future is the one thing the
+  calendar will not offer.
 - **Shareable.** The scrubbed date is reflected in the URL (`/?d=YYYY-MM-DD`),
   so a specific day's map can be linked and reloaded. Since SNOW-660 that
   includes today: an empty querystring means "no day chosen", and the map

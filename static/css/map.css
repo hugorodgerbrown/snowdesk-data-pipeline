@@ -3384,7 +3384,6 @@ body.map-framing #map-legend {
 }
 
 .map-calendar-day {
-    position: relative;
     width: 28px;
     height: 28px;
     display: inline-flex;
@@ -3421,30 +3420,19 @@ body.map-framing #map-legend {
 
 /* The avalanche season — a tint behind the days bulletins run for. A
    highlight, not a fence: every day here is selectable either way, and this
-   only says where the bulletins are. Deliberately quieter than any of the
-   three ring states below, which mark ONE day each. */
+   only says where the bulletins are. Deliberately quieter than the two ring
+   states below, which mark ONE day each.
+
+   It is the only per-day mark. A dot on the days actually carrying a
+   bulletin was here briefly and went: the gap it revealed inside the season
+   is an operator's concern, and a visitor who lands on such a day already
+   sees an uncoloured map. */
 .map-calendar-day.in-season {
     background: var(--color-chip);
 }
 
 .map-calendar-day.in-season:hover:not(:disabled) {
     background: var(--color-chip-strong);
-}
-
-/* A day that actually carries a danger rating — a dot under the number.
-   The season tint says bulletins run in this window; this says one landed
-   on this day. A gap inside the tint is a missing bulletin, which is worth
-   being able to see. */
-.map-calendar-day.has-ratings::after {
-    content: "";
-    position: absolute;
-    bottom: 3px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background: var(--color-text-3);
 }
 
 /* Today and the selected day use the same two markers as the bulletin
@@ -3457,8 +3445,4 @@ body.map-framing #map-legend {
 .map-calendar-day.is-selected {
     border-color: var(--color-ring-selected);
     font-weight: 700;
-}
-
-.map-calendar-day.is-selected::after {
-    background: var(--color-ring-selected);
 }

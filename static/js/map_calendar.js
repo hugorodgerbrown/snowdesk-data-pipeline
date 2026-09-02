@@ -50,9 +50,13 @@
  * The avalanche season is a highlight inside that range, not a fence around
  * it. An earlier draft refused every day outside it, which was wrong the
  * moment the map grew a weather layer — weather has an answer for a day in
- * September, and the picker could not reach it. Days carrying a danger
- * rating get a second, quieter mark, so the grid still shows where the
- * bulletins are without making that the price of admission.
+ * September, and the picker could not reach it.
+ *
+ * That highlight is the ONLY per-day mark. A dot on the days actually
+ * carrying a bulletin came and went: the thing it distinguished — a gap in
+ * the archive inside the season — is an operator's concern, and a visitor
+ * who lands on such a day already sees an uncoloured map. Two marks for one
+ * answer is one more than the grid can spend.
  */
 
 (function mapCalendarInit() {
@@ -89,21 +93,20 @@
   const maxKey = todayKey;
   let minKey = seasonStart;
 
-  // Days carrying a danger rating — the quieter of the two marks. Empty
-  // until the fetch resolves, which only costs the grid its dots.
-  let rated = null;
   let visibleMonth = core.clampMonthKey(core.monthKeyOf(todayKey), minKey, maxKey);
 
+  // The cache is read for one thing: how far back the arrows may page. The
+  // fetch is the scrubber's, memoised and already in flight, so this costs
+  // nothing beyond the callback.
   getSeasonRatings()
     .then((data) => {
-      rated = new Set(Object.keys(data || {}));
       minKey = core.earliestKnownDate(data, seasonStart);
       if (isOpen()) render();
     })
     .catch(() => {
-      // The picker still works without ratings: every day up to today stays
-      // selectable, the season highlight is server-rendered data, and only
-      // the rated-day marks and the paging floor are lost. The scrubber
+      // The picker still works without it: every day up to today stays
+      // selectable and the season highlight is server-rendered data, so all
+      // that is lost is a floor tighter than the season start. The scrubber
       // reports the fetch failure in its own loading strip, so saying it
       // again here would be a second copy of one message.
     });
@@ -137,7 +140,6 @@
     const cells = core.buildMonthGrid(visibleMonth, {
       min: minKey,
       max: maxKey,
-      rated: rated,
       seasonStart: seasonStart,
       seasonEnd: seasonEnd,
       selected: currentDateKey(),
@@ -176,10 +178,8 @@
       // literal reaches the DOM (docs/i18n.md).
       button.setAttribute('aria-label', cell.day + ' ' + monthName + ' ' + year);
       if (!cell.selectable) button.disabled = true;
-      // Two marks, two meanings: the season band says "bulletins run here",
-      // the rated dot says "this day has one". Neither gates the click.
+      // The season band — "bulletins run here". It does not gate the click.
       if (cell.inSeason) button.classList.add('in-season');
-      if (cell.hasRatings) button.classList.add('has-ratings');
       if (cell.selected) {
         button.classList.add('is-selected');
         button.setAttribute('aria-current', 'date');

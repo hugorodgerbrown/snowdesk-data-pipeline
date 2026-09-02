@@ -91,13 +91,17 @@ a highlight inside that range, not a fence around it.
 That distinction is the second thing this ticket got wrong and fixed. The
 first draft made the season the selectable range, which stopped being right
 the moment the map grew a weather layer: weather has an answer for a day in
-September, and the picker could not reach it at all. Days carrying a danger
-rating get a second, quieter mark (a dot), so the grid still shows where the
-bulletins are — and where a bulletin is missing inside the season — without
-making that the price of admission. `map_scrubber.js`'s `snowdesk:scrub-to`
-listener therefore does **not** guard on the season window; an out-of-season
-date parks the thumb at whichever end of the track it is past, which is the
-honest reading of "the season ran out".
+September, and the picker could not reach it at all. `map_scrubber.js`'s
+`snowdesk:scrub-to` listener therefore does **not** guard on the season
+window; an out-of-season date parks the thumb at whichever end of the track
+it is past, which is the honest reading of "the season ran out".
+
+**The season tint is the only per-day mark.** A dot on the days actually
+carrying a bulletin was built and removed: the thing it distinguished — a
+gap in the archive inside the season — is an operator's concern, not a
+visitor's, and a visitor who lands on such a day already sees an uncoloured
+map. If you want to see where the archive is thin, query
+`RegionDayRating`, not the picker.
 
 The paging floor comes from the ratings cache rather than the server: asking
 the DB for its earliest row would be a query on the home page's critical

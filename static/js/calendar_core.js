@@ -37,6 +37,13 @@
  * a fence around it: it tells you where the bulletins are without refusing
  * the days either side.
  *
+ * There is no second, per-day mark for "this day actually has a bulletin".
+ * There was one — a dot, driven by the ratings cache — and it went because
+ * the thing it distinguished, a gap in the archive inside the season, is an
+ * operator's concern and not a visitor's. A visitor who lands on such a day
+ * sees an uncoloured map, which is the same answer told once instead of
+ * twice.
+ *
  * Public API — attached to ``window.pwaCalendarCore``:
  *
  *   monthKeyOf(dateKey)
@@ -53,7 +60,8 @@
  *     entries. See the function docstring for the cell shape.
  *   earliestKnownDate(ratingsCache, fallbackKey)
  *     The earliest date the ratings cache carries, or ``fallbackKey`` when
- *     it carries nothing usable — the floor the month arrows stop at.
+ *     it carries nothing usable — the floor the month arrows stop at, and
+ *     now the only thing the cache is read for here.
  */
 
 (function () {
@@ -190,21 +198,19 @@
    *       day: 16,               // for the visible label
    *       selectable: true,      // inside [min, max] — i.e. not the future
    *       inSeason: true,        // inside the avalanche season: a HIGHLIGHT
-   *       hasRatings: true,      // the map can paint a choropleth for it
    *       selected: false,       // the date the map is currently showing
    *       isToday: false,
    *     }
    *
-   * The last three are deliberately separate facts rather than folded into
-   * ``selectable``. A day outside the season, or one with no bulletin, is
-   * still a day the map has weather for — refusing it was the bug this
-   * shape exists to prevent. Only the future is unselectable.
+   * ``inSeason`` is deliberately separate from ``selectable`` rather than
+   * folded into it. A day outside the season is still a day the map has
+   * weather for — refusing it was the bug this shape exists to prevent.
+   * Only the future is unselectable.
    *
    * @param {string} monthKey A ``YYYY-MM`` month key.
    * @param {Object} opts Grid inputs.
    * @param {string} [opts.min] Earliest reachable day ``YYYY-MM-DD``.
    * @param {string} [opts.max] Latest reachable day (today) ``YYYY-MM-DD``.
-   * @param {Set<string>} [opts.rated] Date keys carrying a danger rating.
    * @param {string} [opts.seasonStart] Season start ``YYYY-MM-DD``.
    * @param {string} [opts.seasonEnd] Season end ``YYYY-MM-DD``.
    * @param {string} [opts.selected] The currently-showing date, or ''.
@@ -215,7 +221,6 @@
     var options = opts || {};
     if (typeof monthKey !== 'string' || !MONTH_KEY_RE.test(monthKey)) return [];
 
-    var rated = options.rated || null;
     var min = options.min || '';
     var max = options.max || '';
     var seasonStart = options.seasonStart || '';
@@ -245,7 +250,6 @@
         selectable: (!min || dateKey >= min) && (!max || dateKey <= max),
         inSeason:
           (!seasonStart || dateKey >= seasonStart) && (!seasonEnd || dateKey <= seasonEnd),
-        hasRatings: rated === null ? false : rated.has(dateKey),
         selected: dateKey === selected,
         isToday: dateKey === today,
       });

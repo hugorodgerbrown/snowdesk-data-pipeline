@@ -33,8 +33,8 @@ const SEASON_END = '2026-03-20';
 const TODAY = '2026-05-14';
 const TODAY_PCT = 100;
 
-// February has a gap in it: the 12th carries no ratings. It stays
-// selectable — it just loses its dot.
+// February has a gap in it: the 12th carries no ratings. The grid does not
+// mark that at all — the day is offered like any other.
 const RATED = ['2026-01-05', '2026-02-10', '2026-02-11', '2026-02-13', '2026-03-20'];
 const RATINGS = Object.fromEntries(RATED.map((d) => [d, { 'CH-4115': 2 }]));
 
@@ -283,17 +283,25 @@ describe('which days it offers', () => {
     expect(days.length).toBe(30);
     expect(days.every((b) => !b.disabled)).toBe(true);
     expect(days.every((b) => !b.classList.contains('in-season'))).toBe(true);
+    // The season tint is the only per-day mark there is.
+    expect(days.every((b) => b.className === 'map-calendar-day')).toBe(true);
   });
 
-  it('offers an in-season day with no bulletin, marking only the ones that have one', async () => {
-    // A gap in the archive costs the day its dot, not its click.
+  it('offers an in-season day with no bulletin, and does not mark it out', async () => {
+    // A gap in the archive is an operator's concern; a visitor who lands on
+    // 12 February sees an uncoloured map, which says it once. The grid
+    // carries no per-day mark distinguishing it from the 11th.
     history.replaceState(null, '', '/?d=2026-02-11');
     await loadCalendar();
     openPopup();
 
-    expect(dayButton('2026-02-12').disabled).toBe(false);
-    expect(dayButton('2026-02-12').classList.contains('has-ratings')).toBe(false);
-    expect(dayButton('2026-02-11').classList.contains('has-ratings')).toBe(true);
+    // The 13th, not the 11th: the 11th is the day being shown and so
+    // carries `is-selected`, which would make the two differ for a reason
+    // that has nothing to do with bulletins.
+    const gap = dayButton('2026-02-12');
+    const rated = dayButton('2026-02-13');
+    expect(gap.disabled).toBe(false);
+    expect(gap.className).toBe(rated.className);
   });
 
   it('highlights the season without fencing it', async () => {

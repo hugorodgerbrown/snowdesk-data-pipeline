@@ -207,19 +207,20 @@ describe('buildMonthGrid', () => {
     expect(days.every((c) => !c.inSeason)).toBe(true);
   });
 
-  it('offers in-season days with no bulletin', () => {
+  it('offers in-season days whether or not a bulletin exists for them', () => {
     // A gap in the archive is a day with no choropleth, not a day the map
-    // cannot show. It loses its dot, not its click.
+    // cannot show — and the grid does not distinguish the two. It carries
+    // no per-day "has a bulletin" mark at all; landing on such a day shows
+    // an uncoloured map, which is the same answer told once.
     const cells = grid('2026-01', {
       min: RANGE_MIN,
       max: TODAY,
       seasonStart: SEASON_START,
       seasonEnd: SEASON_END,
-      rated: new Set(['2026-01-05']),
     });
-    expect(cellFor(cells, '2026-01-05').hasRatings).toBe(true);
-    expect(cellFor(cells, '2026-01-06').hasRatings).toBe(false);
-    expect(cellFor(cells, '2026-01-06').selectable).toBe(true);
+    const days = cells.filter((c) => !c.blank && c.dateKey >= SEASON_START);
+    expect(days.every((c) => c.selectable && c.inSeason)).toBe(true);
+    expect(days.every((c) => !('hasRatings' in c))).toBe(true);
   });
 
   it('marks the season boundary days as in-season and the ones outside as not', () => {
@@ -232,13 +233,11 @@ describe('buildMonthGrid', () => {
     expect(cellFor(april, '2026-04-21').inSeason).toBe(false);
   });
 
-  it('reports no ratings at all when the cache has not resolved', () => {
+  it('stays fully selectable when the ratings cache never resolves', () => {
+    // The cache only supplies the paging floor now; losing the fetch must
+    // not lock the picker.
     const cells = grid('2026-01', { min: RANGE_MIN, max: TODAY });
-    const days = cells.filter((c) => !c.blank);
-    expect(days.every((c) => !c.hasRatings)).toBe(true);
-    // …and every one of them is still selectable. The dots are decoration;
-    // losing the fetch must not lock the picker.
-    expect(days.every((c) => c.selectable)).toBe(true);
+    expect(cells.filter((c) => !c.blank).every((c) => c.selectable)).toBe(true);
   });
 
   it('marks the selected day and today, and only those', () => {
