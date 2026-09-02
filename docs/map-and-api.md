@@ -51,6 +51,71 @@ scope but **not** on `window`, which is how `map_layer_sync_status.js` read
 would otherwise evaluate each file as an ES module and module-scope every
 one of those shared bindings.
 
+### The map's date picker (SNOW-792)
+
+`map_calendar.js` is the tenth surface, loading after `map_scrubber.js`. It
+renders a month grid so a visitor can name a day instead of hitting it with
+a drag — the scrubber track spans a seven-month season in a few hundred
+pixels, so a pixel is about a day and a release snaps to whichever rated day
+is nearest.
+
+**The button and the panel are in different places, deliberately.** The tap
+target is a sixth control in the season-scrubber row, with the other date
+affordances. The panel opens in the bottom-right overlay slot with the same
+geometry as the favourites, observations and routes sheets, so every panel
+over the map appears in one place whichever control opened it. It is
+therefore `position: fixed`, rendered at top level rather than inside the
+scrubber (a fixed element is still confined by any ancestor that creates a
+stacking context), and handed to `window.pwaOverlayBounds.positionSheet` on
+open — the same call `map_sheet.js` makes, which measures the room the
+scrubber and the roundel column leave. Below `sm` that call writes nothing
+and the panel docks to the bottom edge, as the sheets do.
+
+**It owns no commit path.** Picking a day dispatches `snowdesk:scrub-to`
+`{date, source}`; `map_scrubber.js` listens, checks the date is inside the
+season window, and passes it to `commitDate` — the same function a drag
+release calls, so the repaint, the `?d=` write and the outgoing
+`snowdesk:date-changed` are identical either way. Two surfaces writing the
+URL is two places for the URL and the paint to drift apart.
+
+That event name is a revival. It was the season ribbon's click-to-scrub
+contract until SNOW-615 retired it: the ribbon cells stopped carrying click
+handlers when they moved into the scrubber track, leaving `map.js` with a
+listener no one dispatched to.
+
+**What it offers is not the season.** Every day from the earliest the site
+holds data for up to *today*; the future is the only hard stop, because
+nothing on the map can answer for a day that has not happened. The season is
+a highlight inside that range, not a fence around it.
+
+That distinction is the second thing this ticket got wrong and fixed. The
+first draft made the season the selectable range, which stopped being right
+the moment the map grew a weather layer: weather has an answer for a day in
+September, and the picker could not reach it at all. `map_scrubber.js`'s
+`snowdesk:scrub-to` listener therefore does **not** guard on the season
+window; an out-of-season date parks the thumb at whichever end of the track
+it is past, which is the honest reading of "the season ran out".
+
+**The season tint is the only per-day mark.** A dot on the days actually
+carrying a bulletin was built and removed: the thing it distinguished — a
+gap in the archive inside the season — is an operator's concern, not a
+visitor's, and a visitor who lands on such a day already sees an uncoloured
+map. If you want to see where the archive is thin, query
+`RegionDayRating`, not the picker.
+
+The paging floor comes from the ratings cache rather than the server: asking
+the DB for its earliest row would be a query on the home page's critical
+path, and that page has a query-count budget ([`query-counts.md`](query-counts.md)).
+
+The grid is built client-side (`calendar_core.js` holds the maths,
+unit-tested in `tests/js/test_calendar_core.js`), so every word in it is
+handed over by the server: `_base_map_context` supplies Django's own lazy
+month and weekday tables, and the popup partial carries them as a
+pipe-separated `data-months` attribute plus a rendered weekday row. Nothing
+user-facing is a JavaScript literal — see [`i18n.md`](i18n.md).
+
+
+
 **The order is enforced, not hand-maintained** (SNOW-647).
 `tests/public/test_map_script_order.py` renders the homepage and asserts its
 script sequence matches `MAP_BUNDLE`, that the bundle loads as one
@@ -62,13 +127,13 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Nine surfaces float over the map, and only one is ever meaningful at once:
+Ten surfaces float over the map, and only one is ever meaningful at once:
 the layers menu, the four UGC panels (downloads, favourites, field
 observations, and routes since SNOW-686), the anchored detail popup a resort
 pin, a favourite pin or (since SNOW-687) a saved route's line opens, the
 legend card (`#map-legend-card`), the help
-tour's coachmark (`#map-help-overlay`) and the bulletin fill-strength flyout
-(`#map-fill-flyout`). Each registers with `window.pwaMapOverlays`
+tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
+(`#map-fill-flyout`) and the date picker (`map-calendar`, SNOW-792). Each registers with `window.pwaMapOverlays`
 (`static/js/map_overlay_exclusivity.js`) — a name plus `isOpen()` and
 `close()` — and calls `opening(name)` before it reveals itself; the
 registry closes the rest. `MapSheet.attach` registers on a caller's behalf,
