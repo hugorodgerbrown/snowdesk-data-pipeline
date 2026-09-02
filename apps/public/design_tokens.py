@@ -30,6 +30,8 @@ a ``.dark`` ancestor.
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
+
 from apps.public._component_fixtures import (
     BULLETIN_HEADLINE_VARIANTS,
     BUTTON_VARIANTS,
@@ -80,6 +82,13 @@ from apps.public._component_fixtures import (
     WEATHER_PANEL_VARIANTS,
     WEATHER_PROVENANCE_VARIANTS,
 )
+from apps.weather.icon_sets import icon_set_dir
+
+# SNOW-791: condition icons live under the configured set's directory while
+# four candidates are compared (apps/weather/icon_sets.py). Resolved once at
+# import — the component library documents the configured set, not whatever
+# a ``?icons=`` session has pinned.
+_ICON_DIR = icon_set_dir(settings.WEATHER_ICON_SET)
 
 
 @dataclass(frozen=True)
@@ -557,133 +566,74 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
                 "icons/eaws/avalanche_problems/No-Distinct-Avalanche-Problem.svg",
                 "Avalanche problem",
             ),
-            # ---- Meteocons weather icons (MIT, see weather/LICENSE.md) ----
-            # 23 entries: 11 day/night pairs + cloudy (no diurnal variant). Granularity
-            # is higher than WEATHER_BUCKETS — drizzle and light/moderate/heavy rain
-            # all map to the "rain" bucket — so future SNOW-98 wiring can choose the
-            # right asset by WMO code rather than bucket alone.
+            # ---- Yr / MET Norway weather icons (MIT, see weather/LICENSE.md) ----
+            # 14 entries: two day/night pairs (the buckets drawn with a sun or a
+            # moon) plus ten single files. Granularity is higher than
+            # WEATHER_BUCKETS — drizzle and light/moderate/heavy rain all map to
+            # the "rain" bucket — so a surface can choose its asset by WMO code
+            # rather than by bucket alone. `drizzle` and `light_rain` are the same
+            # drawing under two names; see the licence file for why.
             IconToken(
-                "clear-day", "Clear · day", "icons/weather/clear-day.svg", "Weather"
+                "clear-day", "Clear · day", _ICON_DIR + "clear-day.svg", "Weather"
             ),
             IconToken(
                 "clear-night",
                 "Clear · night",
-                "icons/weather/clear-night.svg",
+                _ICON_DIR + "clear-night.svg",
                 "Weather",
             ),
             IconToken(
                 "partly_cloudy-day",
                 "Partly cloudy · day",
-                "icons/weather/partly_cloudy-day.svg",
+                _ICON_DIR + "partly_cloudy-day.svg",
                 "Weather",
             ),
             IconToken(
                 "partly_cloudy-night",
                 "Partly cloudy · night",
-                "icons/weather/partly_cloudy-night.svg",
+                _ICON_DIR + "partly_cloudy-night.svg",
                 "Weather",
             ),
-            IconToken("cloudy", "Cloudy", "icons/weather/cloudy.svg", "Weather"),
-            IconToken("fog-day", "Fog · day", "icons/weather/fog-day.svg", "Weather"),
+            IconToken("cloudy", "Cloudy", _ICON_DIR + "cloudy.svg", "Weather"),
+            IconToken("fog", "Fog", _ICON_DIR + "fog.svg", "Weather"),
+            IconToken("drizzle", "Drizzle", _ICON_DIR + "drizzle.svg", "Weather"),
             IconToken(
-                "fog-night", "Fog · night", "icons/weather/fog-night.svg", "Weather"
-            ),
-            IconToken(
-                "drizzle-day",
-                "Drizzle · day",
-                "icons/weather/drizzle-day.svg",
-                "Weather",
-            ),
-            IconToken(
-                "drizzle-night",
-                "Drizzle · night",
-                "icons/weather/drizzle-night.svg",
+                "light_rain",
+                "Light rain",
+                _ICON_DIR + "light_rain.svg",
                 "Weather",
             ),
             IconToken(
-                "light_rain-day",
-                "Light rain · day",
-                "icons/weather/light_rain-day.svg",
+                "moderate_rain",
+                "Moderate rain",
+                _ICON_DIR + "moderate_rain.svg",
                 "Weather",
             ),
             IconToken(
-                "light_rain-night",
-                "Light rain · night",
-                "icons/weather/light_rain-night.svg",
+                "heavy_rain",
+                "Heavy rain",
+                _ICON_DIR + "heavy_rain.svg",
                 "Weather",
             ),
             IconToken(
-                "moderate_rain-day",
-                "Moderate rain · day",
-                "icons/weather/moderate_rain-day.svg",
+                "light_snow",
+                "Light snow",
+                _ICON_DIR + "light_snow.svg",
                 "Weather",
             ),
             IconToken(
-                "moderate_rain-night",
-                "Moderate rain · night",
-                "icons/weather/moderate_rain-night.svg",
+                "moderate_snow",
+                "Moderate snow",
+                _ICON_DIR + "moderate_snow.svg",
                 "Weather",
             ),
             IconToken(
-                "heavy_rain-day",
-                "Heavy rain · day",
-                "icons/weather/heavy_rain-day.svg",
+                "heavy_snow",
+                "Heavy snow",
+                _ICON_DIR + "heavy_snow.svg",
                 "Weather",
             ),
-            IconToken(
-                "heavy_rain-night",
-                "Heavy rain · night",
-                "icons/weather/heavy_rain-night.svg",
-                "Weather",
-            ),
-            IconToken(
-                "light_snow-day",
-                "Light snow · day",
-                "icons/weather/light_snow-day.svg",
-                "Weather",
-            ),
-            IconToken(
-                "light_snow-night",
-                "Light snow · night",
-                "icons/weather/light_snow-night.svg",
-                "Weather",
-            ),
-            IconToken(
-                "moderate_snow-day",
-                "Moderate snow · day",
-                "icons/weather/moderate_snow-day.svg",
-                "Weather",
-            ),
-            IconToken(
-                "moderate_snow-night",
-                "Moderate snow · night",
-                "icons/weather/moderate_snow-night.svg",
-                "Weather",
-            ),
-            IconToken(
-                "heavy_snow-day",
-                "Heavy snow · day",
-                "icons/weather/heavy_snow-day.svg",
-                "Weather",
-            ),
-            IconToken(
-                "heavy_snow-night",
-                "Heavy snow · night",
-                "icons/weather/heavy_snow-night.svg",
-                "Weather",
-            ),
-            IconToken(
-                "thunder-day",
-                "Thunder · day",
-                "icons/weather/thunder-day.svg",
-                "Weather",
-            ),
-            IconToken(
-                "thunder-night",
-                "Thunder · night",
-                "icons/weather/thunder-night.svg",
-                "Weather",
-            ),
+            IconToken("thunder", "Thunder", _ICON_DIR + "thunder.svg", "Weather"),
             IconToken(
                 "sunrise",
                 "Sunrise",

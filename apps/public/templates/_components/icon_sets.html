@@ -1,0 +1,160 @@
+{% extends "public/base.html" %}
+{% load static %}
+
+{% comment %}
+SNOW-791 — every icon bucket against every candidate set, side by side.
+
+Staff-only, and a working surface rather than a product page: it exists so
+the candidate sets can be judged against each other at the sizes the app
+renders, and it goes away with the switcher once a set is chosen.
+
+**One table per size, not one cell per size.** The three sizes were drawn
+together at first, which put a set's 27px next to its own 40px and 72px —
+so the eye compared sizes when the question is which set. Separated, each
+table asks one question: at THIS size, which of these reads?
+{% endcomment %}
+
+{% block page_meta %}
+    {# Staff-only working surface — never linked, never shared, so no unfurl card. #}
+    {% include "includes/_page_meta.html" with title="Icon sets" description="Staff-only comparison of the candidate weather icon sets." sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <div class="mx-auto max-w-6xl px-4 py-8">
+        {% include "includes/_eyebrow.html" with tag="p" text="Staff · design system" %}
+        <h1 class="mt-1 text-2xl font-semibold tracking-tight text-text-1">Icon sets</h1>
+        <p class="mt-2 max-w-3xl text-sm text-text-2">
+            Every icon bucket against every set on disk, one table per rendered size. The WMO codes beside each row are
+            the codes that resolve to that bucket.
+        </p>
+        <p class="mt-2 max-w-3xl text-sm text-text-3">
+            Read from the filesystem, so it cannot go stale. Use the switcher to change what the rest of the site
+            serves; this page always shows all of them.
+        </p>
+
+        {# Rebuilding the two sets that cannot be committed. At the top of the #}
+        {# page rather than in a doc, because this is where someone stands when #}
+        {# they notice a column is missing.                                     #}
+        <details class="mt-6 rounded-card border border-border bg-card p-4" {% if missing_any %}open{% endif %}>
+            <summary class="cursor-pointer text-sm font-medium text-text-1">
+                Rebuilding the local sets
+                {% if missing_any %}
+                    <span class="ml-1 font-normal text-status-warning">— some are missing on this machine</span>
+                {% else %}
+                    <span class="ml-1 font-normal text-text-3">— all present on this machine</span>
+                {% endif %}
+            </summary>
+
+            <p class="mt-3 text-sm text-text-2">
+                Two sets are <strong>gitignored</strong>: this repository is public and both reserve all rights to their
+                graphics, so they are never committed and never deployed. A fresh clone has neither, and their columns
+                simply do not appear. Showing them here to choose between drawings is reference use; publishing the
+                files is not, which is the line the gitignore draws.
+            </p>
+
+            <p class="mt-2 text-sm text-text-2">
+                Each set is fourteen files, named for the bucket, in
+                <code class="font-mono text-xs">{{ icon_root }}/_local/&lt;set&gt;/</code>.
+            </p>
+
+            {% for src in sources %}
+                <div class="mt-4 border-t border-border pt-3">
+                    <p class="text-sm font-medium text-text-1">
+                        {{ src.label }}
+                        <code class="ml-1 font-mono text-xs text-text-3">{{ icon_root }}/_local/{{ src.name }}/</code>
+                        {% if src.missing %}
+                            <span class="ml-1 text-xs text-status-warning">missing</span>
+                        {% else %}
+                            <span class="ml-1 text-xs text-text-3">present</span>
+                        {% endif %}
+                    </p>
+                    <p class="mt-1 font-mono text-xs break-all text-text-2">{{ src.source }}</p>
+                    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-text-2">
+                        {% for note in src.notes %}<li>{{ note }}</li>{% endfor %}
+                    </ul>
+                    <table class="mt-2 text-xs">
+                        <tbody>
+                            {% for filename, code in src.mapping.items %}
+                                <tr>
+                                    <td class="py-0.5 pr-3 font-mono text-text-3">{{ code }}</td>
+                                    <td class="py-0.5 font-mono text-text-2">{{ filename }}.svg</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endfor %}
+        </details>
+
+        <nav class="mt-4 flex items-center gap-2 text-sm">
+            <span class="font-mono text-xs uppercase tracking-widest text-text-3">jump</span>
+            {% for size in sizes %}
+                <a
+                    href="#size-{{ size }}"
+                    class="rounded-pill border border-border px-2 py-0.5 text-text-2 hover:bg-card-hover"
+                >{{ size }} px</a>
+            {% endfor %}
+        </nav>
+
+        {% for size in sizes %}
+            <section id="size-{{ size }}" class="mt-10 scroll-mt-4">
+                <h2 class="text-sm font-semibold text-text-1">
+                    {{ size }} px
+                    <span class="ml-1 font-normal text-text-3">
+                        {% if size == 27 %}
+                            map symbol
+                        {% elif size == 40 %}
+                            day line
+                        {% else %}
+                            reference — flatters everything, judge at 27
+                        {% endif %}
+                    </span>
+                </h2>
+                <div class="mt-3 overflow-x-auto">
+                    <table class="w-full border-collapse text-sm">
+                        <thead>
+                            <tr class="border-b border-border">
+                                <th class="py-2 pr-4 text-left font-medium text-text-2">Bucket</th>
+                                {% for name in sets %}
+                                    <th class="px-4 py-2 text-left font-mono text-xs font-medium text-text-1">
+                                        {{ name }}
+                                    </th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                                <tr class="border-b border-border/60 align-middle">
+                                    <td class="py-2 pr-4 whitespace-nowrap">
+                                        <p class="font-medium text-text-1">
+                                            {{ row.label }}
+                                            {% if row.variant %}
+                                                <span class="font-mono text-xs text-text-3">· {{ row.variant }}</span>
+                                            {% endif %}
+                                        </p>
+                                        <p class="font-mono text-xs text-text-3">
+                                            {% for code in row.codes %}{{ code }}{% if not forloop.last %},
+                                                {% endif %}{% endfor %}
+                                        </p>
+                                    </td>
+                                    {% for path in row.paths %}
+                                        <td class="px-4 py-2">
+                                            <img
+                                                src="{% static path %}"
+                                                width="{{ size }}"
+                                                height="{{ size }}"
+                                                style="width: {{ size }}px; height: {{ size }}px"
+                                                alt=""
+                                                loading="lazy"
+                                            >
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        {% endfor %}
+    </div>
+{% endblock content %}

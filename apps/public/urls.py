@@ -125,6 +125,13 @@ urlpatterns = [
         debug_views.component_library_panel,
         name="components_panel",
     ),
+    # SNOW-791: every icon bucket against every candidate set, side by side.
+    # A working surface for choosing a set; goes with the switcher.
+    path(
+        "_icon-sets/",
+        debug_views.icon_set_comparison,
+        name="icon_sets",
+    ),
     # Web Push spike — staff-only demo page.
     path("_push-demo/", debug_views.push_demo, name="push_demo"),
     # SW shell cache-version page — staff-only, surfaces live vs deployed

@@ -2265,7 +2265,7 @@
   // transform.
   let weatherGeojsonCache = null;
 
-  // Meteocons are multi-path, gradient-filled SVGs. Unlike the favourite
+  // The weather icons are multi-path, image-shaded SVGs. Unlike the favourite
   // star and the community-report flag (single-colour Path2D fills,
   // registered `sdf: true`), SDF discards colour and keeps only the alpha
   // mask, which cannot carry that — so these are rasterised full-colour via
@@ -2276,15 +2276,30 @@
   // invariant every other icon on this map relies on. Image ids ARE the
   // filenames, so the layer's `['get', 'icon']` reads the projected
   // property directly with no id-mapping table.
-  const WEATHER_ICON_BASE_URL = '/static/icons/weather/';
+  // SNOW-791: the active icon set's directory, resolved server-side and
+  // handed over on the map element, so the map and the server-rendered
+  // weather partials can never disagree about which set is being shown.
+  // Falls back to the built-in path if the attribute is absent.
+  const WEATHER_ICON_BASE_URL =
+    mapEl.dataset.weatherIconDir || '/static/icons/weather/snowdesk/';
+  // Whether this set needs the canvas silhouette edge painted for it.
+  const WEATHER_ICON_HALO = mapEl.dataset.weatherIconHalo !== 'false';
   // Logical (CSS-pixel) footprint of the decoded icon — matches the
   // forecast panel's day-strip icon (`w-8 h-8`).
   const WEATHER_ICON_RASTER_SIZE = 27;
-  // The Meteocons viewBox, and the centred box its ink actually occupies.
+  // The icon viewBox, and the box its ink actually occupies inside it.
   // Measured off the rendered alpha channel, not read off the markup.
-  const WEATHER_ICON_VIEWBOX = 128;
-  const WEATHER_ICON_INK_ORIGIN = 16;
-  const WEATHER_ICON_INK_BOX = 96;
+  //
+  // The Yr set fills its box: the union alpha bbox across all thirteen
+  // source drawings is x[0, 93] y[2, 100] in a 100-unit viewBox, so the
+  // ink box IS the viewBox and the crop below is a no-op (SNOW-791). It is
+  // kept rather than deleted because the numbers are a property of whichever
+  // set is vendored, not of this code — the Meteocons set it was written for
+  // left a uniform 16-unit transparent border on every side, and a future
+  // set may too.
+  const WEATHER_ICON_VIEWBOX = 100;
+  const WEATHER_ICON_INK_ORIGIN = 0;
+  const WEATHER_ICON_INK_BOX = 100;
   const weatherIconImageDataCache = new Map();
 
   // The weather label's type scale, in one place. The elevation mark is
@@ -2402,13 +2417,14 @@
       canvas.height = WEATHER_ICON_RASTER_SIZE * pixelRatio;
       const ctx = canvas.getContext('2d');
       // Crop the set's uniform transparent border before rasterising.
-      // Every Meteocons file is a 128-unit viewBox whose ink never leaves
-      // the centred 96-unit box — `clear-day`, the largest, spans exactly
-      // 16..112 on both axes. Drawing the full 128 therefore spent a
-      // quarter of every symbol's width on nothing — pushing the glyph
-      // away from the temperature beside it, inflating the collision box
-      // it reserves against its neighbours, and leaving the symbol small
-      // for the space it took.
+      //
+      // A set that pads every drawing with the same border spends that
+      // padding on nothing at symbol size — pushing the glyph away from the
+      // temperature beside it, inflating the collision box it reserves
+      // against its neighbours, and leaving the symbol small for the space
+      // it took. The constants above say how much to take back, and the
+      // Yr set makes them a no-op: its ink fills the viewBox, `inset` is
+      // 0, and this draws the full box.
       //
       // The crop is the SAME for every icon on purpose. Cropping each one
       // to its own ink would scale `cloudy` up to fill the box a full sun
@@ -2427,8 +2443,9 @@
       };
       // Outline the symbol before drawing it.
       //
-      // Meteocons draws cloud bodies in a pale grey with white highlights.
-      // That is legible on the set's own dark previews and invisible here:
+      // The set draws cloud bodies in a pale grey with white highlights
+      // (Yr's is `#dddddd`, 1.28:1 on white). That is legible on a dark
+      // plate and invisible here:
       // the plate under it is --color-card at 92%, and the winter basemap
       // under THAT is near-white too, so a cloud's edge had nothing to
       // meet and the glyph dissolved into its own background.
@@ -2450,11 +2467,17 @@
       // handles a rejected decode by leaving that icon unregistered, which
       // is the right outcome for all of them.
       try {
-        ctx.filter =
-          'drop-shadow(0 0 ' + pixelRatio + 'px rgba(41, 45, 54, 0.85))';
-        drawSymbol();
-        drawSymbol();
-        ctx.filter = 'none';
+        // SNOW-791: the edge is a blur, so a set that paints its own
+        // silhouette is only softened by it — at this size that turns a
+        // six-armed flake into a disc. Painted only for the sets that need
+        // it, which the server names on the map element.
+        if (WEATHER_ICON_HALO) {
+          ctx.filter =
+            'drop-shadow(0 0 ' + pixelRatio + 'px rgba(41, 45, 54, 0.85))';
+          drawSymbol();
+          drawSymbol();
+          ctx.filter = 'none';
+        }
         drawSymbol();
         imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       } catch (err) {

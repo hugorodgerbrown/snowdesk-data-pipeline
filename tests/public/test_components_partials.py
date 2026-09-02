@@ -434,13 +434,14 @@ class TestComponentLibraryWeatherIcons:
     """Every weather icon a library fixture names must be a real file.
 
     SNOW-781: the day-strip fixture built its filename as
-    ``f"{icon_bucket}-day.svg"``, which is right for eleven of the twelve
-    icon buckets and wrong for ``cloudy`` — the one that ships a single
-    file rather than a day/night pair. The library rendered a broken image
-    for the Overcast column, and no test noticed because every assertion
-    was about markup rather than about whether the asset existed. That
-    strip is now the day picker and the day line (SNOW-789); the helper
-    the fixtures share is the same one, so the trap is too.
+    ``f"{icon_bucket}-day.svg"``, which was then right for eleven of the
+    twelve icon buckets and wrong for ``cloudy`` — the one that shipped a
+    single file rather than a day/night pair. The library rendered a broken
+    image for the Overcast column, and no test noticed because every
+    assertion was about markup rather than about whether the asset existed.
+    That strip is now the day picker and the day line (SNOW-789); the helper
+    the fixtures share is the same one, so the trap is too — and SNOW-791
+    widened it, since the current set draws a pair for two buckets only.
 
     This walks the filenames the fixtures actually carry, so it covers the
     hand-written ones as well as the derived ones.
@@ -475,15 +476,74 @@ class TestComponentLibraryWeatherIcons:
         """No fixture asks for an icon that is not on disk."""
         from django.conf import settings
 
+        from apps.weather.icon_sets import active_icon_dir
+
         names = self._icon_names()
         assert names, "fixtures named no icons — the walk is broken, not clean"
-        icon_dir = settings.BASE_DIR / "static" / "icons" / "weather"
+        icon_dir = settings.BASE_DIR / "static" / active_icon_dir()
         missing = sorted(name for name in names if not (icon_dir / name).is_file())
         assert not missing, f"fixtures name icons that do not exist: {missing}"
 
-    def test_cloudy_resolves_to_its_single_file(self) -> None:
-        """``cloudy`` has no day variant, so the helper must not invent one."""
-        from apps.weather.services.weather_display import weather_icon_filename
+    def test_every_resolvable_filename_exists_on_disk(self) -> None:
+        """Every bucket resolves, at either hour, to a file that is there.
 
-        assert weather_icon_filename("cloudy", "day") == "cloudy.svg"
-        assert weather_icon_filename("cloudy", "night") == "cloudy.svg"
+        Wider than the fixture walk above, and deliberately so: that one
+        covers the filenames the library HAPPENS to name, which is why
+        SNOW-781's broken Overcast column reached the page. This one covers
+        the helper's whole output — 12 buckets by two times of day — so a
+        bucket no fixture exercises cannot go missing quietly.
+        """
+        from django.conf import settings
+
+        from apps.weather.icon_sets import active_icon_dir
+        from apps.weather.services.weather_display import (
+            WEATHER_ICON_BUCKETS,
+            weather_icon_filename,
+        )
+
+        icon_dir = settings.BASE_DIR / "static" / active_icon_dir()
+        resolved = {
+            weather_icon_filename(bucket, time_of_day)
+            for bucket in WEATHER_ICON_BUCKETS
+            for time_of_day in ("day", "night")
+        }
+        assert resolved, "the helper resolved nothing — the walk is broken, not clean"
+        missing = sorted(name for name in resolved if not (icon_dir / name).is_file())
+        assert not missing, f"buckets resolve to icons that do not exist: {missing}"
+
+    def test_single_file_buckets_resolve_to_one_file_at_either_hour(self) -> None:
+        """A bucket with no day/night pair must not have one invented for it.
+
+        Ten of the twelve buckets ship a single drawing: the icon set draws
+        a day/night variant only where a sun or a moon appears, so weather
+        in front of a cloud is one file (SNOW-791). This asserted ``cloudy``
+        alone until then, which would still have passed while stating
+        something false.
+        """
+        from apps.weather.services.weather_display import (
+            WEATHER_ICON_BUCKETS,
+            WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+            weather_icon_filename,
+        )
+
+        single = [
+            bucket
+            for bucket in WEATHER_ICON_BUCKETS
+            if bucket not in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT
+        ]
+        assert len(single) == 10, "the single-file set changed — is that intended?"
+        for bucket in single:
+            assert weather_icon_filename(bucket, "day") == f"{bucket}.svg"
+            assert weather_icon_filename(bucket, "night") == f"{bucket}.svg"
+
+    def test_paired_buckets_resolve_to_a_distinct_file_per_hour(self) -> None:
+        """The two buckets that DO have a pair resolve to different files."""
+        from apps.weather.services.weather_display import (
+            WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT,
+            weather_icon_filename,
+        )
+
+        assert WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT == {"clear", "partly_cloudy"}
+        for bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
+            assert weather_icon_filename(bucket, "day") == f"{bucket}-day.svg"
+            assert weather_icon_filename(bucket, "night") == f"{bucket}-night.svg"

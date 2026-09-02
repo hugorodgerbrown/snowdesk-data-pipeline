@@ -1,4 +1,5 @@
 {% load i18n static %}
+{% load weather_icons %}
 {% comment %}
 public/partials/_map_embed.html — Shared map surface partial.
 
@@ -92,6 +93,13 @@ Optional context:
     {# community reports above there is no eligibility attribute to pair    #}
     {# with it.                                                             #}
     data-weather-url="{{ weather_geojson_url }}"
+    {# SNOW-791: which icon set the map rasterises. Resolved server-side by #}
+    {# the weather_icon_set context processor so the map and the           #}
+    {# server-rendered partials can never disagree about the active set.   #}
+    data-weather-icon-dir="{% weather_icon_url '' %}"
+    {# SNOW-791: whether this set needs the canvas silhouette edge. The edge #}
+    {# is a blur, so a set that draws its own would only be softened by it.  #}
+    data-weather-icon-halo="{% weather_icon_needs_halo %}"
     {# SNOW-761: the sheet body behind a tap on a weather symbol. A template #}
     {# with a placeholder id, substituted in map_weather_detail.js — the     #}
     {# same idiom data-resort-popup-url uses above.                          #}

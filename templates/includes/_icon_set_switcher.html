@@ -1,0 +1,24 @@
+{% comment %}
+SNOW-791 — a DEBUG-only strip for switching the weather icon set.
+
+Four candidate sets are being compared and the only honest way to judge them
+is against real data on the real surfaces. This renders only when
+WEATHER_ICON_SETS_AVAILABLE is non-empty, which the context processor makes
+so only under DEBUG — so it cannot appear on a deployed site.
+
+`meteoswiss` is absent unless a developer has populated
+static/icons/weather/_local/, which is gitignored because this repository is
+public and MeteoSwiss reserve all rights to their graphics.
+{% endcomment %}
+{% load weather_icons %}
+{% if WEATHER_ICON_SETS_AVAILABLE %}
+    <div class="fixed bottom-2 left-2 z-50 flex items-center gap-1 rounded-pill border border-border bg-card px-2 py-1 text-xs shadow-sm">
+        <span class="font-mono uppercase tracking-widest text-text-3">icons</span>
+        {% for name in WEATHER_ICON_SETS_AVAILABLE %}
+            <a
+                href="{% icon_switch_url name %}"
+                class="rounded-pill px-2 py-0.5 {% if name == WEATHER_ICON_SET %}bg-accent text-white{% else %}text-text-2 hover:bg-card-hover{% endif %}"
+            >{{ name }}</a>
+        {% endfor %}
+    </div>
+{% endif %}

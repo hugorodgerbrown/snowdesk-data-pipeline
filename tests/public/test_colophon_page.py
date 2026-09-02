@@ -83,6 +83,10 @@ class TestColophonPage:
         response = client.get(reverse("public:colophon"))
         assert b"basmilius" in response.content
 
+    def test_yr_weather_icon_link_present(self, client: Client) -> None:
+        response = client.get(reverse("public:colophon"))
+        assert b"metno/weathericons" in response.content
+
     def test_mit_licence_present(self, client: Client) -> None:
         response = client.get(reverse("public:colophon"))
         assert b"MIT" in response.content

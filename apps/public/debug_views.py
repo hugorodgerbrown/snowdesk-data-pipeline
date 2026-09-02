@@ -4,8 +4,9 @@ apps/public/debug_views.py — Staff-only design-system / debug pages.
 Renders every design-system entry from ``apps/public/design_tokens.py`` under
 ``/_components/``. Sidebar grouped into Foundations (design tokens) and
 Components (rendered HTML partials); main column HTMX-swaps via the
-sidebar. Also hosts the Web Push demo (``/_push-demo/``) and the SW
-shell-version page (``/_sw-version/``, SNOW-517).
+sidebar. Also hosts the Web Push demo (``/_push-demo/``), the SW
+shell-version page (``/_sw-version/``, SNOW-517), and the icon-set
+comparison grid (``/_icon-sets/``, SNOW-791).
 
 Auth: ``staff_member_required`` only — no DEBUG gate. Every page here is
 reachable in production by any staff user, by design (everyone with
@@ -27,6 +28,17 @@ from apps.accounts.push_config import VAPID_PUBLIC_KEY
 from apps.core.decorators import require_htmx
 from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
+from apps.weather.icon_sets import (
+    ICON_SETS,
+    LOCAL_SET_SOURCES,
+    available_icon_sets,
+)
+from apps.weather.services.weather_display import (
+    _ICON_BUCKET_LABEL,
+    _WMO_CODE_TO_ICON_BUCKET,
+    WEATHER_ICON_BUCKETS,
+    weather_icon_filename,
+)
 
 DEFAULT_SLUG = "typography"
 
@@ -120,5 +132,77 @@ def sw_version(request: HttpRequest) -> HttpResponse:
             "cache_version": cache_version(),
             "app_version": settings.APP_VERSION,
             "sw_dev_shell_bypass": settings.SW_DEV_SHELL_BYPASS,
+        },
+    )
+
+
+@staff_member_required
+def icon_set_comparison(request: HttpRequest) -> HttpResponse:
+    """Every icon bucket against every candidate set, side by side.
+
+    SNOW-791 is choosing between several drawings of the same twelve
+    buckets. Judging them needs all of it at once — every bucket, every
+    set, at the sizes the app actually renders — and a screenshot of that
+    goes stale the moment one of the sets is edited. This reads what is on
+    disk, so it is never out of date.
+
+    Rows are the twelve buckets in ``WEATHER_ICON_BUCKETS`` order, each
+    labelled with the WMO codes that resolve to it — so the grid doubles as
+    the readable form of ``_WMO_CODE_TO_ICON_BUCKET``. A bucket with a
+    day/night pair contributes two rows; the ten that ship a single drawing
+    contribute one.
+
+    Columns are the sets ``available_icon_sets`` finds on disk. ``meteoswiss``
+    and ``bbc`` are gitignored, so they appear only where someone has
+    populated them — and the page carries the recipe for doing that
+    (``LOCAL_SET_SOURCES``), marking which are currently absent.
+
+    Args:
+        request: The incoming request (unused — the grid is derived from
+            the registry and the filesystem, not from the request).
+
+    Returns:
+        The rendered comparison page.
+
+    """
+    codes: dict[str, list[int]] = {}
+    for code, bucket in sorted(_WMO_CODE_TO_ICON_BUCKET.items()):
+        codes.setdefault(bucket, []).append(code)
+
+    sets = available_icon_sets()
+    rows: list[dict[str, object]] = []
+    for bucket in WEATHER_ICON_BUCKETS:
+        day = weather_icon_filename(bucket, "day")
+        night = weather_icon_filename(bucket, "night")
+        # Ten of the twelve resolve to one drawing at either hour; naming a
+        # variant there would invent a distinction the set does not draw.
+        variants = [("day", day), ("night", night)] if day != night else [("", day)]
+        for variant, filename in variants:
+            rows.append(
+                {
+                    "bucket": bucket,
+                    "label": _ICON_BUCKET_LABEL[bucket],
+                    "codes": codes.get(bucket, []),
+                    "variant": variant,
+                    "filename": filename,
+                    "paths": [ICON_SETS[name] + filename for name in sets],
+                }
+            )
+
+    return render(
+        request,
+        "_components/icon_sets.html",
+        {
+            "rows": rows,
+            "sets": sets,
+            "sizes": (27, 40, 72),
+            # Only the sets that are missing here need rebuilding; showing the
+            # recipe for one already on disk is noise.
+            "sources": [
+                {"name": name, "missing": name not in sets, **LOCAL_SET_SOURCES[name]}
+                for name in LOCAL_SET_SOURCES
+            ],
+            "icon_root": "static/icons/weather",
+            "missing_any": any(n not in sets for n in LOCAL_SET_SOURCES),
         },
     )

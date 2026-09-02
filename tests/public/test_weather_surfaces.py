@@ -143,7 +143,7 @@ class TestBulletinMasthead:
         assert response.status_code == 200
         content = response.content.decode()
         assert 'data-testid="bulletin-weather-panel"' not in content
-        assert "light_snow-day.svg" not in content
+        assert "light_snow.svg" not in content
 
 
 @pytest.mark.django_db
@@ -546,6 +546,154 @@ class TestLocationForecastPage:
         for wrapper in wrappers:
             assert wrapper.count("<label") == 1
             assert len(re.findall(r"<input\b", wrapper)) == 1
+
+
+@pytest.mark.django_db
+class TestIconHalo:
+    """The ``.weather-icon`` hook reaches every server-rendered icon.
+
+    SNOW-791: a set whose cloud is pale reads by its silhouette rather than
+    its fill, so it needs an edge on a light surface. The map dilates one in
+    canvas; the three server-rendered surfaces get it from ``.weather-icon``
+    in ``src/css/main.css``.
+
+    The class is the whole mechanism on this side, and it lives in a
+    template attribute where nothing else would miss it: a refactor that
+    dropped it would leave a pale cloud on a near-white plate with every
+    other assertion — filename, testid, layout — still passing. So it is
+    asserted per surface, the same way the filenames are.
+
+    **These pin ``?icons=yr``.** The default set paints its own edge and so
+    must NOT carry the class; asserting the mechanism means asking a set
+    that needs it. ``test_the_hook_is_absent_for_a_set_that_draws_its_own_edge``
+    is the other half.
+    """
+
+    @freeze_time(MIDDAY)
+    def test_the_hook_is_absent_for_a_set_that_draws_its_own_edge(self) -> None:
+        """SNOW-791: the halo is a blur, so it is only worth its cost sometimes.
+
+        ``.weather-icon`` softens every mark it passes over — at 27 px it
+        turns a six-armed flake into a blob. A set whose artwork already
+        carries a silhouette edge must not be given a second one.
+        """
+        location = LocationFactory.create(elevation_m=2200.0)
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+        )
+        url = reverse("public:location_weather", args=[location.pk])
+        client = Client()
+
+        needs = client.get(f"{url}?date={PAGE_DATE.isoformat()}&icons=yr")
+        assert 'class="weather-icon' in needs.content.decode()
+
+        draws_own = client.get(f"{url}?date={PAGE_DATE.isoformat()}&icons=snowdesk")
+        assert 'class="weather-icon' not in draws_own.content.decode()
+
+    @freeze_time(MIDDAY)
+    def test_the_resort_pages_panel_carries_the_hook(self) -> None:
+        """``_weather_panel.html``, via the resort page."""
+        resort = ResortFactory.create()
+        location = LocationFactory.create(elevation_m=1500.0)
+        ResortLocationFactory.create(resort=resort, location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+        )
+
+        content = Client().get(f"{resort.get_absolute_url()}?icons=yr").content.decode()
+
+        assert 'data-testid="resort-weather"' in content
+        assert 'class="weather-icon' in content
+
+    @freeze_time(MIDDAY)
+    def test_the_picker_and_the_day_line_both_carry_the_hook(self) -> None:
+        """``_weather_day_picker.html`` and ``_weather_day_line.html``.
+
+        Both live on the location forecast page and both draw an icon, so
+        one assertion over the whole page would pass on either alone. The
+        page is sliced at the picker's ``</fieldset>`` to tell them apart.
+        """
+        location = LocationFactory.create(elevation_m=2200.0)
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            forecast=[_forecast_day("2026-08-31")],
+        )
+
+        html = (
+            Client()
+            .get(f"{reverse('public:location_weather', args=[location.pk])}?icons=yr")
+            .content.decode()
+        )
+
+        split = html.index("</fieldset>")
+        picker, below = html[:split], html[split:]
+        assert 'class="weather-icon' in picker
+        assert 'class="weather-icon' in below
+
+
+@pytest.mark.django_db
+class TestIconSetSwitcher:
+    """The DEBUG-only strip for comparing candidate icon sets (SNOW-791)."""
+
+    @freeze_time(MIDDAY)
+    def test_switching_sets_keeps_every_other_query_parameter(self) -> None:
+        """A switch link must not drop the page's own parameters.
+
+        The strip first shipped with a bare ``?icons=<name>`` href, which
+        replaces the whole query string. On this page that dropped
+        ``?date=``, so switching fell back to today, today has no row, and
+        every icon vanished — which reads as the switch being broken rather
+        than the date being lost.
+        """
+        location = LocationFactory.create(elevation_m=2200.0)
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            forecast=[_forecast_day("2026-08-31")],
+        )
+        url = reverse("public:location_weather", args=[location.pk])
+
+        content = Client().get(f"{url}?date={PAGE_DATE.isoformat()}").content.decode()
+
+        hrefs = re.findall(r'href="(\?[^"]*icons=[^"]*)"', content)
+        assert hrefs, "the switcher rendered no links"
+        for href in hrefs:
+            assert f"date={PAGE_DATE.isoformat()}" in href, href
+
+    @freeze_time(MIDDAY)
+    def test_the_chosen_set_reaches_the_rendered_icon(self) -> None:
+        """``?icons=`` picks the directory the icons are served from."""
+        location = LocationFactory.create(elevation_m=2200.0)
+        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
+        WeatherFactory.create(
+            location=location,
+            observed_on=PAGE_DATE,
+            weather_code=71,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+        )
+        url = reverse("public:location_weather", args=[location.pk])
+
+        client = Client()
+        for set_name in ("snowdesk", "meteocons", "yr"):
+            content = client.get(
+                f"{url}?date={PAGE_DATE.isoformat()}&icons={set_name}"
+            ).content.decode()
+            assert f"icons/weather/{set_name}/light_snow.svg" in content, set_name
 
 
 @pytest.mark.django_db

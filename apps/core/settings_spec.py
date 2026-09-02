@@ -365,6 +365,7 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="Include local variables in captured exceptions",
     ),
     SettingSpec("BASEMAP", note="Basemap provider key"),
+    SettingSpec("WEATHER_ICON_SET", note="Which weather icon set to serve"),
     # --- Host allowlists (lists built by decouple's Csv cast) -------------
     SettingSpec("ALLOWED_HOSTS", note="Django host allowlist"),
     SettingSpec("CSRF_TRUSTED_ORIGINS", note="CSRF trusted origins"),

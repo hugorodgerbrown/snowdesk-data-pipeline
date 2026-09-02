@@ -1,0 +1,373 @@
+#!/usr/bin/env python
+"""bin/build-weather-icons — Draw the Snowdesk weather icon set.
+
+The set in ``static/icons/weather/snowdesk/`` is generated, not hand-drawn:
+run this and it rewrites all fourteen files. Every shape comes from one
+shared vocabulary — a cloud, a sun, a moon, drops and flakes — so the set is
+consistent by construction rather than by discipline, and retuning it is a
+constant here rather than fourteen edits.
+
+    uv run python bin/build-weather-icons
+
+Why we draw our own (SNOW-791): MeteoSwiss measured best of the candidates
+and reserves all rights to its graphics, so it was never available. Drawing
+our own also buys what no third-party set could — colours chosen against
+BOTH card backgrounds and a silhouette edge baked into the artwork, which is
+why this set needs no CSS or canvas halo and stays crisp where a blurred one
+would not. See docs/decisions/weather-icons-are-drawn-in-house.md.
+
+Twelve condition buckets plus two night variants. Emits a 100-unit viewBox
+to match what ``map.js`` expects (VIEWBOX 100 / ORIGIN 0 / BOX 100).
+
+The environment variables read below (MARK_SCALE, SPREAD, EDGE_W,
+SNOW_SOLID) exist for tuning against ``/_icon-sets/``; their defaults are
+the shipped values and there is no reason to set them in normal use.
+"""
+
+# ruff: noqa: T201
+from __future__ import annotations
+
+import math
+import os
+import pathlib
+
+# --- palette -----------------------------------------------------------
+# Measured: (contrast on #ffffff, on #2a2825)
+# The cloud ramp, anchored on Yr's own greys.
+#
+# Yr draws four neutral steps — #dddddd overcast, #cccccc light, #b2b2b2
+# moderate, #999999 heavy — and we take all four verbatim, adding one darker
+# step for the thunderstorm. Neutral rather than the warm greys this set
+# started with, and lighter: a fair-weather cloud should read bright.
+#
+# partly_cloudy and cloudy share a step on purpose, as they do in Yr. What
+# separates them is the sun, not the shade of the cloud; giving them
+# different greys would be a distinction the eye cannot make (1.06 apart)
+# standing in for one it can.
+#
+# The light end sits far below 3:1 on the white card, which is exactly what
+# CLOUD_EDGE is for: a fixed neutral mid grey (3.45 on white, 4.26 on the
+# dark card) carries the silhouette wherever the fill cannot, and sits close
+# enough to the darker fills that no outline shows where none is needed.
+CLOUD_EDGE = "#8a8a8a"  # 3.45 / 4.26  — fixed silhouette edge
+CLOUD_L2 = "#dddddd"  # 1.36 / 10.82 — partly cloudy, overcast, fog  (= Yr)
+CLOUD_L3 = "#cccccc"  # 1.61 /  9.15 — drizzle, light rain/snow      (= Yr)
+CLOUD_L4 = "#b2b2b2"  # 2.12 /  6.93 — moderate rain/snow            (= Yr)
+CLOUD_L5 = "#999999"  # 2.85 /  5.16 — heavy rain/snow               (= Yr)
+CLOUD_L6 = "#808080"  # 3.95 /  3.72 — thunderstorm
+CLOUD_L1 = CLOUD_L2
+CLOUD = CLOUD_L3
+SUN = "#f0b429"  # fill; light by nature, so the stroke carries it
+SUN_EDGE = "#b57400"  # 3.84 / 3.82
+RAIN = "#3b7fd4"  # 4.06 / 3.62
+SNOW = "#ffffff"  # white fill + CLOUD stroke: outlined on light,
+SNOW_EDGE = "#8a8a8a"  #   filled on dark. Keeps the conventional colour.
+BOLT = "#f0b429"
+BOLT_EDGE = "#b57400"
+FOG = "#666666"  # = Yr's fog bars
+
+# Toggled by the caller to compare a solid flake against an outlined one.
+SNOW_SOLID = os.environ.get("SNOW_SOLID", "1") == "1"
+if SNOW_SOLID:
+    SNOW_EDGE = "#3389b5"  # 4.79 / 3.07
+
+MARK = float(os.environ.get("MARK_SCALE", "1.5"))  # precipitation mark size
+SPREAD = float(os.environ.get("SPREAD", "24.0"))
+EDGE_W = float(os.environ.get("EDGE_W", "2.6"))  # silhouette edge width
+
+
+def _shift(hex_colour: str, amount: float) -> str:
+    """Lighten (amount > 0) or darken (amount < 0) a hex colour.
+
+    Args:
+        hex_colour: A ``#rrggbb`` string.
+        amount: Fraction of the distance to white (positive) or black
+            (negative), 0..1.
+
+    Returns:
+        The shifted ``#rrggbb`` string.
+
+    """
+    r, g, b = (int(hex_colour[i : i + 2], 16) for i in (1, 3, 5))
+    target = 255 if amount > 0 else 0
+    k = abs(amount)
+    return "#" + "".join(f"{round(c + (target - c) * k):02x}" for c in (r, g, b))
+
+
+def cloud_gradient(fill: str, grad_id: str = "cloudbody") -> str:
+    """Build a top-lit vertical gradient across the whole cloud.
+
+    ``gradientUnits="userSpaceOnUse"`` rather than the default: the cloud is
+    four overlapping shapes, and an object-bounding-box gradient would run
+    the full ramp inside EACH of them, banding the form into its parts. One
+    user-space gradient spanning the cloud's height lights all four as a
+    single body.
+
+    Args:
+        fill: The ramp step this cloud is drawn in.
+        grad_id: The gradient's element id, unique within the file.
+
+    Returns:
+        A ``<defs>`` fragment.
+
+    """
+    return (
+        f'<defs><linearGradient id="{grad_id}" gradientUnits="userSpaceOnUse" '
+        f'x1="0" y1="14" x2="0" y2="70">'
+        f'<stop offset="0" stop-color="{_shift(fill, 0.30)}"/>'
+        f'<stop offset="0.55" stop-color="{fill}"/>'
+        f'<stop offset="1" stop-color="{_shift(fill, -0.12)}"/>'
+        f"</linearGradient></defs>"
+    )
+
+
+HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+FOOT = "</svg>"
+
+
+def cloud(fill: str = CLOUD, dx: float = 0.0, dy: float = 0.0) -> str:
+    """Draw a cloud from overlapping circles plus a rounded base.
+
+    Drawn twice: once in ``CLOUD_EDGE`` carrying a stroke, then again in
+    ``fill`` on top. Because the parts overlap, the first pass shows only
+    at the outer perimeter, which gives a clean silhouette edge without
+    hand-authoring a single outline path — and without the internal seams
+    that stroking each part individually would draw.
+
+    Args:
+        fill: Body colour, one of the ``CLOUD_L*`` ramp steps.
+        dx: Horizontal offset within the viewBox.
+        dy: Vertical offset within the viewBox.
+
+    Returns:
+        An SVG fragment.
+
+    """
+    parts = (
+        '<circle cx="29" cy="48" r="18"/>'
+        '<circle cx="52" cy="40" r="24"/>'
+        '<circle cx="75" cy="50" r="17"/>'
+        '<rect x="20" y="48" width="64" height="18" rx="9"/>'
+    )
+    return (
+        f'<g transform="translate({dx},{dy})">'
+        f"{cloud_gradient(fill)}"
+        f'<g fill="{CLOUD_EDGE}" stroke="{CLOUD_EDGE}" stroke-width="{EDGE_W}" '
+        f'stroke-linejoin="round">{parts}</g>'
+        f'<g fill="url(#cloudbody)">{parts}</g>'
+        # Lobe structure. The gradient alone lights the cloud as one mass,
+        # which reads as a blob with a ramp on it rather than as a cloud —
+        # a real one is a cluster of rounded lobes, and the eye wants to see
+        # where they meet. A soft highlight over the crown of the tall lobe
+        # and the shoulder of the left one puts that back, and stays inside
+        # the body so it can never disturb the silhouette.
+        f'<g fill="{_shift(fill, 0.42)}" opacity="0.55">'
+        f'<ellipse cx="49" cy="27" rx="15" ry="7.5"/>'
+        f'<ellipse cx="27" cy="39" rx="9" ry="4.5"/>'
+        f"</g>"
+        f"</g>"
+    )
+
+
+def sun(cx: float = 50, cy: float = 40, r: float = 13, rays: bool = True) -> str:
+    """Draw the sun — a gold disc with a darker rim, and eight rounded rays."""
+    out = [f'<g stroke="{SUN_EDGE}" stroke-width="2.5" stroke-linecap="round">']
+    if rays:
+        for i in range(8):
+            a = math.radians(i * 45)
+            x1, y1 = cx + math.cos(a) * (r + 5), cy + math.sin(a) * (r + 5)
+            x2, y2 = cx + math.cos(a) * (r + 12), cy + math.sin(a) * (r + 12)
+            out.append(
+                f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
+            )
+    out.append(
+        f'<defs><radialGradient id="sunbody" cx="0.35" cy="0.3" r="0.85">'
+        f'<stop offset="0" stop-color="{_shift(SUN, 0.35)}"/>'
+        f'<stop offset="1" stop-color="{SUN}"/>'
+        f"</radialGradient></defs>"
+    )
+    out.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="url(#sunbody)"/>')
+    out.append("</g>")
+    return "".join(out)
+
+
+def moon(cx: float = 50, cy: float = 40, r: float = 34, angle: float = -38.0) -> str:
+    """Draw a gibbous moon — a disc with a shallow bite out of one shoulder.
+
+    Built from the two points where the disc and the cutting disc intersect,
+    rather than by guessing arc parameters — so how much is bitten out is a
+    real number rather than something to eyeball.
+
+    The bite is deliberately **shallow**. An earlier version cut deep enough
+    to leave a thin curved arm, which is a crescent and reads as an emblem;
+    Yr and Meteocons both draw a nearly-full disc, and at 27 px a fuller
+    body simply survives better.
+
+    Args:
+        cx: Centre x of the moon's disc.
+        cy: Centre y.
+        r: Disc radius.
+        angle: Bearing of the bite, in degrees; negative is up-and-right.
+
+    Returns:
+        An SVG fragment.
+
+    """
+    cutter = r * 0.76
+    distance = r
+    # The two circles meet where x = (d^2 + r^2 - rc^2) / 2d, y = +/-sqrt(r^2 - x^2),
+    # measured in a frame with the cutter on the +x axis; rotate that frame
+    # by `angle` to place the bite.
+    a = math.radians(angle)
+    x = (distance**2 + r**2 - cutter**2) / (2 * distance)
+    y = math.sqrt(max(r**2 - x**2, 1e-9))
+
+    def place(px: float, py: float) -> tuple[float, float]:
+        """Rotate a point out of the cutter frame into the icon's frame."""
+        return (
+            cx + px * math.cos(a) - py * math.sin(a),
+            cy + px * math.sin(a) + py * math.cos(a),
+        )
+
+    start = place(x, -y)
+    end = place(x, y)
+    return (
+        f'<path fill="{SUN}" stroke="{SUN_EDGE}" stroke-width="2.5" '
+        f'stroke-linejoin="round" d="M{start[0]:.2f},{start[1]:.2f} '
+        f"A{r:.2f},{r:.2f} 0 1,0 {end[0]:.2f},{end[1]:.2f} "
+        f'A{cutter:.2f},{cutter:.2f} 0 0,1 {start[0]:.2f},{start[1]:.2f} z"/>'
+    )
+
+
+def drops(n: int, scale: float = 1.0) -> str:
+    """``n`` rain drops in a row beneath the cloud.
+
+    Args:
+        n: How many drops.
+        scale: Multiplier on MARK, so drizzle can be drawn finer than rain.
+
+    Returns:
+        An SVG fragment.
+
+    """
+    xs = _spread(n, SPREAD * (0.62 if scale < 1 else 1.0))
+    out = []
+    for i, x in enumerate(xs):
+        y = 74 + (4 if i % 2 else 0)
+        k = MARK * scale
+        c1, c2, c3 = 3.4 * k, 4.6 * k, 5 * k
+        c4, c5, c6 = 7 * k, 9.2 * k, 10 * k
+        c7, c8 = 2.2 * k, 1.6 * k
+        out.append(
+            f'<path fill="{RAIN}" d="M{x},{y} '
+            f"c{c1:.2f},{c2:.2f} {c3:.2f},{c4:.2f} {c3:.2f},{c5:.2f} "
+            f"a{c3:.2f},{c3:.2f} 0 0,1 {-c6:.2f},0 "
+            f'c0,{-c7:.2f} {c8:.2f},{-c2:.2f} {c3:.2f},{-c5:.2f} z"/>'
+        )
+    return "".join(out)
+
+
+def flakes(n: int) -> str:
+    """``n`` six-armed flakes beneath the cloud.
+
+    Deliberately few and large. A flake small enough to fit six thin arms
+    at 27 px collapses into a disc, which is the failure the current set's
+    canvas halo produces on the map.
+    """
+    xs = _spread(n)
+    out = []
+    for i, x in enumerate(xs):
+        cy = 80 + (4 if i % 2 else 0)
+        arms = []
+        for k in range(3):
+            a = math.radians(k * 60)
+            dx, dy = math.cos(a) * 6.2 * MARK, math.sin(a) * 6.2 * MARK
+            arms.append(
+                f'<line x1="{x - dx:.1f}" y1="{cy - dy:.1f}" '
+                f'x2="{x + dx:.1f}" y2="{cy + dy:.1f}"/>'
+            )
+        if SNOW_SOLID:
+            out.append(
+                f'<g stroke="{SNOW_EDGE}" stroke-width="{3.8 * MARK:.2f}" '
+                f'stroke-linecap="round">' + "".join(arms) + "</g>"
+            )
+        else:
+            out.append(
+                f'<g stroke="{SNOW_EDGE}" stroke-width="6.0" stroke-linecap="round">'
+                + "".join(arms)
+                + f'</g><g stroke="{SNOW}" stroke-width="2.6" stroke-linecap="round">'
+                + "".join(arms)
+                + "</g>"
+            )
+    return "".join(out)
+
+
+def bolt() -> str:
+    """Draw a single lightning bolt, hung below the cloud."""
+    return (
+        f'<path fill="{BOLT}" stroke="{BOLT_EDGE}" stroke-width="2.2" '
+        f'stroke-linejoin="round" d="M56,66 L40,86 L51,86 L47,97 L64,77 L53,77 z"/>'
+    )
+
+
+def fog_bars() -> str:
+    """Three horizontal bars, the fog layer beneath the cloud."""
+    out = []
+    for i, (x, w) in enumerate(((16, 62), (24, 60), (18, 58))):
+        y = 74 + i * 9
+        out.append(
+            f'<rect x="{x}" y="{y}" width="{w}" height="5.5" rx="2.75" fill="{FOG}"/>'
+        )
+    return "".join(out)
+
+
+def _spread(n: int, step: float | None = None) -> list[float]:
+    """Evenly spaced x positions for ``n`` precipitation marks.
+
+    Args:
+        n: How many marks.
+        step: Gap between marks; defaults to :data:`SPREAD`.
+
+    Returns:
+        The x positions, centred on the icon.
+
+    """
+    gap = SPREAD if step is None else step
+    if n == 1:
+        return [50.0]
+    span = gap * (n - 1)
+    return [50.0 - span / 2 + i * gap for i in range(n)]
+
+
+# --- the twelve buckets, plus two night variants ------------------------
+ICONS: dict[str, str] = {
+    "clear-day": sun(50, 50, 21),
+    "clear-night": moon(49, 50, 38),
+    "partly_cloudy-day": sun(34, 30, 14) + cloud(CLOUD_L1, dy=10),
+    "partly_cloudy-night": moon(33, 30, 18) + cloud(CLOUD_L1, dy=10),
+    "cloudy": cloud(CLOUD_L2, dy=2),
+    "fog": cloud(CLOUD_L2, dy=-6) + fog_bars(),
+    "drizzle": cloud(CLOUD_L3, dy=-4) + drops(4, scale=0.55),
+    "light_rain": cloud(CLOUD_L3, dy=-4) + drops(2),
+    "moderate_rain": cloud(CLOUD_L4, dy=-4) + drops(3),
+    "heavy_rain": cloud(CLOUD_L5, dy=-4) + drops(4),
+    "light_snow": cloud(CLOUD_L3, dy=-4) + flakes(2),
+    "moderate_snow": cloud(CLOUD_L4, dy=-4) + flakes(3),
+    "heavy_snow": cloud(CLOUD_L5, dy=-4) + flakes(4),
+    "thunder": cloud(CLOUD_L6, dy=-4) + bolt(),
+}
+
+
+def main() -> None:
+    """Write every icon into ``static/icons/weather/snowdesk/``."""
+    out = pathlib.Path(__file__).resolve().parent.parent / (
+        "static/icons/weather/snowdesk"
+    )
+    out.mkdir(exist_ok=True)
+    for name, body in ICONS.items():
+        (out / f"{name}.svg").write_text(HEAD + body + FOOT + "\n")
+    print(f"wrote {len(ICONS)} icons to {out}")
+
+
+if __name__ == "__main__":
+    main()

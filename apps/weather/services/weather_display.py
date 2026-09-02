@@ -33,9 +33,9 @@ Two bucket maps sit on the WMO weather interpretation code (0–99):
 1. **Background buckets** (``WEATHER_BUCKETS``, 7 entries) — the coarse
    grouping the ``--color-weather-*`` design tokens are keyed by.
 2. **Icon buckets** (``WEATHER_ICON_BUCKETS``, 12 entries) — the finer
-   grouping that selects a Meteocons SVG. Rain splits into drizzle / light /
-   moderate / heavy and snow into light / moderate / heavy, so the icon tells
-   the reader more than the colour band alone.
+   grouping that selects a Yr / MET Norway SVG. Rain splits into drizzle /
+   light / moderate / heavy and snow into light / moderate / heavy, so the
+   icon tells the reader more than the colour band alone.
 
 Both fall back to ``cloudy`` for an unrecognised code — a neutral default
 rather than a missing-data sentinel, so one rogue code can never take a page
@@ -159,12 +159,16 @@ WEATHER_ICON_BUCKETS: tuple[str, ...] = (
     "thunder",
 )
 
-# Every icon bucket that ships separate day/night SVG variants. ``cloudy`` is
-# the only bucket without a day/night distinction — it reads the same
-# regardless of light, so it ships as a single ``cloudy.svg``.
+# Every icon bucket that ships separate day/night SVG variants — the two the
+# icon set draws a sun or a moon in. Everything else is weather in front of a
+# cloud, which looks the same by either light, so it ships as one file
+# (SNOW-791). Enumerated rather than derived by subtraction: the members are
+# a property of the drawings on disk, not of the bucket list, and a new
+# precipitation bucket must not silently acquire a day/night pair that does
+# not exist.
 WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT: frozenset[str] = frozenset(
-    WEATHER_ICON_BUCKETS
-) - {"cloudy"}
+    {"clear", "partly_cloudy"}
+)
 
 DEFAULT_ICON_BUCKET: str = "cloudy"
 
@@ -236,18 +240,18 @@ def weather_code_icon_bucket(code: int) -> str:
 
 
 def weather_icon_filename(icon_bucket: str, time_of_day: str) -> str:
-    """Return the Meteocons SVG basename for a bucket and time of day.
+    """Return the weather SVG basename for a bucket and time of day.
 
-    Buckets in :data:`WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT` ship separate
-    day/night variants; ``cloudy`` is the lone exception that ships as one
-    file regardless of light.
+    Only the buckets in :data:`WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT` ship
+    separate day/night variants; every other bucket resolves to a single
+    file and ignores ``time_of_day``.
 
     Args:
         icon_bucket: One of the identifiers in :data:`WEATHER_ICON_BUCKETS`.
         time_of_day: ``"day"`` or ``"night"``.
 
     Returns:
-        The SVG basename, e.g. ``"light_snow-day.svg"`` or ``"cloudy.svg"``.
+        The SVG basename, e.g. ``"clear-day.svg"`` or ``"light_snow.svg"``.
 
     """
     if icon_bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:

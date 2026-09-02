@@ -2866,7 +2866,7 @@ def _weather_display(**overrides: Any) -> dict[str, Any]:
         "sunset_local": "20:14",
         "icon_bucket": "moderate_snow",
         "condition_label": "Snow",
-        "icon_filename": "moderate_snow-day.svg",
+        "icon_filename": weather_icon_filename("moderate_snow", "day"),
         "temp_max": -1.0,
         "temp_min": -8.0,
         "snowfall_sum": 22.0,
@@ -2892,7 +2892,7 @@ WEATHER_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
                 bucket="clear",
                 icon_bucket="clear",
                 condition_label="Clear",
-                icon_filename="clear-day.svg",
+                icon_filename=weather_icon_filename("clear", "day"),
                 temp_max=6.0,
                 temp_min=-2.0,
                 snowfall_sum=0.0,
@@ -2920,12 +2920,25 @@ WEATHER_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         # Night is not a variant of the panel's chrome — it is a different
         # icon file, which is the whole visual difference.
+        #
+        # CLEAR, not the fixture's default snow: the icon set draws a night
+        # variant only where a sun or a moon appears (SNOW-791), so a snowy
+        # night renders the identical file and this variant would sit in the
+        # library demonstrating nothing.
         "caption": "Night",
         "context": {
             "weather_display": _weather_display(
+                weather={"weather_code": 0},
+                bucket="clear",
                 is_day=False,
                 time_of_day="night",
-                icon_filename="moderate_snow-night.svg",
+                icon_bucket="clear",
+                condition_label="Clear",
+                icon_filename=weather_icon_filename("clear", "night"),
+                temp_max=-4.0,
+                temp_min=-9.0,
+                snowfall_sum=0.0,
+                freezing_level_height=900.0,
             ),
             "testid_prefix": "component-library-weather-night",
         },
