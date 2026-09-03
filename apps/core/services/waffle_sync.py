@@ -12,6 +12,11 @@ re-run.
 ``FlagSpec``; ``compute_flag_diff`` is the pure set-difference the command
 acts on. Neither function imports the ORM, so both are unit-testable without
 a database.
+
+SNOW-812 added ``groups`` to the manifest vocabulary — group NAMES a flag is
+scoped to. It is the one manifest key that is not a scalar create-default:
+``Flag.groups`` is a ManyToMany, so the command applies it after the row
+exists. Everything here still stops at parsing it.
 """
 
 from __future__ import annotations
@@ -37,7 +42,13 @@ _OPTIONAL_KEYS = frozenset(
         "rollout",
     }
 )
-_ALLOWED_KEYS = _REQUIRED_KEYS | _OPTIONAL_KEYS
+# SNOW-812: ``groups`` is allowed in a manifest entry but is NOT one of the
+# scalar create-defaults above — ``Flag.groups`` is a ManyToMany, so it
+# cannot be passed to ``Flag.objects.create()`` and is applied by the
+# command with ``.set()`` after the row exists. Kept out of
+# ``_OPTIONAL_KEYS`` precisely so ``create_defaults()`` cannot pick it up.
+_GROUPS_KEY = "groups"
+_ALLOWED_KEYS = _REQUIRED_KEYS | _OPTIONAL_KEYS | {_GROUPS_KEY}
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,10 +61,17 @@ class FlagSpec:
     targeting rules"); ``percent`` is ``Decimal | None``. In every case
     ``None`` means "not specified in the manifest" — the created ``Flag`` row
     falls back to the model field's own default rather than an explicit value.
+
+    ``groups`` (SNOW-812) is the exception to all of that: a tuple of group
+    NAMES, empty when unspecified, applied after create rather than as a
+    create-default because it is a ManyToMany.
     """
 
     name: str
     note: str
+    #: SNOW-812: group names this flag is scoped to. Applied via ``.set()``
+    #: after create, never as a create-default — see ``_GROUPS_KEY``.
+    groups: tuple[str, ...] = ()
     superusers: bool | None = None
     staff: bool | None = None
     authenticated: bool | None = None
@@ -68,6 +86,9 @@ class FlagSpec:
         Only fields explicitly present in the manifest entry are included
         (plus ``note``, always required) — fields left unset here are
         omitted entirely so the ``Flag`` model's own field default applies.
+
+        ``groups`` is deliberately absent: it is a ManyToMany and cannot be
+        set until the row exists.
 
         Returns:
             A dict of ``Flag`` field name -> value, suitable as ``create()``
@@ -95,8 +116,9 @@ def load_manifest(path: Path) -> list[FlagSpec]:
         ValueError: If the file is missing, is not valid JSON, is not
             shaped ``{"flags": [...]}``, or any entry is missing a
             required key (``name``/``note``), repeats a ``name`` already
-            seen earlier in the file, or carries a key outside the
-            recognised ``FlagSpec`` fields.
+            seen earlier in the file, carries a key outside the
+            recognised ``FlagSpec`` fields, or gives ``groups`` anything
+            but a list of non-empty strings.
 
     """
     if not path.exists():
@@ -160,6 +182,16 @@ def _validate_entry(path: Path, index: int, entry: Any, seen_names: set[str]) ->
             f"required key(s): {', '.join(sorted(missing))}."
         )
 
+    groups = entry.get(_GROUPS_KEY)
+    if groups is not None and (
+        not isinstance(groups, list)
+        or not all(isinstance(g, str) and g.strip() for g in groups)
+    ):
+        raise ValueError(
+            f"Waffle flag manifest {path}: entry {index} key "
+            f"{_GROUPS_KEY!r} must be a list of non-empty group names."
+        )
+
     name = entry["name"]
     if name in seen_names:
         raise ValueError(f"Waffle flag manifest {path}: duplicate flag name {name!r}.")
@@ -180,6 +212,7 @@ def _spec_from_entry(entry: dict[str, Any]) -> FlagSpec:
     return FlagSpec(
         name=entry["name"],
         note=entry["note"],
+        groups=tuple(entry.get(_GROUPS_KEY) or ()),
         superusers=entry.get("superusers"),
         staff=entry.get("staff"),
         authenticated=entry.get("authenticated"),

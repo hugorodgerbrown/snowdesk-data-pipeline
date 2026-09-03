@@ -352,8 +352,27 @@
       const row = await window.pwaDb?.get('meta:app', DOWNLOADED_REGIONS_KEY);
       const value = Array.isArray(row && row.value) ? row.value : [];
       const record = value.find((entry) => entry && entry.region_id === regionId);
+      // SNOW-812: this function returns null for four different reasons —
+      // no row at all, a row holding other regions, a pre-SNOW-583 record
+      // without `z`, and a read that threw — and the caller cannot tell
+      // them apart. `ids` is what makes the second case readable: a
+      // region that looks downloaded in the UI but is not in this list is
+      // a different bug from one that is in it with the wrong shape.
+      window.pwaDebugLog?.record('idb', 'region.record', {
+        key: DOWNLOADED_REGIONS_KEY,
+        lookingFor: regionId,
+        rows: value.length,
+        ids: value.map((entry) => entry && entry.region_id).filter(Boolean),
+        found: !!record,
+        usable: !!(record && record.z),
+      });
       return record && record.z ? record : null;
     } catch (_e) {
+      window.pwaDebugLog?.record('idb', 'region.record', {
+        key: DOWNLOADED_REGIONS_KEY,
+        lookingFor: regionId,
+        error: true,
+      });
       return null;
     }
   }

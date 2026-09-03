@@ -52,8 +52,9 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | Name | Targeting (default) | Gates | Introduced |
 |------|---------------------|-------|------------|
 | `sync_log` | `superusers=True` | The manage-page "Sync log" panel (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
+| `debug_log` | `groups=["GRP_DEBUG"]` | The on-device debug trace on every public page — the panel and the `static/js/debug_log.js` recorder behind it ([`debug-log.md`](debug-log.md)). | SNOW-812. |
 
-**One flag, and it is the right shape for one.** `sync_log` is not a
+**Two flags, both the same shape.** `sync_log` is not a
 rollout gate waiting to be opened: it is a per-user diagnostic toggle. The
 panel prints a device's recent real server round-trips, which is a
 debugging read-out rather than a product surface, and the `Users` M2M is
@@ -73,6 +74,47 @@ against the `django_cache` table, so a warm cache trades three model
 queries for a cache-table one rather than for none. Hugo's call was that a
 permanent per-request cost on that page was the wrong price for a kill
 switch nobody intended to pull, and the feature shipped unconditionally.
+
+**`debug_log` (SNOW-812) is the same trade, and it took two goes to
+pay it.** It gates a surface on `base.html`, so it is read on the homepage
+too — and the first draft cost exactly what `download_sync` did:
+`monitor_query_counts` caught `home` at 5 → 8 and `bulletin_historic` at
+7 → 10.
+
+Two guards bring it back to zero for the traffic that matters, and both
+are load-bearing:
+
+* **Lazy.** The context processor returns a `SimpleLazyObject`, so the flag
+  is evaluated only when a template actually reads it. The JSON API
+  endpoints that render a partial into `{"html": ...}` — `region_summary`
+  and its siblings — and every HTMX fragment therefore pay **nothing**.
+  `test_region_summary_query_count` is what caught that half: it went
+  2 → 3 on the eager version.
+* **Anonymous short-circuit.** `request.user.is_authenticated` is evaluated
+  first, so a visitor with no session never reaches waffle at all. This is
+  the guard that fixed the 5 → 8. Note what did **not** work: measuring on a
+  warm waffle cache and concluding the cost was zero. Waffle's cache is
+  cold on the first request a process serves, and in production it is
+  `DatabaseCache` — a warm cache trades three model queries for a
+  cache-table one, not for none, exactly as the `download_sync` paragraph
+  above already said.
+
+A **signed-in** request pays one extra query, the `auth_user_groups` join a
+group-scoped flag needs and that nothing caches.
+
+Both numbers are pinned —
+`tests/public/test_debug_log_panel.py::test_anonymous_visitors_pay_no_query_for_the_gate`
+(deliberately *without* warming the cache, since warming it is what hid the
+regression) and `::test_signed_in_cost_is_one_query`.
+
+**The short-circuit has a stated cost.** It reads the flag as "never active
+for an anonymous request", which holds for group scoping but not for an
+`everyone = Yes` set in the admin. That combination is deliberately
+unsupported for this flag — turning it on for everyone would ship a debug
+panel to every visitor — and
+`::test_everyone_yes_does_not_reach_an_anonymous_visitor` pins it so it
+stays a contract rather than a surprise. A future flag that genuinely needs
+to reach anonymous traffic must not copy this processor's short-circuit.
 
 The general form: **a flag on a hot path is not free, and "we can always
 turn it off" is worth costing before it is assumed.** Reverting an
@@ -137,6 +179,34 @@ manifest entry landed. Six seeding migrations predate the manifest
 `0006` and `0008`); SNOW-724 emptied their bodies to no-ops and kept the
 nodes, so migration history still applies on deployed databases but there
 is no live example of the pattern left to copy.
+
+### Manifest keys
+
+A manifest entry is `name` + `note` (both required) plus any of waffle's
+scalar targeting fields — `superusers`, `staff`, `authenticated`,
+`everyone`, `percent`, `testing`, `rollout` — and `groups`. Anything else
+is rejected as an unknown key, which is what catches the singular typo
+(`"superuser"`).
+
+Every one of those is a **create-default**: `sync_waffle_flags` reconciles
+by create + delete only and never edits an existing row, so changing a
+value in the manifest does not re-target a flag that already exists. That
+is deliberate — it is what lets an operator tune targeting in the admin
+without a deploy undoing it. To re-scope a live flag, change it in the
+admin, or delete and recreate it.
+
+**`groups` (SNOW-812) is the one key that is not a create-default.**
+`Flag.groups` is a ManyToMany, so it cannot be passed to
+`Flag.objects.create()`; the command applies it with `.set()` after the
+row exists. Two consequences worth knowing:
+
+* A named group that does not exist yet is **created empty**. A flag
+  scoped to a missing group matches nobody and reports nothing — the exact
+  silent failure the manifest exists to remove — so the command leaves an
+  operator one visible step (add people to the group in the admin) rather
+  than a dark feature and no error.
+* `"groups": "GRP_DEBUG"` — a bare string rather than a list — is rejected
+  outright. Iterating it would create ten single-letter groups.
 
 ---
 

@@ -4,6 +4,13 @@
       "name": "sync_log",
       "note": "Gates the SNOW-482 sync-log panel (manage page) and its matching /help/ section — a read-out of the client-side log:sync IndexedDB store of recent real server round-trips.",
       "superusers": true
+    },
+    {
+      "name": "debug_log",
+      "note": "Gates the SNOW-812 on-device debug trace — the panel rendered from public/base.html and the static/js/debug_log.js recorder behind it. Scoped to the GRP_DEBUG group: the flag decides who gets the toggle, and recording stays a per-device choice made in the panel, so holding the flag costs nothing until somebody switches the trace on.",
+      "groups": [
+        "GRP_DEBUG"
+      ]
     }
   ]
 }

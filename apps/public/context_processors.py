@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import waffle
 from django.conf import settings
+from django.utils.functional import SimpleLazyObject
 
 from apps.public.release import release_label
 from apps.public.site_environment import PWAEnvironmentIdentity
@@ -129,6 +131,73 @@ def pwa_dev_shell_bypass(request: HttpRequest) -> dict[str, Any]:
     """
     return {
         "SW_DEV_SHELL_BYPASS": bool(getattr(settings, "SW_DEV_SHELL_BYPASS", False)),
+    }
+
+
+def debug_log_visible(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject the debug-trace gate into every template context (SNOW-812).
+
+    Exposes ``debug_log_visible`` so ``base.html`` can decide whether to
+    render the debug-log panel and load ``static/js/debug_log.js`` at all.
+    A context processor rather than a per-view context key — the panel is
+    a universal surface (the map is only its richest producer), and a
+    per-view key would have meant editing every public view to add one,
+    and forgetting the next one.
+
+    The flag is scoped to the ``GRP_DEBUG`` group (see
+    ``apps/core/fixtures/waffle_flags.json``): everyone in it gets the
+    toggle, and recording stays a per-device choice made in the panel. For
+    everyone else neither the markup nor the recorder reaches the page,
+    so every instrumented call site stays an optional-chain no-op.
+
+    **Two guards, and both are load-bearing.** ``docs/feature-flags.md``
+    records SNOW-749 deleting a ``download_sync`` flag before merge because
+    its gate cost the homepage three queries. This flag gates a surface on
+    ``base.html``, so it is read on that same page and has to answer that
+    objection rather than repeat it. The first draft did repeat it —
+    ``monitor_query_counts`` caught ``home`` at 5 -> 8.
+
+    1. **Lazy.** A context processor runs for every ``render()``, so an
+       eager read would bill responses that never render the panel at all:
+       the JSON API endpoints returning a partial as ``{"html": ...}``
+       (``apps.public.api.region_summary`` and friends) and every HTMX
+       fragment. ``SimpleLazyObject`` defers it until a template actually
+       reads the variable.
+    2. **Anonymous short-circuit.** ``request.user.is_authenticated`` is
+       evaluated first and, being ``and``, stops there for a visitor with
+       no session — no waffle read, no ``waffle_flag`` row fetch, no
+       group join. That is what keeps the homepage at its baseline, since
+       waffle's own cache is cold on a first request and, in production,
+       is ``DatabaseCache`` anyway: a warm cache trades three model
+       queries for a cache-table one, not for none.
+
+    **The trade the short-circuit makes.** It reads the flag as "never
+    active for an anonymous request", which is true of the group scoping
+    this flag ships with (``GRP_DEBUG``) but would NOT be true if an
+    operator set ``everyone = Yes`` on it in the admin. That is deliberate:
+    turning this particular flag on for everyone would ship a debug panel
+    to every visitor, which is a mistake in its own right rather than a
+    configuration worth supporting. Pinned by
+    ``tests/public/test_debug_log_panel.py``, so it stays a stated contract
+    rather than a silent optimisation.
+
+    Args:
+        request: The incoming HTTP request — the flag is per-user.
+
+    Returns:
+        ``{"debug_log_visible": SimpleLazyObject}``, truthy exactly when
+        the request is authenticated AND the flag is active. Templates read
+        it as a plain boolean.
+
+    """
+    return {
+        "debug_log_visible": SimpleLazyObject(
+            lambda: (
+                request.user.is_authenticated
+                and waffle.flag_is_active(request, "debug_log")
+            )
+        )
     }
 
 

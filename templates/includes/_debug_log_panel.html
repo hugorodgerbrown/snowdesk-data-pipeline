@@ -1,0 +1,81 @@
+{% comment %}
+templates/includes/_debug_log_panel.html — on-device debug trace panel (SNOW-812).
+
+Rendered from public/base.html ONLY when the ``debug_log`` waffle flag is
+active — i.e. for members of the GRP_DEBUG group. For everyone else neither
+this markup nor static/js/debug_log.js reaches the page at all, so the
+instrumented call sites across map.js, sw.js and friends stay
+optional-chain no-ops against an undefined ``window.pwaDebugLog``.
+
+The flag decides who gets the toggle. Recording itself is a per-device
+choice made here and persisted (localStorage + a ``debug.enabled``
+meta:app row + a postMessage to the service worker), so holding the flag
+costs nothing until somebody switches the trace on.
+
+Why an on-page panel rather than the console: the failures worth chasing
+here happen on a phone, offline, often mid-download — with no devtools
+attached and no way to attach any. Copy puts the whole trace on the
+clipboard so it can be pasted into a Linear comment from the device that
+produced it.
+{% endcomment %}
+{% load i18n static %}
+<div id="debug-log" data-testid="debug-log-panel" class="fixed bottom-2 left-2 z-50 font-mono text-xs">
+    {# Collapsed state: a single pill. Deliberately small and low-contrast — #}
+    {# it sits on every page for everyone in the group, so it must not read  #}
+    {# as part of the product.                                               #}
+    <button
+        id="debug-log-handle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="debug-log-body"
+        class="rounded-pill border border-border bg-card px-2 py-1 text-text-3 shadow-sm"
+    >
+        <span aria-hidden="true">▚</span>
+        <span id="debug-log-count">0</span>
+    </button>
+    <div
+        id="debug-log-body"
+        hidden
+        class="mt-1 flex w-[min(92vw,44rem)] flex-col rounded-card border border-border bg-card shadow-lg"
+    >
+        <div class="flex items-center gap-2 border-b border-border px-2 py-1.5">
+            <label class="flex items-center gap-1 text-text-1">
+                <input id="debug-log-enabled" type="checkbox" class="h-3 w-3">
+                {% translate "Record" %}
+            </label>
+            <select
+                id="debug-log-filter"
+                aria-label="{% translate 'Filter by source' %}"
+                class="rounded-sm border border-border bg-card px-1 py-0.5 text-text-2"
+            >
+                <option value="">{% translate "all" %}</option>
+                <option value="sw">sw</option>
+                <option value="map">map</option>
+                <option value="idb">idb</option>
+                <option value="cache">cache</option>
+                <option value="net">net</option>
+            </select>
+            <span id="debug-log-status" class="text-text-3" role="status"></span>
+            <span class="grow"></span>
+            <button id="debug-log-copy" type="button" class="text-text-2 underline">
+                {% translate "Copy" %}
+            </button>
+            <button id="debug-log-clear" type="button" class="text-text-2 underline">
+                {% translate "Clear" %}
+            </button>
+            <button id="debug-log-close" type="button" aria-label="{% translate 'Close' %}" class="text-text-2">
+                ×
+            </button>
+        </div>
+        {# max-h rather than a fixed height: a short trace should not leave a #}
+        {# tall empty box over the map it is describing.                      #}
+        <ol id="debug-log-list" class="m-0 max-h-[40vh] list-none overflow-y-auto overflow-x-auto p-0"></ol>
+    </div>
+    {# SNOW-620: server-translated copy, read back by debug_log_panel.js. #}
+    <template id="debug-log-strings-template">
+        <span data-string="off">{% translate "not recording" %}</span>
+        <span data-string="empty">{% translate "Nothing recorded yet." %}</span>
+        <span data-string="copied">{% translate "copied" %}</span>
+        <span data-string="copy-failed">{% translate "copy failed" %}</span>
+    </template>
+</div>
