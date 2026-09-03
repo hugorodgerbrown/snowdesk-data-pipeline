@@ -70,11 +70,18 @@ somebody else's afternoon.
 
 - **Without the flag**: `base.html` renders neither the panel nor the two
   scripts, so `window.pwaDebugLog` is undefined and every instrumented
-  call site is an optional-chain no-op. The flag check itself is a
-  `SimpleLazyObject` in `apps/public/context_processors.py`, evaluated
-  only when a template reads it — so a JSON API response that never
-  renders `base.html` pays no query at all. `tests/public/test_map_api.py`'s
-  query-count assertions pin that.
+  call site is an optional-chain no-op.
+- **The gate itself**: two guards in
+  `apps/public/context_processors.py`, both needed. It is a
+  `SimpleLazyObject`, so a response that never renders `base.html` (a JSON
+  API endpoint, an HTMX fragment) pays no query; and it checks
+  `request.user.is_authenticated` before consulting waffle, so an
+  anonymous visitor never reads the flag row. Without that second guard
+  `monitor_query_counts` reads `home` at 5 → 8 — the same cost that got a
+  flag deleted before merge in SNOW-749. See
+  [`feature-flags.md`](feature-flags.md) for the full measurement and for
+  the one configuration the short-circuit does not support
+  (`everyone = Yes`).
 - **With the flag, not recording**: `record()` returns on its first
   statement. Callers whose detail costs something to build check
   `window.pwaDebugLog.on` first.

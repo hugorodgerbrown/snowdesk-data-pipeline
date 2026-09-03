@@ -151,28 +151,52 @@ def debug_log_visible(request: HttpRequest) -> dict[str, Any]:
     everyone else neither the markup nor the recorder reaches the page,
     so every instrumented call site stays an optional-chain no-op.
 
-    **Lazy on purpose.** A context processor runs for every ``render()``,
-    and ``flag_is_active`` is a DB read — which would put a
-    ``waffle_flag`` query on responses that never render the panel at all:
-    the JSON API endpoints that render a partial into
-    ``{"html": ...}`` (``apps.public.api.region_summary`` and friends), and
-    every HTMX fragment. ``SimpleLazyObject`` defers the read until a
-    template actually reads the variable, so only a page that extends
-    ``base.html`` — the one place that asks — pays for it, and
-    ``tests/public/test_map_api.py``'s query-count assertions stay honest
-    rather than being relaxed to accommodate a debug surface.
+    **Two guards, and both are load-bearing.** ``docs/feature-flags.md``
+    records SNOW-749 deleting a ``download_sync`` flag before merge because
+    its gate cost the homepage three queries. This flag gates a surface on
+    ``base.html``, so it is read on that same page and has to answer that
+    objection rather than repeat it. The first draft did repeat it —
+    ``monitor_query_counts`` caught ``home`` at 5 -> 8.
+
+    1. **Lazy.** A context processor runs for every ``render()``, so an
+       eager read would bill responses that never render the panel at all:
+       the JSON API endpoints returning a partial as ``{"html": ...}``
+       (``apps.public.api.region_summary`` and friends) and every HTMX
+       fragment. ``SimpleLazyObject`` defers it until a template actually
+       reads the variable.
+    2. **Anonymous short-circuit.** ``request.user.is_authenticated`` is
+       evaluated first and, being ``and``, stops there for a visitor with
+       no session — no waffle read, no ``waffle_flag`` row fetch, no
+       group join. That is what keeps the homepage at its baseline, since
+       waffle's own cache is cold on a first request and, in production,
+       is ``DatabaseCache`` anyway: a warm cache trades three model
+       queries for a cache-table one, not for none.
+
+    **The trade the short-circuit makes.** It reads the flag as "never
+    active for an anonymous request", which is true of the group scoping
+    this flag ships with (``GRP_DEBUG``) but would NOT be true if an
+    operator set ``everyone = Yes`` on it in the admin. That is deliberate:
+    turning this particular flag on for everyone would ship a debug panel
+    to every visitor, which is a mistake in its own right rather than a
+    configuration worth supporting. Pinned by
+    ``tests/public/test_debug_log_panel.py``, so it stays a stated contract
+    rather than a silent optimisation.
 
     Args:
         request: The incoming HTTP request — the flag is per-user.
 
     Returns:
         ``{"debug_log_visible": SimpleLazyObject}``, truthy exactly when
-        the flag is active. Templates read it as a plain boolean.
+        the request is authenticated AND the flag is active. Templates read
+        it as a plain boolean.
 
     """
     return {
         "debug_log_visible": SimpleLazyObject(
-            lambda: waffle.flag_is_active(request, "debug_log")
+            lambda: (
+                request.user.is_authenticated
+                and waffle.flag_is_active(request, "debug_log")
+            )
         )
     }
 
