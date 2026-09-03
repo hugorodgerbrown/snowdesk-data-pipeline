@@ -2,7 +2,7 @@
 name: help-illustrations-are-live-mocks
 description: /help/ illustrations render real partials from apps/public/component_previews.py, not screenshots; inert wrappers, namespaced ids
 status: current
-last-reviewed: 2026-08-28
+last-reviewed: 2026-09-03
 ---
 
 # Help illustrations are live mocks, not screenshots
@@ -92,3 +92,22 @@ map's stylesheet onto a text page to decorate one panel is the wrong trade
 against the Lighthouse budget, so that topic is unillustrated and the
 scrubber moved to SNOW-745 with the other surfaces that need a demo form of
 their own.
+
+**One illustration is a mirror, not an include.** The route popup on
+`/help/routes/` is built in JavaScript — `map.js` assembles it and
+`static/js/elevation_profile_core.js` draws the chart — so there is no
+partial to render. `illustrations/_route_popup.html` mirrors that markup,
+and `component_previews.profile_paths` ports the chart's projection, with
+`tests/public/test_component_previews.py` holding the port to the same
+properties the Vitest suite holds the original to. It is still not a
+screenshot: it takes the design tokens, the theme and the translations,
+and it breaks visibly. But it is a second copy of a surface, kept honest
+by a test rather than by being the same code, and that is a cost to pay
+only when the surface is the point of the page. The template's header
+says which it is.
+
+**The wrapper is shared.** `includes/_help_illustration.html` carries the
+`inert` + `aria-hidden` treatment for both the FAQ panels and the
+articles; an article passes `framed` (the FAQ's recessed well vanishes
+against the page) and `width="sheet"` or `"popup"` so a panel renders at
+the width the reader will meet it, not across the column.

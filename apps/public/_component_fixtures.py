@@ -823,6 +823,40 @@ HELP_STEPS_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "Four steps",
         "context": {"body_template": "public/help/articles/_routes_steps.html"},
     },
+    {
+        "caption": "Bulleted notes",
+        "context": {
+            "body_template": "public/help/articles/_routes_notes.html",
+            "unordered": True,
+        },
+    },
+)
+
+
+# ── Help illustration ───────────────────────────────────────────────────────
+# The wrapper alone, around the smallest component that shows it is there.
+# The real illustrations need the synthetic contexts in
+# apps.public.component_previews, which this module does not import — see
+# docs/decisions/help-illustrations-are-live-mocks.md for the boundary.
+
+HELP_ILLUSTRATION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Recessed well (FAQ panel)",
+        "context": {
+            "illustration": "includes/_eyebrow.html",
+            "text": "A live component renders here",
+            "data_testid": "demo-well",
+        },
+    },
+    {
+        "caption": "Framed (article)",
+        "context": {
+            "illustration": "includes/_eyebrow.html",
+            "text": "A live component renders here",
+            "framed": True,
+            "data_testid": "demo-framed",
+        },
+    },
 )
 
 

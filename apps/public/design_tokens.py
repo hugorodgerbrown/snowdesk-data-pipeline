@@ -44,6 +44,7 @@ from apps.public._component_fixtures import (
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
     FORM_FIELD_VARIANTS,
+    HELP_ILLUSTRATION_VARIANTS,
     HELP_STEPS_VARIANTS,
     HOURLY_CHART_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
@@ -1020,16 +1021,33 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="help-steps",
         label="Help steps",
         description=(
-            "Numbered steps for a long-form help article. The only ordered "
-            "list in the codebase — /help/'s FAQ panels are prose, and "
-            "``slf-prose`` styles ul/li but no ol — so the first article "
-            "needing steps extracted this rather than inlining a class "
-            "string. Items come in by ``body_template``, keeping each step a "
-            "whole translatable sentence."
+            "Numbered steps, or bulleted notes, for a long-form help "
+            "article. The only ordered list in the codebase — /help/'s FAQ "
+            "panels are prose, and ``slf-prose`` styles ul/li but no ol — so "
+            "the first article needing steps extracted this rather than "
+            "inlining a class string. Items come in by ``body_template``, "
+            "keeping each step a whole translatable sentence; ``unordered`` "
+            "swaps the numbers for bullets."
         ),
         kind="components",
         partial="includes/_help_steps.html",
         variants=HELP_STEPS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="help-illustration",
+        label="Help illustration",
+        description=(
+            "The wrapper a help surface puts a live illustration in: inert "
+            "and aria-hidden, because the real component inside carries "
+            "real controls that nothing on a help page wires up. The FAQ "
+            "panels use the recessed well, an article the framed card. The "
+            "illustrations themselves are real partials fed synthetic "
+            "contexts (apps.public.component_previews), never screenshots."
+        ),
+        kind="components",
+        partial="includes/_help_illustration.html",
+        variants=HELP_ILLUSTRATION_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

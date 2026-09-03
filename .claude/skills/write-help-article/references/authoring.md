@@ -77,8 +77,8 @@ business touching the ORM.
 
 ## The template
 
-Model it on `public/how_to_read_bulletin.html`, the site's existing long-form
-page. The skeleton:
+Model it on `public/help/articles/routes.html` — the first article, and the
+template for the rest. The skeleton:
 
 ```django
 {% extends "public/base.html" %}
@@ -101,22 +101,49 @@ with that panel.
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="{% page_shell_classes %}">
+    <main class="{% page_shell_classes 'legal-prose max-w-narrow' %}">
         {% trans "<Title>" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="help-article-heading" %}
+        <p class="mb-8 text-base leading-prose text-text-2" data-testid="help-article-<slug>-lead">
+            {% blocktrans trimmed %}<What it is, in one line.>{% endblocktrans %}
+        </p>
 
-        <section class="mb-10 text-sm leading-prose text-text-2" data-testid="help-article-<section>">
-            {% translate "<Section heading>" as t_section %}
-            {% include "includes/_eyebrow.html" with text=t_section class_extra="mb-4" only %}
+        <section data-testid="help-article-<slug>-where">
+            <h2>{% trans "Where to find it" %}</h2>
+            {% include "includes/_help_illustration.html" with illustration="public/help/illustrations/<surface>.html" framed=True width="sheet" data_testid="help-article-<slug>-<surface>" %}
             <p class="mb-3 last:mb-0">
-                {% blocktrans trimmed %}
-                    …
-                {% endblocktrans %}
+                {% blocktrans trimmed %}…{% endblocktrans %}
             </p>
+        </section>
+
+        <section data-testid="help-article-<slug>-how">
+            <h2>{% trans "Doing it" %}</h2>
+            {% include "includes/_help_steps.html" with body_template="public/help/articles/_<slug>_steps.html" %}
+        </section>
+
+        <section data-testid="help-article-<slug>-notes">
+            <h2>{% trans "Good to know" %}</h2>
+            {% include "includes/_help_steps.html" with body_template="public/help/articles/_<slug>_notes.html" unordered=True %}
         </section>
     </main>
 {% endblock content %}
 ```
+
+What the skeleton is doing:
+
+- **`legal-prose`** is the site's long-form document style — the colophon
+  and the terms use it. It sizes each `> section`'s prose and its `<h2>`,
+  so a section carries no class of its own and a heading is a bare `<h2>`.
+  Not `_eyebrow`: a mono uppercase label over a wall of text was the first
+  draft's format, and it is what "not a great reading experience" meant.
+- **`max-w-narrow`** keeps the measure readable. The page shell's own width
+  is for pages with panels beside their text.
+- **The lead replaces a "what it is" section.** One line under the title.
+- **A definition list for a row of controls** — see the "On each row"
+  section of the Routes article: `<dl>` of `<div class="flex gap-3">`, the
+  control's own icon include beside a `<dt>` name and a one-line `<dd>`.
+  The glyph is the same include the real row uses, so the reader matches a
+  control by its mark rather than by a description of it.
 
 Rules that bite if you skip them:
 
@@ -129,19 +156,22 @@ Rules that bite if you skip them:
   A bare string ships as English to every locale.
 - **Tokens only** — `text-text-2`, `leading-prose`, `mb-3`. Never
   `text-slate-500`, never `rounded-[12px]`. `tox -e ds-lint` blocks the PR.
-- **Reuse the partials** — `_page_title`, `_eyebrow`, `_card`, `_button`.
-  Rule one of the design system is reuse first, extract second, inline never.
+- **Reuse the partials** — `_page_title`, `_help_illustration`,
+  `_help_steps`, `_card`, `_button`. Rule one of the design system is reuse
+  first, extract second, inline never.
 - **`data-testid` on each section**, so tests can pin a claim without matching
   prose.
 - `&mdash;` for em dashes, matching the rest of the templates.
 
-## Numbered steps
+## Numbered steps, and bullets
 
-Use `templates/includes/_help_steps.html`. It is the only ordered list in the
-codebase — `/help/`'s FAQ panels are prose and `slf-prose` styles `ul`/`li`
-but no `ol` — so it was extracted with the first article rather than inlined,
-and it is registered in the staff component library at `/_components/` under
-**Help steps**.
+Use `templates/includes/_help_steps.html` for both. It is the only ordered
+list in the codebase — `/help/`'s FAQ panels are prose and `slf-prose` styles
+`ul`/`li` but no `ol` — so it was extracted with the first article rather
+than inlined, and it is registered in the staff component library at
+`/_components/` under **Help steps**. Pass `unordered=True` for a bulleted
+list: steps are numbered because the reader does them in order, "good to
+know" facts are not.
 
 It takes its items by template path, the same slot-by-template shape
 `_collapsible_panel.html` uses:
@@ -198,14 +228,40 @@ synthetic in-memory context, never a screenshot — see
 A PNG has no linter and no test, so it goes stale silently; four claims on
 `/help/` had rotted exactly that way before SNOW-744.
 
+The mechanics:
+
+- **The view already provides the context.** `help_article` renders with
+  `help_illustrations()`, the same mapping `/help/` gets — `panels`
+  (favourites, observations, routes, downloads), `season_calendar`,
+  `weather_panel` and the bulletin blocks. An article illustrating a surface
+  the FAQ already does needs no Python at all.
+- **The wrapper is `includes/_help_illustration.html`** — `inert` and
+  `aria-hidden`, the same partial the FAQ panels use. Pass `framed=True` on
+  an article (the FAQ's recessed well vanishes against the page) and
+  `width="sheet"` or `width="popup"` for a map panel or a map popup, so it
+  renders at the width the reader will meet rather than across the whole
+  column.
+- **A surface built in JavaScript has no partial to include.** The route
+  popup is the standing example: `illustrations/_route_popup.html` mirrors
+  map.js's markup and takes its chart geometry from a Python port in
+  `component_previews.py`, with tests holding the port to the same
+  properties the Vitest suite holds the original to. Do this only when the
+  surface is the point of the article; say so in the template's header.
+- **A panel's rows can carry the real controls.** `illustrations/_panel.html`
+  takes an optional `rows_template`; the Routes article passes
+  `_routes_rows.html`, whose rows render the real action cluster. Its
+  `csrf_token="NOTPROVIDED"` is deliberate — the real token is a session
+  read, which is a query, and a help page issues none.
+
 Three constraints:
 
 1. **No queries** — hand-built dataclasses and dicts, as in
-   `apps/public/component_previews.py`.
+   `apps/public/component_previews.py`. The article's no-queries test is what
+   catches a partial that reaches for the session or the ORM.
 2. **Only `output.css` is loaded.** A component styled from
-   `static/css/map.css` — the season scrubber is the standing example —
+   `static/css/map.css` — the season scrubber, and the map's round buttons —
    cannot be shown on a help page; it collapses to unstyled fragments. Say so
-   in a comment rather than shipping a broken mock.
+   in the page's header comment rather than shipping a broken mock.
 3. **Decoration only** — the illustration wrapper is `aria-hidden`, so the
    prose must stand alone. Never write "as shown below".
 

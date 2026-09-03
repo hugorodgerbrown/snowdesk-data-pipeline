@@ -1261,7 +1261,8 @@ def help_article(request: HttpRequest, slug: str) -> HttpResponse:
     The companion to ``help_page``: that view renders the FAQ accordion, which
     answers a question in a few paragraphs; these pages walk a reader through
     one feature. Both are static text and neither touches the ORM — a property
-    each has its own test for.
+    each has its own test for. Both render the live illustrations from
+    ``apps.public.component_previews``.
 
     Args:
         request: The incoming HTTP request.
@@ -1277,7 +1278,9 @@ def help_article(request: HttpRequest, slug: str) -> HttpResponse:
     template = HELP_ARTICLES.get(slug)
     if template is None:
         raise Http404(f"No help article for slug {slug!r}")
-    return render(request, template)
+    # The same illustration context the FAQ gets, so an article can show
+    # any surface /help/ can. Built in memory: still no queries.
+    return render(request, template, help_illustrations())
 
 
 def observations_list(request: HttpRequest) -> HttpResponse:

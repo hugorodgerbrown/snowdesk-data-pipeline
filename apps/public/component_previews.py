@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+from collections.abc import Sequence
 from typing import Any
 
 from django.utils.translation import gettext_lazy as _
@@ -225,8 +226,20 @@ _PANELS: dict[str, dict[str, Any]] = {
         "rows": (
             # Mirrors the real row's "12.4 km · 850 m ascent · 900 m descent"
             # shape from routes/partials/_route.html.
-            {"label": _("Rosablanche"), "meta": _("14.2 km · 1,320 m ascent")},
-            {"label": _("Pigne d'Arolla"), "meta": _("11.8 km · 1,540 m ascent")},
+            # ``uuid`` is for the Routes article's rows, which render the
+            # real action cluster (_routes_rows.html) and its Remove form
+            # is addressed by one. A shape no stored route can carry; the
+            # wrapper it renders in is inert, so nothing can post to it.
+            {
+                "label": _("Rosablanche"),
+                "meta": _("14.2 km · 1,320 m ascent"),
+                "uuid": "00000000-0000-4000-8000-000000000001",
+            },
+            {
+                "label": _("Pigne d'Arolla"),
+                "meta": _("11.8 km · 1,540 m ascent"),
+                "uuid": "00000000-0000-4000-8000-000000000002",
+            },
         ),
     },
     "downloads": {
@@ -300,6 +313,117 @@ _WEATHER_PANEL: dict[str, Any] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Route popup (the Routes article)
+#
+# The popup a tap on a route line opens is built in JavaScript — map.js's
+# ``activateRoute`` assembles it and static/js/elevation_profile_core.js
+# draws the chart — so there is no server partial to render, and the
+# illustration template mirrors that markup instead. The one part with
+# any arithmetic in it, projecting the elevation series into the chart's
+# viewBox, is ported below so the curve on the help page is shaped the way
+# the map shapes it; tests/public/test_component_previews.py pins the port
+# to the same properties tests/js/test_elevation_profile_core.js pins the
+# original to.
+#
+# The series is a synthetic day on Rosablanche — the first row of the
+# routes panel above — as along-track distance and height, so the port
+# needs no haversine: the map derives distance from coordinates, and here
+# the distances are the data.
+# ---------------------------------------------------------------------------
+
+#: The chart's user-space box, and its vertical inset. Both copied from
+#: elevation_profile_core.js, where the reasoning for each lives.
+PROFILE_VIEWBOX = (288, 72)
+_PROFILE_PAD_Y = 6
+
+
+def profile_paths(
+    points: Sequence[tuple[float, float]],
+    box: tuple[int, int] = PROFILE_VIEWBOX,
+) -> list[dict[str, str]]:
+    """
+    Project an elevation series into SVG path ``d`` strings.
+
+    A port of ``buildPaths`` in static/js/elevation_profile_core.js for one
+    unbroken run: x is along-track distance over the track's length, y is
+    height over the track's own min-to-max range, inset by the same pad.
+    Two paths, as there: the stroked line, and the closed area under it
+    that makes the shape read as terrain.
+
+    Args:
+        points: ``(distance_m, elevation_m)`` pairs along the track, at
+            least two, in order.
+        box: The ``(width, height)`` of the viewBox to draw into.
+
+    Returns:
+        A one-entry list of ``{"line": d, "area": d}`` — a list rather
+        than a pair so the template loops over it the way the map's builder
+        does over its runs.
+
+    """
+    if len(points) < 2:
+        return []
+    width, height = box
+    total = points[-1][0]
+    low = min(e for _, e in points)
+    high = max(e for _, e in points)
+    span = high - low
+    floor = height - _PROFILE_PAD_Y
+    usable = height - _PROFILE_PAD_Y * 2
+
+    def scale_x(d: float) -> float:
+        return (d / total) * width if total else 0.0
+
+    def scale_y(e: float) -> float:
+        return floor - ((e - low) / span) * usable if span else height / 2
+
+    vertices = [f"{scale_x(d):.2f} {scale_y(e):.2f}" for d, e in points]
+    line = "M" + " L".join(vertices)
+    start_x = f"{scale_x(points[0][0]):.2f}"
+    end_x = f"{scale_x(points[-1][0]):.2f}"
+    area = f"{line} L{end_x} {floor:.2f} L{start_x} {floor:.2f} Z"
+    return [{"line": line, "area": area}]
+
+
+#: Along-track distance and height, in metres, at eighteen points of a
+#: Rosablanche day: a steady climb to the summit and a longer, gentler way
+#: down. Range 2,180–3,336 m; the popup's caption states it because the
+#: chart's y-axis is scaled to it.
+_ROSABLANCHE_PROFILE: tuple[tuple[float, float], ...] = (
+    (0, 2180),
+    (700, 2290),
+    (1400, 2420),
+    (2100, 2560),
+    (2800, 2700),
+    (3500, 2850),
+    (4200, 2960),
+    (4900, 3080),
+    (5600, 3200),
+    (6300, 3336),
+    (7300, 3200),
+    (8400, 3050),
+    (9500, 2900),
+    (10600, 2750),
+    (11700, 2600),
+    (12700, 2450),
+    (13500, 2300),
+    (14200, 2180),
+)
+
+_ROUTE_POPUP: dict[str, Any] = {
+    # The same name and figures as the panel's first row, so the two
+    # illustrations on the article are one route seen twice.
+    "name": _("Rosablanche"),
+    "meta": _("14.2 km · 1,320 m ascent"),
+    # Range · duration, the caption line map.js draws under the chart.
+    # The duration is here because the source file carried times; the
+    # article says what that depends on.
+    "caption": _("2,180–3,336 m · 5h40m"),
+    "paths": profile_paths(_ROSABLANCHE_PROFILE),
+}
+
+
 def help_illustrations() -> dict[str, Any]:
     """
     Build the illustration context for the /help/ page.
@@ -307,8 +431,8 @@ def help_illustrations() -> dict[str, Any]:
     Returns:
         A mapping consumed by ``public/help.html``: ``season_calendar`` for
         the heatmap topic, ``panels`` keyed by topic for the four that
-        share the UGC panel shell, and ``weather_panel`` for the weather
-        topic.
+        share the UGC panel shell, ``weather_panel`` for the weather
+        topic, and ``route_popup`` for the Routes article.
 
         The season scrubber is deliberately absent — its styles live in
         ``static/css/map.css``, which ``/help/`` does not load. See that
@@ -319,6 +443,7 @@ def help_illustrations() -> dict[str, Any]:
         "season_calendar": synthetic_season_grid(),
         "panels": _PANELS,
         "weather_panel": _WEATHER_PANEL,
+        "route_popup": _ROUTE_POPUP,
     }
     context.update(_bulletin_illustrations())
     return context

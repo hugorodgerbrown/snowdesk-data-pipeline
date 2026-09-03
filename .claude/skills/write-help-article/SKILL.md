@@ -131,32 +131,45 @@ flow signed out and signed in, and write down:
 
 ## Step 3 — Shape the article around the brief
 
-When the brief gives an angle, its clauses are your sections in its order.
-For "what they are, how they work, where to find them":
+**`/help/routes/` is the template.** Copy its skeleton
+(`public/help/articles/routes.html`), not its words. Design, readability and
+simplicity are the brief for every article, and that page is what they look
+like:
 
-| Section | What goes in it |
-|---|---|
-| What they are | One short paragraph: the feature in plain words, and why someone would want it. |
-| Where to find them | The control, named and located, and what opens when you use it. |
-| How they work | The steps, then what to expect, then the limits. |
+| Part | What it is | Form |
+|---|---|---|
+| Lead | What the feature is, in one line under the title. | One sentence. That is the whole "what it is" section. |
+| Where to find it | The control, located, and what it opens. | A live illustration of the surface, then one short paragraph per place. |
+| Doing it | The steps. | Numbered steps, four or five, then one paragraph on what to expect. |
+| The controls | Each control on the surface, by its glyph. | A definition list: icon, name, one or two lines. |
+| Good to know | Privacy, offline, caps, anything it deliberately won't do. | Bullets, one fact each. |
+| Back link | "More about the rest of Snowdesk is on the help page." | One line. |
 
-Note that answering "where to find them" **before** "how they work" serves
-the reader better than the order it was asked in — someone who can't find the
-button can't follow the steps. Reordering for that reason is fine; dropping a
-clause is not. Say what you did and why in the page's header comment.
+Three rules the first draft of that page broke, which is why it was rewritten:
 
-With no angle given, default to:
+- **Around three hundred words.** The first draft was twice that and read as
+  a wall. What it lost was repetition of the FAQ panel, not facts — the
+  panel is the short answer and the article does not restate it, it
+  structures it. If a paragraph says what the panel says, cut it.
+- **Every section is a real heading over a short form.** Prose only for the
+  shape of a thing; steps for anything done in order; bullets for facts with
+  no order; a definition list for a row of controls. Two paragraphs in a row
+  is the limit. Six was the problem.
+- **One illustration per surface the reader has to recognise** — the real
+  component, live, at the width they will meet it (see
+  [`references/authoring.md`](references/authoring.md) → Illustrations). A
+  surface whose styles are not in `output.css` is described, not drawn.
 
-1. **What it is** — one paragraph, no preamble, no "Snowdesk allows you to".
-2. **Before you start** — preconditions, if any. "You need to be signed in."
-3. **How to use it** — the steps.
-4. **What to expect** — the result, in normal use.
-5. **Limits** — what needs an account, what happens offline, what is private,
-   what it deliberately doesn't do.
+When the brief gives an angle, map its clauses onto those parts. "What they
+are, how they work, where to find them" became lead → where → doing → the
+controls → good to know. Answering "where to find them" **before** "how they
+work" serves the reader better than the order it was asked in — someone who
+can't find the button can't follow the steps. Reordering for that reason is
+fine; dropping a clause is not. Say what you did and why in the page's header
+comment.
 
-Section 5 is the one people skip and the one that prevents support questions.
-"Routes are private — never shown to other users" answers a question nobody
-asked out loud.
+"Good to know" is the part people skip and the one that prevents support
+questions. "Routes are private" answers a question nobody asked out loud.
 
 ## Step 4 — Writing the steps
 

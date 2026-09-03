@@ -1,12 +1,15 @@
 {% comment %}
-templates/includes/_help_steps.html — Numbered steps for a help article.
+templates/includes/_help_steps.html — Numbered steps, or bulleted notes, for
+a help article.
 
-The ordered list a step-by-step help article walks a reader through. Snowdesk
-had no <ol> anywhere in its template tree before this partial: /help/'s FAQ
-panels are prose, and `slf-prose` styles ul/li but never ol. The first article
-that needed numbered steps could either inline a class string or extract this,
-and the design system's rule is reuse first, extract second, inline never — so
-the styling lives here once rather than diverging across articles.
+The list a help article walks a reader through. Snowdesk had no <ol> anywhere
+in its template tree before this partial: /help/'s FAQ panels are prose, and
+`slf-prose` styles ul/li but never ol. The first article that needed numbered
+steps could either inline a class string or extract this, and the design
+system's rule is reuse first, extract second, inline never — so the styling
+lives here once rather than diverging across articles. The bulleted form was
+added when the same article needed a "good to know" list: one partial, two
+markers, so an article's two kinds of list share their spacing.
 
 Parameters (passed via ``{% include … with … %}``):
   body_template (string) — Django template path holding the ``<li>`` items.
@@ -16,11 +19,20 @@ Parameters (passed via ``{% include … with … %}``):
                            strings, which have to stay whole msgids written at
                            their call site rather than be assembled from a
                            list passed through context.
+  unordered     (bool, optional) — render a bulleted ``<ul>`` rather than a
+                           numbered ``<ol>``. Steps are ordered because the
+                           reader does them in sequence; notes are not.
 
 Numbering is ``list-decimal`` rather than a drawn badge, so the number a
 sighted reader sees and the position a screen reader announces are the same
 thing, and there is nothing to keep in sync. Nothing here needs custom CSS.
 {% endcomment %}
-<ol class="mb-4 last:mb-0 ml-5 list-decimal space-y-2 marker:font-semibold marker:text-text-3">
-    {% include body_template %}
-</ol>
+{% if unordered %}
+    <ul class="mb-4 last:mb-0 ml-5 list-disc space-y-2 marker:text-text-3">
+        {% include body_template %}
+    </ul>
+{% else %}
+    <ol class="mb-4 last:mb-0 ml-5 list-decimal space-y-2 marker:font-semibold marker:text-text-3">
+        {% include body_template %}
+    </ol>
+{% endif %}
