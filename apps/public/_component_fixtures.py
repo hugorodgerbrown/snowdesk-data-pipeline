@@ -811,6 +811,21 @@ COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# ── Help steps ──────────────────────────────────────────────────────────────
+# One variant, and one is enough: the partial has a single parameter and a
+# single state. The body is the REAL steps from the Routes help article rather
+# than invented lorem — the library's job here is to show what a step list
+# looks like at the length articles actually use it, and four short imperative
+# sentences is that length.
+
+HELP_STEPS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Four steps",
+        "context": {"body_template": "public/help/articles/_routes_steps.html"},
+    },
+)
+
+
 # ── Form field (SNOW-672) ───────────────────────────────────────────────────
 # A real Django form rather than a SimpleNamespace, because the partial
 # renders the widget: ``{{ field }}`` has to produce an <input>, not a repr.

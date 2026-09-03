@@ -8,6 +8,9 @@ URL structure:
                                                /terms-of-service/ (SNOW-770).
   /help/                                        Plain-language "how it works"
                                                help page (SNOW-456).
+  /help/<slug>/                                 One long-form help article per
+                                               feature; slugs listed in
+                                               views.HELP_ARTICLES.
   /observations/                                Signed-in stream of recent
                                                field observations (SNOW-476).
   /resorts/<id>/<slug>/                         Resort detail page — danger
@@ -90,6 +93,11 @@ urlpatterns = [
     # the generic <region_id:region_id>/ patterns so "help" never resolves
     # as a region id.
     path("help/", views.help_page, name="help"),
+    # Long-form help articles (one page per feature, alongside the /help/
+    # FAQ panels). MUST stay above the generic <region_id>/<slug>/ pattern:
+    # "help/routes/" matches that two-segment shape too, and whichever is
+    # registered first wins.
+    path("help/<slug:slug>/", views.help_article, name="help_article"),
     # Recent field-observations stream (SNOW-476) — registered before the
     # generic <region_id:region_id>/ patterns so "observations" never
     # resolves as a region id.

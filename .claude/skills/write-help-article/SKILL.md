@@ -164,16 +164,19 @@ One action per step, verb first, control named by its visible label, and the
 consequence attached to the action that causes it.
 
 > 1. Sign in, then tap the routes button on the right of the map.
-> 2. Choose **Upload a route** and pick a `.gpx` file — the kind a GPS watch,
->    a planning tool or a touring app exports.
-> 3. The route appears in the list with its distance, and its ascent and
+> 2. Choose **Add a route** and pick a `.gpx` file — the kind a GPS watch, a
+>    planning tool or a touring app exports.
+> 3. The route appears under **Tracks** with its distance, and its ascent and
 >    descent where the file recorded heights.
 > 4. Turn on **Display on the map** at the foot of the panel to draw it.
 
 - **Verb first** — "tap", "choose", "turn on" — not "you should now be able
   to".
 - **Exact labels, in bold.** If the reader can't find your words on the
-  screen, the step has failed.
+  screen, the step has failed. The example above said "Upload a route" until
+  the first article was written against the running app — the button is
+  labelled **Add a route**, and the list heading is **Tracks**. A plausible
+  label is not a label.
 - **Icon-only controls get shape and position** — "the routes button on the
   right of the map". If you can't do it in six words, that is a UI finding
   worth raising, not something to write around.

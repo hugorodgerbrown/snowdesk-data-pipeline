@@ -1,0 +1,38 @@
+{% comment %}
+apps/public/templates/public/help/articles/_routes_steps.html — the four steps
+of adding a route.
+
+The <li> items for includes/_help_steps.html, which supplies the <ol> and its
+styling. They live in their own file rather than inline in routes.html because
+that partial takes its items by template path — each step is a whole msgid
+written at its call site, so a translator gets a sentence rather than a
+fragment reassembled from a context list.
+
+Every control is named with the label the interface actually renders: the
+roundel's accessible name is "Your routes" (public/partials/_map_embed.html),
+the panel's button is "Add a route" and its section heading is "Tracks"
+(public/partials/_routes_surface.html), and "Display on the map" is fixed
+inside includes/_ugc_panel.html rather than passed per panel.
+{% endcomment %}
+{% load i18n %}
+<li>
+    {% blocktrans trimmed %}
+        Sign in, then tap the routes button on the right of the map.
+    {% endblocktrans %}
+</li>
+<li>
+    {% blocktrans trimmed %}
+        Choose "Add a route" and pick a .gpx file &mdash; the kind a GPS watch, a planning tool or a touring app
+        exports.
+    {% endblocktrans %}
+</li>
+<li>
+    {% blocktrans trimmed %}
+        The route appears under "Tracks" with its distance, and its ascent and descent where the file recorded heights.
+    {% endblocktrans %}
+</li>
+<li>
+    {% blocktrans trimmed %}
+        Turn on "Display on the map" at the foot of the panel to draw your routes as lines.
+    {% endblocktrans %}
+</li>

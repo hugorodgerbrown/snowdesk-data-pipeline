@@ -1,0 +1,169 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/public/templates/public/help/articles/routes.html — "Routes" help article.
+
+The first long-form help article. Companion to the FAQ panel at
+public/help/_topic_routes.html, which stays the short answer; this page is the
+walkthrough. Every claim here has to agree with that panel, and the panel's own
+copy is untouched apart from the one link it now carries to this page.
+
+Brief: "what they are, how they work, where to find them".
+
+SECTION ORDER IS NOT THE BRIEF'S ORDER, deliberately. "Where to find them"
+comes second, ahead of "how they work", because the steps start by tapping a
+control the reader has to be able to find first. Nothing was dropped.
+
+Two things this page carries that the panel does not, both verified against the
+running app rather than the templates:
+
+  * The routes button's accessible name is "Your routes", not "Routes" —
+    #route-add-btn in public/partials/_map_embed.html.
+  * /account/routes/ is view-and-manage only. It renders
+    includes/_ugc_panel_row.html rather than includes/_ugc_panel.html, so it
+    has no "Add a route" control: uploading happens from the map panel alone.
+    A reader who goes to the Routes page to add their first route finds
+    nothing to press, which is why this page says where uploading lives.
+
+The two caps are described without their numbers, matching the panel and for
+its reason: ROUTES_MAX_PER_USER and ROUTE_UPLOAD_MAX_BYTES are both
+env-overridable, so a figure written here is a claim the page cannot keep true.
+{% endcomment %}
+{% load i18n components %}
+
+{% block page_meta %}
+    {% trans "Routes" as page_name %}
+    {% trans "How routes work in Snowdesk: upload a GPX track, draw it on the map beside the avalanche picture, rename, share or remove it." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}">
+        {% trans "Routes" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="help-article-heading" %}
+        <p class="text-sm text-text-3 mb-10">
+            {% blocktrans trimmed %}
+                Your own tracks, drawn on the map beside the avalanche picture.
+            {% endblocktrans %}
+        </p>
+
+        <section class="mb-10 text-sm leading-prose text-text-2" data-testid="help-article-routes-what">
+            {% translate "What routes are" as t_what %}
+            {% include "includes/_eyebrow.html" with text=t_what class_extra="mb-4" only %}
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    A route is a track you have uploaded &mdash; a .gpx file of the kind a GPS watch, a planning tool or
+                    a touring app exports. Snowdesk draws it on the map over the same regions and danger ratings you
+                    already read there, so you can see a line you plan to ski against the conditions forecast for it.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    Routes are yours. Nothing is published, nothing appears on anyone else's map, and the only way
+                    another person sees one is that you send them a link.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-10 text-sm leading-prose text-text-2" data-testid="help-article-routes-where">
+            {% translate "Where to find them" as t_where %}
+            {% include "includes/_eyebrow.html" with text=t_where class_extra="mb-4" only %}
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    There are two places, and they do different jobs.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0" data-testid="help-article-routes-where-map">
+                {% blocktrans trimmed %}
+                    On the map, the routes button sits in the column of round buttons down the right-hand side. It opens
+                    the Routes panel: everything you have uploaded, an "Add a route" button, and a "Display on the map"
+                    switch at the foot that draws them all.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0" data-testid="help-article-routes-where-page">
+                {% blocktrans trimmed %}
+                    In the menu, "Routes" opens a full page of the same list, which is easier to work through when you
+                    have a lot of them. You can rename, remove and share from there, but not upload &mdash; adding a
+                    route is done from the map panel.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-10 text-sm leading-prose text-text-2" data-testid="help-article-routes-how">
+            {% translate "How they work" as t_how %}
+            {% include "includes/_eyebrow.html" with text=t_how class_extra="mb-4" only %}
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    You need to be signed in to save a route.
+                {% endblocktrans %}
+            </p>
+            {% include "includes/_help_steps.html" with body_template="public/help/articles/_routes_steps.html" %}
+            <p class="mb-3 last:mb-0" data-testid="help-article-routes-popup">
+                {% blocktrans trimmed %}
+                    Tapping a line on the map opens that route's own popup: its name, the same figures, and an elevation
+                    profile of the whole track. The profile is drawn from the heights in your file, so a track recorded
+                    without them shows none rather than a flat line.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    Each row in the panel carries a pencil to rename the route in place and a control to remove it. The
+                    file you exported is not always the file you want on the map &mdash; the panel points you at a free
+                    browser tool for cropping or splitting a track before you upload it.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-10 text-sm leading-prose text-text-2" data-testid="help-article-routes-sharing">
+            {% translate "Sharing one route" as t_sharing %}
+            {% include "includes/_eyebrow.html" with text=t_sharing class_extra="mb-4" only %}
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    The Share control on a route's row gives you a link to send someone. Whoever opens it sees that one
+                    route drawn on their map with a button to save it. They can open the link before they have signed
+                    in, and it will still be waiting once they have.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    Saving takes a copy. Theirs is theirs to rename or remove, yours is untouched, and the two never
+                    affect each other afterwards. The link keeps working for a few weeks, and stops working straight
+                    away if you remove the route it points at.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section class="mb-10 text-sm leading-prose text-text-2" data-testid="help-article-routes-limits">
+            {% translate "What it won't do" as t_limits %}
+            {% include "includes/_eyebrow.html" with text=t_limits class_extra="mb-4" only %}
+            <p class="mb-3 last:mb-0" data-testid="help-article-routes-offline">
+                {% blocktrans trimmed %}
+                    Once your routes have loaded on a device, the lines stay on the map with no connection. The list
+                    inside the panel needs one, and says so rather than pretending you have no routes.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    Uploading needs a connection, and so do renaming and removing &mdash; unlike a field observation,
+                    those actions are not queued for later.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    There is a limit on the size of a single file and on how many routes one account can keep; the panel
+                    tells you when you reach either. A very long track is thinned before it is stored, which keeps it
+                    quick to draw and leaves its shape, distance and profile intact.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <p class="text-sm leading-prose text-text-2" data-testid="help-article-routes-back">
+            {% url 'public:help' as help_url %}
+            {% blocktrans trimmed %}
+                More about the rest of Snowdesk is on the <a
+                    href="{{ help_url }}"
+                    class="text-status-info-text underline"
+                >help page</a>.
+            {% endblocktrans %}
+        </p>
+    </main>
+{% endblock content %}

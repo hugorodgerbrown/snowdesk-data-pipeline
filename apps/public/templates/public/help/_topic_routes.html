@@ -24,6 +24,12 @@ public/partials/_resort_why_it_matters.html already uses &mdash; so a
 translator can move the link within the sentence instead of reassembling
 fragments. The URL is a context variable and NOT part of the msgid:
 changing where we point must not invalidate every translation.
+
+This panel now has a companion at /help/routes/ (public/help/articles/
+routes.html), which walks the same feature through step by step. The link
+paragraph at the foot is the ONLY change made to this file for it: every
+other string here is an existing msgid, and rewording one to suit the new
+page would orphan its translation in every locale.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -103,6 +109,13 @@ changing where we point must not invalidate every translation.
         {% blocktrans trimmed %}
             Once your routes have loaded on a device, the lines stay on the map with no connection. The list inside the
             panel needs one, and says so instead of pretending you have no routes.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-routes-article-link">
+        {% url 'public:help_article' slug='routes' as routes_article_url %}
+        {% blocktrans trimmed %}
+            There is a fuller <a href="{{ routes_article_url }}" class="text-status-info-text underline"
+            >guide to routes</a>, covering where to find them and how sharing works.
         {% endblocktrans %}
     </p>
 </div>
