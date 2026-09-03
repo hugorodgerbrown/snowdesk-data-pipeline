@@ -29,8 +29,10 @@ import pathlib
 import re
 
 import pytest
+from django.conf import settings
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 from freezegun import freeze_time
 
 from apps.locations.models import Location, ResortLocation
@@ -914,3 +916,56 @@ class TestMeteogramMarks:
         html = self._render()
 
         assert "daylight 06:30 to 20:15" in html
+
+
+# ---------------------------------------------------------------------------
+# SNOW-799 — the weather page's canonical URL
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestLocationWeatherCanonicalUrl:
+    """The bare page is canonical for today; a dated page for its own day."""
+
+    @staticmethod
+    def _canonical(content: str) -> str:
+        """Return the href of the page's <link rel="canonical">."""
+        match = re.search(r'<link rel="canonical" href="([^"]+)">', content)
+        assert match, "no canonical link"
+        return match.group(1)
+
+    @staticmethod
+    def _location() -> Location:
+        """A public location the page will render for."""
+        location = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(location=location)
+        return location
+
+    def test_no_date_is_the_bare_url(self) -> None:
+        """Undated: canonical is /weather/<short_id>/ with no query string."""
+        location = self._location()
+        content = Client().get(location.get_absolute_url()).content.decode()
+        expected = f"{settings.SITE_BASE_URL.rstrip('/')}{location.get_absolute_url()}"
+        assert self._canonical(content) == expected
+        assert f'<meta property="og:url" content="{expected}">' in content
+
+    def test_today_is_the_bare_url(self) -> None:
+        """?date=today picks the same row the bare page shows — one canonical."""
+        location = self._location()
+        today = timezone.localdate().isoformat()
+        content = (
+            Client().get(f"{location.get_absolute_url()}?date={today}").content.decode()
+        )
+        assert self._canonical(content).endswith(location.get_absolute_url())
+
+    def test_a_past_day_keeps_its_date(self) -> None:
+        """A dated page is its own citable thing, canonical with ?date=."""
+        location = self._location()
+        content = (
+            Client()
+            .get(f"{location.get_absolute_url()}?date=2026-01-14")
+            .content.decode()
+        )
+        assert self._canonical(content).endswith(
+            f"{location.get_absolute_url()}?date=2026-01-14"
+        )

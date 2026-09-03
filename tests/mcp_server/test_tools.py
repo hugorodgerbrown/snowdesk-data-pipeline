@@ -22,12 +22,16 @@ from apps.mcp_server import tools
 from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,
+    FavouriteFactory,
+    LocationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
     ResortFactory,
+    ResortLocationFactory,
     SubRegionFactory,
+    WeatherFactory,
 )
 
 
@@ -1817,3 +1821,162 @@ class TestHandleGetRegionalSnapshotArgs:
         """A malformed 'date' is a domain-level ToolError."""
         with pytest.raises(tools.ToolError):
             tools._handle_get_regional_snapshot({"country": "CH", "date": "not-a-date"})
+
+
+# ---------------------------------------------------------------------------
+# list_locations_in_region / get_location_weather (SNOW-799)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestListLocationsInRegion:
+    """Tests for tools.list_locations_in_region — the discovery half."""
+
+    def test_lists_named_locations_of_the_regions_resorts(
+        self, region: MicroRegion
+    ) -> None:
+        """A resort's village and peak are listed with their short ids."""
+        resort = ResortFactory.create(name="Verbier", region=region)
+        peak = LocationFactory.create(name="Mont Fort", elevation_m=3328.0)
+        village = LocationFactory.create(
+            name="Verbier village", kind="VILLAGE", elevation_m=1500.0
+        )
+        ResortLocationFactory.create(resort=resort, location=peak)
+        ResortLocationFactory.create(resort=resort, location=village)
+
+        result = tools.list_locations_in_region(region.region_id)
+
+        assert result["count"] == 2
+        by_name = {entry["name"]: entry for entry in result["locations"]}
+        assert by_name["Mont Fort"]["short_id"] == peak.short_id
+        assert by_name["Mont Fort"]["kind"] == "peak"
+        assert by_name["Mont Fort"]["elevation_m"] == 3328.0
+        assert by_name["Mont Fort"]["weather_url"].endswith(peak.get_absolute_url())
+        assert by_name["Verbier village"]["kind"] == "village"
+        assert "Mont Fort" in result["summary"]
+
+    def test_excludes_the_anonymous_centroid_and_other_regions(
+        self, region: MicroRegion
+    ) -> None:
+        """A centroid has no name; another region's peak is not this region's."""
+        centroid = LocationFactory.create(anonymous=True)
+        region.centroid_location = centroid
+        region.save(update_fields=["centroid_location"])
+        other = ResortFactory.create(name="Elsewhere")
+        ResortLocationFactory.create(
+            resort=other, location=LocationFactory.create(name="Far Peak")
+        )
+
+        result = tools.list_locations_in_region(region.region_id)
+
+        assert result["count"] == 0
+        assert "No named locations" in result["summary"]
+
+    def test_unknown_region_raises_tool_error(self) -> None:
+        """An unknown region_id is a ToolError, not a 500 or an empty list."""
+        with pytest.raises(tools.ToolError, match="Unknown region_id"):
+            tools.list_locations_in_region("XX-0000")
+
+
+def _sid(location: Any) -> str:
+    """Return a location's short id as a plain ``str`` — it is never None once saved."""
+    assert location.short_id
+    return str(location.short_id)
+
+
+@pytest.mark.django_db
+class TestGetLocationWeather:
+    """Tests for tools.get_location_weather — the weather page as data."""
+
+    def test_returns_the_days_row(self) -> None:
+        """Every daily scalar, the page URL and a quotable summary."""
+        location = LocationFactory.create(name="Mont Fort", elevation_m=3328.0)
+        ResortLocationFactory.create(location=location)
+        day = datetime.date(2026, 2, 16)
+        WeatherFactory.create(
+            location=location,
+            observed_on=day,
+            temperature_2m_max=-4.0,
+            temperature_2m_min=-12.0,
+            snowfall_sum=25.0,
+            wind_speed_10m_max=60.0,
+            freezing_level_height=1200.0,
+        )
+
+        result = tools.get_location_weather(_sid(location), day)
+
+        assert result["has_weather"] is True
+        assert result["short_id"] == location.short_id
+        assert result["name"] == "Mont Fort"
+        assert result["date"] == "2026-02-16"
+        assert result["weather"]["temperature_2m_max"] == -4.0
+        assert result["weather"]["snowfall_sum"] == 25.0
+        assert result["weather"]["freezing_level_height"] == 1200.0
+        assert "sunrise" in result["weather"]
+        assert "hourly" not in result["weather"]
+        assert result["weather_url"].endswith(f"/weather/{location.short_id}/")
+        assert "-12 to -4 °C" in result["summary"]
+        assert "25 cm snow" in result["summary"]
+
+    def test_no_row_is_a_structured_empty(self) -> None:
+        """A day with no row is has_weather False, not an error."""
+        location = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(location=location)
+
+        result = tools.get_location_weather(_sid(location), datetime.date(2026, 2, 16))
+
+        assert result["has_weather"] is False
+        assert "weather" not in result
+        assert "No weather is recorded for Mont Fort on 2026-02-16" in result["summary"]
+
+    def test_defaults_to_today(self) -> None:
+        """Omitting the date reads today's row."""
+        location = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(location=location)
+        today = datetime.date(2026, 2, 16)
+        WeatherFactory.create(location=location, observed_on=today)
+
+        result = tools.get_location_weather(_sid(location), today=today)
+
+        assert result["date"] == "2026-02-16"
+        assert result["has_weather"] is True
+
+    def test_anonymous_centroid_is_named_by_its_region(self) -> None:
+        """A centroid's short id resolves; the page's heading precedence applies."""
+        region = MicroRegionFactory.create(region_id="CH-4115", name="Valais")
+        centroid = LocationFactory.create(anonymous=True)
+        region.centroid_location = centroid
+        region.save(update_fields=["centroid_location"])
+
+        result = tools.get_location_weather(_sid(centroid), datetime.date(2026, 2, 16))
+
+        assert result["name"] == "Valais"
+        assert result["kind"] is None
+
+    def test_private_pin_is_unknown(self) -> None:
+        """A favourite-only location is not addressable — same rule as the feed."""
+        favourite = FavouriteFactory.create()
+        assert favourite.location is not None
+
+        with pytest.raises(tools.ToolError, match="Unknown short_id"):
+            tools.get_location_weather(_sid(favourite.location))
+
+    def test_unknown_short_id_raises_tool_error(self) -> None:
+        """An id nothing owns is a ToolError, never a 500."""
+        with pytest.raises(tools.ToolError, match="Unknown short_id"):
+            tools.get_location_weather("AAAAAAAAAAA")
+
+    def test_handler_parses_the_date(self) -> None:
+        """The JSON-RPC adapter accepts an ISO date and rejects a bad one."""
+        location = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(location=location)
+
+        result = tools.TOOLS["get_location_weather"].handler(
+            {"short_id": location.short_id, "date": "2026-02-16"}
+        )
+        assert result["date"] == "2026-02-16"
+
+        with pytest.raises(tools.ToolError):
+            tools.TOOLS["get_location_weather"].handler(
+                {"short_id": location.short_id, "date": "not-a-date"}
+            )

@@ -1,8 +1,8 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — thirteen read-only tools over regions, bulletins, problems, danger trend, geolocation
+description: MCP JSON-RPC 2.0 server at POST /api/mcp/ — fifteen read-only tools over regions, bulletins, danger trend, geolocation, location weather
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-09-03
 ---
 
 # MCP server
@@ -62,12 +62,12 @@ sidesteps standing up an ASGI stack for this one surface.
 | `initialize` | Returns `protocolVersion`, `capabilities: {"tools": {}}`, `serverInfo: {name: "snowdesk", version: <APP_VERSION>}`. |
 | `notifications/initialized` | A notification (no `id`) — accepted, no response body (`204`). |
 | `ping` | Liveness check; empty result `{}`. |
-| `tools/list` | Returns all thirteen tools below with `name`, `description`, `inputSchema`. |
+| `tools/list` | Returns all fifteen tools below with `name`, `description`, `inputSchema`. |
 | `tools/call` | `{"name": ..., "arguments": {...}}` → a `CallToolResult` (`content`, `structuredContent`, `isError`). |
 
 ## Tools
 
-All thirteen are implemented in `apps/mcp_server/tools.py`, composed from
+All fifteen are implemented in `apps/mcp_server/tools.py`, composed from
 services that already exist elsewhere in the codebase — no new query
 logic.
 
@@ -184,6 +184,40 @@ a single region.
 * **Params:** `region_id` (string, required).
 * **Returns:** `{region_id, region_name, resorts: [{name, latitude,
   longitude, canton}], count, summary}`.
+
+### `list_locations_in_region`
+
+Lists the **named** public locations — resort villages, mid-stations and
+peaks — reached by one micro-region's resorts, with the `short_id` each
+weather page is keyed on (SNOW-799). The discovery half of the weather
+pair: an LLM client cannot guess an eleven-character opaque id, so this is
+how one is found from a region. A region's anonymous centroid is not
+listed; the region's own bulletin tools already cover it.
+
+* **Params:** `region_id` (string, required).
+* **Returns:** `{region_id, region_name, locations: [{short_id, name,
+  kind, elevation_m, latitude, longitude, weather_url}], count, summary}`.
+  `kind` is one of `village` / `mid` / `peak`, or `null`.
+
+### `get_location_weather`
+
+One location's daily weather for one day — the `/weather/<short_id>/`
+page as data. The one location-scoped tool; every other tool is region- or
+bulletin-scoped. Resolves the `short_id` over `Location.objects.public()`
+only, so a private favourite pin is never addressable.
+
+* **Params:** `short_id` (string, required); `date` (ISO-8601, optional,
+  defaults to today).
+* **Returns:** `{short_id, name, kind, elevation_m, latitude, longitude,
+  weather_url, date, has_weather, fetched_at, weather: {weather_code,
+  temperature_2m_max, temperature_2m_min, apparent_temperature_max,
+  apparent_temperature_min, precipitation_sum, snowfall_sum,
+  precipitation_probability_max, precipitation_hours, wind_speed_10m_max,
+  wind_gusts_10m_max, wind_direction_10m_dominant, freezing_level_height,
+  uv_index_max, sunshine_duration, sunrise, sunset}, summary}`. When no row
+  covers the day the result is `has_weather: false` with no `weather` key
+  — a structured empty, not an error. Temperatures are °C, precipitation
+  mm, snowfall cm, wind km/h, heights m, durations seconds.
 
 ### `get_bulletin_metadata`
 
@@ -405,6 +439,8 @@ wants visibility into.
 * `bulk_current_conditions` caps its `region_ids[]` input at 20 entries per
   call.
 * `find_regions_near` caps its search radius at 100 km per call.
+* `list_locations_in_region` and `get_location_weather` need no cap — a
+  single region or a single location, a single day.
 * Most bulletin-scoped tools (`get_current_conditions`,
   `get_avalanche_problems`, `get_bulletin_metadata`, `get_bulletin_raw`,
   `list_resorts_in_region`) take a single, already-resolved `region_id`.

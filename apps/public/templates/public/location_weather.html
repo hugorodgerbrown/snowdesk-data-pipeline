@@ -70,8 +70,14 @@ Context:
     {% blocktrans with name=heading trimmed asvar page_description %}
         Mountain weather forecast for {{ name }} — conditions, temperature outlook and hourly detail.
     {% endblocktrans %}
-    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description url=canonical_url %}
 {% endblock page_meta %}
+
+{% block extra_head %}
+    {# SNOW-799: the bare page is canonical for today; a ?date= page is #}
+    {# canonical for its own day — see location_weather. #}
+    <link rel="canonical" href="{{ canonical_url }}">
+{% endblock extra_head %}
 
 {% block content %}
     <main

@@ -4406,6 +4406,31 @@ def _location_forecast_context(
     }
 
 
+def _build_location_canonical_url(
+    location: Location, observed_on: datetime.date
+) -> str:
+    """Build the absolute canonical URL for a location's weather page.
+
+    The bare page for today (or no date), the ``?date=`` form for any other
+    day — see ``location_weather``. Absolute from ``settings.SITE_BASE_URL``
+    for the same reason ``_build_canonical_url`` is: a crawler arriving on
+    a hosting alias must not be told that alias is canonical.
+
+    Args:
+        location: The location the page is for.
+        observed_on: The day the page is showing.
+
+    Returns:
+        An absolute URL.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+    path = location.get_absolute_url()
+    if observed_on != timezone.localdate():
+        path = f"{path}?date={observed_on.isoformat()}"
+    return f"{base}{path}"
+
+
 def location_weather_legacy_redirect(
     request: HttpRequest, location_id: int
 ) -> HttpResponse:
@@ -4479,6 +4504,13 @@ def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
     the day the map was showing. A malformed value falls back to today
     rather than 400-ing.
 
+    **Canonical URL** (SNOW-799). ``?date=`` picks which row the page
+    shows, not which page it is, so the canonical is the bare
+    ``/weather/<short_id>/`` when no date is given or the date is today,
+    and the dated URL when another day is being viewed — that page is a
+    real, citable thing, but it is not what the evergreen URL should point
+    at. The sitemap lists only the undated form.
+
     Args:
         request: The incoming HTTP request.
         short_id: The Location's opaque short id (SNOW-797).
@@ -4507,6 +4539,7 @@ def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
     region = location.micro_regions.first()
     context: dict[str, Any] = {
         "location": location,
+        "canonical_url": _build_location_canonical_url(location, observed_on),
         # Same precedence as the map card's heading: a curated point names
         # itself, an anonymous one is named by what it stands for, and the
         # coordinates are never a heading.

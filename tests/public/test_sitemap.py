@@ -27,9 +27,13 @@ from apps.public.sitemaps import StaticViewSitemap
 from apps.regions.models import MicroRegion, Resort
 from tests.factories import (
     BulletinFactory,
+    FavouriteFactory,
+    LocationFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     ResortFactory,
+    ResortLocationFactory,
+    WeatherFactory,
 )
 
 _ZURICH_TZ = ZoneInfo("Europe/Zurich")
@@ -335,3 +339,63 @@ def test_sitemap_is_not_empty_out_of_season(client: Client) -> None:
     assert "<url>" in body
     assert reverse("public:home") in body
     assert reverse("public:how_to_read_bulletin") in body
+
+
+# ---------------------------------------------------------------------------
+# SNOW-799 — the locations section
+# ---------------------------------------------------------------------------
+
+
+def _locs(client: Client) -> list[str]:
+    """Return every <loc> in the sitemap."""
+    content = client.get(reverse("sitemap")).content.decode()
+    return re.findall(r"<loc>([^<]+)</loc>", content)
+
+
+@pytest.mark.django_db
+class TestLocationWeatherSitemap:
+    """The locations section lists every NAMED public location's weather page."""
+
+    def test_named_public_location_is_listed_undated(self, client: Client) -> None:
+        """A resort's peak is listed at /weather/<short_id>/ — no ?date=."""
+        peak = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(location=peak)
+
+        locs = _locs(client)
+
+        matches = [loc for loc in locs if loc.endswith(peak.get_absolute_url())]
+        assert len(matches) == 1
+        assert "?date=" not in matches[0]
+        # The segment is the opaque short id — the pk is nowhere in the URL.
+        assert matches[0].rsplit("/weather/", 1)[1] == f"{peak.short_id}/"
+
+    def test_anonymous_centroid_is_excluded(self, client: Client) -> None:
+        """A region centroid has no name of its own and is not listed."""
+        region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+        centroid = LocationFactory.create(anonymous=True)
+        region.centroid_location = centroid
+        region.save(update_fields=["centroid_location"])
+
+        assert not any("/weather/" in loc for loc in _locs(client))
+
+    def test_private_pin_is_excluded(self, client: Client) -> None:
+        """A favourite's location is outside public() and never listed."""
+        favourite = FavouriteFactory.create(name="Secret col")
+        assert favourite.location is not None
+        # Named, so only the public() ceiling keeps it out.
+        favourite.location.name = "Secret col"
+        favourite.location.save(update_fields=["name"])
+
+        assert not any("/weather/" in loc for loc in _locs(client))
+
+    def test_listed_url_resolves_and_lastmod_is_the_weather_fetch(
+        self, client: Client
+    ) -> None:
+        """The listed page is a 200, and lastmod follows the newest fetch."""
+        peak = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(location=peak)
+        row = WeatherFactory.create(location=peak, observed_on=_zurich_today())
+
+        assert client.get(peak.get_absolute_url()).status_code == 200
+        content = client.get(reverse("sitemap")).content.decode()
+        assert row.fetched_at.date().isoformat() in content
