@@ -2,8 +2,9 @@
 {% comment %}
 apps/accounts/templates/accounts/unsubscribe_done.html — Unsubscribe complete.
 
-Shown after a successful unsubscribe POST, or when the region subscription was
-already removed (idempotent re-submit).
+Shown after a successful unsubscribe POST, or when the region pin was
+already removed (idempotent re-submit). Since SNOW-802 the thing removed is
+a region pin — the row a Subscription became.
 {% endcomment %}
 {% load i18n components %}
 
@@ -13,14 +14,14 @@ already removed (idempotent re-submit).
 {# prefix robots.txt disallows. Tab title and description still render. #}
 {% block page_meta %}
     {% trans "Unsubscribed — Snowdesk" as page_title %}
-    {% trans "You have been successfully unsubscribed from Snowdesk avalanche bulletin alerts." as page_description %}
+    {% trans "That region has been removed from your pinned regions on Snowdesk." as page_description %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
 {% endblock page_meta %}
 
 {% block status_heading %}{% trans "You've been unsubscribed" %}{% endblock %}
 
 {% block status_body %}
-    {% trans "You will no longer receive avalanche bulletin alerts for that region." %}
+    {% trans "That region has been removed from your pinned regions." %}
 {% endblock %}
 
 {% block status_cta %}

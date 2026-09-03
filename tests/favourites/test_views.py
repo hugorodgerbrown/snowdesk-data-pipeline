@@ -8,13 +8,13 @@ Covers:
                       cap reached → 409 with the limit-reached partial.
   favourite_create_from_resort (SNOW-499) — happy path (200 + resort FK
                       set); cap reached → 409 with the limit partial;
-                      anonymous → 403; non-HTMX → 400; missing/non-integer
-                      resort_id → 400; unknown resort_id → 404; ungeocoded
-                      resort → 422.
+                      anonymous → 403; non-HTMX → 400; missing
+                      resort_slug → 400; unknown resort_slug → 404;
+                      ungeocoded resort → 422.
   favourite_resort_toggle (SNOW-504) — first POST creates, second POST
                       deletes the (user, resort) Favourite; cap reached →
                       409 with the limit partial; anonymous → 403;
-                      non-HTMX → 400; unknown resort_id → 404; ungeocoded
+                      non-HTMX → 400; unknown slug → 404; ungeocoded
                       resort → 422; rate-limited → 429.
   favourite_rename — owner isolation (user A cannot rename user B's pin);
                       name over max_length → 400; updated_at advances.
@@ -25,12 +25,14 @@ Covers:
                     no-coverage note; region + rating → danger tile +
                     bulletin link; unnamed favourite → coordinate
                     fallback.
-  favourite_detail (SNOW-507) — owner GET 200 full page with page chrome
+  favourite_detail_redirect (SNOW-800) — owner GET 301 to the pin's weather
+                    page; no location → 404; the old SNOW-507 page is gone.
+                    Formerly: owner GET 200 full page with page chrome
                     plus the card content; non-owner uuid → 404; unknown
                     uuid → 404; anon → 403; response carries
                     Cache-Control: private, no-store.
   card heading rank — the card's title states its own level per caller
-                    (``heading_tag``): ``h1`` on favourite_detail (the pin's
+                    (``heading_tag``): ``h1`` on the retired detail page (the pin's
                     name IS that page, which carries no other heading), and
                     ``h2`` on /account/favourites/'s hx-get panel, whose
                     page ``h1`` is the only heading above it. It was ``h3``
@@ -47,18 +49,18 @@ Covers:
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; non-HTMX → 400;
                     empty state when the user has none (SNOW-415); each
-                    row carries one detail link to favourites:detail,
+                    row carries one detail link to the pin's weather page,
                     hx-get-enhanced onto the card panel (SNOW-507,
-                    SNOW-658); ``?variant=map`` renders the sheet's lean
+                    SNOW-658); ```` renders the sheet's lean
                     template instead — same rows and roster sidecar, a
                     plain detail link, no card panel and no "view on the
                     map" link — and an unknown variant falls back to the
                     manage-page template.
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
-                        anonymous → 403; each feature carries resort_id
-                        (null for a plain pin, SNOW-499) and created_at as
-                        ISO-8601 (SNOW-658).
+                        anonymous → 403; each feature carries resort_slug
+                        (null for a plain pin, SNOW-499/796) and created_at
+                        as ISO-8601 (SNOW-658).
   freshness (SNOW-418) — favourite_card / favourite_list stamp
                         X-Data-Generated-At / -Max-Age / -Unsafe-After;
                         the card's cache_payload / roster_payload
@@ -129,13 +131,13 @@ def _card_url(uuid: object) -> str:
 
 
 def _detail_url(uuid: object) -> str:
-    """Build the full-page detail URL for a favourite's uuid (SNOW-507)."""
+    """Build the old detail URL for a favourite's uuid — a 301 since SNOW-800."""
     return f"/favourites/{uuid}/"
 
 
-def _resort_toggle_url(resort_id: object) -> str:
-    """Build the resort-favourite-toggle URL for a resort's pk (SNOW-504)."""
-    return f"/favourites/partials/resort/{resort_id}/toggle/"
+def _resort_toggle_url(slug: object) -> str:
+    """Build the resort-favourite-toggle URL for a resort's slug (SNOW-504/796)."""
+    return f"/favourites/partials/resort/{slug}/toggle/"
 
 
 def _problem_card_render_model(elevation: dict[str, Any] | None) -> dict[str, Any]:
@@ -441,7 +443,7 @@ class TestFavouriteCreateFromResortAuthGate:
         """An anonymous POST returns 403."""
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
         response = client.post(
-            RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+            RESORT_CREATE_URL, {"resort_slug": resort.slug}, **HTMX_HEADERS
         )
         assert response.status_code == 403
 
@@ -455,35 +457,45 @@ class TestFavouriteCreateFromResortHtmxGate:
         user = UserFactory.create()
         client.force_login(user)
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        response = client.post(RESORT_CREATE_URL, {"resort_id": resort.pk})
+        response = client.post(RESORT_CREATE_URL, {"resort_slug": resort.slug})
         assert response.status_code == 400
 
 
 @pytest.mark.django_db
 class TestFavouriteCreateFromResortValidation:
-    """Missing/non-integer resort_id → 400; unknown resort_id → 404."""
+    """Missing resort_slug → 400; unknown resort_slug → 404."""
 
-    def test_missing_resort_id_returns_400(self, client: Client) -> None:
-        """No resort_id provided → 400."""
+    def test_missing_resort_slug_returns_400(self, client: Client) -> None:
+        """No resort_slug provided → 400."""
         user = UserFactory.create()
         client.force_login(user)
         response = client.post(RESORT_CREATE_URL, {}, **HTMX_HEADERS)
         assert response.status_code == 400
 
-    def test_non_integer_resort_id_returns_400(self, client: Client) -> None:
-        """A non-integer resort_id → 400."""
+    def test_blank_resort_slug_returns_400(self, client: Client) -> None:
+        """Whitespace is not a slug → 400."""
+        user = UserFactory.create()
+        client.force_login(user)
+        response = client.post(RESORT_CREATE_URL, {"resort_slug": "  "}, **HTMX_HEADERS)
+        assert response.status_code == 400
+
+    def test_pk_is_not_accepted_as_an_identifier(self, client: Client) -> None:
+        """The old integer key no longer resolves a resort (SNOW-796)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        response = client.post(
+            RESORT_CREATE_URL, {"resort_slug": str(resort.pk)}, **HTMX_HEADERS
+        )
+        assert response.status_code == 404
+
+    def test_unknown_resort_slug_returns_404(self, client: Client) -> None:
+        """A resort_slug with no matching row → 404."""
         user = UserFactory.create()
         client.force_login(user)
         response = client.post(
-            RESORT_CREATE_URL, {"resort_id": "not-an-int"}, **HTMX_HEADERS
+            RESORT_CREATE_URL, {"resort_slug": "nowhere"}, **HTMX_HEADERS
         )
-        assert response.status_code == 400
-
-    def test_unknown_resort_id_returns_404(self, client: Client) -> None:
-        """A resort_id with no matching row → 404."""
-        user = UserFactory.create()
-        client.force_login(user)
-        response = client.post(RESORT_CREATE_URL, {"resort_id": 999999}, **HTMX_HEADERS)
         assert response.status_code == 404
 
 
@@ -509,7 +521,7 @@ class TestFavouriteCreateFromResortRateLimit:
         rf = RequestFactory()
         request = rf.post(
             RESORT_CREATE_URL,
-            {"resort_id": resort.pk},
+            {"resort_slug": resort.slug},
             HTTP_HX_REQUEST="true",
         )
         request.limited = True  # type: ignore[attr-defined]
@@ -538,7 +550,7 @@ class TestFavouriteCreateFromResortUngeocoded:
         resort = ResortFactory.create(latitude=None, longitude=None)
 
         response = client.post(
-            RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+            RESORT_CREATE_URL, {"resort_slug": resort.slug}, **HTMX_HEADERS
         )
 
         assert response.status_code == 422
@@ -561,7 +573,7 @@ class TestFavouriteCreateFromResortSuccess:
 
         with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             response = client.post(
-                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+                RESORT_CREATE_URL, {"resort_slug": resort.slug}, **HTMX_HEADERS
             )
 
         assert response.status_code == 200
@@ -579,10 +591,10 @@ class TestFavouriteCreateFromResortSuccess:
 
         with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             first = client.post(
-                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+                RESORT_CREATE_URL, {"resort_slug": resort.slug}, **HTMX_HEADERS
             )
             second = client.post(
-                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+                RESORT_CREATE_URL, {"resort_slug": resort.slug}, **HTMX_HEADERS
             )
 
         assert first.status_code == 200
@@ -609,7 +621,7 @@ class TestFavouriteCreateFromResortCap:
         elevation = 1500.0
         with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
             response = client.post(
-                RESORT_CREATE_URL, {"resort_id": resort.pk}, **HTMX_HEADERS
+                RESORT_CREATE_URL, {"resort_slug": resort.slug}, **HTMX_HEADERS
             )
 
         assert response.status_code == 409
@@ -630,7 +642,7 @@ class TestFavouriteResortToggleAuthGate:
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous POST returns 403."""
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+        response = client.post(_resort_toggle_url(resort.slug), **HTMX_HEADERS)
         assert response.status_code == 403
 
 
@@ -643,19 +655,19 @@ class TestFavouriteResortToggleHtmxGate:
         user = UserFactory.create()
         client.force_login(user)
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)
-        response = client.post(_resort_toggle_url(resort.pk))
+        response = client.post(_resort_toggle_url(resort.slug))
         assert response.status_code == 400
 
 
 @pytest.mark.django_db
 class TestFavouriteResortToggleValidation:
-    """An unknown resort_id → 404."""
+    """An unknown slug → 404."""
 
-    def test_unknown_resort_id_returns_404(self, client: Client) -> None:
-        """A resort_id with no matching row → 404."""
+    def test_unknown_slug_returns_404(self, client: Client) -> None:
+        """A slug with no matching row → 404."""
         user = UserFactory.create()
         client.force_login(user)
-        response = client.post(_resort_toggle_url(999999), **HTMX_HEADERS)
+        response = client.post(_resort_toggle_url("nowhere"), **HTMX_HEADERS)
         assert response.status_code == 404
 
 
@@ -669,7 +681,7 @@ class TestFavouriteResortToggleUngeocoded:
         client.force_login(user)
         resort = ResortFactory.create(latitude=None, longitude=None)
 
-        response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+        response = client.post(_resort_toggle_url(resort.slug), **HTMX_HEADERS)
 
         assert response.status_code == 422
         assert not Favourite.objects.filter(user=user).exists()
@@ -696,7 +708,7 @@ class TestFavouriteResortToggleRateLimit:
 
         rf = RequestFactory()
         request = rf.post(
-            _resort_toggle_url(resort.pk),
+            _resort_toggle_url(resort.slug),
             HTTP_HX_REQUEST="true",
         )
         request.limited = True  # type: ignore[attr-defined]
@@ -710,7 +722,7 @@ class TestFavouriteResortToggleRateLimit:
 
         from apps.favourites.views import favourite_resort_toggle  # noqa: PLC0415
 
-        resp = favourite_resort_toggle(request, resort.pk)
+        resp = favourite_resort_toggle(request, resort.slug)
         assert resp.status_code == 429
 
 
@@ -729,12 +741,12 @@ class TestFavouriteResortToggleSuccess:
         elevation = 1500.0
 
         with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
-            first = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+            first = client.post(_resort_toggle_url(resort.slug), **HTMX_HEADERS)
             assert first.status_code == 200
             assert Favourite.objects.filter(user=user, resort=resort).exists()
             assert 'data-favourited="true"' in first.content.decode()
 
-            second = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+            second = client.post(_resort_toggle_url(resort.slug), **HTMX_HEADERS)
             assert second.status_code == 200
             assert not Favourite.objects.filter(user=user, resort=resort).exists()
             assert 'data-favourited="false"' in second.content.decode()
@@ -756,7 +768,7 @@ class TestFavouriteResortToggleCap:
         resort = ResortFactory.create(latitude=47.0, longitude=8.0)
         elevation = 1500.0
         with patch("apps.favourites.services.fetch_elevation", return_value=elevation):
-            response = client.post(_resort_toggle_url(resort.pk), **HTMX_HEADERS)
+            response = client.post(_resort_toggle_url(resort.slug), **HTMX_HEADERS)
 
         assert response.status_code == 409
         assert Favourite.objects.filter(user=user).count() == 1
@@ -1059,61 +1071,48 @@ class TestFavouriteCard:
 
 
 # ---------------------------------------------------------------------------
-# favourite_detail — GET /favourites/<uuid>/ (SNOW-507)
+# favourite_detail_redirect — GET /favourites/<uuid>/ (SNOW-800)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestFavouriteDetail:
-    """favourite_detail — the favourite's own full, bookmarkable page (SNOW-507)."""
+class TestFavouriteDetailRedirect:
+    """/favourites/<uuid>/ 301s to the pin's weather page — a favourite is not a page."""
 
-    def test_owner_gets_200_full_page(self, client: Client) -> None:
-        """Owner GET renders a full page with page chrome and the card content."""
+    def test_owner_is_redirected_to_the_locations_weather_page(
+        self, client: Client
+    ) -> None:
+        """A backfilled favourite 301s to /weather/<short_id>/, and that page opens."""
         user = UserFactory.create()
         client.force_login(user)
-        region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, max_rating="considerable")
-        favourite = FavouriteFactory.create(user=user, name="My spot", region=region)
+        favourite = FavouriteFactory.create(user=user, name="My spot")
+        assert favourite.location is not None
 
         response = client.get(_detail_url(favourite.uuid))
 
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Page chrome — a real page, not an HTMX fragment.
-        assert "<title>" in content
-        assert "My spot" in content
-        # The card content, reused verbatim.
-        assert 'data-testid="favourite-card"' in content
-        assert 'data-testid="favourite-card-rating-chip"' in content
-        assert 'data-testid="favourite-card-bulletin-link"' in content
-        assert region.get_absolute_url() in content
+        assert response.status_code == 301
+        assert response["Location"] == favourite.location.get_absolute_url()
+        assert client.get(response["Location"]).status_code == 200
 
-    def test_back_link_present_when_region_set(self, client: Client) -> None:
-        """A "Region bulletin" back-link is shown when favourite.region is set."""
+    def test_redirect_carries_no_private_no_store(self, client: Client) -> None:
+        """The old page's per-user header must not follow the redirect."""
         user = UserFactory.create()
         client.force_login(user)
-        region = MicroRegionFactory.create()
-        favourite = FavouriteFactory.create(user=user, region=region)
+        favourite = FavouriteFactory.create(user=user)
 
         response = client.get(_detail_url(favourite.uuid))
 
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="favourite-detail-back-link"' in content
-        assert region.get_absolute_url() in content
+        assert "no-store" not in response.get("Cache-Control", "")
 
-    def test_back_link_absent_when_region_none(self, client: Client) -> None:
-        """No back-link is shown when the favourite has no resolved region."""
+    def test_favourite_without_a_location_is_404(self, client: Client) -> None:
+        """A pre-backfill row has no page to reach — 404, never a broken redirect."""
         user = UserFactory.create()
         client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, region=None)
+        favourite = FavouriteFactory.create(user=user, location=None)
 
         response = client.get(_detail_url(favourite.uuid))
 
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="favourite-detail-back-link"' not in content
-        assert 'data-testid="favourite-card-no-coverage"' in content
+        assert response.status_code == 404
 
     def test_non_owner_uuid_returns_404(self, client: Client) -> None:
         """A different user's uuid returns 404, not 403 — no existence oracle."""
@@ -1140,37 +1139,12 @@ class TestFavouriteDetail:
         response = client.get(_detail_url("00000000-0000-0000-0000-000000000000"))
         assert response.status_code == 403
 
-    def test_cache_control_is_private_no_store(self, client: Client) -> None:
-        """The response is never cacheable by a shared cache — it's per-user."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
+    def test_the_old_url_name_is_gone(self) -> None:
+        """``favourites:detail`` no longer reverses — a missed call site fails loudly."""
+        from django.urls import NoReverseMatch, reverse  # noqa: PLC0415
 
-        response = client.get(_detail_url(favourite.uuid))
-
-        assert response.status_code == 200
-        assert response["Cache-Control"] == "private, no-store"
-
-    def test_response_carries_freshness_header(self, client: Client) -> None:
-        """The page stamps the SNOW-370/418 freshness headers, same as the card."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-
-        response = client.get(_detail_url(favourite.uuid))
-
-        assert response.status_code == 200
-        assert "X-Data-Generated-At" in response
-
-    def test_no_htmx_header_required(self, client: Client) -> None:
-        """Unlike favourite_card, a plain (non-HTMX) GET is not rejected — it's a real page."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-
-        response = client.get(_detail_url(favourite.uuid))
-
-        assert response.status_code == 200
+        with pytest.raises(NoReverseMatch):
+            reverse("favourites:detail", args=["00000000-0000-0000-0000-000000000000"])
 
 
 # ---------------------------------------------------------------------------
@@ -1182,12 +1156,14 @@ class TestFavouriteDetail:
 class TestFavouriteCardHeadingRank:
     """The card's title ranks itself for the outline it lands in.
 
-    One partial, two callers at two depths, so the level is the caller's
-    to state (``heading_tag``) and the size never moves — ``text-lg`` in
-    both cases. The card was a fixed ``<h2>`` before SNOW-507: correct for
-    neither caller then, since the full page had no ``<h1>`` at all and the
-    account hub's panel put a single pin's title level with the
-    "Favourites" section heading that contained it.
+    One partial, and until SNOW-800 two callers at two depths, so the level
+    is the caller's to state (``heading_tag``) and the size never moves —
+    ``text-lg`` whatever the rank. The card was a fixed ``<h2>`` before
+    SNOW-507: correct for neither caller then, since the full page had no
+    ``<h1>`` at all and the account hub's panel put a single pin's title
+    level with the "Favourites" section heading that contained it. The full
+    page is gone; the mechanism stays because the rank is still the
+    caller's to state.
 
     The panel's own rank has since moved from ``h3`` to ``h2``, and not
     because the card changed: SNOW-668 lifted the list out of that section
@@ -1210,21 +1186,6 @@ class TestFavouriteCardHeadingRank:
         assert match is not None, "card title heading not found"
         return match.group(1)
 
-    def test_full_page_title_is_the_pages_h1(self, client: Client) -> None:
-        """On its own page the pin's name IS the page — so it is the h1.
-
-        favourite_detail.html renders no other heading (its back-link is a
-        link), so an h2 here would leave a page whose outline starts at
-        level 2.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="My spot")
-
-        content = client.get(_detail_url(favourite.uuid)).content.decode()
-
-        assert self._title_tag(content) == "h1"
-
     def test_account_page_panel_title_is_an_h2(self, client: Client) -> None:
         """The hx-get card is an h2 — the page's own h1 is all that outranks it.
 
@@ -1243,20 +1204,18 @@ class TestFavouriteCardHeadingRank:
 
         assert self._title_tag(content) == "h2"
 
-    def test_the_rank_is_the_only_thing_that_changes(self, client: Client) -> None:
-        """Both callers draw the same title at the same size — this is not a visual change."""
+    def test_the_rank_does_not_change_the_size(self, client: Client) -> None:
+        """The title's size is fixed whatever rank the caller states."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="My spot")
 
-        page = client.get(_detail_url(favourite.uuid)).content.decode()
         card = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
 
-        for content in (page, card):
-            assert (
-                'class="text-lg font-semibold text-text-1" '
-                'data-testid="favourite-card-title"'
-            ) in content
+        assert (
+            'class="text-lg font-semibold text-text-1" '
+            'data-testid="favourite-card-title"'
+        ) in card
 
     def test_default_is_h2_for_a_caller_that_states_nothing(self) -> None:
         """A third caller that passes no heading_tag gets the h2 the partial had.
@@ -1406,90 +1365,13 @@ class TestFavouriteList:
         assert "Theirs" not in content
         assert str(mine.uuid) in content
 
-    def test_row_links_to_the_favourites_own_page(self, client: Client) -> None:
-        """Each row carries one detail link to favourites:detail (SNOW-507)."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="favourite-list-detail-link"' in content
-        assert _detail_url(favourite.uuid) in content
-
-    def test_detail_link_is_htmx_enhanced_onto_the_rows_own_panel(
-        self, client: Client
-    ) -> None:
-        """The chevron hx-gets the card into the panel under its own row.
-
-        SNOW-658 collapsed the "Details" button and the "Open page →" link
-        into one element: an href for the no-JS navigation, an hx-get so
-        the card still renders in-page — and so favourites_offline.js still
-        sees an HTMX swap to write through (SNOW-418). SNOW-711 made that
-        element the row's trailing chevron and gave every row its own
-        panel: there was ONE #favourite-card-panel above the whole list, so
-        expanding the fifth row painted its card four rows away from it.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        content = response.content.decode()
-        hx_get = f'hx-get="{_card_url(favourite.uuid)}"'
-        assert hx_get in content
-        assert f'hx-target="#favourite-panel-{favourite.uuid}"' in content
-        assert f'id="favourite-panel-{favourite.uuid}"' in content
-        # The panel is the row's next sibling, not a box somewhere above
-        # it: that adjacency is the whole point of the change.
-        row_at = content.index(f'id="favourite-{favourite.uuid}"')
-        assert row_at < content.index(f'id="favourite-panel-{favourite.uuid}"')
-        # The GET is carried by a link, never a button: a GET is a link, a
-        # POST is an active control. (The row's own buttons — rename,
-        # Remove — are POSTs, so they stay buttons.)
-        opener = content[: content.index(hx_get)].rsplit("<", 1)[1]
-        assert opener.startswith("a ") or opener.startswith("a\n")
-
-    def test_the_disclosure_is_the_only_expand_control(self, client: Client) -> None:
-        """One control, not a button and a link beside it.
-
-        The row carried an underlined "Details →" until SNOW-711 — the one
-        typographic control on a row whose other controls are icons.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        content = response.content.decode()
-        assert content.count("data-row-disclosure") == 1
-        assert "Details" not in content
-        # It names the row, because "Details" alone names nothing with a
-        # list of pins on screen.
-        assert 'aria-label="Show details for Mine"' in content
-        assert 'aria-expanded="false"' in content
-
-    def test_default_variant_offers_the_map_link(self, client: Client) -> None:
-        """The manage-page template keeps its "view on the map" navigation."""
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        assert b"View favourites on the map" in response.content
-
     def test_map_variant_renders_the_lean_template(self, client: Client) -> None:
-        """``?variant=map`` drops the card panel and the map link (SNOW-658)."""
+        """```` drops the card panel and the map link (SNOW-658)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert response.status_code == 200
         content = response.content.decode()
@@ -1515,7 +1397,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine", latitude=46.1, longitude=7.5)
 
-        content = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+        content = client.get(f"{LIST_URL}", **HTMX_HEADERS).content.decode()
 
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert 'aria-label="Zoom to Mine"' in content
@@ -1532,7 +1414,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, latitude=45.9, longitude=6.87)
 
-        content = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+        content = client.get(f"{LIST_URL}", **HTMX_HEADERS).content.decode()
         feature = client.get(GEOJSON_URL).json()["features"][0]
 
         assert (
@@ -1544,28 +1426,13 @@ class TestFavouriteList:
             favourite.latitude,
         ]
 
-    def test_default_variant_has_no_focus_control(self, client: Client) -> None:
-        """/account/favourites/ renders the same row with an inert name.
-
-        There is no map on that page to fly, and a button that did nothing
-        would read as broken rather than as absent.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert "data-row-focus" not in content
-        assert "Zoom to" not in content
-
     def test_map_variant_keeps_the_roster_sidecar(self, client: Client) -> None:
         """The sheet still caches the roster for offline reads."""
         user = UserFactory.create()
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert 'id="favourites-roster-cache"' in response.content.decode()
 
@@ -1587,7 +1454,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert _detail_url(favourite.uuid) not in content
@@ -1606,7 +1473,7 @@ class TestFavouriteList:
         with freeze_time("2026-02-03T09:00:00Z"):
             favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert _row_meta(response.content.decode()) == "Saved 3 Feb 2026"
         # The coordinates are gone entirely, not merely demoted. Asserted
@@ -1628,7 +1495,7 @@ class TestFavouriteList:
         with freeze_time("2026-02-03T09:00:00Z"):
             FavouriteFactory.create(user=user, name="Mine", region=region)
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert _row_meta(response.content.decode()) == "Alpstein · saved 3 Feb 2026"
 
@@ -1644,7 +1511,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert "cursor-text" not in content
@@ -1666,7 +1533,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert "data-row-renameable" in content
@@ -1691,7 +1558,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert 'role="menu"' not in content
@@ -1703,93 +1570,15 @@ class TestFavouriteList:
         assert 'aria-label="Rename Mine"' in content
         assert 'aria-label="Remove Mine"' in content
 
-    def test_both_variants_render_the_same_shared_row(self, client: Client) -> None:
-        """The account page's row IS the map's row now (SNOW-711).
-
-        This reverses the assertion SNOW-658 left here, which pinned the
-        account page's always-visible name field and underlined "Remove" as
-        deliberate. They were not deliberate for long: the same pin read
-        one way on the map and another on /account/, and this was the last
-        surface managing user data with a text field and a text button.
-        Only the disclosure differs — the map reaches a pin's detail by
-        tapping the pin.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-
-        account = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-        sheet = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
-
-        for hook in (
-            "data-row-renameable",
-            "data-row-rename-input",
-            f'data-favourite-rename="{favourite.uuid}"',
-            _delete_url(favourite.uuid),
-        ):
-            assert hook in account, hook
-            assert hook in sheet, hook
-        # The always-visible input is gone from both. It was never
-        # reachable without JS anyway: /account/ loads this list by hx-get.
-        assert 'name="name"' not in account
-        # One slot differs, and only that one.
-        assert "data-row-disclosure" in account
-        assert "data-row-disclosure" not in sheet
-
-    def test_both_variants_address_a_row_by_the_same_id(self, client: Client) -> None:
-        """``favourite-<uuid>`` on both, so a Remove targets it either way."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-
-        account = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-        sheet = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
-
-        assert f'id="favourite-{favourite.uuid}"' in account
-        assert f'id="favourite-{favourite.uuid}"' in sheet
-        assert f'hx-target="#favourite-{favourite.uuid}"' in account
-        assert f'hx-target="#favourite-{favourite.uuid}"' in sheet
-
-    def test_the_list_carries_the_rename_url_template(self, client: Client) -> None:
-        """account_favourites.js builds a row's rename URL from this.
-
-        On the list rather than on each row: every row would carry the same
-        string, and this element is rendered by the same endpoint the rows
-        are.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert 'data-rename-url-template="/favourites/partials/__UUID__/rename/"' in (
-            content
-        )
-
     def test_map_variant_empty_state(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy in the sheet."""
         user = UserFactory.create()
         client.force_login(user)
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert response.status_code == 200
         assert b"no saved favourites" in response.content.lower()
-
-    @pytest.mark.parametrize("variant", ["", "unknown", "../../etc/passwd"])
-    def test_unknown_variant_falls_back_to_the_manage_template(
-        self, client: Client, variant: str
-    ) -> None:
-        """An unrecognised variant never reaches a template path."""
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(f"{LIST_URL}?variant={variant}", **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        assert b'data-testid="favourite-card-panel"' in response.content
 
     def test_empty_state_when_no_favourites(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy."""
@@ -1860,8 +1649,8 @@ class TestFavouritesGeojson:
         response = client.get(GEOJSON_URL)
         assert response["Cache-Control"] == "private, no-store"
 
-    def test_resort_id_is_null_for_a_plain_pin(self, client: Client) -> None:
-        """A dropped-pin favourite's resort_id property is null (SNOW-499)."""
+    def test_resort_slug_is_null_for_a_plain_pin(self, client: Client) -> None:
+        """A dropped-pin favourite's resort_slug property is null (SNOW-499)."""
         user = UserFactory.create()
         client.force_login(user)
         _create_via_service(user)
@@ -1869,10 +1658,10 @@ class TestFavouritesGeojson:
         response = client.get(GEOJSON_URL)
 
         data = response.json()
-        assert data["features"][0]["properties"]["resort_id"] is None
+        assert data["features"][0]["properties"]["resort_slug"] is None
 
-    def test_resort_id_is_set_for_a_resort_favourite(self, client: Client) -> None:
-        """A resort favourite's resort_id property matches the linked Resort (SNOW-499)."""
+    def test_resort_slug_is_set_for_a_resort_favourite(self, client: Client) -> None:
+        """A resort favourite carries the Resort's slug, never its pk (SNOW-796)."""
         from apps.favourites.services import create_resort_favourite  # noqa: PLC0415
 
         user = UserFactory.create()
@@ -1885,7 +1674,8 @@ class TestFavouritesGeojson:
         response = client.get(GEOJSON_URL)
 
         data = response.json()
-        assert data["features"][0]["properties"]["resort_id"] == resort.pk
+        assert data["features"][0]["properties"]["resort_slug"] == resort.slug
+        assert "resort_id" not in data["features"][0]["properties"]
 
     def test_created_at_is_an_iso_timestamp(self, client: Client) -> None:
         """Each feature carries the pin's save time as ISO-8601 (SNOW-658).

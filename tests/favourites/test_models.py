@@ -4,9 +4,6 @@ tests/favourites/test_models.py — Tests for apps.favourites.models.
 Covers:
   Favourite to_string / __str__ format (with and without a name).
   FavouriteQuerySet.for_user — isolates favourites by owner.
-  FavouriteQuerySet.for_user_region — isolates favourites by owner AND
-    region (SNOW-507); excludes other users, other regions, and
-    null-region favourites.
   Meta.ordering — newest-first (inherited from BaseModel).
   resort FK (SNOW-499) — partial-unique (user, resort) constraint; two
     different users may each favourite the same resort; two NULL-resort
@@ -25,7 +22,6 @@ from django.utils import timezone
 from apps.favourites.models import Favourite
 from tests.factories import (
     FavouriteFactory,
-    MicroRegionFactory,
     ResortFactory,
     UserFactory,
 )
@@ -72,42 +68,6 @@ class TestFavouriteQuerySetForUser:
         """for_user returns an empty queryset when the user has no rows."""
         user = UserFactory.create()
         assert list(Favourite.objects.for_user(user)) == []
-
-
-@pytest.mark.django_db
-class TestFavouriteQuerySetForUserRegion:
-    """FavouriteQuerySet.for_user_region — isolates rows by owner AND region (SNOW-507)."""
-
-    def test_returns_only_that_users_favourites_in_the_region(self) -> None:
-        """for_user_region excludes another user's favourite in the same region."""
-        region = MicroRegionFactory.create()
-        user_a = UserFactory.create()
-        user_b = UserFactory.create()
-        mine = FavouriteFactory.create(user=user_a, region=region)
-        FavouriteFactory.create(user=user_b, region=region)
-
-        result = list(Favourite.objects.for_user_region(user_a, region))
-        assert result == [mine]
-
-    def test_excludes_the_same_users_favourite_in_a_different_region(self) -> None:
-        """A favourite in a different region is excluded."""
-        region = MicroRegionFactory.create()
-        other_region = MicroRegionFactory.create()
-        user = UserFactory.create()
-        mine = FavouriteFactory.create(user=user, region=region)
-        FavouriteFactory.create(user=user, region=other_region)
-
-        result = list(Favourite.objects.for_user_region(user, region))
-        assert result == [mine]
-
-    def test_excludes_null_region_favourites(self) -> None:
-        """A favourite with no resolved region is excluded."""
-        region = MicroRegionFactory.create()
-        user = UserFactory.create()
-        FavouriteFactory.create(user=user, region=None)
-
-        result = list(Favourite.objects.for_user_region(user, region))
-        assert result == []
 
 
 @pytest.mark.django_db

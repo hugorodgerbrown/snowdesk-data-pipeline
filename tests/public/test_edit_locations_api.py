@@ -25,6 +25,7 @@ failure this endpoint exists to prevent.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 import pytest
@@ -84,18 +85,18 @@ def _create_url() -> str:
 
 
 def _save_url(location: Location) -> str:
-    """Return the save endpoint's URL for ``location``."""
-    return reverse("api:edit_location_save", args=[location.pk])
+    """Return the save endpoint's URL for ``location`` — short-id keyed (SNOW-798)."""
+    return reverse("api:edit_location_save", args=[location.short_id])
 
 
 def _link_url(location: Location) -> str:
-    """Return the link endpoint's URL for ``location``."""
-    return reverse("api:edit_location_link", args=[location.pk])
+    """Return the link endpoint's URL for ``location`` — short-id keyed (SNOW-798)."""
+    return reverse("api:edit_location_link", args=[location.short_id])
 
 
 def _unlink_url(link: ResortLocation) -> str:
-    """Return the unlink endpoint's URL for ``link``."""
-    return reverse("api:edit_location_unlink", args=[link.pk])
+    """Return the unlink endpoint's URL for ``link`` — uuid keyed (SNOW-798)."""
+    return reverse("api:edit_location_unlink", args=[link.uuid])
 
 
 # ---------------------------------------------------------------------------
@@ -679,7 +680,7 @@ class TestSave:
         """No row, no edit."""
         resp = _post(
             _superuser_client(),
-            reverse("api:edit_location_save", args=[999999]),
+            reverse("api:edit_location_save", args=["AAAAAAAAAAA"]),
             {"name": "X", "latitude": MONT_FORT_LAT, "longitude": MONT_FORT_LON},
         )
         assert resp.status_code == 404
@@ -829,7 +830,7 @@ class TestLink:
         resort = ResortFactory.create()
         resp = _post(
             _superuser_client(),
-            reverse("api:edit_location_link", args=[999999]),
+            reverse("api:edit_location_link", args=["AAAAAAAAAAA"]),
             {"resort_id": resort.pk, "role": "TOP"},
         )
         assert resp.status_code == 404
@@ -875,7 +876,7 @@ class TestUnlink:
         """Nothing to unlink."""
         resp = _post(
             _superuser_client(),
-            reverse("api:edit_location_unlink", args=[999999]),
+            reverse("api:edit_location_unlink", args=[uuid.UUID(int=0)]),
             {},
         )
         assert resp.status_code == 404
@@ -906,9 +907,10 @@ class TestEditLocationsPageGate:
     def test_the_panel_carries_all_five_endpoint_urls(self) -> None:
         """The JS reads every URL off the panel's data attributes.
 
-        Three of them are ``__ID__`` templates the panel string-replaces
-        at runtime; a missing one is a button that silently POSTs to the
-        page it is on.
+        Three of them are placeholder templates the panel string-replaces
+        at runtime — ``__SHORTID__`` for the location, ``__UUID__`` for the
+        link (SNOW-798); a missing one is a button that silently POSTs to
+        the page it is on.
         """
         content = (
             _superuser_client()
@@ -919,9 +921,9 @@ class TestEditLocationsPageGate:
         for attribute in (
             f'data-queue-url="{reverse("api:edit_locations_queue")}"',
             f'data-create-url="{reverse("api:edit_location_create")}"',
-            'data-save-url-template="/api/edit/locations/__ID__/save/"',
-            'data-link-url-template="/api/edit/locations/__ID__/link/"',
-            'data-unlink-url-template="/api/edit/locations/links/__ID__/unlink/"',
+            'data-save-url-template="/api/edit/locations/__SHORTID__/save/"',
+            'data-link-url-template="/api/edit/locations/__SHORTID__/link/"',
+            'data-unlink-url-template="/api/edit/locations/links/__UUID__/unlink/"',
         ):
             assert attribute in content
 
@@ -1008,3 +1010,32 @@ def test_the_resort_catalogue_carries_its_coordinates() -> None:
     assert entry["latitude"] == pytest.approx(46.0961)
     assert entry["longitude"] == pytest.approx(7.2286)
     assert entry["region_id"] == Resort.objects.get().region.region_id
+
+
+# ---------------------------------------------------------------------------
+# SNOW-798 — the editor is keyed on short_id and link uuid, not pks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestEditorIsShortIdKeyed:
+    """Every payload the panel builds a URL from carries the opaque keys."""
+
+    def test_queue_payloads_carry_short_id_and_link_uuid(self) -> None:
+        """The catalogue row is what the panel selects on, links and unlinks through."""
+        location = LocationFactory.create(name="Mont Fort")
+        link = ResortLocationFactory.create(location=location)
+        body = _superuser_client().get(reverse("api:edit_locations_queue")).json()
+        row = next(r for r in body["locations"] if r["id"] == location.pk)
+        assert row["short_id"] == location.short_id
+        assert row["links"][0]["uuid"] == str(link.uuid)
+
+    def test_a_pk_in_the_short_id_slot_resolves_nothing(self) -> None:
+        """Eleven digits is not a short id — the converter refuses it outright."""
+        location = LocationFactory.create(name="Mont Fort")
+        resp = _post(
+            _superuser_client(),
+            f"/api/edit/locations/{location.pk:011d}/save/",
+            {"name": "X", "latitude": MONT_FORT_LAT, "longitude": MONT_FORT_LON},
+        )
+        assert resp.status_code == 404

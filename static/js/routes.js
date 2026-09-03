@@ -24,7 +24,7 @@
  *                                               its own before SNOW-764.
  *   data-signin-url="<url>"                   — Sign-in page for the anon CTA.
  *   data-route-create-url="<url>"             — Multipart upload endpoint.
- *   data-route-list-url="<url>"               — The list endpoint, ?variant=map.
+ *   data-route-list-url="<url>"               — The list endpoint.
  *   data-route-rename-url-template="<url>"    — __UUID__-templated rename.
  *   data-route-share-url-template="<url>"     — __UUID__-templated share mint.
  *
@@ -61,7 +61,7 @@
  *
  * Flow when eligible (authenticated):
  *   1. Tap #route-add-btn — opens the sheet on the list panel, whose rows
- *      load over HTMX from routes:list at ?variant=map.
+ *      load over HTMX from routes:list.
  *   2. Tap [data-panel-add] inside it — opens the native file picker by
  *      clicking the hidden #route-upload-input the surface partial renders.
  *   3. Choosing a file POSTs it straight to routes:create as multipart,
@@ -324,10 +324,9 @@
 
   /** (Re)load the panel's rows from routes:list over HTMX.
    *
-   * The URL is used VERBATIM — the server puts ``?variant=map`` on it so
-   * the sheet gets the lean row template (routes/partials/
-   * _route_list_map.html), and rebuilding the path here would silently drop
-   * it and render the default variant's markup instead.
+   * The URL is used VERBATIM — the server writes it once, and the sheet's
+   * row template (routes/partials/_route_list_map.html) has been the
+   * endpoint's only shape since SNOW-803.
    *
    * Called on open, and again after an upload or a rename lands — the same
    * re-read-the-truth move favourites.js makes, rather than patching a row
@@ -377,13 +376,31 @@
   // roundels — a second tap on the control that opened the panel closes it.
   // Bound on the button, so it runs before MapSheet's own document-level
   // click-outside handler, which then sees a closed sheet and does nothing.
+  /** Open the sheet on its list — what a roundel tap does when it is shut.
+   * @returns {void}
+   */
+  function openSheet() {
+    controller.open();
+    showListPanel();
+  }
+
   btn.addEventListener('click', function () {
     if (controller.isOpen()) {
       closeSheet();
       return;
     }
-    controller.open();
-    showListPanel();
+    openSheet();
+  });
+
+  // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
+  // ``/?panel=routes`` arrival — what /account/routes/ redirects to now.
+  // ``open`` is the roundel's own open path, so it goes through
+  // MapSheet.attach's registration with window.pwaMapOverlays. Frozen,
+  // like every other window.pwa* bridge.
+  window.pwaRoutesSheet = Object.freeze({
+    open: openSheet,
+    close: closeSheet,
+    isOpen: controller.isOpen,
   });
 
   // ---------------------------------------------------------------------------

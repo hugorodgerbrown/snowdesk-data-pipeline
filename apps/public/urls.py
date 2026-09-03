@@ -8,11 +8,15 @@ URL structure:
                                                /terms-of-service/ (SNOW-770).
   /help/                                        Plain-language "how it works"
                                                help page (SNOW-456).
-  /observations/                                Signed-in stream of recent
-                                               field observations (SNOW-476).
-  /resorts/<id>/<slug>/                         Resort detail page — danger
+  /observations/                                Permanent 301 redirect to
+                                               /?panel=reports — the map with
+                                               the reports sheet open (SNOW-804).
+  /resorts/<slug>/                             Resort detail page — danger
                                                chip, bulletin link, favourite
-                                               toggle (SNOW-504).
+                                               toggle (SNOW-504; slug-keyed
+                                               since SNOW-796).
+  /resorts/<id>/<slug>/                         Permanent 301 redirect to the
+                                               slug-keyed page (SNOW-796).
   /examples/random/                            Renders a random bulletin inline
                                                using the canonical view.
   /examples/category/<danger_level>/           Renders a random bulletin matching
@@ -90,26 +94,50 @@ urlpatterns = [
     # the generic <region_id:region_id>/ patterns so "help" never resolves
     # as a region id.
     path("help/", views.help_page, name="help"),
-    # Recent field-observations stream (SNOW-476) — registered before the
-    # generic <region_id:region_id>/ patterns so "observations" never
-    # resolves as a region id.
-    path("observations/", views.observations_list, name="observations"),
+    # SNOW-804: the recent-observations stream (SNOW-476) was a filtered
+    # view of map data — the map has the layer, the sheet and the submit
+    # flow — so the page is gone and the URL 301s to the map with the
+    # reports sheet open (``?panel=`` is consumed by static/js/map.js).
+    # Registered here, ahead of the generic <region_id:region_id>/ patterns,
+    # so "observations" never resolves as a region id; the name is kept so
+    # an old reverse still resolves. Mirrors the /map/ redirect above.
+    path(
+        "observations/",
+        RedirectView.as_view(url="/?panel=reports", permanent=True, query_string=True),
+        name="observations",
+    ),
     # Resort detail page (SNOW-504) — registered before the generic
     # <region_id:region_id>/ patterns so "resorts" never resolves as a
     # region id (though the RegionIdConverter regex already rejects it,
     # since it requires a two-letter-country-code + digit prefix).
     path(
-        "resorts/<int:resort_id>/<slug:slug>/",
+        "resorts/<slug:slug>/",
         views.resort_detail,
         name="resort",
+    ),
+    # SNOW-796: the pre-slug shape. Indexed and bookmarked, so it stays as
+    # a permanent redirect to the slug-keyed page — the ADR's "every changed
+    # route keeps a permanent redirect from its integer form".
+    path(
+        "resorts/<int:resort_id>/<slug:slug>/",
+        views.resort_legacy_redirect,
+        name="resort_legacy",
     ),
     # SNOW-761: the full forecast for one Location — the page the map's
     # weather card hands off to via "View forecast". Keyed on Location
     # rather than on a resort or a region because most of the estate is
     # neither: 461 of 540 public locations are region centroids, which had
-    # no page of their own before this one.
+    # no page of their own before this one. SNOW-797: keyed on the opaque
+    # short id, not the pk; the integer form keeps a permanent redirect.
+    # The int route is listed first, but the two cannot compete anyway —
+    # the short_id converter wants exactly eleven characters.
     path(
         "weather/<int:location_id>/",
+        views.location_weather_legacy_redirect,
+        name="location_weather_legacy",
+    ),
+    path(
+        "weather/<short_id:short_id>/",
         views.location_weather,
         name="location_weather",
     ),

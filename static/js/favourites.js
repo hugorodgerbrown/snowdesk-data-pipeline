@@ -13,7 +13,7 @@
  *
  * SNOW-658: the roundel opens a PANEL, not the create form. The panel
  * (#favourite-list-template, in _favourites_surface.html) lists the user's
- * own pins — loaded over HTMX from favourites:list at ?variant=map, whose
+ * own pins — loaded over HTMX from favourites:list, whose
  * row (favourites/partials/_favourite.html) is the shared UGC row:
  * a label, a muted meta line, and two icon controls — a pencil and a
  * trash. Remove is that row's own HTMX form and needs nothing here;
@@ -107,6 +107,8 @@
     // the failure line is still JS-rendered copy.
     'rename-failed': "That name couldn't be saved. Try again.",
     'list-failed': "Your favourites couldn't be loaded — check your connection.",
+    // SNOW-802: the region pin control's failure line.
+    'pin-failed': "That region couldn't be pinned. Try again.",
   });
 
   const CREATE_URL = btn.dataset.favouriteCreateUrl;
@@ -311,11 +313,10 @@
   // roundel — a second tap on the control that opened the panel closes it.
   // Bound on the button, so it runs before MapSheet's own document-level
   // click-outside handler, which then sees a closed sheet and does nothing.
-  btn.addEventListener('click', function () {
-    if (controller.isOpen()) {
-      closeSheet();
-      return;
-    }
+  /** Open the sheet on its list — what a roundel tap does when it is shut.
+   * @returns {void}
+   */
+  function openSheet() {
     controller.open();
     if (showListPanel()) return;
     // No list template on this surface. The create flow is still reachable,
@@ -323,6 +324,26 @@
     // dead end with no explanation.
     if (IS_ELIGIBLE) startCreateFlow();
     else sheet.replaceChildren(buildSigninCta());
+  }
+
+  btn.addEventListener('click', function () {
+    if (controller.isOpen()) {
+      closeSheet();
+      return;
+    }
+    openSheet();
+  });
+
+  // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
+  // ``/?panel=favourites`` arrival — what /account/favourites/ redirects
+  // to now. ``open`` is the roundel's own open path, so it goes through
+  // MapSheet.attach's registration with window.pwaMapOverlays and closes
+  // whatever else is up, exactly as a tap would. Frozen, like every other
+  // window.pwa* bridge.
+  window.pwaFavouritesSheet = Object.freeze({
+    open: openSheet,
+    close: closeSheet,
+    isOpen: controller.isOpen,
   });
 
   /** Show the create form seeded from the map centre and arm the place-picker.
@@ -717,6 +738,57 @@
   });
 
   // ---------------------------------------------------------------------------
+  // Region pin (SNOW-802) — pin/unpin a region from the region + date panel
+  // or the region popup, both of which inject public/_region_tooltip.html
+  // and with it favourites/partials/_region_pin_button.html. Delegated from
+  // document for the same reason the resort star below is: that markup
+  // arrives long after this script ran, and is replaced on every open.
+  //
+  // ONLINE-ONLY, like the resort page's toggle and unlike the star's
+  // create: a region pin has no coordinate, so there is nothing to draw
+  // optimistically and nothing for the mutation queue to replay into a
+  // layer. The response IS the control in its new state, swapped in whole.
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const control = target && target.closest ? target.closest('[data-region-pin]') : null;
+    if (!control) return;
+    event.preventDefault();
+    const url = control.dataset.regionPinToggleUrl;
+    if (!url || control.dataset.pinBusy === 'true') return;
+    control.dataset.pinBusy = 'true';
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        // favourite_region_toggle is @require_htmx; this is a plain fetch.
+        'HX-Request': 'true',
+        'X-CSRFToken': getCsrfToken(),
+      },
+    })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('region pin ' + resp.status);
+        return resp.text();
+      })
+      .then(function (html) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        const next = wrap.firstElementChild;
+        if (next) control.replaceWith(next);
+        // The pins sheet lists region pins, so its rows are stale now.
+        document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+        window.pwaTelemetry?.emit('map.region.pin_toggled', {
+          pinned: !!(next && next.dataset.pinned === 'true'),
+        });
+      })
+      .catch(function () {
+        delete control.dataset.pinBusy;
+        showToast(STRINGS['pin-failed']);
+      });
+  });
+
+  // ---------------------------------------------------------------------------
   // Resort-popup star (SNOW-499) — favourite/unfavourite a resort from the
   // minimal map-pin popup (public/templates/public/partials/_resort_popup.html).
   // Delegated from document — the popup markup is injected by map.js well
@@ -742,7 +814,7 @@
     if (!star) return;
     event.preventDefault();
 
-    const resortId = star.dataset.resortId;
+    const resortSlug = star.dataset.resortSlug;
     const lat = parseFloat(star.dataset.resortLat);
     const lon = parseFloat(star.dataset.resortLon);
     const name = star.dataset.resortName || '';
@@ -760,7 +832,7 @@
 
       const body = new URLSearchParams({
         csrfmiddlewaretoken: getCsrfToken(),
-        resort_id: resortId,
+        resort_slug: resortSlug,
       }).toString();
 
       window.pwaMutationQueue

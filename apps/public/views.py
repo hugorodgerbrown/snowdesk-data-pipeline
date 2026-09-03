@@ -80,7 +80,7 @@ from django_ratelimit.decorators import ratelimit
 
 from apps import analytics
 from apps.accounts.identity import request_identity
-from apps.accounts.models import Subscription, user_is_verified
+from apps.accounts.models import user_is_verified
 from apps.bulletins.models import (
     Bulletin,
     BulletinShare,
@@ -108,20 +108,15 @@ from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache_version
 from apps.core.utils import html_to_markdown
-from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
-from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
-from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
-    WeatherDisplay,
     build_point_forecast_panel,
-    build_weather_display,
 )
 
 from .component_previews import help_illustrations
@@ -737,26 +732,33 @@ def _get_name_slug(region: MicroRegion) -> str:
 def _edit_locations_context() -> dict[str, str]:
     """Return the URL context the location editor's panel is wired with.
 
-    Three of the five endpoints take a row id, so they are reversed with a
-    dummy and string-replaced at runtime in the JS — the same
-    ``__ID__`` placeholder trick ``edit_save_url_template`` above uses, and
-    the same one ``static/js/map.js`` uses for the region-summary URL.
+    Three of the five endpoints take an identifier, so they are reversed
+    with a placeholder the JS swaps at runtime — the same trick
+    ``edit_save_url_template`` above and ``static/js/map.js``'s
+    region-summary URL use. SNOW-798: save and link take the location's
+    short id (``__SHORTID__`` is eleven characters with a non-digit, so
+    the ``short_id`` converter accepts it verbatim); unlink takes the
+    link's uuid, reversed with the nil uuid and swapped for ``__UUID__``,
+    the pattern ``_favourites_context`` established.
 
     Returns:
         The five URLs the panel's data attributes carry.
 
     """
-
-    def _templated(name: str) -> str:
-        """Reverse ``name`` with a dummy id and swap in the placeholder."""
-        return reverse(name, args=[0]).replace("/0/", "/__ID__/")
-
+    nil_uuid = uuid.UUID(int=0)
+    unlink_template = reverse("api:edit_location_unlink", args=[nil_uuid]).replace(
+        str(nil_uuid), "__UUID__"
+    )
     return {
         "edit_locations_queue_url": reverse("api:edit_locations_queue"),
         "edit_location_create_url": reverse("api:edit_location_create"),
-        "edit_location_save_url_template": _templated("api:edit_location_save"),
-        "edit_location_link_url_template": _templated("api:edit_location_link"),
-        "edit_location_unlink_url_template": _templated("api:edit_location_unlink"),
+        "edit_location_save_url_template": reverse(
+            "api:edit_location_save", args=["__SHORTID__"]
+        ),
+        "edit_location_link_url_template": reverse(
+            "api:edit_location_link", args=["__SHORTID__"]
+        ),
+        "edit_location_unlink_url_template": unlink_template,
     }
 
 
@@ -823,7 +825,7 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_target``         — "resorts" when resort-edit mode is active,
                                 else "". The empty string is the normal map.
       ``edit_queue_url``      — URL for the edit queue API (resorts only).
-      ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (resorts).
+      ``edit_save_url_template`` — Save URL with ``__SLUG__`` placeholder (resorts).
       ``edit_create_url``     — URL for the resort-create API (resorts only).
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (resorts).
       ``edit_locations_*``     — the five location-editor URLs, present only
@@ -883,12 +885,11 @@ def home(request: HttpRequest) -> HttpResponse:
     edit_target = _edit_target(request)
     edit_context: dict[str, Any] = {"edit_target": edit_target}
     if edit_target == "resorts":
-        # The save URL contains an :resort_id placeholder — same trick as
-        # the region_summary URL in static/js/map.js: reverse with a
-        # dummy id, then string-replace at runtime in the JS.
-        save_url_template = reverse("api:edit_resort_save", args=[0]).replace(
-            "/0/", "/__ID__/"
-        )
+        # The save URL carries a ``__SLUG__`` placeholder the JS swaps for
+        # the selected resort's slug (SNOW-798) — same trick as the
+        # region_summary URL in static/js/map.js. The slug converter
+        # accepts the placeholder as-is, so no string-replace is needed.
+        save_url_template = reverse("api:edit_resort_save", args=["__SLUG__"])
         edit_context.update(
             {
                 "edit_queue_url": reverse("api:edit_resorts_queue"),
@@ -1246,65 +1247,6 @@ def help_page(request: HttpRequest) -> HttpResponse:
     return render(request, "public/help.html", context)
 
 
-def observations_list(request: HttpRequest) -> HttpResponse:
-    """
-    Render the /observations page — a signed-in stream of recent reports.
-
-    Shows FieldObservation rows from the last 48 hours, newest first. An
-    anonymous visitor sees a sign-in call to action instead of the list. A
-    signed-in viewer sees their own reports plus other users' reports.
-
-    Every row renders its timestamp as recorded, whoever filed it. Other
-    users' were floored to the preceding 15-minute mark until the note
-    above ``community_reports_geojson`` in ``apps.public.api``: this page
-    shows no names either, so the floor identified nobody and only made
-    one report read two ages across two surfaces.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        The rendered observations page.
-
-    """
-    window_hours = 48
-    since = timezone.now() - datetime.timedelta(hours=window_hours)
-    rows: list[dict[str, Any]] = []
-
-    if request.user.is_authenticated:
-        queryset = FieldObservation.objects.recent(since).select_related(
-            "region", "user"
-        )
-
-        for observation in queryset:
-            is_own = observation.user_id == request.user.pk
-            rows.append(
-                {
-                    "type_label": observation.get_observation_type_display(),
-                    "region_name": (
-                        observation.region.name
-                        if observation.region is not None
-                        else "unknown region"
-                    ),
-                    "region_url": (
-                        observation.region.get_absolute_url()
-                        if observation.region is not None
-                        else None
-                    ),
-                    "observed_at": observation.observed_at,
-                    "is_own": is_own,
-                }
-            )
-
-    context = {
-        "rows": rows,
-        "viewer_authenticated": request.user.is_authenticated,
-        "signin_url": reverse("accounts:sign_in"),
-        "window_hours": window_hours,
-    }
-    return render(request, "public/observations.html", context)
-
-
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather
@@ -1577,15 +1519,9 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
         # SNOW-658: the roundel opens a panel listing the user's own reports
         # before it offers to file another, so the panel needs the list
         # endpoint.
-        # SNOW-752: ``?variant=map`` asks for map-focus rows, whose label
-        # frames the report on the map behind the sheet. The parameter was
-        # added when /account/observations/ needed to re-read the same
-        # endpoint and must NOT get those rows — there is no map on that
-        # page to fly. Same convention, same spelling, as the favourites
-        # and routes lists above and below.
-        "report_list_url": (
-            f"{reverse('observations:list')}?variant={OBSERVATION_LIST_MAP_VARIANT}"
-        ),
+        # The rows come back with map-focus labels; since SNOW-803 the sheet
+        # is the endpoint's only surface, so there is no variant to ask for.
+        "report_list_url": reverse("observations:list"),
         "report_signin_url": reverse("accounts:sign_in"),
     }
 
@@ -1616,7 +1552,7 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 
     """
     favourites_eligible = request.user.is_authenticated
-    # __UUID__ placeholder, mirroring the __ID__ trick used above for
+    # __UUID__ placeholder, mirroring the __SLUG__ trick used above for
     # edit_save_url_template — reverse with a dummy uuid, then string-
     # replace at runtime with the uuid of the pin actually selected.
     dummy_uuid = uuid.UUID(int=0)
@@ -1626,12 +1562,9 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
         "favourite_create_url": reverse("favourites:create"),
         # SNOW-658: the roundel opens a panel listing the user's own pins
         # before it offers to add one, so the panel needs the list endpoint.
-        # ``?variant=map`` asks for the sheet's lean row template — same
-        # rows and offline sidecar, without the manage page's in-page card
-        # panel or its "view on the map" link.
-        "favourite_list_url": (
-            f"{reverse('favourites:list')}?variant={FAVOURITE_LIST_MAP_VARIANT}"
-        ),
+        # The sheet's lean row template is the endpoint's only shape since
+        # SNOW-803 removed the account page that hosted the fuller one.
+        "favourite_list_url": reverse("favourites:list"),
         "favourite_rename_url_template": reverse(
             "favourites:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
@@ -1708,10 +1641,9 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # an Add-a-route CTA in front of a signed-out recipient.
         "routes_upload_eligible": request.user.is_authenticated,
         "route_create_url": reverse("routes:create"),
-        # ``?variant=map`` asks for the sheet's lean row template — the
-        # shared includes/_ugc_panel_row.html shape, rather than
-        # _route.html's always-visible rename field.
-        "route_list_url": f"{reverse('routes:list')}?variant={ROUTE_LIST_MAP_VARIANT}",
+        # One row shape since SNOW-803 — the shared
+        # includes/_ugc_panel_row.html row the sheet has always listed.
+        "route_list_url": reverse("routes:list"),
         "route_rename_url_template": reverse(
             "routes:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
@@ -1870,9 +1802,10 @@ def _slope_context(request: HttpRequest) -> dict[str, Any]:
 def _labelled_counts(raw: "dict[str, int]") -> "list[tuple[str, int]]":
     """Map raw ``OBSERVATION_TYPE`` counts to sorted, human-readable pairs.
 
-    Shared by ``_get_observation_counts`` (region-wide) and
-    ``_get_local_observation_counts`` (SNOW-508, point-local) so the
-    key→label mapping lives in exactly one place.
+    Used by ``_get_observation_counts`` (region-wide); it was shared with
+    the resort page's point-local counts until SNOW-807 turned that panel
+    into a link to the map. The key→label mapping still lives in exactly
+    one place.
 
     Args:
         raw: Mapping from ``OBSERVATION_TYPE`` value string to count, as
@@ -1920,61 +1853,6 @@ def _get_observation_counts(
     return _labelled_counts(raw)
 
 
-@dataclasses.dataclass(frozen=True)
-class LocalObservationResult:
-    """Structured result for a distance-scoped field-observation lookup.
-
-    Distinguishes "checked, nothing nearby" (``visible=True``, empty
-    ``counts``) from "feature off" (``visible=False``) so the template can
-    render the correct empty-state copy rather than silently omitting the
-    panel. ``scope`` tells the template which heading/empty-state copy to
-    use: ``"point"`` when coordinates were available for a point-local
-    query, ``"region"`` when falling back to the region-wide count.
-
-    """
-
-    visible: bool
-    scope: str
-    counts: "list[tuple[str, int]]"
-
-
-def _get_local_observation_counts(
-    request: HttpRequest,
-    resort: "Resort",
-    day: datetime.date,
-) -> LocalObservationResult:
-    """Return a distance-scoped field-observation result for a resort page.
-
-    Point-local when the resort has both coordinates (SNOW-508); falls back
-    to the existing region-wide count (``counts_for_region_day``) when the
-    resort's coordinates are null.
-
-    Args:
-        request: The current HTTP request.
-        resort: The Resort to look up observations near.
-        day: The calendar day to count observations on.
-
-    Returns:
-        A ``LocalObservationResult`` — see its docstring for field meanings.
-
-    """
-    if resort.latitude is not None and resort.longitude is not None:
-        raw = FieldObservation.objects.counts_near_point_for_day(
-            resort.latitude,
-            resort.longitude,
-            settings.FIELD_OBSERVATION_RADIUS_KM,
-            day,
-        )
-        return LocalObservationResult(
-            visible=True, scope="point", counts=_labelled_counts(raw)
-        )
-
-    raw = FieldObservation.objects.counts_for_region_day(resort.region, day)
-    return LocalObservationResult(
-        visible=True, scope="region", counts=_labelled_counts(raw)
-    )
-
-
 def _get_observation_has_user_located(
     request: HttpRequest,
     region: "MicroRegion",
@@ -1998,29 +1876,6 @@ def _get_observation_has_user_located(
     from apps.observations.models import FieldObservation  # noqa: PLC0415
 
     return FieldObservation.objects.user_located_exists_for_region_day(region, day)
-
-
-def _get_favourites_in_region(
-    request: HttpRequest, region: "MicroRegion"
-) -> list[Favourite]:
-    """Return the requesting user's own favourites resolved to a region (SNOW-507).
-
-    Guarded on ``request.user.is_authenticated`` so anonymous requests issue
-    zero extra queries — mirrors ``user_subscribed_to_region``'s per-user
-    pattern on the bulletin page.
-
-    Args:
-        request: The current HTTP request.
-        region: The MicroRegion to resolve favourites for.
-
-    Returns:
-        The user's favourites in this region, or an empty list when
-        anonymous.
-
-    """
-    if not request.user.is_authenticated:
-        return []
-    return list(Favourite.objects.for_user_region(request.user, region))
 
 
 def _serve_sw_file(static_relative_path: str) -> HttpResponse:
@@ -2605,14 +2460,12 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         .distinct()
     )
 
-    # Match the prefetch shape ``bulletin_detail`` uses so the core renders
-    # at the same query budget the SNOW-13 monitor enforces.
+    # Match the select shape ``bulletin_detail`` uses so the core renders
+    # at the same query budget the SNOW-13 monitor enforces. (The
+    # ``neighbours`` prefetch went with the adjoining-regions section in
+    # SNOW-806.)
     regions = list(
-        MicroRegion.objects.filter(pk__in=region_ids)
-        .select_related("subregion")
-        .prefetch_related(
-            Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
-        )
+        MicroRegion.objects.filter(pk__in=region_ids).select_related("subregion")
     )
     if not regions:
         return redirect("public:home")
@@ -3317,9 +3170,10 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     ``_build_structured_data`` uses for the JSON-LD ``spatialCoverage``
     ``containedInPlace`` field). Without the full chain, every bulletin
     pageview fires an extra SELECT on ``regions_majorregion`` (SNOW-13
-    query-count monitor catches regressions). ``neighbours`` is prefetched
-    ordered-by-name so the "Adjoining regions" section iterates in display
-    order without a per-render sort.
+    query-count monitor catches regressions). ``neighbours`` was prefetched
+    here for the "Adjoining regions" tail section until SNOW-806 removed
+    it — the page's tail is one link back to the map now, so the M2M is
+    not read on this path at all.
 
     ``centroid_location`` is in the chain for ``MicroRegion.centre_point()``,
     which ``_build_structured_data`` calls for the JSON-LD ``geo`` block on
@@ -3328,11 +3182,7 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     panel — the JOIN is still earned, just by a different reader.
     """
     return get_object_or_404(
-        MicroRegion.objects.select_related(
-            "subregion__major", "centroid_location"
-        ).prefetch_related(
-            Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
-        ),
+        MicroRegion.objects.select_related("subregion__major", "centroid_location"),
         region_id__iexact=region_id,
     )
 
@@ -3838,14 +3688,6 @@ def _bulletin_detail_response(
         covers the target day).
 
     """
-    adjoining_regions = list(region.neighbours.all())
-    # Resorts in this region (SNOW-504) — reverse FK, alphabetical per
-    # Resort.Meta.ordering. Cross-links the bulletin page to each resort's
-    # own page; empty for regions with no fixture-seeded resorts.
-    # SNOW-544: kind=RESORT only — see regions.ResortQuerySet.resorts().
-    resorts_in_region = list(region.resorts.resorts())
-    favourites_in_region = _get_favourites_in_region(request, region)
-
     _capture_utm_to_session(request)
 
     # Warm the cache for future region_redirect lookups.
@@ -3921,9 +3763,6 @@ def _bulletin_detail_response(
                 "prev_date": prev_date,
                 "next_date": next_date,
                 "year": datetime.date.today().year,
-                "adjoining_regions": adjoining_regions,
-                "resorts_in_region": resorts_in_region,
-                "favourites_in_region": favourites_in_region,
                 "season_calendar": season_header(today),
                 "canonical_url": canonical_url,
                 "map_url": map_url,
@@ -4071,15 +3910,12 @@ def _bulletin_detail_response(
         "period_transition_chip": period_transition_chip,
         # Day movement — gates the flat-split caption (SNOW day-summary work).
         "day_movement": day_movement,
-        # Geographic neighbours — see SNOW-82.
-        "adjoining_regions": adjoining_regions,
-        # Resorts in this region — see SNOW-504.
-        "resorts_in_region": resorts_in_region,
-        # The user's own favourites in this region — see SNOW-507.
-        "favourites_in_region": favourites_in_region,
         # Canonical form-3 URL — see SNOW-99.
         "canonical_url": canonical_url,
-        # Context-aware back-link for the nav bar — see SNOW-183.
+        # Context-aware back-link for the nav bar (SNOW-183) and, since
+        # SNOW-806, the page's one tail link: the bulletin is a document,
+        # and everything that used to follow it — adjoining regions, resorts,
+        # the reader's pins, the subscribe form — is a map object.
         "map_url": map_url,
         # Source agency label and URL for the metadata strip Source cell (SNOW-211).
         "bulletin_source_label": bulletin_source_label,
@@ -4087,19 +3923,6 @@ def _bulletin_detail_response(
         # OG description — plain-text summary for og:description / twitter:description
         # (SNOW-218).  Built from the panel's danger rating and key message.
         "og_description": _build_og_description(panel),
-        # Subscribe panel state — whether the authenticated user already has a
-        # Subscription for this region (SNOW-222).  Anonymous users short-circuit
-        # to False so no DB query is issued for unauthenticated requests.
-        # Subscription lookup: authenticated users with an Account profile are
-        # checked; anonymous users and staff-only Users (no profile) return False.
-        "user_subscribed_to_region": (
-            request.user.is_authenticated
-            and hasattr(request.user, "account")
-            and Subscription.objects.filter(
-                account=request.user.account,
-                region=region,
-            ).exists()
-        ),
         # JSON-LD structured data (SNOW-220) — schema.org WebPage + Report.
         # Serialised with "</"-escaping; rendered unescaped in the template
         # inside a <script type="application/ld+json"> block.
@@ -4241,105 +4064,6 @@ def _bulletin_detail_render(
 # ---------------------------------------------------------------------------
 
 
-@dataclasses.dataclass(frozen=True)
-class ResortWeatherSection:
-    """One curated location's weather block on the resort page.
-
-    Attributes:
-        location: The ``Location`` the block describes.
-        label: The eyebrow text — the location's name and, when known, its
-            elevation. The elevation is the whole reason a resort shows
-            more than one block: village rain and summit snow are the same
-            forecast read at two heights.
-        role_label: The role this location plays FOR THIS RESORT (Base /
-            Mid-mountain / Top), which is not the same as the location's own
-            ``kind`` — see ``ResortLocation.role``.
-        weather_display: The day's ``WeatherDisplay``, or ``None``.
-        forecast_url: The location's own forecast page — where the week and
-            the hourly detail live (SNOW-783). The resort page shows the
-            day per altitude and hands the week off rather than drawing it
-            once per location.
-        testid_prefix: Stable per-block prefix for ``data-testid``s.
-
-    """
-
-    location: Location
-    label: str
-    role_label: str
-    weather_display: WeatherDisplay | None
-    forecast_url: str
-    testid_prefix: str
-
-
-def _resort_weather_sections(
-    resort: Resort, observed_on: datetime.date, now: datetime.datetime
-) -> list[ResortWeatherSection]:
-    """Build one weather block per curated location linked to a resort.
-
-    Ordered with the primary link first — the one the resort leads with,
-    normally the village, because that is where someone arrives — then by
-    role and name so the rest read bottom-to-top consistently.
-
-    Blocks with no ``Weather`` row are dropped entirely rather than rendered
-    empty: a resort whose peak has a row and whose village does not should
-    show one block, not one block and a hole.
-
-    One query for the links (with their locations joined) and one for the
-    day's rows across all of them, so the section costs two queries however
-    many locations a resort has.
-
-    Args:
-        resort: The resort whose links to walk.
-        observed_on: The calendar day to read.
-        now: The reference instant for each block's day/night icon decision.
-
-    Returns:
-        The blocks, in display order. Empty when the resort has no linked
-        locations or none of them has a row for the day.
-
-    """
-    links = list(
-        resort.resort_locations.select_related("location").order_by(
-            "-is_primary", "role", "location__name"
-        )
-    )
-    if not links:
-        return []
-    rows = {
-        row.location_id: row
-        for row in Weather.objects.filter(
-            location__in=[link.location_id for link in links],
-            observed_on=observed_on,
-        )
-    }
-    sections: list[ResortWeatherSection] = []
-    for index, link in enumerate(links):
-        weather = rows.get(link.location_id)
-        if weather is None:
-            continue
-        location = link.location
-        # A curated point carries its own name ("Verbier village"). An
-        # anonymous one — the Location link_resort_locations mints at the
-        # resort's own pin so a geocoded resort has weather at all — has
-        # none, and Location.to_string() would put raw coordinates on the
-        # page. Fall back to the resort's name instead: "Verbier · 1494 m"
-        # is what that point actually is.
-        label = location.name or resort.name
-        if location.elevation_m is not None:
-            label = f"{label} · {location.elevation_m:.0f} m"
-        sections.append(
-            ResortWeatherSection(
-                location=location,
-                label=label,
-                role_label=str(link.get_role_display()),
-                weather_display=build_weather_display(weather, now),
-                forecast_url=reverse("public:location_weather", args=[location.pk]),
-                testid_prefix=f"resort-weather-{index}",
-            )
-        )
-    return sections
-
-
 def _location_forecast_context(
     location: Location, observed_on: datetime.date, now: datetime.datetime
 ) -> dict[str, Any]:
@@ -4400,7 +4124,60 @@ def _location_forecast_context(
     }
 
 
-def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
+def _build_location_canonical_url(
+    location: Location, observed_on: datetime.date
+) -> str:
+    """Build the absolute canonical URL for a location's weather page.
+
+    The bare page for today (or no date), the ``?date=`` form for any other
+    day — see ``location_weather``. Absolute from ``settings.SITE_BASE_URL``
+    for the same reason ``_build_canonical_url`` is: a crawler arriving on
+    a hosting alias must not be told that alias is canonical.
+
+    Args:
+        location: The location the page is for.
+        observed_on: The day the page is showing.
+
+    Returns:
+        An absolute URL.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+    path = location.get_absolute_url()
+    if observed_on != timezone.localdate():
+        path = f"{path}?date={observed_on.isoformat()}"
+    return f"{base}{path}"
+
+
+def location_weather_legacy_redirect(
+    request: HttpRequest, location_id: int
+) -> HttpResponse:
+    """301 the pre-SNOW-797 ``/weather/<id>/`` shape to ``/weather/<short_id>/``.
+
+    The integer form was the page's URL for its first weeks and was shared
+    from the map's weather card, so it keeps a permanent redirect
+    (``docs/decisions/no-integer-pks-in-urls.md``). Same visibility rule as
+    the page — the public estate plus the reader's own pins — so a guessed
+    pk still cannot confirm a stranger's private pin exists. ``?date=``
+    rides along, so a shared dated link still opens on its day.
+
+    Args:
+        request: The incoming HTTP request.
+        location_id: The Location's primary key, from the legacy URL.
+
+    Returns:
+        A 301 to the canonical page, or 404 when the pk is not visible.
+
+    """
+    location = get_object_or_404(
+        Location.objects.visible_to(request.user), pk=location_id
+    )
+    query = request.META.get("QUERY_STRING", "")
+    url = location.get_absolute_url()
+    return redirect(f"{url}?{query}" if query else url, permanent=True)
+
+
+def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
     """Render the full forecast for one location.
 
     THE PAGE THE MAP CARD HANDS OFF TO. Tapping a weather symbol opens a
@@ -4445,9 +4222,16 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
     the day the map was showing. A malformed value falls back to today
     rather than 400-ing.
 
+    **Canonical URL** (SNOW-799). ``?date=`` picks which row the page
+    shows, not which page it is, so the canonical is the bare
+    ``/weather/<short_id>/`` when no date is given or the date is today,
+    and the dated URL when another day is being viewed — that page is a
+    real, citable thing, but it is not what the evergreen URL should point
+    at. The sitemap lists only the undated form.
+
     Args:
         request: The incoming HTTP request.
-        location_id: The Location's primary key.
+        short_id: The Location's opaque short id (SNOW-797).
 
     Returns:
         The rendered page.
@@ -4458,7 +4242,7 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
 
     """
     location = get_object_or_404(
-        Location.objects.visible_to(request.user), pk=location_id
+        Location.objects.visible_to(request.user), short_id=short_id
     )
 
     observed_on = timezone.localdate()
@@ -4473,6 +4257,7 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
     region = location.micro_regions.first()
     context: dict[str, Any] = {
         "location": location,
+        "canonical_url": _build_location_canonical_url(location, observed_on),
         # Same precedence as the map card's heading: a curated point names
         # itself, an anonymous one is named by what it stands for, and the
         # coordinates are never a heading.
@@ -4488,46 +4273,69 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
     return render(request, "public/location_weather.html", context)
 
 
-def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpResponse:
+def resort_legacy_redirect(
+    request: HttpRequest, resort_id: int, slug: str
+) -> HttpResponse:
+    """301 the pre-SNOW-796 ``/resorts/<id>/<slug>/`` shape to ``/resorts/<slug>/``.
+
+    The integer form was indexed and bookmarked for months, so it keeps a
+    permanent redirect (``docs/decisions/no-integer-pks-in-urls.md``). The
+    inbound ``slug`` is ignored: the row's stored slug is the canonical one,
+    and this route is the last place a resort's primary key is accepted.
+
+    Args:
+        request: The incoming HTTP request.
+        resort_id: The Resort's primary key, from the legacy URL.
+        slug: The legacy name-derived suffix — not checked.
+
+    Returns:
+        A 301 to the resort's canonical page, or 404 for an unknown pk.
+
+    """
+    resort = get_object_or_404(Resort, pk=resort_id)
+    return redirect(resort.get_absolute_url(), permanent=True)
+
+
+def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     """
     Render the public resort detail page.
 
-    Gives a Resort its own indexable URL (``/resorts/<id>/<slug>/``),
+    Gives a Resort its own indexable URL (``/resorts/<slug>/``, SNOW-796),
     cross-linking with the bulletin page (which lists "Resorts in this
     region" — see ``_bulletin_detail_response``) and the map's resort-pin
     popup (``apps.public.api.resort_popup``, whose CTA now reads "View resort →"
     and links here instead of straight to the bulletin).
 
-    301-redirects to the canonical slug when the inbound ``slug`` doesn't
-    match ``resort.name_slug`` — mirrors the region canonical-slug
-    behaviour (``_redirect_to_canonical``) so search engines index one URL
-    per resort.
+    The slug is stored and never regenerated, so there is no canonical-slug
+    redirect to perform here: the URL either names a resort or it 404s.
+    The pre-slug ``/resorts/<id>/<slug>/`` form is ``resort_legacy_redirect``.
+
+    A ROUTER, not a third document (SNOW-807,
+    ``docs/decisions/two-documents-and-a-map.md``). What is the resort's
+    own — name, region, the curated facts and why-it-matters line, the
+    favourite toggle — renders here; everything else is a link: the danger
+    area to the region's bulletin, each curated location to its weather
+    page, the observations to the map with the reports sheet open. The
+    page is kept because people search "Verbier avalanche", not
+    "CH-4115", and ``ResortSitemap`` publishes every resort.
 
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
     (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``)
     and by ``apps.public.api.region_summary`` (today's ``RegionDayRating`` lookup
-    for the danger chip). Field-observation counts are point-local — scoped
-    to ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
-    coordinates (SNOW-508) — falling back to the region-wide count when the
-    resort has no coordinates.
+    for the danger chip).
 
     Args:
         request: The incoming HTTP request.
-        resort_id: The Resort's primary key, from the URL.
-        slug: The inbound URL slug — checked against ``resort.name_slug``;
-            a mismatch 301s to the canonical URL.
+        slug: The Resort's slug, from the URL.
 
     Returns:
-        The rendered resort page, or a 301 redirect to the canonical URL.
+        The rendered resort page.
 
     """
     resort = get_object_or_404(
         Resort.objects.select_related("region"),
-        pk=resort_id,
+        slug=slug,
     )
-
-    if slug != resort.name_slug:
-        return redirect(resort.get_absolute_url(), permanent=True)
 
     region = resort.region
     today = timezone.localdate()
@@ -4555,16 +4363,50 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
         # metadata rows already do.
         "is_staff": request.user.is_staff,
         "signin_url": reverse("accounts:sign_in"),
-        "local_observations": _get_local_observation_counts(request, resort, today),
-        "observation_has_user_located": _get_observation_has_user_located(
-            request, region, today
+        # SNOW-807: the resort's curated locations, each a link to its own
+        # weather page — no forecast is read here. One query, no Weather.
+        "locations": _resort_location_links(resort),
+        # SNOW-807: the map with the reports sheet open, flown to this resort
+        # (static/js/map.js consumes ``?panel=`` and ``?resort=``).
+        "observations_map_url": (
+            f"{reverse('public:home')}?panel=reports&resort={resort.slug}"
         ),
-        # SNOW-761: one weather block per curated location, labelled with the
-        # height it was read at. Empty list when the resort has no linked
-        # locations or none of them has a row for today.
-        "weather_sections": _resort_weather_sections(resort, today, timezone.now()),
     }
     return render(request, "public/resort.html", context)
+
+
+def _resort_location_links(resort: Resort) -> list[dict[str, Any]]:
+    """Return the resort's curated locations as links to their weather pages.
+
+    Ordered with the primary link first — the one the resort leads with,
+    normally the village, because that is where someone arrives — then by
+    role and name. A curated point carries its own name; the anonymous one
+    ``link_resort_locations`` mints at the resort's own pin has none, and
+    falls back to the resort's name (SNOW-807, after SNOW-761's block).
+
+    Args:
+        resort: The resort whose links to walk.
+
+    Returns:
+        One dict per link: ``label``, ``elevation_m``, ``role_label``,
+        ``url`` and a stable ``testid``. Empty when the resort has no
+        linked locations — a manual operator step, so that state is
+        normal for a freshly geocoded resort.
+
+    """
+    links = resort.resort_locations.select_related("location").order_by(
+        "-is_primary", "role", "location__name"
+    )
+    return [
+        {
+            "label": link.location.name or resort.name,
+            "elevation_m": link.location.elevation_m,
+            "role_label": str(link.get_role_display()),
+            "url": link.location.get_absolute_url(),
+            "testid": f"resort-location-{index}",
+        }
+        for index, link in enumerate(links)
+    ]
 
 
 # ---------------------------------------------------------------------------

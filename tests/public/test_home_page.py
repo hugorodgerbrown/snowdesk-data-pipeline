@@ -877,9 +877,9 @@ class TestHomePageFavouritesParity:
         # SNOW-658: the layers-menu row became the panel's own switch.
         assert 'data-overlay-key="favourites"' not in content
         assert 'id="map-favourites-overlay-toggle"' in content
-        # ?variant=map: the sheet asks for the lean row template, not the
-        # manage page's (no in-page card panel, no "view on the map" link).
-        assert f"{reverse('favourites:list')}?variant=map" in content
+        # SNOW-803: one list shape — the sheet's — so no variant is asked for.
+        assert f'data-favourite-list-url="{reverse("favourites:list")}"' in content
+        assert "?variant=" not in content
         assert reverse("favourites:geojson") in content
 
 

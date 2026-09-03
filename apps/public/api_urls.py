@@ -55,8 +55,14 @@ urlpatterns = [
     # SNOW-761: the sheet body behind a tap on a weather symbol. Keyed on
     # Location like the feed it is tapped from, and 404s for anything
     # outside Location.objects.public() — see the view.
+    # SNOW-797: keyed on Location.short_id; the integer form 301s to it.
     path(
         "weather/<int:location_id>/detail/",
+        api.weather_detail_legacy_redirect,
+        name="weather_detail_legacy",
+    ),
+    path(
+        "weather/<short_id:short_id>/detail/",
         api.weather_detail,
         name="weather_detail",
     ),
@@ -93,7 +99,7 @@ urlpatterns = [
     # SNOW-499: minimal resort-pin popup — public (unlike favourites.geojson),
     # per-user favourite star state resolved inline; never cached.
     path(
-        "resorts/<int:resort_id>/popup/",
+        "resorts/<slug:slug>/popup/",
         api.resort_popup,
         name="resort_popup",
     ),
@@ -114,25 +120,30 @@ urlpatterns = [
         api.edit_resorts_queue,
         name="edit_resorts_queue",
     ),
-    # Literal segment, declared before the ``<int:resort_id>`` pattern so
-    # the two can never be confused by a future non-numeric converter.
+    # Literal segment, declared before the ``<slug:slug>`` pattern. The
+    # two cannot collide anyway — different final segment — but the
+    # ordering keeps the intent visible now that the key IS non-numeric
+    # (SNOW-798: the editor addresses a resort by its slug, like every
+    # other surface since SNOW-796).
     path(
         "edit/resorts/create/",
         api.edit_resort_create,
         name="edit_resort_create",
     ),
     path(
-        "edit/resorts/<int:resort_id>/save/",
+        "edit/resorts/<slug:slug>/save/",
         api.edit_resort_save,
         name="edit_resort_save",
     ),
     # SNOW-755 — edit-locations mode endpoints, gated the same way. The
-    # literal segments ("create", "links") are declared before the
-    # ``<int:...>`` patterns for the same reason the resort routes above
-    # are, and ``links/`` is its own prefix because unlink names the LINK,
-    # not the location: a location reached by four resorts has four links
-    # to choose between, and the pair of ids that would otherwise be
-    # needed is exactly what the link row's own id already is.
+    # literal segments ("create", "links") are declared before the keyed
+    # patterns for the same reason the resort routes above are, and
+    # ``links/`` is its own prefix because unlink names the LINK, not the
+    # location: a location reached by four resorts has four links to
+    # choose between, and the pair of ids that would otherwise be needed
+    # is exactly what the link row's own identity already is. SNOW-798:
+    # a location is addressed by its short id and a link by its uuid —
+    # the last integer keys in the URL tree are gone.
     path(
         "edit/locations/queue/",
         api.edit_locations_queue,
@@ -144,17 +155,17 @@ urlpatterns = [
         name="edit_location_create",
     ),
     path(
-        "edit/locations/links/<int:link_id>/unlink/",
+        "edit/locations/links/<uuid:link_uuid>/unlink/",
         api.edit_location_unlink,
         name="edit_location_unlink",
     ),
     path(
-        "edit/locations/<int:location_id>/save/",
+        "edit/locations/<short_id:short_id>/save/",
         api.edit_location_save,
         name="edit_location_save",
     ),
     path(
-        "edit/locations/<int:location_id>/link/",
+        "edit/locations/<short_id:short_id>/link/",
         api.edit_location_link,
         name="edit_location_link",
     ),

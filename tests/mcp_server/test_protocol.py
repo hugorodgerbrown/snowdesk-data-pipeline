@@ -207,6 +207,8 @@ def test_tools_list_returns_all_registered_tools() -> None:
         "get_regional_snapshot",
         "list_regions",
         "region_info",
+        "list_locations_in_region",
+        "get_location_weather",
     }
     for tool in response["result"]["tools"]:
         assert tool["description"]

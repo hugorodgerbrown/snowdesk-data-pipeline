@@ -789,282 +789,86 @@ class TestBulletinDetailIssueParam:
 
 
 @pytest.mark.django_db
-class TestAdjoiningRegions:
-    """Tests for the adjoining-regions context entry and rendered section."""
+class TestMapTailLink:
+    """SNOW-806: the tail is one link back to the map, focused on region and day.
 
-    def test_context_lists_neighbours_in_alphabetical_order(
+    The adjoining-regions, resorts-in-region and favourites-here sections and
+    the subscribe form are gone — map objects, not part of the document.
+    """
+
+    def test_today_page_links_to_the_map_at_this_region(
         self, client: Client, region: MicroRegion
     ) -> None:
-        """``adjoining_regions`` is sorted by name regardless of insertion order."""
-        zoulou = MicroRegionFactory.create(
+        """On today's page the link is the bare map with the region fragment."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-15T10:00:00+00:00"):
+            response = client.get(
+                reverse(
+                    "public:bulletin", kwargs={"region_id": "ch-4115", "slug": "valais"}
+                )
+            )
+
+        content = response.content.decode()
+        assert 'data-testid="bulletin-map-link"' in content
+        assert 'href="/#CH-4115"' in content
+        assert "See this region on the map" in content
+
+    def test_historic_page_carries_the_date(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A past day's page sends the map to that day."""
+        _make_am_bulletin(region, date(2026, 3, 15))
+        with _freeze("2026-03-20T10:00:00+00:00"):
+            response = client.get(
+                reverse(
+                    "public:bulletin_date",
+                    kwargs={
+                        "region_id": "ch-4115",
+                        "slug": "valais",
+                        "date_str": "2026-03-15",
+                    },
+                )
+            )
+
+        assert 'href="/?d=2026-03-15#CH-4115"' in response.content.decode()
+
+    def test_the_four_map_affordances_are_gone(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """Neighbours, resorts, the reader's pins and the subscribe form no longer render."""
+        neighbour = MicroRegionFactory.create(
             region_id="CH-9991", name="Zoulou", slug="zoulou"
         )
-        alpha = MicroRegionFactory.create(
-            region_id="CH-9992", name="Alpha", slug="alpha"
-        )
-        mike = MicroRegionFactory.create(region_id="CH-9993", name="Mike", slug="mike")
-        # Insert in non-alphabetical order to prove the view sorts.
-        region.neighbours.set([zoulou, mike, alpha])
-
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        names = [r.name for r in response.context["adjoining_regions"]]
-        assert names == ["Alpha", "Mike", "Zoulou"]
-
-    def test_section_renders_with_links_to_each_neighbour(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """The Adjoining Regions section emits a link per neighbour."""
-        neighbour = MicroRegionFactory.create(
-            region_id="CH-9994", name="Bordering", slug="bordering"
-        )
         region.neighbours.add(neighbour)
-
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        content = response.content.decode()
-        # The adjoining-region link points at the canonical form-3 URL
-        # using the same page_date as the rendered page (SNOW-99) so the
-        # neighbour link preserves the date the user is browsing.
-        expected_url = reverse(
-            "public:bulletin_date",
-            kwargs={
-                "region_id": "ch-9994",
-                "slug": "bordering",
-                "date_str": "2026-03-15",
-            },
-        )
-        assert 'data-testid="adjoining-regions"' in content
-        assert "Bordering" in content
-        assert expected_url in content
-
-    def test_section_hidden_when_no_neighbours(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """No neighbours seeded → no adjoining-regions section in the HTML."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        assert response.context["adjoining_regions"] == []
-        assert b'data-testid="adjoining-regions"' not in response.content
-
-    def test_empty_state_includes_adjoining_regions(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """Even when there is no bulletin for the date, neighbours still render."""
-        neighbour = MicroRegionFactory.create(
-            region_id="CH-9995", name="Border", slug="border"
-        )
-        region.neighbours.add(neighbour)
-
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        assert response.context["bulletin"] is None
-        assert list(response.context["adjoining_regions"]) == [neighbour]
-        assert b'data-testid="adjoining-regions"' in response.content
-
-
-@pytest.mark.django_db
-class TestResortsInRegion:
-    """Tests for the "Resorts in this region" context entry and section (SNOW-504)."""
-
-    def test_context_lists_resorts_in_the_region(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """``resorts_in_region`` lists the region's resorts, alphabetically."""
-        ResortFactory.create(name="Zermatt", region=region)
-        ResortFactory.create(name="Arosa", region=region)
-
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        names = [r.name for r in response.context["resorts_in_region"]]
-        assert names == ["Arosa", "Zermatt"]
-
-    def test_section_renders_with_links_to_each_resort(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """The section emits a link to each resort's own page."""
-        resort = ResortFactory.create(name="Verbier", region=region)
-
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        content = response.content.decode()
-        assert 'data-testid="resorts-in-region"' in content
-        assert "Verbier" in content
-        assert resort.get_absolute_url() in content
-
-    def test_section_hidden_when_no_resorts(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """No resorts seeded in the region → no section in the HTML."""
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        assert response.context["resorts_in_region"] == []
-        assert b'data-testid="resorts-in-region"' not in response.content
-
-    def test_empty_state_includes_resorts_in_region(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """Even when there is no bulletin for the date, resorts still render."""
-        resort = ResortFactory.create(name="Verbier", region=region)
-
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        assert response.context["bulletin"] is None
-        assert list(response.context["resorts_in_region"]) == [resort]
-        assert b'data-testid="resorts-in-region"' in response.content
-
-
-@pytest.mark.django_db
-class TestFavouritesInRegion:
-    """Tests for the "Your favourites here" context entry and section (SNOW-507)."""
-
-    def test_section_shows_for_signed_in_user_with_favourite_in_region(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """A signed-in user's favourite in this region renders the section + link."""
+        ResortFactory.create(region=region, name="Verbier")
         user = UserFactory.create()
+        FavouriteFactory.create(user=user, name="My spot", region=region)
         client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="My spot", region=region)
-
         _make_am_bulletin(region, date(2026, 3, 15))
         with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
+            content = client.get(
+                reverse(
+                    "public:bulletin", kwargs={"region_id": "ch-4115", "slug": "valais"}
+                )
+            ).content.decode()
 
-        content = response.content.decode()
-        assert 'data-testid="favourites-in-region"' in content
-        assert "My spot" in content
-        assert reverse("favourites:detail", args=[favourite.uuid]) in content
-
-    def test_section_hidden_for_anonymous(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """The section never renders for an anonymous request."""
-        FavouriteFactory.create(region=region)
-
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        assert response.context["favourites_in_region"] == []
-        assert b'data-testid="favourites-in-region"' not in response.content
-
-    def test_section_hidden_when_users_favourites_are_all_in_other_regions(
-        self, client: Client, region: MicroRegion
-    ) -> None:
-        """A favourite in a different region does not surface here."""
-        user = UserFactory.create()
-        client.force_login(user)
-        other_region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=user, region=other_region)
-
-        _make_am_bulletin(region, date(2026, 3, 15))
-        with _freeze("2026-03-15T10:00:00+00:00"):
-            url = reverse(
-                "public:bulletin_date",
-                kwargs={
-                    "region_id": "ch-4115",
-                    "slug": "valais",
-                    "date_str": "2026-03-15",
-                },
-            )
-            response = client.get(url)
-
-        assert response.context["favourites_in_region"] == []
-        assert b'data-testid="favourites-in-region"' not in response.content
+        for testid in (
+            "adjoining-regions",
+            "resorts-in-region",
+            "favourites-in-region",
+        ):
+            assert f'data-testid="{testid}"' not in content
+        assert "subscribe-cta-" not in content
+        assert "Zoulou" not in content
+        assert "My spot" not in content
+        assert (
+            "adjoining_regions"
+            not in client.get(
+                reverse(
+                    "public:bulletin", kwargs={"region_id": "ch-4115", "slug": "valais"}
+                )
+            ).context
+        )
 
 
 @pytest.mark.django_db

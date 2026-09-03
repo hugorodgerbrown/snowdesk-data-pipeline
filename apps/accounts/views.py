@@ -57,7 +57,6 @@ views_passkey.py, django.contrib.auth.login() establishes the session.
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -82,9 +81,8 @@ from django_ratelimit.decorators import ratelimit
 from apps import analytics
 from apps.core.decorators import require_htmx
 from apps.core.services.request_log import capture as capture_request_log
-from apps.public.decorators import lowercase_region_id
+from apps.favourites.services import delete_region_favourite
 from apps.regions.models import MicroRegion
-from apps.regions.services.point_match import IN_NEIGHBOUR, IN_REGION
 
 from .forms import (
     ChangeEmailForm,
@@ -92,21 +90,18 @@ from .forms import (
     PasswordSignInForm,
     RegisterForm,
     SnowdeskSetPasswordForm,
-    SubscribeForm,
 )
 from .identity import user_identity
 from .logging_utils import mask_email
-from .models import Account, Subscription
+from .models import Account
 from .services.deletion import erase_account
 from .services.email import (
     send_account_access_email,
     send_email_change_confirmation,
     send_email_change_notice,
     send_password_reset_email,
-    send_subscription_confirmation_email,
     send_verification_email,
 )
-from .services.request_context import geo_match_snapshot
 from .services.token import (
     SALT_ACCOUNT_ACCESS,
     SALT_EMAIL_VERIFICATION,
@@ -149,7 +144,8 @@ _REFERRER_CONFIRM_PAGE = "same-origin"
 # string. SNOW-667 moved this off /account/manage/, which is now a 301 to
 # the hub; pointing at the redirect would cost a needless hop and drop
 # nothing but time.
-_HUB_URL = "/account/"
+# SNOW-802: where a just-verified account lands — the map, pins sheet open.
+_VERIFIED_LANDING_URL = "/?panel=favourites"
 
 # URL for the unsubscribe-done page — used in HX-Redirect headers.
 _UNSUBSCRIBE_DONE_URL = "/account/unsubscribe-done/"
@@ -202,7 +198,7 @@ def _password_sign_in(request: HttpRequest) -> HttpResponse | None:
         )
         if user is not None:
             login(request, user)
-            return redirect("accounts:hub")
+            return redirect("public:home")
 
     return render(
         request,
@@ -234,7 +230,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
 
     """
     if request.user.is_authenticated:
-        return redirect("accounts:hub")
+        return redirect("public:home")
 
     if request.method == "GET":
         return render(request, "accounts/sign_in.html", {"form": EmailForm()})
@@ -316,7 +312,7 @@ def register_view(request: HttpRequest) -> HttpResponse:
 
     """
     if request.user.is_authenticated:
-        return redirect("accounts:hub")
+        return redirect("public:home")
 
     if request.method == "GET":
         return render(request, "accounts/register.html", {"form": RegisterForm()})
@@ -520,7 +516,7 @@ def set_password_view(request: HttpRequest) -> HttpResponse:
     # session is not invalidated by SessionAuthenticationMiddleware.
     update_session_auth_hash(request, request.user)
     logger.info("Password set for user pk=%s via setup page", request.user.pk)
-    return redirect("accounts:hub")
+    return redirect("public:home")
 
 
 # ---------------------------------------------------------------------------
@@ -637,7 +633,7 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
         account.mark_verified(now)
         account.save(update_fields=["is_verified", "verified_at", "updated_at"])
 
-    response = redirect("accounts:hub")
+    response = redirect("public:home")
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
@@ -814,7 +810,7 @@ def change_email_confirm_view(request: HttpRequest, token: str) -> HttpResponse:
     login(request, user, backend=_TOKEN_BACKEND)
     send_email_change_notice(old_email, stage="completed")
     logger.info("Email change completed for user pk=%s", user.pk)
-    response = redirect("accounts:hub")
+    response = redirect("accounts:settings")
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
@@ -879,442 +875,6 @@ def _resolve_utm_source(request: HttpRequest, utm_source: str) -> str:
         return urlparse(referer).hostname or ""
     except Exception:  # noqa: BLE001
         return ""
-
-
-def _track_subscription_started(
-    request: HttpRequest,
-    anon_id: str,
-    country_code: str = "",
-    geo_match_kind: str = "",
-    region_match: bool = False,
-    language_primary: str = "",
-) -> None:
-    """Emit the ``subscription_started`` analytics event.
-
-    Derives the ``source`` from the UTM params stored in the session by the
-    bulletin page (``request.session["analytics_utm"]``), falling back to the
-    HTTP Referer host when no UTM data is present.
-
-    Args:
-        request: The current HTMX POST request.
-        anon_id: The session-scoped anonymous UUID used as ``distinct_id``.
-        country_code: ISO 3166-1 alpha-2 country code resolved from the
-            client IP.  Included in props when non-empty.
-        geo_match_kind: The region-relative classification string (one of
-            ``IN_REGION``, ``IN_NEIGHBOUR``, ``ELSEWHERE``, ``UNKNOWN``).
-            Included in props when non-empty.
-        region_match: True when geo_match_kind is ``IN_REGION`` or
-            ``IN_NEIGHBOUR``, signalling the subscriber was geographically
-            close to the region they signed up for.
-        language_primary: The primary language subtag from Accept-Language
-            (e.g. ``'en'``, ``'de'``, ``'fr'``).  Included in props when
-            non-empty.
-
-    """
-    utm: dict[str, str] = request.session.get("analytics_utm") or {}
-    utm_source: str = _resolve_utm_source(request, utm.get("utm_source", ""))
-    utm_medium: str = utm.get("utm_medium", "")
-    utm_campaign: str = utm.get("utm_campaign", "")
-
-    props: dict[str, object] = {}
-    if utm_source:
-        props["source"] = utm_source
-    if utm_medium:
-        props["utm_medium"] = utm_medium
-    if utm_campaign:
-        props["utm_campaign"] = utm_campaign
-    if country_code:
-        props["country_code"] = country_code
-    if geo_match_kind:
-        props["geo_match_kind"] = geo_match_kind
-        props["region_match"] = region_match
-    if language_primary:
-        props["language_primary"] = language_primary
-
-    analytics.track("subscription_started", anon_id, props)
-
-
-# ---------------------------------------------------------------------------
-# subscribe_partial — inline HTMX form on bulletin pages
-# ---------------------------------------------------------------------------
-
-
-@require_POST
-@require_htmx
-@ratelimit(key="ip", rate="5/m", block=False)
-def subscribe_partial(request: HttpRequest) -> HttpResponse:
-    """
-    Accept a POST from the inline bulletin-page subscribe CTA.
-
-    Requires ``region_id`` in the POST data.  Uses a four-case matrix keyed
-    on ``(account_created, subscription_created)`` and ``account.is_verified``
-    to decide which email to send and which success fragment to return:
-
-    A. New account (account_created=True):
-       Send account-access email → "Check your inbox" fragment.
-
-    B. Existing unverified account (account_created=False, is_verified=False):
-       Resend account-access email → "Check your inbox" fragment. **Byte-equal**
-       to Case A's response — this is the documented anti-enumeration invariant
-       (docs/accounts.md).
-
-    C. Verified account + new region (is_verified=True, sub_created=True):
-       Send subscription confirmation email → "Added {region} to your alerts" fragment.
-
-    D. Verified account + already subscribed (is_verified=True,
-       sub_created=False):
-       No email → "You're already subscribed to {region}" fragment.
-
-    If ``region_id`` does not resolve to a known MicroRegion, returns a 400 error
-    fragment — this path should not occur in normal use.
-
-    Rate limited to 5 POST requests per minute per IP.  Exceeding the
-    limit returns HTTP 429.
-
-    Args:
-        request: HTMX POST request containing ``email`` and ``region_id``.
-
-    Returns:
-        HTML fragment representing the outcome of the subscribe attempt.
-
-    """
-    if getattr(request, "limited", False):
-        return HttpResponse(status=429)
-
-    form = SubscribeForm(request.POST)
-    if not form.is_valid():
-        # Re-render the form with validation errors instead of the success card.
-        return render(
-            request,
-            "accounts/partials/subscribe_form.html",
-            {"form": form, "region_id": request.POST.get("region_id", "")},
-        )
-
-    email: str = form.cleaned_data["email"]
-    region_id: str = form.cleaned_data["region_id"]
-
-    # Resolve the region — return a 400 error fragment if not found.
-    try:
-        region = MicroRegion.objects.get(region_id__iexact=region_id)
-    except MicroRegion.DoesNotExist:
-        logger.warning(
-            "subscribe_partial: region_id %s not found in DB",
-            region_id,
-        )
-        return render(
-            request,
-            "accounts/partials/subscribe_error.html",
-            {},
-            status=400,
-        )
-
-    # Capture request context once; first-observation wins on both FKs.
-    req_log = capture_request_log(request)
-
-    account, account_created = Account.objects.get_or_create_for_email(
-        email,
-        defaults={"acquisition_request": req_log},
-    )
-
-    # Compute geo match before get_or_create so the fields land in the
-    # INSERT rather than a subsequent UPDATE.  Existing rows are never touched.
-    geo_defaults = geo_match_snapshot(req_log, region)
-
-    # Persist the region subscription idempotently; capture whether it's new.
-    _subscription, subscription_created = Subscription.objects.get_or_create(
-        account=account,
-        region=region,
-        defaults={"subscribed_via": req_log, **geo_defaults},
-    )
-
-    if account_created:
-        # Case A — new account.
-        logger.info("New account created pk=%s (unverified)", account.pk)
-        send_account_access_email(email, request=request)
-
-        # Emit subscription_started (Case A only — silent on Case B resend).
-        anon_id: str = request.session.setdefault(
-            "analytics_anon_id", str(uuid.uuid4())
-        )
-        _kind: str = str(geo_defaults.get("geo_match_kind", ""))
-        _track_subscription_started(
-            request,
-            anon_id,
-            country_code=req_log.country_code,
-            geo_match_kind=_kind,
-            region_match=_kind in {IN_REGION, IN_NEIGHBOUR},
-            language_primary=req_log.language,
-        )
-
-        return render(
-            request,
-            "accounts/partials/subscribe_success_access.html",
-            {},
-        )
-
-    if not account.is_verified:
-        # Case B — existing unverified account; resend the access link.
-        logger.info(
-            "Resending account-access email to unverified account pk=%s", account.pk
-        )
-        send_account_access_email(email, request=request)
-        return render(
-            request,
-            "accounts/partials/subscribe_success_access.html",
-            {},
-        )
-
-    if subscription_created:
-        # Case C — verified account, new region added.
-        logger.info(
-            "Verified account pk=%s added new region %s",
-            account.pk,
-            region.region_id,
-        )
-        send_subscription_confirmation_email(email, region=region, request=request)
-        region_added_props: dict[str, object] = {
-            "region_id": region.region_id,
-            "source": "bulletin",
-            "region_count_after": account.subscriptions.count(),
-        }
-        if req_log.country_code:
-            region_added_props["country_code"] = req_log.country_code
-        analytics.track(
-            "region_added",
-            str(account.uuid),
-            region_added_props,
-        )
-        return render(
-            request,
-            "accounts/partials/subscribe_success_added.html",
-            {"region_name": region.name},
-        )
-
-    # Case D — verified account, already subscribed to this region.
-    logger.info(
-        "Verified account pk=%s already subscribed to region %s — no-op",
-        account.pk,
-        region.region_id,
-    )
-    return render(
-        request,
-        "accounts/partials/subscribe_success_already.html",
-        {"region_name": region.name},
-    )
-
-
-# ---------------------------------------------------------------------------
-# _delete_subscription_with_cascade — shared cascade helper
-# ---------------------------------------------------------------------------
-
-
-def _delete_subscription_with_cascade(
-    account: Account, region: MicroRegion, request: HttpRequest
-) -> bool | None:
-    """Delete an (account, region) Subscription row.
-
-    Removing the last region deletes only the Subscription row(s) — the
-    User and Account survive and the caller stays signed in on manage. No
-    session change happens here.
-
-    Short-circuits when no matching Subscription row exists (deleted_count == 0)
-    so the caller can distinguish a stale/forged POST from a real removal.
-
-    Args:
-        account: The authenticated Account whose subscription is being removed.
-        region: The MicroRegion to unsubscribe from.
-        request: The current HTTP request (unused beyond signature parity with
-            callers — retained for future request-scoped needs).
-
-    Returns:
-        True on success (a Subscription row was deleted); None when the
-        (account, region) pair had no Subscription row to begin with.
-
-    """
-    deleted_count, _ = Subscription.objects.filter(
-        account=account, region=region
-    ).delete()
-    if deleted_count == 0:
-        logger.info(
-            "Account pk=%s has no subscription for region %s — nothing removed",
-            account.pk,
-            region.region_id,
-        )
-        return None
-    logger.info(
-        "Account pk=%s removed region %s",
-        account.pk,
-        region.region_id,
-    )
-    region_count_after = account.subscriptions.count()
-    analytics.track(
-        "region_removed",
-        str(account.uuid),
-        {
-            "region_id": region.region_id,
-            "region_count_after": region_count_after,
-        },
-    )
-    return True
-
-
-# ---------------------------------------------------------------------------
-# add_region — HTMX: authenticated one-click add from bulletin page
-# ---------------------------------------------------------------------------
-
-
-# @lowercase_region_id is outermost so it can redirect mixed-case URLs before
-# @require_POST fires. preserve_method=True makes that a 308 rather than a 301,
-# so the browser replays the POST at the canonical path; a 301 would downgrade it
-# to a GET and @require_POST would answer 405 (SNOW-650). Every EAWS region id is
-# uppercase and the templates post to it raw, so this fires on every click.
-@lowercase_region_id(preserve_method=True)
-@require_POST
-@require_htmx
-@ratelimit(key="ip", rate="5/m", block=False)
-def add_region(request: HttpRequest, region_id: str) -> HttpResponse:
-    """Add a Subscription for the authenticated user and the given region.
-
-    Idempotent — uses ``get_or_create`` so POSTing twice returns the same
-    success fragment without raising an IntegrityError.  No email is sent
-    because the account is already verified.
-
-    Guarded by authentication (no session → 403), ``@require_POST``,
-    ``@require_htmx``, and rate-limited at 5 requests/min per IP.
-
-    Args:
-        request: HTMX POST request.
-        region_id: The SLF region identifier to add.
-
-    Returns:
-        subscribe_success_added fragment (200), or 403 / 400 / 429 on error.
-
-    """
-    if getattr(request, "limited", False):
-        return HttpResponse(status=429)
-
-    account = _get_account(request)
-    if account is None:
-        return HttpResponse(status=403)
-
-    try:
-        region = MicroRegion.objects.get(region_id__iexact=region_id)
-    except MicroRegion.DoesNotExist:
-        logger.warning("add_region: region_id %s not found in DB", region_id)
-        return render(
-            request,
-            "accounts/partials/subscribe_error.html",
-            {},
-            status=400,
-        )
-
-    req_log = capture_request_log(request)
-    geo_defaults = geo_match_snapshot(req_log, region)
-    _subscription, sub_created = Subscription.objects.get_or_create(
-        account=account,
-        region=region,
-        defaults={"subscribed_via": req_log, **geo_defaults},
-    )
-    logger.info(
-        "Account pk=%s added region %s via bulletin page (idempotent)",
-        account.pk,
-        region_id,
-    )
-    if sub_created:
-        region_added_props: dict[str, object] = {
-            "region_id": region.region_id,
-            "source": "bulletin",
-            "region_count_after": account.subscriptions.count(),
-        }
-        if req_log.country_code:
-            region_added_props["country_code"] = req_log.country_code
-        analytics.track(
-            "region_added",
-            str(account.uuid),
-            region_added_props,
-        )
-    return render(
-        request,
-        "accounts/partials/subscribe_success_added.html",
-        {"region_name": region.name},
-    )
-
-
-# ---------------------------------------------------------------------------
-# remove_region_from_bulletin — HTMX: authenticated unsubscribe from bulletin page
-# ---------------------------------------------------------------------------
-
-
-# @lowercase_region_id is outermost so it can redirect mixed-case URLs before
-# @require_POST fires. preserve_method=True makes that a 308 rather than a 301,
-# so the browser replays the POST at the canonical path; a 301 would downgrade it
-# to a GET and @require_POST would answer 405 (SNOW-650). Every EAWS region id is
-# uppercase and the templates post to it raw, so this fires on every click.
-@lowercase_region_id(preserve_method=True)
-@require_POST
-@require_htmx
-@ratelimit(key="ip", rate="10/m", block=False)
-def remove_region_from_bulletin(request: HttpRequest, region_id: str) -> HttpResponse:
-    """Remove a Subscription for the authenticated user from the bulletin page.
-
-    Deletes the ``(account, region)`` Subscription row and swaps the panel
-    for a confirmation fragment. The account stays signed in, even when this
-    was the last remaining region.
-
-    Guarded by authentication (no session → 403), ``@require_POST``,
-    ``@require_htmx``, and rate-limited at 10 requests/min per IP.
-
-    Args:
-        request: HTMX POST request.
-        region_id: The SLF region identifier to unsubscribe from.
-
-    Returns:
-        subscribe_unsubscribed fragment (200), 403 when unauthenticated, 400
-        when region unknown or the account never held the region (stale/forged
-        POST), or 429 when rate-limited.
-
-    """
-    if getattr(request, "limited", False):
-        return HttpResponse(status=429)
-
-    account = _get_account(request)
-    if account is None:
-        return HttpResponse(status=403)
-
-    try:
-        region = MicroRegion.objects.get(region_id__iexact=region_id)
-    except MicroRegion.DoesNotExist:
-        logger.warning(
-            "remove_region_from_bulletin: region_id %s not found in DB", region_id
-        )
-        return render(
-            request,
-            "accounts/partials/subscribe_error.html",
-            {},
-            status=400,
-        )
-
-    result = _delete_subscription_with_cascade(account, region, request)
-    if result is None:
-        # The account never held this region — stale or forged POST.
-        logger.warning(
-            "remove_region_from_bulletin: account pk=%s has no subscription for "
-            "region %s — returning 400",
-            account.pk,
-            region.region_id,
-        )
-        return render(
-            request,
-            "accounts/partials/subscribe_error.html",
-            {},
-            status=400,
-        )
-
-    return render(
-        request,
-        "accounts/partials/subscribe_unsubscribed.html",
-        {"region_name": region.name},
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1404,115 +964,47 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
                 alias_id=anon_id,
             )
     login(request, user, backend=_TOKEN_BACKEND)
-    response = redirect(f"{_HUB_URL}?just_confirmed=1")
+    response = redirect(_VERIFIED_LANDING_URL)
     # Tokens appear in this view's URL path — suppress Referer leakage.
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response
 
 
 # ---------------------------------------------------------------------------
-# hub_view / settings_view / favourites_view — the account area (SNOW-667)
+# settings_view — the account area (SNOW-667, cut to one page by SNOW-802/803)
 # ---------------------------------------------------------------------------
 #
-# These replace the former ``manage_view``, a single page that had
-# accumulated nine unranked sections. The split is by what the user is doing:
-# the hub holds their subscriptions, favourites holds their saved pins, and
-# settings holds everything they can change about the account itself.
-# ``/account/manage/`` is now a permanent redirect to the hub (see urls.py).
+# SNOW-667 split the former ``manage_view`` — a single page that had
+# accumulated nine unranked sections — into a hub (subscriptions), a
+# favourites page and settings. SNOW-803 sent the favourites page to the
+# map's pins sheet; SNOW-802 sent the hub there too, because a subscription
+# was only ever a bookmark on a region. Settings — everything the user can
+# change about the account itself — is the one page left, and ``/account/``
+# and ``/account/manage/`` both 301 to the map (see urls.py).
 #
-# SNOW-668 added the third: favourites had been a lazy-loaded section at the
-# foot of the hub since SNOW-415, which left the hub a page with no honest
-# name for itself. It is the Subscriptions page now.
-#
-# None of the three is ``@never_cache``, and that is deliberate — see
+# Not ``@never_cache``, and that is deliberate — see
 # ``_ACCOUNT_PAGE_CACHE_NOTE`` below.
 
 _ACCOUNT_PAGE_CACHE_NOTE = """
 Deliberately NOT ``@never_cache``, unlike ``change_email_view`` (C1,
 ``docs/code-reviews/2026-08-03-js-review.md``). These pages render the
 signed-in user's own data, so they must never be served to anyone else — but
-the offline favourites roster is built on ``/account/favourites/``
-(``favourites_view``) being in the PWA shell cache, so ``no-store`` would
-break a shipped feature. SNOW-668 moved that dependency off the hub with the
-list itself; the hub and settings keep this posture because they render in
-the same shell under the same principal guard, not because either still
-feeds the roster. The ``X-SW-Principal``
-stamp is what makes that safe: ``_networkFirst`` in ``static/js/sw.js``
-records the account this HTML was rendered for and the offline read refuses
-an entry whose stamp is not the principal signed in now, so a sign-out or a
+the account area is cache-PARTITIONED rather than cache-avoided, and these
+pages keep that posture because they render in the same PWA shell under
+the same principal guard as the map. The ``X-SW-Principal`` stamp is what
+makes that safe: ``_networkFirst`` in ``static/js/sw.js`` records the
+account this HTML was rendered for and the offline read refuses an entry
+whose stamp is not the principal signed in now, so a sign-out or a
 different user gets the offline fallback instead of the previous session's
-page. Cache-partitioning, not cache-avoidance — the same trade
-``map_overlay_offline_cache.js`` makes for the overlay cache under SNOW-493.
+page. The same trade ``map_overlay_offline_cache.js`` makes for the overlay
+cache under SNOW-493.
+
+History: the posture was first load-bearing on ``/account/favourites/``,
+which the offline favourites roster read out of the shell cache
+(SNOW-418/668). SNOW-803 removed that page; the roster's write-through keys
+on the ``/favourites/partials/list/`` request path, which the map sheet
+fetches, and the map at ``/`` is the navigation the shell caches for it.
 """
-
-
-@require_GET
-def hub_view(request: HttpRequest) -> HttpResponse:
-    """
-    Show ``/account/`` — the user's subscribed regions.
-
-    Unauthenticated visitors are redirected to the sign-in page.  A registered
-    user with no ``Subscription`` rows still sees the page (with no
-    subscription cards) — this is the landing spot after registration.
-
-    The Subscriptions page, despite the name: it carried the lazy-loaded
-    favourites panel as well until SNOW-668 gave that its own page, which is
-    what let the template's ``<h1>`` stop being sr-only. The view name, the
-    URL name and the template filename are unchanged deliberately —
-    renaming them is churn across every reverse in the codebase for no
-    user-visible gain.
-
-    Not ``@never_cache``. The offline favourites roster now depends on
-    ``favourites_view`` rather than on this page, but both render inside the
-    same PWA shell and share one caching posture rather than inventing two.
-    See ``_ACCOUNT_PAGE_CACHE_NOTE``.
-
-    GET: render the subscriptions dashboard (one card per subscribed
-    region, with resort list and per-region remove button).
-
-    Context keys:
-        account        — authenticated Account instance.
-        subscriptions  — queryset of Subscription rows for the account.
-        just_confirmed — True when arriving via the confirmation link.
-        today          — today's date (datetime.date) for the bulletin link label.
-
-    Args:
-        request: Incoming HTTP request.
-
-    Returns:
-        Rendered page or redirect to sign-in.
-
-    """
-    if not request.user.is_authenticated:
-        return redirect("accounts:sign_in")
-
-    # A registered user (SNOW-430) has an Account but may have no Subscription
-    # rows (no bulletin subscriptions). Render the dashboard for any
-    # authenticated user — redirecting non-subscribers to sign-in would loop,
-    # because sign_in_view sends authenticated users straight back here.
-    account = _get_account(request)
-
-    just_confirmed = request.GET.get("just_confirmed") == "1"
-
-    subscriptions = (
-        Subscription.objects.filter(account=account)
-        .select_related("region", "region__subregion__major")
-        .prefetch_related("region__resorts")
-        .order_by("region__name")
-        if account is not None
-        else Subscription.objects.none()
-    )
-
-    return render(
-        request,
-        "accounts/hub.html",
-        {
-            "account": account,
-            "subscriptions": subscriptions,
-            "just_confirmed": just_confirmed,
-            "today": timezone.now().date(),
-        },
-    )
 
 
 @require_GET
@@ -1557,106 +1049,6 @@ def settings_view(request: HttpRequest) -> HttpResponse:
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
         },
     )
-
-
-@require_GET
-def favourites_view(request: HttpRequest) -> HttpResponse:
-    """
-    Show the signed-in user's saved favourites as a page of their own.
-
-    Unauthenticated visitors are redirected to the sign-in page, as
-    ``hub_view`` and ``settings_view`` do — a page can render the way in,
-    where a fragment endpoint cannot, so this is a redirect and never a 403.
-
-    The favourites list was a lazy-loaded ``<section>`` at the bottom of the
-    hub from SNOW-415 until this ticket. Nothing renders here that
-    ``apps.favourites`` did not already render there: the template hosts
-    ``favourites:list`` by ``hx-get``, exactly as the hub did, and the view
-    queries nothing itself — that endpoint owns the batched
-    ``RegionDayRating`` lookup, the freshness headers and the offline roster
-    sidecar, and duplicating any of it here would be a second place to fix.
-
-    Deliberately NOT ``@never_cache``, and — unlike its siblings
-    ``apps.routes.views.my_routes`` and
-    ``apps.observations.views.my_observations`` — it must NOT set
-    ``Cache-Control: private, no-store`` either. Those two keep themselves
-    out of the PWA shell cache on purpose; this page is the surface the
-    offline favourites roster is read from, so the same header here would
-    silently break a shipped feature while every test still passed. See
-    ``_ACCOUNT_PAGE_CACHE_NOTE`` above for why the ``X-SW-Principal`` stamp
-    makes caching per-user HTML safe.
-
-    Context keys:
-        account — authenticated Account instance, or None for a staff user
-                  with no Account profile. Not read by the template today;
-                  supplied for parity with the hub and settings pages, whose
-                  shared partials expect it.
-
-    Args:
-        request: Incoming HTTP request.
-
-    Returns:
-        Rendered ``accounts/favourites.html`` or a redirect to sign-in.
-
-    """
-    if not request.user.is_authenticated:
-        return redirect("accounts:sign_in")
-
-    return render(
-        request,
-        "accounts/favourites.html",
-        {"account": _get_account(request)},
-    )
-
-
-# ---------------------------------------------------------------------------
-# remove_region — HTMX: remove one subscribed region
-# ---------------------------------------------------------------------------
-
-
-# @lowercase_region_id is outermost so it can redirect mixed-case URLs before
-# @require_POST fires. preserve_method=True makes that a 308 rather than a 301,
-# so the browser replays the POST at the canonical path; a 301 would downgrade it
-# to a GET and @require_POST would answer 405 (SNOW-650). Every EAWS region id is
-# uppercase and the templates post to it raw, so this fires on every click.
-@lowercase_region_id(preserve_method=True)
-@require_POST
-@require_htmx
-@ratelimit(key="ip", rate="10/m", block=False)
-def remove_region(request: HttpRequest, region_id: str) -> HttpResponse:
-    """
-    Remove a single subscribed region for the authenticated account.
-
-    Deletes the ``(account, region)`` Subscription row. The account stays
-    signed in on manage, even when this was the last remaining region — no
-    logout, no redirect away.
-
-    Guarded by authentication (no session → 403), ``@require_POST``,
-    ``@require_htmx``, and rate-limited at 10 requests/min per IP.
-
-    Args:
-        request: HTMX POST request.
-        region_id: The SLF region identifier to remove.
-
-    Returns:
-        Empty 200 (card removed via outerHTML swap), 403 when unauthenticated,
-        or 429 when rate-limited.
-
-    """
-    if getattr(request, "limited", False):
-        return HttpResponse(status=429)
-
-    account = _get_account(request)
-    if account is None:
-        return HttpResponse(status=403)
-
-    region = get_object_or_404(MicroRegion, region_id__iexact=region_id)
-    _delete_subscription_with_cascade(account, region, request)
-
-    # Return empty content — hx-swap="outerHTML" on the card will remove it.
-    # This covers both the "subscription removed" and the "no row existed" (None)
-    # paths: either way the card should disappear from the manage UI.
-    return HttpResponse(status=200)
 
 
 # ---------------------------------------------------------------------------
@@ -1786,10 +1178,13 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     extract ``(email, region_id)``.
 
     GET: render a confirmation page showing which region will be removed.
-    POST: delete that region's Subscription row. The User and Account are
-          not touched — deletion here removes only the Subscription, even
-          when it was the account's last one. Idempotent on re-submit
-          (already deleted → renders done page anyway).
+    POST: remove that region's **region pin** (SNOW-802 — the row a
+          ``Subscription`` became; see ``apps.favourites.services
+          .delete_region_favourite``). The User and Account are not
+          touched. Idempotent on re-submit (already removed → renders the
+          done page anyway). The tokens have no expiry and are live in
+          historical emails, so this path keeps resolving and keeps doing
+          what the person clicking intends.
 
     Rate limited to 10 requests per minute per IP.
 
@@ -1842,14 +1237,14 @@ def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
     distinct_id = str(account.uuid)
     account_age_days = (timezone.now() - account.created_at).days
 
-    # Delete the specific subscription. The User and Account survive — this
+    # Remove the region pin. The User and Account survive — this
     # unauthenticated token path makes no session change and removes only
-    # the Subscription row, even when it was the account's last one.
+    # the pin, even when it was the account's last one.
     # Note: we intentionally do NOT fire ``region_removed`` here.  The
     # unsubscribe-link path fires only ``unsubscribed``; ``region_removed``
-    # is reserved for the in-app "remove a region" flow.  Firing both would
-    # double-count churn for subscribers who leave via the email link.
-    Subscription.objects.filter(account=account, region=region).delete()
+    # is reserved for the in-app toggle.  Firing both would double-count
+    # churn for people who leave via the email link.
+    delete_region_favourite(account.user, region)
     logger.info("Account pk=%s unsubscribed from region %s", account.pk, region_id)
 
     analytics.track(

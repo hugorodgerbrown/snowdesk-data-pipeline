@@ -2,21 +2,15 @@
 routes/partials/_route_list_map.html — Owner routes list, map sheet
 (SNOW-686).
 
-Rendered by apps.routes.views.route_list for ``?variant=map`` and swapped
-into [data-routes-rows] inside the map's routes panel
+Rendered by apps.routes.views.route_list and swapped into
+[data-routes-rows] inside the map's routes panel
 (public/partials/_routes_surface.html) by static/js/routes.js.
 
-The sibling of _route_list.html: the same routes and, since SNOW-711, the
-same row — _route.html, which is includes/_ugc_panel_row.html, the shape
-shared with the favourites, observations and downloads panels. SNOW-686
-gave this sheet a fork of that row (_route_row_map.html) because the
-default one was still a bordered box with a name field in it; SNOW-711 put
-that shape on every surface and deleted the fork.
-
-What is left between the two variants is this wrapper and its testid,
-which routes.js and the account-page surfaces address separately. Unlike
-the favourites pair there is no slot that differs: a route has no detail
-page, so neither list has a row disclosure.
+The only route list since SNOW-803 removed /account/routes/ and its
+_route_list.html sibling (a route is a map object, not a page). Its rows
+have been _route.html — includes/_ugc_panel_row.html, the shape shared
+with the favourites, observations and downloads panels — since SNOW-711
+put that shape on every surface and deleted the map's own fork of it.
 
 The rows are a real ``<ul>``: each row is a ``<li>`` from
 includes/_ugc_panel_row.html, drawing its own separator via ``border-t``

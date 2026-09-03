@@ -2,10 +2,10 @@
 {% comment %}
 favourites/partials/_favourite_card.html — Favourite detail card.
 
-Rendered by apps.favourites.views.favourite_card. Shown in-page (the
-account list row's chevron hx-gets it into that row's own panel — the same
-content its href leads to, since favourite_detail.html includes this very
-partial); the map pin-tap trigger is SNOW-414 (out of scope here).
+Rendered by apps.favourites.views.favourite_card. Shown in-page: the
+account list row's chevron hx-gets it into that row's own panel (its href
+is the pin's weather page since SNOW-800 retired the favourite's own page);
+the map pin-tap trigger is SNOW-414 (out of scope here).
 
 Content:
   1. Title, altitude, and a link that finds the pin on the map.
@@ -56,10 +56,10 @@ one commit) fixed the id collision while leaving the duplication on screen.
 
 So managing a favourite belongs to the surface that LISTS it — the account
 row and the map row, both of which are one row per pin. The same split the
-map already had: its row manages, its card reads. On the standalone
-favourite_detail.html the controls are not replaced by anything, and are
-not missed: that page has never loaded htmx, so the rename form and Remove
-button it inherited here were inert from the day SNOW-507 shipped them.
+map already had: its row manages, its card reads. (The standalone
+favourite_detail.html that once also included this partial never loaded
+htmx, so the controls it inherited were inert from the day SNOW-507 shipped
+them; SNOW-800 removed that page.)
 
 Context:
     favourite            : Favourite — the pin being detailed.
@@ -89,16 +89,16 @@ Context:
                             case). Same shape as includes/_eyebrow.html's
                             ``tag``. See "WHO OWNS THE TITLE'S RANK" below.
 
-WHO OWNS THE TITLE'S RANK. This partial has two callers and they sit at
-different depths, so a fixed heading level is wrong for one of them
-whichever level is picked:
+WHO OWNS THE TITLE'S RANK. This partial had two callers at two depths, so
+a fixed heading level was wrong for one of them whichever level was picked;
+the rank is the caller's to state (``heading_tag``) and stays so with one
+caller left:
 
-  favourite_detail.html   the pin's own page, and the pin's name is what
-                          that page is about — so the title is its ``h1``.
-                          The page carries no other heading (no separate
-                          page header above the card), so an ``h2`` here
-                          would leave a page whose outline starts at
-                          level 2.
+  favourite_detail.html   (removed by SNOW-800) the pin's own page, where
+                          the pin's name was what the page was about — so
+                          the title was its ``h1``. The page carried no
+                          other heading, so an ``h2`` would have left an
+                          outline starting at level 2.
   the account page panel  apps.favourites.views.favourite_card, hx-getting
                           this card into the panel under the row that
                           asked for it, on /account/favourites/. The only

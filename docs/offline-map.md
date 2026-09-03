@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-08-28
+last-reviewed: 2026-09-03
 ---
 
 # PWA shell
@@ -530,8 +530,10 @@ the `X-SW-Principal` stamp is what makes holding them safe.
 
 The page this actually turns on is whichever one hosts the favourites
 list: `/account/manage/` when this was written, then the favourites
-section of `/account/`, and since SNOW-668 `/account/favourites/`
-(`apps.accounts.views.favourites_view`).
+section of `/account/`, then `/account/favourites/` (SNOW-668) — and
+since SNOW-803 the map itself at `/`, whose pins sheet is the list's only
+surface. Every cached navigation carries the stamp, so nothing about the
+mechanism changed with the move.
 
 `@never_cache` was the first shape of this fix and was backed out. The
 offline favourites roster is built on that page being in the shell cache,

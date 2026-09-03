@@ -32,11 +32,18 @@ the codebase (``apps.mcp_server.resolvers``, ``apps.public.views``,
 * ``region_info`` — per-region reference-data metadata: EAWS parents,
   provider, resorts, computed bbox, coverage window, static issue
   schedule.
+* ``list_locations_in_region`` — the named public locations (villages,
+  mid-stations, peaks) within one region, with the ``short_id`` each
+  weather page and ``get_location_weather`` are keyed on (SNOW-799).
+* ``get_location_weather`` — one location's daily weather row for one day:
+  the weather page as data. The one location-scoped tool, and the reason
+  ``list_locations_in_region`` exists: an LLM client cannot guess an
+  eleven-character opaque id.
 
 ``list_regions`` and ``region_info`` deliberately emit UPPER CASE response
 constants (``kind: "MICRO"``, provider values ``"SLF"``/``"ALBINA"``/
 ``"METEOFRANCE"`` — the ``Bulletin.Source`` enum *names*, never the raw
-lowercase literals the other eleven tools use) with case-insensitive input
+lowercase literals the other thirteen tools use) with case-insensitive input
 normalisation — an approved SNOW-404 deviation from the rest of this
 registry, not an oversight.
 
@@ -57,15 +64,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
 from django.db.models import Max, Min
 from django.utils import timezone
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.schema import AvalancheProblem
+from apps.locations.models import Location
 from apps.mcp_server import resolvers, season
 from apps.public.api import COUNTRY_NAMES
 from apps.public.views import _select_bulletin_for_date
 from apps.regions.models import MicroRegion, Resort
+from apps.weather.models import Weather
 
 # Rank order for "at or above" comparisons in get_danger_history. Mirrors
 # apps/public/api.py's private _RATING_TO_INT, minus NO_RATING — duplicated
@@ -1837,6 +1847,204 @@ def _handle_get_regional_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# list_locations_in_region / get_location_weather (SNOW-799)
+# ---------------------------------------------------------------------------
+
+
+def _weather_page_url(location: Location) -> str:
+    """Return the absolute URL of a location's weather page."""
+    return f"{settings.SITE_BASE_URL.rstrip('/')}{location.get_absolute_url()}"
+
+
+def _location_label(location: Location) -> str:
+    """Name a location the way its weather page does.
+
+    A curated point names itself; an anonymous one is named by what it
+    stands for — the resort it is pinned at, else the region whose centroid
+    it is — and the coordinates are never a name.
+    """
+    if location.name:
+        return location.name
+    link = location.resort_locations.select_related("resort").first()
+    if link is not None:
+        return str(link.resort.name)
+    region = location.micro_regions.first()
+    if region is not None:
+        return str(region.name)
+    return "Weather station"
+
+
+def _serialise_location(location: Location) -> dict[str, Any]:
+    """Return one location as the two location tools describe it."""
+    return {
+        "short_id": location.short_id,
+        "name": _location_label(location),
+        "kind": location.kind.lower() if location.kind else None,
+        "elevation_m": location.elevation_m,
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+        "weather_url": _weather_page_url(location),
+    }
+
+
+def list_locations_in_region(region_id: str) -> dict[str, Any]:
+    """List the named public locations within one micro-region.
+
+    The discovery half of the weather pair: ``get_location_weather`` is
+    keyed on an opaque ``short_id`` no client can guess, so this is how one
+    is found from a region.
+
+    Args:
+        region_id: Exact region identifier, e.g. ``"CH-4115"``.
+
+    Returns:
+        A dict with the location list (short_id, name, kind, elevation,
+        coordinates, weather page URL), its count, and a plain-text summary.
+
+    Raises:
+        ToolError: ``region_id`` does not match any known region.
+
+    """
+    region = resolvers.resolve_region(region_id)
+    if region is None:
+        raise ToolError(f"Unknown region_id: {region_id!r}.")
+
+    location_list = [
+        _serialise_location(location)
+        for location in resolvers.named_locations_in_region(region)
+    ]
+    return {
+        "region_id": region.region_id,
+        "region_name": region.name,
+        "locations": location_list,
+        "count": len(location_list),
+        "summary": _list_locations_summary(region, location_list),
+    }
+
+
+def _list_locations_summary(region: Any, location_list: list[dict[str, Any]]) -> str:
+    """Return a one-line, LLM-quotable summary of a list_locations_in_region result."""
+    if not location_list:
+        return f"No named locations found in {region.name} ({region.region_id})."
+    names = ", ".join(entry["name"] for entry in location_list[:10])
+    return (
+        f"{len(location_list)} location(s) in {region.name} "
+        f"({region.region_id}): {names}."
+    )
+
+
+def _handle_list_locations_in_region(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``list_locations_in_region`` JSON-RPC arguments to the tool."""
+    region_id = _require_str(arguments, "region_id")
+    return list_locations_in_region(region_id)
+
+
+# The daily scalars the tool emits, in the order a reader scans them.
+# ``hourly`` and ``forecast`` are deliberately not included: the tool
+# answers for one day, and the hourly table alone is most of the row.
+_WEATHER_FIELDS = (
+    "weather_code",
+    "temperature_2m_max",
+    "temperature_2m_min",
+    "apparent_temperature_max",
+    "apparent_temperature_min",
+    "precipitation_sum",
+    "snowfall_sum",
+    "precipitation_probability_max",
+    "precipitation_hours",
+    "wind_speed_10m_max",
+    "wind_gusts_10m_max",
+    "wind_direction_10m_dominant",
+    "freezing_level_height",
+    "uv_index_max",
+    "sunshine_duration",
+)
+
+
+def get_location_weather(
+    short_id: str,
+    date: dt.date | None = None,
+    *,
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """Return one location's daily weather for one day — the weather page as data.
+
+    Args:
+        short_id: The location's opaque short id, as listed by
+            ``list_locations_in_region`` or carried in a ``/weather/<short_id>/``
+            URL.
+        date: The day to look up. Defaults to ``today`` (or, if that is also
+            unset, the real current date) when omitted.
+        today: Overrides "today" for the default-date fallback — a
+            settable-in-tests seam; production callers never pass this.
+
+    Returns:
+        A dict describing the day. When no row covers ``date`` this is a
+        structured "no data" result (``has_weather: False``), not an error —
+        the ``get_current_conditions`` convention.
+
+    Raises:
+        ToolError: ``short_id`` does not match any public location.
+
+    """
+    location = resolvers.resolve_location(short_id)
+    if location is None:
+        raise ToolError(f"Unknown short_id: {short_id!r}.")
+
+    target_date = date or today or timezone.localdate()
+    label = _location_label(location)
+    base = {
+        **_serialise_location(location),
+        "name": label,
+        "date": target_date.isoformat(),
+    }
+    row = Weather.objects.filter(location=location, observed_on=target_date).first()
+    if row is None:
+        return {
+            **base,
+            "has_weather": False,
+            "summary": (
+                f"No weather is recorded for {label} on {target_date.isoformat()}."
+            ),
+        }
+
+    weather = {field: getattr(row, field) for field in _WEATHER_FIELDS}
+    weather["sunrise"] = row.sunrise.isoformat()
+    weather["sunset"] = row.sunset.isoformat()
+    return {
+        **base,
+        "has_weather": True,
+        "fetched_at": row.fetched_at.isoformat(),
+        "weather": weather,
+        "summary": _location_weather_summary(label, target_date, row),
+    }
+
+
+def _location_weather_summary(label: str, target_date: dt.date, row: Weather) -> str:
+    """Return a one-line, LLM-quotable summary of a get_location_weather result."""
+    parts = [f"{label} on {target_date.isoformat()}:"]
+    if row.temperature_2m_min is not None and row.temperature_2m_max is not None:
+        parts.append(
+            f"{row.temperature_2m_min:.0f} to {row.temperature_2m_max:.0f} °C,"
+        )
+    if row.snowfall_sum is not None:
+        parts.append(f"{row.snowfall_sum:.0f} cm snow,")
+    if row.wind_speed_10m_max is not None:
+        parts.append(f"wind to {row.wind_speed_10m_max:.0f} km/h,")
+    if row.freezing_level_height is not None:
+        parts.append(f"freezing level {row.freezing_level_height:.0f} m.")
+    text = " ".join(parts)
+    return text.rstrip(",") + ("" if text.endswith(".") else ".")
+
+
+def _handle_get_location_weather(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the ``get_location_weather`` JSON-RPC arguments to the tool function."""
+    short_id = _require_str(arguments, "short_id")
+    parsed_date = _optional_iso_date(arguments, "date")
+    return get_location_weather(short_id, parsed_date)
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -1968,6 +2176,53 @@ TOOLS: dict[str, ToolSpec] = {
             "required": ["region_id"],
         },
         handler=_handle_list_resorts_in_region,
+    ),
+    "list_locations_in_region": ToolSpec(
+        name="list_locations_in_region",
+        description=(
+            "List the named weather locations (resort villages, mid-stations "
+            "and peaks) within one avalanche-warning region, each with the "
+            "short_id that get_location_weather and the /weather/<short_id>/ "
+            "page are keyed on. Call this before get_location_weather when "
+            "you only have a region."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "region_id": {
+                    "type": "string",
+                    "description": "Exact region_id, e.g. 'CH-4115'.",
+                },
+            },
+            "required": ["region_id"],
+        },
+        handler=_handle_list_locations_in_region,
+    ),
+    "get_location_weather": ToolSpec(
+        name="get_location_weather",
+        description=(
+            "Daily weather for one location on one day — temperature, "
+            "precipitation and snowfall, wind, freezing level, sunshine — "
+            "as recorded for that day. Keyed on the location's short_id from "
+            "list_locations_in_region or a /weather/<short_id>/ URL."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "short_id": {
+                    "type": "string",
+                    "description": (
+                        "The location's eleven-character short_id, e.g. 'Ab3dE_fGh1J'."
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": "ISO-8601 date (YYYY-MM-DD). Defaults to today.",
+                },
+            },
+            "required": ["short_id"],
+        },
+        handler=_handle_get_location_weather,
     ),
     "get_bulletin_metadata": ToolSpec(
         name="get_bulletin_metadata",

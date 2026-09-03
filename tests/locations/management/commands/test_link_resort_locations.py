@@ -127,12 +127,16 @@ class TestLinkResortLocations:
 class TestAGeocodedResortGetsWeather:
     """The requirement, asserted through the page rather than the rows."""
 
-    def test_the_resort_page_shows_weather_after_linking(self, client: Client) -> None:
-        """A resort with a pin and a weather row renders a weather panel.
+    def test_the_resort_page_links_to_the_weather_page_after_linking(
+        self, client: Client
+    ) -> None:
+        """A resort with a pin renders a Forecasts link to its location's weather.
 
         This is the whole point: before this command a geocoded resort had
-        a map pin and a resort page with no weather section at all, because
-        nothing had ever created the ResortLocation the section reads.
+        a map pin and a resort page with no forecast at all, because
+        nothing had ever created the ResortLocation the page's Forecasts
+        list reads (SNOW-807 made that list the resort page's route to the
+        weather document).
         """
         resort = ResortFactory.create(
             geocoded=True, name="Verbier", base_elevation_m=1494
@@ -145,9 +149,10 @@ class TestAGeocodedResortGetsWeather:
         body = response.content.decode()
 
         assert response.status_code == 200
-        assert 'data-testid="resort-weather-0-panel"' in body
+        assert 'data-testid="resort-locations"' in body
+        assert f'href="{link.location.get_absolute_url()}"' in body
 
-    def test_the_panel_is_labelled_with_the_resort_name(self, client: Client) -> None:
+    def test_the_link_is_labelled_with_the_resort_name(self, client: Client) -> None:
         """An anonymous location must not put raw coordinates on the page.
 
         ``Location.to_string()`` renders "46.09610,7.22860" for an unnamed
@@ -162,5 +167,6 @@ class TestAGeocodedResortGetsWeather:
 
         body = client.get(resort.get_absolute_url()).content.decode()
 
-        assert "Verbier · 1494 m" in body
-        assert str(resort.latitude) not in body.split("resort-weather-0-panel")[1][:400]
+        link_markup = body.split('data-testid="resort-location-0-link"')[1][:200]
+        assert ">Verbier</a>" in link_markup
+        assert str(resort.latitude) not in link_markup

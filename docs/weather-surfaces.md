@@ -2,7 +2,7 @@
 name: weather-surfaces
 description: Weather UI — _weather_panel, _weather_day_picker, _weather_day_line, _weather_masthead, build_weather_display, is_day, /api/weather.geojson
 status: current
-last-reviewed: 2026-09-01
+last-reviewed: 2026-09-03
 ---
 
 # Weather surfaces
@@ -233,9 +233,22 @@ the palette in place.
 
 ## The location forecast page
 
-`/weather/<location_id>/` is five regions, and SNOW-789 rebuilt it around
+`/weather/<short_id>/` is five regions, and SNOW-789 rebuilt it around
 one question — *which day are you planning for*. The week is navigation;
 everything below it describes the one selected day.
+
+It is **document two** of the two-documents IA (SNOW-795,
+[`two-documents-and-a-map`](decisions/two-documents-and-a-map.md)), keyed
+on `Location.short_id` — eleven opaque characters from
+`secrets.token_urlsafe(8)`, never the primary key
+([`no-integer-pks-in-urls`](decisions/no-integer-pks-in-urls.md); the old
+`/weather/<int>/` 301s). SNOW-799 promoted it: every *named* public
+location is in `sitemap.xml`'s `locations` section, the page emits a
+`<link rel="canonical">` — the bare URL when the page shows today, the
+`?date=` URL for a past day, since `?date=` picks a row inside the page
+rather than a different page — and the MCP server reaches it through
+`list_locations_in_region` and `get_location_weather`
+([`mcp-server.md`](mcp-server.md)).
 
 | # | Region | Partial |
 |---|--------|---------|
@@ -453,7 +466,7 @@ no tier to choose between and no zoom threshold to choose it at.
   "type": "Feature",
   "geometry": {"type": "Point", "coordinates": [7.5, 46.1]},
   "properties": {
-    "location_id": 42,
+    "short_id": "Ab3dE_fGh1J",
     "name": "Mont Fort",
     "elevation_m": 3328.0,
     "days": {"2026-08-30": {"code": 71, "tmax": 4.0}}

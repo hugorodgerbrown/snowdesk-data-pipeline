@@ -31,7 +31,7 @@ account" always reaches the manage page.
                 {% trans "Your email address is confirmed. You can manage your account and subscriptions from here." %}
             </p>
             <div>
-                {% url 'accounts:hub' as manage_url %}
+                {% url 'accounts:settings' as manage_url %}
                 {% trans "Continue to your account" as label %}
                 {% include "includes/_button.html" with label=label href=manage_url variant="primary" full_width=True %}
             </div>
@@ -111,7 +111,7 @@ account" always reaches the manage page.
             var regBtn = document.getElementById("btn-register-passkey");
             var feedback = document.getElementById("passkey-feedback");
             var card = document.getElementById("passkey-setup");
-            var MANAGE_URL = "{% url 'accounts:hub' %}";
+            var MANAGE_URL = "{% url 'accounts:settings' %}";
 
             function showFeedback(msg) {
                 if (!feedback) return;

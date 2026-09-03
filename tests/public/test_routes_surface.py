@@ -88,7 +88,7 @@ class TestRoutesSurfaceRenders:
         assert 'id="route-add-btn"' in body
         assert 'data-routes-eligible="true"' in body
         assert 'data-route-create-url="/routes/partials/create/"' in body
-        assert 'data-route-list-url="/routes/partials/list/?variant=map"' in body
+        assert 'data-route-list-url="/routes/partials/list/"' in body
         assert "data-route-rename-url-template=" in body
         assert "data-signin-url=" in body
 

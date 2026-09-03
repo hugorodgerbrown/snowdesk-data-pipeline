@@ -319,8 +319,6 @@ _NEW_SLUGS = [
     "site-footer",
     "rating-block",
     "region-tooltip",
-    "subscribe-form",
-    "subscribe-outcomes",
     "no-data-supplied",
 ]
 
@@ -342,8 +340,6 @@ def test_new_slug_index_page_renders_200_with_known_marker(
         "site-footer": 'data-testid="site-footer"',
         "rating-block": 'data-testid="rating-block"',
         "region-tooltip": 'class="region-tooltip"',
-        "subscribe-form": 'id="subscribe-cta-',
-        "subscribe-outcomes": "Check your inbox",
         "no-data-supplied": 'data-testid="no-data-supplied"',
     }
     response = staff_client.get(f"{_index_url()}?slug={slug}")
@@ -440,97 +436,6 @@ class TestRegionTooltipPanel:
         assert response.status_code == 200
         body = response.content.decode()
         assert 'data-testid="region-tooltip-rating-chip"' in body
-
-
-@pytest.mark.django_db
-class TestSubscribeOutcomesPanel:
-    """Focused tests for the subscribe-outcomes component panel."""
-
-    def test_five_variants_each_with_distinct_partial(
-        self, htmx_staff_client: Client
-    ) -> None:
-        """Five variants are registered and each carries a ``"partial"`` key."""
-        from apps.public.design_tokens import get_category
-
-        category = get_category("subscribe-outcomes")
-        assert category is not None
-        assert len(category.variants) == 5  # noqa: PLR2004 — five outcomes
-
-        partials = [v.get("partial") for v in category.variants]
-        # Every variant must have a partial override.
-        assert all(p is not None for p in partials)
-        # All five must be distinct template paths.
-        assert len(set(partials)) == 5  # noqa: PLR2004
-
-    def test_all_five_outcome_copies_appear_in_rendered_html(
-        self, htmx_staff_client: Client
-    ) -> None:
-        """Each of the five outcome templates renders its own distinct copy.
-
-        Checks known heading strings from each partial — these are
-        stable i18n keys that change only intentionally.
-        """
-        response = htmx_staff_client.get(_panel_url("subscribe-outcomes"))
-        assert response.status_code == 200
-        body = response.content.decode()
-
-        # subscribe_success + subscribe_success_access both say "Check your inbox"
-        assert "Check your inbox" in body
-        # subscribe_success_added — region name is in the fixture
-        assert "Bex" in body  # "Added Bex–Villars to your alerts"
-        # subscribe_success_already — same region
-        assert "already subscribed" in body
-        # subscribe_error
-        assert "Something went wrong" in body
-
-
-@pytest.mark.django_db
-class TestIncludeVariantPartialOverride:
-    """Unit test for the include_variant partial-key override path (Option A)."""
-
-    def test_variant_partial_key_overrides_category_default(
-        self, htmx_staff_client: Client
-    ) -> None:
-        """``variant["partial"]`` renders a *different* template than the category default.
-
-        Uses the subscribe-outcomes panel, whose first variant
-        (``subscribe_success.html``) is also the category default, and whose
-        last variant (``subscribe_error.html``) is different.  If the override
-        is working, the error copy appears; if it were ignored, the error
-        template would never render.
-        """
-        response = htmx_staff_client.get(_panel_url("subscribe-outcomes"))
-        assert response.status_code == 200
-        body = response.content.decode()
-        # The error template's heading only appears if the override worked.
-        assert "Something went wrong" in body
-
-    def test_csrf_token_present_in_subscribe_form_partial(
-        self, htmx_staff_client: Client
-    ) -> None:
-        """``include_variant`` renders a ``RequestContext`` so ``{% csrf_token %}`` works.
-
-        Before the fix, ``include_variant`` called ``Template.render(dict)``,
-        which builds a plain ``Context``.  ``{% csrf_token %}`` inside the
-        subscribe-form partial silently renders to an empty string in that case.
-        This test asserts the token input is present in the rendered output,
-        proving a ``RequestContext`` (with its CSRF middleware processor) was used.
-        """
-        import warnings
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            response = htmx_staff_client.get(_panel_url("subscribe-form"))
-
-        assert response.status_code == 200
-        body = response.content.decode()
-        # The CSRF hidden input must be present.
-        assert 'name="csrfmiddlewaretoken"' in body
-        # No UserWarning about a missing CSRF value must have been emitted.
-        csrf_warnings = [w for w in caught if "csrf_token" in str(w.message).lower()]
-        assert csrf_warnings == [], (
-            f"Unexpected CSRF warning(s): {[str(w.message) for w in csrf_warnings]}"
-        )
 
 
 def _sw_version_url() -> str:

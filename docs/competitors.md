@@ -2,7 +2,7 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-08-30
+last-reviewed: 2026-09-03
 ---
 
 # Competitor list
@@ -566,9 +566,10 @@ notification.
 **4. Recent field observations on the bulletin page** *(Whympr's activity wall)*
 Whympr surfaces the last ten days of community outings with conditions;
 it is what makes a static forecast feel live. We already collect
-`FieldObservation` and list it at `/observations/`, but the bulletin page
-for a region doesn't show the observations filed *in* that region. Same
-data, one join, much better place for it.
+`FieldObservation` and show it on the map's community-reports layer and
+sheet, but the bulletin page for a region only counts the observations
+filed *in* that region today. Same data, one join, much better place for
+it.
 **2026-08-30 scan update:** Whympr's field reports are free to post
 without login or subscription and auto-expire after 90 days unless
 corroborated by another user — a concrete staleness/trust mechanic worth

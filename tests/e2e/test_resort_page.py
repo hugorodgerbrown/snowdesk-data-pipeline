@@ -26,36 +26,33 @@ from apps.regions.models import Resort
 from tests.e2e.conftest import FavouritesPage
 
 
-def test_bulletin_to_resort_and_back_round_trips_to_same_region(
+def test_resort_to_bulletin_to_map_lands_on_the_same_region(
     live_server: LiveServer,
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """Bulletin → resort link → resort page → "View bulletin" → same region.
+    """Resort page → its danger link → bulletin → "See this region on the map".
 
-    Navigates the canonical bulletin page, follows the "Verbier" link from
-    the "Resorts in this region" section, confirms the resort page renders
-    that resort's name, then follows its "View bulletin" link back to the
-    CH-4115 region's bulletin page.
+    The resort page is a router to the two documents (SNOW-807) and the
+    bulletin's tail is one link back to the map (SNOW-806), so the journey
+    runs in that direction: the resort names its region's bulletin, and
+    the bulletin hands over to the map at that region's fragment.
     """
-    page.goto(f"{live_server.url}/ch-4115/martigny-verbier/2026-04-08/")
+    page.goto(f"{live_server.url}/resorts/verbier/")
     page.wait_for_load_state("networkidle")
-
-    resorts_section = page.locator('[data-testid="resorts-in-region"]')
-    resorts_section.wait_for(state="visible")
-    resort_link = resorts_section.locator("a", has_text="Verbier")
-    resort_link.click()
-
-    page.wait_for_load_state("networkidle")
-    assert "/resorts/" in page.url
     heading = page.locator('[data-testid="resort-heading"]')
     assert heading.inner_text().strip() == "Verbier"
 
-    bulletin_link = page.locator('[data-testid="resort-danger"] a')
-    bulletin_link.click()
-
+    page.locator('[data-testid="resort-danger"] a').click()
     page.wait_for_load_state("networkidle")
     assert "/ch-4115/" in page.url
+
+    map_link = page.locator('[data-testid="bulletin-map-link"]')
+    map_link.wait_for(state="visible")
+    map_link.click()
+    page.wait_for_load_state("load")
+    assert page.url.endswith("#CH-4115"), page.url
+    expect(page.locator("#map")).to_be_visible()
 
 
 @pytest.mark.django_db(transaction=True)

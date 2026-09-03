@@ -294,19 +294,3 @@ def test_pwa_offline_script_loaded_on_home_page() -> None:
     response = Client().get("/")
     body = response.content.decode("utf-8")
     assert "pwa_offline.js" in body
-
-
-@pytest.mark.django_db
-def test_subscribe_form_marked_network_required() -> None:
-    """The subscribe form ships ``data-network-required`` for JS pickup."""
-    response = Client().get("/account/")
-    # Regardless of auth state we should be able to see /sign-in/, which
-    # renders another form via the flow. Instead exercise the partial
-    # directly against a fake context.
-    _ = response
-    out = _render(
-        '{% include "accounts/partials/subscribe_form.html" '
-        "with region_id='CH-4123' %}",
-        {},
-    )
-    assert "data-network-required" in out

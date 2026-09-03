@@ -25,13 +25,10 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-from apps.accounts.models import Account
 from tests.factories import (
-    AccountFactory,
     MicroRegionFactory,
     ResortFactory,
     SubRegionFactory,
-    SubscriptionFactory,
     UserFactory,
 )
 
@@ -64,7 +61,6 @@ def anonymous_pages(db: None) -> dict[str, str]:
     return {
         "home": reverse("public:home"),
         "help": reverse("public:help"),
-        "observations": reverse("public:observations"),
         "colophon": reverse("public:colophon"),
         "privacy": reverse("public:privacy"),
         "terms": reverse("public:terms"),
@@ -76,15 +72,6 @@ def anonymous_pages(db: None) -> dict[str, str]:
         "register": reverse("accounts:register"),
         "reset_password": reverse("accounts:reset_password"),
     }
-
-
-@pytest.fixture
-def subscribed_account(db: None) -> Account:
-    """An account with one subscribed region, for the manage page."""
-    account = AccountFactory.create()
-    region = MicroRegionFactory.create(region_id="CH-4115", name="Valais")
-    SubscriptionFactory.create(account=account, region=region)
-    return account
 
 
 class TestHtmxIsLoadedWhereItIsUsed:
@@ -104,14 +91,6 @@ class TestHtmxIsLoadedWhereItIsUsed:
                 f"the controls are inert. Add the script in "
                 f"{{% block extra_head %}}, or drop the attributes."
             )
-
-    def test_account_hub_page(self, subscribed_account: Account) -> None:
-        """The signed-in account hub is htmx-driven end to end."""
-        client = Client()
-        client.force_login(subscribed_account.user, backend=_TOKEN_BACKEND)
-        html = client.get(reverse("accounts:hub")).content.decode()
-        assert _hx_attributes(html), "account hub no longer emits hx-* attributes"
-        assert _HTMX_SCRIPT in html, "account hub emits hx-* but never loads htmx"
 
 
 class TestResortPage:

@@ -29,11 +29,13 @@ import pathlib
 import re
 
 import pytest
+from django.conf import settings
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 from freezegun import freeze_time
 
-from apps.locations.models import Location, ResortLocation
+from apps.locations.models import Location
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
@@ -147,108 +149,6 @@ class TestBulletinMasthead:
 
 
 @pytest.mark.django_db
-class TestResortPage:
-    """One weather block per curated location linked to the resort."""
-
-    @freeze_time(MIDDAY)
-    def test_one_block_per_linked_location_labelled_with_its_elevation(self) -> None:
-        """Each block names its location and the height it was read at."""
-        today = datetime.date(2026, 8, 30)
-        resort = ResortFactory.create(name="Verbier")
-        village = LocationFactory.create(
-            name="Verbier", kind=Location.KIND.VILLAGE, elevation_m=1500.0
-        )
-        peak = LocationFactory.create(
-            name="Mont Fort", kind=Location.KIND.PEAK, elevation_m=3328.0
-        )
-        ResortLocationFactory.create(
-            resort=resort,
-            location=village,
-            role=ResortLocation.ROLE.BASE,
-            is_primary=True,
-        )
-        ResortLocationFactory.create(
-            resort=resort, location=peak, role=ResortLocation.ROLE.TOP
-        )
-        for location in (village, peak):
-            WeatherFactory.create(
-                location=location,
-                observed_on=today,
-                sunrise=SUNRISE,
-                sunset=SUNSET,
-            )
-
-        response = Client().get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="resort-weather"' in content
-        assert "Verbier · 1500 m" in content
-        assert "Mont Fort · 3328 m" in content
-        # The primary (base) link leads, whatever order the links were made.
-        assert content.index("Verbier · 1500 m") < content.index("Mont Fort · 3328 m")
-
-    @freeze_time(MIDDAY)
-    def test_the_week_is_not_drawn_here_only_linked(self) -> None:
-        """SNOW-783: the day per altitude, and a link out for the week.
-
-        The strip used to be rendered once per curated location, so a
-        resort with a village, a mid-station and a peak drew the same
-        seven days three times.
-        """
-        today = datetime.date(2026, 8, 30)
-        resort = ResortFactory.create()
-        location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
-        ResortLocationFactory.create(resort=resort, location=location)
-        WeatherFactory.create(
-            location=location,
-            observed_on=today,
-            sunrise=SUNRISE,
-            sunset=SUNSET,
-            forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
-        )
-
-        response = Client().get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        # The day is here.
-        assert 'data-testid="resort-weather-0-panel"' in content
-        # The week is not.
-        assert 'data-testid="resort-weather-0-forecast-panel"' not in content
-        assert 'data-date="2026-08-31"' not in content
-        # But it is one click away, per location.
-        assert 'data-testid="resort-weather-0-forecast-link"' in content
-        assert reverse("public:location_weather", args=[location.pk]) in content
-
-    def test_a_location_without_a_row_is_dropped_not_rendered_empty(self) -> None:
-        """A resort whose peak has a row and village none shows one block."""
-        today = datetime.date(2026, 8, 30)
-        resort = ResortFactory.create()
-        with_row = LocationFactory.create(name="Attelas")
-        without_row = LocationFactory.create(name="Ruinettes")
-        ResortLocationFactory.create(resort=resort, location=with_row)
-        ResortLocationFactory.create(resort=resort, location=without_row)
-        WeatherFactory.create(location=with_row, observed_on=today)
-
-        with freeze_time(MIDDAY):
-            response = Client().get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        assert "Attelas" in content
-        assert 'data-testid="resort-weather-0"' in content
-        assert 'data-testid="resort-weather-1"' not in content
-
-    def test_a_resort_with_no_linked_locations_omits_the_section(self) -> None:
-        """No links means no section heading, not an empty one."""
-        resort = ResortFactory.create()
-
-        response = Client().get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        assert 'data-testid="resort-weather"' not in response.content.decode()
-
-
-@pytest.mark.django_db
 class TestFavouriteCard:
     """The favourite detail card's weather section."""
 
@@ -268,7 +168,8 @@ class TestFavouriteCard:
         client = Client()
         client.force_login(user)
         response = client.get(
-            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+            reverse("favourites:card", kwargs={"uuid": favourite.uuid}),
+            HTTP_HX_REQUEST="true",
         )
 
         assert response.status_code == 200
@@ -284,7 +185,8 @@ class TestFavouriteCard:
         client = Client()
         client.force_login(user)
         response = client.get(
-            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+            reverse("favourites:card", kwargs={"uuid": favourite.uuid}),
+            HTTP_HX_REQUEST="true",
         )
 
         assert response.status_code == 200
@@ -310,16 +212,16 @@ class TestFavouriteCard:
         client = Client()
         client.force_login(user)
         response = client.get(
-            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+            reverse("favourites:card", kwargs={"uuid": favourite.uuid}),
+            HTTP_HX_REQUEST="true",
         )
 
         content = response.content.decode()
         assert 'data-testid="favourite-weather-panel"' in content
         assert 'data-testid="favourite-forecast-panel"' not in content
         assert 'data-testid="favourite-card-forecast-link"' in content
-        assert (
-            reverse("public:location_weather", args=[favourite.location_id]) in content
-        )
+        assert favourite.location is not None
+        assert favourite.location.get_absolute_url() in content
 
 
 @pytest.mark.django_db
@@ -344,7 +246,9 @@ class TestLocationForecastPage:
             forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
         )
 
-        response = Client().get(reverse("public:location_weather", args=[location.pk]))
+        response = Client().get(
+            reverse("public:location_weather", args=[location.short_id])
+        )
 
         content = response.content.decode()
         assert 'data-date="2026-08-30"' in content
@@ -362,7 +266,8 @@ class TestLocationForecastPage:
         owner = UserFactory.create()
         stranger = UserFactory.create()
         favourite = FavouriteFactory.create(user=owner, name="The col")
-        url = reverse("public:location_weather", args=[favourite.location_id])
+        assert favourite.location is not None
+        url = favourite.location.get_absolute_url()
 
         owner_client = Client()
         owner_client.force_login(owner)
@@ -401,7 +306,7 @@ class TestLocationForecastPage:
 
         html = (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 
@@ -440,7 +345,7 @@ class TestLocationForecastPage:
 
         html = (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 
@@ -533,7 +438,7 @@ class TestLocationForecastPage:
 
         html = (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 
@@ -585,7 +490,7 @@ class TestIconHalo:
             sunrise=SUNRISE,
             sunset=SUNSET,
         )
-        url = reverse("public:location_weather", args=[location.pk])
+        url = reverse("public:location_weather", args=[location.short_id])
         client = Client()
 
         needs = client.get(f"{url}?date={PAGE_DATE.isoformat()}&icons=yr")
@@ -593,24 +498,6 @@ class TestIconHalo:
 
         draws_own = client.get(f"{url}?date={PAGE_DATE.isoformat()}&icons=snowdesk")
         assert 'class="weather-icon' not in draws_own.content.decode()
-
-    @freeze_time(MIDDAY)
-    def test_the_resort_pages_panel_carries_the_hook(self) -> None:
-        """``_weather_panel.html``, via the resort page."""
-        resort = ResortFactory.create()
-        location = LocationFactory.create(elevation_m=1500.0)
-        ResortLocationFactory.create(resort=resort, location=location)
-        WeatherFactory.create(
-            location=location,
-            observed_on=PAGE_DATE,
-            sunrise=SUNRISE,
-            sunset=SUNSET,
-        )
-
-        content = Client().get(f"{resort.get_absolute_url()}?icons=yr").content.decode()
-
-        assert 'data-testid="resort-weather"' in content
-        assert 'class="weather-icon' in content
 
     @freeze_time(MIDDAY)
     def test_the_picker_and_the_day_line_both_carry_the_hook(self) -> None:
@@ -632,7 +519,9 @@ class TestIconHalo:
 
         html = (
             Client()
-            .get(f"{reverse('public:location_weather', args=[location.pk])}?icons=yr")
+            .get(
+                f"{reverse('public:location_weather', args=[location.short_id])}?icons=yr"
+            )
             .content.decode()
         )
 
@@ -665,7 +554,7 @@ class TestIconSetSwitcher:
             sunset=SUNSET,
             forecast=[_forecast_day("2026-08-31")],
         )
-        url = reverse("public:location_weather", args=[location.pk])
+        url = reverse("public:location_weather", args=[location.short_id])
 
         content = Client().get(f"{url}?date={PAGE_DATE.isoformat()}").content.decode()
 
@@ -686,7 +575,7 @@ class TestIconSetSwitcher:
             sunrise=SUNRISE,
             sunset=SUNSET,
         )
-        url = reverse("public:location_weather", args=[location.pk])
+        url = reverse("public:location_weather", args=[location.short_id])
 
         client = Client()
         for set_name in ("snowdesk", "meteocons", "yr"):
@@ -721,7 +610,7 @@ class TestMeteogramMarks:
         )
         return (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 
@@ -910,3 +799,56 @@ class TestMeteogramMarks:
         html = self._render()
 
         assert "daylight 06:30 to 20:15" in html
+
+
+# ---------------------------------------------------------------------------
+# SNOW-799 — the weather page's canonical URL
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestLocationWeatherCanonicalUrl:
+    """The bare page is canonical for today; a dated page for its own day."""
+
+    @staticmethod
+    def _canonical(content: str) -> str:
+        """Return the href of the page's <link rel="canonical">."""
+        match = re.search(r'<link rel="canonical" href="([^"]+)">', content)
+        assert match, "no canonical link"
+        return match.group(1)
+
+    @staticmethod
+    def _location() -> Location:
+        """A public location the page will render for."""
+        location = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(location=location)
+        return location
+
+    def test_no_date_is_the_bare_url(self) -> None:
+        """Undated: canonical is /weather/<short_id>/ with no query string."""
+        location = self._location()
+        content = Client().get(location.get_absolute_url()).content.decode()
+        expected = f"{settings.SITE_BASE_URL.rstrip('/')}{location.get_absolute_url()}"
+        assert self._canonical(content) == expected
+        assert f'<meta property="og:url" content="{expected}">' in content
+
+    def test_today_is_the_bare_url(self) -> None:
+        """?date=today picks the same row the bare page shows — one canonical."""
+        location = self._location()
+        today = timezone.localdate().isoformat()
+        content = (
+            Client().get(f"{location.get_absolute_url()}?date={today}").content.decode()
+        )
+        assert self._canonical(content).endswith(location.get_absolute_url())
+
+    def test_a_past_day_keeps_its_date(self) -> None:
+        """A dated page is its own citable thing, canonical with ?date=."""
+        location = self._location()
+        content = (
+            Client()
+            .get(f"{location.get_absolute_url()}?date=2026-01-14")
+            .content.decode()
+        )
+        assert self._canonical(content).endswith(
+            f"{location.get_absolute_url()}?date=2026-01-14"
+        )

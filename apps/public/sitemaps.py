@@ -1,11 +1,13 @@
 """
 apps/public/sitemaps.py — XML sitemaps for the public bulletin site.
 
-Three sections, registered together in config/urls.py:
+Four sections, registered together in config/urls.py:
 
-    bulletins  BulletinSitemap     — regions with a bulletin for today
-    resorts    ResortSitemap       — every resort's detail page
-    static     StaticViewSitemap   — the homepage, the guides, the legal pages
+    bulletins  BulletinSitemap        — regions with a bulletin for today
+    resorts    ResortSitemap          — every resort's detail page
+    locations  LocationWeatherSitemap — every named public location's
+                                        weather page (SNOW-799)
+    static     StaticViewSitemap      — the homepage, the guides, the legal pages
 
 Until SNOW-676 the sitemap was the bulletin section alone, which had two
 consequences. The resort pages SNOW-504 built specifically as indexable,
@@ -34,6 +36,7 @@ from django.db.models import Max
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.locations.models import Location
 from apps.regions.models import MicroRegion, Resort
 
 logger = logging.getLogger(__name__)
@@ -163,7 +166,7 @@ class ResortSitemap(Sitemap):
             item: A ``Resort`` instance from ``items()``.
 
         Returns:
-            The path string (e.g. ``"/resorts/109/adelboden/"``).
+            The path string (e.g. ``"/resorts/adelboden/"``).
 
         """
         return item.get_absolute_url()
@@ -188,6 +191,87 @@ class ResortSitemap(Sitemap):
         return item.updated_at
 
 
+class LocationWeatherSitemap(Sitemap):
+    """
+    Sitemap listing the weather page of every *named* public location (SNOW-799).
+
+    The weather page is document two of the two-document IA
+    (``docs/decisions/two-documents-and-a-map.md``) and had full sharing
+    metadata but no sitemap entry. This is that entry.
+
+    **Named locations only** — ``Location.objects.public().named()``. The
+    public estate is ~540 rows of which ~461 are anonymous region
+    centroids; their pages fall back to the region's name for a heading,
+    so listing them would publish 461 pages titled after regions, each
+    competing with that region's own bulletin page for the same query.
+    Villages, mid-stations and peaks have a name of their own and are the
+    pages worth an index entry.
+
+    ``public()`` is the privacy ceiling — never ``active()``, which reaches
+    the locations a ``Favourite`` created. A private pin must not appear
+    in a sitemap any more than in ``weather.geojson``.
+
+    Only the evergreen, undated URL is listed — ``?date=`` picks a row
+    inside the page, not a different page
+    (``docs/decisions/weather-day-picker-is-a-selector-not-navigation.md``),
+    the same convention as ``BulletinSitemap``'s today-only entries.
+    """
+
+    changefreq = "daily"
+    priority = 0.6
+
+    def items(self) -> Any:
+        """
+        Return every named public location, ordered by id for a stable sitemap.
+
+        Annotated with the newest ``fetched_at`` across the location's
+        weather rows so ``lastmod()`` reads it without a query per row.
+
+        Returns:
+            A queryset of ``Location`` instances annotated with
+            ``latest_weather_fetched_at``.
+
+        """
+        return (
+            Location.objects.public()
+            .named()
+            .annotate(latest_weather_fetched_at=Max("weather__fetched_at"))
+            .distinct()
+            .order_by("id")
+        )
+
+    def location(self, item: Location) -> str:
+        """
+        Return the location's undated weather-page path.
+
+        Args:
+            item: A ``Location`` instance from ``items()``.
+
+        Returns:
+            The path string (e.g. ``"/weather/Ab3dE_fGh1J/"``).
+
+        """
+        return item.get_absolute_url()
+
+    def lastmod(self, item: Location) -> Any:
+        """
+        Return when the page last changed: the newest weather fetch, else the row.
+
+        A weather page changes when its forecast is re-fetched, four times a
+        day — that is the honest modification signal, and it is what the
+        ``items()`` annotation carries. A location with no weather yet falls
+        back to its own ``updated_at``.
+
+        Args:
+            item: An annotated ``Location`` instance.
+
+        Returns:
+            A ``datetime`` (UTC-aware).
+
+        """
+        return getattr(item, "latest_weather_fetched_at", None) or item.updated_at
+
+
 class StaticViewSitemap(Sitemap):
     """
     Sitemap listing the public pages that aren't generated from data (SNOW-676).
@@ -198,10 +282,9 @@ class StaticViewSitemap(Sitemap):
 
     Excluded on purpose, and why:
 
-    * ``public:observations`` — a public URL, but an anonymous visitor gets
-      a sign-in call to action rather than the stream, so indexing it
-      advertises a sign-in wall as content. Worth revisiting under SNOW-669,
-      which is about giving that page a way in.
+    * ``public:observations`` — a permanent redirect to the map with the
+      reports sheet open since SNOW-804 (before that, a page an anonymous
+      visitor met as a sign-in wall). A redirect is not a destination.
     * ``public:examples_random`` / ``examples_category`` — the content is a
       *random* bulletin per request, so listing them invites duplicate-content
       collisions with the real bulletin pages they sample.
@@ -212,7 +295,9 @@ class StaticViewSitemap(Sitemap):
     * ``_components/``, ``_push-demo/``, ``_sw-version/`` — staff-only.
     * ``/account/…`` and ``/favourites/<uuid>/`` — per-user, and ``Disallow``ed
       in robots.txt (``apps.public.views.serve_robots``). Listing them here
-      would contradict that file.
+      would contradict that file. (``/favourites/<uuid>/`` has been a
+      redirect to the pin's weather page since SNOW-800; the weather page
+      itself is listed in the ``locations`` section when it is public.)
     """
 
     # Route name → (changefreq, priority).
@@ -283,5 +368,6 @@ class StaticViewSitemap(Sitemap):
 SITEMAPS: dict[str, type[Sitemap]] = {
     "bulletins": BulletinSitemap,
     "resorts": ResortSitemap,
+    "locations": LocationWeatherSitemap,
     "static": StaticViewSitemap,
 }

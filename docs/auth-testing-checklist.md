@@ -2,7 +2,7 @@
 name: auth-testing-checklist
 description: Manual login/logout test checklist — magic-link, password, passkey sign-in, logout, registration, password reset, change email, unsubscribe
 status: current
-last-reviewed: 2026-07-24
+last-reviewed: 2026-09-03
 ---
 
 # Login / Logout Testing Checklist — Snowdesk
@@ -93,8 +93,8 @@ the scenario doc does not.
 ## 9. Unsubscribe (no login required)
 
 - [ ] `/account/unsubscribe/<token>/` (`GET`) → confirmation page naming the region; **no state change** on GET.
-- [ ] POST → the region's subscription is removed; landing page confirms.
-- [ ] Removing the **last** region → only the `Subscription` row is removed; the `User`/`Account` survive (no hard-delete, no session change — this path is unauthenticated by design).
+- [ ] POST → the region pin is removed (SNOW-802 — the token still resolves, and removes the pin that the subscription became); landing page confirms.
+- [ ] Removing the **last** pin → only that `Favourite` row is removed; the `User`/`Account` survive (no hard-delete, no session change — this path is unauthenticated by design).
 - [ ] Re-POST an already-processed unsubscribe → idempotent (still renders the done page).
 - [ ] Use an **old** email's unsubscribe link (token never expires) → still works.
 - [ ] Invalid/tampered token → `link_expired` (400).
@@ -102,8 +102,8 @@ the scenario doc does not.
 ## 10. Nav visibility (check in each state)
 
 - [ ] **Anonymous** → "Register" and "Sign in" links visible.
-- [ ] **Authenticated account with subscriptions** → avatar dropdown: up to 3 region links, "Manage alerts", "Sign out".
-- [ ] **Authenticated, no subscriptions** (registered only) → avatar dropdown with no region links; manage page still reachable.
+- [ ] **Authenticated account** → avatar dropdown: the offline-mode switch, "Settings", "Sign out" — no region links, no list entries (SNOW-802/803: those are map sheets).
+- [ ] `/account/`, `/account/favourites/`, `/account/routes/`, `/account/observations/` → 301 to the map with the matching sheet open.
 - [ ] **Staff** → extra cog dropdown (Component library, Django admin, …) rendered alongside the avatar.
 
 ## 11. Cross-cutting checks

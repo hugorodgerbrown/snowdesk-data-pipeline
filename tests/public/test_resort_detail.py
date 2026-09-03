@@ -1,18 +1,20 @@
 """
 tests/public/test_resort_detail.py — Tests for the resort detail page (SNOW-504).
 
-Covers ``apps.public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
+Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
   - 200 + content: resort name, canton, parent region name, today's danger
     chip, and a "View bulletin" link to the region's evergreen bulletin.
-  - Slug mismatch 301s to the canonical URL (mirrors the region
-    canonical-slug behaviour); a rubbish slug does not loop.
+  - The pre-slug ``/resorts/<id>/<slug>/`` form 301s to the canonical URL
+    whatever suffix it carries (``resort_legacy_redirect``), and does not
+    loop.
   - A resort with ``needs_review=True`` or null coordinates still renders.
-  - An unknown resort_id returns 404.
+  - An unknown slug returns 404.
   - Favourite-star state: sign-in CTA for anonymous/ineligible visitors,
     the button (unfavourited or favourited) for eligible ones.
-  - Distance-scoped field observations (SNOW-508): point-local when the
-    resort has coordinates, region-wide fallback when it doesn't, and
-    empty-state copy when nothing is nearby.
+  - SNOW-807: the danger area is one link to the bulletin; each curated
+    location is a link to its weather page (no inline weather); the
+    observations section is one link to the map with the reports sheet
+    open, flown to the resort.
   - Resort facts block (SNOW-695): the curated Resort columns the page
     stored but never rendered. Every cell renders when curated, an unset
     cell is omitted, and the whole block is omitted rather than rendered
@@ -21,7 +23,6 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
 
 from __future__ import annotations
 
-import datetime
 import re
 
 import pytest
@@ -30,14 +31,15 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.bulletins.models import RegionDayRating
-from apps.observations.models import FieldObservation
 from tests.factories import (
     FavouriteFactory,
-    FieldObservationFactory,
+    LocationFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
     ResortFactory,
+    ResortLocationFactory,
     UserFactory,
+    WeatherFactory,
 )
 
 
@@ -103,13 +105,59 @@ class TestResortDetailContent:
 
         assert region.get_absolute_url() in response.content.decode()
 
+    @pytest.mark.parametrize("rated", [True, False])
+    def test_the_danger_area_is_one_link_to_the_bulletin(self, rated: bool) -> None:
+        """SNOW-807: chip or note, the whole area is one tappable link.
+
+        tests/e2e/test_resort_page.py clicks ``[data-testid="resort-danger"] a``,
+        so the container must hold exactly one anchor whichever state it is in.
+        """
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        if rated:
+            RegionDayRatingFactory.create(
+                region=region, max_rating=RegionDayRating.Rating.CONSIDERABLE
+            )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        area = re.search(
+            r'<div[^>]*data-testid="resort-danger"[^>]*>(.*?)</div>', content, re.S
+        )
+        assert area is not None
+        assert len(re.findall(r"<a\b", area.group(1))) == 1
+        assert f'href="{region.get_absolute_url()}"' in area.group(1)
+        assert "View bulletin" in area.group(1)
+
+    def test_no_weather_is_rendered_inline(self) -> None:
+        """SNOW-807: the page reads no Weather row — forecasts are links."""
+        resort = ResortFactory.create()
+        location = LocationFactory.create(name="Mont Fort", elevation_m=3328.0)
+        ResortLocationFactory.create(resort=resort, location=location)
+        WeatherFactory.create(location=location, observed_on=timezone.localdate())
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-weather"' not in content
+        assert "weather-icon" not in content
+
 
 @pytest.mark.django_db
-class TestResortDetailCanonicalSlug:
-    """Slug-mismatch redirects to the canonical URL."""
+class TestResortLegacyRedirect:
+    """The pre-SNOW-796 ``/resorts/<id>/<slug>/`` form 301s to ``/resorts/<slug>/``."""
 
-    def test_wrong_slug_301s_to_canonical(self) -> None:
-        """A stale/incorrect slug 301-redirects to resort.get_absolute_url()."""
+    def test_legacy_url_301s_to_canonical(self) -> None:
+        """The integer form redirects to resort.get_absolute_url()."""
+        resort = ResortFactory.create(name="Verbier")
+
+        client = Client()
+        response = client.get(f"/resorts/{resort.pk}/verbier/")
+
+        assert response.status_code == 301
+        assert response["Location"] == "/resorts/verbier/"
+
+    def test_legacy_suffix_is_ignored(self) -> None:
+        """A stale name suffix still lands on the stored slug's page."""
         resort = ResortFactory.create(name="Verbier")
 
         client = Client()
@@ -137,6 +185,12 @@ class TestResortDetailCanonicalSlug:
         assert response.status_code == 200
         assert response.redirect_chain == [(resort.get_absolute_url(), 301)]
 
+    def test_unknown_pk_returns_404(self) -> None:
+        """An integer nothing owns is a 404, not a redirect to nowhere."""
+        client = Client()
+        response = client.get("/resorts/999999/nowhere/")
+        assert response.status_code == 404
+
 
 @pytest.mark.django_db
 class TestResortDetailEdgeCases:
@@ -160,10 +214,10 @@ class TestResortDetailEdgeCases:
 
         assert response.status_code == 200
 
-    def test_unknown_resort_id_returns_404(self) -> None:
-        """An unknown resort_id returns 404."""
+    def test_unknown_slug_returns_404(self) -> None:
+        """An unknown slug returns 404."""
         client = Client()
-        response = client.get("/resorts/999999/nowhere/")
+        response = client.get("/resorts/nowhere/")
         assert response.status_code == 404
 
 
@@ -218,109 +272,80 @@ class TestResortDetailUrl:
     """URL-reversal sanity check."""
 
     def test_url_reverses_to_expected_path(self) -> None:
-        """public:resort reverses to /resorts/<id>/<slug>/."""
+        """public:resort reverses to /resorts/<slug>/ — no pk in it."""
         resort = ResortFactory.create(name="Verbier")
-        url = reverse(
-            "public:resort", kwargs={"resort_id": resort.pk, "slug": "verbier"}
-        )
-        assert url == f"/resorts/{resort.pk}/verbier/"
+        url = reverse("public:resort", kwargs={"slug": resort.slug})
+        assert url == "/resorts/verbier/"
+        assert str(resort.pk) not in url
 
 
 @pytest.mark.django_db
-class TestResortDetailLocalObservations:
-    """Distance-scoped field-observation panel (SNOW-508)."""
+class TestResortLocations:
+    """SNOW-807: the resort's curated locations, each a link to its weather page."""
 
-    def _today_at_noon(self) -> datetime.datetime:
-        """Return a tz-aware datetime for noon today."""
-        today = timezone.localdate()
-        return datetime.datetime(
-            today.year, today.month, today.day, 12, 0, tzinfo=datetime.UTC
+    def test_each_curated_location_links_to_its_weather_page(self) -> None:
+        """Primary first, then role and name; label, role and elevation on the row."""
+        resort = ResortFactory.create(name="Verbier")
+        summit = LocationFactory.create(
+            name="Mont Fort", kind="PEAK", elevation_m=3328.0
+        )
+        village = LocationFactory.create(
+            name="Verbier village", kind="VILLAGE", elevation_m=1500.0
+        )
+        ResortLocationFactory.create(resort=resort, location=summit, role="TOP")
+        ResortLocationFactory.create(
+            resort=resort, location=village, role="BASE", is_primary=True
         )
 
-    def test_point_local_scope_when_resort_has_coords(self) -> None:
-        """A geocoded resort shows the point-local heading and its own count."""
-        resort = ResortFactory.create(geocoded=True)  # (46.1, 7.4)
-        FieldObservationFactory.create(
-            latitude=resort.latitude,
-            longitude=resort.longitude,
-            observed_at=self._today_at_noon(),
-            observation_type="WHUMPFING",
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-locations"' in content
+        first = content.index('data-testid="resort-location-0"')
+        second = content.index('data-testid="resort-location-1"')
+        assert first < second
+        assert f'href="{village.get_absolute_url()}"' in content[first:second]
+        assert "Verbier village" in content[first:second]
+        assert "Base" in content[first:second]
+        assert "1500 m" in content[first:second]
+        assert f'href="{summit.get_absolute_url()}"' in content[second:]
+        assert "3328 m" in content[second:]
+
+    def test_an_anonymous_pin_is_labelled_with_the_resorts_name(self) -> None:
+        """The location link_resort_locations mints has no name of its own."""
+        resort = ResortFactory.create(name="Verbier")
+        ResortLocationFactory.create(
+            resort=resort, location=LocationFactory.create(anonymous=True)
         )
 
-        client = Client()
-        response = client.get(resort.get_absolute_url())
+        content = Client().get(resort.get_absolute_url()).content.decode()
 
-        content = response.content.decode()
-        assert "Reported nearby" in content
-        assert "Reported in this region" not in content
-        assert "Whumpfing" in content
+        assert re.search(r'data-testid="resort-location-0-link"\s*>Verbier<', content)
 
-    def test_region_wide_fallback_when_coords_null(self) -> None:
-        """A resort with no coordinates falls back to the region-wide count."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region, latitude=None, longitude=None)
-        FieldObservationFactory.create(
-            region=region,
-            observed_at=self._today_at_noon(),
-            observation_type="PINWHEELS",
-        )
-
-        client = Client()
-        response = client.get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        assert "Reported in this region" in content
-        assert "Reported nearby" not in content
-        assert "Pinwheels" in content
-
-    def test_empty_state_point_local(self) -> None:
-        """A geocoded resort with nothing nearby shows the point empty-state copy."""
+    def test_no_curated_locations_means_no_section(self) -> None:
+        """A freshly geocoded resort renders no heading over an empty list."""
         resort = ResortFactory.create(geocoded=True)
 
-        client = Client()
-        response = client.get(resort.get_absolute_url())
+        content = Client().get(resort.get_absolute_url()).content.decode()
 
-        content = response.content.decode()
-        assert "Reported nearby" in content
-        assert "No reports near here today." in content
+        assert 'data-testid="resort-locations"' not in content
+        assert "Forecasts" not in content
 
-    def test_empty_state_region_wide(self) -> None:
-        """A coord-null resort with nothing in-region shows the region empty-state copy."""
-        resort = ResortFactory.create(latitude=None, longitude=None)
 
-        client = Client()
-        response = client.get(resort.get_absolute_url())
+@pytest.mark.django_db
+class TestResortObservationsLink:
+    """SNOW-807: reports are on the map, with the sheet open and the camera here."""
 
-        content = response.content.decode()
-        assert "Reported in this region" in content
-        assert "No reports in this region today." in content
+    def test_links_to_the_map_with_the_reports_sheet_open_at_this_resort(
+        self,
+    ) -> None:
+        resort = ResortFactory.create(name="Verbier", geocoded=True)
 
-    def test_manual_footnote_absent_when_local_counts_are_empty(self) -> None:
-        """The 'placed manually' footnote never contradicts the empty state.
+        content = Client().get(resort.get_absolute_url()).content.decode()
 
-        Regression: ``observation_has_user_located`` is a region-wide check
-        (FK match only, no distance filter) — a MANUAL report can exist
-        somewhere in the resort's region while sitting well outside the
-        point-local radius, leaving ``local_observations.counts`` empty. The
-        footnote must not render alongside the "no reports" empty state.
-        """
-        resort = ResortFactory.create(geocoded=True)  # (46.1, 7.4)
-        assert resort.latitude is not None
-        assert resort.longitude is not None
-        FieldObservationFactory.create(
-            region=resort.region,
-            latitude=resort.latitude + 1.0,  # ~111 km away — outside 10 km
-            longitude=resort.longitude,
-            observed_at=self._today_at_noon(),
-            location_source=FieldObservation.LOCATION_SOURCE.MANUAL,
-        )
-
-        client = Client()
-        response = client.get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        assert "No reports near here today." in content
-        assert "Some reports were placed manually" not in content
+        assert 'data-testid="resort-observations"' in content
+        assert f'href="/?panel=reports&amp;resort={resort.slug}"' in content
+        assert "Reported nearby" not in content
+        assert "Reported in this region" not in content
 
 
 @pytest.mark.django_db

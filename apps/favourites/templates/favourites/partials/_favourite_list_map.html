@@ -6,10 +6,11 @@ Rendered by apps.favourites.views.favourite_list for ``?variant=map`` and
 swapped into [data-favourites-rows] inside the map's favourites panel
 (public/partials/_favourites_surface.html) by static/js/favourites.js.
 
-The lean sibling of _favourite_list.html. Same favourites, same row
-(_favourite.html — SNOW-711 retired the map's own fork of it), same roster
-sidecar, and two things dropped, each because the sheet is not the account
-page:
+The only list since SNOW-803 removed /account/favourites/ and the fuller
+_favourite_list.html it hosted (a favourite is a map pin, not a page). Same
+row (_favourite.html — SNOW-711 retired the map's own fork of it), same
+roster sidecar, and two things that page's list had and this never did,
+each because the sheet is not the account page:
 
   the row's disclosure   the sheet is height-bounded and scrolls, so
                           expanding a full detail card inside it is the

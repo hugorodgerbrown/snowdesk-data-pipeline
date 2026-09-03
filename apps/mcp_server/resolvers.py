@@ -17,6 +17,11 @@ Entry points consumed by ``apps.mcp_server.tools``:
 * ``regions_for_scope(country, major_region_id)`` — the MicroRegions
   covered by a country or a major-region prefix, for
   ``get_regional_snapshot``'s "where should I go?" fan-out.
+* ``resolve_location(short_id)`` — exact ``Location.short_id`` lookup over
+  the PUBLIC estate only (SNOW-799), so a private pin is never addressable
+  from an MCP client.
+* ``named_locations_in_region(region)`` — the named public locations a
+  region's resorts reach, for ``list_locations_in_region``.
 
 The candidate universe (~1500 rows across ``Resort``, ``MicroRegion``,
 ``MajorRegion``, and ``RegionAlias``) is cheap to hold in full and is
@@ -39,6 +44,7 @@ from django.db.models import Count, Max, QuerySet
 from rapidfuzz import fuzz, process
 
 from apps.core.geo import haversine_km
+from apps.locations.models import Location
 from apps.mcp_server.normalise import normalise
 from apps.public.api import COUNTRY_NAMES
 from apps.regions.models import MajorRegion, MicroRegion, RegionAlias, Resort
@@ -99,6 +105,49 @@ def resolve_region(region_id: str) -> MicroRegion | None:
         MicroRegion.objects.select_related("subregion__major")
         .filter(region_id__iexact=region_id)
         .first()
+    )
+
+
+def resolve_location(short_id: str) -> Location | None:
+    """Look up a public ``Location`` by ``short_id``, or ``None`` if unknown.
+
+    ``Location.objects.public()`` is the same filter ``weather.geojson`` and
+    the weather sheet use, and it is load-bearing here for the same reason:
+    ``active()`` also reaches the locations a ``Favourite`` created, and a
+    tool that answered for one would hand a stranger's private pin, its
+    coordinates and its elevation to any MCP client that guessed the id.
+
+    Args:
+        short_id: The eleven-character opaque id (SNOW-797), matched exactly.
+
+    Returns:
+        The location, or ``None`` if no public location has that id.
+
+    """
+    return Location.objects.public().filter(short_id=short_id).first()
+
+
+def named_locations_in_region(region: MicroRegion) -> QuerySet[Location]:
+    """Return the named public locations reached by a region's resorts.
+
+    Named only — a region's own centroid is an anonymous row whose page is
+    headed by the region's name, which is what the region's bulletin tools
+    already cover. The villages, mid-stations and peaks of the region's
+    resorts are the locations a client can usefully name.
+
+    Args:
+        region: The region to list within.
+
+    Returns:
+        A ``Location`` queryset, ordered by name then id.
+
+    """
+    return (
+        Location.objects.public()
+        .named()
+        .filter(resort_locations__resort__region=region)
+        .distinct()
+        .order_by("name", "id")
     )
 
 

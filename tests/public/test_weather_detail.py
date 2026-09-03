@@ -3,9 +3,9 @@ tests/public/test_weather_detail.py — the weather card and the forecast page.
 
 Two surfaces, one estate rule (SNOW-761):
 
-  * ``/api/weather/<location_id>/detail/`` — the card the map opens when a
+  * ``/api/weather/<short_id>/detail/`` — the card the map opens when a
     weather symbol is tapped. Today's conditions and a link out.
-  * ``/weather/<location_id>/`` — the full forecast that link opens: the
+  * ``/weather/<short_id>/`` — the full forecast that link opens: the
     day picker, the selected day's line, and the hourly detail
     (SNOW-789).
 
@@ -180,12 +180,12 @@ def favourite_only_location() -> Location:
 
 def _card_url(location: Location) -> str:
     """Build the card endpoint's URL for a location."""
-    return reverse("api:weather_detail", kwargs={"location_id": location.pk})
+    return reverse("api:weather_detail", kwargs={"short_id": location.short_id})
 
 
 def _page_url(location: Location) -> str:
     """Build the forecast page's URL for a location."""
-    return reverse("public:location_weather", kwargs={"location_id": location.pk})
+    return reverse("public:location_weather", kwargs={"short_id": location.short_id})
 
 
 @pytest.mark.django_db
@@ -219,9 +219,57 @@ class TestPrivacy:
         assert client.get(_page_url(favourite_only_location)).status_code == 404
 
     def test_both_404_for_an_unknown_id(self, client: Client) -> None:
-        """An id nothing owns is a 404, not a 500."""
+        """An id nothing owns is a 404, not a 500 — in either URL shape."""
+        assert client.get("/api/weather/AAAAAAAAAAA/detail/").status_code == 404
+        assert client.get("/weather/AAAAAAAAAAA/").status_code == 404
         assert client.get("/api/weather/999999/detail/").status_code == 404
         assert client.get("/weather/999999/").status_code == 404
+
+
+@pytest.mark.django_db
+class TestLegacyIntegerRedirects:
+    """The pre-SNOW-797 ``<int:location_id>`` forms 301 to the short id."""
+
+    def test_page_redirects_and_keeps_the_query_string(self, client: Client) -> None:
+        """/weather/<pk>/?date=… lands on /weather/<short_id>/?date=…."""
+        location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
+
+        response = client.get(f"/weather/{location.pk}/?date=2026-01-14")
+
+        assert response.status_code == 301
+        assert response["Location"] == f"/weather/{location.short_id}/?date=2026-01-14"
+
+    def test_card_redirects(self, client: Client) -> None:
+        """/api/weather/<pk>/detail/ lands on the short-id endpoint."""
+        location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
+
+        response = client.get(f"/api/weather/{location.pk}/detail/")
+
+        assert response.status_code == 301
+        assert response["Location"] == f"/api/weather/{location.short_id}/detail/"
+
+    def test_redirects_404_for_a_private_pin(
+        self, client: Client, favourite_only_location: Location
+    ) -> None:
+        """A guessed pk must not confirm a stranger's pin exists."""
+        assert client.get(f"/weather/{favourite_only_location.pk}/").status_code == 404
+        assert (
+            client.get(f"/api/weather/{favourite_only_location.pk}/detail/").status_code
+            == 404
+        )
+
+    def test_owner_is_redirected_to_their_own_pin(self, client: Client) -> None:
+        """The page's owner-visibility rule holds for the legacy form too."""
+        location = LocationFactory.create(anonymous=True)
+        favourite = FavouriteFactory.create(location=location)
+        client.force_login(favourite.user)
+
+        response = client.get(f"/weather/{location.pk}/")
+
+        assert response.status_code == 301
+        assert response["Location"] == f"/weather/{location.short_id}/"
 
 
 @pytest.mark.django_db

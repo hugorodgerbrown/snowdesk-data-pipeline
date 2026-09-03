@@ -28,7 +28,8 @@ so no database views or URL routing are needed. ``request=`` is load-bearing
 rather than incidental: it builds a RequestContext, which is what runs the
 context processors nav.html depends on (``nav_subscriptions``) — this
 partial renders on pages that pass no context of their own, this one
-included.
+included. (SNOW-802 removed ``nav_subscriptions``; the menu no longer
+lists regions.)
 """
 
 from __future__ import annotations
@@ -171,19 +172,19 @@ class TestNavAuthArea:
         html = render_to_string("includes/nav.html", {}, request=request)
         assert reverse("accounts:register") not in html
 
-    def test_authenticated_sees_the_subscriptions_link(
+    def test_authenticated_sees_the_settings_link(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Authenticated users see the "Subscriptions" menu item.
+        """Authenticated users see the "Settings" menu item.
 
-        It was "My account" until SNOW-668. The hub stopped being a hub when
-        favourites moved off it, and inside /account/ the possessive carries
-        no information — every page in the area is the viewer's by
-        definition.
+        "Subscriptions" was the entry until SNOW-802 folded the hub into the
+        map's pins sheet; "My account" the one before that (SNOW-668). Inside
+        /account/ the possessive carries no information.
         """
         html = _render_nav_for(rf, regular_user)
-        assert reverse("accounts:hub") in html
-        assert "Subscriptions" in html
+        assert reverse("accounts:settings") in html
+        assert "Settings" in html
+        assert "Subscriptions" not in html
         assert "My account" not in html
 
 
@@ -198,20 +199,19 @@ class TestNavAccountMenuEntries:
     that would notice.
     """
 
-    def test_every_unflagged_entry_is_present(
+    def test_every_entry_is_present(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Subscriptions, Favourites, Observations, Settings and Sign out.
+        """Settings and Sign out — each asserted by name.
 
-        Routes is asserted separately below because it is the one entry
-        behind a flag.
+        SNOW-803 removed Favourites, Routes and Observations and SNOW-802
+        Subscriptions: those are map sheets now, reached from the map's
+        roundels. The survivors keep a positive assertion each, so one
+        cannot vanish the way the two orphaned pages once shipped.
         """
         html = _render_nav_for(rf, regular_user)
 
         for url_name, label in (
-            ("accounts:hub", "Subscriptions"),
-            ("accounts:favourites", "Favourites"),
-            ("accounts:observations", "Observations"),
             ("accounts:settings", "Settings"),
             ("accounts:sign_out", "Sign out"),
         ):
@@ -224,41 +224,35 @@ class TestNavAccountMenuEntries:
     def test_entries_render_in_the_ranked_order(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Content first, account machinery last (SNOW-705's ranking).
+        """Settings before Sign out (SNOW-705's ranking, minus the content).
 
-        Subscriptions is what an account is for; Favourites and Observations
-        are the lists of saved things; Settings and Sign out are machinery
-        and sit below a rule. Order is the ranking, so a reshuffle that puts
-        Sign out mid-menu is a real regression.
+        Order is the ranking, so a reshuffle that puts Sign out above
+        Settings is a real regression.
         """
         html = _render_nav_for(rf, regular_user)
 
-        positions = [
-            html.index(f'href="{reverse(name)}"')
-            for name in (
-                "accounts:hub",
-                "accounts:favourites",
-                "accounts:observations",
-                "accounts:settings",
-            )
-        ]
-        assert positions == sorted(positions)
-        assert positions[-1] < html.index(f'action="{reverse("accounts:sign_out")}"')
+        assert html.index(f'href="{reverse("accounts:settings")}"') < html.index(
+            f'action="{reverse("accounts:sign_out")}"'
+        )
 
-    def test_routes_entry_is_offered_to_every_signed_in_user(
+    def test_the_three_list_entries_are_gone(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """The signed-in menu offers /account/routes/.
+        """Favourites, Routes and Observations no longer appear (SNOW-803).
 
-        This is the entry SNOW-713 could not add, which is why that page
-        shipped orphaned. It was flag-gated when SNOW-668 added it, because
-        ``my_routes`` answered 404 behind an inactive ``routes`` flag;
-        SNOW-724 removed both the flag and that 404, so an ordinary account
-        gets the entry and the destination it points at.
+        Their URLs still resolve — as permanent redirects to the map with the
+        matching sheet open — but the menu must not offer a link to a
+        redirect, and the map's own roundels are where those lists live.
         """
         html = _render_nav_for(rf, regular_user)
-        assert f'href="{reverse("accounts:routes")}"' in html
-        assert "Routes" in html
+        for url_name, label in (
+            ("accounts:favourites", ">Favourites<"),
+            ("accounts:routes", ">Routes<"),
+            ("accounts:observations", ">Observations<"),
+            ("accounts:hub", ">Subscriptions<"),
+        ):
+            assert f'href="{reverse(url_name)}"' not in html, url_name
+            assert label not in html, label
 
     def test_anonymous_sees_no_account_entries(self, rf: RequestFactory) -> None:
         """The whole menu is behind the authenticated branch.
@@ -619,9 +613,9 @@ class TestNavOfflineModeSwitch:
     already failed — so the user it was built for ("I have signal now and am
     about to lose it") could never reach it.
 
-    It sits FIRST in the menu, in its own section between the subscribed
-    regions and "Subscriptions": everything below it is a destination you
-    browse to, and this is the one row you open the menu to operate.
+    It sits FIRST in the menu, in its own section above "Settings":
+    everything below it is a destination you browse to, and this is the one
+    row you open the menu to operate.
 
     Signed-in only, and these assertions pin both halves of that: the row is
     present for a signed-in user and absent for an anonymous one, who still
@@ -643,14 +637,13 @@ class TestNavOfflineModeSwitch:
     def test_switch_sits_above_every_destination(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """It comes before Subscriptions, Settings and Sign out.
+        """It comes before Settings and Sign out.
 
         The menu's order is meaning, not decoration (SNOW-705). Asserted by
         position rather than by eye, because a later entry inserted in the
         wrong group reads fine in a diff.
         """
         html = _render_nav_for(rf, regular_user)
-        assert html.index("data-network-toggle") < html.index(reverse("accounts:hub"))
         assert html.index("data-network-toggle") < html.index(
             reverse("accounts:settings")
         )

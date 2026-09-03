@@ -40,7 +40,7 @@ one. The account keeps its current address until the new one is confirmed
                 {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
             </form>
             <p class="text-text-3 text-sm mt-6 text-center">
-                {% url 'accounts:hub' as manage_url %}
+                {% url 'accounts:settings' as manage_url %}
                 {% blocktrans trimmed %}
                     <a href="{{ manage_url }}" class="underline">Back to your account</a>
                 {% endblocktrans %}

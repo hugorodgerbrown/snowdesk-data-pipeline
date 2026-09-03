@@ -88,7 +88,7 @@ function saveFavourite() {
 function starResort() {
   const star = document.createElement('button');
   star.setAttribute('data-resort-star', '');
-  star.dataset.resortId = '42';
+  star.dataset.resortSlug = 'verbier';
   star.dataset.resortLat = '46.1';
   star.dataset.resortLon = '7.2';
   star.dataset.resortName = 'Verbier';

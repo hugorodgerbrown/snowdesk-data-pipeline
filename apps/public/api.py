@@ -22,7 +22,7 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
   MapLibre Popup anchored to the region's bbox centre; shows the day's danger
   rating chip (``?d=YYYY-MM-DD``-aware), breadcrumb, and resort list.
-* ``/api/resorts/<resort_id>/popup/``      — SNOW-499: pre-rendered minimal
+* ``/api/resorts/<slug>/popup/``           — SNOW-499: pre-rendered minimal
   popup HTML for a resort pin (name, region, favourite star, bulletin link).
   Public (no auth gate — resorts are a public layer); the favourite star
   itself is gated on authentication.
@@ -35,7 +35,7 @@ Superuser-only endpoints powering the in-map resort editor (SNOW-74,
 ``request.user.is_superuser`` (SNOW-724) and 404s for everyone else:
 
 * ``GET  /api/edit/resorts/queue/``               — queue + catalogue payload.
-* ``POST /api/edit/resorts/<int:resort_id>/save/`` — persist the placed
+* ``POST /api/edit/resorts/<slug>/save/`` — persist the placed
   coordinates and the hand-curated detail fields.
 * ``POST /api/edit/resorts/create/``              — create a resort from a
   placed pin, deriving its parent region from that pin.
@@ -49,9 +49,9 @@ resort so Mont Fort stays one row that four resorts share:
   location's links, and the resort catalogue to link against.
 * ``POST /api/edit/locations/create/``                — mint a location
   from a placed pin and link it to one resort.
-* ``POST /api/edit/locations/<int:location_id>/save/`` — move, rename or
+* ``POST /api/edit/locations/<short_id>/save/`` — move, rename or
   re-classify an existing location.
-* ``POST /api/edit/locations/<int:location_id>/link/`` — attach it to
+* ``POST /api/edit/locations/<short_id>/link/`` — attach it to
   another resort.
 * ``POST /api/edit/locations/links/<int:link_id>/unlink/`` — drop one
   link, keeping the location.
@@ -67,6 +67,7 @@ import json
 import logging
 import re
 import secrets
+import uuid
 from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, cast
@@ -75,8 +76,8 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
-from django.http import Http404, HttpRequest, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
@@ -97,6 +98,7 @@ from apps.bulletins.models import (
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
+from apps.favourites.context import region_pin_context
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.observations.models import FieldObservation
@@ -425,6 +427,12 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
     ``needs_review``, ``tier``. Resorts missing latitude or longitude are
     skipped.
 
+    ``id`` is the resort's **slug**, not its primary key (SNOW-796,
+    ``docs/decisions/no-integer-pks-in-urls.md``): this feed is public and
+    cacheable, so anything it emits is exported. The slug is also what the
+    map hands to ``resort_popup`` and what ``favourites.geojson`` carries as
+    ``resort_slug``, so the two feeds share one key.
+
     SNOW-543: ``tier`` (``CORE`` / ``STANDARD`` / ``MINOR``) is the curated
     map-prominence verdict, and the public map sizes its pins from it. This
     response is shared by the public map and the edit panel and cached for
@@ -461,7 +469,7 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
                     "coordinates": [resort.longitude, resort.latitude],
                 },
                 "properties": {
-                    "id": resort.pk,
+                    "id": resort.slug,
                     "name": resort.name,
                     "region_id": resort.region.region_id,
                     "needs_review": resort.needs_review,
@@ -512,7 +520,7 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
               "type": "Feature",
               "geometry": {"type": "Point", "coordinates": [7.5, 46.1]},
               "properties": {
-                "location_id": 42,
+                "short_id": "Ab3dE_fGh1J",
                 "name": "Mont Fort",
                 "elevation_m": 3328.0,
                 "days": {"2026-08-30": {"code": 71, "tmax": 4.0}, ...}
@@ -528,6 +536,11 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
     no ``resort_id`` and no ``region_id``, because nothing on the map reads
     them — a feature carrying fields no layer touches is payload every
     visitor downloads and no visitor sees.
+
+    ``short_id`` is ``Location.short_id``, never the primary key (SNOW-797,
+    ``docs/decisions/no-integer-pks-in-urls.md``): this feed is
+    unauthenticated and cacheable, so anything it emits is public to every
+    visitor. It is what the map hands to ``weather_detail`` on a tap.
 
     ``elevation_m`` is nullable: it is resolved out of band, so a
     freshly-imported location has none yet and the label falls back to the
@@ -563,7 +576,10 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
 
     """
     observed_on = timezone.localdate()
-    cache_key = f"weather-geojson:v1:{observed_on.isoformat()}"
+    # v2: SNOW-797 renamed ``location_id`` to ``short_id`` in the payload,
+    # and a v1 entry cached across the deploy would hand the map a shape
+    # its tap handler no longer reads.
+    cache_key = f"weather-geojson:v2:{observed_on.isoformat()}"
     payload, generated_at = cast(
         "tuple[dict[str, Any], datetime | None]",
         cache.get_or_set(
@@ -629,7 +645,7 @@ def _build_weather_payload(
                     "coordinates": [location.longitude, location.latitude],
                 },
                 "properties": {
-                    "location_id": location.pk,
+                    "short_id": location.short_id,
                     "name": location.name,
                     "elevation_m": location.elevation_m,
                     "days": build_point_weather_days(row),
@@ -1196,6 +1212,10 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
                     "target_date": target_date,
                     "covered": covered,
                     "provider_name": provider_name,
+                    # SNOW-802: the pin control beside the bulletin link.
+                    # Per-user state, which is fine here — this endpoint
+                    # has never been cached, for the same reason.
+                    **region_pin_context(region, request.user),
                 },
                 request=request,
             ),
@@ -1213,7 +1233,47 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     return response
 
 
-def weather_detail(request: HttpRequest, location_id: int) -> JsonResponse:
+def weather_detail_legacy_redirect(
+    request: HttpRequest, location_id: int
+) -> HttpResponse:
+    """301 the pre-SNOW-797 ``/api/weather/<id>/detail/`` to the short-id form.
+
+    Kept because the integer form is what any cached ``weather.geojson``
+    payload still names for a few minutes after the deploy, and because
+    every changed route keeps a permanent redirect from its integer form
+    (``docs/decisions/no-integer-pks-in-urls.md``). Same estate rule as the
+    endpoint it redirects to — a private pin's pk is a 404 here too — and
+    the ``?date=`` query string rides along.
+
+    Args:
+        request: The incoming HTTP request.
+        location_id: The Location's primary key, from the legacy URL.
+
+    Returns:
+        A 301 to the short-id endpoint, or 404 outside the public estate.
+
+    """
+    location = get_object_or_404(Location.objects.public(), pk=location_id)
+    url = reverse("api:weather_detail", kwargs={"short_id": location.short_id})
+    return _redirect_with_query(request, url)
+
+
+def _redirect_with_query(request: HttpRequest, url: str) -> HttpResponse:
+    """Permanent-redirect to ``url``, carrying the request's query string.
+
+    Args:
+        request: The request whose query string to forward.
+        url: The redirect target path.
+
+    Returns:
+        A 301 response.
+
+    """
+    query = request.META.get("QUERY_STRING", "")
+    return redirect(f"{url}?{query}" if query else url, permanent=True)
+
+
+def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
     """Return pre-rendered sheet HTML for a tapped weather symbol.
 
     Response shape::
@@ -1253,17 +1313,17 @@ def weather_detail(request: HttpRequest, location_id: int) -> JsonResponse:
     ``target_date`` that varies per request.
 
     Errors:
-        404 — unknown ``location_id``, or one outside the public estate.
+        404 — unknown ``short_id``, or one outside the public estate.
 
     Args:
         request: The incoming HTTP request.
-        location_id: The Location's primary key.
+        short_id: The Location's opaque short id (SNOW-797).
 
     Returns:
         A JsonResponse with a single ``html`` key containing the sheet body.
 
     """
-    location = get_object_or_404(Location.objects.public(), pk=location_id)
+    location = get_object_or_404(Location.objects.public(), short_id=short_id)
 
     target_date = timezone.localdate()
     raw_date = request.GET.get("date", "")
@@ -1323,7 +1383,7 @@ def _weather_forecast_url(location: Location) -> str:
         An absolute path.
 
     """
-    return reverse("public:location_weather", kwargs={"location_id": location.pk})
+    return location.get_absolute_url()
 
 
 def _weather_detail_heading(location: Location) -> str:
@@ -1357,7 +1417,7 @@ def _weather_detail_heading(location: Location) -> str:
     return str(_("Weather station"))
 
 
-def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
+def resort_popup(request: HttpRequest, slug: str) -> JsonResponse:
     """Return pre-rendered minimal popup HTML for a resort-pin tap.
 
     Response shape::
@@ -1398,11 +1458,11 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     problem).
 
     Errors:
-        404 — unknown ``resort_id``.
+        404 — unknown ``slug``.
 
     Args:
         request: The incoming HTTP request.
-        resort_id: The Resort's primary key.
+        slug: The Resort's slug — the ``id`` the resorts feed emits.
 
     Returns:
         A JsonResponse with a single ``html`` key containing the popup markup.
@@ -1410,7 +1470,7 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     """
     resort = get_object_or_404(
         Resort.objects.select_related("region"),
-        pk=resort_id,
+        slug=slug,
     )
 
     can_favourite = False
@@ -1800,7 +1860,8 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     from ``sub_regions``.
 
     Each catalogue entry carries the fields the side panel needs to
-    render a row and (on click) a full target readout: ``id``,
+    render a row and (on click) a full target readout: ``id``, ``slug``
+    (the key the panel selects on and builds its save URL from, SNOW-798),
     ``name``, ``region_id``, ``region_name``, ``canton``, ``latitude``,
     ``longitude``, ``has_coords``, ``needs_review``, plus a ``details``
     object holding every hand-curated metadata field
@@ -1826,6 +1887,7 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     all_resorts = [
         {
             "id": row["pk"],
+            "slug": row["slug"],
             "name": row["name"],
             "region_id": row["region__region_id"],
             "region_name": row["region__name"],
@@ -1843,6 +1905,7 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
             # order. ``name`` breaks ties within a region.
             .order_by("region__region_id", "name").values(
                 "pk",
+                "slug",
                 "name",
                 "region__region_id",
                 "region__name",
@@ -2018,6 +2081,7 @@ def _resort_save_payload(resort: Resort) -> dict[str, Any]:
     """
     return {
         "id": resort.pk,
+        "slug": resort.slug,
         "name": resort.name,
         "region_id": resort.region.region_id,
         "region_name": resort.region.name,
@@ -2034,7 +2098,7 @@ def _resort_save_payload(resort: Resort) -> dict[str, Any]:
 
 
 @require_POST
-def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
+def edit_resort_save(request: HttpRequest, slug: str) -> JsonResponse:
     """Persist the placed coordinates and detail fields of a resort (flag-gated).
 
     Request body (JSON)::
@@ -2061,7 +2125,7 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
     catalogue without a follow-up GET.
 
     Errors:
-        404 — request user is not a superuser, or unknown ``resort_id``.
+        404 — request user is not a superuser, or unknown ``slug``.
         400 — invalid JSON; missing or non-float lat/lon; coordinates
               outside the Swiss bounding box; a detail field that fails
               model validation (``{"error": "invalid_details", "fields":
@@ -2080,7 +2144,7 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
 
     resort = get_object_or_404(
         Resort.objects.select_related("region"),
-        pk=resort_id,
+        slug=slug,
     )
 
     details_error, changed_details = _bind_resort_details(
@@ -2397,12 +2461,14 @@ def _location_link_payload(link: ResortLocation) -> dict[str, Any]:
             selected (the queue endpoint prefetches both).
 
     Returns:
-        The link's JSON shape — its own id, so unlink can name it, plus
-        enough of the resort to render a row without a second request.
+        The link's JSON shape — its own ``uuid``, so unlink can name it
+        (SNOW-798), plus enough of the resort to render a row without a
+        second request.
 
     """
     return {
         "id": link.pk,
+        "uuid": str(link.uuid),
         "resort_id": link.resort_id,
         "resort_name": link.resort.name,
         "region_id": link.resort.region.region_id,
@@ -2431,6 +2497,9 @@ def _location_payload(location: Location) -> dict[str, Any]:
     return {
         "id": location.pk,
         "uuid": str(location.uuid),
+        # SNOW-798: what the panel selects on and builds save/link URLs
+        # from — the same identifier the public weather surfaces use.
+        "short_id": location.short_id,
         "name": location.name,
         "kind": location.kind,
         "latitude": location.latitude,
@@ -2784,7 +2853,7 @@ def edit_location_create(request: HttpRequest) -> JsonResponse:
 
 
 @require_POST
-def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
+def edit_location_save(request: HttpRequest, short_id: str) -> JsonResponse:
     """Move, rename or re-classify an existing location.
 
     Request body (JSON)::
@@ -2822,7 +2891,7 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
               missing, non-float or out-of-bbox coordinates.
     """
     _require_edit_map_admin(request)
-    location = get_object_or_404(Location.objects.named(), pk=location_id)
+    location = get_object_or_404(Location.objects.named(), short_id=short_id)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:
@@ -2880,7 +2949,7 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
 
 
 @require_POST
-def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
+def edit_location_link(request: HttpRequest, short_id: str) -> JsonResponse:
     """Attach an existing location to another resort.
 
     Request body (JSON)::
@@ -2913,7 +2982,7 @@ def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
               location (``duplicate_link``).
     """
     _require_edit_map_admin(request)
-    location = get_object_or_404(Location.objects.named(), pk=location_id)
+    location = get_object_or_404(Location.objects.named(), short_id=short_id)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:
@@ -2938,7 +3007,7 @@ def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
 
 
 @require_POST
-def edit_location_unlink(request: HttpRequest, link_id: int) -> JsonResponse:
+def edit_location_unlink(request: HttpRequest, link_uuid: uuid.UUID) -> JsonResponse:
     """Remove one resort's link to a location, keeping the location.
 
     The inverse of :func:`edit_location_link`, and deliberately not a
@@ -2956,7 +3025,7 @@ def edit_location_unlink(request: HttpRequest, link_id: int) -> JsonResponse:
     """
     _require_edit_map_admin(request)
     link = get_object_or_404(
-        ResortLocation.objects.select_related("resort", "location"), pk=link_id
+        ResortLocation.objects.select_related("resort", "location"), uuid=link_uuid
     )
     location = link.location
     logger.info(

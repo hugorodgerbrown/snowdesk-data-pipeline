@@ -23,13 +23,13 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 - ``favourite_card`` (GET) — owner-checked detail card: name/coords,
   altitude, the containing region's current danger rating, and a 7-day
   point forecast panel with a near-term hourly detail (SNOW-415, SNOW-417).
-- ``favourite_detail`` (GET) — SNOW-507: the same card content as
-  ``favourite_card``, promoted to a real, bookmarkable full page
-  (``/favourites/<uuid>/``) rather than an HTMX-only fragment. Shares its
-  context-building with ``favourite_card`` via ``_favourite_card_context``.
-- ``favourite_list`` (GET) — the requesting user's own favourites,
-  rendered for /account/favourites/ (SNOW-415, moved off the account
-  hub by SNOW-668) and, as ``?variant=map``, for the map sheet.
+- ``favourite_detail_redirect`` (GET) — SNOW-800: ``/favourites/<uuid>/``
+  was the SNOW-507 full page; a favourite is a map pin, not a document,
+  so the URL now 301s to the pin's own weather page
+  (``/weather/<short_id>/``), which the owner can always open.
+- ``favourite_list`` (GET) — the requesting user's own favourites, rendered
+  for the map sheet (SNOW-658; the account page that also hosted it went
+  in SNOW-803).
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
@@ -37,7 +37,7 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
 
 All nine are authentication-gated (403 for anonymous users).
 
-``favourite_card``, ``favourite_detail``, and ``favourite_rename``/
+``favourite_card``, ``favourite_detail_redirect``, and ``favourite_rename``/
 ``favourite_delete`` are owner-scoped via ``Favourite.objects.for_user()``
 — another user's uuid returns 404, never 403, so a probing request can't
 distinguish "not yours" from "doesn't exist" (no existence oracle).
@@ -59,12 +59,14 @@ from typing import Any
 from uuid import UUID
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
+from apps import analytics
+from apps.accounts.identity import user_identity
 from apps.bulletins.models import RegionDayRating
 from apps.core.coordinates import validate_coordinates
 from apps.core.decorators import require_htmx
@@ -73,19 +75,21 @@ from apps.core.freshness import (
     apply_freshness_headers,
     freshness_state as compute_freshness_state,
 )
-from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
+from apps.favourites.context import region_pin_context
 from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
 from apps.favourites.services import (
     FavouriteLimitReached,
     ResortNotGeocoded,
     create_favourite,
+    create_region_favourite,
     create_resort_favourite,
     delete_favourite,
+    delete_region_favourite,
 )
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
-from apps.regions.models import Resort
+from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import (
     build_weather_display,
@@ -96,15 +100,6 @@ logger = logging.getLogger(__name__)
 # Must match Favourite.name's max_length. Checked here so an over-length
 # submission is turned into a handled 400 instead of a DB DataError (500).
 _NAME_MAX_LENGTH = 100
-
-# SNOW-658: favourite_list serves two surfaces. The ``variant`` query
-# parameter selects a template out of this fixed map — an unknown (or
-# absent) value falls back to the account page's default, so nothing a
-# caller sends ever reaches a template path.
-_LIST_TEMPLATE_DEFAULT = "favourites/partials/_favourite_list.html"
-_LIST_TEMPLATES = {
-    FAVOURITE_LIST_MAP_VARIANT: "favourites/partials/_favourite_list_map.html",
-}
 
 # SNOW-711: the dummy uuid the rename URL template is reversed with. See
 # _rename_url_template below.
@@ -342,8 +337,8 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
     path as ``favourite_create`` (SNOW-499).
 
     Request body:
-    - ``resort_id`` — the Resort's primary key. 400 if missing/non-integer,
-      404 if no such Resort exists.
+    - ``resort_slug`` — the Resort's slug (SNOW-796; the ``id`` the resorts
+      feed emits). 400 if missing, 404 if no such Resort exists.
 
     Mirrors ``favourite_create``'s error-status contract so the mutation
     queue classifies each outcome the same way: 409 (not 200/429) at the
@@ -353,8 +348,8 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
 
     Errors:
         403 — anonymous request.
-        400 — non-HTMX request; missing/non-integer ``resort_id``.
-        404 — unknown ``resort_id``.
+        400 — non-HTMX request; missing ``resort_slug``.
+        404 — unknown ``resort_slug``.
         409 — the user has reached ``settings.FAVOURITES_MAX_PER_USER``.
         422 — the resort has no latitude/longitude set.
         429 — rate limit exceeded (> 10 creations/min per user).
@@ -375,16 +370,12 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
             status=429,
         )
 
-    raw_resort_id = request.POST.get("resort_id")
-    if not raw_resort_id:
-        return HttpResponse("resort_id is required.", status=400)
-    try:
-        resort_id = int(raw_resort_id)
-    except TypeError, ValueError:
-        return HttpResponse("resort_id must be an integer.", status=400)
+    slug = request.POST.get("resort_slug", "").strip()
+    if not slug:
+        return HttpResponse("resort_slug is required.", status=400)
 
     try:
-        resort = Resort.objects.select_related("region").get(pk=resort_id)
+        resort = Resort.objects.select_related("region").get(slug=slug)
     except Resort.DoesNotExist:
         return HttpResponse("Resort not found.", status=404)
 
@@ -410,7 +401,7 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
 @require_htmx
 @require_POST
 @ratelimit(key="user", rate="10/m", block=False)
-def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpResponse:
+def favourite_resort_toggle(request: HttpRequest, slug: str) -> HttpResponse:
     """Toggle the requesting user's Favourite for a resort; return the button partial.
 
     Entry point is the resort detail page's favourite button
@@ -431,14 +422,14 @@ def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpRespons
     Errors:
         403 — anonymous request.
         400 — non-HTMX request.
-        404 — unknown ``resort_id``.
+        404 — unknown ``slug``.
         409 — creating would exceed ``settings.FAVOURITES_MAX_PER_USER``.
         422 — the resort has no latitude/longitude set (can't be favourited).
         429 — rate limit exceeded (> 10 toggles/min per user).
 
     Args:
         request: The incoming HTMX POST request.
-        resort_id: The Resort's primary key, from the URL.
+        slug: The Resort's slug, from the URL (SNOW-796).
 
     Returns:
         The rendered favourite-button partial in its new state, or an
@@ -455,7 +446,7 @@ def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpRespons
         )
 
     try:
-        resort = Resort.objects.select_related("region").get(pk=resort_id)
+        resort = Resort.objects.select_related("region").get(slug=slug)
     except Resort.DoesNotExist:
         return HttpResponse("Resort not found.", status=404)
 
@@ -565,9 +556,11 @@ def _favourite_card_context(
 ) -> tuple[dict[str, Any], datetime.datetime, int | None]:
     """Build the shared template context for a favourite's detail card.
 
-    Shared by ``favourite_card`` (HTMX fragment) and ``favourite_detail``
-    (SNOW-507 full page) so both endpoints render identical card content
-    from one code path.
+    Built for ``favourite_card`` (the HTMX fragment behind the account row's
+    disclosure and the map sheet). It was shared with the SNOW-507 full page
+    until SNOW-800 removed that page; the elevation-relative problem
+    annotation it builds (``apps.favourites.relevance``) lives on in the
+    card, which was always its other surface.
 
     When ``favourite.region`` is set, resolves today's ``RegionDayRating``
     for it (mirroring ``apps.public.api.region_summary``) so the card can show
@@ -624,7 +617,14 @@ def _favourite_card_context(
         bulletin = _select_bulletin_for_date(favourite.region, today)
         if bulletin is not None:
             cards = problem_cards_for_bulletin(bulletin)
-            problem_cards = annotate_problem_relevance(cards, favourite.elevation)
+            # SNOW-802: a region pin has no elevation, so there is no
+            # altitude to judge a problem against — the cards render
+            # unannotated rather than against a height nobody stated.
+            problem_cards = (
+                annotate_problem_relevance(cards, favourite.elevation)
+                if favourite.elevation is not None
+                else cards
+            )
 
     # SNOW-761: weather for the pin's own Location, read for today on the
     # (location, observed_on) unique constraint. A pre-SNOW-704 row with no
@@ -658,8 +658,8 @@ def _favourite_card_context(
         # live on the location's own forecast page rather than being
         # redrawn inside a card that is already a scrolling surface.
         "forecast_url": (
-            reverse("public:location_weather", args=[favourite.location_id])
-            if favourite.location_id
+            favourite.location.get_absolute_url()
+            if favourite.location is not None
             else ""
         ),
         "cache_payload": cache_payload,
@@ -681,8 +681,8 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     ``X-Data-Unsafe-After`` freshness headers (SNOW-370 / SNOW-418).
     Threads a ``cache_payload`` JSON sidecar + freshness indicator into the
     template context so ``static/js/favourites_offline.js`` can cache this
-    pin for offline reads. Context-building is shared with
-    ``favourite_detail`` (SNOW-507) via ``_favourite_card_context``.
+    pin for offline reads. Context-building is ``_favourite_card_context``,
+    which the SNOW-507 full page also used until SNOW-800 removed it.
 
     Renders the card's title as an ``<h2>`` — see the inline note below;
     the full-page caller ranks the same title differently.
@@ -724,40 +724,42 @@ def favourite_card(request: HttpRequest, uuid: UUID) -> HttpResponse:
     #
     # The map's favourites panel never reaches here: its rows are rendered
     # with ``hide_disclosure``, so no chevron ever asks for a card. The
-    # partial's default is <h2> and favourite_detail passes <h1> for its own
-    # page; this stays explicit because the rank is the caller's to state.
-    # See _favourite_card.html's "WHO OWNS THE TITLE'S RANK".
+    # partial's default is <h2>, and since SNOW-800 removed the full page
+    # (which passed <h1>) this is its only caller — it stays explicit
+    # because the rank is the caller's to state. See _favourite_card.html's
+    # "WHO OWNS THE TITLE'S RANK".
     context["heading_tag"] = "h2"
     response = render(request, "favourites/partials/_favourite_card.html", context)
     return apply_freshness_headers(response, generated_at, unsafe_after=unsafe_after)
 
 
 @require_GET
-def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
-    """Render the favourite's own full, bookmarkable page (SNOW-507).
+def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """301 ``/favourites/<uuid>/`` to the pin's weather page (SNOW-800).
 
-    Promotes ``favourite_card``'s content behind a real page URL
-    (``/favourites/<uuid>/``) rather than only existing as an HTMX
-    fragment swapped into the manage page. Deliberately NOT
-    ``@require_htmx`` — this is a real page a user can navigate to
-    directly or bookmark, not a fragment.
+    The SNOW-507 detail page rendered the forecast plus a rating for a
+    point the weather page already renders — a favourite is a map pin, not
+    a document (``docs/decisions/two-documents-and-a-map.md``). The URL was
+    bookmarkable, so it stays as a permanent redirect to
+    ``favourite.location``'s page, which ``Location.objects.visible_to()``
+    lets the owner open.
 
     Same gating and owner scoping as ``favourite_card``: 403 for an
     anonymous request, and 404 (never 403) for a non-owner or unknown
-    uuid — no existence oracle. Builds its context via the shared
-    ``_favourite_card_context`` helper and applies the same freshness
-    headers.
+    uuid — no existence oracle. A favourite with no ``location`` (a row
+    the SNOW-704 backfill has not reached) has no page to reach, so it is
+    a 404 rather than a redirect to a broken target.
 
-    The response additionally sets ``Cache-Control: private, no-store`` —
-    this is a per-user page and must never land in a shared cache, mirroring
-    ``favourites_geojson``.
+    No ``Cache-Control: private, no-store``: the old page carried it
+    because the whole response was per-user, and a redirect carries only
+    a ``Location`` header. The weather page's own headers are untouched.
 
     Args:
         request: The incoming GET request.
         uuid: The Favourite's uuid, from the URL.
 
     Returns:
-        Rendered ``favourites/favourite_detail.html``, or an error response.
+        A 301 to the weather page, or an error response.
 
     """
     if not request.user.is_authenticated:
@@ -766,21 +768,92 @@ def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
     try:
         favourite = (
             Favourite.objects.for_user(request.user)
-            .select_related("region", "location")
+            .select_related("location")
             .get(uuid=uuid)
         )
     except Favourite.DoesNotExist:
         return HttpResponse("Favourite not found.", status=404)
 
-    context, generated_at, unsafe_after = _favourite_card_context(
-        favourite, timezone.now(), timezone.localdate()
+    if favourite.location is None:
+        return HttpResponse("Favourite not found.", status=404)
+    return redirect(favourite.location.get_absolute_url(), permanent=True)
+
+
+@require_htmx
+@require_POST
+@ratelimit(key="user", rate="10/m", block=False)
+def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpResponse:
+    """Toggle the requesting user's region pin; return the pin control partial.
+
+    The control lives in ``public/_region_tooltip.html`` — the region + date
+    panel and the region popup both render it (SNOW-802) — and is driven by
+    ``static/js/favourites.js`` as a plain, online-only fetch, the shape
+    ``favourite_resort_toggle`` has on the resort page. A region pin has no
+    coordinate, so nothing here touches the map's mutation queue: there is
+    no pin to draw optimistically.
+
+    When the user already holds a region pin for this region it is deleted;
+    otherwise one is created via ``create_region_favourite``. Either way the
+    response is the control rendered in its NEW state, which the JS swaps
+    in with ``outerHTML``.
+
+    Errors:
+        403 — anonymous request.
+        400 — non-HTMX request.
+        404 — unknown ``region_id``.
+        409 — creating would exceed ``settings.FAVOURITES_MAX_PER_USER``.
+        429 — rate limit exceeded (> 10 toggles/min per user).
+
+    Args:
+        request: The incoming HTMX POST request.
+        region_id: The EAWS region identifier, from the URL.
+
+    Returns:
+        The rendered pin-control partial in its new state, or an error.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before toggling this pin.",
+            status=429,
+        )
+
+    region = MicroRegion.objects.filter(region_id__iexact=region_id).first()
+    if region is None:
+        return HttpResponse("Region not found.", status=404)
+
+    if delete_region_favourite(request.user, region):
+        pinned = False
+        analytics.track(
+            "region_removed",
+            user_identity(request.user),
+            {"region_id": region.region_id, "source": "map"},
+        )
+    else:
+        try:
+            create_region_favourite(request.user, region)
+        except FavouriteLimitReached:
+            logger.info(
+                "Region pin toggle blocked: user=%s hit the cap", request.user.pk
+            )
+            return render(
+                request, "favourites/partials/_favourite_limit.html", {}, status=409
+            )
+        pinned = True
+        analytics.track(
+            "region_added",
+            user_identity(request.user),
+            {"region_id": region.region_id, "source": "map"},
+        )
+
+    return render(
+        request,
+        "favourites/partials/_region_pin_button.html",
+        region_pin_context(region, request.user, pinned=pinned),
     )
-    response = render(request, "favourites/favourite_detail.html", context)
-    response = apply_freshness_headers(
-        response, generated_at, unsafe_after=unsafe_after
-    )
-    response["Cache-Control"] = "private, no-store"
-    return response
 
 
 @require_htmx
@@ -788,14 +861,11 @@ def favourite_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
 def favourite_list(request: HttpRequest) -> HttpResponse:
     """Render the requesting user's own favourites list partial.
 
-    Powers two surfaces from one endpoint, chosen by the ``variant`` query
-    parameter: ``/account/favourites/``, which lazy-loads this endpoint via
-    ``hx-get`` on page load (no parameter), and the map sheet's favourites
-    panel (``?variant=map``, SNOW-658), which gets the leaner
-    ``_favourite_list_map.html`` — no row disclosure, no "view on the map"
-    link. Anything other than a known variant falls back to the account
-    page's template; the value picks a template out of a fixed map, it is
-    never interpolated into a template path.
+    Powers the map sheet's favourites panel, which lazy-loads this endpoint
+    over HTMX. One template, ``_favourite_list_map.html``: until SNOW-803 a
+    ``?variant=`` parameter chose between it and the account page's fuller
+    list (row disclosure, "view on the map" link); that page is gone and a
+    parameter is ignored.
 
     Batches today's ``RegionDayRating`` lookup for every favourite's
     region into a single query (never N+1 as the favourite count grows),
@@ -809,14 +879,18 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
         request: The incoming HTMX GET request.
 
     Returns:
-        Rendered ``_favourite_list.html`` (or ``_favourite_list_map.html``
-        for ``?variant=map``), or an error response.
+        Rendered ``_favourite_list_map.html``, or an error response.
 
     """
     if not request.user.is_authenticated:
         return HttpResponse("Authentication required.", status=403)
 
-    favourites = list(Favourite.objects.for_user(request.user).select_related("region"))
+    # ``location`` joined too: each row's chevron links to the pin's weather
+    # page (SNOW-800), and a per-row fetch of the FK would be the N+1 the
+    # batched rating lookup below exists to avoid.
+    favourites = list(
+        Favourite.objects.for_user(request.user).select_related("region", "location")
+    )
 
     today = timezone.localdate()
     region_ids = [f.region_id for f in favourites if f.region_id is not None]
@@ -835,6 +909,10 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
             if favourite.region_id is not None
             else None
         )
+        # SNOW-802: a region pin's row shows the day's rating and a dated
+        # bulletin link — that is all a region has — and reads them off
+        # the favourite rather than issuing a query per row.
+        favourite.day_rating = day_rating  # type: ignore[attr-defined]
         bulletin_url = favourite.region.get_absolute_url() if favourite.region else ""
         generated_at, unsafe_after = _card_freshness(day_rating)
         roster_payload.append(
@@ -854,7 +932,7 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
 
     response = render(
         request,
-        _LIST_TEMPLATES.get(request.GET.get("variant", ""), _LIST_TEMPLATE_DEFAULT),
+        "favourites/partials/_favourite_list_map.html",
         {
             "favourites": favourites,
             "roster_payload": roster_payload,
@@ -871,10 +949,12 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
     (RFC 7946) and properties ``uuid``, ``name``, ``created_at`` and
-    ``resort_id`` (SNOW-499; ``null`` for a plain dropped-pin favourite).
-    ``resort_id`` lets the map client hide a favourited resort from the
+    ``resort_slug`` (SNOW-499; ``null`` for a plain dropped-pin favourite).
+    ``resort_slug`` lets the map client hide a favourited resort from the
     public resorts layer — it should render only as a favourite star, never
-    as a plain dot as well. Not ``@require_htmx`` — consumed by the map's
+    as a plain dot as well. It is the slug, not the pk, because it has to
+    match ``resorts.geojson``'s ``id`` (SNOW-796) and because this feed,
+    though per-user, is still a feed. Not ``@require_htmx`` — consumed by the map's
     saved-pins layer via a JS ``fetch()`` call, not an HTMX swap.
 
     SNOW-658: ``created_at`` is an ISO-8601 timestamp, and it is on the
@@ -897,7 +977,11 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 
-    favourites = list(Favourite.objects.for_user(request.user))
+    # SNOW-802: ``placed()`` — a region pin has no coordinate, so it has no
+    # feature and nothing for the map to draw. It lives in the pins sheet.
+    favourites = list(
+        Favourite.objects.for_user(request.user).placed().select_related("resort")
+    )
 
     features: list[dict[str, Any]] = []
     for favourite in favourites:
@@ -905,7 +989,9 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
             "uuid": str(favourite.uuid),
             "name": favourite.name,
             "created_at": favourite.created_at.isoformat(),
-            "resort_id": favourite.resort_id,
+            "resort_slug": (
+                favourite.resort.slug if favourite.resort is not None else None
+            ),
         }
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(

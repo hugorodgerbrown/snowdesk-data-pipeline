@@ -2,13 +2,15 @@
 tests/regions/models/test_resort.py — Tests for the Resort model.
 
 Covers model creation, ordering, string representation, cascade
-deletion, natural key support on MicroRegion, fixture loading, and the
-SNOW-504 resort-page URL helpers (``name_slug`` / ``get_absolute_url``).
+deletion, natural key support on MicroRegion, fixture loading, the
+SNOW-796 stored ``slug`` (minted once, never regenerated, suffixed on a
+collision) and ``get_absolute_url``.
 """
 
 import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.db import IntegrityError
 
 from apps.regions.models import MicroRegion, Resort
 from tests.factories import MicroRegionFactory, ResortFactory
@@ -33,21 +35,43 @@ class TestResortModel:
         resort = ResortFactory.create(name="Zermatt")
         assert resort.to_string() == f"Zermatt ({resort.region.region_id})"
 
-    def test_name_slug_is_slugified_name(self) -> None:
-        """name_slug is the slugified resort name (SNOW-504)."""
+    def test_slug_is_minted_from_name_on_first_save(self) -> None:
+        """A new row gets slugify(name) without anyone setting it (SNOW-796)."""
         resort = ResortFactory.create(name="Crans-Montana")
-        assert resort.name_slug == "crans-montana"
+        assert resort.slug == "crans-montana"
 
-    def test_name_slug_reflects_current_name(self) -> None:
-        """name_slug is derived live from name, not cached at creation."""
+    def test_slug_is_never_regenerated_on_rename(self) -> None:
+        """A rename leaves the slug alone — it is an indexed URL."""
         resort = ResortFactory.create(name="Old Name")
         resort.name = "New Name"
-        assert resort.name_slug == "new-name"
+        resort.save()
+        resort.refresh_from_db()
+        assert resort.slug == "old-name"
+
+    def test_explicit_slug_is_kept(self) -> None:
+        """A slug supplied at creation wins over the name-derived one."""
+        resort = ResortFactory.create(name="Verbier", slug="verbier-4-vallees")
+        assert resort.slug == "verbier-4-vallees"
+
+    def test_duplicate_name_gets_a_numeric_suffix(self) -> None:
+        """Two resorts called the same thing do not collide on the slug."""
+        first = ResortFactory.create(name="Verbier")
+        second = ResortFactory.create(name="Verbier")
+        third = ResortFactory.create(name="Verbier")
+        assert first.slug == "verbier"
+        assert second.slug == "verbier-2"
+        assert third.slug == "verbier-3"
+
+    def test_slug_is_unique_at_the_database(self) -> None:
+        """The unique constraint is the backstop behind the save() hook."""
+        ResortFactory.create(name="Verbier")
+        with pytest.raises(IntegrityError):
+            ResortFactory.create(name="Other", slug="verbier")
 
     def test_get_absolute_url_returns_resort_page_url(self) -> None:
-        """get_absolute_url() builds /resorts/<id>/<slug>/ (SNOW-504)."""
+        """get_absolute_url() builds /resorts/<slug>/ with no pk in it."""
         resort = ResortFactory.create(name="Verbier")
-        assert resort.get_absolute_url() == f"/resorts/{resort.pk}/verbier/"
+        assert resort.get_absolute_url() == "/resorts/verbier/"
 
     def test_default_ordering_is_by_name(self) -> None:
         """Resorts are ordered alphabetically by name."""

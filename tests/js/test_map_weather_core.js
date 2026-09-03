@@ -31,7 +31,7 @@ function makeFeature(days, { lon = 7.4, lat = 46.1, elevation = 1500, id = 1 } =
   return {
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [lon, lat] },
-    properties: { location_id: id, name: 'Station', elevation_m: elevation, days },
+    properties: { short_id: id, name: 'Station', elevation_m: elevation, days },
   };
 }
 
@@ -202,7 +202,7 @@ describe('projectFeatureForDate', () => {
 
     const projected = core.projectFeatureForDate(feature, '2026-08-30');
 
-    expect(projected.properties.location_id).toBe(42);
+    expect(projected.properties.short_id).toBe(42);
     expect(projected.geometry).toEqual(feature.geometry);
   });
 });
@@ -297,7 +297,7 @@ describe('collapseToLowest', () => {
     const collapsed = core.collapseToLowest(fc, 0.1);
 
     expect(collapsed.features).toHaveLength(1);
-    expect(collapsed.features[0].properties.location_id).toBe('village');
+    expect(collapsed.features[0].properties.short_id).toBe('village');
   });
 
   it('keeps the lowest whichever order the members arrive in', () => {
@@ -309,7 +309,7 @@ describe('collapseToLowest', () => {
         { type: 'FeatureCollection', features },
         0.1,
       );
-      expect(collapsed.features[0].properties.location_id).toBe('low');
+      expect(collapsed.features[0].properties.short_id).toBe('low');
     }
   });
 
@@ -324,7 +324,7 @@ describe('collapseToLowest', () => {
 
     const collapsed = core.collapseToLowest(fc, 0.1);
 
-    expect(collapsed.features.map((f) => f.properties.location_id)).toEqual(['a', 'b']);
+    expect(collapsed.features.map((f) => f.properties.short_id)).toEqual(['a', 'b']);
   });
 
   it('sorts a station with no resolved elevation as infinitely high', () => {
@@ -340,7 +340,7 @@ describe('collapseToLowest', () => {
 
     const collapsed = core.collapseToLowest(fc, 0.1);
 
-    expect(collapsed.features[0].properties.location_id).toBe('known');
+    expect(collapsed.features[0].properties.short_id).toBe('known');
   });
 
   it('returns every feature when the radius is zero or negative', () => {

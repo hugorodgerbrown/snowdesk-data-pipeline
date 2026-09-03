@@ -55,7 +55,7 @@ const RESORTS_GEOJSON = {
     {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [7.5, 46.1] },
-      properties: { id: 42, name: 'Verbier', region_id: 'CH-2101' },
+      properties: { id: 'verbier', name: 'Verbier', region_id: 'CH-2101' },
     },
   ],
 };
@@ -66,7 +66,7 @@ const FAVOURITES_GEOJSON = {
     {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [7.5, 46.1] },
-      properties: { uuid: 'f-1', name: 'Verbier', resort_id: 42 },
+      properties: { uuid: 'f-1', name: 'Verbier', resort_slug: 'verbier' },
     },
   ],
 };

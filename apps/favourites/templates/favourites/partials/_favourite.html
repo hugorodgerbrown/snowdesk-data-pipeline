@@ -72,6 +72,12 @@ anonymised), so a popup is available to one of the three and not the other
 two. One gesture that means the same thing on all three beats a richer one
 on the panel that happens to allow it.
 
+A REGION PIN IS A DIFFERENT ROW (SNOW-802). Its subject is the region, not
+a place: no coordinate to zoom to, no name of the user's own to rename, no
+forecast to expand. So it renders the region's name, the day's rating and a
+dated bulletin link (_region_pin_meta.html), and a trash — honestly nothing
+else, because that is all a region has.
+
 Context:
     favourite       : Favourite — the saved pin to render.
     hide_disclosure : bool, optional — drop the trailing chevron. Passed
@@ -81,29 +87,39 @@ Context:
                       _favourite_list_map.html; the account page passes
                       nothing, having no map to fly.
 {% endcomment %}
-{% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
-    {% firstof "favourite-"|add:uuid as row_dom_id %}
-    {% blocktrans trimmed with when=when asvar row_meta %}Saved {{ when }}{% endblocktrans %}
-    {% if favourite.region %}
-        {% blocktrans trimmed with region=favourite.region.name when=when asvar row_meta %}{{ region }} · saved
-            {{ when }}{% endblocktrans %}
-    {% endif %}
-    {% trans "Unnamed pin" as unnamed_pin %}
-    {% firstof favourite.name unnamed_pin as row_label %}
-    {% trans "Favourite name" as rename_label %}
-    {# The chevron and the panel it fills are one decision, so they are      #}
-    {# gated together. A map row that kept the panel would carry an empty    #}
-    {# expand target nothing on that surface can ever open.                  #}
-    {% if not hide_disclosure %}
-        {% firstof "includes/_row_disclosure.html" as row_disclosure %}
-        {% firstof "favourite-panel-"|add:uuid as row_panel_id %}
-    {% endif %}
-    {% if map_focus %}
-        {% focus_target favourite.longitude favourite.latitude as row_focus_target %}
-        {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
-    {% endif %}
-    {% blocktrans trimmed with name=row_label asvar disclosure_label %}Show details for {{ name }}{% endblocktrans %}
-    {% url 'favourites:detail' favourite.uuid as detail_url %}
-    {% url 'favourites:card' favourite.uuid as card_url %}
-    {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
-{% endwith %}
+{% if favourite.is_region_pin %}
+    {% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
+        {% firstof "favourite-"|add:uuid as row_dom_id %}
+        {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=favourite.region.name label_testid="favourite-list-row-label" meta_template="favourites/partials/_region_pin_meta.html" actions_template="favourites/partials/_favourite_row_actions.html" %}
+    {% endwith %}
+{% else %}
+    {% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
+        {% firstof "favourite-"|add:uuid as row_dom_id %}
+        {% blocktrans trimmed with when=when asvar row_meta %}Saved {{ when }}{% endblocktrans %}
+        {% if favourite.region %}
+            {% blocktrans trimmed with region=favourite.region.name when=when asvar row_meta %}{{ region }} · saved
+                {{ when }}{% endblocktrans %}
+        {% endif %}
+        {% trans "Unnamed pin" as unnamed_pin %}
+        {% firstof favourite.name unnamed_pin as row_label %}
+        {% trans "Favourite name" as rename_label %}
+        {# The chevron and the panel it fills are one decision, so they are      #}
+        {# gated together. A map row that kept the panel would carry an empty    #}
+        {# expand target nothing on that surface can ever open.                  #}
+        {% if not hide_disclosure %}
+            {% firstof "includes/_row_disclosure.html" as row_disclosure %}
+            {% firstof "favourite-panel-"|add:uuid as row_panel_id %}
+        {% endif %}
+        {% if map_focus %}
+            {% focus_target favourite.longitude favourite.latitude as row_focus_target %}
+            {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
+        {% endif %}
+        {% blocktrans trimmed with name=row_label asvar disclosure_label %}Show details for
+            {{ name }}{% endblocktrans %}
+        {# SNOW-800: the pin's page is its location's weather page; a row the #}
+        {# SNOW-704 backfill has not reached has no location and gets no href. #}
+        {% firstof favourite.location.get_absolute_url "" as detail_url %}
+        {% url 'favourites:card' favourite.uuid as card_url %}
+        {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
+    {% endwith %}
+{% endif %}

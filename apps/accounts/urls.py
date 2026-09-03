@@ -7,21 +7,17 @@ All URLs are mounted under the ``/account/`` prefix by the root URLconf
 
 URL map
 -------
-/account/                             hub                    GET  — account hub (authed)
+/account/                             hub                    301 → /?panel=favourites
 /account/settings/                    settings               GET  — settings (authed)
-/account/favourites/                  favourites             GET  — own pins (authed)
-/account/observations/                observations           GET  — own reports (authed)
-/account/routes/                      routes                 GET  — own routes (authed)
-/account/subscribe/                   subscribe              POST-only HTMX form
-/account/add/<region_id>/             add_region             POST HTMX (authed)
-/account/remove-region/<region_id>/   remove_region_from_bulletin  POST HTMX (authed)
+/account/favourites/                  favourites             301 → /?panel=favourites
+/account/observations/                observations           301 → /?panel=reports
+/account/routes/                      routes                 301 → /?panel=routes
 /account/register/                    register               GET/POST — registration
 /account/verify/<token>/              verify                 GET/POST — verify email
 /account/setup/                       setup                  GET — credential setup
 /account/sign-in/                     sign_in                GET/POST — sign-in page
 /account/access/<token>/              account                GET/POST — access token
-/account/manage/                      manage                 GET  — 301 to /account/
-/account/manage/remove/<region_id>/   remove_region          POST HTMX
+/account/manage/                      manage                 301 → /?panel=favourites
 /account/manage/delete/               delete_account         POST HTMX
 /account/manage/passkeys/<uuid>/delete/ passkey_delete       POST HTMX
 /account/sign-out/                    sign_out               POST
@@ -36,44 +32,42 @@ URL map
 from django.urls import path
 from django.views.generic import RedirectView
 
-from apps.observations import views as observation_views
-from apps.routes import views as route_views
-
 from . import push_views, views, views_passkey
 
 app_name = "accounts"
 
 urlpatterns = [
-    # SNOW-667: the hub owns "" (GET). ``subscribe_partial`` used to sit
-    # here, which made a GET of /account/ answer 405 — Django dispatches on
-    # path, not method, so the two cannot share a route. The URL *name* is
-    # unchanged, and every caller reverses by name, so moving the path is
-    # transparent to templates.
-    path("", views.hub_view, name="hub"),
+    # SNOW-802: the hub — the Subscriptions page — is gone. A subscription
+    # was a bookmark on a region, and bookmarks are pins on the map, so the
+    # account root 301s to the map with the pins sheet open (``?panel=`` is
+    # consumed by static/js/map.js). The name is kept: older emails and
+    # bookmarks reverse it, and a redirect is the sensible place to land.
+    path(
+        "",
+        RedirectView.as_view(url="/?panel=favourites", permanent=True),
+        name="hub",
+    ),
     path("settings/", views.settings_view, name="settings"),
-    # SNOW-668: favourites were a lazy-loaded section on the hub (SNOW-415)
-    # until this route existed. The view lives in this app, not in
-    # apps.favourites, because it is a page of the account area that happens
-    # to host that app's list partial — the boundary is the URL name the
-    # template reverses, and nothing is imported across it.
-    path("favourites/", views.favourites_view, name="favourites"),
-    # SNOW-677 / SNOW-713: these two account pages are mounted here because
-    # this app owns the ``/account/`` prefix, while each view lives in the app
-    # that owns its model. Splitting one URL prefix across two urls.py files
-    # would be the worse trade — the imports are explicit and one-way
-    # (accounts reads observations and routes, never the reverse).
+    # SNOW-803: the three account list pages were second renderings of
+    # sheets the map already has (docs/decisions/two-documents-and-a-map.md).
+    # Each URL stays as a permanent redirect to the map with the matching
+    # sheet open — ``?panel=`` is consumed by static/js/map.js — so a
+    # bookmark still lands somewhere. Same shape as the ``manage/``
+    # redirect below; the names are kept so an old reverse still resolves.
+    path(
+        "favourites/",
+        RedirectView.as_view(url="/?panel=favourites", permanent=True),
+        name="favourites",
+    ),
     path(
         "observations/",
-        observation_views.my_observations,
+        RedirectView.as_view(url="/?panel=reports", permanent=True),
         name="observations",
     ),
-    path("routes/", route_views.my_routes, name="routes"),
-    path("subscribe/", views.subscribe_partial, name="subscribe"),
-    path("add/<region_id:region_id>/", views.add_region, name="add_region"),
     path(
-        "remove-region/<region_id:region_id>/",
-        views.remove_region_from_bulletin,
-        name="remove_region_from_bulletin",
+        "routes/",
+        RedirectView.as_view(url="/?panel=routes", permanent=True),
+        name="routes",
     ),
     path("register/", views.register_view, name="register"),
     path("verify/<str:token>/", views.verify_view, name="verify"),
@@ -103,13 +97,8 @@ urlpatterns = [
     # /subscribe/ -> /account/ precedent in config/urls.py (SNOW-430).
     path(
         "manage/",
-        RedirectView.as_view(pattern_name="accounts:hub", permanent=True),
+        RedirectView.as_view(url="/?panel=favourites", permanent=True),
         name="manage",
-    ),
-    path(
-        "manage/remove/<region_id:region_id>/",
-        views.remove_region,
-        name="remove_region",
     ),
     path("manage/delete/", views.delete_account, name="delete_account"),
     path("sign-out/", views.sign_out, name="sign_out"),

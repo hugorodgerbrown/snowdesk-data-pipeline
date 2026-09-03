@@ -132,10 +132,11 @@
   // renders the literal placeholder through {% url 'api:region_summary'
   // region_id='XX-0000' %} so the JS never has to reconstruct URL structure.
   const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl || '';
-  // SNOW-499: The resort-pin popup URL template — the literal '0' resort_id
-  // is string-replaced with the tapped resort's real id before each fetch.
-  // Rendered via {% url 'api:resort_popup' resort_id=0 %}; public endpoint,
-  // always present regardless of favourites eligibility.
+  // SNOW-499: The resort-pin popup URL template — the literal '__SLUG__'
+  // is string-replaced with the tapped resort's slug before each fetch.
+  // Rendered via {% url 'api:resort_popup' slug='__SLUG__' %}; public
+  // endpoint, always present regardless of favourites eligibility. The
+  // slug is the feed's ``id`` (SNOW-796) — no integer key anywhere here.
   const RESORT_POPUP_URL_TEMPLATE = mapEl.dataset.resortPopupUrl || '';
 
   // SNOW-660: ``bootDateKey`` — min(today, seasonEnd), SNOW-236's cold-open
@@ -1651,13 +1652,16 @@
 
   // SNOW-499: recompute favouritedResortIds from a favourites
   // FeatureCollection and reapply the exclusion filter. Called whenever
-  // favouritesGeojsonCache is set to a new authoritative payload.
+  // favouritesGeojsonCache is set to a new authoritative payload. The key
+  // is the resort SLUG (SNOW-796): favourites.geojson carries it as
+  // ``resort_slug`` and resorts.geojson as ``id``, so the exclusion filter
+  // compares like with like.
   const syncFavouritedResortIds = (geojson) => {
     favouritedResortIds = [];
     if (geojson && Array.isArray(geojson.features)) {
       for (const feature of geojson.features) {
-        const resortId = feature.properties && feature.properties.resort_id;
-        if (resortId != null) favouritedResortIds.push(resortId);
+        const resortSlug = feature.properties && feature.properties.resort_slug;
+        if (resortSlug != null) favouritedResortIds.push(resortSlug);
       }
     }
     applyResortsFavouritedFilter();
@@ -4626,6 +4630,75 @@
     isEnabled: () => !!overlayState.routes,
   });
 
+  // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====
+  //
+  // The three account list pages became permanent redirects to the map
+  // with the matching sheet open (docs/decisions/two-documents-and-a-map.md).
+  // Only item-specific deep links existed before — ``?favourite=<uuid>``
+  // and ``?route_share=<token>``; this is the sheet-level one. Consumed
+  // the way ``consumeFavouriteDeepLink`` is, read once and stripped from
+  // the address bar, so a refetch or a shared URL does not reopen a sheet
+  // nobody asked for.
+  //
+  // Each sheet module exposes ``open()`` on a frozen ``window.pwa*Sheet``
+  // bridge — its roundel's own open path, which goes through
+  // MapSheet.attach's registration with window.pwaMapOverlays. So an open
+  // from here closes whatever else is up, exactly as a tap would; a path
+  // that skipped the registry would be two overlays open at once.
+  //
+  // The bridges are assigned by other deferred scripts. In home.html the
+  // surfaces' tags precede map.js, so they exist by now; a page that
+  // orders them the other way is covered by the DOMContentLoaded fallback,
+  // by which point every deferred script has run.
+  const PANEL_SHEET_BRIDGES = {
+    favourites: () => window.pwaFavouritesSheet,
+    routes: () => window.pwaRoutesSheet,
+    reports: () => window.pwaReportSheet,
+  };
+
+  /**
+   * Read ``?panel=`` and strip it from the address bar in one step.
+   *
+   * @returns {?string} The requested sheet name, or null when there is none.
+   */
+  const consumePanelDeepLink = () => {
+    const params = new URLSearchParams(location.search);
+    const name = params.get('panel');
+    if (!name) return null;
+    params.delete('panel');
+    const query = params.toString();
+    history.replaceState(
+      null,
+      '',
+      location.pathname + (query ? `?${query}` : '') + location.hash,
+    );
+    return name;
+  };
+
+  /**
+   * Honour a ``/?panel=favourites|routes|reports`` arrival.
+   *
+   * Silent for a name no sheet answers to: the parameter is consumed
+   * either way, and the map opens as it otherwise would.
+   *
+   * @returns {void}
+   */
+  const openPanelDeepLink = () => {
+    const name = consumePanelDeepLink();
+    // Own-property check, not a bare index: the name is whatever the URL
+    // says, and ``PANEL_SHEET_BRIDGES['constructor']`` is a function too.
+    if (!name || !Object.hasOwn(PANEL_SHEET_BRIDGES, name)) return;
+    const bridge = PANEL_SHEET_BRIDGES[name]();
+    if (!bridge) return;
+    bridge.open();
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', openPanelDeepLink, { once: true });
+  } else {
+    openPanelDeepLink();
+  }
+
   // ==== The camera, for a panel row that names a place ====
   //
   // Hugo: "For routes, resorts, and observations, clicking on the name of an
@@ -5428,7 +5501,7 @@
       if (resortId == null || !RESORT_POPUP_URL_TEMPLATE) return false;
 
       const url = RESORT_POPUP_URL_TEMPLATE.replace(
-        '/resorts/0/popup/', `/resorts/${encodeURIComponent(resortId)}/popup/`,
+        '__SLUG__', encodeURIComponent(String(resortId)),
       );
       try {
         const resp = await fetch(url, { headers: { Accept: 'application/json' } });
@@ -5908,6 +5981,78 @@
     };
 
     openFavouriteDeepLink();
+
+    /**
+     * Read ``?resort=`` and strip it from the address bar in one step.
+     *
+     * SNOW-807: the resort page's "reports near here" link is
+     * ``/?panel=reports&resort=<slug>`` — the sheet-level ``?panel=`` opens
+     * the reports sheet (SNOW-803), and this flies the camera to the resort.
+     * Consumed for the same reasons ``consumeFavouriteDeepLink`` gives.
+     *
+     * @returns {?string} The requested resort slug, or null when none.
+     */
+    const consumeResortDeepLink = () => {
+      const params = new URLSearchParams(location.search);
+      const slug = params.get('resort');
+      if (!slug) return null;
+      params.delete('resort');
+      const query = params.toString();
+      history.replaceState(
+        null,
+        '',
+        location.pathname + (query ? `?${query}` : '') + location.hash,
+      );
+      return slug;
+    };
+
+    /**
+     * Honour a ``/?resort=<slug>`` arrival: fly to that resort's pin.
+     *
+     * The resort is resolved by identity in the already-loaded ``resorts``
+     * source — its feature ``id`` IS the slug since SNOW-796 — the same
+     * shape as the favourite deep link above, so no new camera mechanism
+     * and no raw lat/lon in the URL. A slug matching nothing (a renamed
+     * or deleted resort) is silent: the map opens as it otherwise would.
+     *
+     * @returns {void}
+     */
+    const openResortDeepLink = () => {
+      const slug = consumeResortDeepLink();
+      if (!slug) return;
+
+      // Someone who followed a link to one resort means to see its pin, so
+      // an overlay left switched off is switched back on through the
+      // panel's own path — the same reasoning as the favourite deep link.
+      if (!overlayState.resorts) showPanelOverlay('resorts');
+
+      const flyToResort = () => {
+        const features = resortsGeojsonCache && resortsGeojsonCache.features;
+        if (!Array.isArray(features)) return false;
+        const feature = features.find(
+          (f) => f && f.properties && f.properties.id === slug,
+        );
+        if (!feature) return false;
+        map.flyTo({
+          center: feature.geometry.coordinates,
+          zoom: FAVOURITE_DEEP_LINK_ZOOM,
+        });
+        return true;
+      };
+
+      if (flyToResort()) return;
+
+      // Otherwise wait for the resorts source to install, exactly once —
+      // ``sourcedata`` is what the source emits whichever path loaded it.
+      const onResortsSourceData = (e) => {
+        if (e.sourceId !== 'resorts' || !map.isSourceLoaded('resorts')) return;
+        map.off('sourcedata', onResortsSourceData);
+        flyToResort();
+      };
+      map.on('sourcedata', onResortsSourceData);
+    };
+
+    openResortDeepLink();
 
     /**
      * Read ``?route_share=`` and strip it from the address bar in one step.
@@ -6537,16 +6682,17 @@
       // is the label's own extent, which is what the user aimed at.
       //
       // `collapseToLowest` means the feature under the cursor may stand for
-      // several stations. Its `location_id` is the one that survived the
+      // several stations. Its `short_id` is the one that survived the
       // collapse — the lowest — which is the reading the symbol is drawing,
-      // so the sheet answers for the same place the map showed.
+      // so the sheet answers for the same place the map showed. The feed
+      // carries the opaque short id, never the pk (SNOW-797).
       if (map.getLayer('weather-point')) {
         const weatherHit = map.queryRenderedFeatures(e.point, {
           layers: ['weather-point'],
         })[0];
         if (weatherHit) {
           window.pwaWeatherDetail?.open(
-            weatherHit.properties.location_id, currentDisplayedDate,
+            weatherHit.properties.short_id, currentDisplayedDate,
           );
           return;
         }

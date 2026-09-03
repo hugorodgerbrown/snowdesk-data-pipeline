@@ -272,12 +272,12 @@
       }
 
       const li = document.createElement('li');
-      const isCurrent = currentTarget && currentTarget.id === entry.id;
+      const isCurrent = currentTarget && currentTarget.slug === entry.slug;
       li.className = [
         'flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1',
         isCurrent ? 'bg-status-info-bg font-semibold text-status-info-text' : 'hover:bg-tag',
       ].join(' ');
-      li.dataset.resortId = String(entry.id);
+      li.dataset.resortSlug = entry.slug;
 
       const left = document.createElement('span');
       left.className = 'flex items-baseline gap-2 truncate';
@@ -638,11 +638,14 @@
     renderTarget();
   };
 
-  const selectTargetById = (id) => {
+  // SNOW-798: the catalogue is keyed on the SLUG — the same ``id`` the
+  // public resorts.geojson feed carries since SNOW-796 — so a click on a
+  // pin and a click on a list row select on one key with no coercion.
+  const selectTargetBySlug = (slug) => {
     // The catalogue carries every resort with full display fields
     // (region_name, canton, latitude, longitude) so a single lookup
     // suffices — see public/api.py::edit_resorts_queue.
-    const entry = allResorts.find((e) => e.id === id);
+    const entry = allResorts.find((e) => e.slug === slug);
     if (entry) selectTarget(entry);
   };
 
@@ -748,6 +751,7 @@
   // so this is a pick rather than a translation.
   const catalogueEntryFrom = (data) => ({
     id:           data.id,
+    slug:         data.slug,
     name:         data.name,
     region_id:    data.region_id,
     region_name:  data.region_name,
@@ -824,7 +828,7 @@
     }
     if (!currentTarget || !draftMarker || saveInFlight) return;
     const ll = draftMarker.getLngLat();
-    const url = SAVE_URL_TEMPLATE.replace('__ID__', String(currentTarget.id));
+    const url = SAVE_URL_TEMPLATE.replace('__SLUG__', encodeURIComponent(currentTarget.slug));
     setSaving(true);
     clearError();
     clearStatus();
@@ -856,7 +860,7 @@
       // resort renders the post-save state (new region_id from
       // auto-rebind, new lat/lon, has_coords true) without a page
       // reload. Catalogue order is by name, so no re-sort is needed.
-      const catIdx = allResorts.findIndex((r) => r.id === data.id);
+      const catIdx = allResorts.findIndex((r) => r.slug === data.slug);
       if (catIdx !== -1) {
         allResorts[catIdx] = {
           ...allResorts[catIdx],
@@ -877,7 +881,7 @@
       // that SNOW-74 had is gone — the operator picks the next row
       // themselves.
       removeDraftMarker();
-      if (currentTarget && currentTarget.id === data.id) {
+      if (currentTarget && currentTarget.slug === data.slug) {
         currentTarget = catIdx !== -1 ? allResorts[catIdx] : currentTarget;
         writeDetailsForm(data.details);
       }
@@ -950,8 +954,9 @@
         });
         MAP.on('click', LAYER_ID, (e) => {
           if (!e.features || e.features.length === 0) return;
-          const id = e.features[0].properties.id;
-          if (id != null) selectTargetById(Number(id));
+          // ``properties.id`` IS the slug (SNOW-796) — no Number() here.
+          const slug = e.features[0].properties.id;
+          if (slug != null) selectTargetBySlug(String(slug));
         });
         MAP.on('mouseenter', LAYER_ID, () => {
           MAP.getCanvas().style.cursor = 'pointer';

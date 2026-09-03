@@ -40,6 +40,35 @@ class TestLocationModel:
         assert location.name
         assert location.kind == Location.KIND.PEAK
 
+    def test_short_id_is_minted_by_default(self) -> None:
+        """Every creation path gets an eleven-character opaque id (SNOW-797).
+
+        The default lives on the field, following ``BaseModel.uuid``, so
+        a bare ``Location.objects.create()`` cannot produce a row without
+        one — that is the guarantee the field default exists to give.
+        """
+        location = Location.objects.create(latitude=46.1, longitude=7.4)
+        assert location.short_id is not None
+        assert len(location.short_id) == 11
+        assert location.short_id != str(location.pk)
+
+    def test_short_ids_are_distinct_per_row(self) -> None:
+        """Two rows never share a short id."""
+        ids = {LocationFactory.create().short_id for _ in range(5)}
+        assert len(ids) == 5
+
+    def test_short_id_is_unique_at_the_database(self) -> None:
+        """The unique constraint is the backstop behind the default."""
+        location = LocationFactory.create()
+        with pytest.raises(IntegrityError):
+            LocationFactory.create(short_id=location.short_id)
+
+    def test_get_absolute_url_is_the_weather_page_keyed_on_short_id(self) -> None:
+        """The weather page is the location's document — no pk in its URL."""
+        location = LocationFactory.create()
+        assert location.get_absolute_url() == f"/weather/{location.short_id}/"
+        assert str(location.pk) not in location.get_absolute_url()
+
     def test_unresolved_by_default(self) -> None:
         """A fresh location has no elevation.
 

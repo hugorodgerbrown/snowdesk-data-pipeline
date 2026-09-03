@@ -3,7 +3,11 @@ apps/favourites/models.py — Database models for the favourites application.
 
 Defines ``Favourite``: a saved map pin created by an authenticated user.
 Each row records the user's chosen location (latitude, longitude, optional
-name) and a best-effort ``MicroRegion`` resolution.
+name) and a best-effort ``MicroRegion`` resolution — or, since SNOW-802, a
+**region pin**: a row whose subject is the ``MicroRegion`` itself, with no
+coordinate, no elevation and no ``Location``. Region pins are what the
+retired ``Subscription`` rows became; ``Favourite`` is the one saved-place
+model (``docs/decisions/two-documents-and-a-map.md``).
 
 Business logic (forecast-point resolution, region resolution, per-user
 favourite caps) lives in ``apps/favourites/services.py``.
@@ -20,8 +24,6 @@ from apps.core.models import BaseModel
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
-
-    from apps.regions.models import MicroRegion
 
 
 # ---------------------------------------------------------------------------
@@ -44,20 +46,31 @@ class FavouriteQuerySet(models.QuerySet["Favourite"]):
         """
         return self.filter(user=user)
 
-    def for_user_region(
-        self, user: "User", region: "MicroRegion"
-    ) -> "FavouriteQuerySet":
-        """Return the user's favourites resolved to a given region.
+    def placed(self) -> "FavouriteQuerySet":
+        """Return the favourites that have a coordinate — everything but a region pin.
 
-        Args:
-            user: The user to filter by.
-            region: The MicroRegion to filter by.
+        What the map can draw. ``favourites_geojson`` is built from this:
+        a region pin has no point and no feature.
 
         Returns:
             Filtered queryset.
 
         """
-        return self.filter(user=user, region=region)
+        return self.filter(latitude__isnull=False)
+
+    def region_pins(self) -> "FavouriteQuerySet":
+        """Return the region pins — rows whose subject is the region itself.
+
+        The same predicate as ``Favourite.is_region_pin`` and the partial
+        unique constraint, written once here so the three cannot drift.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.filter(
+            location__isnull=True, latitude__isnull=True, region__isnull=False
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +108,15 @@ class Favourite(BaseModel):
     snapshotted name/coordinates/region survive) if the resort row is ever
     deleted; the partial-unique constraint below stops a user favouriting
     the same resort twice.
+
+    A **region pin** (SNOW-802) is the row where ``region`` is the subject
+    rather than a resolution: ``location``, ``latitude``, ``longitude``
+    and ``elevation`` are all null, and ``region`` is set. It has nothing
+    the map can draw and nothing a forecast can be read for — it is a
+    bookmark on a bulletin — so it appears in the pins sheet and nowhere
+    else. ``is_region_pin`` is the predicate; a second partial-unique
+    constraint keeps one per ``(user, region)``. These rows are what the
+    ``Subscription`` table's rows became.
     """
 
     user = models.ForeignKey(
@@ -121,21 +143,30 @@ class Favourite(BaseModel):
         ),
     )
     latitude = models.FloatField(
+        null=True,
+        blank=True,
         help_text=(
             "WGS-84 latitude of the saved pin. Superseded by "
-            "location.latitude (SNOW-704); dropped once nothing reads it."
+            "location.latitude (SNOW-704); dropped once nothing reads it. "
+            "Null on a region pin (SNOW-802), which has no coordinate."
         ),
     )
     longitude = models.FloatField(
+        null=True,
+        blank=True,
         help_text=(
             "WGS-84 longitude of the saved pin. Superseded by "
-            "location.longitude (SNOW-704); dropped once nothing reads it."
+            "location.longitude (SNOW-704); dropped once nothing reads it. "
+            "Null on a region pin (SNOW-802), which has no coordinate."
         ),
     )
     elevation = models.FloatField(
+        null=True,
+        blank=True,
         help_text=(
             "Elevation in metres. Superseded by location.elevation_m "
-            "(SNOW-704); dropped once nothing reads it."
+            "(SNOW-704); dropped once nothing reads it. Null on a region "
+            "pin (SNOW-802), which has no elevation."
         ),
     )
     region = models.ForeignKey(
@@ -187,14 +218,48 @@ class Favourite(BaseModel):
                 condition=models.Q(resort__isnull=False),
                 name="favourite_unique_user_resort",
             ),
+            # SNOW-802: one region pin per (user, region). Partial on the
+            # region-pin predicate — the same one ``is_region_pin`` and
+            # ``FavouriteQuerySet.region_pins`` use — so placed pins that
+            # merely RESOLVED to a region never collide with one another,
+            # and a placed pin never collides with a region pin.
+            models.UniqueConstraint(
+                fields=["user", "region"],
+                condition=models.Q(
+                    location__isnull=True,
+                    latitude__isnull=True,
+                    region__isnull=False,
+                ),
+                name="favourite_unique_user_region_pin",
+            ),
         ]
+
+    @property
+    def is_region_pin(self) -> bool:
+        """Whether this row pins a region rather than a place (SNOW-802).
+
+        No location, no coordinate, a region: the row's subject IS the
+        region. Everything a placed pin renders — a point on the map, a
+        forecast, an altitude-relative problem verdict — is absent here.
+        """
+        return (
+            self.location_id is None
+            and self.latitude is None
+            and self.region_id is not None
+        )
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this favourite.
 
-        Format: ``"{user} @ {name or lat,lon}"``
+        Format: ``"{user} @ {name or lat,lon}"``; a region pin reads
+        ``"{user} @ {region name}"``.
         """
-        label = self.name or f"{self.latitude:.5f},{self.longitude:.5f}"
+        if self.is_region_pin:
+            label = self.name or (self.region.name if self.region else "region")
+        elif self.latitude is None or self.longitude is None:
+            label = self.name or "unplaced pin"
+        else:
+            label = self.name or f"{self.latitude:.5f},{self.longitude:.5f}"
         return f"{self.user} @ {label}"
 
     def __str__(self) -> str:

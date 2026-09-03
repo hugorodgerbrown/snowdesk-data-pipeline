@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-08-25
+last-reviewed: 2026-09-03
 ---
 
 # Map page — functional specification
@@ -260,9 +260,9 @@ users so they can be used independently:
   surface attributes a report to anyone) while making the map read up to a
   quarter hour older than the reporter's own panel for the same report.
 
-(A third surface, the `/observations/` page — a signed-in 48-hour stream
-of reports — always shows the viewer's own reports plus other users'
-reports.)
+(There is no third surface: `/observations/`, a signed-in 48-hour stream
+of reports, was a filtered view of this layer and became a redirect to the
+map with the reports sheet open — SNOW-804.)
 
 > **Weather overlay — removed by SNOW-762.** Section 3.4 described a
 > weather condition symbol plus the day's max temperature at each

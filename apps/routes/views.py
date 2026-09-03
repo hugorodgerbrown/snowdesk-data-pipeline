@@ -89,7 +89,7 @@ from django.http import (
     HttpResponseRedirect,
     JsonResponse,
 )
-from django.shortcuts import redirect, render
+from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import cache_control
@@ -99,7 +99,6 @@ from django_ratelimit.decorators import ratelimit
 from apps.core.decorators import require_htmx
 from apps.core.freshness import apply_freshness_headers
 from apps.core.http import client_ip, is_top_level_navigation
-from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route, RouteShare
 from apps.routes.services.gpx import GPXParseError
 from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
@@ -142,15 +141,6 @@ def _rename_url_template() -> str:
         str(_DUMMY_UUID), "__UUID__"
     )
 
-
-# SNOW-686: route_list serves two row shapes. The ``variant`` query
-# parameter selects a template out of this fixed map — an unknown (or
-# absent) value falls back to the default, so nothing a caller sends ever
-# reaches a template path. Mirrors ``apps.favourites.views``'s own pair.
-_LIST_TEMPLATE_DEFAULT = "routes/partials/_route_list.html"
-_LIST_TEMPLATES = {
-    ROUTE_LIST_MAP_VARIANT: "routes/partials/_route_list_map.html",
-}
 
 # Must match Route.name's max_length. Checked here so an over-length
 # submission is turned into a handled 400 instead of a DB DataError (500).
@@ -442,13 +432,10 @@ def route_list(request: HttpRequest) -> HttpResponse:
     an open/close cycle — so a row deleted or renamed in one session can
     never survive into the next.
 
-    The ``variant`` query parameter picks the row shape out of a fixed map:
-    ``?variant=map`` gets ``_route_list_map.html`` (the lean
-    ``includes/_ugc_panel_row.html`` row the panel wants), anything else —
-    including no parameter at all — falls back to ``_route_list.html`` and
-    the always-visible rename field ``_route.html`` carries. The value
-    selects a template out of a dict; it is never interpolated into a
-    template path.
+    One template, ``_route_list_map.html``. Until SNOW-803 a ``?variant=``
+    parameter chose between it and an account-page sibling; that page is
+    gone, the map sheet is this endpoint's only surface, and a parameter
+    is ignored.
 
     No freshness headers and no offline-cache sidecar, both of which
     ``favourite_list`` carries. A route has no safety-critical constituent
@@ -480,8 +467,7 @@ def route_list(request: HttpRequest) -> HttpResponse:
         request: The incoming HTMX GET request.
 
     Returns:
-        Rendered ``_route_list.html`` (or ``_route_list_map.html`` for
-        ``?variant=map``), or an error response.
+        Rendered ``_route_list_map.html``, or an error response.
 
     """
     pending = _pending_shares_for(request)
@@ -495,24 +481,17 @@ def route_list(request: HttpRequest) -> HttpResponse:
         else []
     )
 
-    variant = request.GET.get("variant", "")
-
     return render(
         request,
-        _LIST_TEMPLATES.get(variant, _LIST_TEMPLATE_DEFAULT),
+        "routes/partials/_route_list_map.html",
         {
             "routes": routes,
             "pending_shares": pending,
-            # SNOW-764: whether an owned row draws its Share control. One
-            # condition, and it is not about permission — it is about which
-            # SURFACE asked. Share is wired by static/js/routes.js, which
-            # owns the map panel; /account/routes/ renders the same row
-            # through the default variant and has no handler for it, and a
-            # control nothing listens to is worse than no control at all
-            # (it is the "dead pencil" argument account_routes.js's own
-            # header makes). The account page gains Share when its module
-            # does — noted as a follow-up on SNOW-764.
-            "sharing_enabled": variant == ROUTE_LIST_MAP_VARIANT,
+            # SNOW-764: whether an owned row draws its Share control. It was
+            # a per-surface condition while /account/routes/ rendered the
+            # same row with no handler for it; the map panel is the only
+            # surface since SNOW-803, and static/js/routes.js wires Share.
+            "sharing_enabled": True,
         },
     )
 
@@ -840,13 +819,10 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
 
     drop_pending_token(request.session, token)
 
-    # ``sharing_enabled`` True because of WHERE this row lands, not because
-    # of who claimed it: the only surface that posts here is the map panel
-    # (static/js/routes.js), and the row swapped in is an ordinary owned row
-    # on the one surface whose Share control is wired. It is the same
-    # condition ``route_list`` spells as ``variant == ROUTE_LIST_MAP_VARIANT``
-    # — hardcoded rather than read off the request because this endpoint has
-    # no variant to read, having only ever one caller.
+    # ``sharing_enabled`` True because of WHERE this row lands: the only
+    # surface that posts here is the map panel (static/js/routes.js), and
+    # the row swapped in is an ordinary owned row on the surface whose Share
+    # control is wired — the same value ``route_list`` passes.
     return render(
         request,
         "routes/partials/_route.html",
@@ -857,70 +833,3 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 # Full-page views
 # ---------------------------------------------------------------------------
-
-
-@require_GET
-def my_routes(request: HttpRequest) -> HttpResponse:
-    """Render the signed-in user's own saved routes as a full page (SNOW-713).
-
-    The account area's routes surface, mounted at ``/account/routes/``. Until
-    this existed a user could upload a GPX and then reach it only from the
-    map: SNOW-686 gave routes a roundel and a panel over the map canvas, and
-    nothing listed what was saved.
-
-    The routes twin of ``apps.observations.views.my_observations``, and
-    deliberately the same shape — a full-page host for
-    ``routes/partials/_route_list.html``, whose rows have been the shared UGC
-    row since SNOW-711. No second listing is authored here.
-
-    Deliberately NOT ``@require_htmx``, unlike every other GET in this
-    module: this is a page a user navigates to, and applying that decorator
-    by habit would make it unreachable by the only means anyone reaches it.
-
-    Gating follows the account area rather than the fragment endpoints
-    above. An anonymous visitor is redirected to sign-in, as ``accounts:hub``
-    and ``accounts:settings`` do, not answered 403 — a page can render the
-    way in; a fragment cannot.
-
-    Authentication is the only gate. Until SNOW-724 the page also sat
-    behind the superusers-only ``routes`` waffle flag and answered 404 for
-    everyone else; the feature reached general availability, so the flag
-    and its 404 branch are both gone.
-
-    Ownership is enforced by the query (``for_user``), so nothing here
-    depends on an id supplied by the client.
-
-    The response carries ``Cache-Control: private, no-store`` — per-user
-    content that must never land in a shared cache, mirroring
-    ``routes_geojson`` below. That also keeps it out of the PWA shell cache:
-    caching routes for offline reads belongs with the map layer, as
-    ``_route_list_map.html`` already records.
-
-    Args:
-        request: The incoming GET request.
-
-    Returns:
-        Rendered ``routes/my_routes.html``, or a redirect to sign-in for an
-        anonymous visitor.
-
-    """
-    if not request.user.is_authenticated:
-        return redirect("accounts:sign_in")
-
-    routes = list(Route.objects.for_user(request.user))
-
-    response = render(
-        request,
-        "routes/my_routes.html",
-        {
-            "routes": routes,
-            # The ``__UUID__``-templated rename endpoint, resolved here
-            # rather than built in JS: static/js/account_routes.js must not
-            # know how this project spells its URLs. Same contract as the
-            # map panel's ``data-route-rename-url-template`` and the
-            # favourites list's ``rename_url_template``.
-            "rename_url_template": _rename_url_template(),
-        },
-    )
-    response["Cache-Control"] = "private, no-store"
-    return response

@@ -14,11 +14,9 @@ Covers:
   route_delete — owner deletes; another user's uuid → 404 and the row
                  survives; anonymous → 403; non-HTMX → 400.
   route_list   — SNOW-686: the owner's own routes only; the empty state;
-                 anonymous → 403; non-HTMX → 400; POST → 405; both row
-                 variants render, and an unknown variant falls back to the
-                 default rather than reaching a template path; the map
-                 variant's name is a button carrying the route's bbox, and
-                 the account variant's is not.
+                 anonymous → 403; non-HTMX → 400; POST → 405; one row
+                 shape since SNOW-803 (the map sheet's), whose name is a
+                 button carrying the route's bbox.
   routes_geojson — SNOW-687: anonymous → 403 JSON; served without an
                  HX-Request header (a fetch(), not a swap); private/no-store;
                  LineString geometry carrying ``points`` verbatim in
@@ -52,7 +50,6 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
-from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.models import Route
 from tests.factories import RouteFactory, RouteShareFactory, UserFactory
 
@@ -85,8 +82,9 @@ def _delete_url(uuid: object) -> str:
 
 LIST_URL = "/routes/partials/list/"
 
-# The map sheet's variant, as apps.public.views._routes_context builds it.
-MAP_LIST_URL = f"{LIST_URL}?variant={ROUTE_LIST_MAP_VARIANT}"
+# SNOW-803: one shape — the map sheet's. Kept as a name so the tests that
+# read as "the sheet's list" still do.
+MAP_LIST_URL = LIST_URL
 
 # SNOW-687: the map layer's data endpoint. Outside the ``partials/`` prefix
 # on purpose — it is a plain-JSON fetch target, not an HTMX fragment.
@@ -596,82 +594,6 @@ class TestRouteListScoping:
 
 
 @pytest.mark.django_db
-class TestRouteListVariants:
-    """``?variant=`` picks a row shape out of a fixed map."""
-
-    def test_map_variant_renders_the_shared_ugc_row(self, client: Client) -> None:
-        """``?variant=map`` gets the lean row: a pencil, a trash, no name field.
-
-        The hooks asserted here are the contract three other files depend
-        on — inline_rename.js reads ``data-row-renameable`` /
-        ``data-row-rename``, and routes.js reads ``data-route-rename`` for
-        the uuid — so a row that stopped carrying them would break the
-        panel's rename with nothing else failing.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        route = RouteFactory.create(user=user)
-
-        response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
-        body = response.content.decode()
-
-        assert 'data-testid="route-list"' in body
-        assert "data-row-renameable" in body
-        assert "data-row-rename" in body
-        assert f'data-route-rename="{route.uuid}"' in body
-        # A <li> in a <ul>, not the bordered box with an always-visible
-        # rename input that SNOW-685 shipped.
-        assert "<li" in body
-        assert 'name="name"' not in body
-
-    def test_both_variants_render_the_same_shared_row(self, client: Client) -> None:
-        """One row, both variants (SNOW-711).
-
-        This reverses what SNOW-686 pinned here: _route.html kept an
-        always-visible rename field and an underlined "Remove" while the map
-        sheet rendered the shared UGC row, so the same route read two ways.
-        Unlike the favourites pair there is nothing left that differs —
-        a route has no detail page, so neither list carries a disclosure.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        route = RouteFactory.create(user=user)
-
-        default = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-        sheet = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert 'data-testid="route-list-default"' in default
-        for hook in (
-            "data-row-renameable",
-            "data-row-rename-input",
-            f'data-route-rename="{route.uuid}"',
-            f'hx-target="#route-{route.uuid}"',
-        ):
-            assert hook in default, hook
-            assert hook in sheet, hook
-        # The always-visible field is gone from both — the commit is a
-        # fetch from an inline editor, not a form submit.
-        assert 'name="name"' not in default
-        assert "data-row-disclosure" not in default
-        assert "data-row-disclosure" not in sheet
-
-    def test_an_unknown_variant_falls_back_to_the_default(self, client: Client) -> None:
-        """An unknown value is not interpolated into a template path.
-
-        The guard that matters: ``variant`` selects out of a dict, so a
-        caller cannot reach an arbitrary template with it.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        RouteFactory.create(user=user)
-
-        response = client.get(f"{LIST_URL}?variant=../../etc/passwd", **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        assert 'data-testid="route-list-default"' in response.content.decode()
-
-
-@pytest.mark.django_db
 class TestRouteListFocus:
     """The row's name frames the route on the map — and only on the map.
 
@@ -713,21 +635,6 @@ class TestRouteListFocus:
 
         assert "<button" in body
         assert 'aria-label="Zoom to Haute Route"' in body
-
-    def test_the_account_row_has_no_focus_control(self, client: Client) -> None:
-        """/account/routes/ renders the same row with an inert name.
-
-        There is no map on that page to fly, and a button that did nothing
-        would read as broken rather than as absent.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        RouteFactory.create(user=user)
-
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert "data-row-focus" not in body
-        assert "Zoom to" not in body
 
 
 @pytest.mark.django_db
@@ -1266,9 +1173,7 @@ class TestRouteListPendingShares:
         share = RouteShareFactory.create()
         _follow(client, share.token)
 
-        response = client.get(
-            f"{LIST_URL}?variant={ROUTE_LIST_MAP_VARIANT}", **HTMX_HEADERS
-        )
+        response = client.get(LIST_URL, **HTMX_HEADERS)
 
         assert response.status_code == 200
         assert f"route-share-{share.token}" in response.content.decode()

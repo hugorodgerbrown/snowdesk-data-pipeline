@@ -31,9 +31,11 @@ down in ``docs/locations.md``.
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import TYPE_CHECKING
 
 from django.db import models
+from django.urls import reverse
 
 if TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
@@ -42,6 +44,32 @@ if TYPE_CHECKING:
 from apps.core.models import BaseModel
 
 logger = logging.getLogger(__name__)
+
+
+def generate_short_id() -> str:
+    """Mint an eleven-character URL-safe id for a ``Location`` (SNOW-797).
+
+    ``secrets.token_urlsafe(8)`` — 64 bits, the generator and width
+    ``BulletinShare`` and ``RouteShare`` already use. It is the field's
+    ``default=`` rather than a ``save()`` override or a per-call-site mint,
+    following ``BaseModel.uuid``: a default is the one place a creation
+    path cannot forget. Over a few hundred rows a collision is vanishingly
+    unlikely, and the unique constraint is the backstop.
+
+    Never all digits: ``/weather/<int:location_id>/`` — the legacy redirect
+    — and ``/weather/<short_id>/`` share a prefix, and an all-digit token
+    would be claimed by the integer route. ``ShortIdConverter`` rejects the
+    same shape, so the two routes are disjoint by construction rather than
+    by ordering. The re-draw fires about once in 10**9 mints.
+
+    Returns:
+        A fresh eleven-character token.
+
+    """
+    while True:
+        token = secrets.token_urlsafe(8)
+        if not token.isdigit():
+            return token
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +275,20 @@ class Location(BaseModel):
         MID = "MID", "Mid-mountain"
         PEAK = "PEAK", "Peak"
 
+    short_id = models.CharField(
+        max_length=16,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+        default=generate_short_id,
+        help_text=(
+            "Eleven-character opaque URL identifier — /weather/<short_id>/ and "
+            "the id weather.geojson emits (SNOW-797). Opaque rather than a slug "
+            "because most public locations are unnamed region centroids. Null "
+            "only on a row backfill_location_short_ids has not reached yet."
+        ),
+    )
     name = models.CharField(
         max_length=120,
         blank=True,
@@ -291,6 +333,14 @@ class Location(BaseModel):
         """Model metadata."""
 
         ordering = ["-created_at"]
+
+    def get_absolute_url(self) -> str:
+        """Return the location's weather page — ``/weather/<short_id>/``.
+
+        Document two of the two-document IA (SNOW-795): one location, one
+        day. Keyed on the opaque short id, never the primary key.
+        """
+        return reverse("public:location_weather", kwargs={"short_id": self.short_id})
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this location.

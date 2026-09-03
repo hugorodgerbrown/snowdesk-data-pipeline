@@ -800,15 +800,14 @@ def test_report_eligible_true_for_verified_user() -> None:
 
 
 @pytest.mark.django_db
-def test_report_list_url_asks_for_the_map_variant() -> None:
-    """The panel's list URL carries ``?variant=map`` (SNOW-752).
+def test_report_list_url_is_the_bare_list_endpoint() -> None:
+    """The panel's list URL is ``observations:list`` with nothing appended.
 
-    That is what makes each row's label a control framing the report on the
-    map behind the sheet.  ``observation_list`` set the flag unconditionally
-    until this ticket; the parameter exists so ``/account/observations/`` can
-    read the same endpoint and NOT get those rows, having no map to fly.
-    Same spelling as the favourites and routes lists, which is the point of
-    having a convention.
+    It carried ``?variant=map`` from SNOW-752 to SNOW-803, while
+    ``/account/observations/`` read the same endpoint and must not get
+    map-focus rows. That page is gone and the sheet is the endpoint's only
+    surface, so the rows are map-focused unconditionally
+    (tests/observations/test_views.py) and the URL has no variant to name.
     """
     user = UserFactory.create()
     AccountFactory.create(user=user, is_verified=True)
@@ -816,9 +815,8 @@ def test_report_list_url_asks_for_the_map_variant() -> None:
     client.force_login(user)
     content = client.get(reverse("public:home")).content.decode()
 
-    assert (
-        f'data-report-list-url="{reverse("observations:list")}?variant=map"' in content
-    )
+    assert f'data-report-list-url="{reverse("observations:list")}"' in content
+    assert "?variant=" not in content
 
 
 @pytest.mark.django_db

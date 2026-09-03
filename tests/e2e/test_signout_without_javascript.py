@@ -14,7 +14,9 @@ from playwright.sync_api import Page, expect
 
 from tests.e2e.conftest import NoScriptPage
 
-ACCOUNT_URL_PATH = "/account/"
+# The one page that still needs a session: /account/ itself is a permanent
+# redirect into the map since SNOW-802, signed in or not.
+ACCOUNT_URL_PATH = "/account/settings/"
 
 _MENU = "#subscriber-menu"
 _MENU_TOGGLE = "#subscriber-menu-toggle"
@@ -22,7 +24,7 @@ _SIGN_OUT = f'{_MENU} form[action$="/account/sign-out/"] button[type="submit"]'
 
 
 def _assert_signed_out(page: Page, live_server_url: str) -> None:
-    """Assert the session is over: the manage page bounces to sign-in.
+    """Assert the session is over: the settings page bounces to sign-in.
 
     Checked by navigation rather than by the absence of the nav avatar,
     because a stale render would still pass that — the session ending is
@@ -31,7 +33,7 @@ def _assert_signed_out(page: Page, live_server_url: str) -> None:
     page.goto(live_server_url + ACCOUNT_URL_PATH)
     page.wait_for_load_state("load")
     assert "sign-in" in page.url, (
-        f"expected the manage page to redirect to sign-in after signing out; "
+        f"expected the settings page to redirect to sign-in after signing out; "
         f"landed on '{page.url}'"
     )
 

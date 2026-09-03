@@ -8,14 +8,19 @@ swallow this prefix).
 URL structure:
   favourites/partials/create/               POST — save a new favourite
   favourites/partials/resort/create/        POST — save a resort favourite (SNOW-499)
-  favourites/partials/resort/<id>/toggle/    POST — toggle a resort favourite,
+  favourites/partials/resort/<slug>/toggle/  POST — toggle a resort favourite,
                                              online-only (SNOW-504)
+  favourites/partials/region/<region_id>/toggle/
+                                             POST — toggle a region pin,
+                                             online-only (SNOW-802)
   favourites/partials/<uuid>/rename/         POST — rename a favourite
   favourites/partials/<uuid>/delete/         POST — delete a favourite
   favourites/partials/<uuid>/card/           GET  — detail card (SNOW-415)
   favourites/partials/list/                  GET  — owner's favourites list (SNOW-415)
   favourites/favourites.geojson              GET  — the user's own pins
-  favourites/<uuid>/                         GET  — full detail page (SNOW-507)
+  favourites/<uuid>/                         GET  — 301 to the pin's weather
+                                             page (SNOW-800; was the SNOW-507
+                                             detail page)
 """
 
 from django.urls import path
@@ -36,9 +41,16 @@ urlpatterns = [
         name="resort_create",
     ),
     path(
-        "partials/resort/<int:resort_id>/toggle/",
+        "partials/resort/<slug:slug>/toggle/",
         views.favourite_resort_toggle,
         name="resort_toggle",
+    ),
+    # SNOW-802: the region pin — the control the region + date panel and
+    # the region popup carry beside the bulletin link.
+    path(
+        "partials/region/<region_id:region_id>/toggle/",
+        views.favourite_region_toggle,
+        name="region_toggle",
     ),
     path(
         "partials/<uuid:uuid>/rename/",
@@ -65,9 +77,14 @@ urlpatterns = [
         views.favourites_geojson,
         name="geojson",
     ),
+    # SNOW-800: the detail page is gone — a favourite is a map pin, not a
+    # document — but the URL was bookmarkable, so it 301s to the pin's
+    # weather page. The old ``favourites:detail`` name is deliberately NOT
+    # kept: a template that still reversed it would link to a redirect,
+    # and a NoReverseMatch is the louder failure.
     path(
         "<uuid:uuid>/",
-        views.favourite_detail,
-        name="detail",
+        views.favourite_detail_redirect,
+        name="detail_redirect",
     ),
 ]

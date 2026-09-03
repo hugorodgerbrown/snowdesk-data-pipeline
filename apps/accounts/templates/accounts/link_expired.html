@@ -26,7 +26,7 @@ visitor can request a fresh access link.
 
 {% block status_cta %}
     <div class="mt-6">
-        {% url 'accounts:hub' as manage_url %}
+        {% url 'accounts:sign_in' as manage_url %}
         {% trans "Request a new link" as label %}
         {% include "includes/_button.html" with label=label href=manage_url variant="primary" %}
     </div>
