@@ -527,9 +527,9 @@
    * make on their own lists, rather than trusting the row's own swap to be
    * the whole update.
    *
-   * That endpoint IS the map variant (it sets ``map_focus`` itself, where
-   * the other two lists express the same thing with a ``?variant=map``
-   * template), so the URL is used verbatim and there is nothing to append.
+   * That endpoint sets ``map_focus`` itself — the sheet is its only surface
+   * since SNOW-803 — so the URL is used verbatim and there is nothing to
+   * append.
    *
    * @returns {void}
    */
@@ -543,11 +543,10 @@
   // roundel — a second tap on the control that opened the panel closes it.
   // Bound on the button, so it runs before MapSheet's own document-level
   // click-outside handler, which then sees a closed sheet and does nothing.
-  btn.addEventListener('click', function () {
-    if (controller.isOpen()) {
-      closeSheet();
-      return;
-    }
+  /** Open the sheet on its list — what a roundel tap does when it is shut.
+   * @returns {void}
+   */
+  function openSheet() {
     controller.open();
     if (showListPanel()) return;
     // No list template on this surface. The flow is still reachable, and an
@@ -555,6 +554,25 @@
     // a dead end with no explanation.
     if (IS_ELIGIBLE) startReportFlow();
     else sheet.innerHTML = gateHtml();
+  }
+
+  btn.addEventListener('click', function () {
+    if (controller.isOpen()) {
+      closeSheet();
+      return;
+    }
+    openSheet();
+  });
+
+  // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
+  // ``/?panel=reports`` arrival — what /account/observations/ (and, since
+  // SNOW-804, /observations/) redirects to. ``open`` is the roundel's own
+  // open path, so it goes through MapSheet.attach's registration with
+  // window.pwaMapOverlays. Frozen, like every other window.pwa* bridge.
+  window.pwaReportSheet = Object.freeze({
+    open: openSheet,
+    close: closeSheet,
+    isOpen: controller.isOpen,
   });
 
   // SNOW-658: "Report an observation" — what the roundel itself used to do.

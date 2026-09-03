@@ -108,13 +108,10 @@ from apps.core.http import client_ip, is_speculative
 from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import cache_version, cached_cache_version, inject_cache_version
 from apps.core.utils import html_to_markdown
-from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
-from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.models import MicroRegion, Resort
-from apps.routes.constants import ROUTE_LIST_MAP_VARIANT
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
@@ -1583,15 +1580,9 @@ def _report_context(request: HttpRequest) -> dict[str, Any]:
         # SNOW-658: the roundel opens a panel listing the user's own reports
         # before it offers to file another, so the panel needs the list
         # endpoint.
-        # SNOW-752: ``?variant=map`` asks for map-focus rows, whose label
-        # frames the report on the map behind the sheet. The parameter was
-        # added when /account/observations/ needed to re-read the same
-        # endpoint and must NOT get those rows — there is no map on that
-        # page to fly. Same convention, same spelling, as the favourites
-        # and routes lists above and below.
-        "report_list_url": (
-            f"{reverse('observations:list')}?variant={OBSERVATION_LIST_MAP_VARIANT}"
-        ),
+        # The rows come back with map-focus labels; since SNOW-803 the sheet
+        # is the endpoint's only surface, so there is no variant to ask for.
+        "report_list_url": reverse("observations:list"),
         "report_signin_url": reverse("accounts:sign_in"),
     }
 
@@ -1632,12 +1623,9 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
         "favourite_create_url": reverse("favourites:create"),
         # SNOW-658: the roundel opens a panel listing the user's own pins
         # before it offers to add one, so the panel needs the list endpoint.
-        # ``?variant=map`` asks for the sheet's lean row template — same
-        # rows and offline sidecar, without the manage page's in-page card
-        # panel or its "view on the map" link.
-        "favourite_list_url": (
-            f"{reverse('favourites:list')}?variant={FAVOURITE_LIST_MAP_VARIANT}"
-        ),
+        # The sheet's lean row template is the endpoint's only shape since
+        # SNOW-803 removed the account page that hosted the fuller one.
+        "favourite_list_url": reverse("favourites:list"),
         "favourite_rename_url_template": reverse(
             "favourites:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
@@ -1714,10 +1702,9 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # an Add-a-route CTA in front of a signed-out recipient.
         "routes_upload_eligible": request.user.is_authenticated,
         "route_create_url": reverse("routes:create"),
-        # ``?variant=map`` asks for the sheet's lean row template — the
-        # shared includes/_ugc_panel_row.html shape, rather than
-        # _route.html's always-visible rename field.
-        "route_list_url": f"{reverse('routes:list')}?variant={ROUTE_LIST_MAP_VARIANT}",
+        # One row shape since SNOW-803 — the shared
+        # includes/_ugc_panel_row.html row the sheet has always listed.
+        "route_list_url": reverse("routes:list"),
         "route_rename_url_template": reverse(
             "routes:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),

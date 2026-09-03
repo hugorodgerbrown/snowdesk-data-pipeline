@@ -9,9 +9,9 @@ URL map
 -------
 /account/                             hub                    GET  — account hub (authed)
 /account/settings/                    settings               GET  — settings (authed)
-/account/favourites/                  favourites             GET  — own pins (authed)
-/account/observations/                observations           GET  — own reports (authed)
-/account/routes/                      routes                 GET  — own routes (authed)
+/account/favourites/                  favourites             301 → /?panel=favourites
+/account/observations/                observations           301 → /?panel=reports
+/account/routes/                      routes                 301 → /?panel=routes
 /account/subscribe/                   subscribe              POST-only HTMX form
 /account/add/<region_id>/             add_region             POST HTMX (authed)
 /account/remove-region/<region_id>/   remove_region_from_bulletin  POST HTMX (authed)
@@ -36,9 +36,6 @@ URL map
 from django.urls import path
 from django.views.generic import RedirectView
 
-from apps.observations import views as observation_views
-from apps.routes import views as route_views
-
 from . import push_views, views, views_passkey
 
 app_name = "accounts"
@@ -51,23 +48,27 @@ urlpatterns = [
     # transparent to templates.
     path("", views.hub_view, name="hub"),
     path("settings/", views.settings_view, name="settings"),
-    # SNOW-668: favourites were a lazy-loaded section on the hub (SNOW-415)
-    # until this route existed. The view lives in this app, not in
-    # apps.favourites, because it is a page of the account area that happens
-    # to host that app's list partial — the boundary is the URL name the
-    # template reverses, and nothing is imported across it.
-    path("favourites/", views.favourites_view, name="favourites"),
-    # SNOW-677 / SNOW-713: these two account pages are mounted here because
-    # this app owns the ``/account/`` prefix, while each view lives in the app
-    # that owns its model. Splitting one URL prefix across two urls.py files
-    # would be the worse trade — the imports are explicit and one-way
-    # (accounts reads observations and routes, never the reverse).
+    # SNOW-803: the three account list pages were second renderings of
+    # sheets the map already has (docs/decisions/two-documents-and-a-map.md).
+    # Each URL stays as a permanent redirect to the map with the matching
+    # sheet open — ``?panel=`` is consumed by static/js/map.js — so a
+    # bookmark still lands somewhere. Same shape as the ``manage/``
+    # redirect below; the names are kept so an old reverse still resolves.
+    path(
+        "favourites/",
+        RedirectView.as_view(url="/?panel=favourites", permanent=True),
+        name="favourites",
+    ),
     path(
         "observations/",
-        observation_views.my_observations,
+        RedirectView.as_view(url="/?panel=reports", permanent=True),
         name="observations",
     ),
-    path("routes/", route_views.my_routes, name="routes"),
+    path(
+        "routes/",
+        RedirectView.as_view(url="/?panel=routes", permanent=True),
+        name="routes",
+    ),
     path("subscribe/", views.subscribe_partial, name="subscribe"),
     path("add/<region_id:region_id>/", views.add_region, name="add_region"),
     path(

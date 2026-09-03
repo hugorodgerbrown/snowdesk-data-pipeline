@@ -383,3 +383,16 @@ describe('framing a favourite from its row', () => {
     expect(window.PlacePicker.activate).not.toHaveBeenCalled();
   });
 });
+
+
+describe('the sheet-level bridge (SNOW-803)', () => {
+  it('exposes window.pwaFavouritesSheet.open(), which opens the panel like a tap', () => {
+    expect(Object.isFrozen(window.pwaFavouritesSheet)).toBe(true);
+    window.pwaFavouritesSheet.open();
+    expect(window.pwaFavouritesSheet.isOpen()).toBe(true);
+    expect(sheet.hidden).toBe(false);
+    expect(sheet.querySelector('[data-favourites-rows]')).not.toBeNull();
+    window.pwaFavouritesSheet.close();
+    expect(window.pwaFavouritesSheet.isOpen()).toBe(false);
+  });
+});

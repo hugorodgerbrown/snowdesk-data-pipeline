@@ -13,7 +13,7 @@
  *
  * SNOW-658: the roundel opens a PANEL, not the create form. The panel
  * (#favourite-list-template, in _favourites_surface.html) lists the user's
- * own pins — loaded over HTMX from favourites:list at ?variant=map, whose
+ * own pins — loaded over HTMX from favourites:list, whose
  * row (favourites/partials/_favourite.html) is the shared UGC row:
  * a label, a muted meta line, and two icon controls — a pencil and a
  * trash. Remove is that row's own HTMX form and needs nothing here;
@@ -311,11 +311,10 @@
   // roundel — a second tap on the control that opened the panel closes it.
   // Bound on the button, so it runs before MapSheet's own document-level
   // click-outside handler, which then sees a closed sheet and does nothing.
-  btn.addEventListener('click', function () {
-    if (controller.isOpen()) {
-      closeSheet();
-      return;
-    }
+  /** Open the sheet on its list — what a roundel tap does when it is shut.
+   * @returns {void}
+   */
+  function openSheet() {
     controller.open();
     if (showListPanel()) return;
     // No list template on this surface. The create flow is still reachable,
@@ -323,6 +322,26 @@
     // dead end with no explanation.
     if (IS_ELIGIBLE) startCreateFlow();
     else sheet.replaceChildren(buildSigninCta());
+  }
+
+  btn.addEventListener('click', function () {
+    if (controller.isOpen()) {
+      closeSheet();
+      return;
+    }
+    openSheet();
+  });
+
+  // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
+  // ``/?panel=favourites`` arrival — what /account/favourites/ redirects
+  // to now. ``open`` is the roundel's own open path, so it goes through
+  // MapSheet.attach's registration with window.pwaMapOverlays and closes
+  // whatever else is up, exactly as a tap would. Frozen, like every other
+  // window.pwa* bridge.
+  window.pwaFavouritesSheet = Object.freeze({
+    open: openSheet,
+    close: closeSheet,
+    isOpen: controller.isOpen,
   });
 
   /** Show the create form seeded from the map centre and arm the place-picker.

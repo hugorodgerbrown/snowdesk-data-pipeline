@@ -502,16 +502,6 @@ class TestShareControlRendering:
 
         assert f'data-route-share="{route.uuid}"' in response.content.decode()
 
-    def test_the_account_variant_draws_no_share_control(self, client: Client) -> None:
-        """/account/routes/ has no handler for it yet — see route_list."""
-        user = UserFactory.create()
-        RouteFactory.create(user=user)
-        client.force_login(user)
-
-        response = client.get("/routes/partials/list/", **HTMX_HEADERS)
-
-        assert "data-route-share" not in response.content.decode()
-
     def test_a_pending_row_never_draws_a_share_control(self, client: Client) -> None:
         """You cannot pass on a route you have not yet saved."""
         share = RouteShareFactory.create()

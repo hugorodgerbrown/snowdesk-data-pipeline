@@ -51,7 +51,7 @@ Covers:
                     empty state when the user has none (SNOW-415); each
                     row carries one detail link to the pin's weather page,
                     hx-get-enhanced onto the card panel (SNOW-507,
-                    SNOW-658); ``?variant=map`` renders the sheet's lean
+                    SNOW-658); ```` renders the sheet's lean
                     template instead — same rows and roster sidecar, a
                     plain detail link, no card panel and no "view on the
                     map" link — and an unknown variant falls back to the
@@ -1365,110 +1365,13 @@ class TestFavouriteList:
         assert "Theirs" not in content
         assert str(mine.uuid) in content
 
-    def test_row_links_to_the_pins_weather_page(self, client: Client) -> None:
-        """Each row's chevron links straight to the pin's weather page (SNOW-800).
-
-        Straight there — not via the old ``/favourites/<uuid>/`` redirect,
-        which exists for bookmarks, not for links the site itself renders.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-        assert favourite.location is not None
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="favourite-list-detail-link"' in content
-        assert favourite.location.get_absolute_url() in content
-        assert _detail_url(favourite.uuid) not in content
-
-    def test_row_without_a_location_keeps_the_hx_get_but_no_href(
-        self, client: Client
-    ) -> None:
-        """A pre-backfill row has no page to link to; the disclosure still expands."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine", location=None)
-
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert 'data-testid="favourite-list-detail-link"' in content
-        assert _card_url(favourite.uuid) in content
-        assert _detail_url(favourite.uuid) not in content
-
-    def test_detail_link_is_htmx_enhanced_onto_the_rows_own_panel(
-        self, client: Client
-    ) -> None:
-        """The chevron hx-gets the card into the panel under its own row.
-
-        SNOW-658 collapsed the "Details" button and the "Open page →" link
-        into one element: an href for the no-JS navigation, an hx-get so
-        the card still renders in-page — and so favourites_offline.js still
-        sees an HTMX swap to write through (SNOW-418). SNOW-711 made that
-        element the row's trailing chevron and gave every row its own
-        panel: there was ONE #favourite-card-panel above the whole list, so
-        expanding the fifth row painted its card four rows away from it.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        content = response.content.decode()
-        hx_get = f'hx-get="{_card_url(favourite.uuid)}"'
-        assert hx_get in content
-        assert f'hx-target="#favourite-panel-{favourite.uuid}"' in content
-        assert f'id="favourite-panel-{favourite.uuid}"' in content
-        # The panel is the row's next sibling, not a box somewhere above
-        # it: that adjacency is the whole point of the change.
-        row_at = content.index(f'id="favourite-{favourite.uuid}"')
-        assert row_at < content.index(f'id="favourite-panel-{favourite.uuid}"')
-        # The GET is carried by a link, never a button: a GET is a link, a
-        # POST is an active control. (The row's own buttons — rename,
-        # Remove — are POSTs, so they stay buttons.)
-        opener = content[: content.index(hx_get)].rsplit("<", 1)[1]
-        assert opener.startswith("a ") or opener.startswith("a\n")
-
-    def test_the_disclosure_is_the_only_expand_control(self, client: Client) -> None:
-        """One control, not a button and a link beside it.
-
-        The row carried an underlined "Details →" until SNOW-711 — the one
-        typographic control on a row whose other controls are icons.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        content = response.content.decode()
-        assert content.count("data-row-disclosure") == 1
-        assert "Details" not in content
-        # It names the row, because "Details" alone names nothing with a
-        # list of pins on screen.
-        assert 'aria-label="Show details for Mine"' in content
-        assert 'aria-expanded="false"' in content
-
-    def test_default_variant_offers_the_map_link(self, client: Client) -> None:
-        """The manage-page template keeps its "view on the map" navigation."""
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        assert b"View favourites on the map" in response.content
-
     def test_map_variant_renders_the_lean_template(self, client: Client) -> None:
-        """``?variant=map`` drops the card panel and the map link (SNOW-658)."""
+        """```` drops the card panel and the map link (SNOW-658)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert response.status_code == 200
         content = response.content.decode()
@@ -1494,7 +1397,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine", latitude=46.1, longitude=7.5)
 
-        content = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+        content = client.get(f"{LIST_URL}", **HTMX_HEADERS).content.decode()
 
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert 'aria-label="Zoom to Mine"' in content
@@ -1511,7 +1414,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, latitude=45.9, longitude=6.87)
 
-        content = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
+        content = client.get(f"{LIST_URL}", **HTMX_HEADERS).content.decode()
         feature = client.get(GEOJSON_URL).json()["features"][0]
 
         assert (
@@ -1523,28 +1426,13 @@ class TestFavouriteList:
             favourite.latitude,
         ]
 
-    def test_default_variant_has_no_focus_control(self, client: Client) -> None:
-        """/account/favourites/ renders the same row with an inert name.
-
-        There is no map on that page to fly, and a button that did nothing
-        would read as broken rather than as absent.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert "data-row-focus" not in content
-        assert "Zoom to" not in content
-
     def test_map_variant_keeps_the_roster_sidecar(self, client: Client) -> None:
         """The sheet still caches the roster for offline reads."""
         user = UserFactory.create()
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert 'id="favourites-roster-cache"' in response.content.decode()
 
@@ -1566,7 +1454,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert _detail_url(favourite.uuid) not in content
@@ -1585,7 +1473,7 @@ class TestFavouriteList:
         with freeze_time("2026-02-03T09:00:00Z"):
             favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert _row_meta(response.content.decode()) == "Saved 3 Feb 2026"
         # The coordinates are gone entirely, not merely demoted. Asserted
@@ -1607,7 +1495,7 @@ class TestFavouriteList:
         with freeze_time("2026-02-03T09:00:00Z"):
             FavouriteFactory.create(user=user, name="Mine", region=region)
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert _row_meta(response.content.decode()) == "Alpstein · saved 3 Feb 2026"
 
@@ -1623,7 +1511,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert "cursor-text" not in content
@@ -1645,7 +1533,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert "data-row-renameable" in content
@@ -1670,7 +1558,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         content = response.content.decode()
         assert 'role="menu"' not in content
@@ -1682,93 +1570,15 @@ class TestFavouriteList:
         assert 'aria-label="Rename Mine"' in content
         assert 'aria-label="Remove Mine"' in content
 
-    def test_both_variants_render_the_same_shared_row(self, client: Client) -> None:
-        """The account page's row IS the map's row now (SNOW-711).
-
-        This reverses the assertion SNOW-658 left here, which pinned the
-        account page's always-visible name field and underlined "Remove" as
-        deliberate. They were not deliberate for long: the same pin read
-        one way on the map and another on /account/, and this was the last
-        surface managing user data with a text field and a text button.
-        Only the disclosure differs — the map reaches a pin's detail by
-        tapping the pin.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-
-        account = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-        sheet = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
-
-        for hook in (
-            "data-row-renameable",
-            "data-row-rename-input",
-            f'data-favourite-rename="{favourite.uuid}"',
-            _delete_url(favourite.uuid),
-        ):
-            assert hook in account, hook
-            assert hook in sheet, hook
-        # The always-visible input is gone from both. It was never
-        # reachable without JS anyway: /account/ loads this list by hx-get.
-        assert 'name="name"' not in account
-        # One slot differs, and only that one.
-        assert "data-row-disclosure" in account
-        assert "data-row-disclosure" not in sheet
-
-    def test_both_variants_address_a_row_by_the_same_id(self, client: Client) -> None:
-        """``favourite-<uuid>`` on both, so a Remove targets it either way."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="Mine")
-
-        account = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-        sheet = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS).content.decode()
-
-        assert f'id="favourite-{favourite.uuid}"' in account
-        assert f'id="favourite-{favourite.uuid}"' in sheet
-        assert f'hx-target="#favourite-{favourite.uuid}"' in account
-        assert f'hx-target="#favourite-{favourite.uuid}"' in sheet
-
-    def test_the_list_carries_the_rename_url_template(self, client: Client) -> None:
-        """account_favourites.js builds a row's rename URL from this.
-
-        On the list rather than on each row: every row would carry the same
-        string, and this element is rendered by the same endpoint the rows
-        are.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert 'data-rename-url-template="/favourites/partials/__UUID__/rename/"' in (
-            content
-        )
-
     def test_map_variant_empty_state(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy in the sheet."""
         user = UserFactory.create()
         client.force_login(user)
 
-        response = client.get(f"{LIST_URL}?variant=map", **HTMX_HEADERS)
+        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
 
         assert response.status_code == 200
         assert b"no saved favourites" in response.content.lower()
-
-    @pytest.mark.parametrize("variant", ["", "unknown", "../../etc/passwd"])
-    def test_unknown_variant_falls_back_to_the_manage_template(
-        self, client: Client, variant: str
-    ) -> None:
-        """An unrecognised variant never reaches a template path."""
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(f"{LIST_URL}?variant={variant}", **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        assert b'data-testid="favourite-card-panel"' in response.content
 
     def test_empty_state_when_no_favourites(self, client: Client) -> None:
         """A user with no favourites sees the empty-state copy."""

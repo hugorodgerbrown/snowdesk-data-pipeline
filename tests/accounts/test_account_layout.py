@@ -77,8 +77,8 @@ def _client_for(account: Account) -> Client:
 class TestNavDropdownCarriesTheAccountArea:
     """The menu reaches every account page, because nothing else does."""
 
-    def test_dropdown_links_to_every_unflagged_account_page(self) -> None:
-        """Subscriptions, Favourites, Observations and Settings, on a real page.
+    def test_dropdown_links_to_every_account_page(self) -> None:
+        """Subscriptions and Settings, on a real page.
 
         SNOW-667 added the settings entry as a placeholder "until SNOW-705
         designs the account area's own navigation". SNOW-705 decided the
@@ -92,18 +92,12 @@ class TestNavDropdownCarriesTheAccountArea:
         ``render_to_string`` as in tests/public/test_nav_partial.py: that
         file asserts the menu's contents entry by entry, and this one
         asserts the menu survives onto a real page for a signed-in user.
-        Routes is omitted because it is flag-gated and off for this account;
-        the flag's two branches are asserted in that file.
+        The three list pages SNOW-803 removed are asserted absent there.
         """
         client = _client_for(AccountFactory.create())
         html = client.get(reverse("public:home")).content.decode()
 
-        for url_name in (
-            "accounts:hub",
-            "accounts:favourites",
-            "accounts:observations",
-            "accounts:settings",
-        ):
+        for url_name in ("accounts:hub", "accounts:settings"):
             assert f'href="{reverse(url_name)}"' in html, url_name
 
 
@@ -111,9 +105,7 @@ class TestNavDropdownCarriesTheAccountArea:
 class TestNoSubNav:
     """No account page grows a sub-nav of its own."""
 
-    @pytest.mark.parametrize(
-        "url_name", ["accounts:hub", "accounts:favourites", "accounts:settings"]
-    )
+    @pytest.mark.parametrize("url_name", ["accounts:hub", "accounts:settings"])
     def test_account_pages_carry_no_subnav(self, url_name: str) -> None:
         """Two attempts at a sub-nav were built and removed.
 
@@ -167,21 +159,6 @@ class TestAccountHeadings:
         assert '<h1 class="sr-only"' not in html.split("</h1>")[0]
         assert html.count("<h1") == 1
 
-    def test_favourites_page_names_itself(self) -> None:
-        """/account/favourites/ carries the same one-visible-``<h1>`` rule.
-
-        The pair to the hub assertion above, and the reason it can be made:
-        two lists that shared a page are two pages, each named for the one
-        list it holds. The rest of that page's contract is pinned in
-        tests/accounts/test_favourites_page.py.
-        """
-        client = _client_for(AccountFactory.create())
-        html = client.get(reverse("accounts:favourites")).content.decode()
-
-        assert "Favourites" in html
-        assert '<h1 class="sr-only"' not in html
-        assert html.count("<h1") == 1
-
     def test_hub_no_longer_hosts_the_favourites_section(self) -> None:
         """The section moved; it did not get copied.
 
@@ -208,7 +185,7 @@ class TestAccountHeadings:
         until SNOW-668 renamed it "Subscriptions".
         """
         client = _client_for(AccountFactory.create())
-        for url_name in ("accounts:hub", "accounts:favourites"):
+        for url_name in ("accounts:hub",):
             html = client.get(reverse(url_name)).content.decode()
             assert "My favourites" not in html, url_name
             assert "Your subscription" not in html, url_name

@@ -198,20 +198,20 @@ class TestNavAccountMenuEntries:
     that would notice.
     """
 
-    def test_every_unflagged_entry_is_present(
+    def test_every_entry_is_present(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Subscriptions, Favourites, Observations, Settings and Sign out.
+        """Subscriptions, Settings and Sign out — each asserted by name.
 
-        Routes is asserted separately below because it is the one entry
-        behind a flag.
+        SNOW-803 removed Favourites, Routes and Observations: those are map
+        sheets now, reached from the map's roundels. The survivors keep a
+        positive assertion each, so one cannot vanish the way the two
+        orphaned pages once shipped.
         """
         html = _render_nav_for(rf, regular_user)
 
         for url_name, label in (
             ("accounts:hub", "Subscriptions"),
-            ("accounts:favourites", "Favourites"),
-            ("accounts:observations", "Observations"),
             ("accounts:settings", "Settings"),
             ("accounts:sign_out", "Sign out"),
         ):
@@ -226,39 +226,36 @@ class TestNavAccountMenuEntries:
     ) -> None:
         """Content first, account machinery last (SNOW-705's ranking).
 
-        Subscriptions is what an account is for; Favourites and Observations
-        are the lists of saved things; Settings and Sign out are machinery
-        and sit below a rule. Order is the ranking, so a reshuffle that puts
-        Sign out mid-menu is a real regression.
+        Subscriptions is what an account is for; Settings and Sign out are
+        machinery and sit below a rule. Order is the ranking, so a reshuffle
+        that puts Sign out mid-menu is a real regression.
         """
         html = _render_nav_for(rf, regular_user)
 
         positions = [
             html.index(f'href="{reverse(name)}"')
-            for name in (
-                "accounts:hub",
-                "accounts:favourites",
-                "accounts:observations",
-                "accounts:settings",
-            )
+            for name in ("accounts:hub", "accounts:settings")
         ]
         assert positions == sorted(positions)
         assert positions[-1] < html.index(f'action="{reverse("accounts:sign_out")}"')
 
-    def test_routes_entry_is_offered_to_every_signed_in_user(
+    def test_the_three_list_entries_are_gone(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """The signed-in menu offers /account/routes/.
+        """Favourites, Routes and Observations no longer appear (SNOW-803).
 
-        This is the entry SNOW-713 could not add, which is why that page
-        shipped orphaned. It was flag-gated when SNOW-668 added it, because
-        ``my_routes`` answered 404 behind an inactive ``routes`` flag;
-        SNOW-724 removed both the flag and that 404, so an ordinary account
-        gets the entry and the destination it points at.
+        Their URLs still resolve — as permanent redirects to the map with the
+        matching sheet open — but the menu must not offer a link to a
+        redirect, and the map's own roundels are where those lists live.
         """
         html = _render_nav_for(rf, regular_user)
-        assert f'href="{reverse("accounts:routes")}"' in html
-        assert "Routes" in html
+        for url_name, label in (
+            ("accounts:favourites", ">Favourites<"),
+            ("accounts:routes", ">Routes<"),
+            ("accounts:observations", ">Observations<"),
+        ):
+            assert f'href="{reverse(url_name)}"' not in html, url_name
+            assert label not in html, label
 
     def test_anonymous_sees_no_account_entries(self, rf: RequestFactory) -> None:
         """The whole menu is behind the authenticated branch.

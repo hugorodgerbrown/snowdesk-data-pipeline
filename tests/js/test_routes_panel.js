@@ -976,3 +976,16 @@ describe('sharing a row (SNOW-764)', () => {
     expect(window.pwaTelemetry.emit).toHaveBeenCalledWith('map.route.shared', {});
   });
 });
+
+
+describe('the sheet-level bridge (SNOW-803)', () => {
+  it('exposes window.pwaRoutesSheet.open(), which opens the panel like a tap', () => {
+    expect(Object.isFrozen(window.pwaRoutesSheet)).toBe(true);
+    window.pwaRoutesSheet.open();
+    expect(window.pwaRoutesSheet.isOpen()).toBe(true);
+    expect(sheet.hidden).toBe(false);
+    expect(sheet.querySelector('[data-routes-rows]')).not.toBeNull();
+    window.pwaRoutesSheet.close();
+    expect(window.pwaRoutesSheet.isOpen()).toBe(false);
+  });
+});

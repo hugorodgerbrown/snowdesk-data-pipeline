@@ -332,3 +332,16 @@ describe('framing a report from its row', () => {
     expect(window.PlacePicker.activate).not.toHaveBeenCalled();
   });
 });
+
+
+describe('the sheet-level bridge (SNOW-803)', () => {
+  it('exposes window.pwaReportSheet.open(), which opens the panel like a tap', () => {
+    expect(Object.isFrozen(window.pwaReportSheet)).toBe(true);
+    window.pwaReportSheet.open();
+    expect(window.pwaReportSheet.isOpen()).toBe(true);
+    expect(sheet.hidden).toBe(false);
+    expect(rows()).not.toBeNull();
+    window.pwaReportSheet.close();
+    expect(window.pwaReportSheet.isOpen()).toBe(false);
+  });
+});

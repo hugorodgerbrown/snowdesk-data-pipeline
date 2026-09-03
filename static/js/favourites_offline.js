@@ -397,16 +397,14 @@
       if (path.indexOf(LIST_PATH_SUFFIX) !== -1) {
         const records = await window.pwaDb.getAll(STORE);
         if (!records || records.length === 0 || !target) return;
-        // One endpoint, two surfaces, ONE outline depth — h2 on both, which
-        // is why there is no branch here any more.
+        // One endpoint, one outline depth — h2.
         //
         // The map sheet swaps this list into [data-favourites-rows], inside
         // a panel whose title is a <span> (includes/_sheet_header.html), so
-        // a card in it has no section heading to rank under. The other
-        // surface is /account/favourites/, whose only heading above the
-        // list is the page <h1> — SNOW-668 moved it there from a
-        // <section> inside the account hub, headed by an <h2>, which is
-        // what the h3 branch this replaces was ranking under.
+        // a card in it has no section heading to rank under. (It was also
+        // h2 on /account/favourites/, whose only heading above the list was
+        // the page <h1>, until SNOW-803 removed that page; the h3 branch
+        // before that ranked under the account hub's <h2>.)
         target.textContent = '';
         records.forEach((record) =>
           target.appendChild(renderOfflineCard(record, 'h2'))
@@ -422,9 +420,9 @@
         // The request's own target — the panel under the row whose chevron
         // asked for the card (SNOW-711 gave every row its own; there was
         // one #favourite-card-panel above the whole list before it). That
-        // is /account/favourites/ and only that page: the map renders its
-        // rows with ``hide_disclosure``, so nothing there has a chevron to
-        // ask with, and the detail page has its card server-rendered.
+        // was /account/favourites/, which SNOW-803 removed: the map renders
+        // its rows with ``hide_disclosure``, so nothing there has a chevron
+        // to ask with — this branch is kept for the card endpoint's sake.
         //
         // h2, matching what the server would have sent for the same
         // request — apps.favourites.views.favourite_card passes

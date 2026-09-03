@@ -27,9 +27,9 @@ the map page's saved-pins feature (SNOW-413) and the favourite detail card
   was the SNOW-507 full page; a favourite is a map pin, not a document,
   so the URL now 301s to the pin's own weather page
   (``/weather/<short_id>/``), which the owner can always open.
-- ``favourite_list`` (GET) — the requesting user's own favourites,
-  rendered for /account/favourites/ (SNOW-415, moved off the account
-  hub by SNOW-668) and, as ``?variant=map``, for the map sheet.
+- ``favourite_list`` (GET) — the requesting user's own favourites, rendered
+  for the map sheet (SNOW-658; the account page that also hosted it went
+  in SNOW-803).
 - ``favourites_geojson`` (GET) — a FeatureCollection of the requesting
   user's own favourites, for the map's saved-pins layer. Not
   ``@require_htmx`` — this is consumed by a JS ``fetch()`` call, not an
@@ -73,7 +73,6 @@ from apps.core.freshness import (
     apply_freshness_headers,
     freshness_state as compute_freshness_state,
 )
-from apps.favourites.constants import FAVOURITE_LIST_MAP_VARIANT
 from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
 from apps.favourites.services import (
@@ -96,15 +95,6 @@ logger = logging.getLogger(__name__)
 # Must match Favourite.name's max_length. Checked here so an over-length
 # submission is turned into a handled 400 instead of a DB DataError (500).
 _NAME_MAX_LENGTH = 100
-
-# SNOW-658: favourite_list serves two surfaces. The ``variant`` query
-# parameter selects a template out of this fixed map — an unknown (or
-# absent) value falls back to the account page's default, so nothing a
-# caller sends ever reaches a template path.
-_LIST_TEMPLATE_DEFAULT = "favourites/partials/_favourite_list.html"
-_LIST_TEMPLATES = {
-    FAVOURITE_LIST_MAP_VARIANT: "favourites/partials/_favourite_list_map.html",
-}
 
 # SNOW-711: the dummy uuid the rename URL template is reversed with. See
 # _rename_url_template below.
@@ -782,14 +772,11 @@ def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
 def favourite_list(request: HttpRequest) -> HttpResponse:
     """Render the requesting user's own favourites list partial.
 
-    Powers two surfaces from one endpoint, chosen by the ``variant`` query
-    parameter: ``/account/favourites/``, which lazy-loads this endpoint via
-    ``hx-get`` on page load (no parameter), and the map sheet's favourites
-    panel (``?variant=map``, SNOW-658), which gets the leaner
-    ``_favourite_list_map.html`` — no row disclosure, no "view on the map"
-    link. Anything other than a known variant falls back to the account
-    page's template; the value picks a template out of a fixed map, it is
-    never interpolated into a template path.
+    Powers the map sheet's favourites panel, which lazy-loads this endpoint
+    over HTMX. One template, ``_favourite_list_map.html``: until SNOW-803 a
+    ``?variant=`` parameter chose between it and the account page's fuller
+    list (row disclosure, "view on the map" link); that page is gone and a
+    parameter is ignored.
 
     Batches today's ``RegionDayRating`` lookup for every favourite's
     region into a single query (never N+1 as the favourite count grows),
@@ -803,8 +790,7 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
         request: The incoming HTMX GET request.
 
     Returns:
-        Rendered ``_favourite_list.html`` (or ``_favourite_list_map.html``
-        for ``?variant=map``), or an error response.
+        Rendered ``_favourite_list_map.html``, or an error response.
 
     """
     if not request.user.is_authenticated:
@@ -853,7 +839,7 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
 
     response = render(
         request,
-        _LIST_TEMPLATES.get(request.GET.get("variant", ""), _LIST_TEMPLATE_DEFAULT),
+        "favourites/partials/_favourite_list_map.html",
         {
             "favourites": favourites,
             "roster_payload": roster_payload,

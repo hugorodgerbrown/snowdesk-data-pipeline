@@ -4630,6 +4630,75 @@
     isEnabled: () => !!overlayState.routes,
   });
 
+  // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====
+  //
+  // The three account list pages became permanent redirects to the map
+  // with the matching sheet open (docs/decisions/two-documents-and-a-map.md).
+  // Only item-specific deep links existed before — ``?favourite=<uuid>``
+  // and ``?route_share=<token>``; this is the sheet-level one. Consumed
+  // the way ``consumeFavouriteDeepLink`` is, read once and stripped from
+  // the address bar, so a refetch or a shared URL does not reopen a sheet
+  // nobody asked for.
+  //
+  // Each sheet module exposes ``open()`` on a frozen ``window.pwa*Sheet``
+  // bridge — its roundel's own open path, which goes through
+  // MapSheet.attach's registration with window.pwaMapOverlays. So an open
+  // from here closes whatever else is up, exactly as a tap would; a path
+  // that skipped the registry would be two overlays open at once.
+  //
+  // The bridges are assigned by other deferred scripts. In home.html the
+  // surfaces' tags precede map.js, so they exist by now; a page that
+  // orders them the other way is covered by the DOMContentLoaded fallback,
+  // by which point every deferred script has run.
+  const PANEL_SHEET_BRIDGES = {
+    favourites: () => window.pwaFavouritesSheet,
+    routes: () => window.pwaRoutesSheet,
+    reports: () => window.pwaReportSheet,
+  };
+
+  /**
+   * Read ``?panel=`` and strip it from the address bar in one step.
+   *
+   * @returns {?string} The requested sheet name, or null when there is none.
+   */
+  const consumePanelDeepLink = () => {
+    const params = new URLSearchParams(location.search);
+    const name = params.get('panel');
+    if (!name) return null;
+    params.delete('panel');
+    const query = params.toString();
+    history.replaceState(
+      null,
+      '',
+      location.pathname + (query ? `?${query}` : '') + location.hash,
+    );
+    return name;
+  };
+
+  /**
+   * Honour a ``/?panel=favourites|routes|reports`` arrival.
+   *
+   * Silent for a name no sheet answers to: the parameter is consumed
+   * either way, and the map opens as it otherwise would.
+   *
+   * @returns {void}
+   */
+  const openPanelDeepLink = () => {
+    const name = consumePanelDeepLink();
+    // Own-property check, not a bare index: the name is whatever the URL
+    // says, and ``PANEL_SHEET_BRIDGES['constructor']`` is a function too.
+    if (!name || !Object.hasOwn(PANEL_SHEET_BRIDGES, name)) return;
+    const bridge = PANEL_SHEET_BRIDGES[name]();
+    if (!bridge) return;
+    bridge.open();
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', openPanelDeepLink, { once: true });
+  } else {
+    openPanelDeepLink();
+  }
+
   // ==== The camera, for a panel row that names a place ====
   //
   // Hugo: "For routes, resorts, and observations, clicking on the name of an

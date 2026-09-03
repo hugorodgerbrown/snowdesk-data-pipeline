@@ -25,9 +25,11 @@ through to IndexedDB on `htmx:afterOnLoad`, an event a full-page
 navigation never fires.
 
 COLLAPSE IS JS. `aria-expanded` starts false and is flipped by the
-surface's own module (static/js/account_favourites.js for the one caller),
-which also empties the panel on the closing click. With no JS the control
-degrades to its href, which is why the closed state is the one rendered.
+surface's own module, which also empties the panel on the closing click.
+(The one caller was /account/favourites/ via static/js/account_favourites.js
+until SNOW-803 removed both; the map rows pass ``hide_disclosure``.) With
+no JS the control degrades to its href, which is why the closed state is
+the one rendered.
 
 Parameters (passed via {% include … with … %}):
   disclosure_href     (string, optional) — the plain-navigation destination.

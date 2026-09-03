@@ -53,7 +53,7 @@ from uuid import UUID
 
 from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -64,7 +64,6 @@ from apps.accounts.models import user_is_verified
 from apps.core.coordinates import validate_accuracy_radius_km, validate_coordinates
 from apps.core.decorators import require_htmx
 from apps.locations.models import Location
-from apps.observations.constants import OBSERVATION_LIST_MAP_VARIANT
 from apps.observations.models import FieldObservation
 from apps.regions.services.point_match import region_for_point
 
@@ -408,29 +407,17 @@ def observation_list(request: HttpRequest) -> HttpResponse:
 
     ``map_focus`` is what tells the shared row it is being read over a map,
     so each row's label renders as a control that frames its report (see
-    ``observations/partials/_observation.html``).  It follows the
-    ``?variant=map`` query parameter, the same convention
-    ``apps.routes.views.route_list`` and ``apps.favourites.views
-    .favourite_list`` use — those two pick a whole template out of a fixed
-    map, and this one has a single template whose one variable choice is
-    this flag, but the caller-facing contract is identical.
-
-    It was set unconditionally until SNOW-752, on the reasoning that this
-    endpoint *is* the map variant: ``/account/observations/`` renders the
-    same partial from its own page context and passes nothing, so nothing
-    else called this.  That stopped being true when that page needed to
-    re-read its own list after a row was deleted — its empty state is a
-    server-side clause, and only a fresh response can carry it.  Served the
-    map variant, every row's label would render as a zoom control on a page
-    with no map to zoom.
+    ``observations/partials/_observation.html``). It is always on: the map
+    sheet is this endpoint's only surface. (SNOW-752 made it follow a
+    ``?variant=map`` parameter while ``/account/observations/`` re-read the
+    same list on a page with no map to fly; SNOW-803 removed that page, and
+    the flag with it.)
 
     Args:
         request: The incoming HTMX GET request.
 
     Returns:
-        Rendered ``_observation_list.html`` partial — with map-focus rows
-        for ``?variant=map``, without them otherwise — or an error
-        response.
+        Rendered ``_observation_list.html`` partial, or an error response.
 
     """
     gate = _auth_gate(request)
@@ -447,9 +434,7 @@ def observation_list(request: HttpRequest) -> HttpResponse:
         "observations/partials/_observation_list.html",
         {
             "observations": observations,
-            "map_focus": (
-                request.GET.get("variant", "") == OBSERVATION_LIST_MAP_VARIANT
-            ),
+            "map_focus": True,
         },
     )
 
@@ -490,73 +475,3 @@ def observation_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
 # ---------------------------------------------------------------------------
 # Full-page views
 # ---------------------------------------------------------------------------
-
-
-@require_GET
-def my_observations(request: HttpRequest) -> HttpResponse:
-    """Render the signed-in user's own field reports as a full page (SNOW-677).
-
-    The account area's observations surface, mounted at
-    ``/account/observations/``. Until this existed a user could submit a
-    report from the map or the bulletin page and then had nowhere to see
-    what they had submitted: ``/observations/`` is the 48-hour anonymised
-    community stream, not a personal record, and the map panel's own list
-    is only reachable behind a roundel on the map canvas.
-
-    Deliberately NOT ``@require_htmx`` — this is a real page a user
-    navigates to, not a fragment. It is the full-page host for the same
-    partials the map panel uses (``_observation_list.html`` and, through it,
-    ``_observation.html``), the relationship the account favourites page has
-    to ``_favourite_list.html``.
-
-    Gating follows the account area rather than the map endpoints above: an
-    anonymous visitor is redirected to sign-in, as ``accounts:hub`` and
-    ``accounts:settings`` do, not answered 403 the way the HTMX fragments
-    are — a person who followed a link to a page should be offered the way
-    in, and a fragment has nowhere to render one. There is no verification
-    gate either: ``_auth_gate`` keeps unverified users from *creating*
-    reports, so an unverified account simply has none and sees the empty
-    state.
-
-    Ownership is enforced by the query (``for_user``), so nothing here
-    depends on an id supplied by the client.
-
-    No 48-hour cutoff. That window is a property of the community overlay,
-    where it bounds what strangers can see; a user's own record has no
-    reason to end.
-
-    Timestamps render exactly as recorded. The 15-minute flooring applied
-    by ``apps.public.api.community_reports_geojson`` is an anonymisation
-    rule for *other people's* reports and must not be applied to the
-    owner's own.
-
-    The response carries ``Cache-Control: private, no-store`` — per-user
-    content that must never land in a shared cache, mirroring
-    ``favourites_geojson``. That also keeps it out of the PWA shell cache;
-    reading these reports offline is SNOW-661, not this ticket.
-
-    Args:
-        request: The incoming GET request.
-
-    Returns:
-        Rendered ``observations/my_observations.html``, or a redirect to
-        sign-in for an anonymous visitor.
-
-    """
-    if not request.user.is_authenticated:
-        return redirect("accounts:sign_in")
-
-    # No ``cast(User, ...)`` here, unlike the HTMX views above: those narrow
-    # via ``_auth_gate``, whose return type mypy cannot follow, while the
-    # inline ``is_authenticated`` guard above narrows on its own.
-    observations = FieldObservation.objects.for_user(request.user).select_related(
-        "region"
-    )
-
-    response = render(
-        request,
-        "observations/my_observations.html",
-        {"observations": observations},
-    )
-    response["Cache-Control"] = "private, no-store"
-    return response
