@@ -1,8 +1,8 @@
 ---
 name: testing-scenarios
-description: Manual test scenarios — homepage, bulletin, map, search, subscriptions, PWA install/update/offline/kill-switch — on seed_test_data data
+description: Manual test scenarios — homepage, bulletin, map, search, accounts, region pins, PWA install/update/offline/kill-switch — on seed_test_data
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-09-03
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -311,89 +311,95 @@ screenshots and bug reports.
 
 ---
 
-## Subscription Flow
+## Accounts and Pins
 
-### Scenario 10: Subscribe as a new user -- happy path
+Since SNOW-795 a saved region is a **region pin** in the map's pins sheet,
+not a subscription (nothing ever sent a bulletin). The account area is
+`/account/settings/` alone; `/account/` and the old list pages redirect into
+the map's sheets.
 
-**Goal**: Complete the full subscription flow from the bulletin-page inline form to the manage page.
+### Scenario 10: Sign up and land on the map -- happy path
 
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ and scroll to the bottom of the bulletin | A "Get avalanche alerts" card is visible with an email input (placeholder "your@email.com") and a "Subscribe" button |
-| 2 | Type `tester@example.com` into the email field | Text appears in the input field |
-| 3 | Click "Subscribe" | The card is replaced in-place (HTMX, no page reload) with "Check your inbox" and "We've sent you a link to access your account. It expires in 24 hours." |
-| 4 | Open Mailpit at http://localhost:8025 | An email is listed in the inbox for `tester@example.com` containing an account-access link of the form `http://localhost:8000/account/access/<token>/` |
-| 5 | Open the email and click the account link | An "Access your account" confirm page loads (no auto sign-in on the GET); it shows a "Sign in to my account" button (SNOW-439) |
-| 6 | Click "Sign in to my account" | Browser POSTs and redirects to http://localhost:8000/account/manage/?just_confirmed=1 |
-| 7 | Verify the manage page | A "Your subscription is confirmed." banner is shown; a region card for the subscribed region (CH-4115) is listed with a "Remove" button; a "Passkeys" section prompts "Sign in faster with a passkey" |
-
-### Scenario 11: One-click add a region from another bulletin page (HTMX)
-
-**Goal**: Verify the inline CTA becomes a one-click "Add region" button when signed in, updating without a page reload.
+**Goal**: Complete the account-access flow from the sign-in page to the map with the pins sheet open.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in (Scenario 10), navigate to http://localhost:8000/CH-1221/grindelwald/2026-04-10/ and scroll to the CTA | The card shows "You're signed in. One click to add daily bulletin updates for this region." with an "Add region" button (no email input) |
-| 2 | Click "Add region" | The card is replaced in-place (no page reload) with a confirmation that the region was added, including a "Manage your subscriptions" link |
-| 3 | Navigate to http://localhost:8000/account/manage/ | Two region cards are listed |
+| 1 | Navigate to http://localhost:8000/account/sign-in/ | The sign-in page loads with an email field |
+| 2 | Type `tester@example.com` and submit | "Check your inbox" is shown |
+| 3 | Open Mailpit at http://localhost:8025 | An email is listed for `tester@example.com` containing an account-access link of the form `http://localhost:8000/account/access/<token>/` |
+| 4 | Open the email and click the account link | An "Access your account" confirm page loads (no auto sign-in on the GET); it shows a "Sign in to my account" button (SNOW-439) |
+| 5 | Click "Sign in to my account" | Browser POSTs and redirects to the map (`/?panel=favourites`, which the map consumes to `/`) with the pins sheet open; the avatar menu shows Settings and Sign out |
 
-### Scenario 12: Add multiple regions and remove one (HTMX)
+### Scenario 11: Pin a region from the map
 
-**Goal**: Verify adding and removing region subscriptions updates the UI dynamically.
-
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | While signed in, navigate to http://localhost:8000/CH-4222/ and scroll to the CTA | The bulletin page for the Zermatt region shows the one-click "Add region" card |
-| 2 | Click "Add region" | The card confirms the region was added |
-| 3 | Navigate to http://localhost:8000/account/manage/ | Three region cards are listed |
-| 4 | Click "Remove" on the Grindelwald region card | The card disappears without a page reload (HTMX swap); two region cards remain |
-
-### Scenario 13: Unsubscribe from all alerts (delete account)
-
-**Goal**: Verify the "Unsubscribe from all alerts" button deletes the account.
+**Goal**: Verify the region + date panel's pin control creates a region pin and the pins sheet lists it.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On the manage page with at least one region subscribed, locate the "Unsubscribe from all alerts" link at the bottom | The link is visible as small underlined text below the Passkeys section |
-| 2 | Click "Unsubscribe from all alerts" | A browser confirmation dialog appears asking "Unsubscribe from all alerts and delete your account?" |
-| 3 | Click "OK" on the confirmation dialog | Browser is redirected to http://localhost:8000/account/unsubscribe-done/; the subscriber account is hard-deleted and the session is cleared |
+| 1 | While signed in (Scenario 10), tap a region on the map and open the region + date panel from the readout chip | The panel shows the region's name, today's rating, "Open bulletin for …" and a "☆ Pin this region" control beside it |
+| 2 | Click "Pin this region" | The control swaps in place to "★ Pinned" (no page reload) |
+| 3 | Open the pins sheet from its roundel | A row for the region is listed: the region's name, today's rating chip, a dated "Bulletin for …" link, a trash — no pencil, no zoom control |
+| 4 | Sign out, reload, open the same panel | The control reads "Sign in to pin this region" and links to the sign-in page |
 
-### Scenario 14: Removing the last region deletes the account
+### Scenario 12: Unpin a region from the pins sheet
 
-**Goal**: Verify the last-region cascade hard-deletes the subscriber.
-
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Subscribe to exactly one region (Scenario 10) and open http://localhost:8000/account/manage/ | One region card is listed |
-| 2 | Click "Remove" on the only region card | Browser is redirected to http://localhost:8000/account/unsubscribe-done/ |
-| 3 | Navigate to http://localhost:8000/account/manage/ | Browser redirects to http://localhost:8000/account/sign-in/ (account deleted, session cleared) |
-
-### Scenario 15: Already-subscribed region shows an Unsubscribe CTA
-
-**Goal**: Verify the inline CTA reflects an existing subscription and can remove it.
+**Goal**: Verify removing a region pin updates the sheet dynamically and the region panel follows.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in and subscribed to CH-4115, navigate to http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ and scroll to the CTA | The card reads "You receive daily bulletin updates for this region." with an "Unsubscribe" button and a "Manage your subscriptions" link |
-| 2 | Click "Unsubscribe" (with at least one other region still subscribed) | The card is replaced in-place with an unsubscribed confirmation, without a page reload |
+| 1 | While signed in with two pinned regions (Scenario 11 twice), open the pins sheet | Two region rows are listed |
+| 2 | Click the trash on one region row | The row disappears without a page reload (HTMX swap); one row remains |
+| 3 | Open that region's panel again | The control reads "☆ Pin this region" |
 
-### Scenario 16: Submit the inline subscribe form with an invalid email address
+### Scenario 13: Delete the account from settings
 
-**Goal**: Verify validation on the inline email form.
-
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Sign out (or use a fresh private window) and open http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/ | The "Get avalanche alerts" card with the email input loads |
-| 2 | Type `notanemail` into the email field | Text appears in the input |
-| 3 | Click "Subscribe" | Submission is blocked: either the browser's built-in email validation fires, or the form re-renders in place with a validation error (e.g. "Enter a valid email address."); the page does NOT navigate |
-
-### Scenario 17: Submit the inline subscribe form with an empty email
-
-**Goal**: Verify the form requires an email address.
+**Goal**: Verify the "Delete account" control hard-deletes the account.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On the same bulletin page, leave the email field empty and click "Subscribe" | Submission is blocked: either the browser's required-field validation fires, or the form re-renders in place with a validation error (e.g. "This field is required."); no navigation occurs |
+| 1 | Navigate to http://localhost:8000/account/settings/ and locate "Delete account" | The control is visible in its own group |
+| 2 | Click it | A browser confirmation dialog appears |
+| 3 | Click "OK" | Browser is redirected to http://localhost:8000/account/unsubscribe-done/; the account is hard-deleted and the session is cleared; the pins sheet on the map is anonymous again |
+
+### Scenario 14: Removing the last pin keeps the account
+
+**Goal**: Verify that unpinning the only region removes the pin and nothing else.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Pin exactly one region (Scenario 11) and open the pins sheet | One region row is listed |
+| 2 | Click its trash | The row goes; the sheet shows its empty state; the user stays signed in |
+| 3 | Navigate to http://localhost:8000/account/settings/ | The settings page renders — the account survives |
+
+### Scenario 15: The old account URLs redirect into the map
+
+**Goal**: Verify every retired account list page lands on the map with the matching sheet open.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Navigate to http://localhost:8000/account/ | 301 to `/?panel=favourites`; the map opens with the pins sheet open |
+| 2 | Navigate to http://localhost:8000/account/routes/ | 301 to `/?panel=routes`; the routes sheet opens |
+| 3 | Navigate to http://localhost:8000/account/observations/ and http://localhost:8000/observations/ | Both 301 to `/?panel=reports`; the reports sheet opens |
+| 4 | Navigate to http://localhost:8000/favourites/<uuid>/ for one of your pins | 301 to that pin's `/weather/<short_id>/` page |
+
+### Scenario 16: Unpin from a historical unsubscribe link (no login required)
+
+**Goal**: Verify an unsubscribe token still resolves and removes the region pin.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In a private window, open an unsubscribe link of the form `http://localhost:8000/account/unsubscribe/<token>/` (build one in a shell with `build_unsubscribe_url(email, region_id)`) | A confirmation page names the region; nothing changes on the GET |
+| 2 | Click "Yes, unsubscribe me" | The done page confirms the region was removed from the account's pins |
+| 3 | Sign in and open the pins sheet | The region row is gone |
+
+### Scenario 17: Submit the registration form with an invalid email address
+
+**Goal**: Verify validation on the registration form.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In a fresh private window open http://localhost:8000/account/register/ | The registration form loads |
+| 2 | Type `notanemail` into the email field and submit | Submission is blocked: either the browser's built-in email validation fires, or the form re-renders in place with a validation error; the page does NOT navigate |
 
 ### Scenario 18: Use an expired or invalid account link
 
@@ -403,7 +409,7 @@ screenshots and bug reports.
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/account/access/expired.invalid.token/ | Page shows "This link has expired" (HTTP 400) with the text "Account links are only valid for 24 hours. This one has expired or is invalid." |
 | 2 | Verify the recovery link | A "Request a new link" button is visible |
-| 3 | Click "Request a new link" | Browser navigates to http://localhost:8000/account/manage/, which redirects (unauthenticated) to http://localhost:8000/account/sign-in/ |
+| 3 | Click "Request a new link" | Browser navigates to http://localhost:8000/account/sign-in/ |
 
 ### Scenario 19: Access the account URL with no token
 
@@ -413,27 +419,28 @@ screenshots and bug reports.
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/account/access/ | Browser shows a 404 Not Found page (the URL pattern requires a token segment) |
 
-### Scenario 20: Access the manage page without authentication
+### Scenario 20: Access the settings page without authentication
 
 **Goal**: Verify unauthenticated users are redirected to the sign-in page.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Open a new private/incognito browser window | Fresh session with no cookies |
-| 2 | Navigate to http://localhost:8000/account/manage/ | Browser redirects to http://localhost:8000/account/sign-in/ |
+| 2 | Navigate to http://localhost:8000/account/settings/ | Browser redirects to http://localhost:8000/account/sign-in/ |
+| 3 | Navigate to http://localhost:8000/account/manage/ | Browser 301s to the map (`/?panel=favourites`); the pins sheet shows its signed-out state |
 
-### Scenario 21: Returning subscriber re-authenticates via the sign-in page
+### Scenario 21: Returning user re-authenticates via the sign-in page
 
-**Goal**: Verify a returning subscriber sees their existing regions after re-authenticating.
+**Goal**: Verify a returning user sees their existing pins after re-authenticating.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Complete Scenario 10 (subscribe and confirm at least one region, e.g. CH-4115) | Region is saved |
+| 1 | Complete Scenarios 10 and 11 (sign up and pin at least one region, e.g. CH-4115) | The region pin is saved |
 | 2 | Open a new private/incognito window (to clear the session) | Fresh session |
 | 3 | Navigate to http://localhost:8000/account/sign-in/ | Page loads with a "Sign in" heading, the text "Enter your email address and we'll send you a sign-in link.", and (where WebAuthn is available) a "Sign in with a passkey" button |
-| 4 | Enter `tester@example.com` and click "Send sign-in link" | A "Check your inbox" page loads: "If that address is registered, we've sent you a link to manage your subscriptions. It expires in 24 hours." (the same response is shown whether or not the email is registered) |
-| 5 | Open Mailpit, find the new email, and click the account link | Browser redirects to http://localhost:8000/account/manage/ |
-| 6 | Verify existing subscriptions | The previously added region card (e.g. CH-4115) is listed with a "Remove" button |
+| 4 | Enter `tester@example.com` and click "Send sign-in link" | A "Check your inbox" page loads (the same response is shown whether or not the email is registered) |
+| 5 | Open Mailpit, find the new email, and click the account link, then the confirm button | Browser lands on the map with the pins sheet open |
+| 6 | Verify existing pins | The previously pinned region row (e.g. CH-4115) is listed with its trash control |
 
 ### Scenario 22: Sign out via the nav account menu
 
@@ -441,8 +448,8 @@ screenshots and bug reports.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in, click the circular avatar button (first letter of your email) in the top nav | A dropdown menu opens listing the subscribed region links, a "Manage alerts" link, and a "Sign out" button |
-| 2 | Click "Sign out" | The session is cleared and the browser is redirected to the sign-in page; navigating to http://localhost:8000/account/manage/ now redirects to http://localhost:8000/account/sign-in/ |
+| 1 | While signed in, click the circular avatar button (first letter of your email) in the top nav | A dropdown menu opens with the offline-mode switch, a "Settings" link and a "Sign out" button — no region links |
+| 2 | Click "Sign out" | The session is cleared and the browser is redirected to the sign-in page; navigating to http://localhost:8000/account/settings/ now redirects to http://localhost:8000/account/sign-in/ |
 
 ### Scenario 23: Deprecated /random/ URL redirects
 

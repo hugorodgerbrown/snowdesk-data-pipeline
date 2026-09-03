@@ -2,7 +2,7 @@
 name: two-documents-and-a-map
 description: Two document pages — bulletin and weather — plus the map; regions, resorts, locations, observations and routes are map objects
 status: current
-last-reviewed: 2026-09-02
+last-reviewed: 2026-09-03
 ---
 
 # Two documents and a map
@@ -66,12 +66,15 @@ survives here for a different reason: there is no list page at all.
   new interaction in the change; the choropleth is a rating display with no
   pin target today. Without it `/account/` has nowhere to fold into.
 - **`Favourite` becomes the one saved-place model**, absorbing what
-  `Subscription` recorded. Nothing user-facing is called "Favourites" once
-  the list is a map sheet whose rows are pins.
-- **The weather page is promoted, and it is the weaker of the two.** It has
+  `Subscription` recorded. A region pin is a `Favourite` with `region` set
+  and no coordinate, elevation or `Location` — it is deliberately excluded
+  from `favourites.geojson`, because it has nothing to place, and lives in
+  the pins sheet only (SNOW-802). Nothing user-facing is called
+  "Favourites" once the list is a map sheet whose rows are pins.
+- **The weather page is promoted, and it is the weaker of the two.** It had
   full sharing metadata but no sitemap entry, and none of the MCP server's
-  thirteen tools reaches it — every one is region- or bulletin-scoped. It
-  gains a sitemap section and an MCP tool.
+  thirteen tools reached it — every one was region- or bulletin-scoped. It
+  gained a sitemap section, a canonical URL and two MCP tools (SNOW-799).
 - **The bulletin page's tail collapses** to a single link back to the map,
   focused on this region.
 - **The nav avatar menu drops from five destinations to two** (Settings,

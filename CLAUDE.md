@@ -57,16 +57,20 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  the new table. Read
                  docs/decisions/weather-is-one-immutable-location-row.md
                  before changing the shape of a row
-  accounts/      Signed-token subscription flow (see docs/accounts.md);
-                 owns the ``Account`` profile model (OneToOne to auth.User,
-                 not AUTH_USER_MODEL itself — SNOW-514 collapsed the former
-                 ``Subscriber`` into it), plus ``Subscription`` and
-                 ``PushSubscription`` (both FK to ``Account``) and
-                 ``PasskeyCredential`` (FK to auth.User, so any
-                 authenticated user can register a passkey without an
-                 Account profile)
-  favourites/    Saved map pins and resorts — the ``Favourite`` model, its
-                 relevance scoring, and the HTMX partials under /favourites/
+  accounts/      Signed-token account flow and the one account page,
+                 /account/settings/ (see docs/accounts.md); owns the
+                 ``Account`` profile model (OneToOne to auth.User, not
+                 AUTH_USER_MODEL itself — SNOW-514 collapsed the former
+                 ``Subscriber`` into it), ``PushSubscription`` (FK to
+                 ``Account``) and ``PasskeyCredential`` (FK to auth.User,
+                 so any authenticated user can register a passkey without
+                 an Account profile). ``Subscription`` is retired — its
+                 rows became region pins (SNOW-802) and SNOW-805 drops the
+                 table in its own deploy
+  favourites/    The one saved-place model — ``Favourite`` is a map pin, a
+                 saved resort, or a region pin (a region with no
+                 coordinate, SNOW-802) — plus its relevance scoring and the
+                 HTMX partials under /favourites/
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model

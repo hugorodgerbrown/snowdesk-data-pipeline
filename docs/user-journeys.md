@@ -1,8 +1,8 @@
 ---
 name: user-journeys
-description: Personas (anonymous visitor, subscriber) and core journeys J1–J7 with URL surfaces and invariants for new features
+description: Personas (anonymous visitor, signed-in user) and core journeys J1–J7 — two documents and a map — URL surfaces and invariants
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-09-03
 ---
 
 # User personas and core journeys
@@ -40,30 +40,33 @@ Defining traits:
   content (`/how-to-read-a-bulletin/`, `/examples/…`) as equally
   important entry points.
 
-### 2. Subscriber
+### 2. Signed-in user
 
-Has an `Account` row (created the moment they submit the inline form;
-`is_verified` flips to `True` once they click the account-access link).
-Owns a set of `Subscription` rows pinning specific regions. Acts in two
-modes, and a single feature often has to work in both:
+Has an `Account` row (created the moment they register or request an
+account-access link; `is_verified` flips to `True` once they click it).
+Owns saved things that live on the map — pins, saved resorts, region pins,
+routes, field reports — every one of them a `Favourite`, `Route` or
+`FieldObservation` row shown in a map sheet (SNOW-795,
+[`two-documents-and-a-map`](decisions/two-documents-and-a-map.md)). Acts in
+two modes, and a single feature often has to work in both:
 
 - **Session-authenticated** — has clicked an account-access link or
-  signed in with a passkey in this browser. The full management surface
-  under `/account/manage/` is available: add regions, remove regions,
-  register passkeys, delete the account.
-- **Token-authenticated** — arrived via a signed token in a bulletin
-  email, with no active session. The surface is intentionally narrow:
-  confirm account, unsubscribe one region. Tokens encode the account
-  identity, so we can act on their behalf without a login round-trip.
+  signed in with a password or passkey in this browser. The map's sheets
+  are the management surface: pin and unpin, rename and remove, upload a
+  route, file a report. `/account/settings/` — the one account page —
+  holds email, passkeys, telemetry and account deletion.
+- **Token-authenticated** — arrived via a signed token in an email, with
+  no active session. The surface is intentionally narrow: confirm the
+  account, or unpin one region from a historical unsubscribe link. Tokens
+  encode the account identity, so we can act on their behalf without a
+  login round-trip.
 
 Defining traits:
 - Identified by email. Email is the lookup key and the lowercased,
   normalised primary identifier.
-- Reachable asynchronously. Most of their relationship with the product
-  happens outside a session.
-- Cares about specific regions, not the country as a whole. The map and
-  region pages are the daily-driver surfaces; the homepage is for first
-  contact.
+- Cares about specific places, not the country as a whole. The map is the
+  daily-driver surface; the two documents — the bulletin and the weather
+  page — are what the map's pins open onto.
 
 ### 3. Staff (stub)
 
@@ -131,122 +134,121 @@ ten seconds.
   `<str:region_id>/` pattern without registering it before
   `apps.public.urls` is included.
 
-### J2 — Subscribe (anonymous → subscriber)
+### J2 — Sign up and pin a region (anonymous → signed-in)
 
-> "Tell me when this region's bulletin changes."
+> "Keep this region where I can find it."
 
-The conversion journey. An anonymous visitor on a bulletin page (or the
-homepage) drops an email into the inline form and becomes a subscriber.
+The conversion journey. An anonymous visitor taps the pin control in the
+map's region panel, is offered sign-in, registers or requests an
+account-access link, and comes back to a map that remembers the region.
 
 **Entry points:**
-- Inline subscribe form on any bulletin page, region pre-seeded.
-- Inline subscribe form on the homepage, no region context.
+- The pin control in the region + date panel and the region popup
+  (`favourites/partials/_region_pin_button.html`) — a sign-in path for a
+  visitor, a toggle for a signed-in user.
+- `/account/register/` and `/account/sign-in/`.
 
 **URL surface:**
-- `POST /account/` — HTMX form submit, returns one of four success
-  cards (A new account, B existing-unverified, C verified-new-region,
-  D verified-already).
-- Email — account-access link.
-- `GET /account/access/<token>/` — verifies the token and renders a
-  confirm page with a POST button; no state change and no sign-in on the
-  GET (SNOW-439).
+- `POST /account/register/` — creates the `Account`, sends a verification
+  link.
+- Email — account-access or verification link.
+- `GET /account/access/<token>/` — renders a confirm page with a POST
+  button; no state change and no sign-in on the GET (SNOW-439).
 - `POST /account/access/<token>/` — verifies the `Account`
-  (`is_verified → True`, stamps `verified_at`), and signs the account in.
-- `/account/manage/` — the post-confirm destination.
+  (`is_verified → True`, stamps `verified_at`), signs the account in and
+  lands on `/?panel=favourites` — the map with the pins sheet open.
+- `POST /favourites/partials/region/<region_id>/toggle/` — pins or unpins
+  the region (SNOW-802); the response is the control in its new state.
 
 **Key invariants:**
-- Cases A and B return **byte-equal** response fragments. This is the
-  security-relevant invariant: an unauthenticated submitter must not
-  be able to tell whether an address is already on the system.
 - Email normalisation happens at every entry point: `email.lower()`
   before storage and before lookup.
-- The Resend email send is async (no blocking the request cycle from a
-  web view).
+- Email sends are async (no blocking the request cycle from a web view).
 - Token verification is salt-scoped: account-access tokens cannot be
   replayed as unsubscribe tokens, and vice versa.
+- A region pin has no coordinate and never appears in
+  `favourites.geojson`; it is a row in the pins sheet, nothing on the map.
+- The favourites cap applies to region pins as to any other pin; the
+  one-time backfill from `Subscription` rows bypassed it.
 
 **Adding functionality here:**
-- If you touch `subscribe_partial`, A=B byte-equality is mandatory.
-  Add coverage that asserts it. C and D may diverge further.
-- New email templates inherit from the shared base; never inline
-  unsubscribe markup, use the shared partial so the signed token is
-  generated in one place.
-- Rate limiting on subscribe-side endpoints is IP-keyed via
-  `django-ratelimit`; new entry points should keep that pattern.
+- The pin control is one template rendered two ways (the panel's first
+  render and the toggle's response). Keep it that way.
+- Rate limiting on account endpoints is IP-keyed via `django-ratelimit`;
+  new entry points should keep that pattern.
 
-### J3 — Sign in to manage (subscriber, session)
+### J3 — Manage saved things (signed-in, session)
 
-> "Add another region. Remove one I don't care about any more. Register
-> a passkey so I don't need email links."
+> "Rename that pin. Drop the region I don't ski any more. Register a
+> passkey so I don't need email links."
 
 **Entry points:**
-- `/account/sign-in/` — the dedicated sign-in page.
-- Account-access email link (covered in J2) — implicitly signs the
-  user in on click.
-- A passkey present on the device, surfaced as a "Sign in with
-  passkey" option on the sign-in page.
+- The map's roundels open its sheets: pins, routes, reports, downloads.
+- `/account/sign-in/` — the dedicated sign-in page; a passkey present on
+  the device is surfaced as a "Sign in with passkey" option.
+- The nav avatar menu — the offline-mode switch, Settings, Sign out.
 
 **URL surface:**
-- `/account/sign-in/` — email entry or passkey challenge.
-- `/account/access/<token>/` — token consumed during the email
-  branch of sign-in.
-- `/account/manage/` — landing page once authenticated.
-- `/account/manage/remove/<region_id>/` — HTMX region removal.
+- `/?panel=favourites|routes|reports` — the map with a sheet open
+  (SNOW-803); what every retired account list page redirects to.
+- `/favourites/partials/…`, `/routes/partials/…`, `/partials/report/…`
+  — the HTMX endpoints behind the sheets' rows and controls.
+- `/account/settings/` — email, passkeys, telemetry, sync log, reset
+  local data, sign out, delete account.
 - `/account/manage/delete/` — hard-delete the account.
 - `/account/manage/passkeys/<uuid>/delete/` — remove a passkey.
 - `/account/webauthn/…` — WebAuthn challenge/response endpoints.
 - `/account/sign-out/` — POST-only.
 
 **Key invariants:**
-- Adding a new region happens on a bulletin page through the inline
-  subscribe form — the manage page itself does not have a region
-  picker. There is one entry point for "I want this region", not two.
+- There is no account list page. `/account/`, `/account/favourites/`,
+  `/account/observations/` and `/account/routes/` are permanent redirects
+  into the map (SNOW-802/803); a sheet is the only rendering of a list.
 - `delete_account` is the sole hard-delete path — it drops the `User`
-  (cascading to `Account` and any `Subscription` rows), available to any
-  authenticated account. Removing the last region via `remove_region` or
-  the unsubscribe token deletes only that `Subscription` row; the
-  `User`/`Account` survive and a session-authenticated user stays signed
-  in on manage.
+  (cascading to `Account` and everything the user owns), available to any
+  authenticated account. Unpinning the last region deletes only that
+  `Favourite`; the `User`/`Account` survive and the session is untouched.
 - Passkey registration and authentication require an active session;
-  passkeys cannot bootstrap an account from scratch (account creation
-  is always email-first).
+  passkeys cannot bootstrap an account from scratch (account creation is
+  always email-first).
 
 **Adding functionality here:**
-- New manage-page surfaces should be POST + HTMX with `outerHTML`
-  swap, matching the rest of the page.
+- New sheet controls are POST + HTMX (or a plain fetch that swaps the
+  response in), matching the rest of the sheet; register any new overlay
+  with `window.pwaMapOverlays`.
 - Any new auth path must be guarded by `require_htmx` if it returns a
   fragment, and must respect the IP-keyed rate limit on email-based
   flows.
 
-### J4 — Act on a bulletin email (subscriber, token)
+### J4 — Act on an email link (token)
 
-> "I got the morning email. I'll either click through to read today's
-> bulletin, or I'll one-click unsubscribe."
+> "I got an email. I'll click through, or I'll one-click unsubscribe."
 
-This journey deliberately runs **without a session**. The signed token
-in the email is the entire authentication mechanism.
+This journey deliberately runs **without a session**. The signed token in
+the email is the entire authentication mechanism. No scheduled job sends
+a bulletin — every email is transactional — but the per-region
+unsubscribe links in historical emails have no expiry, so the path stays.
 
 **Entry points:**
-- A bulletin email in the subscriber's inbox.
+- An email in the user's inbox.
 
 **URL surface:**
 - Click-through to a current bulletin — re-enters J1 from the URL on.
 - `GET /account/unsubscribe/<token>/` — confirm page.
-- `POST /account/unsubscribe/<token>/` — perform the unsubscribe.
+- `POST /account/unsubscribe/<token>/` — removes the region pin the
+  subscription became (SNOW-802).
 - `/account/unsubscribe-done/` — confirmation page.
 
 **Key invariants:**
-- Unsubscribe tokens have **no expiry**. A subscriber must be able to
-  opt out from any historical email, no matter how old.
+- Unsubscribe tokens have **no expiry**. A reader must be able to act on
+  any historical email, no matter how old, and the action must still be
+  the one the link promised — the region goes.
 - The token encodes `{email}|{region_id}` so the action is unambiguous
-  even when the recipient holds many subscriptions.
+  even when the recipient holds many pins.
 - One-click unsubscribe never requires sign-in. Friction here is a
   legal compliance risk, not a UX choice.
 
 **Adding functionality here:**
-- New email types must include the per-region unsubscribe partial.
-  Skipping it is a CAN-SPAM-class regression even if technically the
-  user can manage subscriptions elsewhere.
 - Any new token surface goes through `apps/accounts/services/token.py`
   and uses a fresh salt — never overload `SALT_UNSUBSCRIBE`.
 

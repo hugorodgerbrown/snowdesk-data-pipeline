@@ -1,13 +1,23 @@
 ---
 name: pure-python-point-in-polygon
-description: Subscribe request path uses pure-Python ray-casting instead of dev-only Shapely; raw geo/language fields live on RequestLog not Subscription
+description: region_for_point is pure-Python ray-casting on the request path, not dev-only Shapely; the Subscription geo fields it fed are retired
 status: current
-last-reviewed: 2026-06-14
+last-reviewed: 2026-09-03
 ---
 
 # Pure-Python point-in-polygon on the request path
 
-**Decision.** The subscribe and add-region request handlers classify a
+> **Retired half (SNOW-802/805).** The subscribe and add-region handlers
+> this record describes are gone: a `Subscription` was a bookmark on a
+> region and is a region pin now, so nothing classifies a subscriber's
+> geolocation and `Subscription.subscribed_via` / `GeoMatchKind` go with
+> the table. What survives — and why the record stays `current` — is the
+> first decision: `region_for_point` in
+> `apps/regions/services/point_match.py` is the request-path
+> point-in-polygon for a dropped favourite pin (`apps/favourites/services
+> .create_favourite`), and it stays pure Python for the reasons below.
+
+**Decision.** The subscribe and add-region request handlers classified a
 subscriber's geolocation relative to the target MicroRegion using a
 pure-Python ray-casting implementation in
 `apps/regions/services/point_match.py`, not the Shapely-based helper used by

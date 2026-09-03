@@ -1,8 +1,8 @@
 ---
 name: site-structure
-description: Public route map — home is the map page, bulletin/resort/favourites/observations URLs, HTMX partial prefixes, retired AI-summary design
+description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-08-25
+last-reviewed: 2026-09-03
 ---
 
 # Snowdesk site structure
@@ -14,6 +14,20 @@ The public URL surface, as routed. Route tables live in
 [`apps/favourites/urls.py`](../apps/favourites/urls.py) and
 [`apps/observations/urls.py`](../apps/observations/urls.py) — this page is the
 map of them, not a second source of truth.
+
+**Two documents and a map** (SNOW-795,
+[`docs/decisions/two-documents-and-a-map.md`](decisions/two-documents-and-a-map.md)).
+Snowdesk has two document pages — the bulletin at
+`/<region_id>/<slug>/<date>/` and the weather page at `/weather/<short_id>/`
+— and one application, the map at `/`. Everything else a visitor might
+read at length lives on the map as a layer, a pin or a sheet, and the
+routes that used to render those things as pages are permanent redirects
+into the map (`?panel=favourites|routes|reports` opens a sheet,
+`?resort=<slug>` flies to a resort). `/resorts/<slug>/` survives as a
+search landing page that routes to the two documents, and
+`/account/settings/` because account mechanics are not map objects.
+Identifiers follow [`no-integer-pks-in-urls`](decisions/no-integer-pks-in-urls.md):
+no sequential primary key appears in a URL or a public feed.
 
 ## Route ordering constraint
 
@@ -33,9 +47,10 @@ prefixes depend on this ordering — don't reorder
 | `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |
-| `/resorts/<resort_id>/<slug>/` | `resort_detail` | Resort page — curated facts plus a point-local field-observations panel. |
-| `/favourites/<uuid>/` | `favourites.views.favourite_detail` | A saved map pin or resort. |
-| `/observations/` | `public.views.observations_list` | Community field reports. |
+| `/weather/<short_id>/` | `location_weather` | **Document two**: one location, one day (SNOW-761/789). `?date=` picks the row inside the page; the bare URL is canonical for today, the dated one for a past day (SNOW-799). Keyed on `Location.short_id` — eleven opaque characters, never the pk (SNOW-797); `/weather/<int>/` 301s. |
+| `/resorts/<slug>/` | `resort_detail` | A router, not a document (SNOW-807): the resort's own curated facts, then one link to the region's bulletin, a link per curated location to its weather page, and one link to the map with the reports sheet open at the resort. Keyed on `Resort.slug` (SNOW-796); `/resorts/<id>/<slug>/` 301s. |
+| `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location. |
+| `/observations/` | redirect | Permanent 301 to `/?panel=reports` — the map with the reports sheet open (SNOW-804). |
 | `/how-to-read-a-bulletin/` | `how_to_read_bulletin` | Domain primer for readers. |
 | `/help/` | `help_page` | Help, including the PWA/offline sections. |
 | `/examples/random/` | `examples_random` | A sample bulletin; `/random/` is a deprecated redirect to it. |
@@ -43,9 +58,12 @@ prefixes depend on this ordering — don't reorder
 | `/s/<token>/` | `share_redirect` | Short share links. |
 | `/privacy/`, `/terms/`, `/terms-of-service/`, `/colophon/` | static pages | Legal and attribution. |
 
-Account routes (`/account/…` — register, verify, setup, sign-in, manage,
+Account routes (`/account/…` — settings, register, verify, setup, sign-in,
 change-email, unsubscribe, WebAuthn, push) are documented in
-[`docs/accounts.md`](accounts.md).
+[`docs/accounts.md`](accounts.md). `/account/`, `/account/favourites/`,
+`/account/observations/` and `/account/routes/` are permanent redirects into
+the map's sheets (SNOW-802/803); `/account/settings/` is the one account
+page.
 
 ## Staff-only routes
 
@@ -66,11 +84,13 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
 - `/partials/report/`, `/partials/report/form/` — field-report submission
-- `/favourites/partials/…` — create, rename, delete, toggle, card, list
+- `/favourites/partials/…` — create, rename, delete, resort toggle, region
+  pin toggle (SNOW-802), card, list
 - `/routes/partials/…` — create (multipart GPX upload), rename, delete, list.
-  `list` takes `?variant=map` for the map sheet's lean row (SNOW-686); the
-  surface that reaches these is open to every visitor and its contents to
-  every signed-in one ([`docs/map-and-api.md`](map-and-api.md))
+  Every list endpoint has one shape, the map sheet's (SNOW-803 retired the
+  account-page variants); the surface that reaches these is open to every
+  visitor and its contents to every signed-in one
+  ([`docs/map-and-api.md`](map-and-api.md))
 - `/partials/_components/<slug>/` — component-library panels
 
 ## Non-HTML routes
@@ -84,17 +104,18 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 `/llms-full.txt`, `/favicon.ico`, and the `/livez` + `/healthz` probes
 ([`docs/deployment.md`](deployment.md)).
 
-`/sitemap.xml` has three sections, defined in
+`/sitemap.xml` has four sections, defined in
 [`apps/public/sitemaps.py`](../apps/public/sitemaps.py) and registered together
 as `SITEMAPS`: `bulletins` (regions with a bulletin valid today), `resorts`
-(every resort detail page), and `static` (the homepage, both guides, the four
-legal pages). SNOW-676 added the last two — until then the sitemap was the
-bulletin section alone, which left the resort pages invisible to search and
-made the whole file *empty* out of season, when no bulletin is valid today.
-Deliberately absent, with the reasoning in the module: `/observations/` (shows
-an anonymous visitor a sign-in CTA, not the stream), `/examples/…` (serves a
-random bulletin per request), redirects, staff-only routes, and anything
-`Disallow`ed in robots.txt.
+(every resort page), `locations` (every *named* public location's weather
+page — never a centroid, never a favourite's pin; SNOW-799) and `static`
+(the homepage, both guides, the four legal pages). SNOW-676 added `resorts`
+and `static` — until then the sitemap was the bulletin section alone, which
+left the resort pages invisible to search and made the whole file *empty*
+out of season, when no bulletin is valid today. Deliberately absent, with
+the reasoning in the module: `/examples/…` (serves a random bulletin per
+request), redirects (`/observations/` is one now), staff-only routes, and
+anything `Disallow`ed in robots.txt.
 
 ## Page metadata
 

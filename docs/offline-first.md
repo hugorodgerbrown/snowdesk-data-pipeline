@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-09-03
 ---
 
 # Offline-first PWA compliance
@@ -358,14 +358,15 @@ views' own docstrings pin the choice, and
 [`offline-map.md`](offline-map.md#the-account-pages-are-partitioned-not-excluded)
 carries the full argument.
 
-**Which page holds the roster has moved.** It was `/account/manage/`
-(SNOW-667 split that into `/account/` + `/account/settings/`), then the
-favourites section of `/account/`, and since SNOW-668 it is
-`/account/favourites/` — `apps.accounts.views.favourites_view`. The two
-neighbouring account pages whose views live elsewhere, `my_routes` and
-`my_observations`, DO send `Cache-Control: private, no-store`
-deliberately; copying that header onto `favourites_view` is the silent
-way to break this, which is what `TestFavouritesPageCaching` guards.
+**Which page holds the roster has moved — to the map.** It was
+`/account/manage/` (SNOW-667 split that into `/account/` +
+`/account/settings/`), then the favourites section of `/account/`, then
+`/account/favourites/` (SNOW-668). SNOW-803 removed that page: the pins
+sheet on the map at `/` is the only surface that fetches
+`/favourites/partials/list/`, the write-through keys on that request
+path, and `/` is the navigation the shell caches. Every cached navigation
+is stamped with `X-SW-Principal` — the map like any other — so the
+partitioning argument is unchanged; only its subject moved.
 
 Partitioned is not the same as dependable, though. The page's entry is
 in the cache only after that account has loaded it online in this

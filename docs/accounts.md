@@ -1,36 +1,25 @@
 ---
 name: accounts
-description: accounts app — Account model, registration, email verification, is_verified gate, signed-token salts, the five /account/ pages
+description: accounts app — Account model, registration, is_verified gate, signed-token salts, the one /account/settings/ page, the redirects
 status: current
-last-reviewed: 2026-08-25
+last-reviewed: 2026-09-03
 ---
 
 # Accounts
 
-Users subscribe to bulletin alerts via a signed-token flow — no passwords, no third-party auth library. An inline HTMX form on bulletin pages (or the landing page) captures an email address; an account-access link is sent by email. Clicking the link verifies the `Account` and opens the account page where they manage their regions. Every outbound bulletin email carries a per-region unsubscribe token so subscribers can opt out without logging in.
+An account is an email address proven reachable — via a signed-token flow (no passwords required, no third-party auth library), a password, or a passkey. Signing in unlocks the map's saved things: pins, routes, reports and pinned regions, all of which live in the map's sheets (SNOW-795, [`docs/decisions/two-documents-and-a-map.md`](decisions/two-documents-and-a-map.md)). The only account *page* is `/account/settings/`.
 
-**Entry points** — the subscribe form is a single partial included wherever a CTA is needed:
-
-```django
-{# bulletin page — region pre-seeded #}
-{% include "accounts/partials/subscribe_form.html" with region_id=region.region_id %}
-
-{# landing page — no region context #}
-{% include "accounts/partials/subscribe_form.html" %}
-```
-
-The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`. The form posts to `accounts:subscribe` with `hx-target="this"` and `hx-swap="outerHTML"` so the success card replaces the form in-place.
+**What "subscription" used to mean.** Until SNOW-802 an account owned `Subscription` rows, captured by an inline subscribe form on every bulletin page and listed on `/account/`. Nothing ever sent a bulletin off them — every sender in `apps/accounts/services/email.py` is transactional — so a subscription was a bookmark on a region, and bookmarks belong on the map. They are **region pins** now (`Favourite` rows with a `region` and no coordinate), created from the pin control in the map's region panel and listed in the pins sheet. `backfill_subscriptions_to_region_pins --commit` converted the existing rows; the `Subscription` table is dropped in its own deploy (SNOW-805). The per-region unsubscribe token in historical emails still resolves, and removes the region pin.
 
 **URL surfaces** — all mounted under `/account/` (`app_name = "accounts"`). The app was remounted from `/subscribe/` to `/account/` in SNOW-430; `config/urls.py` keeps a permanent (301) redirect from `/subscribe/*` so in-flight account-access and unsubscribe email links still resolve. The account-access token route was renamed `account/<token>/` → `access/<token>/` at the same time (a dedicated legacy redirect maps `/subscribe/account/<token>/` → `/account/access/<token>/`).
 
 | URL | Name | Method | Purpose |
 |-----|------|--------|---------|
-| `/account/` | `hub` | GET | Subscriptions — one card per subscribed region (SNOW-667; favourites moved off it by SNOW-668) |
-| `/account/favourites/` | `favourites` | GET | Saved pins — hosts `favourites:list` by `hx-get` (SNOW-668) |
-| `/account/observations/` | `observations` | GET | The user's own field reports; view lives in `apps.observations` (SNOW-677) |
-| `/account/routes/` | `routes` | GET | The user's own GPX routes; view lives in `apps.routes`, 404 behind the `routes` flag (SNOW-713) |
-| `/account/settings/` | `settings` | GET | Email, passkeys, telemetry, sync log, reset local data, sign out, delete account (SNOW-667) |
-| `/account/subscribe/` | `subscribe` | POST | HTMX inline subscribe form (moved off `/account/` by SNOW-667) |
+| `/account/` | `hub` | GET | Permanent 301 to `/?panel=favourites` — the map with the pins sheet open (SNOW-802; it was the Subscriptions page) |
+| `/account/favourites/` | `favourites` | GET | Permanent 301 to `/?panel=favourites` (SNOW-803) |
+| `/account/observations/` | `observations` | GET | Permanent 301 to `/?panel=reports` (SNOW-803) |
+| `/account/routes/` | `routes` | GET | Permanent 301 to `/?panel=routes` (SNOW-803) |
+| `/account/settings/` | `settings` | GET | Email, passkeys, telemetry, sync log, reset local data, sign out, delete account (SNOW-667) — the one account page |
 | `/account/register/` | `register` | GET + POST | Standalone registration (email required, name optional); sends a verification link |
 | `/account/verify/<token>/` | `verify` | GET + POST | GET shows a confirm button (no state change); POST marks the `Account` verified, logs in, redirects to setup |
 | `/account/setup/` | `setup` | GET | Post-verification credential-setup landing (extended by SNOW-431/434) |
@@ -40,22 +29,22 @@ The outer wrapper is `<div id="subscribe-cta-{{ region_id|default:'global' }}">`
 | `/account/change-email/` | `change_email` | GET + POST | Request a change of account email (SNOW-433) |
 | `/account/change-email/<token>/` | `change_email_confirm` | GET + POST | Confirm + apply an email change (SNOW-433) |
 | `/account/access/<token>/` | `account` | GET + POST | GET shows a confirm button (no state change, no login); POST verifies the `Account` and signs in (SNOW-439) |
-| `/account/manage/` | `manage` | GET | Permanent redirect to `/account/` (SNOW-667) |
-| `/account/manage/remove/<region_id>/` | `remove_region` | POST | HTMX — remove one region from the authenticated account |
-| `/account/manage/delete/` | `delete_account` | POST | HTMX — hard-delete the authenticated account (User) and cascade subscriptions |
-| `/account/unsubscribe/<token>/` | `unsubscribe` | GET + POST | One-click region unsubscribe |
+| `/account/manage/` | `manage` | GET | Permanent 301 to `/?panel=favourites` (SNOW-667 sent it to the hub; SNOW-802 sent the hub to the map) |
+| `/account/manage/delete/` | `delete_account` | POST | HTMX — hard-delete the authenticated account (User) and everything it owns |
+| `/account/unsubscribe/<token>/` | `unsubscribe` | GET + POST | One-click region unpin from a historical email link — removes the region pin (SNOW-802) |
 | `/account/unsubscribe-done/` | `unsubscribe_done` | GET | Post-unsubscribe confirmation page |
 
-**Account area layout (SNOW-667 → SNOW-668)** — `/account/manage/` was a single 529-line template stacking nine unranked sections. It is now five pages, one per list: `/account/` (subscriptions), `/account/favourites/`, `/account/observations/`, `/account/routes/` and `/account/settings/`, with `/account/manage/` kept as a permanent redirect so old bookmarks and in-flight email links still resolve.
+**Account area layout (SNOW-667 → SNOW-668 → SNOW-802/803)** — `/account/manage/` was a single 529-line template stacking nine unranked sections. SNOW-667 split it into a hub, favourites and settings; SNOW-668 gave every list its own page. Then the two-documents IA (SNOW-795) recognised each of those lists as a second rendering of a map sheet, and sent them there: the account area is `/account/settings/` alone, and every other account URL is a permanent redirect into the map so old bookmarks and in-flight email links still land.
 
-**The nav avatar menu is the area's only navigation**, by decision — [`docs/decisions/account-area-navigation-lives-in-the-nav-menu.md`](decisions/account-area-navigation-lives-in-the-nav-menu.md). Two sub-navs were built and removed (SNOW-667's grouped strip, rendered from a since-deleted `apps/accounts/subnav.py`; SNOW-705's flat tab strip), so adding a page means adding one `<a>` to `templates/includes/nav.html` — **and an assertion to `tests/public/test_nav_partial.py`**. That is not a formality: `/account/observations/` and `/account/routes/` both shipped mounted, tested and reachable only by typing the URL, because their tests reverse the URL directly. SNOW-668 linked them and added the per-entry assertions. A gated page needs its entry gated to match, or the menu offers a broken destination — Routes was gated that way until SNOW-724 removed the `routes` flag and the 404 behind it, and every entry is now inside the signed-in branch and nothing more.
+**The nav avatar menu is the area's only navigation**, by decision — [`docs/decisions/account-area-navigation-lives-in-the-nav-menu.md`](decisions/account-area-navigation-lives-in-the-nav-menu.md). Two sub-navs were built and removed (SNOW-667's grouped strip, rendered from a since-deleted `apps/accounts/subnav.py`; SNOW-705's flat tab strip). The menu holds the offline-mode switch, Settings and Sign out. Adding a page would mean adding one `<a>` to `templates/includes/nav.html` — **and an assertion to `tests/public/test_nav_partial.py`**. That is not a formality: `/account/observations/` and `/account/routes/` both shipped mounted, tested and reachable only by typing the URL, because their tests reverse the URL directly; the per-entry assertions are what caught it, and the file now asserts each removed entry absent as well as each survivor present.
 
-Two things to know before touching the routing. `subscribe_partial` used to own the `""` route, which made a GET of `/account/` answer 405; it moved to `/account/subscribe/` keeping its URL name, so every `{% url 'accounts:subscribe' %}` is unaffected. And none of `hub_view`, `settings_view` or `favourites_view` is `@never_cache`, nor may any of them set `Cache-Control: private, no-store`: the offline favourites roster reads `/account/favourites/` out of the PWA shell cache, and `static/js/sw.js` refuses to cache a `no-store` response, so safety comes from the `X-SW-Principal` stamp instead. Their two neighbours in the area — `my_routes` and `my_observations`, whose views live in other apps — DO send `no-store`, deliberately, so copying a header between account pages is the mistake to watch for.
+One thing to know before touching the caching. `settings_view` is not `@never_cache`, and must not set `Cache-Control: private, no-store`: the account area is cache-*partitioned*, not cache-avoided — `static/js/sw.js` stamps every cached navigation with `X-SW-Principal` and refuses it to any other principal. The posture was first load-bearing on `/account/favourites/`, which the offline favourites roster read out of the shell cache; that page is gone, the roster's write-through keys on the `/favourites/partials/list/` request path the map sheet fetches, and the map at `/` is the navigation the shell caches for it (`apps.accounts.views._ACCOUNT_PAGE_CACHE_NOTE`).
 
 **Models** (SNOW-514 collapsed `Subscriber` into `Account` — there is now a single public-user identity):
 - `Account(user, is_verified, verified_at, display_name, acquisition_request, pending_email, pending_email_requested_at)` — the single public-user identity, OneToOne to `auth.User` (`related_name="account"`). Auto-created at every public entry point (subscribe, sign-in, register) via `Account.objects.get_or_create_for_email(email)` (username == email == lowercased). `is_verified` is the sole "email proven reachable" gate, set by **every** email-proving link (`verify_view`, `account_view`, `change_email_confirm_view`, and `reset_password_confirm_view`); it is deliberately distinct from `User.is_active` (the kill switch). `Account.mark_verified(now)` mutates in memory and returns `self` (idempotent on `verified_at`); the caller owns the `save()` + `login()`. `acquisition_request` (FK to `core.RequestLog`, `SET_NULL`) records the request that first created the account — first-observation wins, never overwritten. `pending_email` / `pending_email_requested_at` (SNOW-433) hold a new address awaiting verification without touching the live `User.email`.
-- `Subscription(account, region)` — links an `Account` to a `regions.MicroRegion`. `unique_together` on `(account, region)`.
-- Delete semantics: removing a region (via the manage page, bulletin page, or unsubscribe token) deletes only the `Subscription` row — the `User` and `Account` survive, even when it was the last region, and the caller stays signed in. `delete_account` is the **sole** hard-delete path, available to any authenticated account (including a registered-only account with zero subscriptions) — it deletes the `User`, which cascades to `Account` and any `Subscription` rows.
+- `Subscription(account, region)` — **retired** (SNOW-802). Links an `Account` to a `regions.MicroRegion`; no code path reads or writes it any more, its rows have been converted to region pins, and SNOW-805 drops the table in its own deploy.
+- Region pin — a `Favourite` whose subject is the region: `region` set, `location`/`latitude`/`longitude`/`elevation` null, one per `(user, region)` by partial unique constraint (`Favourite.is_region_pin`, `FavouriteQuerySet.region_pins()`). Created and removed from the map's region panel (`favourites:region_toggle`), listed in the pins sheet, never in `favourites.geojson`.
+- Delete semantics: unpinning a region (from the map, or via the unsubscribe token) deletes only that `Favourite` row — the `User` and `Account` survive, even when it was the last pin, and the caller stays signed in. `delete_account` is the **sole** hard-delete path, available to any authenticated account — it deletes the `User`, which cascades to `Account` and everything the user owns.
 
 **Change email (SNOW-433)** — a signed-in user changes their address via the same re-verify pattern; `username == email` is never touched until the new address is proven. `change_email_view` (`/account/change-email/`, 3/m) records the new address on `Account.pending_email` (a nullable slot; the account keeps its current verified address), emails the **new** address a confirmation (`SALT_EMAIL_CHANGE`, bound to user + address) and the **old** address a link-free FYI. A new address already owned by another account is a **silent no-op** — same "check your inbox" response, no confirmation sent, `pending_email` left unset. `change_email_confirm_view` (`/account/change-email/<token>/`, 10/m) requires `pending_email` to still match (latest-request-wins + single-use) and the address to still be free, then on POST atomically swaps `username`/`email`, stamps verified, clears the pending slot, re-`login()`s under the new identity, and FYIs the old address again. `mask_email` on both addresses in logs.
 

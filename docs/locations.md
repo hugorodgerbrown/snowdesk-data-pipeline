@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
-last-reviewed: 2026-08-23
+last-reviewed: 2026-09-03
 ---
 
 # Locations — what every coordinate in this codebase means
@@ -87,10 +87,11 @@ tickets (SNOW-696, SNOW-704, SNOW-709) are moving onto it.
 `latitude`/`longitude` are exactly where the user dropped the pin. Nothing
 rounds them and nothing should.
 
-The pin's **name** is the user's own text, which is why `favourite_detail`
-is `sharing=False` with `Cache-Control: private, no-store` — a saved place
-must not be indexed. Note what this does *not* say: the coordinate is not
-anonymised anywhere. See
+The pin's **name** is the user's own text, and a saved place must not be
+indexed: the favourite has no page of its own (`/favourites/<uuid>/` 301s
+to the location's weather page since SNOW-800), and that page is reachable
+only by the owner for a favourite's location. Note what this does *not*
+say: the coordinate is not anonymised anywhere. See
 [`location-is-the-primitive`](decisions/location-is-the-primitive.md),
 which corrected exactly that misreading.
 

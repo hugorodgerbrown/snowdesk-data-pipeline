@@ -2,7 +2,7 @@
 name: nav_implementation_spec
 description: templates/includes/nav.html partial — back_url/back_label/season_trigger parameters, auth and staff dropdowns, sync badge, full-width layout
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-09-03
 ---
 
 # Navigation implementation spec
@@ -26,7 +26,7 @@ Left to right:
    standalone and drops to `text-label` when sharing the row with a back link.
 3. Optional right-aligned **Season** button (`season_trigger`), on bulletin
    pages only.
-4. The right-side cluster: sync badge, then subscriber auth, then staff admin.
+4. The right-side cluster: sync badge, then account auth, then staff admin.
 
 ### Right-side cluster
 
@@ -36,15 +36,17 @@ Left to right:
   queued mutation has permanently failed. It carries only `hidden` at rest;
   `inline-flex` is added by the script, so a count-zero badge never leaks a
   stray pill (SNOW-445). See [`docs/mutation-queue.md`](mutation-queue.md).
-- **Authenticated subscriber** — an avatar button (first letter of the email)
-  opens a dropdown with up to three subscribed region links (from the
-  `nav_subscriptions` context processor in
-  `apps/accounts/context_processors.py`), "My account", and "Sign out".
+- **Authenticated account** — an avatar button (first letter of the email)
+  opens a dropdown holding the offline-mode switch, "Settings" and "Sign
+  out". Since SNOW-802/803 that is the whole menu: the region links and
+  the list entries it once carried are map sheets now, and the
+  `nav_subscriptions` context processor that fed the region links is gone
+  ([`account-area-navigation-lives-in-the-nav-menu`](decisions/account-area-navigation-lives-in-the-nav-menu.md)).
 - **Not authenticated** — a single "Sign in" button to `/account/sign-in/`,
   which itself carries the "Create an account" link.
 - **Staff overlay** — a cog button opens an admin dropdown (Component library,
   Push demo, Edit map, Django admin). It is rendered *in addition to* the
-  subscriber avatar, so a staff user who is also a subscriber sees both.
+  account avatar, so a staff user with an account sees both.
 
 Both dropdowns are native `<details>` disclosures (SNOW-616), not scripted
 ones. Opening, closing, Enter/Space and focus all work with JavaScript

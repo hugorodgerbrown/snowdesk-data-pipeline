@@ -1,8 +1,8 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, import_resorts, import_locations, link_region_centroid_locations
+description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, import_resorts, import_locations, link_region_centroid_locations, backfill_*
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-09-03
 ---
 
 # Management commands
@@ -662,6 +662,54 @@ uv run python manage.py backfill_observation_locations --commit  # apply
 ```
 
 Run it before SNOW-714 drops `FieldObservation.latitude`/`longitude`.
+
+### `backfill_resort_slugs` — mint `Resort.slug` where it is null
+
+One-shot backfill for SNOW-796. `Resort.slug` is the resort's URL identifier
+(`/resorts/<slug>/`) and the `id` that `resorts.geojson` emits, replacing the
+integer primary key ([`no-integer-pks-in-urls`](decisions/no-integer-pks-in-urls.md)).
+`Resort.save()` mints a slug for every row created after the column landed;
+this reaches the rows that pre-date it. **Not a data migration**: the schema
+migration adds a nullable column and writes nothing, and a later migration
+tightens it to `null=False` once every environment has run this. A collision
+is a failure, not a suffix — the command exits non-zero and leaves both rows
+alone. Idempotent; a slug is never regenerated.
+
+```bash
+uv run python manage.py backfill_resort_slugs           # preview
+uv run python manage.py backfill_resort_slugs --commit  # apply
+```
+
+### `backfill_location_short_ids` — mint `Location.short_id` where it is null
+
+One-shot backfill for SNOW-797. `Location.short_id` is the key of
+`/weather/<short_id>/` and of `weather.geojson`'s features. The field's
+`default=` mints one for every new row; this reaches the rows that pre-date
+the column. It cannot be a migration even in principle: Django evaluates a
+callable default once and stamps every existing row with the same token,
+which the unique constraint rejects — so the migration adds the column with
+no database-side default (`SeparateDatabaseAndState`) and this fills it.
+Idempotent; a short id is never regenerated.
+
+```bash
+uv run python manage.py backfill_location_short_ids           # preview
+uv run python manage.py backfill_location_short_ids --commit  # apply
+```
+
+### `backfill_subscriptions_to_region_pins` — turn Subscription rows into region pins
+
+One-shot backfill for SNOW-802. Every `Subscription` row becomes the
+account's region pin (`create_region_favourite`, with the favourites cap
+switched off so nobody's regions are dropped). The `Subscription` row is
+left in place: the table is dropped in its own deploy (SNOW-805), after this
+has run in production — `build.sh` auto-migrates, so a drop cannot travel
+with the backfill that empties it. Idempotent: an existing pin is reported,
+not duplicated.
+
+```bash
+uv run python manage.py backfill_subscriptions_to_region_pins           # preview
+uv run python manage.py backfill_subscriptions_to_region_pins --commit  # apply
+```
 
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 

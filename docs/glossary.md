@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-08-05
+last-reviewed: 2026-09-03
 ---
 
 # Glossary — domain terms to code symbols
@@ -98,6 +98,8 @@ Which coordinate on which model is exact, approximate or derived:
 | Weather | What was known about one `Location` on one day. One row per `(location, observed_on)`, immutable once that day is past; `forecast` holds the days after it *as known on it* | `Weather` in `apps/weather/models.py`; `docs/decisions/weather-is-one-immutable-location-row.md` |
 | observed_on | The day a `Weather` row **is of** — not the day it was fetched (that is `fetched_at`). Today's row is refined in place by each of the four daily runs; a past one raises `ImmutableWeatherRowError` | `Weather.observed_on`; `upsert_weather` in `apps/weather/services/upsert.py` |
 | Region centroid | The `Location` at a micro-region's centre — what anchors a region in the location estate so it can have weather. Anonymous by design: a centroid is not a place anyone goes | `MicroRegion.centroid_location`, filled by `link_region_centroid_locations`; read via `MicroRegion.centre_point()` |
+| short_id | A `Location`'s external identifier: eleven URL-safe characters from `secrets.token_urlsafe(8)`, the key of `/weather/<short_id>/` and of `weather.geojson`'s features (SNOW-797). Opaque rather than a slug because ~461 of ~540 public locations are unnamed centroids; never all digits, so it cannot collide with the legacy integer route | `Location.short_id`; `ShortIdConverter` in `apps/locations/converters.py`; `backfill_location_short_ids` |
+| Resort slug | A `Resort`'s stored, unique URL identifier — `/resorts/<slug>/` and `resorts.geojson`'s `id` (SNOW-796). Minted from the name on first save and **never regenerated on rename**: the page is indexed, and a changed slug is a broken URL | `Resort.slug`; `unique_resort_slug()` in `apps/regions/models.py`; `backfill_resort_slugs` |
 | Role vs kind | `Location.kind` describes the place (Mont Fort is a peak whoever is looking); `ResortLocation.role` describes what it is *to one resort*. Attelas can be one resort's top and another's mid-station — which is why the join is a many-to-many | `Location.KIND` / `ResortLocation.ROLE` in `apps/locations/models.py` |
 | Report location vs raw fix | On a field observation, `latitude`/`longitude` is where the report says it happened (possibly dragged); `gps_latitude`/`gps_longitude` is the device's own fix. The gap is precision, never anonymisation | `FieldObservation` in `apps/observations/models.py` |
 | Region centroid | `MicroRegion.centre` — the polygon's centroid, representing the region rather than any place anyone goes | `centre` on `MicroRegion` / `SubRegion` / `MajorRegion`; computed by `refresh_eaws_fixtures` |
@@ -110,12 +112,13 @@ Which coordinate on which model is exact, approximate or derived:
 | Slope angle overlay | The map's steepness raster (SNOW-691) — swisstopo's `ch.swisstopo.hangneigung-ueber_30`, banded to the SLF classification (30–35 / 35–40 / 40–45 / 45–50 / >50°). Under 30° is unshaded | `static/js/slope_overlay_core.js`; `installSlopeLayer` in `static/js/map.js`; `SLOPE_TILE_URL` in `config/settings/base.py` |
 | Coverage rectangle | The slope raster's declared extent, `5.140242, 45.398181` → `11.47757, 48.230651`. Used as the source's `bounds` and to disable the layers-menu row outside it, because unshaded ground *outside* it means "not surveyed" rather than "under 30°" | `COVERAGE_BOUNDS` / `coversPoint` in `static/js/slope_overlay_core.js` |
 
-## Subscriptions and tracking
+## Accounts and tracking
 
 | Term | Meaning | Code |
 |------|---------|------|
-| Account | The single public-user identity (`OneToOne` to `auth.User`, SNOW-514 collapsed the former `Subscriber` model into this). Auto-created at every public entry point (subscribe, sign-in, register). `is_verified` is the sole "email proven reachable" gate, set by every email-proving link. `AUTH_USER_MODEL` is Django's built-in `auth.User`; `Account` is a domain profile, not the user model | `apps/accounts/models.py` |
-| Subscription | (Account, MicroRegion) pair driving bulletin emails | `apps/accounts/models.py` |
+| Account | The single public-user identity (`OneToOne` to `auth.User`, SNOW-514 collapsed the former `Subscriber` model into this). Auto-created at every public entry point (sign-in, register). `is_verified` is the sole "email proven reachable" gate, set by every email-proving link. `AUTH_USER_MODEL` is Django's built-in `auth.User`; `Account` is a domain profile, not the user model | `apps/accounts/models.py` |
+| Region pin | A `Favourite` whose subject is the `MicroRegion` itself — `region` set, `location`/`latitude`/`longitude`/`elevation` null, one per `(user, region)` by partial unique constraint (SNOW-802). What a `Subscription` row became: a bookmark on a region's bulletin, pinned from the map's region panel, listed in the pins sheet, never in `favourites.geojson` | `Favourite.is_region_pin`; `FavouriteQuerySet.region_pins()` / `.placed()`; `favourites:region_toggle` |
+| Subscription | **Retired** (SNOW-802) — an (Account, MicroRegion) pair that was meant to drive bulletin emails and never did. Its rows are region pins now; SNOW-805 drops the table | `apps/accounts/models.py` until SNOW-805 |
 | Signed token | `TimestampSigner` tokens for account access (expiring) and unsubscribe (permanent, encodes `email\|region_id`) | `apps/accounts/services/token.py` |
 | PasskeyCredential | WebAuthn platform passkey for an `auth.User` (FK to `User`, not `Account` — any authenticated user, including staff without an Account profile, can register one) | `apps/accounts/models.py` |
 | PushSubscription | Web Push endpoint (spike) | `apps/accounts/models.py` |
