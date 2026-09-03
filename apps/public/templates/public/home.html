@@ -98,8 +98,9 @@ in addition to the shared map assets.
     {# SNOW-314: shared map surface with intro overlay enabled.          #}
     {# The _map_embed partial renders #home-intro when show_intro=True.  #}
     {# SNOW-535: map_help_autostart=False — the coachmark tour only opens #}
-    {# here via #home-intro's "Explore the map" CTA or the "?" roundel,  #}
-    {# never automatically straight after the intro is dismissed.        #}
+    {# here via #home-intro's "Explore the map" CTA, reached on a first   #}
+    {# visit or by re-opening the panel from the "?" roundel; never       #}
+    {# automatically straight after the intro is dismissed.               #}
     {% include "public/partials/_map_embed.html" with show_intro=True map_help_autostart=False %}
     {# SNOW-344: edit-resorts panel (moved from map.html).               #}
     {% if edit_target == "resorts" %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}

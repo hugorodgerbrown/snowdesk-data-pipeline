@@ -165,13 +165,14 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Ten surfaces float over the map, and only one is ever meaningful at once:
+Eleven surfaces float over the map, and only one is ever meaningful at once:
 the layers menu, the four UGC panels (downloads, favourites, field
 observations, and routes since SNOW-686), the anchored detail popup a resort
 pin, a favourite pin or (since SNOW-687) a saved route's line opens, the
 legend card (`#map-legend-card`), the help
 tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
-(`#map-fill-flyout`) and the date picker (`map-calendar`, SNOW-792). Each registers with `window.pwaMapOverlays`
+(`#map-fill-flyout`), the date picker (`map-calendar`, SNOW-792) and the
+welcome panel (`#home-intro`). Each registers with `window.pwaMapOverlays`
 (`static/js/map_overlay_exclusivity.js`) — a name plus `isOpen()` and
 `close()` — and calls `opening(name)` before it reveals itself; the
 registry closes the rest. `MapSheet.attach` registers on a caller's behalf,
@@ -189,8 +190,24 @@ one that forgets to register fails there.
 
 Each panel's own roundel toggles: a second tap closes what the first
 opened, matching the layers pill. The one exception is the help "?"
-roundel, which always re-opens the tour from step 1 — the deliberate "show
-me again" affordance it has had since SNOW-457.
+roundel, which always re-opens — the deliberate "show me again" affordance
+it has had since SNOW-457. What it re-opens is the **welcome panel**
+wherever the page renders one (`#home-intro`, i.e. the homepage): the panel
+says what Snowdesk is, and its "Explore the map" CTA carries on into the
+tour from step 1. It went straight to the tour until then, which left a
+visitor who had dismissed the panel with no route back to it. Elsewhere —
+any page embedding `_map_embed.html` without `show_intro` — the roundel
+still opens the tour itself; `static/js/map_help.js` decides from the
+presence of `#home-intro` rather than from any "am I the homepage" check,
+and asks for the panel with a `snowdesk:home-intro-requested` event that
+`home_intro.js` answers.
+
+The welcome panel is in the registry for that reason: while a fresh page
+load was the only way to see it, nothing else could be open behind it.
+Like the coachmark, it closes without persisting `snowdesk.home.intro` —
+being displaced is not the visitor saying "read", which is what the "×",
+Escape and the CTA mean — and re-opening it from the roundel does not clear
+that flag either, so the next load is still a clean map.
 
 The legend, the coachmark and the fill flyout joined last, and none was
 covered by the outside-click dismiss it already had: their toggles call
@@ -225,7 +242,9 @@ The homepage *is* the map, so there is no "go to the map" link: the
 (`public/partials/_map_embed.html`) is a **dismiss** control — it clears the
 landing overlay to reveal the map already mounted behind it, and additionally
 opens the map-help coachmark tour (SNOW-535), which the overlay's "×" does
-not. The overlay's only outbound link is "Register"; `/examples/random/` is
+not. It is the only way into the tour on this page, on a first visit and
+on every later one: the "?" roundel re-opens this panel rather than the
+tour (see "One open overlay at a time" below). The overlay's only outbound link is "Register"; `/examples/random/` is
 reachable by URL but is not linked from here.
 
 **Basemap layer picker (SNOW-58)**: a Google-Maps-style stacked-layers

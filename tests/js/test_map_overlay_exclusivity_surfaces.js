@@ -6,9 +6,15 @@
  * tests/js/test_map_overlay_exclusivity.js against fakes. THIS file loads
  * the real surfaces — the layers menu, the favourites panel, the field-
  * observations panel, the downloads panel, the routes panel, the legend
- * card, the help tour's coachmark and the bulletin fill-strength flyout —
- * into one document, the way public/home.html does, and runs the full
- * ordered matrix over them: open A, open B, A must be shut.
+ * card, the help tour's coachmark, the bulletin fill-strength flyout and
+ * the welcome panel — into one document, the way public/home.html does,
+ * and runs the full ordered matrix over them: open A, open B, A must be
+ * shut.
+ *
+ * The welcome panel (#home-intro) joined when the "?" roundel started
+ * opening IT rather than the tour: a panel that can be summoned over a map
+ * the visitor has been using has to close what is already up, which a
+ * panel only ever seen on a fresh page load did not.
  *
  * SNOW-686 added the eighth (the routes panel) and is exactly the case this
  * shape was built for: registering it took no edit to any other surface,
@@ -57,9 +63,16 @@ function shownByAttribute(id) {
 }
 
 /**
- * The eight surfaces, by their registered name: how to open each one the way
+ * The nine surfaces, by their registered name: how to open each one the way
  * a user does — through its own roundel or pill — and how to read whether
  * it is on screen.
+ *
+ * The "?" roundel opens the WELCOME PANEL here, not the tour, because this
+ * fixture renders #home-intro (as home.html does). The tour is reached the
+ * way a user reaches it from there: the panel's "Explore the map" CTA,
+ * whose 'snowdesk:map-help-requested' event is dispatched directly rather
+ * than clicked, so a matrix cell is about one surface opening and not about
+ * the dismissal the CTA also triggers.
  *
  * The registered name is the element's own DOM id in every case. The read
  * is per-surface because the idiom is: `hidden` for the four panels, the
@@ -99,8 +112,14 @@ const SURFACES = {
     isOpen: () => document.getElementById('map-legend').dataset.state === 'expanded',
   },
   'map-help-overlay': {
-    open: () => document.getElementById('map-help-toggle').click(),
+    open: () => document.dispatchEvent(
+      new CustomEvent('snowdesk:map-help-requested'),
+    ),
     isOpen: () => shownByAttribute('map-help-overlay'),
+  },
+  'home-intro': {
+    open: () => document.getElementById('map-help-toggle').click(),
+    isOpen: () => shownByAttribute('home-intro'),
   },
   'map-fill-flyout': {
     open: () => document.getElementById('map-fill-toggle').click(),
@@ -114,12 +133,14 @@ const SURFACE_NAMES = Object.keys(SURFACES);
  * The surfaces whose own control toggles — a second tap closes what the
  * first opened.
  *
- * The help "?" roundel is the one exception, and deliberately so: it
- * re-opens the tour from step 1 whatever its state, the "show me again"
- * affordance it has carried since SNOW-457.
+ * The help "?" roundel is the exception, and deliberately so: it re-opens,
+ * whatever the state of what it opens — the "show me again" affordance it
+ * has carried since SNOW-457. Both surfaces it reaches are therefore out:
+ * the welcome panel, which it opens directly, and the tour, which that
+ * panel's CTA opens.
  */
 const TOGGLING_SURFACE_NAMES = SURFACE_NAMES.filter(
-  (name) => name !== 'map-help-overlay',
+  (name) => name !== 'map-help-overlay' && name !== 'home-intro',
 );
 
 /** home.html's markup for the seven surfaces, cut to what the modules bind. */
@@ -208,6 +229,10 @@ function buildFixture() {
       <li data-help-target="#map-legend-toggle" data-help-title="Map information">Attribution and the danger key.</li>
     </ul>
     <button id="map-help-toggle" type="button">?</button>
+    <div id="home-intro" data-overlay data-overlay-persist="snowdesk.home.intro=dismissed">
+      <button id="home-intro-close" type="button" data-action="dismiss"></button>
+      <button id="home-intro-dismiss" type="button" data-action="dismiss"></button>
+    </div>
     <div id="map-help-overlay" hidden role="dialog" data-overlay data-map-help-no-autostart>
       <div id="map-help-ring"></div>
       <div id="map-help-tooltip" tabindex="-1">
@@ -225,8 +250,10 @@ function buildFixture() {
 /**
  * Load the registry and the surface modules in home.html's order.
  *
- * Eight surfaces, seven modules: map_basemap_picker.js carries both the
- * layers menu and the bulletin fill-strength flyout, in two IIFEs.
+ * Nine surfaces, nine modules: map_basemap_picker.js carries both the
+ * layers menu and the bulletin fill-strength flyout in two IIFEs, and
+ * overlays.js carries no surface of its own — it is the shared dismiss
+ * handler home_intro.js's "×" and CTA both route through.
  *
  * @returns {Promise<void>}
  */
@@ -243,6 +270,8 @@ async function loadSurfaces() {
   await import('../../static/js/map_downloads_manager.js');
   await import('../../static/js/map_legend.js');
   await import('../../static/js/map_basemap_picker.js');
+  await import('../../static/js/overlays.js');
+  await import('../../static/js/home_intro.js');
   await import('../../static/js/map_help.js');
 }
 
@@ -273,6 +302,11 @@ function settle() {
 
 beforeEach(async () => {
   buildFixture();
+  // The welcome panel shows itself on a first paint, which would leave one
+  // surface already open before a cell starts. Every matrix row opens it
+  // deliberately through the roundel instead — which does not clear this
+  // flag, so it stays the starting state for the whole file.
+  localStorage.setItem('snowdesk.home.intro', 'dismissed');
   // The picker reads these from the shared classic-script scope; under
   // Vitest each file is a module, so they have to be globals.
   globalThis.BASEMAP_STORAGE_KEY = 'snowdesk.map.basemap';
@@ -352,10 +386,22 @@ describe('the roundel that opened a surface closes it', () => {
     });
   }
 
-  it('the help "?" roundel re-opens the tour instead of closing it', async () => {
-    // Not an oversight in the loop above: the tour's own control is a "show
-    // me again" affordance (SNOW-457), so a second tap restarts it from
-    // step 1. Escape, "×" and Done are its close paths.
+  it('the help "?" roundel re-opens the welcome panel instead of closing it', async () => {
+    // Not an oversight in the loop above: the roundel is a "show me again"
+    // affordance (SNOW-457), so a second tap leaves the panel up rather
+    // than closing it. Escape and the "×" are its close paths.
+    openSurface('home-intro');
+    await settle();
+
+    openSurface('home-intro');
+    await settle();
+
+    expect(isOpen('home-intro')).toBe(true);
+  });
+
+  it('a second map-help request restarts the tour instead of closing it', async () => {
+    // Same affordance, one step further in: the CTA's event restarts the
+    // walkthrough from step 1 whatever its state.
     openSurface('map-help-overlay');
     await settle();
 

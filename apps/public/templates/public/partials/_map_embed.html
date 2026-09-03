@@ -27,7 +27,11 @@ Context expected from the including template:
 
 Optional context:
   show_intro          — bool (default False): when True, renders the
-                        #home-intro overlay inside #map.
+                        #home-intro welcome overlay inside #map. It is also
+                        what the "?" roundel opens: with the panel present
+                        the roundel shows it rather than starting the tour
+                        (static/js/map_help.js), and the panel's CTA carries
+                        on into the tour from there.
   is_offseason        — bool: True when today is past the season end.
                         Drives the persistent #map-offseason-note chip
                         (bottom-left, beside the legend toggle) so that
@@ -36,11 +40,13 @@ Optional context:
   map_help_autostart  — bool (default True): when False, #map-help-overlay
                         carries data-map-help-no-autostart and
                         static/js/map_help.js's first-load auto-start is
-                        skipped — the tour then only opens via the "?"
-                        roundel or (on the homepage) the #home-intro CTA.
-                        home.html passes False (SNOW-535): the tour must
-                        not throw itself at a visitor straight after they
-                        dismiss #home-intro.
+                        skipped — the tour then only opens on request. On a
+                        page with #home-intro that request comes from the
+                        panel's "Explore the map" CTA, which is also where
+                        the "?" roundel now leads; elsewhere the roundel
+                        opens the tour itself. home.html passes False
+                        (SNOW-535): the tour must not throw itself at a
+                        visitor straight after they dismiss #home-intro.
 {% endcomment %}
 {# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
 {# result badge. Extracted to a shared include (SNOW-162) so the      #}
@@ -1089,6 +1095,12 @@ Optional context:
         {# see the note at its old site for why. It sits after the date so the  #}
         {# row reads left to right as legend, date, help: what the colours mean, #}
         {# which day they are for, how to use any of it.                        #}
+        {# On this page it opens #home-intro, the welcome panel, whose        #}
+        {# "Explore the map" CTA leads into the coachmark tour — the roundel   #}
+        {# used to start that tour directly, which left a visitor who had      #}
+        {# dismissed the panel with no way back to it. map_help.js decides     #}
+        {# from the presence of #home-intro, so a page embedding this partial  #}
+        {# without show_intro still gets the tour straight from the roundel.   #}
         <button
             id="map-help-toggle"
             type="button"
@@ -1327,9 +1339,11 @@ Optional context:
         {# The bottom-left stack, walked top to bottom in DOM order — which is #}
         {# also the order the tour reaches them on screen.                      #}
         {# The tour explains its own trigger, and this is where a user who has  #}
-        {# just been shown it learns how to get back to it.                     #}
+        {# just been shown it learns how to get back to it. On a page carrying  #}
+        {# #home-intro the roundel re-opens that welcome panel, which leads     #}
+        {# back in here by its own CTA — so the copy names both.                #}
         <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
-            {% trans "Reopen this tour." %}
+            {% trans "Reopen the welcome panel, and this tour." %}
         </li>
         <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
             {% trans "View attribution and EAWS danger level key." %}
@@ -1430,7 +1444,9 @@ Optional context:
         {# SNOW-314: Homepage intro overlay — absolutely positioned over #map.  #}
         {# Dismissed by clicking the overlay or a button; localStorage key      #}
         {# 'snowdesk.home.intro' persists the dismissed state. /#about hash     #}
-        {# forces it open. home_intro.js owns the behaviour.                    #}
+        {# forces it open, as does the "?" roundel above — a dismissal is not   #}
+        {# meant to be final, and the roundel is the way back. home_intro.js    #}
+        {# owns the behaviour.                                                  #}
         {# aria-modal is only valid on role="dialog"/"alertdialog"; the panel is #}
         {# role="complementary" (non-blocking, map stays interactive behind it),  #}
         {# so the attribute is dropped — it was an axe aria-allowed-attr failure. #}

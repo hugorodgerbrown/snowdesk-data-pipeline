@@ -21,6 +21,13 @@
  * dispatch 'snowdesk:map-help-requested' — the event static/js/map_help.js
  * listens for to open the coachmark tour. Both are covered below; the
  * fixture carries both buttons.
+ *
+ * The panel is now re-openable at any time from the map's "?" roundel,
+ * which dispatches 'snowdesk:home-intro-requested' (map_help.js) rather
+ * than starting that tour. Two consequences are covered here: the re-open
+ * itself, and the registry membership it forced — a panel that can appear
+ * over a map the visitor has been using has to close whatever else is
+ * open, and be closed by it.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,9 +50,17 @@ function buildFixture() {
   `;
 }
 
-/** Re-import overlays.js + home_intro.js fresh against the current fixture/location. */
+/**
+ * Re-import the registry + overlays.js + home_intro.js fresh against the
+ * current fixture/location, in home.html's own load order
+ * (map_overlay_exclusivity.js is loaded there ahead of every registering
+ * module). The registry global is deleted first because it is frozen once
+ * assigned, so a second IIFE run has to start from nothing.
+ */
 async function loadModules() {
   vi.resetModules();
+  delete window.pwaMapOverlays;
+  await import('../../static/js/map_overlay_exclusivity.js');
   await import('../../static/js/overlays.js');
   await import('../../static/js/home_intro.js');
 }
@@ -246,5 +261,130 @@ describe('Escape key', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
     expect(location.hash).toBe('');
+  });
+});
+
+describe('snowdesk:home-intro-requested (the "?" roundel)', () => {
+  it('re-opens a dismissed panel without clearing the dismissed flag', async () => {
+    // A one-shot restore, exactly as the /#about deep link is: the visitor
+    // asked to see the panel again, not to be shown it on every load.
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    buildFixture();
+    await loadModules();
+    const overlay = document.getElementById('home-intro');
+    expect(overlay.hasAttribute('hidden')).toBe(true);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:home-intro-requested'));
+
+    expect(overlay.hasAttribute('hidden')).toBe(false);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(DISMISSED_VALUE);
+  });
+
+  it('focuses the CTA, so the tour is one Enter away', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    buildFixture();
+    await loadModules();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:home-intro-requested'));
+
+    expect(document.activeElement).toBe(
+      document.getElementById('home-intro-dismiss'),
+    );
+  });
+
+  it('the "×" hands focus back to whatever opened the panel', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    buildFixture();
+    document.body.insertAdjacentHTML(
+      'beforeend', '<button id="map-help-toggle" type="button">?</button>',
+    );
+    await loadModules();
+    const toggle = document.getElementById('map-help-toggle');
+    toggle.focus();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:home-intro-requested'));
+    document.getElementById('home-intro-close').click();
+
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it('falls back to the roundel when the recorded element is gone', async () => {
+    // Opening this panel closes whatever else was up — so a roundel click
+    // during the coachmark tour records the tour's tooltip and then hides
+    // it. Focusing a display:none element leaves focus on <body>, which is
+    // nowhere; the roundel is where a keyboard user would look next.
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    buildFixture();
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<button id="map-help-toggle" type="button">?</button>'
+      + '<div id="displaced"><button id="displaced-btn"></button></div>',
+    );
+    await loadModules();
+    const displacedBtn = document.getElementById('displaced-btn');
+    displacedBtn.focus();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:home-intro-requested'));
+    // display:none on the element itself, not on the #displaced wrapper:
+    // jsdom has no checkVisibility(), so the module's fallback reads the
+    // recorded element's OWN computed display and an ancestor's would go
+    // unseen here. A real browser answers for both.
+    displacedBtn.style.display = 'none';
+    document.getElementById('home-intro-close').click();
+
+    expect(document.activeElement).toBe(
+      document.getElementById('map-help-toggle'),
+    );
+  });
+
+  it('does NOT pull focus back when the CTA opens the tour', async () => {
+    // The tour focuses its own tooltip on open; the dismissal that same
+    // click triggers must not drag focus back to the roundel behind it.
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    buildFixture();
+    document.body.insertAdjacentHTML(
+      'beforeend', '<button id="map-help-toggle" type="button">?</button>',
+    );
+    await loadModules();
+    const toggle = document.getElementById('map-help-toggle');
+    toggle.focus();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:home-intro-requested'));
+    document.getElementById('home-intro-dismiss').click();
+
+    expect(document.activeElement).not.toBe(toggle);
+  });
+});
+
+describe('map-overlay exclusivity', () => {
+  it('registers itself, so another overlay opening closes it', async () => {
+    buildFixture();
+    await loadModules();
+    const overlay = document.getElementById('home-intro');
+    expect(window.pwaMapOverlays.names()).toContain('home-intro');
+    expect(overlay.hasAttribute('hidden')).toBe(false);
+
+    window.pwaMapOverlays.opening('map-help-overlay');
+
+    expect(overlay.hasAttribute('hidden')).toBe(true);
+    // Displaced, not dismissed: the next load still shows the panel.
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(null);
+  });
+
+  it('closes every other overlay when it opens', async () => {
+    localStorage.setItem(STORAGE_KEY, DISMISSED_VALUE);
+    buildFixture();
+    await loadModules();
+    const other = { open: true };
+    window.pwaMapOverlays.register('map-legend', {
+      isOpen: () => other.open,
+      close: () => {
+        other.open = false;
+      },
+    });
+
+    document.dispatchEvent(new CustomEvent('snowdesk:home-intro-requested'));
+
+    expect(other.open).toBe(false);
   });
 });
