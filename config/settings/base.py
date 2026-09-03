@@ -305,6 +305,12 @@ TEMPLATES = [
                 # telemetry master switch into a <meta> tag read by
                 # static/js/telemetry.js (docs/telemetry-pipeline.md).
                 "apps.public.context_processors.pwa_telemetry",
+                # SNOW-812: injects debug_log_visible (the debug_log waffle
+                # flag, scoped to GRP_DEBUG) so base.html can decide whether
+                # to render the on-device debug-trace panel and load its
+                # recorder at all. A context processor because the panel is a
+                # universal surface, not one view's.
+                "apps.public.context_processors.debug_log_visible",
                 # SNOW-585: injects SW_DEV_SHELL_BYPASS so base.html can bake
                 # the dev-only shell-cache bypass flag into a <meta> tag read
                 # synchronously at startup by sw_register.js and

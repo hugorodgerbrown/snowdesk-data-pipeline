@@ -23,6 +23,10 @@
  *   data:map_overlays cached favourites / community-reports GeoJSON for
  *                     the map's offline overlay toggles (SNOW-492;
  *                     keyPath: 'key', one row per resource)
+ *   log:debug        rolling diagnostic trace of the page-side and
+ *                     service-worker decisions the map's silent
+ *                     fallbacks would otherwise swallow, trimmed to the
+ *                     newest 500 rows (SNOW-812; autoIncrement id)
  *   data:*           reserved namespace for further cached server-data
  *                     copies; added on demand by consumers.
  *
@@ -58,7 +62,13 @@
   // v4 (SNOW-492): added 'data:map_overlays' — cached favourites /
   // community-reports GeoJSON so the map's overlay toggles keep working
   // offline (map_overlay_offline_cache.js).
-  const DB_VERSION = 4;
+  // v5 (SNOW-812): added 'log:debug' — the on-device diagnostic trace
+  // backing the debug-log panel (debug_log.js). Created for every client
+  // at v5 regardless of the debug_log waffle flag: the store is a schema
+  // fact, and gating its CREATION on a per-user flag would mean two
+  // populations running the same DB_VERSION with different schemas, which
+  // no later migration could tell apart. Empty costs nothing.
+  const DB_VERSION = 5;
 
   // Static store definitions (name → createObjectStore options). Any
   // store present here is created at version 1 and never removed.
@@ -79,6 +89,10 @@
     // the map's overlay toggles, keyed by resource name ('favourites' /
     // 'community_reports'). See map_overlay_offline_cache.js.
     'data:map_overlays': { keyPath: 'key' },
+    // SNOW-812 (v5) — rolling diagnostic trace written by debug_log.js
+    // (page) and relayed from sw.js (worker). Trimmed to the newest 500
+    // rows by appendDebugLogBatch below.
+    'log:debug': { keyPath: 'id', autoIncrement: true },
   });
 
   // Session state — single-page-load lifetime.
@@ -362,30 +376,40 @@
   }
 
   // -------------------------------------------------------------------
-  // SNOW-482 — log:sync helpers
+  // log:* ring-buffer helpers — SNOW-482 (log:sync), SNOW-812 (log:debug)
   //
-  // appendSyncLog writes one row then trims the store to the newest
-  // ``maxRows`` (default 100) entries. getSyncLog reads back up to
-  // ``limit`` rows, newest first. IDBObjectStore.getAll(query, count)
+  // Both stores are autoIncrement ring buffers: append a row, trim the
+  // oldest away, read the newest back. IDBObjectStore.getAll(query, count)
   // returns the LOWEST keys first, which is the wrong end for both of
-  // these — trimming and reading both walk a cursor instead.
+  // those — trimming and reading both walk a cursor instead.
+  //
+  // SNOW-812 generalised the pair over a store name rather than copying
+  // forty lines of cursor plumbing for a second, identically-shaped log.
+  // ``appendSyncLog``/``getSyncLog`` stay as the named SNOW-482 surface;
+  // the debug log adds a batched appender because it writes in bursts.
   // -------------------------------------------------------------------
 
   const SYNC_LOG_MAX_ROWS = 100;
+  // Deliberately larger than log:sync's 100. A debug session is a burst —
+  // one map load with the trace on emits well over a hundred lines — and a
+  // buffer that has already discarded the boot sequence by the time the
+  // user opens the panel would answer none of the questions it exists for.
+  const DEBUG_LOG_MAX_ROWS = 500;
 
   /**
-   * Delete the oldest rows in ``log:sync`` until at most ``maxRows``
+   * Delete the oldest rows in ``storeName`` until at most ``maxRows``
    * remain. Ascending cursor order visits the lowest (oldest)
    * autoIncrement ids first.
    *
+   * @param {string} storeName
    * @param {number} maxRows
    * @returns {Promise<void>}
    */
-  async function _trimSyncLog(maxRows) {
+  async function _trimLog(storeName, maxRows) {
     const db = await open();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction('log:sync', 'readwrite');
-      const store = tx.objectStore('log:sync');
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
       const countReq = store.count();
       countReq.onsuccess = () => {
         const excess = countReq.result - maxRows;
@@ -421,23 +445,89 @@
    */
   async function appendSyncLog(entry) {
     await put('log:sync', entry);
-    await _trimSyncLog(SYNC_LOG_MAX_ROWS);
+    await _trimLog('log:sync', SYNC_LOG_MAX_ROWS);
   }
 
   /**
-   * Read up to ``limit`` rows from ``log:sync``, newest first. A
-   * descending cursor visits the highest (newest) autoIncrement ids
-   * first.
+   * Append many rows to the ``log:debug`` store in ONE transaction, then
+   * trim to the newest ``DEBUG_LOG_MAX_ROWS`` (SNOW-812).
+   *
+   * Batched because the debug log's whole point is to record the bursts a
+   * single map load emits. A per-row ``put()`` + trim, the shape
+   * ``appendSyncLog`` uses for its handful of round-trips a session, would
+   * open two transactions per line and make the instrumentation itself the
+   * slowest thing on the page — which would change the behaviour being
+   * traced. One transaction per flush, one trim after it.
+   *
+   * @param {Array<object>} entries - rows to store; none may set ``id``.
+   * @returns {Promise<void>}
+   */
+  async function appendDebugLogBatch(entries) {
+    if (!entries || entries.length === 0) return;
+    const db = await open();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('log:debug', 'readwrite');
+      const store = tx.objectStore('log:debug');
+      for (const entry of entries) store.add(entry);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('appendDebugLogBatch failed'));
+      tx.onabort = () => reject(tx.error || new Error('IDBTransaction aborted'));
+    });
+    await _trimLog('log:debug', DEBUG_LOG_MAX_ROWS);
+  }
+
+  /**
+   * Read up to ``limit`` rows from ``log:debug``, newest first.
    *
    * @param {number} [limit]
    * @returns {Promise<Array<object>>}
    */
-  async function getSyncLog(limit) {
+  function getDebugLog(limit) {
+    return _readLogNewestFirst('log:debug', limit || DEBUG_LOG_MAX_ROWS);
+  }
+
+  /**
+   * Empty the ``log:debug`` store outright (SNOW-812) — the panel's
+   * "Clear" control, and what switching recording off calls so a device
+   * doesn't carry a stale trace around indefinitely.
+   *
+   * @returns {Promise<void>}
+   */
+  async function clearDebugLog() {
     const db = await open();
-    const max = limit || SYNC_LOG_MAX_ROWS;
     return new Promise((resolve, reject) => {
-      const tx = db.transaction('log:sync', 'readonly');
-      const store = tx.objectStore('log:sync');
+      const tx = db.transaction('log:debug', 'readwrite');
+      tx.objectStore('log:debug').clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('clearDebugLog failed'));
+      tx.onabort = () => reject(tx.error || new Error('IDBTransaction aborted'));
+    });
+  }
+
+  /**
+   * Read up to ``limit`` rows from ``log:sync``, newest first.
+   *
+   * @param {number} [limit]
+   * @returns {Promise<Array<object>>}
+   */
+  function getSyncLog(limit) {
+    return _readLogNewestFirst('log:sync', limit || SYNC_LOG_MAX_ROWS);
+  }
+
+  /**
+   * Read up to ``max`` rows from ``storeName``, newest first. A
+   * descending cursor visits the highest (newest) autoIncrement ids
+   * first.
+   *
+   * @param {string} storeName
+   * @param {number} max
+   * @returns {Promise<Array<object>>}
+   */
+  async function _readLogNewestFirst(storeName, max) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
       const results = [];
       const cursorReq = store.openCursor(null, 'prev');
       cursorReq.onsuccess = (evt) => {
@@ -449,7 +539,8 @@
         results.push(cursor.value);
         cursor.continue();
       };
-      cursorReq.onerror = () => reject(cursorReq.error || new Error('getSyncLog failed'));
+      cursorReq.onerror = () =>
+        reject(cursorReq.error || new Error(`read ${storeName} failed`));
     });
   }
 
@@ -600,6 +691,9 @@
       clear,
       appendSyncLog,
       getSyncLog,
+      appendDebugLogBatch,
+      getDebugLog,
+      clearDebugLog,
       context,
       isResetRequired,
       // Exposed for tests + doc reference. Do not mutate.

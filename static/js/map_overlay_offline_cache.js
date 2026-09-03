@@ -134,15 +134,31 @@
     if (!dbReady() || !resource) return null;
     try {
       const record = await window.pwaDb.get(STORE, resource);
+      // SNOW-812: this read returns null three ways — nothing cached, a
+      // row cached under a different principal (SNOW-493's account-switch
+      // guard), and a throw. Offline they are indistinguishable to the
+      // caller and all of them look like "the overlay just isn't there".
+      // `principalMatch: false` is the one that surprises people: the row
+      // IS on the device, it just belongs to another session.
+      const principalMatch =
+        !PRINCIPAL_SCOPED.has(resource) || record?.principal === _currentPrincipal();
+      window.pwaDebugLog?.record('idb', 'overlay.read', {
+        store: STORE,
+        key: resource,
+        found: !!(record && record.geojson),
+        principalScoped: PRINCIPAL_SCOPED.has(resource),
+        principalMatch,
+        cachedAt: (record && record.cached_at) || null,
+      });
       if (!record || !record.geojson) return null;
-      if (
-        PRINCIPAL_SCOPED.has(resource) &&
-        record.principal !== _currentPrincipal()
-      ) {
-        return null;
-      }
+      if (!principalMatch) return null;
       return record.geojson;
     } catch (_e) {
+      window.pwaDebugLog?.record('idb', 'overlay.read', {
+        store: STORE,
+        key: resource,
+        error: true,
+      });
       return null;
     }
   }

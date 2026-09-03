@@ -30,6 +30,8 @@ const V2_STORES = [...STATIC_STORES, 'data:favourites'];
 const V3_STORES = [...V2_STORES, 'log:sync'];
 // SNOW-492 (schema v4) — added alongside the six version-3 stores above.
 const V4_STORES = [...V3_STORES, 'data:map_overlays'];
+// SNOW-812 (schema v5) — added alongside the seven version-4 stores above.
+const V5_STORES = [...V4_STORES, 'log:debug'];
 
 /**
  * Delete the PWA database and wait for the deletion to actually complete.
@@ -62,8 +64,8 @@ beforeEach(async () => {
 describe('fresh open', () => {
   it('creates all seven stores at version 4', async () => {
     const db = await window.pwaDb.open();
-    expect(db.version).toBe(4);
-    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V4_STORES].sort());
+    expect(db.version).toBe(5);
+    expect(Array.from(db.objectStoreNames).sort()).toEqual([...V5_STORES].sort());
   });
 });
 
@@ -210,28 +212,43 @@ describe('schema upgrades', () => {
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(4);
-    expect(result.names).toEqual([...V4_STORES].sort());
+    expect(result.version).toBe(5);
+    expect(result.names).toEqual([...V5_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v2 DB (five stores) gains log:sync + data:map_overlays', async () => {
+  it('a pre-existing v2 DB (five stores) gains log:sync, map_overlays + log:debug', async () => {
     const seeded = await seedLegacyDb(2, V2_STORES);
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(4);
-    expect(result.names).toEqual([...V4_STORES].sort());
+    expect(result.version).toBe(5);
+    expect(result.names).toEqual([...V5_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 
-  it('a pre-existing v3 DB (six stores) gains data:map_overlays', async () => {
+  it('a pre-existing v3 DB (six stores) gains data:map_overlays + log:debug', async () => {
     const seeded = await seedLegacyDb(3, V3_STORES);
     expect(seeded).toBe(1);
 
     const result = await openViaDbJsAndRead();
-    expect(result.version).toBe(4);
-    expect(result.names).toEqual([...V4_STORES].sort());
+    expect(result.version).toBe(5);
+    expect(result.names).toEqual([...V5_STORES].sort());
+    expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
+  });
+
+  it('a pre-existing v4 DB (seven stores) gains log:debug', async () => {
+    // SNOW-812: log:debug is created for EVERY client at v5, not only for
+    // those holding the debug_log waffle flag. The store is a schema fact —
+    // gating its creation on a per-user flag would leave two populations on
+    // the same DB_VERSION with different schemas, which no later migration
+    // could tell apart. An empty store costs nothing.
+    const seeded = await seedLegacyDb(4, V4_STORES);
+    expect(seeded).toBe(1);
+
+    const result = await openViaDbJsAndRead();
+    expect(result.version).toBe(5);
+    expect(result.names).toEqual([...V5_STORES].sort());
     expect(result.row).toEqual({ id: 1, event: 'pre-existing' });
   });
 });
@@ -263,5 +280,60 @@ describe('log:sync helpers', () => {
 
     expect(all.map((row) => row.path)).toEqual(['sync-5', 'sync-4', 'sync-3', 'sync-2', 'sync-1']);
     expect(limited.map((row) => row.path)).toEqual(['sync-5', 'sync-4']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. appendDebugLogBatch / getDebugLog / clearDebugLog (SNOW-812).
+// ---------------------------------------------------------------------------
+
+describe('log:debug helpers', () => {
+  it('appendDebugLogBatch writes a whole burst in one call', async () => {
+    // The batching is the point: the debug trace records bursts (a single
+    // offline pan emits a line per tile), and a per-row put + trim would
+    // make the instrumentation the slowest thing on the page — which would
+    // change the behaviour it exists to observe.
+    await window.pwaDb.appendDebugLogBatch([
+      { at: 1, src: 'sw', evt: 'classify' },
+      { at: 2, src: 'sw', evt: 'pinned.search' },
+    ]);
+
+    expect(await window.pwaDb.count('log:debug')).toBe(2);
+  });
+
+  it('tolerates an empty batch without opening a transaction', async () => {
+    await window.pwaDb.appendDebugLogBatch([]);
+
+    expect(await window.pwaDb.count('log:debug')).toBe(0);
+  });
+
+  it('trims to the newest 500 rows', async () => {
+    const rows = Array.from({ length: 520 }, (_, i) => ({ at: i, evt: `evt-${i}` }));
+    await window.pwaDb.appendDebugLogBatch(rows);
+
+    const all = await window.pwaDb.getAll('log:debug');
+    expect(all).toHaveLength(500);
+    // The OLDEST twenty are the ones discarded.
+    expect(all.map((row) => row.evt)).toContain('evt-20');
+    expect(all.map((row) => row.evt)).not.toContain('evt-19');
+  });
+
+  it('getDebugLog reads back newest-first, honouring limit', async () => {
+    await window.pwaDb.appendDebugLogBatch(
+      Array.from({ length: 5 }, (_, i) => ({ at: i, evt: `evt-${i + 1}` })),
+    );
+
+    const all = await window.pwaDb.getDebugLog();
+    const limited = await window.pwaDb.getDebugLog(2);
+
+    expect(all.map((row) => row.evt)).toEqual(['evt-5', 'evt-4', 'evt-3', 'evt-2', 'evt-1']);
+    expect(limited.map((row) => row.evt)).toEqual(['evt-5', 'evt-4']);
+  });
+
+  it('clearDebugLog empties the store', async () => {
+    await window.pwaDb.appendDebugLogBatch([{ at: 1, evt: 'evt' }]);
+    await window.pwaDb.clearDebugLog();
+
+    expect(await window.pwaDb.count('log:debug')).toBe(0);
   });
 });

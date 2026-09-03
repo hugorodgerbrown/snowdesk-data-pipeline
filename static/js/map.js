@@ -3195,6 +3195,17 @@
         }).catch(() => null) : Promise.resolve(null),
       ]);
 
+      // SNOW-812: which of the three per-country feeds actually answered.
+      // Each of the two optional ones swallows its own failure with
+      // `.catch(() => null)`, so a partially-loaded country renders as a
+      // map with missing boundaries and no error anywhere.
+      window.pwaDebugLog?.record('net', 'country.load', {
+        country: code,
+        regions: newRegions ? (newRegions.features || []).length : null,
+        major: newMajor ? (newMajor.features || []).length : null,
+        sub: newSub ? (newSub.features || []).length : null,
+      });
+
       // Merge new features into the existing caches and update the sources.
       if (newRegions && newRegions.features && geojsonCache) {
         // Assign numeric ids to new features, continuing from the current max.
@@ -6835,6 +6846,16 @@
       const regionID = location.hash.slice(1);
       if (!regionID || !REGION_ID_RE.test(regionID)) return null;
       const feature = FEATURE_BY_REGION_ID[regionID];
+      // SNOW-812: a miss here means the region is not in the GeoJSON this
+      // page loaded — usually because its country's feeds never arrived
+      // (see the `country.load` line), which offline is entirely silent.
+      // The map simply does not move, and there is nothing else on the
+      // page that says why.
+      window.pwaDebugLog?.record('map', 'hash.resolve', {
+        regionID,
+        found: !!feature,
+        known: Object.keys(FEATURE_BY_REGION_ID).length,
+      });
       return feature ? feature.id : null;
     };
 

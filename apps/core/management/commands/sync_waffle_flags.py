@@ -10,6 +10,11 @@ never edited in place, so an operator's live changes survive every deploy.
 
 Read-only by default (prints the create/delete diff); pass ``--commit`` to
 persist. Run on every deploy via ``build.sh``, after ``migrate``/``loaddata``.
+
+SNOW-812: a manifest entry may carry ``groups`` (group names). Those are
+applied with ``.set()`` after the row is created — ``Flag.groups`` is a
+ManyToMany — and any named group that does not exist yet is created empty,
+because a flag scoped to a missing group silently matches nobody.
 """
 
 from __future__ import annotations
@@ -17,8 +22,9 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from waffle.models import Flag
@@ -38,7 +44,10 @@ class Command(BaseCommand):
     """Reconcile waffle.Flag rows to apps/core/fixtures/waffle_flags.json.
 
     Read-only by default; ``--commit`` persists the create/delete diff.
-    Flags present in both the manifest and the DB are left untouched.
+    Flags present in both the manifest and the DB are left untouched — so a
+    manifest ``groups`` change never re-scopes an existing flag, exactly as
+    an ``everyone`` change never re-targets one. Re-scoping is an admin
+    action, or a delete-and-recreate.
 
     SNOW-602 exempt: no per-row queryset loop — a handful of named flags,
     reconciled as name sets via bulk create/delete.
@@ -104,7 +113,32 @@ class Command(BaseCommand):
         with transaction.atomic():
             for name in to_create:
                 spec = manifest_by_name[name]
-                Flag.objects.create(name=name, **spec.create_defaults())
+                # cast: ``Flag.objects`` is typed against waffle's
+                # ``AbstractBaseFlag``, which declares no ``groups`` — that
+                # field arrives on ``AbstractUserFlag``, which the concrete
+                # ``Flag`` this project uses inherits from. The row really is
+                # a ``Flag``; only the manager's annotation is broader.
+                flag = cast(
+                    Flag, Flag.objects.create(name=name, **spec.create_defaults())
+                )
+                # SNOW-812: ``groups`` is a ManyToMany, so it is applied here
+                # rather than as a create-default. get_or_create rather than
+                # get: a flag scoped to a group that does not exist matches
+                # nobody and reports no error, which is the exact class of
+                # silent failure this manifest exists to remove. Creating the
+                # empty group instead leaves an operator one visible step —
+                # add people to it in the admin.
+                if spec.groups:
+                    groups = [
+                        Group.objects.get_or_create(name=group_name)[0]
+                        for group_name in spec.groups
+                    ]
+                    flag.groups.set(groups)
+                    if verbosity >= 1:
+                        self.stdout.write(
+                            f"  {name}: scoped to group(s) "
+                            f"{', '.join(sorted(spec.groups))}"
+                        )
             if to_delete:
                 Flag.objects.filter(name__in=to_delete).delete()
 

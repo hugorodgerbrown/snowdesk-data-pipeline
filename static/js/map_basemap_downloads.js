@@ -713,6 +713,18 @@ async function basemapDownloadedAreas() {
   const storedIds = await pinnedBucketAreaIds();
   const recordedIds = new Set(areas.map((area) => area.id));
   const orphanIds = storedIds.filter((id) => !recordedIds.has(id));
+  // SNOW-812: the two halves of "is this area downloaded" side by side —
+  // the records the page keeps in meta:app, and the pinned buckets
+  // actually on disk. `missing` is the one that matters for a blank map:
+  // an area the UI reports as downloaded with no bucket behind it. It is
+  // the same comparison sw.js's `pinned.buckets` line records from the
+  // other side, so the two can be read against each other.
+  window.pwaDebugLog?.record('cache', 'areas.reconcile', {
+    recorded: [...recordedIds],
+    onDisk: storedIds,
+    orphans: orphanIds,
+    missing: [...recordedIds].filter((id) => !storedIds.includes(id)),
+  });
   // Measured one bucket at a time rather than in parallel: an orphan is
   // rare, and a concurrent walk of several thousand cache entries each is
   // the kind of burst that makes a slow device feel broken.

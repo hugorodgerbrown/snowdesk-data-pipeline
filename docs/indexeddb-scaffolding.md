@@ -1,6 +1,6 @@
 ---
 name: indexeddb-scaffolding
-description: IndexedDB wrapper (window.pwaDb, static/js/db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, data:map_overlays
+description: IndexedDB wrapper (window.pwaDb, db.js) — schema, queue:mutations/events, meta:app, data:favourites, log:sync, log:debug, data:map_overlays
 status: current
 last-reviewed: 2026-08-28
 ---
@@ -23,8 +23,9 @@ as the first PWA script (deferred). Exposes exactly one surface:
   schema version. Bumped **only** if the store namespace itself changes
   (e.g. a fundamental rework); store additions are handled by
   incrementing `DB_VERSION` inside the wrapper.
-- Current schema version: **4** (SNOW-492 added `data:map_overlays`;
-  SNOW-482 added `log:sync`; v2 added `data:favourites`).
+- Current schema version: **5** (SNOW-812 added `log:debug`; SNOW-492
+  added `data:map_overlays`; SNOW-482 added `log:sync`; v2 added
+  `data:favourites`).
 
 ## Object stores
 
@@ -41,6 +42,12 @@ never removed.
 | `data:favourites`  | `uuid`          | false         | SNOW-418 favourites offline cache |
 | `log:sync`         | `id`            | true          | SNOW-482 sync-log panel — rolling record of recent real (un-cached) server round-trips, trimmed to the newest 100 rows |
 | `data:map_overlays`| `key`           | false         | SNOW-492 map overlay offline cache — one row per resource (`'favourites'` / `'community_reports'`), written/read by `static/js/map_overlay_offline_cache.js` (`window.pwaMapOverlayCache`) |
+| `log:debug`        | `id`            | true          | SNOW-812 on-device debug trace — rolling diagnostic record of the page-side and service-worker decisions the map's silent fallbacks swallow, trimmed to the newest 500 rows. Written in batches by `static/js/debug_log.js` (`window.pwaDebugLog`), which is the store's only writer: `static/js/sw.js` relays its lines to the page rather than opening the DB itself. See [`debug-log.md`](debug-log.md) |
+
+Alongside `basemap.origins` and `sw.devShellCache`, `meta:app` also
+carries **`debug.enabled`** (SNOW-812) — the durable mirror of the
+debug trace's on/off state, so a service worker the browser terminated
+and restarted can rehydrate it (`sw.js`'s `_hydrateDebugLogEnabled()`).
 
 `data:*` is a reserved namespace for cached server-data copies.
 `data:favourites` (v2) was its first occupant; `data:map_overlays` (v4,

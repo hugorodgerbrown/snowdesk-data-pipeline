@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import waffle
 from django.conf import settings
+from django.utils.functional import SimpleLazyObject
 
 from apps.public.release import release_label
 from apps.public.site_environment import PWAEnvironmentIdentity
@@ -129,6 +131,49 @@ def pwa_dev_shell_bypass(request: HttpRequest) -> dict[str, Any]:
     """
     return {
         "SW_DEV_SHELL_BYPASS": bool(getattr(settings, "SW_DEV_SHELL_BYPASS", False)),
+    }
+
+
+def debug_log_visible(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject the debug-trace gate into every template context (SNOW-812).
+
+    Exposes ``debug_log_visible`` so ``base.html`` can decide whether to
+    render the debug-log panel and load ``static/js/debug_log.js`` at all.
+    A context processor rather than a per-view context key — the panel is
+    a universal surface (the map is only its richest producer), and a
+    per-view key would have meant editing every public view to add one,
+    and forgetting the next one.
+
+    The flag is scoped to the ``GRP_DEBUG`` group (see
+    ``apps/core/fixtures/waffle_flags.json``): everyone in it gets the
+    toggle, and recording stays a per-device choice made in the panel. For
+    everyone else neither the markup nor the recorder reaches the page,
+    so every instrumented call site stays an optional-chain no-op.
+
+    **Lazy on purpose.** A context processor runs for every ``render()``,
+    and ``flag_is_active`` is a DB read — which would put a
+    ``waffle_flag`` query on responses that never render the panel at all:
+    the JSON API endpoints that render a partial into
+    ``{"html": ...}`` (``apps.public.api.region_summary`` and friends), and
+    every HTMX fragment. ``SimpleLazyObject`` defers the read until a
+    template actually reads the variable, so only a page that extends
+    ``base.html`` — the one place that asks — pays for it, and
+    ``tests/public/test_map_api.py``'s query-count assertions stay honest
+    rather than being relaxed to accommodate a debug surface.
+
+    Args:
+        request: The incoming HTTP request — the flag is per-user.
+
+    Returns:
+        ``{"debug_log_visible": SimpleLazyObject}``, truthy exactly when
+        the flag is active. Templates read it as a plain boolean.
+
+    """
+    return {
+        "debug_log_visible": SimpleLazyObject(
+            lambda: waffle.flag_is_active(request, "debug_log")
+        )
     }
 
 

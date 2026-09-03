@@ -557,10 +557,16 @@ async function _pinnedCacheNames() {
   if (_pinnedNamesInFlight) return _pinnedNamesInFlight;
   _pinnedNamesInFlight = (async () => {
     const names = await caches.keys();
-    return names.filter(
+    const pinned = names.filter(
       (name) =>
         name.startsWith(BASEMAP_PINNED_CACHE_PREFIX) && name !== LEGACY_BASEMAP_PINNED_CACHE,
     );
+    // SNOW-812: the bucket names themselves, because "the region says it
+    // is downloaded" and "a bucket exists for that region's areaId" are
+    // different claims, and the gap between them is only visible here.
+    // Enumeration is memoised, so this records once per worker lifetime.
+    _debugLog('pinned.buckets', { count: pinned.length, names: pinned });
+    return pinned;
   })();
   try {
     const resolved = await _pinnedNamesInFlight;
@@ -642,15 +648,38 @@ async function _searchPinnedBuckets(request) {
   try {
     const pinnedNames = await _pinnedCacheNames();
     const pinnedHit = await searchPinned(pinnedNames);
-    if (pinnedHit) return pinnedHit;
+    if (pinnedHit) {
+      _debugLog('pinned.search', {
+        url: _debugUrlOf(request),
+        result: 'hit',
+        searched: pinnedNames.length,
+      });
+      return pinnedHit;
+    }
 
     // Missed. The list may be the stale half of the story — re-enumerate
     // and search again if anything has appeared since.
     const freshNames = await _pinnedCacheNamesAfterMiss(pinnedNames);
     if (freshNames) {
       const freshHit = await searchPinned(freshNames);
-      if (freshHit) return freshHit;
+      if (freshHit) {
+        _debugLog('pinned.search', {
+          url: _debugUrlOf(request),
+          result: 'hit-after-reenumerate',
+          searched: freshNames.length,
+        });
+        return freshHit;
+      }
     }
+    // The line that answers "the region is downloaded, why is the map
+    // blank": every bucket on the device was searched and none of them
+    // holds this tile. Either the download never covered it, or the key
+    // it was stored under is not the key being asked for.
+    _debugLog('pinned.search', {
+      url: _debugUrlOf(request),
+      result: 'miss',
+      searched: (freshNames || pinnedNames).length,
+    });
   } catch (_err) {
     // Defensive: the caller falls through to the network.
   }
@@ -705,10 +734,20 @@ async function _readOnlyBasemapCacheProbe(request) {
     // on the browsed-but-never-downloaded case.
     const cache = await caches.open(BASEMAP_CACHE);
     const cached = await cache.match(request);
-    if (cached) return cached;
+    if (cached) {
+      _debugLog('probe.passive', { url: _debugUrlOf(request), result: 'hit' });
+      return cached;
+    }
     // Nothing pinned: skip the walk, and the re-enumeration behind it.
     const pinnedNames = await _pinnedCacheNames();
-    if (pinnedNames.length === 0) return undefined;
+    if (pinnedNames.length === 0) {
+      _debugLog('probe.passive', {
+        url: _debugUrlOf(request),
+        result: 'miss',
+        pinned: 0,
+      });
+      return undefined;
+    }
   } catch (_err) {
     return undefined;
   }
@@ -771,6 +810,40 @@ let _devShellCacheOptIn = false;
 // replaces ``_devShellCacheOptIn``, so a later toggle is never shadowed by
 // a stale memoised promise.
 let _devShellCacheHydration = null;
+
+// SNOW-812: whether the page has switched the on-device debug trace on
+// (window.pwaDebugLog, static/js/debug_log.js). Off by default and, like
+// _devShellCacheOptIn, lost whenever the browser terminates an idle
+// worker — so it is rehydrated from the durable 'debug.enabled' meta:app
+// row by _hydrateDebugLogEnabled(), and re-asserted by the page's
+// 'debug-log-enabled' message on every load.
+//
+// Everything the worker records is gated on this. A worker that cannot
+// tell whether the trace is on records nothing, which is the right
+// default: the cost of a missing line is one more reload with the toggle
+// confirmed on, and the cost of recording unconditionally is paid by
+// every user on every request.
+let _debugLogEnabled = false;
+
+// Memoises the in-flight (or completed) debug-flag hydration read,
+// mirroring _devShellCacheHydration. Cleared by the 'debug-log-enabled'
+// handler so a toggle is never shadowed by a stale memoised promise.
+let _debugLogHydration = null;
+
+// Lines recorded since the last broadcast, and the timer that ships them.
+// Batched for the same reason the page side batches its IndexedDB writes:
+// a single offline pan can emit a line per tile, and one postMessage per
+// tile would make the instrumentation the most expensive thing in the
+// fetch handler.
+let _debugLogPending = [];
+let _debugLogTimer = null;
+
+// How long a line may sit unsent, and the cap on the burst held in
+// memory. The cap matters more here than on the page: a worker with no
+// live client (a background sync, a push) has nothing to flush TO, and an
+// uncapped buffer would grow for as long as that worker lives.
+const DEBUG_LOG_FLUSH_MS = 250;
+const DEBUG_LOG_MAX_PENDING = 200;
 
 // Pre-cached on install so the offline fallback is reliably available
 // the moment the network drops, even on the very first navigation that
@@ -1018,6 +1091,144 @@ self.addEventListener('activate', (event) => {
 // ---------------------------------------------------------------------------
 
 /**
+ * SNOW-812: record one diagnostic line, if the debug trace is switched on.
+ *
+ * The service worker is the half of the map that nobody can see. It has
+ * no console reachable from a phone, and its decisions — which origins are
+ * allowlisted, which pinned buckets exist, whether a tile hit any of them
+ * — are exactly the ones that decide whether a downloaded region draws.
+ * Every one of those sites swallows its own errors by design, so without
+ * this the failure and the success look identical from the outside.
+ *
+ * Lines are buffered and broadcast to every client by ``_flushDebugLog``;
+ * ``static/js/debug_log.js`` folds them into the same ring buffer the page
+ * writes to, so the panel shows one ordered trace rather than two.
+ *
+ * Never throws, and returns on its first statement when the trace is off.
+ *
+ * @param {string} evt Dotted event name, e.g. 'pinned.search'.
+ * @param {object} [detail] Small, JSON-serialisable facts — identifiers,
+ *   cache names, hit/miss. Never a response body.
+ */
+function _debugLog(evt, detail) {
+  if (!_debugLogEnabled) return;
+  try {
+    _debugLogPending.push({ at: Date.now(), src: 'sw', evt, detail: detail || null });
+    // Drop the OLDEST on overflow. A worker running without a client is
+    // usually mid-burst, and the newest lines are the ones describing
+    // whatever it is doing now.
+    if (_debugLogPending.length > DEBUG_LOG_MAX_PENDING) {
+      _debugLogPending.splice(0, _debugLogPending.length - DEBUG_LOG_MAX_PENDING);
+    }
+    if (_debugLogTimer === null) {
+      _debugLogTimer = setTimeout(_flushDebugLog, DEBUG_LOG_FLUSH_MS);
+    }
+  } catch (_err) {
+    // Recording must never affect the behaviour being recorded.
+  }
+}
+
+/**
+ * SNOW-812: the short, readable form of a request's URL for a trace line
+ * — origin plus path, query string dropped.
+ *
+ * Tile URLs carry cache-busting and style parameters that make a raw URL
+ * unreadable at the width a phone panel has, and the part that matters
+ * for a cache lookup is the path. Query strings ARE part of the cache
+ * key, so a mismatch that lives purely in the query would not show here;
+ * that is a deliberate trade for a trace that can be read on the device
+ * it was recorded on.
+ *
+ * @param {Request} request
+ * @returns {string}
+ */
+function _debugUrlOf(request) {
+  try {
+    const u = new URL(request.url);
+    return u.origin + u.pathname;
+  } catch (_err) {
+    return String((request && request.url) || 'unknown');
+  }
+}
+
+/**
+ * Broadcast the buffered debug lines to every client and clear the
+ * buffer.
+ *
+ * Cleared even when there is no client to receive them. Holding lines
+ * back for a client that may never appear is how the buffer becomes a
+ * leak in a worker woken for a background sync, and a trace nobody was
+ * watching for is not worth that.
+ */
+function _flushDebugLog() {
+  _debugLogTimer = null;
+  if (_debugLogPending.length === 0) return;
+  const entries = _debugLogPending;
+  _debugLogPending = [];
+  try {
+    if (!self.clients || typeof self.clients.matchAll !== 'function') return;
+    self.clients
+      .matchAll({ includeUncontrolled: true, type: 'window' })
+      .then((clients) => {
+        for (const client of clients) {
+          try {
+            client.postMessage({ type: 'debug-log', entries });
+          } catch (_err) {
+            // A torn-down client is not worth retrying for.
+          }
+        }
+      })
+      .catch(() => {});
+  } catch (_err) {
+    // Ignore.
+  }
+}
+
+/**
+ * SNOW-812: lazily rehydrate ``_debugLogEnabled`` from the durable
+ * ``meta:app`` IndexedDB row (key ``debug.enabled``) that
+ * ``static/js/debug_log.js``'s ``persistEnabled()`` writes alongside its
+ * ``debug-log-enabled`` postMessage.
+ *
+ * Mirrors ``_hydrateDevShellCacheOptIn()`` exactly, including tolerating a
+ * missing ``meta:app`` store (a worker-created DB only has
+ * ``queue:mutations`` — see ``_openMutationsDb()``'s docstring): a read
+ * failure leaves the default (off), which is the safe direction.
+ *
+ * Called from the fetch router's basemap paths only, and only after
+ * ``_hydrateBasemapOrigins()`` has already established there is a DB open
+ * to read — so it adds no round trip to a request that was not going to
+ * touch IndexedDB anyway.
+ *
+ * @returns {Promise<void>}
+ */
+function _hydrateDebugLogEnabled() {
+  if (_debugLogHydration) return _debugLogHydration;
+  _debugLogHydration = (async () => {
+    let db;
+    try {
+      db = await _openMutationsDb();
+      const meta = await _idbGetAll(db, 'meta:app');
+      const row = meta.find((r) => r.key === 'debug.enabled');
+      if (row) _debugLogEnabled = !!row.value;
+    } catch (_err) {
+      // meta:app missing, or a transient open/read failure — leave the
+      // trace off. Recovery comes from the next live page's
+      // debug-log-enabled message, which resets _debugLogHydration.
+    } finally {
+      if (db) {
+        try {
+          db.close();
+        } catch (_e) {
+          // Non-fatal.
+        }
+      }
+    }
+  })();
+  return _debugLogHydration;
+}
+
+/**
  * SNOW-487: lazily rehydrate ``_basemapOrigins`` from the durable
  * ``meta:app`` IndexedDB row (key ``basemap.origins``) that
  * ``static/js/map.js``'s ``registerBasemapOrigins()`` writes alongside
@@ -1060,6 +1271,16 @@ function _hydrateBasemapOrigins() {
       if (row && Array.isArray(row.value) && _basemapOrigins.size === 0) {
         _basemapOrigins = new Set(row.value);
       }
+      // SNOW-812: says which of the three outcomes happened — the row was
+      // there and restored the allowlist, the row was there but something
+      // had already populated it, or there was no row at all. Reading
+      // 'no-row' here is the difference between "the worker forgot" and
+      // "the page never registered them in the first place".
+      _debugLog('origins.hydrate', {
+        found: !!row,
+        restored: row && Array.isArray(row.value) ? row.value.length : 0,
+        size: _basemapOrigins.size,
+      });
     } catch (_err) {
       // meta:app missing (fresh worker-created DB), or a transient DB
       // open/read failure (blocked by a concurrent version upgrade, lock
@@ -1070,6 +1291,7 @@ function _hydrateBasemapOrigins() {
       // SNOW-722: flagged for the memo-drop below, so the next request
       // re-reads rather than reusing this empty result.
       failed = true;
+      _debugLog('origins.hydrate', { found: false, error: true, size: _basemapOrigins.size });
     } finally {
       if (db) {
         try {
@@ -1203,10 +1425,27 @@ function _classifySync(request, url) {
  */
 async function _classifyCrossOriginGet(url) {
   await _hydrateBasemapOrigins();
+  // SNOW-812: piggy-backs on the hydration above rather than adding its
+  // own DB round trip — by here a read has already happened (or failed),
+  // so establishing whether the trace is on is nearly free. Awaited
+  // before the _debugLog call below so a worker restarted mid-session
+  // records this request rather than the one after it.
+  await _hydrateDebugLogEnabled();
   // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
   const isBasemap = self.pwaBasemapCacheCore
     ? self.pwaBasemapCacheCore.isBasemapOrigin(url, _basemapOrigins)
     : _basemapOrigins.has(url.origin);
+  // The single most useful line in the trace. 'unclassified' with a
+  // non-empty allowlist means the origin genuinely is not a basemap;
+  // 'unclassified' with origins=0 means the allowlist was lost to an idle
+  // worker restart and hydration did not get it back — which is the
+  // SNOW-722 blank-basemap-over-a-full-cache bug, and is otherwise
+  // completely invisible from the outside.
+  _debugLog('classify', {
+    url: url.origin + url.pathname,
+    result: isBasemap ? 'basemap' : 'unclassified',
+    origins: _basemapOrigins.size,
+  });
   if (isBasemap) return 'basemap';
   return 'network';
 }
@@ -2909,6 +3148,25 @@ self.addEventListener('message', (event) => {
     _devShellCacheOptIn = !!event.data.enabled;
     _devShellCacheHydration = null;
   }
+  // SNOW-812: static/js/debug_log.js posts this when the debug trace is
+  // switched on or off, and re-asserts it on every page load. Mirrors
+  // 'dev-shell-cache': replaces the in-memory flag and clears the
+  // memoised hydration read, so a worker restarted since the last toggle
+  // starts recording on the very next request rather than after its own
+  // meta:app read happens to land.
+  if (event.data && event.data.type === 'debug-log-enabled') {
+    _debugLogEnabled = !!event.data.enabled;
+    _debugLogHydration = null;
+    if (!_debugLogEnabled) {
+      _debugLogPending = [];
+      if (_debugLogTimer !== null) {
+        clearTimeout(_debugLogTimer);
+        _debugLogTimer = null;
+      }
+    } else {
+      _debugLog('recording.started', { cache_version: CACHE_VERSION });
+    }
+  }
   // SNOW-492: "Download basemap" — map.js posts this with the current
   // view's URL list (see its docstring for how that list is assembled).
   // Runs inside event.waitUntil (ExtendableMessageEvent supports it, same
@@ -2986,6 +3244,12 @@ self.addEventListener('message', (event) => {
           requestId,
         });
       };
+      _debugLog('warm.start', {
+        urls: event.data.urls.length,
+        pinned,
+        areaId: areaId || null,
+        requestId,
+      });
       const warm = _warmCache(event.data.urls, {
         pinned,
         areaId,
@@ -3006,6 +3270,19 @@ self.addEventListener('message', (event) => {
         // does not mark a finished run cancelled (which would leave its id
         // sitting in the cancelled set with nothing to clear it).
         _clearWarmCacheActive(requestId);
+        // SNOW-812: the download's own verdict. A run that reports
+        // ok>0 alongside a later pinned.search miss is the signal that
+        // the tiles were written under keys nothing asks for; a run
+        // reporting failed>0 is a plainer story with the same symptom.
+        _debugLog('warm.done', {
+          ok: result.ok,
+          failed: result.failed,
+          reason: result.reason || null,
+          bytes: result.bytes,
+          cancelled: !!result.cancelled,
+          areaId: areaId || null,
+          requestId,
+        });
         event.source?.postMessage({
           type: 'warm-cache-done',
           ok: result.ok,
