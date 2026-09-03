@@ -166,9 +166,9 @@ exists to make it impossible to repeat.
 
 The current Favourites copy, and what steps do to it.
 
-**Before** — accurate, complete, and unusable in a hurry. The instruction is
-three clauses deep in a paragraph, and the reader has to hold the whole
-sentence to extract two taps:
+**Before** — accurate and complete, but the instructions are dissolved into
+the description. The two taps that place a pin are three clauses deep in a
+sentence that is also defining what a favourite is:
 
 > Favourites let you pin specific spots — a resort, a trailhead, a favourite
 > line — directly on the map. Sign in, open the star button on the right of
@@ -176,15 +176,16 @@ sentence to extract two taps:
 > place it with one hand. You can also save a resort straight from its pin's
 > popup.
 
-**After** — same facts, same length, scannable:
+**After** — same facts, same feature, structured:
 
-> Pin a spot you ski often so you can jump straight to its bulletin.
+> Favourites are your own pins on the map — a resort, a trailhead, a line you
+> keep coming back to — each one a shortcut to that spot's bulletin.
 >
 > You need to be signed in.
 >
 > 1. Tap the star button on the right of the map.
-> 2. Choose **Add a favourite**. The map moves under a fixed pin, so you can
->    place it one-handed.
+> 2. Choose **Add a favourite**. A pin appears in the centre and stays there
+>    while the map moves beneath it, so you aim by moving the map.
 > 3. Drag the map until the pin sits where you want it, then tap **Save**.
 > 4. Give it a name. It appears in the list below the button.
 >
@@ -193,21 +194,26 @@ sentence to extract two taps:
 > Favourites are private — never shown to other users. Each one gets its own
 > page you can bookmark or share. To draw them all on the map, turn on
 > **Display on the map** at the foot of the same panel; it lives there rather
-> than in the layers menu.
+> than in the layers menu. A pin dropped with no connection is saved on the
+> device and sent when you are back online.
 
 What changed, and why each move is worth copying:
 
-- **The task moved to line one.** "Pin a spot you ski often" is what the
-  reader searched for; "Favourites let you pin specific spots" is a
-  definition of a noun they may not have thought of.
+- **The feature is still the subject.** The panel is called Favourites and
+  the first line says what a favourite *is*. The rewrite is about structure,
+  not about renaming the feature after a task someone might be doing.
+- **The definition stops after one sentence.** The old copy kept explaining in
+  prose; here the opening hands straight over to the steps.
 - **The precondition came out of the step list.** Signing in is not step one
   of placing a pin; it is a gate, and a signed-out reader needs to hit it
   before they start counting taps.
-- **Each tap got its own number and its consequence.** "The map moves under a
-  fixed pin" now sits with the action that causes it.
+- **Each tap got its own number and its consequence.** The fixed centre pin
+  now sits with the action that causes it, instead of trailing a colon in the
+  middle of a paragraph.
 - **The alternative path stopped competing with the main one.** "You can also
   save a resort straight from its pin's popup" was a third clause in the
   primary flow; as a one-line aside after the steps it is findable without
   interrupting.
-- **The limits got their own closing block** — private, own page, and the
-  switch that isn't where you'd look for it. Nothing was cut.
+- **The limits got their own closing block** — private, own page, the switch
+  that isn't where you'd look for it, and the offline behaviour. Nothing was
+  cut; the offline sentence was pulled up from the original's last paragraph.
