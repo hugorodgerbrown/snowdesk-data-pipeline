@@ -118,9 +118,17 @@ urlpatterns = [
     # weather card hands off to via "View forecast". Keyed on Location
     # rather than on a resort or a region because most of the estate is
     # neither: 461 of 540 public locations are region centroids, which had
-    # no page of their own before this one.
+    # no page of their own before this one. SNOW-797: keyed on the opaque
+    # short id, not the pk; the integer form keeps a permanent redirect.
+    # The int route is listed first, but the two cannot compete anyway —
+    # the short_id converter wants exactly eleven characters.
     path(
         "weather/<int:location_id>/",
+        views.location_weather_legacy_redirect,
+        name="location_weather_legacy",
+    ),
+    path(
+        "weather/<short_id:short_id>/",
         views.location_weather,
         name="location_weather",
     ),

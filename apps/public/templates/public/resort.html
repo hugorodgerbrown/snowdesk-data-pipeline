@@ -135,7 +135,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
                 {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-weather-heading" text=weather_heading_label class_extra="mb-2" only %}
                 <div class="space-y-4">
                     {% for section in weather_sections %}
-                        <div data-testid="{{ section.testid_prefix }}" data-location-id="{{ section.location.pk }}">
+                        <div
+                            data-testid="{{ section.testid_prefix }}"
+                            data-location-short-id="{{ section.location.short_id }}"
+                        >
                             {% include "includes/_weather_panel.html" with weather_display=section.weather_display location_label=section.label testid_prefix=section.testid_prefix only %}
                             {# SNOW-783: the day here, the week on the location's own #}
                             {# forecast page. Drawing the same week once per altitude  #}

@@ -77,7 +77,7 @@ Context:
     <main
         class="{% page_shell_classes %}"
         data-testid="location-weather"
-        data-location-id="{{ location.pk }}"
+        data-location-short-id="{{ location.short_id }}"
     >
         {# 1. Masthead. #}
         {% include "includes/_weather_masthead.html" with heading=heading location=location resort=resort region=region only %}

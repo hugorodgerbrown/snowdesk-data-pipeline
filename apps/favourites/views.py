@@ -654,8 +654,8 @@ def _favourite_card_context(
         # live on the location's own forecast page rather than being
         # redrawn inside a card that is already a scrolling surface.
         "forecast_url": (
-            reverse("public:location_weather", args=[favourite.location_id])
-            if favourite.location_id
+            favourite.location.get_absolute_url()
+            if favourite.location is not None
             else ""
         ),
         "cache_payload": cache_payload,

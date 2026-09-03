@@ -218,7 +218,7 @@ class TestResortPage:
         assert 'data-date="2026-08-31"' not in content
         # But it is one click away, per location.
         assert 'data-testid="resort-weather-0-forecast-link"' in content
-        assert reverse("public:location_weather", args=[location.pk]) in content
+        assert reverse("public:location_weather", args=[location.short_id]) in content
 
     def test_a_location_without_a_row_is_dropped_not_rendered_empty(self) -> None:
         """A resort whose peak has a row and village none shows one block."""
@@ -317,9 +317,8 @@ class TestFavouriteCard:
         assert 'data-testid="favourite-weather-panel"' in content
         assert 'data-testid="favourite-forecast-panel"' not in content
         assert 'data-testid="favourite-card-forecast-link"' in content
-        assert (
-            reverse("public:location_weather", args=[favourite.location_id]) in content
-        )
+        assert favourite.location is not None
+        assert favourite.location.get_absolute_url() in content
 
 
 @pytest.mark.django_db
@@ -344,7 +343,9 @@ class TestLocationForecastPage:
             forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
         )
 
-        response = Client().get(reverse("public:location_weather", args=[location.pk]))
+        response = Client().get(
+            reverse("public:location_weather", args=[location.short_id])
+        )
 
         content = response.content.decode()
         assert 'data-date="2026-08-30"' in content
@@ -362,7 +363,8 @@ class TestLocationForecastPage:
         owner = UserFactory.create()
         stranger = UserFactory.create()
         favourite = FavouriteFactory.create(user=owner, name="The col")
-        url = reverse("public:location_weather", args=[favourite.location_id])
+        assert favourite.location is not None
+        url = favourite.location.get_absolute_url()
 
         owner_client = Client()
         owner_client.force_login(owner)
@@ -401,7 +403,7 @@ class TestLocationForecastPage:
 
         html = (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 
@@ -440,7 +442,7 @@ class TestLocationForecastPage:
 
         html = (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 
@@ -533,7 +535,7 @@ class TestLocationForecastPage:
 
         html = (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 
@@ -585,7 +587,7 @@ class TestIconHalo:
             sunrise=SUNRISE,
             sunset=SUNSET,
         )
-        url = reverse("public:location_weather", args=[location.pk])
+        url = reverse("public:location_weather", args=[location.short_id])
         client = Client()
 
         needs = client.get(f"{url}?date={PAGE_DATE.isoformat()}&icons=yr")
@@ -632,7 +634,9 @@ class TestIconHalo:
 
         html = (
             Client()
-            .get(f"{reverse('public:location_weather', args=[location.pk])}?icons=yr")
+            .get(
+                f"{reverse('public:location_weather', args=[location.short_id])}?icons=yr"
+            )
             .content.decode()
         )
 
@@ -665,7 +669,7 @@ class TestIconSetSwitcher:
             sunset=SUNSET,
             forecast=[_forecast_day("2026-08-31")],
         )
-        url = reverse("public:location_weather", args=[location.pk])
+        url = reverse("public:location_weather", args=[location.short_id])
 
         content = Client().get(f"{url}?date={PAGE_DATE.isoformat()}").content.decode()
 
@@ -686,7 +690,7 @@ class TestIconSetSwitcher:
             sunrise=SUNRISE,
             sunset=SUNSET,
         )
-        url = reverse("public:location_weather", args=[location.pk])
+        url = reverse("public:location_weather", args=[location.short_id])
 
         client = Client()
         for set_name in ("snowdesk", "meteocons", "yr"):
@@ -721,7 +725,7 @@ class TestMeteogramMarks:
         )
         return (
             Client()
-            .get(reverse("public:location_weather", args=[location.pk]))
+            .get(reverse("public:location_weather", args=[location.short_id]))
             .content.decode()
         )
 

@@ -4333,7 +4333,7 @@ def _resort_weather_sections(
                 label=label,
                 role_label=str(link.get_role_display()),
                 weather_display=build_weather_display(weather, now),
-                forecast_url=reverse("public:location_weather", args=[location.pk]),
+                forecast_url=location.get_absolute_url(),
                 testid_prefix=f"resort-weather-{index}",
             )
         )
@@ -4400,7 +4400,35 @@ def _location_forecast_context(
     }
 
 
-def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
+def location_weather_legacy_redirect(
+    request: HttpRequest, location_id: int
+) -> HttpResponse:
+    """301 the pre-SNOW-797 ``/weather/<id>/`` shape to ``/weather/<short_id>/``.
+
+    The integer form was the page's URL for its first weeks and was shared
+    from the map's weather card, so it keeps a permanent redirect
+    (``docs/decisions/no-integer-pks-in-urls.md``). Same visibility rule as
+    the page — the public estate plus the reader's own pins — so a guessed
+    pk still cannot confirm a stranger's private pin exists. ``?date=``
+    rides along, so a shared dated link still opens on its day.
+
+    Args:
+        request: The incoming HTTP request.
+        location_id: The Location's primary key, from the legacy URL.
+
+    Returns:
+        A 301 to the canonical page, or 404 when the pk is not visible.
+
+    """
+    location = get_object_or_404(
+        Location.objects.visible_to(request.user), pk=location_id
+    )
+    query = request.META.get("QUERY_STRING", "")
+    url = location.get_absolute_url()
+    return redirect(f"{url}?{query}" if query else url, permanent=True)
+
+
+def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
     """Render the full forecast for one location.
 
     THE PAGE THE MAP CARD HANDS OFF TO. Tapping a weather symbol opens a
@@ -4447,7 +4475,7 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
 
     Args:
         request: The incoming HTTP request.
-        location_id: The Location's primary key.
+        short_id: The Location's opaque short id (SNOW-797).
 
     Returns:
         The rendered page.
@@ -4458,7 +4486,7 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
 
     """
     location = get_object_or_404(
-        Location.objects.visible_to(request.user), pk=location_id
+        Location.objects.visible_to(request.user), short_id=short_id
     )
 
     observed_on = timezone.localdate()

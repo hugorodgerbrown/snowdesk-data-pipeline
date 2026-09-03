@@ -119,12 +119,17 @@ class TestPayloadShape:
         feature = _get()["features"][0]
 
         assert set(feature["properties"]) == {
-            "location_id",
+            "short_id",
             "name",
             "elevation_m",
             "days",
         }
         assert feature["properties"]["elevation_m"] == 3328.0
+        # SNOW-797: the identifier is the opaque short id — the feed is
+        # public and cacheable, so the pk must not be in it anywhere.
+        assert feature["properties"]["short_id"] == location.short_id
+        assert len(feature["properties"]["short_id"]) == 11
+        assert str(location.pk) not in feature["properties"].values()
 
     def test_geometry_is_lon_lat(self) -> None:
         """GeoJSON ordering is [longitude, latitude] per RFC 7946."""

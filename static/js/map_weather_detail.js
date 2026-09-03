@@ -9,7 +9,7 @@
  *
  * WHERE THE BOUNDARY IS. map.js owns the map and binds the tap, because the
  * layer is its; this module owns the sheet and knows nothing about MapLibre.
- * They meet at `window.pwaWeatherDetail.open(locationId, dateKey)` and
+ * They meet at `window.pwaWeatherDetail.open(shortId, dateKey)` and
  * nowhere else — which is why this file has no reference to `map`, a layer
  * id, or a feature, and map.js has none to the sheet.
  *
@@ -33,8 +33,9 @@
   var sheetEl = document.getElementById('weather-sheet');
   if (!mapEl || !sheetEl || !window.MapSheet) return;
 
-  // Rendered via {% url 'api:weather_detail' location_id=0 %}; the id is a
-  // placeholder to substitute, matching map.js's resort-popup handling.
+  // Rendered via {% url 'api:weather_detail' short_id='__SHORTID__' %}; the
+  // placeholder is substituted per tap, matching map.js's resort-popup
+  // handling. The feed's `short_id` is opaque, never a pk (SNOW-797).
   var URL_TEMPLATE = mapEl.dataset.weatherDetailUrl || '';
 
   // `read` takes the whole fallback map and returns the whole map back,
@@ -84,23 +85,20 @@
    * resolves. A tap that shows nothing until the network answers reads as a
    * tap that missed, and the second tap then closes what the first opened.
    *
-   * @param {number|string} locationId Location primary key from the feed's
-   *   `location_id` property.
+   * @param {string} shortId Location short id from the feed's `short_id`
+   *   property.
    * @param {string} [dateKey] ISO date the map is showing. Omitted, the
    *   server answers for today.
    * @returns {Promise<boolean>} Whether the body was rendered.
    */
-  async function open(locationId, dateKey) {
-    if (locationId == null || !URL_TEMPLATE) return false;
+  async function open(shortId, dateKey) {
+    if (shortId == null || !URL_TEMPLATE) return false;
 
     var token = ++requestToken;
     sheet.open();
     showMessage(strings.loading);
 
-    var url = URL_TEMPLATE.replace(
-      '/weather/0/detail/',
-      '/weather/' + encodeURIComponent(String(locationId)) + '/detail/',
-    );
+    var url = URL_TEMPLATE.replace('__SHORTID__', encodeURIComponent(String(shortId)));
     if (dateKey) url += '?date=' + encodeURIComponent(dateKey);
 
     try {

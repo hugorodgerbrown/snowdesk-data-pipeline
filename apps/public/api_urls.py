@@ -55,8 +55,14 @@ urlpatterns = [
     # SNOW-761: the sheet body behind a tap on a weather symbol. Keyed on
     # Location like the feed it is tapped from, and 404s for anything
     # outside Location.objects.public() — see the view.
+    # SNOW-797: keyed on Location.short_id; the integer form 301s to it.
     path(
         "weather/<int:location_id>/detail/",
+        api.weather_detail_legacy_redirect,
+        name="weather_detail_legacy",
+    ),
+    path(
+        "weather/<short_id:short_id>/detail/",
         api.weather_detail,
         name="weather_detail",
     ),

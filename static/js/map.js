@@ -6541,16 +6541,17 @@
       // is the label's own extent, which is what the user aimed at.
       //
       // `collapseToLowest` means the feature under the cursor may stand for
-      // several stations. Its `location_id` is the one that survived the
+      // several stations. Its `short_id` is the one that survived the
       // collapse — the lowest — which is the reading the symbol is drawing,
-      // so the sheet answers for the same place the map showed.
+      // so the sheet answers for the same place the map showed. The feed
+      // carries the opaque short id, never the pk (SNOW-797).
       if (map.getLayer('weather-point')) {
         const weatherHit = map.queryRenderedFeatures(e.point, {
           layers: ['weather-point'],
         })[0];
         if (weatherHit) {
           window.pwaWeatherDetail?.open(
-            weatherHit.properties.location_id, currentDisplayedDate,
+            weatherHit.properties.short_id, currentDisplayedDate,
           );
           return;
         }

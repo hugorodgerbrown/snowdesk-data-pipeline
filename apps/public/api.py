@@ -75,8 +75,8 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
-from django.http import Http404, HttpRequest, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
@@ -518,7 +518,7 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
               "type": "Feature",
               "geometry": {"type": "Point", "coordinates": [7.5, 46.1]},
               "properties": {
-                "location_id": 42,
+                "short_id": "Ab3dE_fGh1J",
                 "name": "Mont Fort",
                 "elevation_m": 3328.0,
                 "days": {"2026-08-30": {"code": 71, "tmax": 4.0}, ...}
@@ -534,6 +534,11 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
     no ``resort_id`` and no ``region_id``, because nothing on the map reads
     them — a feature carrying fields no layer touches is payload every
     visitor downloads and no visitor sees.
+
+    ``short_id`` is ``Location.short_id``, never the primary key (SNOW-797,
+    ``docs/decisions/no-integer-pks-in-urls.md``): this feed is
+    unauthenticated and cacheable, so anything it emits is public to every
+    visitor. It is what the map hands to ``weather_detail`` on a tap.
 
     ``elevation_m`` is nullable: it is resolved out of band, so a
     freshly-imported location has none yet and the label falls back to the
@@ -569,7 +574,10 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
 
     """
     observed_on = timezone.localdate()
-    cache_key = f"weather-geojson:v1:{observed_on.isoformat()}"
+    # v2: SNOW-797 renamed ``location_id`` to ``short_id`` in the payload,
+    # and a v1 entry cached across the deploy would hand the map a shape
+    # its tap handler no longer reads.
+    cache_key = f"weather-geojson:v2:{observed_on.isoformat()}"
     payload, generated_at = cast(
         "tuple[dict[str, Any], datetime | None]",
         cache.get_or_set(
@@ -635,7 +643,7 @@ def _build_weather_payload(
                     "coordinates": [location.longitude, location.latitude],
                 },
                 "properties": {
-                    "location_id": location.pk,
+                    "short_id": location.short_id,
                     "name": location.name,
                     "elevation_m": location.elevation_m,
                     "days": build_point_weather_days(row),
@@ -1219,7 +1227,47 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
     return response
 
 
-def weather_detail(request: HttpRequest, location_id: int) -> JsonResponse:
+def weather_detail_legacy_redirect(
+    request: HttpRequest, location_id: int
+) -> HttpResponse:
+    """301 the pre-SNOW-797 ``/api/weather/<id>/detail/`` to the short-id form.
+
+    Kept because the integer form is what any cached ``weather.geojson``
+    payload still names for a few minutes after the deploy, and because
+    every changed route keeps a permanent redirect from its integer form
+    (``docs/decisions/no-integer-pks-in-urls.md``). Same estate rule as the
+    endpoint it redirects to — a private pin's pk is a 404 here too — and
+    the ``?date=`` query string rides along.
+
+    Args:
+        request: The incoming HTTP request.
+        location_id: The Location's primary key, from the legacy URL.
+
+    Returns:
+        A 301 to the short-id endpoint, or 404 outside the public estate.
+
+    """
+    location = get_object_or_404(Location.objects.public(), pk=location_id)
+    url = reverse("api:weather_detail", kwargs={"short_id": location.short_id})
+    return _redirect_with_query(request, url)
+
+
+def _redirect_with_query(request: HttpRequest, url: str) -> HttpResponse:
+    """Permanent-redirect to ``url``, carrying the request's query string.
+
+    Args:
+        request: The request whose query string to forward.
+        url: The redirect target path.
+
+    Returns:
+        A 301 response.
+
+    """
+    query = request.META.get("QUERY_STRING", "")
+    return redirect(f"{url}?{query}" if query else url, permanent=True)
+
+
+def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
     """Return pre-rendered sheet HTML for a tapped weather symbol.
 
     Response shape::
@@ -1259,17 +1307,17 @@ def weather_detail(request: HttpRequest, location_id: int) -> JsonResponse:
     ``target_date`` that varies per request.
 
     Errors:
-        404 — unknown ``location_id``, or one outside the public estate.
+        404 — unknown ``short_id``, or one outside the public estate.
 
     Args:
         request: The incoming HTTP request.
-        location_id: The Location's primary key.
+        short_id: The Location's opaque short id (SNOW-797).
 
     Returns:
         A JsonResponse with a single ``html`` key containing the sheet body.
 
     """
-    location = get_object_or_404(Location.objects.public(), pk=location_id)
+    location = get_object_or_404(Location.objects.public(), short_id=short_id)
 
     target_date = timezone.localdate()
     raw_date = request.GET.get("date", "")
@@ -1329,7 +1377,7 @@ def _weather_forecast_url(location: Location) -> str:
         An absolute path.
 
     """
-    return reverse("public:location_weather", kwargs={"location_id": location.pk})
+    return location.get_absolute_url()
 
 
 def _weather_detail_heading(location: Location) -> str:

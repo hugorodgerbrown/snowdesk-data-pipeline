@@ -117,7 +117,7 @@ class TestPanelAndChartAgree:
     ``_weather_panel.html`` rotates its glyph with ``wind_arrow_rotation``;
     the hourly chart builds its own ``transform`` in
     ``apps.weather.services.hourly_chart``. Both are on
-    ``/weather/<location_id>/`` (SNOW-786), and SNOW-785 exists because they
+    ``/weather/<short_id>/`` (SNOW-786), and SNOW-785 exists because they
     used to disagree by half a turn. Two implementations reached by two
     templates will drift unless something asserts they cannot.
     """

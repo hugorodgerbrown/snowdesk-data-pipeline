@@ -106,9 +106,10 @@ Optional context:
     {# is a blur, so a set that draws its own would only be softened by it.  #}
     data-weather-icon-halo="{% weather_icon_needs_halo %}"
     {# SNOW-761: the sheet body behind a tap on a weather symbol. A template #}
-    {# with a placeholder id, substituted in map_weather_detail.js — the     #}
-    {# same idiom data-resort-popup-url uses above.                          #}
-    data-weather-detail-url="{% url 'api:weather_detail' location_id=0 %}"
+    {# with a placeholder short id, substituted in map_weather_detail.js —   #}
+    {# the same idiom data-resort-popup-url uses above. Eleven characters,   #}
+    {# because that is all the short_id converter accepts (SNOW-797).        #}
+    data-weather-detail-url="{% url 'api:weather_detail' short_id='__SHORTID__' %}"
     data-community-reports-eligible="true"
     {# SNOW-691: the slope-angle raster's tile template. Emitted only for an  #}
     {# eligible request — i.e. only while settings.SLOPE_TILE_URL is set       #}
