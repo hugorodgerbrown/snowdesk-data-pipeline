@@ -293,7 +293,8 @@ both hits appear and the badge makes the distinction obvious.
 ### Scenario MS7: "Explore the map" dismisses the intro overlay
 
 **Goal**: Verify the intro overlay's CTA is a *dismiss* control, not a link —
-the map is already mounted behind it — and that the dismissal persists.
+the map is already mounted behind it — that the dismissal persists, and that
+the "?" roundel brings the card back rather than jumping straight to the tour.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
@@ -302,6 +303,8 @@ the map is already mounted behind it — and that the dismissal persists.
 | 3 | Inspect `localStorage` | `snowdesk.home.intro` is set to `dismissed` |
 | 4 | Reload the page | The map loads with no intro card |
 | 5 | Repeat from step 1, but click the "×" close button (or press Escape) | The card dismisses and persists the same way — but the map-help tour does **not** open. That extra step is what distinguishes the CTA from the "×" |
+| 6 | With the card dismissed, click the "?" roundel in the bottom-left stack | The welcome card comes back, over whatever the map was showing; any other open panel (layers, legend, a sheet) closes. `snowdesk.home.intro` is still `dismissed` |
+| 7 | Click "Explore the map" | The card clears and the coachmark tour opens on step 1 — the same route in as step 2, which is the only route in on this page |
 
 To bring the overlay back without clearing `localStorage`, load
 `http://localhost:8000/?intro=1` — it forces the panel open, survives a server

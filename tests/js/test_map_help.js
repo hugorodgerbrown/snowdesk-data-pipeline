@@ -279,6 +279,40 @@ describe('auto-start', () => {
   });
 });
 
+describe('the "?" roundel where the page has a welcome panel', () => {
+  it('opens #home-intro instead of the tour', async () => {
+    // The roundel is the only way back to the welcome panel, so on a page
+    // that renders one it hands the click over rather than starting the
+    // tour: the panel's own "Explore the map" CTA is what leads in here.
+    // home_intro.js answers the event; this fixture has no such module, so
+    // the assertion is that the request goes out and the tour stays shut.
+    buildFixture({ noAutostart: true });
+    document.body.insertAdjacentHTML('beforeend', '<div id="home-intro"></div>');
+    await loadModules();
+    const requested = vi.fn();
+    document.addEventListener('snowdesk:home-intro-requested', requested);
+
+    document.getElementById('map-help-toggle').click();
+
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(overlayHidden()).toBe(true);
+  });
+
+  it('opens the tour directly when there is no welcome panel', async () => {
+    // Any other page embedding the map partial without show_intro: nothing
+    // would answer the request event, so the roundel must not dispatch it.
+    buildFixture({ noAutostart: true });
+    await loadModules();
+    const requested = vi.fn();
+    document.addEventListener('snowdesk:home-intro-requested', requested);
+
+    document.getElementById('map-help-toggle').click();
+
+    expect(requested).not.toHaveBeenCalled();
+    expect(overlayHidden()).toBe(false);
+  });
+});
+
 describe('snowdesk:map-help-requested', () => {
   it('opens the tour from step 1, same as the "?" roundel', async () => {
     // SNOW-535: this is the event home_intro.js dispatches when its

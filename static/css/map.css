@@ -137,6 +137,17 @@
    very line the scrubber fills. */
 #map {
     --map-bottom-row-offset: var(--map-edge-inset-bottom);
+    /* How tall the bottom-left stack is: three control-height members —
+       the help roundel, the legend toggle and the date row — and the two
+       8px gaps between them. A surface floating over the map's bottom-left
+       corner has to clear it, because those members are what a visitor
+       taps and a card overlapping them wins the hit test in silence: the
+       date control simply stops responding, with no console error and
+       nothing on screen to say why. #home-intro is the one that does
+       (its own rule, below); the stack's members read their offsets from
+       --map-bottom-row-offset above, so both sides of that clearance come
+       from the same two tokens. */
+    --map-bottom-left-stack: calc(3 * var(--map-control-sm) + 16px);
 }
 
 .map-utility-cluster {
@@ -2644,9 +2655,19 @@
        both present) rather than assumed: a raw `100dvh`-minus-insets
        figure here was off by the nav+banner's own height, letting the
        card's computed max-height run past the bottom of the viewport.
-       `--map-edge-inset-bottom` is the same bottom clearance every other
-       floating map surface already respects. */
-    bottom: var(--map-edge-inset-bottom);
+       The figure is the bottom-left stack's own clearance plus its height
+       plus the 8px gap the stack's members use between themselves: this
+       card sits directly above the help roundel, the legend toggle and the
+       date control, and must not cover them. It was the bare edge inset
+       until the date control joined that stack (SNOW-794), after which a
+       short viewport — a docked preview pane, a laptop with the off-season
+       banner up — put the card straight over the date pill, where it
+       swallowed every click on it. `--map-bottom-left-stack` is defined on
+       #map beside the offset the stack itself uses, so the two cannot
+       drift apart. */
+    bottom: calc(
+        var(--map-bottom-row-offset) + var(--map-bottom-left-stack) + 8px
+    );
     left: calc(env(safe-area-inset-left, 0px) + 16px);
     z-index: 5;
     /* Pointer events on the card only; the map behind the card stays interactive. */

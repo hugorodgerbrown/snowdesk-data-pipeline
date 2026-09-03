@@ -12,16 +12,24 @@
  *     auto-starts once — unless #map-help-overlay carries
  *     data-map-help-no-autostart, an opt-out the embedding page sets when
  *     it has its own, better way to offer the tour. home.html sets it
- *     (SNOW-535): on the homepage the tour only opens via the "?" roundel
- *     or #home-intro's "Explore the map" CTA, never automatically straight
- *     after a visitor dismisses that card.
+ *     (SNOW-535): on the homepage the tour is only ever reached through
+ *     #home-intro's "Explore the map" CTA — on first load, or after
+ *     re-opening that panel from the "?" roundel — never automatically
+ *     straight after a visitor dismisses the card.
  *   - Steps whose target selector resolves to nothing in the DOM (the
  *     flag-gated #favourite-add-btn / #report-btn controls) are skipped
  *     automatically when the active step list is built.
- *   - The "?" roundel (#map-help-toggle) re-opens the tour from step 1 at
- *     any time, regardless of stored state — as does a
- *     'snowdesk:map-help-requested' CustomEvent, which home_intro.js
- *     dispatches when its "Explore the map" CTA is clicked.
+ *   - The "?" roundel (#map-help-toggle) is the way back in. Where the page
+ *     renders the welcome panel (#home-intro, the homepage) the roundel
+ *     opens THAT rather than the tour, by dispatching
+ *     'snowdesk:home-intro-requested' for home_intro.js to answer: the
+ *     panel says what Snowdesk is, and its "Explore the map" CTA leads on
+ *     into the tour. Without that panel — any other page embedding the map
+ *     partial — the roundel opens the tour directly, from step 1,
+ *     regardless of stored state.
+ *   - A 'snowdesk:map-help-requested' CustomEvent opens the tour from step 1
+ *     too. home_intro.js dispatches it when the "Explore the map" CTA is
+ *     clicked, which is the second half of the flow above.
  *   - Back / Next control the sequence; Next becomes "Done" on the final
  *     step. The "×" close button, Escape and Done all persist the dismissed
  *     state.
@@ -378,9 +386,27 @@
   });
 
   if (toggleBtn) {
-    // Re-opens from step 1 regardless of stored state — this is the
-    // deliberate "show me again" affordance.
-    toggleBtn.addEventListener('click', () => open(true));
+    // The deliberate "show me again" affordance, and the only way back to
+    // the welcome panel: before this the roundel went straight to the tour,
+    // so a visitor who had dismissed #home-intro could never read what
+    // Snowdesk is again. The panel leads into the tour by its own CTA, so
+    // handing the click over loses nothing and gains the step in front.
+    //
+    // Presence of #home-intro is the test, resolved per click rather than
+    // at parse time: it is the panel's own template that decides whether a
+    // page has one (show_intro in _map_embed.html), and asking the DOM
+    // keeps this module free of any "am I the homepage" check. Where there
+    // is no panel, nothing answers the request event — hence the fallback
+    // rather than a dispatch into the void.
+    toggleBtn.addEventListener('click', () => {
+      if (document.getElementById('home-intro')) {
+        document.dispatchEvent(
+          new CustomEvent('snowdesk:home-intro-requested'),
+        );
+        return;
+      }
+      open(true);
+    });
   }
 
   // SNOW-658: the tour closes whenever any other map overlay opens, and
