@@ -1249,65 +1249,6 @@ def help_page(request: HttpRequest) -> HttpResponse:
     return render(request, "public/help.html", context)
 
 
-def observations_list(request: HttpRequest) -> HttpResponse:
-    """
-    Render the /observations page — a signed-in stream of recent reports.
-
-    Shows FieldObservation rows from the last 48 hours, newest first. An
-    anonymous visitor sees a sign-in call to action instead of the list. A
-    signed-in viewer sees their own reports plus other users' reports.
-
-    Every row renders its timestamp as recorded, whoever filed it. Other
-    users' were floored to the preceding 15-minute mark until the note
-    above ``community_reports_geojson`` in ``apps.public.api``: this page
-    shows no names either, so the floor identified nobody and only made
-    one report read two ages across two surfaces.
-
-    Args:
-        request: The incoming HTTP request.
-
-    Returns:
-        The rendered observations page.
-
-    """
-    window_hours = 48
-    since = timezone.now() - datetime.timedelta(hours=window_hours)
-    rows: list[dict[str, Any]] = []
-
-    if request.user.is_authenticated:
-        queryset = FieldObservation.objects.recent(since).select_related(
-            "region", "user"
-        )
-
-        for observation in queryset:
-            is_own = observation.user_id == request.user.pk
-            rows.append(
-                {
-                    "type_label": observation.get_observation_type_display(),
-                    "region_name": (
-                        observation.region.name
-                        if observation.region is not None
-                        else "unknown region"
-                    ),
-                    "region_url": (
-                        observation.region.get_absolute_url()
-                        if observation.region is not None
-                        else None
-                    ),
-                    "observed_at": observation.observed_at,
-                    "is_own": is_own,
-                }
-            )
-
-    context = {
-        "rows": rows,
-        "viewer_authenticated": request.user.is_authenticated,
-        "signin_url": reverse("accounts:sign_in"),
-        "window_hours": window_hours,
-    }
-    return render(request, "public/observations.html", context)
-
-
 # User-facing labels for the basemap layer picker (SNOW-58). Keyed by the
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather

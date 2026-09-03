@@ -75,7 +75,6 @@ def sharing_pages(db: None) -> dict[str, str]:
     return {
         "home": reverse("public:home"),
         "help": reverse("public:help"),
-        "observations": reverse("public:observations"),
         "colophon": reverse("public:colophon"),
         "privacy": reverse("public:privacy"),
         # ``public:terms`` is deliberately absent: SNOW-770 merged its page

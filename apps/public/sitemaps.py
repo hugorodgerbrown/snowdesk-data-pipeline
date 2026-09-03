@@ -282,10 +282,9 @@ class StaticViewSitemap(Sitemap):
 
     Excluded on purpose, and why:
 
-    * ``public:observations`` — a public URL, but an anonymous visitor gets
-      a sign-in call to action rather than the stream, so indexing it
-      advertises a sign-in wall as content. Worth revisiting under SNOW-669,
-      which is about giving that page a way in.
+    * ``public:observations`` — a permanent redirect to the map with the
+      reports sheet open since SNOW-804 (before that, a page an anonymous
+      visitor met as a sign-in wall). A redirect is not a destination.
     * ``public:examples_random`` / ``examples_category`` — the content is a
       *random* bulletin per request, so listing them invites duplicate-content
       collisions with the real bulletin pages they sample.

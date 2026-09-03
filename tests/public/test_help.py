@@ -54,7 +54,6 @@ ALWAYS_ON_TESTIDS = [
     "help-topic-routes",
     "help-topic-downloads",
     "help-topic-accounts",
-    "help-topic-recent-observations",
     "help-topic-install",
 ]
 
