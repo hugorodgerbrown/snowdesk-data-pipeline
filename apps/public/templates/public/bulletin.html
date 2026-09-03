@@ -673,117 +673,13 @@ reachable via the SNOW-81 deep-link in the masthead.
         {# bulletin #}
 
         {% comment %}
-           Adjoining regions — geographic neighbours of the focal region.
-           Computed from boundary polygons at fixture-build time and
-           rehydrated via the symmetric Region.neighbours M2M (SNOW-82).
-           Hidden when the focal region has no neighbours seeded.
+           SNOW-806: the tail used to carry adjoining regions, resorts in
+           the region, the reader's favourites here and the subscribe form
+           — four map affordances stapled to a document, ordered outside-in.
+           They are map objects (docs/decisions/two-documents-and-a-map.md);
+           the tail is now the observation counts and one link back to the
+           map, focused on this region and this day.
         {% endcomment %}
-        {% if adjoining_regions %}
-            <section
-                class="mt-8 pt-4 border-t border-border"
-                data-testid="adjoining-regions"
-                aria-labelledby="adjoining-regions-heading"
-            >
-                {% comment %}
-                    Left inline — carries id="adjoining-regions-heading" (aria-labelledby target),
-                    uses mb-2 (not the standard mb-3/mb-6), and sits inside a section whose
-                    parent has no explicit text-colour reset, so inheriting from _eyebrow
-                    would differ from the surrounding context.
-                {% endcomment %}
-                <h2
-                    id="adjoining-regions-heading"
-                    class="font-mono uppercase tracking-wider text-meta text-text-3 mb-2"
-                >
-                    {% trans "Adjoining regions" %}
-                </h2>
-                <ul class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-                    {% for r in adjoining_regions %}
-                        <li>
-                            <a
-                                class="text-text-2 underline hover:text-text-1"
-                                href="{% url 'public:bulletin_date' region_id=r.canonical_region_id slug=r.name_slug date_str=page_date|date:'Y-m-d' %}"
-                            >
-                                {{ r.name }}
-                            </a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </section>
-        {% endif %}
-
-        {% comment %}
-           Resorts in this region — cross-link to each resort's own page
-           (SNOW-504). Reverse FK (Resort.region → MicroRegion.resorts),
-           alphabetical per Resort.Meta.ordering. Hidden when the region
-           has no fixture-seeded resorts. Shares the "Adjoining regions"
-           list pattern above.
-        {% endcomment %}
-        {% if resorts_in_region %}
-            <section
-                class="mt-8 pt-4 border-t border-border"
-                data-testid="resorts-in-region"
-                aria-labelledby="resorts-in-region-heading"
-            >
-                <h2
-                    id="resorts-in-region-heading"
-                    class="font-mono uppercase tracking-wider text-meta text-text-3 mb-2"
-                >
-                    {% trans "Resorts in this region" %}
-                </h2>
-                <ul class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-                    {% for resort in resorts_in_region %}
-                        <li>
-                            <a
-                                class="text-text-2 underline hover:text-text-1"
-                                href="{{ resort.get_absolute_url }}"
-                            >
-                                {{ resort.name }}
-                            </a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </section>
-        {% endif %}
-
-        {% comment %}
-           Your favourites here — cross-link to each of the signed-in
-           user's own favourites in this region, and on to their own page
-           (SNOW-507). Hidden for anonymous users and when the user has no
-           favourites resolved to this region. Shares the "Adjoining
-           regions" / "Resorts in this region" list pattern above.
-        {% endcomment %}
-        {% if favourites_in_region %}
-            <section
-                class="mt-8 pt-4 border-t border-border"
-                data-testid="favourites-in-region"
-                aria-labelledby="favourites-in-region-heading"
-            >
-                <h2
-                    id="favourites-in-region-heading"
-                    class="font-mono uppercase tracking-wider text-meta text-text-3 mb-2"
-                >
-                    {% trans "Your favourites here" %}
-                </h2>
-                <ul class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-                    {% for favourite in favourites_in_region %}
-                        <li>
-                            {# SNOW-800: a pin's page is its location's weather page. #}
-                            <a
-                                class="text-text-2 underline hover:text-text-1"
-                                href="{{ favourite.location.get_absolute_url }}"
-                            >
-                                {% if favourite.name %}
-                                    {{ favourite.name }}
-                                {% else %}
-                                    {{ favourite.latitude|floatformat:3 }}, {{ favourite.longitude|floatformat:3 }}
-                                {% endif %}
-                            </a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </section>
-        {% endif %}
-
         {# ── Field-observation counts (SNOW-324) ────────────────────── #}
         {# Shown only on today's page when at least one report has been   #}
         {# submitted for this region today.                               #}
@@ -811,9 +707,12 @@ reachable via the SNOW-81 deep-link in the masthead.
             </section>
         {% endif %}
 
-        {# ── Subscribe CTA (always visible) ────────────────────────── #}
-        <div class="mt-6">
-            {% include "accounts/partials/subscribe_form.html" with region_id=region.region_id %}
+        {# ── Back to the map (SNOW-806) ─────────────────────────────── #}
+        {# map_url carries the date and the region fragment (SNOW-183), so #}
+        {# the map opens on the day this page shows with this region at   #}
+        {# peek — the same target as the nav's back link, said in words.  #}
+        <div class="mt-8 pt-4 border-t border-border" data-testid="bulletin-map-link">
+            {% include "includes/_button.html" with label=_("See this region on the map") href=map_url variant="secondary" size="compact" %}
         </div>
     </div>
     {# /font-sans container #}

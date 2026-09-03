@@ -21,8 +21,6 @@ from apps.core.models import BaseModel
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from apps.regions.models import MicroRegion
-
 
 # ---------------------------------------------------------------------------
 # QuerySet / Manager
@@ -43,21 +41,6 @@ class FavouriteQuerySet(models.QuerySet["Favourite"]):
 
         """
         return self.filter(user=user)
-
-    def for_user_region(
-        self, user: "User", region: "MicroRegion"
-    ) -> "FavouriteQuerySet":
-        """Return the user's favourites resolved to a given region.
-
-        Args:
-            user: The user to filter by.
-            region: The MicroRegion to filter by.
-
-        Returns:
-            Filtered queryset.
-
-        """
-        return self.filter(user=user, region=region)
 
 
 # ---------------------------------------------------------------------------

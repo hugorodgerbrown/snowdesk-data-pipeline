@@ -2006,29 +2006,6 @@ def _get_observation_has_user_located(
     return FieldObservation.objects.user_located_exists_for_region_day(region, day)
 
 
-def _get_favourites_in_region(
-    request: HttpRequest, region: "MicroRegion"
-) -> list[Favourite]:
-    """Return the requesting user's own favourites resolved to a region (SNOW-507).
-
-    Guarded on ``request.user.is_authenticated`` so anonymous requests issue
-    zero extra queries — mirrors ``user_subscribed_to_region``'s per-user
-    pattern on the bulletin page.
-
-    Args:
-        request: The current HTTP request.
-        region: The MicroRegion to resolve favourites for.
-
-    Returns:
-        The user's favourites in this region, or an empty list when
-        anonymous.
-
-    """
-    if not request.user.is_authenticated:
-        return []
-    return list(Favourite.objects.for_user_region(request.user, region))
-
-
 def _serve_sw_file(static_relative_path: str) -> HttpResponse:
     """Read a service-worker script off disk and wrap it in SW-required headers.
 
@@ -2611,14 +2588,12 @@ def examples_random(request: HttpRequest) -> HttpResponse:
         .distinct()
     )
 
-    # Match the prefetch shape ``bulletin_detail`` uses so the core renders
-    # at the same query budget the SNOW-13 monitor enforces.
+    # Match the select shape ``bulletin_detail`` uses so the core renders
+    # at the same query budget the SNOW-13 monitor enforces. (The
+    # ``neighbours`` prefetch went with the adjoining-regions section in
+    # SNOW-806.)
     regions = list(
-        MicroRegion.objects.filter(pk__in=region_ids)
-        .select_related("subregion")
-        .prefetch_related(
-            Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
-        )
+        MicroRegion.objects.filter(pk__in=region_ids).select_related("subregion")
     )
     if not regions:
         return redirect("public:home")
@@ -3323,9 +3298,10 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     ``_build_structured_data`` uses for the JSON-LD ``spatialCoverage``
     ``containedInPlace`` field). Without the full chain, every bulletin
     pageview fires an extra SELECT on ``regions_majorregion`` (SNOW-13
-    query-count monitor catches regressions). ``neighbours`` is prefetched
-    ordered-by-name so the "Adjoining regions" section iterates in display
-    order without a per-render sort.
+    query-count monitor catches regressions). ``neighbours`` was prefetched
+    here for the "Adjoining regions" tail section until SNOW-806 removed
+    it — the page's tail is one link back to the map now, so the M2M is
+    not read on this path at all.
 
     ``centroid_location`` is in the chain for ``MicroRegion.centre_point()``,
     which ``_build_structured_data`` calls for the JSON-LD ``geo`` block on
@@ -3334,11 +3310,7 @@ def _resolve_region_for_bulletin(region_id: str) -> MicroRegion:
     panel — the JOIN is still earned, just by a different reader.
     """
     return get_object_or_404(
-        MicroRegion.objects.select_related(
-            "subregion__major", "centroid_location"
-        ).prefetch_related(
-            Prefetch("neighbours", queryset=MicroRegion.objects.order_by("name")),
-        ),
+        MicroRegion.objects.select_related("subregion__major", "centroid_location"),
         region_id__iexact=region_id,
     )
 
@@ -3844,14 +3816,6 @@ def _bulletin_detail_response(
         covers the target day).
 
     """
-    adjoining_regions = list(region.neighbours.all())
-    # Resorts in this region (SNOW-504) — reverse FK, alphabetical per
-    # Resort.Meta.ordering. Cross-links the bulletin page to each resort's
-    # own page; empty for regions with no fixture-seeded resorts.
-    # SNOW-544: kind=RESORT only — see regions.ResortQuerySet.resorts().
-    resorts_in_region = list(region.resorts.resorts())
-    favourites_in_region = _get_favourites_in_region(request, region)
-
     _capture_utm_to_session(request)
 
     # Warm the cache for future region_redirect lookups.
@@ -3927,9 +3891,6 @@ def _bulletin_detail_response(
                 "prev_date": prev_date,
                 "next_date": next_date,
                 "year": datetime.date.today().year,
-                "adjoining_regions": adjoining_regions,
-                "resorts_in_region": resorts_in_region,
-                "favourites_in_region": favourites_in_region,
                 "season_calendar": season_header(today),
                 "canonical_url": canonical_url,
                 "map_url": map_url,
@@ -4077,15 +4038,12 @@ def _bulletin_detail_response(
         "period_transition_chip": period_transition_chip,
         # Day movement — gates the flat-split caption (SNOW day-summary work).
         "day_movement": day_movement,
-        # Geographic neighbours — see SNOW-82.
-        "adjoining_regions": adjoining_regions,
-        # Resorts in this region — see SNOW-504.
-        "resorts_in_region": resorts_in_region,
-        # The user's own favourites in this region — see SNOW-507.
-        "favourites_in_region": favourites_in_region,
         # Canonical form-3 URL — see SNOW-99.
         "canonical_url": canonical_url,
-        # Context-aware back-link for the nav bar — see SNOW-183.
+        # Context-aware back-link for the nav bar (SNOW-183) and, since
+        # SNOW-806, the page's one tail link: the bulletin is a document,
+        # and everything that used to follow it — adjoining regions, resorts,
+        # the reader's pins, the subscribe form — is a map object.
         "map_url": map_url,
         # Source agency label and URL for the metadata strip Source cell (SNOW-211).
         "bulletin_source_label": bulletin_source_label,

@@ -24,7 +24,6 @@ from django.urls import reverse
 from django.utils.translation import override as language_override
 from pytest_django.fixtures import Settings
 
-from apps.accounts.models import Account
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.public.views import BULLETIN_SOURCE_LINKS
@@ -36,7 +35,6 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
     SubRegionFactory,
-    SubscriptionFactory,
 )
 
 # ---------------------------------------------------------------------------
@@ -3385,66 +3383,6 @@ class TestStructuredData:
 # ---------------------------------------------------------------------------
 
 _TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
-
-
-def _make_session_client(account: Account) -> Client:
-    """Return a test client logged in as account via Django auth."""
-    client = Client()
-    client.force_login(account.user, backend=_TOKEN_BACKEND)
-    return client
-
-
-@pytest.mark.django_db
-class TestSubscribePanelStates:
-    """Bulletin page subscribe panel renders the correct state for each user/subscription combo.
-
-    Three states (SNOW-222):
-      1. Anonymous — email-input form.
-      2. Authenticated + not subscribed to this region — "Add region" CTA.
-      3. Authenticated + already subscribed to this region — "Unsubscribe" CTA.
-    """
-
-    def test_panel_renders_anonymous_form_when_logged_out(
-        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
-    ) -> None:
-        """Anonymous visitor sees the email-input form."""
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'name="email"' in content
-        assert 'type="email"' in content
-
-    def test_panel_renders_add_cta_when_authed_but_not_subscribed(
-        self, simple_bulletin: Bulletin, region: MicroRegion
-    ) -> None:
-        """Authenticated visitor with no subscription sees the 'Add region' CTA."""
-        account = AccountFactory.create()
-        client = _make_session_client(account)
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Add-region form POSTs to the add_region endpoint.
-        assert "/account/add/" in content
-        # Should NOT show the email input (anonymous form).
-        assert 'name="email"' not in content
-
-    def test_panel_renders_unsubscribe_cta_when_authed_and_subscribed(
-        self, simple_bulletin: Bulletin, region: MicroRegion
-    ) -> None:
-        """Authenticated visitor already subscribed sees the 'Unsubscribe' CTA."""
-        account = AccountFactory.create()
-        SubscriptionFactory.create(account=account, region=region)
-        client = _make_session_client(account)
-        url = _url("ch-4115", "valais", "2026-03-15")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Unsubscribe form POSTs to the remove_region_from_bulletin endpoint.
-        assert "/account/remove-region/" in content
-        # Should NOT show the email input (anonymous form).
-        assert 'name="email"' not in content
 
 
 # ── _best_rating_from_rm_entries unit tests ───────────────────────────────────
