@@ -45,6 +45,7 @@ from apps.public._component_fixtures import (
     FAVOURITE_PROBLEM_VARIANTS,
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
+    HELP_STEPS_VARIANTS,
     HOURLY_CHART_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
@@ -1004,6 +1005,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_tendency_body.html",
         variants=GLOSSARY_TERM_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="help-steps",
+        label="Help steps",
+        description=(
+            "Numbered steps for a long-form help article. The only ordered "
+            "list in the codebase — /help/'s FAQ panels are prose, and "
+            "``slf-prose`` styles ul/li but no ol — so the first article "
+            "needing steps extracted this rather than inlining a class "
+            "string. Items come in by ``body_template``, keeping each step a "
+            "whole translatable sentence."
+        ),
+        kind="components",
+        partial="includes/_help_steps.html",
+        variants=HELP_STEPS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

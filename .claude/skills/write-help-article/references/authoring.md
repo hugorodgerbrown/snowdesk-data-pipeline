@@ -135,28 +135,41 @@ Rules that bite if you skip them:
   prose.
 - `&mdash;` for em dashes, matching the rest of the templates.
 
-## Numbered steps: there is no `<ol>` yet
+## Numbered steps
 
-There is not a single `<ol>` anywhere in the template tree, and `slf-prose`
-styles `ul`/`li` but no ordered list. The first article that needs numbered
-steps has to create that markup — and the design system's rule is **reuse
-first, extract second, inline never**, so it belongs in a shared partial from
-the start, not inlined into one article.
+Use `templates/includes/_help_steps.html`. It is the only ordered list in the
+codebase — `/help/`'s FAQ panels are prose and `slf-prose` styles `ul`/`li`
+but no `ol` — so it was extracted with the first article rather than inlined,
+and it is registered in the staff component library at `/_components/` under
+**Help steps**.
 
-Extract `templates/includes/_help_steps.html`:
+It takes its items by template path, the same slot-by-template shape
+`_collapsible_panel.html` uses:
 
-- takes a list of already-translated step strings and renders an `<ol>` with
-  a visible number;
-- tokens for the marker and the text — no hex, no raw palette utilities;
-- a registry entry in the staff component library at `/_components/`
-  (`apps/public/design_tokens.py` + `apps/public/_component_fixtures.py`), so
-  the next person finds it instead of reinventing it;
-- new CSS in `src/css/main.css` only if Tailwind utilities genuinely can't
-  express the marker positioning. They usually can.
+```django
+{% include "includes/_help_steps.html" with body_template="public/help/articles/_<slug>_steps.html" %}
+```
 
-If the ticket in hand is copy-only, raise the partial as its own ticket rather
-than smuggling a new shared component into a content PR — and say so, don't
-quietly inline a class string.
+and that file is a flat list of `<li>` items, one whole `{% blocktrans %}`
+each:
+
+```django
+{% load i18n %}
+<li>
+    {% blocktrans trimmed %}
+        Sign in, then tap the routes button on the right of the map.
+    {% endblocktrans %}
+</li>
+```
+
+**Why items arrive by template rather than as a list in the context.** Each
+step has to stay one msgid written at its call site. Passing translated
+strings through a context list gives a translator fragments to reassemble and
+puts the article's words in a Python file, away from the page they belong to.
+
+Numbering is `list-decimal`, not a drawn badge, so the number a sighted reader
+sees and the position a screen reader announces are the same thing with
+nothing to keep in sync. Needs no custom CSS — don't add any.
 
 ## The one permitted edit to the FAQ panel
 
