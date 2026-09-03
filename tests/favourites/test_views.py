@@ -25,12 +25,14 @@ Covers:
                     no-coverage note; region + rating → danger tile +
                     bulletin link; unnamed favourite → coordinate
                     fallback.
-  favourite_detail (SNOW-507) — owner GET 200 full page with page chrome
+  favourite_detail_redirect (SNOW-800) — owner GET 301 to the pin's weather
+                    page; no location → 404; the old SNOW-507 page is gone.
+                    Formerly: owner GET 200 full page with page chrome
                     plus the card content; non-owner uuid → 404; unknown
                     uuid → 404; anon → 403; response carries
                     Cache-Control: private, no-store.
   card heading rank — the card's title states its own level per caller
-                    (``heading_tag``): ``h1`` on favourite_detail (the pin's
+                    (``heading_tag``): ``h1`` on the retired detail page (the pin's
                     name IS that page, which carries no other heading), and
                     ``h2`` on /account/favourites/'s hx-get panel, whose
                     page ``h1`` is the only heading above it. It was ``h3``
@@ -47,7 +49,7 @@ Covers:
   favourite_list — owner sees only their own favourites; another user's
                     favourites are absent; anon → 403; non-HTMX → 400;
                     empty state when the user has none (SNOW-415); each
-                    row carries one detail link to favourites:detail,
+                    row carries one detail link to the pin's weather page,
                     hx-get-enhanced onto the card panel (SNOW-507,
                     SNOW-658); ``?variant=map`` renders the sheet's lean
                     template instead — same rows and roster sidecar, a
@@ -129,7 +131,7 @@ def _card_url(uuid: object) -> str:
 
 
 def _detail_url(uuid: object) -> str:
-    """Build the full-page detail URL for a favourite's uuid (SNOW-507)."""
+    """Build the old detail URL for a favourite's uuid — a 301 since SNOW-800."""
     return f"/favourites/{uuid}/"
 
 
@@ -1069,61 +1071,48 @@ class TestFavouriteCard:
 
 
 # ---------------------------------------------------------------------------
-# favourite_detail — GET /favourites/<uuid>/ (SNOW-507)
+# favourite_detail_redirect — GET /favourites/<uuid>/ (SNOW-800)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestFavouriteDetail:
-    """favourite_detail — the favourite's own full, bookmarkable page (SNOW-507)."""
+class TestFavouriteDetailRedirect:
+    """/favourites/<uuid>/ 301s to the pin's weather page — a favourite is not a page."""
 
-    def test_owner_gets_200_full_page(self, client: Client) -> None:
-        """Owner GET renders a full page with page chrome and the card content."""
+    def test_owner_is_redirected_to_the_locations_weather_page(
+        self, client: Client
+    ) -> None:
+        """A backfilled favourite 301s to /weather/<short_id>/, and that page opens."""
         user = UserFactory.create()
         client.force_login(user)
-        region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, max_rating="considerable")
-        favourite = FavouriteFactory.create(user=user, name="My spot", region=region)
+        favourite = FavouriteFactory.create(user=user, name="My spot")
+        assert favourite.location is not None
 
         response = client.get(_detail_url(favourite.uuid))
 
-        assert response.status_code == 200
-        content = response.content.decode()
-        # Page chrome — a real page, not an HTMX fragment.
-        assert "<title>" in content
-        assert "My spot" in content
-        # The card content, reused verbatim.
-        assert 'data-testid="favourite-card"' in content
-        assert 'data-testid="favourite-card-rating-chip"' in content
-        assert 'data-testid="favourite-card-bulletin-link"' in content
-        assert region.get_absolute_url() in content
+        assert response.status_code == 301
+        assert response["Location"] == favourite.location.get_absolute_url()
+        assert client.get(response["Location"]).status_code == 200
 
-    def test_back_link_present_when_region_set(self, client: Client) -> None:
-        """A "Region bulletin" back-link is shown when favourite.region is set."""
+    def test_redirect_carries_no_private_no_store(self, client: Client) -> None:
+        """The old page's per-user header must not follow the redirect."""
         user = UserFactory.create()
         client.force_login(user)
-        region = MicroRegionFactory.create()
-        favourite = FavouriteFactory.create(user=user, region=region)
+        favourite = FavouriteFactory.create(user=user)
 
         response = client.get(_detail_url(favourite.uuid))
 
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="favourite-detail-back-link"' in content
-        assert region.get_absolute_url() in content
+        assert "no-store" not in response.get("Cache-Control", "")
 
-    def test_back_link_absent_when_region_none(self, client: Client) -> None:
-        """No back-link is shown when the favourite has no resolved region."""
+    def test_favourite_without_a_location_is_404(self, client: Client) -> None:
+        """A pre-backfill row has no page to reach — 404, never a broken redirect."""
         user = UserFactory.create()
         client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, region=None)
+        favourite = FavouriteFactory.create(user=user, location=None)
 
         response = client.get(_detail_url(favourite.uuid))
 
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="favourite-detail-back-link"' not in content
-        assert 'data-testid="favourite-card-no-coverage"' in content
+        assert response.status_code == 404
 
     def test_non_owner_uuid_returns_404(self, client: Client) -> None:
         """A different user's uuid returns 404, not 403 — no existence oracle."""
@@ -1150,37 +1139,12 @@ class TestFavouriteDetail:
         response = client.get(_detail_url("00000000-0000-0000-0000-000000000000"))
         assert response.status_code == 403
 
-    def test_cache_control_is_private_no_store(self, client: Client) -> None:
-        """The response is never cacheable by a shared cache — it's per-user."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
+    def test_the_old_url_name_is_gone(self) -> None:
+        """``favourites:detail`` no longer reverses — a missed call site fails loudly."""
+        from django.urls import NoReverseMatch, reverse  # noqa: PLC0415
 
-        response = client.get(_detail_url(favourite.uuid))
-
-        assert response.status_code == 200
-        assert response["Cache-Control"] == "private, no-store"
-
-    def test_response_carries_freshness_header(self, client: Client) -> None:
-        """The page stamps the SNOW-370/418 freshness headers, same as the card."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-
-        response = client.get(_detail_url(favourite.uuid))
-
-        assert response.status_code == 200
-        assert "X-Data-Generated-At" in response
-
-    def test_no_htmx_header_required(self, client: Client) -> None:
-        """Unlike favourite_card, a plain (non-HTMX) GET is not rejected — it's a real page."""
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user)
-
-        response = client.get(_detail_url(favourite.uuid))
-
-        assert response.status_code == 200
+        with pytest.raises(NoReverseMatch):
+            reverse("favourites:detail", args=["00000000-0000-0000-0000-000000000000"])
 
 
 # ---------------------------------------------------------------------------
@@ -1192,12 +1156,14 @@ class TestFavouriteDetail:
 class TestFavouriteCardHeadingRank:
     """The card's title ranks itself for the outline it lands in.
 
-    One partial, two callers at two depths, so the level is the caller's
-    to state (``heading_tag``) and the size never moves — ``text-lg`` in
-    both cases. The card was a fixed ``<h2>`` before SNOW-507: correct for
-    neither caller then, since the full page had no ``<h1>`` at all and the
-    account hub's panel put a single pin's title level with the
-    "Favourites" section heading that contained it.
+    One partial, and until SNOW-800 two callers at two depths, so the level
+    is the caller's to state (``heading_tag``) and the size never moves —
+    ``text-lg`` whatever the rank. The card was a fixed ``<h2>`` before
+    SNOW-507: correct for neither caller then, since the full page had no
+    ``<h1>`` at all and the account hub's panel put a single pin's title
+    level with the "Favourites" section heading that contained it. The full
+    page is gone; the mechanism stays because the rank is still the
+    caller's to state.
 
     The panel's own rank has since moved from ``h3`` to ``h2``, and not
     because the card changed: SNOW-668 lifted the list out of that section
@@ -1220,21 +1186,6 @@ class TestFavouriteCardHeadingRank:
         assert match is not None, "card title heading not found"
         return match.group(1)
 
-    def test_full_page_title_is_the_pages_h1(self, client: Client) -> None:
-        """On its own page the pin's name IS the page — so it is the h1.
-
-        favourite_detail.html renders no other heading (its back-link is a
-        link), so an h2 here would leave a page whose outline starts at
-        level 2.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        favourite = FavouriteFactory.create(user=user, name="My spot")
-
-        content = client.get(_detail_url(favourite.uuid)).content.decode()
-
-        assert self._title_tag(content) == "h1"
-
     def test_account_page_panel_title_is_an_h2(self, client: Client) -> None:
         """The hx-get card is an h2 — the page's own h1 is all that outranks it.
 
@@ -1253,20 +1204,18 @@ class TestFavouriteCardHeadingRank:
 
         assert self._title_tag(content) == "h2"
 
-    def test_the_rank_is_the_only_thing_that_changes(self, client: Client) -> None:
-        """Both callers draw the same title at the same size — this is not a visual change."""
+    def test_the_rank_does_not_change_the_size(self, client: Client) -> None:
+        """The title's size is fixed whatever rank the caller states."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="My spot")
 
-        page = client.get(_detail_url(favourite.uuid)).content.decode()
         card = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
 
-        for content in (page, card):
-            assert (
-                'class="text-lg font-semibold text-text-1" '
-                'data-testid="favourite-card-title"'
-            ) in content
+        assert (
+            'class="text-lg font-semibold text-text-1" '
+            'data-testid="favourite-card-title"'
+        ) in card
 
     def test_default_is_h2_for_a_caller_that_states_nothing(self) -> None:
         """A third caller that passes no heading_tag gets the h2 the partial had.
@@ -1416,18 +1365,38 @@ class TestFavouriteList:
         assert "Theirs" not in content
         assert str(mine.uuid) in content
 
-    def test_row_links_to_the_favourites_own_page(self, client: Client) -> None:
-        """Each row carries one detail link to favourites:detail (SNOW-507)."""
+    def test_row_links_to_the_pins_weather_page(self, client: Client) -> None:
+        """Each row's chevron links straight to the pin's weather page (SNOW-800).
+
+        Straight there — not via the old ``/favourites/<uuid>/`` redirect,
+        which exists for bookmarks, not for links the site itself renders.
+        """
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
+        assert favourite.location is not None
 
         response = client.get(LIST_URL, **HTMX_HEADERS)
 
         assert response.status_code == 200
         content = response.content.decode()
         assert 'data-testid="favourite-list-detail-link"' in content
-        assert _detail_url(favourite.uuid) in content
+        assert favourite.location.get_absolute_url() in content
+        assert _detail_url(favourite.uuid) not in content
+
+    def test_row_without_a_location_keeps_the_hx_get_but_no_href(
+        self, client: Client
+    ) -> None:
+        """A pre-backfill row has no page to link to; the disclosure still expands."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, name="Mine", location=None)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="favourite-list-detail-link"' in content
+        assert _card_url(favourite.uuid) in content
+        assert _detail_url(favourite.uuid) not in content
 
     def test_detail_link_is_htmx_enhanced_onto_the_rows_own_panel(
         self, client: Client

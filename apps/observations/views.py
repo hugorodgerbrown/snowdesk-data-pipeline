@@ -506,8 +506,8 @@ def my_observations(request: HttpRequest) -> HttpResponse:
     Deliberately NOT ``@require_htmx`` — this is a real page a user
     navigates to, not a fragment. It is the full-page host for the same
     partials the map panel uses (``_observation_list.html`` and, through it,
-    ``_observation.html``), the relationship
-    ``apps.favourites.views.favourite_detail`` has to ``_favourite_card.html``.
+    ``_observation.html``), the relationship the account favourites page has
+    to ``_favourite_list.html``.
 
     Gating follows the account area rather than the map endpoints above: an
     anonymous visitor is redirected to sign-in, as ``accounts:hub`` and
@@ -532,7 +532,7 @@ def my_observations(request: HttpRequest) -> HttpResponse:
 
     The response carries ``Cache-Control: private, no-store`` — per-user
     content that must never land in a shared cache, mirroring
-    ``favourite_detail``. That also keeps it out of the PWA shell cache;
+    ``favourites_geojson``. That also keeps it out of the PWA shell cache;
     reading these reports offline is SNOW-661, not this ticket.
 
     Args:

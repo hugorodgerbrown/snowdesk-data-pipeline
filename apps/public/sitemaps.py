@@ -296,7 +296,9 @@ class StaticViewSitemap(Sitemap):
     * ``_components/``, ``_push-demo/``, ``_sw-version/`` — staff-only.
     * ``/account/…`` and ``/favourites/<uuid>/`` — per-user, and ``Disallow``ed
       in robots.txt (``apps.public.views.serve_robots``). Listing them here
-      would contradict that file.
+      would contradict that file. (``/favourites/<uuid>/`` has been a
+      redirect to the pin's weather page since SNOW-800; the weather page
+      itself is listed in the ``locations`` section when it is public.)
     """
 
     # Route name → (changefreq, priority).

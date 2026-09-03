@@ -1019,7 +1019,9 @@ class TestFavouritesInRegion:
         content = response.content.decode()
         assert 'data-testid="favourites-in-region"' in content
         assert "My spot" in content
-        assert reverse("favourites:detail", args=[favourite.uuid]) in content
+        # SNOW-800: a pin links to its location's weather page.
+        assert favourite.location is not None
+        assert favourite.location.get_absolute_url() in content
 
     def test_section_hidden_for_anonymous(
         self, client: Client, region: MicroRegion

@@ -15,7 +15,9 @@ URL structure:
   favourites/partials/<uuid>/card/           GET  — detail card (SNOW-415)
   favourites/partials/list/                  GET  — owner's favourites list (SNOW-415)
   favourites/favourites.geojson              GET  — the user's own pins
-  favourites/<uuid>/                         GET  — full detail page (SNOW-507)
+  favourites/<uuid>/                         GET  — 301 to the pin's weather
+                                             page (SNOW-800; was the SNOW-507
+                                             detail page)
 """
 
 from django.urls import path
@@ -65,9 +67,14 @@ urlpatterns = [
         views.favourites_geojson,
         name="geojson",
     ),
+    # SNOW-800: the detail page is gone — a favourite is a map pin, not a
+    # document — but the URL was bookmarkable, so it 301s to the pin's
+    # weather page. The old ``favourites:detail`` name is deliberately NOT
+    # kept: a template that still reversed it would link to a redirect,
+    # and a NoReverseMatch is the louder failure.
     path(
         "<uuid:uuid>/",
-        views.favourite_detail,
-        name="detail",
+        views.favourite_detail_redirect,
+        name="detail_redirect",
     ),
 ]

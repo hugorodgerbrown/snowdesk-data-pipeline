@@ -30,7 +30,11 @@ which also empties the panel on the closing click. With no JS the control
 degrades to its href, which is why the closed state is the one rendered.
 
 Parameters (passed via {% include … with … %}):
-  disclosure_href     (string) — the plain-navigation destination.
+  disclosure_href     (string, optional) — the plain-navigation destination.
+                      Omitted, the control has no href and is hx-get only
+                      (SNOW-800: a favourite row whose pin has no location
+                      yet has no page to reach), and is made focusable as a
+                      button so the keyboard can still expand it.
   disclosure_hx_get   (string, optional) — fragment URL for the in-place
                       expand. Omit it and the control is a plain link.
   disclosure_panel_id (string) — DOM id of the element the fragment is
@@ -46,7 +50,7 @@ Parameters (passed via {% include … with … %}):
                       closed and opened by its module.
 {% endcomment %}
 <a
-    href="{{ disclosure_href }}"
+    {% if disclosure_href %}href="{{ disclosure_href }}"{% else %}role="button" tabindex="0"{% endif %}
     {% if disclosure_hx_get %}
         hx-get="{{ disclosure_hx_get }}"
         hx-target="#{{ disclosure_panel_id }}"

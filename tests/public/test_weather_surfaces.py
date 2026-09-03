@@ -270,7 +270,8 @@ class TestFavouriteCard:
         client = Client()
         client.force_login(user)
         response = client.get(
-            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+            reverse("favourites:card", kwargs={"uuid": favourite.uuid}),
+            HTTP_HX_REQUEST="true",
         )
 
         assert response.status_code == 200
@@ -286,7 +287,8 @@ class TestFavouriteCard:
         client = Client()
         client.force_login(user)
         response = client.get(
-            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+            reverse("favourites:card", kwargs={"uuid": favourite.uuid}),
+            HTTP_HX_REQUEST="true",
         )
 
         assert response.status_code == 200
@@ -312,7 +314,8 @@ class TestFavouriteCard:
         client = Client()
         client.force_login(user)
         response = client.get(
-            reverse("favourites:detail", kwargs={"uuid": favourite.uuid})
+            reverse("favourites:card", kwargs={"uuid": favourite.uuid}),
+            HTTP_HX_REQUEST="true",
         )
 
         content = response.content.decode()

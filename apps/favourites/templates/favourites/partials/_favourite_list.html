@@ -31,11 +31,11 @@ collapsed row's panel takes no space and needs no hiding.
 
 The control that opens it is one control doing one thing. It was two for a
 while (SNOW-507): a "Details" button hx-getting the card, and an "Open
-page →" link to the same content, since favourite_detail.html includes the
-very same _favourite_card.html. SNOW-658 collapsed them into a
-progressively-enhanced link and SNOW-711 made it the row's chevron: href
-navigates to the real page with no JS, hx-get expands the card in place
-with it. The hx-get is load-bearing beyond convenience — it is what drives
+page →" link to the favourite's own page, which included the very same
+_favourite_card.html. SNOW-658 collapsed them into a progressively-enhanced
+link and SNOW-711 made it the row's chevron: href navigates to a real page
+with no JS, hx-get expands the card in place with it. Since SNOW-800 that
+page is the pin's weather page — the favourite has no page of its own. The hx-get is load-bearing beyond convenience — it is what drives
 the SNOW-418 offline cache write-through in favourites_offline.js, which
 fires on htmx:afterOnLoad and would never see a plain full-page
 navigation.

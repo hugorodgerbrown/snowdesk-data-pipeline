@@ -103,7 +103,9 @@ Context:
         {% blocktrans trimmed with name=row_label asvar row_focus_label %}Zoom to {{ name }}{% endblocktrans %}
     {% endif %}
     {% blocktrans trimmed with name=row_label asvar disclosure_label %}Show details for {{ name }}{% endblocktrans %}
-    {% url 'favourites:detail' favourite.uuid as detail_url %}
+    {# SNOW-800: the pin's page is its location's weather page; a row the #}
+    {# SNOW-704 backfill has not reached has no location and gets no href. #}
+    {% firstof favourite.location.get_absolute_url "" as detail_url %}
     {% url 'favourites:card' favourite.uuid as card_url %}
     {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=row_label label_testid="favourite-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="favourites/partials/_favourite_row_actions.html" disclosure_template=row_disclosure disclosure_href=detail_url disclosure_hx_get=card_url disclosure_panel_id=row_panel_id disclosure_panel_testid="favourite-card-panel" disclosure_label=disclosure_label disclosure_testid="favourite-list-detail-link" %}
 {% endwith %}

@@ -767,9 +767,10 @@ reachable via the SNOW-81 deep-link in the masthead.
                 <ul class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
                     {% for favourite in favourites_in_region %}
                         <li>
+                            {# SNOW-800: a pin's page is its location's weather page. #}
                             <a
                                 class="text-text-2 underline hover:text-text-1"
-                                href="{% url 'favourites:detail' favourite.uuid %}"
+                                href="{{ favourite.location.get_absolute_url }}"
                             >
                                 {% if favourite.name %}
                                     {{ favourite.name }}
