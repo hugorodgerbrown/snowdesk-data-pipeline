@@ -1310,6 +1310,31 @@ every other command here).
   standalone `seed_dev_users` command was folded into `seed_test_data` (SNOW-454).
   Credentials: `docs/worktrees.md`.
 
+- `seed_test_routes` — attaches the two bundled GPX fixtures in
+  `apps/routes/fixtures/gpx/` to the normal dev user so the map's routes
+  panel, `/account/routes/` and the share flow can be looked at with content
+  in them rather than in their empty state. The fixtures go through
+  `create_route`, the same entry point an upload takes, so distance, ascent,
+  descent, thinning and bounds are derived exactly as a real row's are. One
+  track carries elevation and timestamps and the other carries neither, which
+  is the pairing `/help/routes/` describes (a profile versus no profile); a
+  test pins it. Opt-in on purpose: it is not a `SeedModel` layer in
+  `seed_test_data`, because that dataset is what the query-count baselines
+  are measured against, and rows added there for a manual look at one panel
+  are how the baseline drifts. Read-only by default; a no-op once the user
+  already has a route. Needs the dev user (`seed_test_data --include user`),
+  which `bin/init-worktree` has already created.
+
+  ```bash
+  # Dry-run — reports the two routes it would create.
+  uv run python manage.py seed_test_routes
+
+  # Persist.
+  uv run python manage.py seed_test_routes --commit
+  ```
+
+  Flags: `--commit` (persist; omit for a read-only run).
+
 - `mint_vapid_keypair` — generates a VAPID P-256 keypair for Web Push
   and writes the raw private scalar (single-line URL-safe-base64) to the
   secret file at `VAPID_PRIVATE_KEY_PATH`. Dry-run by default; pass
