@@ -1197,9 +1197,17 @@
    CLOSED legend card — an invisible panel swallowing clicks over a third of
    the map, the same defect being fixed here, moved somewhere subtler.
 
-   So the two panels are left out entirely. Each already owns its own
-   answer: the card is `none` closed and `auto` under
-   `[data-state="expanded"]`, and #map-calendar is `hidden` when shut. */
+   So the two panels are left out entirely, and each states its own answer
+   in its own rule: .map-legend-card is `none` closed and `auto` under
+   `[data-state="expanded"]`, and .map-calendar is plain `auto` because it
+   is `display: none` when shut and so has no closed state to arm.
+
+   "It is `hidden` when shut" stood here as the reason .map-calendar needed
+   nothing at all, which was half an answer: `hidden` settles the CLOSED
+   state, and says nothing about the open one. It inherited the `none` from
+   this stack and every click in the open card fell through to #map, which
+   is the bug that sent it back here. A panel in this stack needs a
+   pointer-events answer for BOTH states. */
 .map-legend > .map-legend-toggle,
 #map-date-row > * {
     pointer-events: auto;
@@ -3494,6 +3502,21 @@ body.map-framing #map-legend {
     position: absolute;
     left: calc(var(--map-control-sm) + 8px);
     bottom: calc(var(--map-control-sm) + 8px);
+    /* Its events back. .map-legend is `pointer-events: none` so the stack's
+       full-width box cannot swallow map clicks, and that inherits: without
+       this, every click inside the open card passes THROUGH to #map. The
+       arrows and the day cells never fire, MapLibre gets the click instead,
+       and map_calendar.js's outside-tap handler sees a target outside the
+       card and shuts it — so the whole panel reads as "opens, then closes
+       on any press".
+
+       Unconditional, unlike .map-legend-card's `auto` gated on
+       [data-state="expanded"]: that card is always displayed and merely
+       transparent when shut, so an ungated rule would leave an invisible
+       panel eating clicks over a third of the map. This one is `hidden`
+       when shut — `display: none`, out of the hit test entirely — so there
+       is no closed state to arm. */
+    pointer-events: auto;
     /* Bounded and scrolling, like every surface that floats over the map.
        Six rows of dates fit easily today — but the anchor is low, the card
        opens into the viewport, and nothing else here would stop it. Same
