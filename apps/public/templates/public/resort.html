@@ -2,11 +2,15 @@
 {% comment %}
 apps/public/templates/public/resort.html — Public resort detail page (SNOW-504).
 
-Gives a Resort its own indexable URL (``/resorts/<id>/<slug>/``), rendered
-by ``apps.public.views.resort_detail``. Cross-linked from the bulletin page's
-"Resorts in this region" list and from the map's resort-pin popup, whose
-CTA now reads "View resort →" and links here instead of straight to the
-bulletin.
+Gives a Resort its own indexable URL (``/resorts/<slug>/``), rendered by
+``apps.public.views.resort_detail``. Cross-linked from the map's resort-pin
+popup, whose CTA reads "View resort →".
+
+A ROUTER TO THE TWO DOCUMENTS (SNOW-807, docs/decisions/two-documents-and-
+a-map.md). The page is kept because people search "Verbier avalanche", not
+"CH-4115" — but it is not a third document, and it renders nothing that
+belongs to one. Someone landing here from a search engine gets to the
+bulletin or a forecast in one tap.
 
 Sections, top to bottom:
   1. Resort name (+ alternative/marketing name, when set), canton, and
@@ -16,23 +20,24 @@ Sections, top to bottom:
      (SNOW-695) via ``public/partials/_resort_facts.html`` — operator,
      website, lifts, runs, piste, elevation range, season and notes, each
      cell omitted when unset and the whole block omitted when all are.
-  2. Today's danger chip — reuses the ``.danger-tile`` component from
-     ``_region_tooltip.html`` — alongside a "View bulletin →" link to the
-     parent region's evergreen bulletin page.
+     The resort's own.
+  2. The danger area — ONE link to the parent region's evergreen bulletin,
+     carrying today's ``.danger-tile`` chip (or the no-bulletin note) and
+     the "View bulletin →" label. It was a chip beside a separate button;
+     the whole area is the link now, and tests/e2e/test_resort_page.py
+     clicks ``[data-testid="resort-danger"] a`` — keep exactly one.
   3. The favourite/unfavourite control
      (``favourites/partials/_resort_favourite_button.html``).
-  4. Weather (SNOW-761) — one block per curated ``Location`` linked to
-     this resort, in ``ResortLocation`` order (primary first). Each block
-     is labelled with the location's name and elevation, because the
-     elevation is the whole point of showing more than one: village rain
-     and summit snow are the same forecast read at two heights. A block
-     whose location has no ``Weather`` row for today is dropped rather
-     than rendered empty, and the section disappears entirely when none
-     of them has one.
-  5. Field-observation counts (SNOW-508) — point-local, scoped to
-     ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
-     coordinates, falling back to the region-wide count (the ``bulletin.html``
-     pattern) when the resort has no coordinates.
+  4. Forecasts — a plain list of the resort's curated locations, each a
+     link to its own weather page (``/weather/<short_id>/``), with the
+     role and elevation that tell village from summit. No weather data is
+     read here: SNOW-761 drew one block per location and SNOW-783 trimmed
+     it to the day; this removes the rest. A resort with no curated
+     locations renders no section at all — ``link_resort_locations`` is a
+     manual operator step, so that state is normal.
+  5. Observations — ONE link to the map with the reports sheet open, flown
+     to this resort (``?panel=reports&resort=<slug>``). The point-local
+     counts SNOW-508 rendered here were a filtered view of map data.
 
 Resorts with ``needs_review=True`` or null coordinates still render here —
 only the map-anchor affordance is skipped, and this page has none.
@@ -52,13 +57,11 @@ Context expected (built by ``apps.public.views.resort_detail``):
   is_staff                      — bool: switches the why-it-matters blank
                                    state to a curation hint (SNOW-542).
   signin_url                    — str: accounts:sign_in URL.
-  local_observations            — apps.public.views.LocalObservationResult:
-                                   visible / scope ("point"|"region") /
-                                   counts (list[(label, count)]).
-  observation_has_user_located  — bool.
-  weather_sections              — list[apps.public.views.ResortWeatherSection]:
-                                   one per curated location with a row for
-                                   today. Empty is the normal no-data state.
+  locations                     — list[dict]: the resort's curated locations
+                                   (label, elevation_m, role_label, url,
+                                   testid), primary first. Empty is normal.
+  observations_map_url          — str: the map with the reports sheet open,
+                                   flown to this resort.
 {% endcomment %}
 {% load i18n static components snowdesk_time %}
 
@@ -79,7 +82,8 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {% block page_meta %}
     {% blocktrans with name=resort.name trimmed asvar page_title %}{{ name }} · Snowdesk{% endblocktrans %}
     {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
-        {{ name }} ski resort — avalanche danger and bulletin for {{ region }}.
+        {{ name }} ski resort on Snowdesk — links to the {{ region }} avalanche bulletin and to forecasts for its
+        village, mid-station and summit.
     {% endblocktrans %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
 {% endblock page_meta %}
@@ -108,91 +112,65 @@ Context expected (built by ``apps.public.views.resort_detail``):
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-4 mb-6" data-testid="resort-danger">
-            {% if day_rating %}
-                <span
-                    class="danger-tile"
-                    data-level="{{ day_rating.max_rating }}"
-                    data-testid="resort-danger-chip"
-                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
-            {% else %}
-                <p class="text-sm text-text-3" data-testid="resort-no-rating">
-                    {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
-                        {{ d }}{% endblocktrans %}
-                </p>
-            {% endif %}
-            {% include "includes/_button.html" with label=_("View bulletin →") href=bulletin_url variant="secondary" size="compact" %}
+        {# SNOW-807: the whole danger area is ONE link to the bulletin —     #}
+        {# keep exactly one <a> inside [data-testid="resort-danger"].         #}
+        <div class="mb-6" data-testid="resort-danger">
+            <a
+                href="{{ bulletin_url }}"
+                class="hover-affordance flex flex-wrap items-center gap-4 rounded-card border border-border p-4"
+                data-testid="resort-danger-link"
+            >
+                {% if day_rating %}
+                    <span
+                        class="danger-tile"
+                        data-level="{{ day_rating.max_rating }}"
+                        data-testid="resort-danger-chip"
+                    >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+                {% else %}
+                    <span class="text-sm text-text-3" data-testid="resort-no-rating">
+                        {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                            {{ d }}{% endblocktrans %}
+                    </span>
+                {% endif %}
+                <span class="text-sm font-medium text-text-1 underline">{% trans "View bulletin →" %}</span>
+            </a>
         </div>
 
         <div class="mb-6">
             {% include "favourites/partials/_resort_favourite_button.html" %}
         </div>
 
-        {# ── Weather, one block per curated location (SNOW-761) ────────────── #}
-        {% if weather_sections %}
-            <section class="mt-6" aria-labelledby="resort-weather-heading" data-testid="resort-weather">
-                {% translate "Weather" as weather_heading_label %}
-                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-weather-heading" text=weather_heading_label class_extra="mb-2" only %}
-                <div class="space-y-4">
-                    {% for section in weather_sections %}
-                        <div
-                            data-testid="{{ section.testid_prefix }}"
-                            data-location-short-id="{{ section.location.short_id }}"
-                        >
-                            {% include "includes/_weather_panel.html" with weather_display=section.weather_display location_label=section.label testid_prefix=section.testid_prefix only %}
-                            {# SNOW-783: the day here, the week on the location's own #}
-                            {# forecast page. Drawing the same week once per altitude  #}
-                            {# was the same seven days three times over; the rows      #}
-                            {# above are the altitude comparison this page exists for. #}
+        {# ── Forecasts: the resort's curated locations, each a link (SNOW-807) ── #}
+        {% if locations %}
+            <section class="mt-6" aria-labelledby="resort-locations-heading" data-testid="resort-locations">
+                {% translate "Forecasts" as locations_heading_label %}
+                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-locations-heading" text=locations_heading_label class_extra="mb-2" only %}
+                <ul class="flex flex-col gap-2 text-sm">
+                    {% for place in locations %}
+                        <li data-testid="{{ place.testid }}">
                             <a
-                                class="mt-1 inline-block text-xs text-text-3 underline hover-affordance"
-                                href="{{ section.forecast_url }}"
-                                data-testid="{{ section.testid_prefix }}-forecast-link"
-                            >{% blocktrans with place=section.label trimmed %}Full forecast for
-                                    {{ place }}{% endblocktrans %}</a>
-                        </div>
+                                class="hover-affordance text-text-1 underline"
+                                href="{{ place.url }}"
+                                data-testid="{{ place.testid }}-link"
+                            >{{ place.label }}</a>
+                            <span class="text-text-3">
+                                <span aria-hidden="true">
+                                    &middot;
+                                </span>{{ place.role_label }}{% if place.elevation_m is not None %}<span
+                                        aria-hidden="true"
+                                    >
+                                        &middot;
+                                    </span>{{ place.elevation_m|floatformat:0 }} m{% endif %}
+                            </span>
+                        </li>
                     {% endfor %}
-                </div>
+                </ul>
             </section>
         {% endif %}
 
-        {# ── Field-observation counts (SNOW-324 pattern, point-local per SNOW-508) ── #}
-        {% if local_observations.visible %}
-            <section class="mt-6" aria-labelledby="obs-counts-heading">
-                <h2
-                    id="obs-counts-heading"
-                    class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-3"
-                >
-                    {% if local_observations.scope == "point" %}
-                        {% trans "Reported nearby" %}
-                    {% else %}
-                        {% trans "Reported in this region" %}
-                    {% endif %}
-                </h2>
-                {% if local_observations.counts %}
-                    <ul class="flex flex-wrap gap-2">
-                        {% for label, count in local_observations.counts %}
-                            <li class="flex items-center gap-1.5 rounded-pill bg-status-info-bg px-3 py-1 text-sm text-status-info-text">
-                                <span class="font-medium">{{ count }}</span>
-                                <span>{{ label }}</span>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                    {% if observation_has_user_located %}
-                        <p class="mt-2 rounded-tag bg-status-warning-bg px-3 py-1.5 text-xs text-status-warning-text">
-                            {% trans "Some reports were placed manually" %}
-                        </p>
-                    {% endif %}
-                {% else %}
-                    <p class="text-sm text-text-3" data-testid="resort-observations-empty">
-                        {% if local_observations.scope == "point" %}
-                            {% trans "No reports near here today." %}
-                        {% else %}
-                            {% trans "No reports in this region today." %}
-                        {% endif %}
-                    </p>
-                {% endif %}
-            </section>
-        {% endif %}
+        {# ── Observations: on the map, reports sheet open, flown here (SNOW-807) ── #}
+        <div class="mt-6" data-testid="resort-observations">
+            {% include "includes/_button.html" with label=_("Reports near here on the map") href=observations_map_url variant="secondary" size="compact" %}
+        </div>
     </main>
 {% endblock %}

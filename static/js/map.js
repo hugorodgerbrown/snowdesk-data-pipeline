@@ -5983,6 +5983,78 @@
     openFavouriteDeepLink();
 
     /**
+     * Read ``?resort=`` and strip it from the address bar in one step.
+     *
+     * SNOW-807: the resort page's "reports near here" link is
+     * ``/?panel=reports&resort=<slug>`` — the sheet-level ``?panel=`` opens
+     * the reports sheet (SNOW-803), and this flies the camera to the resort.
+     * Consumed for the same reasons ``consumeFavouriteDeepLink`` gives.
+     *
+     * @returns {?string} The requested resort slug, or null when none.
+     */
+    const consumeResortDeepLink = () => {
+      const params = new URLSearchParams(location.search);
+      const slug = params.get('resort');
+      if (!slug) return null;
+      params.delete('resort');
+      const query = params.toString();
+      history.replaceState(
+        null,
+        '',
+        location.pathname + (query ? `?${query}` : '') + location.hash,
+      );
+      return slug;
+    };
+
+    /**
+     * Honour a ``/?resort=<slug>`` arrival: fly to that resort's pin.
+     *
+     * The resort is resolved by identity in the already-loaded ``resorts``
+     * source — its feature ``id`` IS the slug since SNOW-796 — the same
+     * shape as the favourite deep link above, so no new camera mechanism
+     * and no raw lat/lon in the URL. A slug matching nothing (a renamed
+     * or deleted resort) is silent: the map opens as it otherwise would.
+     *
+     * @returns {void}
+     */
+    const openResortDeepLink = () => {
+      const slug = consumeResortDeepLink();
+      if (!slug) return;
+
+      // Someone who followed a link to one resort means to see its pin, so
+      // an overlay left switched off is switched back on through the
+      // panel's own path — the same reasoning as the favourite deep link.
+      if (!overlayState.resorts) showPanelOverlay('resorts');
+
+      const flyToResort = () => {
+        const features = resortsGeojsonCache && resortsGeojsonCache.features;
+        if (!Array.isArray(features)) return false;
+        const feature = features.find(
+          (f) => f && f.properties && f.properties.id === slug,
+        );
+        if (!feature) return false;
+        map.flyTo({
+          center: feature.geometry.coordinates,
+          zoom: FAVOURITE_DEEP_LINK_ZOOM,
+        });
+        return true;
+      };
+
+      if (flyToResort()) return;
+
+      // Otherwise wait for the resorts source to install, exactly once —
+      // ``sourcedata`` is what the source emits whichever path loaded it.
+      const onResortsSourceData = (e) => {
+        if (e.sourceId !== 'resorts' || !map.isSourceLoaded('resorts')) return;
+        map.off('sourcedata', onResortsSourceData);
+        flyToResort();
+      };
+      map.on('sourcedata', onResortsSourceData);
+    };
+
+    openResortDeepLink();
+
+    /**
      * Read ``?route_share=`` and strip it from the address bar in one step.
      *
      * SNOW-764. Consumed rather than merely read, for the same reasons

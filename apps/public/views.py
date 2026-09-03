@@ -116,9 +116,7 @@ from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
-    WeatherDisplay,
     build_point_forecast_panel,
-    build_weather_display,
 )
 
 from .component_previews import help_illustrations
@@ -1804,9 +1802,10 @@ def _slope_context(request: HttpRequest) -> dict[str, Any]:
 def _labelled_counts(raw: "dict[str, int]") -> "list[tuple[str, int]]":
     """Map raw ``OBSERVATION_TYPE`` counts to sorted, human-readable pairs.
 
-    Shared by ``_get_observation_counts`` (region-wide) and
-    ``_get_local_observation_counts`` (SNOW-508, point-local) so the
-    key→label mapping lives in exactly one place.
+    Used by ``_get_observation_counts`` (region-wide); it was shared with
+    the resort page's point-local counts until SNOW-807 turned that panel
+    into a link to the map. The key→label mapping still lives in exactly
+    one place.
 
     Args:
         raw: Mapping from ``OBSERVATION_TYPE`` value string to count, as
@@ -1852,61 +1851,6 @@ def _get_observation_counts(
 
     raw: dict[str, int] = FieldObservation.objects.counts_for_region_day(region, day)
     return _labelled_counts(raw)
-
-
-@dataclasses.dataclass(frozen=True)
-class LocalObservationResult:
-    """Structured result for a distance-scoped field-observation lookup.
-
-    Distinguishes "checked, nothing nearby" (``visible=True``, empty
-    ``counts``) from "feature off" (``visible=False``) so the template can
-    render the correct empty-state copy rather than silently omitting the
-    panel. ``scope`` tells the template which heading/empty-state copy to
-    use: ``"point"`` when coordinates were available for a point-local
-    query, ``"region"`` when falling back to the region-wide count.
-
-    """
-
-    visible: bool
-    scope: str
-    counts: "list[tuple[str, int]]"
-
-
-def _get_local_observation_counts(
-    request: HttpRequest,
-    resort: "Resort",
-    day: datetime.date,
-) -> LocalObservationResult:
-    """Return a distance-scoped field-observation result for a resort page.
-
-    Point-local when the resort has both coordinates (SNOW-508); falls back
-    to the existing region-wide count (``counts_for_region_day``) when the
-    resort's coordinates are null.
-
-    Args:
-        request: The current HTTP request.
-        resort: The Resort to look up observations near.
-        day: The calendar day to count observations on.
-
-    Returns:
-        A ``LocalObservationResult`` — see its docstring for field meanings.
-
-    """
-    if resort.latitude is not None and resort.longitude is not None:
-        raw = FieldObservation.objects.counts_near_point_for_day(
-            resort.latitude,
-            resort.longitude,
-            settings.FIELD_OBSERVATION_RADIUS_KM,
-            day,
-        )
-        return LocalObservationResult(
-            visible=True, scope="point", counts=_labelled_counts(raw)
-        )
-
-    raw = FieldObservation.objects.counts_for_region_day(resort.region, day)
-    return LocalObservationResult(
-        visible=True, scope="region", counts=_labelled_counts(raw)
-    )
 
 
 def _get_observation_has_user_located(
@@ -4120,105 +4064,6 @@ def _bulletin_detail_render(
 # ---------------------------------------------------------------------------
 
 
-@dataclasses.dataclass(frozen=True)
-class ResortWeatherSection:
-    """One curated location's weather block on the resort page.
-
-    Attributes:
-        location: The ``Location`` the block describes.
-        label: The eyebrow text — the location's name and, when known, its
-            elevation. The elevation is the whole reason a resort shows
-            more than one block: village rain and summit snow are the same
-            forecast read at two heights.
-        role_label: The role this location plays FOR THIS RESORT (Base /
-            Mid-mountain / Top), which is not the same as the location's own
-            ``kind`` — see ``ResortLocation.role``.
-        weather_display: The day's ``WeatherDisplay``, or ``None``.
-        forecast_url: The location's own forecast page — where the week and
-            the hourly detail live (SNOW-783). The resort page shows the
-            day per altitude and hands the week off rather than drawing it
-            once per location.
-        testid_prefix: Stable per-block prefix for ``data-testid``s.
-
-    """
-
-    location: Location
-    label: str
-    role_label: str
-    weather_display: WeatherDisplay | None
-    forecast_url: str
-    testid_prefix: str
-
-
-def _resort_weather_sections(
-    resort: Resort, observed_on: datetime.date, now: datetime.datetime
-) -> list[ResortWeatherSection]:
-    """Build one weather block per curated location linked to a resort.
-
-    Ordered with the primary link first — the one the resort leads with,
-    normally the village, because that is where someone arrives — then by
-    role and name so the rest read bottom-to-top consistently.
-
-    Blocks with no ``Weather`` row are dropped entirely rather than rendered
-    empty: a resort whose peak has a row and whose village does not should
-    show one block, not one block and a hole.
-
-    One query for the links (with their locations joined) and one for the
-    day's rows across all of them, so the section costs two queries however
-    many locations a resort has.
-
-    Args:
-        resort: The resort whose links to walk.
-        observed_on: The calendar day to read.
-        now: The reference instant for each block's day/night icon decision.
-
-    Returns:
-        The blocks, in display order. Empty when the resort has no linked
-        locations or none of them has a row for the day.
-
-    """
-    links = list(
-        resort.resort_locations.select_related("location").order_by(
-            "-is_primary", "role", "location__name"
-        )
-    )
-    if not links:
-        return []
-    rows = {
-        row.location_id: row
-        for row in Weather.objects.filter(
-            location__in=[link.location_id for link in links],
-            observed_on=observed_on,
-        )
-    }
-    sections: list[ResortWeatherSection] = []
-    for index, link in enumerate(links):
-        weather = rows.get(link.location_id)
-        if weather is None:
-            continue
-        location = link.location
-        # A curated point carries its own name ("Verbier village"). An
-        # anonymous one — the Location link_resort_locations mints at the
-        # resort's own pin so a geocoded resort has weather at all — has
-        # none, and Location.to_string() would put raw coordinates on the
-        # page. Fall back to the resort's name instead: "Verbier · 1494 m"
-        # is what that point actually is.
-        label = location.name or resort.name
-        if location.elevation_m is not None:
-            label = f"{label} · {location.elevation_m:.0f} m"
-        sections.append(
-            ResortWeatherSection(
-                location=location,
-                label=label,
-                role_label=str(link.get_role_display()),
-                weather_display=build_weather_display(weather, now),
-                forecast_url=location.get_absolute_url(),
-                testid_prefix=f"resort-weather-{index}",
-            )
-        )
-    return sections
-
-
 def _location_forecast_context(
     location: Location, observed_on: datetime.date, now: datetime.datetime
 ) -> dict[str, Any]:
@@ -4465,13 +4310,19 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     redirect to perform here: the URL either names a resort or it 404s.
     The pre-slug ``/resorts/<id>/<slug>/`` form is ``resort_legacy_redirect``.
 
+    A ROUTER, not a third document (SNOW-807,
+    ``docs/decisions/two-documents-and-a-map.md``). What is the resort's
+    own — name, region, the curated facts and why-it-matters line, the
+    favourite toggle — renders here; everything else is a link: the danger
+    area to the region's bulletin, each curated location to its weather
+    page, the observations to the map with the reports sheet open. The
+    page is kept because people search "Verbier avalanche", not
+    "CH-4115", and ``ResortSitemap`` publishes every resort.
+
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
     (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``)
     and by ``apps.public.api.region_summary`` (today's ``RegionDayRating`` lookup
-    for the danger chip). Field-observation counts are point-local — scoped
-    to ``settings.FIELD_OBSERVATION_RADIUS_KM`` of the resort's own
-    coordinates (SNOW-508) — falling back to the region-wide count when the
-    resort has no coordinates.
+    for the danger chip).
 
     Args:
         request: The incoming HTTP request.
@@ -4512,16 +4363,50 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # metadata rows already do.
         "is_staff": request.user.is_staff,
         "signin_url": reverse("accounts:sign_in"),
-        "local_observations": _get_local_observation_counts(request, resort, today),
-        "observation_has_user_located": _get_observation_has_user_located(
-            request, region, today
+        # SNOW-807: the resort's curated locations, each a link to its own
+        # weather page — no forecast is read here. One query, no Weather.
+        "locations": _resort_location_links(resort),
+        # SNOW-807: the map with the reports sheet open, flown to this resort
+        # (static/js/map.js consumes ``?panel=`` and ``?resort=``).
+        "observations_map_url": (
+            f"{reverse('public:home')}?panel=reports&resort={resort.slug}"
         ),
-        # SNOW-761: one weather block per curated location, labelled with the
-        # height it was read at. Empty list when the resort has no linked
-        # locations or none of them has a row for today.
-        "weather_sections": _resort_weather_sections(resort, today, timezone.now()),
     }
     return render(request, "public/resort.html", context)
+
+
+def _resort_location_links(resort: Resort) -> list[dict[str, Any]]:
+    """Return the resort's curated locations as links to their weather pages.
+
+    Ordered with the primary link first — the one the resort leads with,
+    normally the village, because that is where someone arrives — then by
+    role and name. A curated point carries its own name; the anonymous one
+    ``link_resort_locations`` mints at the resort's own pin has none, and
+    falls back to the resort's name (SNOW-807, after SNOW-761's block).
+
+    Args:
+        resort: The resort whose links to walk.
+
+    Returns:
+        One dict per link: ``label``, ``elevation_m``, ``role_label``,
+        ``url`` and a stable ``testid``. Empty when the resort has no
+        linked locations — a manual operator step, so that state is
+        normal for a freshly geocoded resort.
+
+    """
+    links = resort.resort_locations.select_related("location").order_by(
+        "-is_primary", "role", "location__name"
+    )
+    return [
+        {
+            "label": link.location.name or resort.name,
+            "elevation_m": link.location.elevation_m,
+            "role_label": str(link.get_role_display()),
+            "url": link.location.get_absolute_url(),
+            "testid": f"resort-location-{index}",
+        }
+        for index, link in enumerate(links)
+    ]
 
 
 # ---------------------------------------------------------------------------

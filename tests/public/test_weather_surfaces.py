@@ -35,7 +35,7 @@ from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
 
-from apps.locations.models import Location, ResortLocation
+from apps.locations.models import Location
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
@@ -146,108 +146,6 @@ class TestBulletinMasthead:
         content = response.content.decode()
         assert 'data-testid="bulletin-weather-panel"' not in content
         assert "light_snow.svg" not in content
-
-
-@pytest.mark.django_db
-class TestResortPage:
-    """One weather block per curated location linked to the resort."""
-
-    @freeze_time(MIDDAY)
-    def test_one_block_per_linked_location_labelled_with_its_elevation(self) -> None:
-        """Each block names its location and the height it was read at."""
-        today = datetime.date(2026, 8, 30)
-        resort = ResortFactory.create(name="Verbier")
-        village = LocationFactory.create(
-            name="Verbier", kind=Location.KIND.VILLAGE, elevation_m=1500.0
-        )
-        peak = LocationFactory.create(
-            name="Mont Fort", kind=Location.KIND.PEAK, elevation_m=3328.0
-        )
-        ResortLocationFactory.create(
-            resort=resort,
-            location=village,
-            role=ResortLocation.ROLE.BASE,
-            is_primary=True,
-        )
-        ResortLocationFactory.create(
-            resort=resort, location=peak, role=ResortLocation.ROLE.TOP
-        )
-        for location in (village, peak):
-            WeatherFactory.create(
-                location=location,
-                observed_on=today,
-                sunrise=SUNRISE,
-                sunset=SUNSET,
-            )
-
-        response = Client().get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="resort-weather"' in content
-        assert "Verbier · 1500 m" in content
-        assert "Mont Fort · 3328 m" in content
-        # The primary (base) link leads, whatever order the links were made.
-        assert content.index("Verbier · 1500 m") < content.index("Mont Fort · 3328 m")
-
-    @freeze_time(MIDDAY)
-    def test_the_week_is_not_drawn_here_only_linked(self) -> None:
-        """SNOW-783: the day per altitude, and a link out for the week.
-
-        The strip used to be rendered once per curated location, so a
-        resort with a village, a mid-station and a peak drew the same
-        seven days three times.
-        """
-        today = datetime.date(2026, 8, 30)
-        resort = ResortFactory.create()
-        location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
-        ResortLocationFactory.create(resort=resort, location=location)
-        WeatherFactory.create(
-            location=location,
-            observed_on=today,
-            sunrise=SUNRISE,
-            sunset=SUNSET,
-            forecast=[_forecast_day("2026-08-31"), _forecast_day("2026-09-01")],
-        )
-
-        response = Client().get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        # The day is here.
-        assert 'data-testid="resort-weather-0-panel"' in content
-        # The week is not.
-        assert 'data-testid="resort-weather-0-forecast-panel"' not in content
-        assert 'data-date="2026-08-31"' not in content
-        # But it is one click away, per location.
-        assert 'data-testid="resort-weather-0-forecast-link"' in content
-        assert reverse("public:location_weather", args=[location.short_id]) in content
-
-    def test_a_location_without_a_row_is_dropped_not_rendered_empty(self) -> None:
-        """A resort whose peak has a row and village none shows one block."""
-        today = datetime.date(2026, 8, 30)
-        resort = ResortFactory.create()
-        with_row = LocationFactory.create(name="Attelas")
-        without_row = LocationFactory.create(name="Ruinettes")
-        ResortLocationFactory.create(resort=resort, location=with_row)
-        ResortLocationFactory.create(resort=resort, location=without_row)
-        WeatherFactory.create(location=with_row, observed_on=today)
-
-        with freeze_time(MIDDAY):
-            response = Client().get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        assert "Attelas" in content
-        assert 'data-testid="resort-weather-0"' in content
-        assert 'data-testid="resort-weather-1"' not in content
-
-    def test_a_resort_with_no_linked_locations_omits_the_section(self) -> None:
-        """No links means no section heading, not an empty one."""
-        resort = ResortFactory.create()
-
-        response = Client().get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        assert 'data-testid="resort-weather"' not in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -600,24 +498,6 @@ class TestIconHalo:
 
         draws_own = client.get(f"{url}?date={PAGE_DATE.isoformat()}&icons=snowdesk")
         assert 'class="weather-icon' not in draws_own.content.decode()
-
-    @freeze_time(MIDDAY)
-    def test_the_resort_pages_panel_carries_the_hook(self) -> None:
-        """``_weather_panel.html``, via the resort page."""
-        resort = ResortFactory.create()
-        location = LocationFactory.create(elevation_m=1500.0)
-        ResortLocationFactory.create(resort=resort, location=location)
-        WeatherFactory.create(
-            location=location,
-            observed_on=PAGE_DATE,
-            sunrise=SUNRISE,
-            sunset=SUNSET,
-        )
-
-        content = Client().get(f"{resort.get_absolute_url()}?icons=yr").content.decode()
-
-        assert 'data-testid="resort-weather"' in content
-        assert 'class="weather-icon' in content
 
     @freeze_time(MIDDAY)
     def test_the_picker_and_the_day_line_both_carry_the_hook(self) -> None:
