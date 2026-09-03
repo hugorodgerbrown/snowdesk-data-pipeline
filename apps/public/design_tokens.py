@@ -67,8 +67,6 @@ from apps.public._component_fixtures import (
     SHEET_HEADER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
-    SUBSCRIBE_FORM_VARIANTS,
-    SUBSCRIBE_OUTCOMES_VARIANTS,
     SWITCH_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
     THEME_PREFERENCE_VARIANTS,
@@ -892,7 +890,7 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "Persistent top navigation bar — wordmark, optional back-chevron link, "
             "optional season-trigger button, and a right-side auth/admin area. "
             "Variants cover the bare logo-only state, back link, season trigger, "
-            "and an authenticated subscriber with a subscribed region."
+            "and an authenticated user."
         ),
         kind="components",
         partial="includes/nav.html",
@@ -958,36 +956,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         partial="public/_region_tooltip.html",
         variants=REGION_TOOLTIP_VARIANTS,
         panel_layout="two-col",
-    ),
-    FoundationCategory(
-        slug="subscribe-form",
-        label="Subscribe form",
-        description=(
-            "Inline subscription CTA embedded on bulletin pages. Branches into four "
-            "variants based on authentication state and subscription status: "
-            "(1) anonymous — email-input form; "
-            "(2) anonymous with validation error — form re-displayed with an error; "
-            "(3) authenticated, not yet subscribed — one-click 'Add region' CTA; "
-            "(4) authenticated, already subscribed — one-click 'Unsubscribe' CTA."
-        ),
-        kind="components",
-        partial="accounts/partials/subscribe_form.html",
-        variants=SUBSCRIBE_FORM_VARIANTS,
-        panel_layout="stack",
-    ),
-    FoundationCategory(
-        slug="subscribe-outcomes",
-        label="Subscribe outcomes",
-        description=(
-            "HTMX response fragments returned after a subscribe POST. Five outcome "
-            "templates: generic check-inbox, account-access link sent, region added, "
-            "already subscribed, and error. Each variant overrides the template path "
-            "via the ``include_variant`` partial-key mechanism."
-        ),
-        kind="components",
-        partial="accounts/partials/subscribe_success.html",
-        variants=SUBSCRIBE_OUTCOMES_VARIANTS,
-        panel_layout="stack",
     ),
     FoundationCategory(
         slug="no-data-supplied",

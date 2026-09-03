@@ -80,7 +80,7 @@ from django_ratelimit.decorators import ratelimit
 
 from apps import analytics
 from apps.accounts.identity import request_identity
-from apps.accounts.models import Subscription, user_is_verified
+from apps.accounts.models import user_is_verified
 from apps.bulletins.models import (
     Bulletin,
     BulletinShare,
@@ -3979,19 +3979,6 @@ def _bulletin_detail_response(
         # OG description — plain-text summary for og:description / twitter:description
         # (SNOW-218).  Built from the panel's danger rating and key message.
         "og_description": _build_og_description(panel),
-        # Subscribe panel state — whether the authenticated user already has a
-        # Subscription for this region (SNOW-222).  Anonymous users short-circuit
-        # to False so no DB query is issued for unauthenticated requests.
-        # Subscription lookup: authenticated users with an Account profile are
-        # checked; anonymous users and staff-only Users (no profile) return False.
-        "user_subscribed_to_region": (
-            request.user.is_authenticated
-            and hasattr(request.user, "account")
-            and Subscription.objects.filter(
-                account=request.user.account,
-                region=region,
-            ).exists()
-        ),
         # JSON-LD structured data (SNOW-220) — schema.org WebPage + Report.
         # Serialised with "</"-escaping; rendered unescaped in the template
         # inside a <script type="application/ld+json"> block.

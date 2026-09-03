@@ -69,15 +69,19 @@ Context:
 {# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
 {# recognise a rename click without knowing which panel it is on;          #}
 {# `data-favourite-rename` carries this row's uuid for the commit.         #}
-<button
-    type="button"
-    data-row-rename
-    data-favourite-rename="{{ favourite.uuid }}"
-    aria-label="{{ rename_aria_label }}"
-    class="{% icon_button_classes %}"
->
-    {% include "includes/_icon_pencil.html" only %}
-</button>
+{# SNOW-802: a region pin has no name of the user's own — its label is the #}
+{# region's — so there is nothing to rename and no pencil. Trash only.     #}
+{% if not favourite.is_region_pin %}
+    <button
+        type="button"
+        data-row-rename
+        data-favourite-rename="{{ favourite.uuid }}"
+        aria-label="{{ rename_aria_label }}"
+        class="{% icon_button_classes %}"
+    >
+        {% include "includes/_icon_pencil.html" only %}
+    </button>
+{% endif %}
 <form
     data-row-remove
     hx-post="{% url 'favourites:delete' favourite.uuid %}"

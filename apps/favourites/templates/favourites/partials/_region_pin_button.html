@@ -1,0 +1,51 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_region_pin_button.html — the region pin control (SNOW-802).
+
+Rendered inside public/_region_tooltip.html — which the region + date panel
+(static/js/map_region_panel.js) and the plain MapLibre region popup both
+inject — and returned by apps.favourites.views.favourite_region_toggle in
+the control's NEW state, which static/js/favourites.js swaps in with
+outerHTML. One template, two renders, so the two can never disagree.
+
+The resort star's twin (_resort_popup.html): a signed-in user gets a real
+button whose pressed state says whether the region is pinned; a visitor
+gets the same control as a sign-in path rather than nothing (show the
+control, offer the way in). A region pin has no coordinate, so this is a
+plain online-only POST — nothing to draw optimistically, nothing for the
+mutation queue.
+
+Context:
+    region                — MicroRegion.
+    region_can_pin        — bool: the requester is signed in.
+    region_pinned         — bool: they already hold a pin for this region.
+    region_pin_toggle_url — str: favourites:region_toggle for this region.
+    signin_url            — str: accounts:sign_in, for the anonymous path.
+{% endcomment %}
+{% if region_can_pin %}
+    <button
+        type="button"
+        data-region-pin
+        data-region-id="{{ region.region_id }}"
+        data-region-pin-toggle-url="{{ region_pin_toggle_url }}"
+        data-pinned="{{ region_pinned|yesno:'true,false' }}"
+        aria-pressed="{{ region_pinned|yesno:'true,false' }}"
+        data-testid="region-pin-toggle"
+        class="flex items-center gap-2 self-start rounded-pill border border-border px-3 py-1.5 text-sm font-medium text-text-1 hover:border-text-2"
+    >
+        <span aria-hidden="true">{% if region_pinned %}★{% else %}☆{% endif %}</span>
+        {% if region_pinned %}
+            {% trans "Pinned" %}
+        {% else %}
+            {% trans "Pin this region" %}
+        {% endif %}
+    </button>
+{% elif signin_url %}
+    <a
+        href="{{ signin_url }}"
+        data-testid="region-pin-signin"
+        class="self-start text-sm font-medium text-status-info-text underline"
+    >
+        {% trans "Sign in to pin this region" %}
+    </a>
+{% endif %}

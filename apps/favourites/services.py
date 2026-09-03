@@ -32,7 +32,7 @@ from apps.regions.services.point_match import region_for_point
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from apps.regions.models import Resort
+    from apps.regions.models import MicroRegion, Resort
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +220,105 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
         resort.region.region_id,
     )
     return favourite
+
+
+def create_region_favourite(
+    user: "User", region: "MicroRegion", *, enforce_cap: bool = True
+) -> Favourite:
+    """Create (or return the existing) region pin for ``user`` on ``region``.
+
+    A region pin (SNOW-802) is a ``Favourite`` whose subject is the region
+    itself: no ``Location`` is minted, no elevation is fetched, and the row
+    carries no coordinate — it is a bookmark on the region's bulletin, the
+    thing a ``Subscription`` row always was. ``name`` snapshots the region's
+    name so the row reads sensibly wherever it is listed.
+
+    Idempotent on an existing ``(user, region)`` region pin: a pre-check
+    returns the existing row, and the ``IntegrityError`` from the partial
+    unique constraint is caught as the race backstop.
+
+    Args:
+        user: The authenticated user pinning the region.
+        region: The region being pinned.
+        enforce_cap: Whether ``settings.FAVOURITES_MAX_PER_USER`` applies.
+            ``False`` for the one-time ``Subscription`` backfill — a user's
+            existing regions must not be dropped on the floor because they
+            also hold many placed pins.
+
+    Returns:
+        The newly created (or pre-existing) region pin.
+
+    Raises:
+        FavouriteLimitReached: When ``enforce_cap`` is set and the user
+            already holds ``settings.FAVOURITES_MAX_PER_USER`` favourites.
+
+    """
+    existing = Favourite.objects.for_user(user).region_pins().filter(region=region)
+    if (found := existing.first()) is not None:
+        return found
+
+    def _over_cap() -> bool:
+        return (
+            enforce_cap
+            and Favourite.objects.for_user(user).count()
+            >= settings.FAVOURITES_MAX_PER_USER
+        )
+
+    if _over_cap():
+        raise FavouriteLimitReached(
+            f"User {user.pk} has reached the "
+            f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
+        )
+
+    try:
+        with transaction.atomic():
+            # Lock the user row before the cap re-check — see create_favourite
+            # for the full race-condition rationale.
+            get_user_model().objects.select_for_update().get(pk=user.pk)
+            if _over_cap():
+                raise FavouriteLimitReached(
+                    f"User {user.pk} has reached the "
+                    f"{settings.FAVOURITES_MAX_PER_USER}-favourite limit."
+                )
+            favourite = Favourite.objects.create(
+                user=user,
+                name=region.name,
+                region=region,
+            )
+    except IntegrityError:
+        # The partial-unique constraint fired: a concurrent request pinned
+        # the same region first. Return that row.
+        logger.info(
+            "Region pin race: user=%s region=%s already pinned; returning existing",
+            user.pk,
+            region.region_id,
+        )
+        return Favourite.objects.for_user(user).region_pins().get(region=region)
+
+    logger.info("Region pin created: user=%s region=%s", user.pk, region.region_id)
+    return favourite
+
+
+def delete_region_favourite(user: "User", region: "MicroRegion") -> bool:
+    """Delete ``user``'s region pin on ``region``, if there is one.
+
+    Owner-checked by construction — only ``user``'s own row is addressed.
+    No ``Location`` to sweep: a region pin never minted one.
+
+    Args:
+        user: The user whose pin is being removed.
+        region: The pinned region.
+
+    Returns:
+        ``True`` when a pin was deleted, ``False`` when there was none.
+
+    """
+    deleted, _ = (
+        Favourite.objects.for_user(user).region_pins().filter(region=region).delete()
+    )
+    if deleted:
+        logger.info("Region pin deleted: user=%s region=%s", user.pk, region.region_id)
+    return bool(deleted)
 
 
 def delete_favourite(user: "User", uuid: UUID) -> None:

@@ -197,7 +197,7 @@ class TestChangeEmailConfirmView:
         account = self._pending_account()
         response = client.post(self._url(account))
         assert response.status_code == 302
-        assert response["Location"] == reverse("accounts:hub")
+        assert response["Location"] == reverse("accounts:settings")
 
         account.user.refresh_from_db()
         account.refresh_from_db()

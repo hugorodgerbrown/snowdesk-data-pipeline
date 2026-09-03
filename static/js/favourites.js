@@ -107,6 +107,8 @@
     // the failure line is still JS-rendered copy.
     'rename-failed': "That name couldn't be saved. Try again.",
     'list-failed': "Your favourites couldn't be loaded — check your connection.",
+    // SNOW-802: the region pin control's failure line.
+    'pin-failed': "That region couldn't be pinned. Try again.",
   });
 
   const CREATE_URL = btn.dataset.favouriteCreateUrl;
@@ -733,6 +735,57 @@
     ) {
       document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Region pin (SNOW-802) — pin/unpin a region from the region + date panel
+  // or the region popup, both of which inject public/_region_tooltip.html
+  // and with it favourites/partials/_region_pin_button.html. Delegated from
+  // document for the same reason the resort star below is: that markup
+  // arrives long after this script ran, and is replaced on every open.
+  //
+  // ONLINE-ONLY, like the resort page's toggle and unlike the star's
+  // create: a region pin has no coordinate, so there is nothing to draw
+  // optimistically and nothing for the mutation queue to replay into a
+  // layer. The response IS the control in its new state, swapped in whole.
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const control = target && target.closest ? target.closest('[data-region-pin]') : null;
+    if (!control) return;
+    event.preventDefault();
+    const url = control.dataset.regionPinToggleUrl;
+    if (!url || control.dataset.pinBusy === 'true') return;
+    control.dataset.pinBusy = 'true';
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        // favourite_region_toggle is @require_htmx; this is a plain fetch.
+        'HX-Request': 'true',
+        'X-CSRFToken': getCsrfToken(),
+      },
+    })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('region pin ' + resp.status);
+        return resp.text();
+      })
+      .then(function (html) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        const next = wrap.firstElementChild;
+        if (next) control.replaceWith(next);
+        // The pins sheet lists region pins, so its rows are stale now.
+        document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+        window.pwaTelemetry?.emit('map.region.pin_toggled', {
+          pinned: !!(next && next.dataset.pinned === 'true'),
+        });
+      })
+      .catch(function () {
+        delete control.dataset.pinBusy;
+        showToast(STRINGS['pin-failed']);
+      });
   });
 
   // ---------------------------------------------------------------------------

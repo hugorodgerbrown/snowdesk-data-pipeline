@@ -857,7 +857,8 @@ class Command(BaseCommand):
         """
         from django.contrib.auth import get_user_model
 
-        from apps.accounts.models import Account, Subscription
+        from apps.accounts.models import Account
+        from apps.favourites.services import create_region_favourite
         from apps.regions.models import MicroRegion
 
         user_model = get_user_model()
@@ -898,11 +899,9 @@ class Command(BaseCommand):
                 "region fixtures first: "
                 "uv run python manage.py loaddata eaws_CH resorts"
             ) from exc
-        Subscription.objects.get_or_create(
-            account=account,
-            region=region,
-            defaults={"geo_match_kind": Subscription.GeoMatchKind.IN_REGION},
-        )
+        # SNOW-802: the dev user's region is a region pin — the row a
+        # Subscription became — so the pins sheet has something to show.
+        create_region_favourite(account.user, region, enforce_cap=False)
 
         if verbosity >= 2:
             self.stdout.write(f"  Created dev accounts: {email_super}, {email_dev}")

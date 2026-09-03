@@ -97,7 +97,7 @@ class TestNavDropdownCarriesTheAccountArea:
         client = _client_for(AccountFactory.create())
         html = client.get(reverse("public:home")).content.decode()
 
-        for url_name in ("accounts:hub", "accounts:settings"):
+        for url_name in ("accounts:settings",):
             assert f'href="{reverse(url_name)}"' in html, url_name
 
 
@@ -105,7 +105,7 @@ class TestNavDropdownCarriesTheAccountArea:
 class TestNoSubNav:
     """No account page grows a sub-nav of its own."""
 
-    @pytest.mark.parametrize("url_name", ["accounts:hub", "accounts:settings"])
+    @pytest.mark.parametrize("url_name", ["accounts:settings"])
     def test_account_pages_carry_no_subnav(self, url_name: str) -> None:
         """Two attempts at a sub-nav were built and removed.
 
@@ -131,25 +131,6 @@ class TestNoSubNav:
 class TestAccountHeadings:
     """The heading rules SNOW-705 settled, which are easy to undo by hand."""
 
-    def test_hub_names_itself_as_the_subscriptions_page(self) -> None:
-        """The hub's ``<h1>`` is visible and reads "Subscriptions".
-
-        It was ``<h1 class="sr-only">Account</h1>`` from SNOW-705 until
-        SNOW-668, and the reason was the page's contents rather than a
-        heading style: it held two unrelated lists of saved things and
-        summarised neither, so there was no honest name for it as a whole.
-        Moving favourites to their own page removed the premise. One list,
-        one name, one visible heading — and the eyebrow that used to label
-        the section is gone, because under this ``<h1>`` it only repeated
-        it.
-        """
-        client = _client_for(AccountFactory.create())
-        html = client.get(reverse("accounts:hub")).content.decode()
-
-        assert "Subscriptions" in html
-        assert '<h1 class="sr-only"' not in html
-        assert html.count("<h1") == 1
-
     def test_settings_keeps_its_visible_heading(self) -> None:
         """Settings names itself; it is one page about one thing."""
         client = _client_for(AccountFactory.create())
@@ -158,22 +139,6 @@ class TestAccountHeadings:
         assert "Settings" in html
         assert '<h1 class="sr-only"' not in html.split("</h1>")[0]
         assert html.count("<h1") == 1
-
-    def test_hub_no_longer_hosts_the_favourites_section(self) -> None:
-        """The section moved; it did not get copied.
-
-        The regression this guards is a merge or a revert restoring the
-        ``hx-get`` at the foot of the hub. Two surfaces lazy-loading
-        ``favourites:list`` is not a cosmetic duplication — the offline
-        write-through in static/js/favourites_offline.js keys on the request
-        path, so both would claim the roster and the outline ranks would
-        disagree between them.
-        """
-        client = _client_for(AccountFactory.create())
-        html = client.get(reverse("accounts:hub")).content.decode()
-
-        assert reverse("favourites:list") not in html
-        assert 'data-testid="hub-section-favourites"' not in html
 
     def test_account_headings_carry_no_possessive(self) -> None:
         """Inside /account/ the possessive carries no information.
@@ -185,10 +150,10 @@ class TestAccountHeadings:
         until SNOW-668 renamed it "Subscriptions".
         """
         client = _client_for(AccountFactory.create())
-        for url_name in ("accounts:hub",):
+        for url_name in ("accounts:settings",):
             html = client.get(reverse(url_name)).content.decode()
             assert "My favourites" not in html, url_name
-            assert "Your subscription" not in html, url_name
+            assert "Your subscriptions" not in html, url_name
             assert "My account" not in html, url_name
 
     def test_settings_groups_render_in_order(self) -> None:

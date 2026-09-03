@@ -185,7 +185,7 @@ class TestResetConfirmView:
             {"new_password1": _NEW, "new_password2": _NEW},
         )
         assert response.status_code == 302
-        assert response["Location"] == reverse("accounts:hub")
+        assert response["Location"] == reverse("public:home")
         user.refresh_from_db()
         assert user.check_password(_NEW) is True
         assert "_auth_user_id" in client.session

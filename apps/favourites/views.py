@@ -65,6 +65,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
+from apps import analytics
+from apps.accounts.identity import user_identity
 from apps.bulletins.models import RegionDayRating
 from apps.core.coordinates import validate_coordinates
 from apps.core.decorators import require_htmx
@@ -73,18 +75,21 @@ from apps.core.freshness import (
     apply_freshness_headers,
     freshness_state as compute_freshness_state,
 )
+from apps.favourites.context import region_pin_context
 from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
 from apps.favourites.services import (
     FavouriteLimitReached,
     ResortNotGeocoded,
     create_favourite,
+    create_region_favourite,
     create_resort_favourite,
     delete_favourite,
+    delete_region_favourite,
 )
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import _select_bulletin_for_date, problem_cards_for_bulletin
-from apps.regions.models import Resort
+from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import (
     build_weather_display,
@@ -612,7 +617,14 @@ def _favourite_card_context(
         bulletin = _select_bulletin_for_date(favourite.region, today)
         if bulletin is not None:
             cards = problem_cards_for_bulletin(bulletin)
-            problem_cards = annotate_problem_relevance(cards, favourite.elevation)
+            # SNOW-802: a region pin has no elevation, so there is no
+            # altitude to judge a problem against — the cards render
+            # unannotated rather than against a height nobody stated.
+            problem_cards = (
+                annotate_problem_relevance(cards, favourite.elevation)
+                if favourite.elevation is not None
+                else cards
+            )
 
     # SNOW-761: weather for the pin's own Location, read for today on the
     # (location, observed_on) unique constraint. A pre-SNOW-704 row with no
@@ -768,6 +780,83 @@ def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
 
 @require_htmx
+@require_POST
+@ratelimit(key="user", rate="10/m", block=False)
+def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpResponse:
+    """Toggle the requesting user's region pin; return the pin control partial.
+
+    The control lives in ``public/_region_tooltip.html`` — the region + date
+    panel and the region popup both render it (SNOW-802) — and is driven by
+    ``static/js/favourites.js`` as a plain, online-only fetch, the shape
+    ``favourite_resort_toggle`` has on the resort page. A region pin has no
+    coordinate, so nothing here touches the map's mutation queue: there is
+    no pin to draw optimistically.
+
+    When the user already holds a region pin for this region it is deleted;
+    otherwise one is created via ``create_region_favourite``. Either way the
+    response is the control rendered in its NEW state, which the JS swaps
+    in with ``outerHTML``.
+
+    Errors:
+        403 — anonymous request.
+        400 — non-HTMX request.
+        404 — unknown ``region_id``.
+        409 — creating would exceed ``settings.FAVOURITES_MAX_PER_USER``.
+        429 — rate limit exceeded (> 10 toggles/min per user).
+
+    Args:
+        request: The incoming HTMX POST request.
+        region_id: The EAWS region identifier, from the URL.
+
+    Returns:
+        The rendered pin-control partial in its new state, or an error.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before toggling this pin.",
+            status=429,
+        )
+
+    region = MicroRegion.objects.filter(region_id__iexact=region_id).first()
+    if region is None:
+        return HttpResponse("Region not found.", status=404)
+
+    if delete_region_favourite(request.user, region):
+        pinned = False
+        analytics.track(
+            "region_removed",
+            user_identity(request.user),
+            {"region_id": region.region_id, "source": "map"},
+        )
+    else:
+        try:
+            create_region_favourite(request.user, region)
+        except FavouriteLimitReached:
+            logger.info(
+                "Region pin toggle blocked: user=%s hit the cap", request.user.pk
+            )
+            return render(
+                request, "favourites/partials/_favourite_limit.html", {}, status=409
+            )
+        pinned = True
+        analytics.track(
+            "region_added",
+            user_identity(request.user),
+            {"region_id": region.region_id, "source": "map"},
+        )
+
+    return render(
+        request,
+        "favourites/partials/_region_pin_button.html",
+        region_pin_context(region, request.user, pinned=pinned),
+    )
+
+
+@require_htmx
 @require_GET
 def favourite_list(request: HttpRequest) -> HttpResponse:
     """Render the requesting user's own favourites list partial.
@@ -820,6 +909,10 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
             if favourite.region_id is not None
             else None
         )
+        # SNOW-802: a region pin's row shows the day's rating and a dated
+        # bulletin link — that is all a region has — and reads them off
+        # the favourite rather than issuing a query per row.
+        favourite.day_rating = day_rating  # type: ignore[attr-defined]
         bulletin_url = favourite.region.get_absolute_url() if favourite.region else ""
         generated_at, unsafe_after = _card_freshness(day_rating)
         roster_payload.append(
@@ -884,7 +977,11 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 
-    favourites = list(Favourite.objects.for_user(request.user).select_related("resort"))
+    # SNOW-802: ``placed()`` — a region pin has no coordinate, so it has no
+    # feature and nothing for the map to draw. It lives in the pins sheet.
+    favourites = list(
+        Favourite.objects.for_user(request.user).placed().select_related("resort")
+    )
 
     features: list[dict[str, Any]] = []
     for favourite in favourites:

@@ -1,43 +1,38 @@
 """
-tests/accounts/test_account_hub.py — The /account/ hub split (SNOW-667).
+tests/accounts/test_account_hub.py — The /account/ root after SNOW-802.
 
 ``/account/manage/`` was one page stacking nine unranked sections. SNOW-667
-split it into a hub at ``/account/`` and a settings page at
-``/account/settings/``, tied together by a sub-nav whose groups come from
-the nav dropdown.
+split it into a hub at ``/account/`` (subscriptions) and ``/account/settings/``;
+SNOW-803 sent the favourites page to the map's pins sheet and SNOW-802 sent
+the hub there too — a subscription was a bookmark on a region, and bookmarks
+are pins. Settings is the one account page left.
 
-The sub-nav this ticket originally shipped was cut — it did not earn its
-place. SNOW-705 designs the account area's navigation and layouts; until
-then the two pages are reached from the nav menu.
+These tests pin the parts that are easy to regress:
 
-These tests pin the parts of that split which are easy to regress:
-
-  * the **route collision** — ``/account/`` used to answer 405, because
-    ``subscribe_partial`` (``@require_POST``) held the ``""`` route. The hub
-    owns it now and ``subscribe_partial`` moved to ``/account/subscribe/``
-    keeping its URL name, so a reverse-by-name still reaches it;
-  * the **legacy redirect** — ``/account/manage/`` 301s to the hub and
-    ``reverse("accounts:manage")`` still resolves, so old bookmarks and
-    in-flight emails land somewhere sensible;
+  * the **redirects** — ``/account/`` and ``/account/manage/`` both 301 to
+    the map with the pins sheet open, in every auth state, and the URL
+    names still reverse so old bookmarks and in-flight emails land;
+  * the **retired write paths** — the subscribe / add-region /
+    remove-region endpoints no longer reverse, so a template that still
+    named one fails loudly rather than posting into a 404;
   * the **renamed delete control**, which read "Unsubscribe from all alerts"
-    while hard-deleting the account.
-
-Section membership (which block lives on which page) is covered by the
-existing classes in ``test_views.py``.
+    while hard-deleting the account;
+  * the **passkey Remove control** on settings, an icon control naming its
+    passkey.
 """
 
 from __future__ import annotations
 
 import pytest
 from django.test import Client
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 
 from apps.accounts.models import Account
 from tests.factories import (
     AccountFactory,
+    FavouriteFactory,
     MicroRegionFactory,
     PasskeyCredentialFactory,
-    SubscriptionFactory,
 )
 
 _TOKEN_BACKEND = "django.contrib.auth.backends.ModelBackend"
@@ -51,68 +46,55 @@ def _client_for(account: Account) -> Client:
 
 
 # ---------------------------------------------------------------------------
-# Routing — the collision and the legacy redirect
+# Routing — the account root is a redirect to the map
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestAccountRouting:
-    """The route shape SNOW-667 introduced."""
-
-    def test_hub_get_renders(self) -> None:
-        """GET /account/ renders the hub.
-
-        The regression test for the collision: before SNOW-667 this path was
-        bound to ``subscribe_partial``, which is ``@require_POST``, so a GET
-        of the account root answered **405** rather than a page.
-        """
-        client = _client_for(AccountFactory.create())
-        response = client.get(reverse("accounts:hub"))
-        assert response.status_code == 200
+    """The route shape after SNOW-802."""
 
     def test_hub_url_is_the_account_root(self) -> None:
-        """The hub is mounted at /account/, not a child path."""
+        """The name survives, at the account root."""
         assert reverse("accounts:hub") == "/account/"
 
-    def test_manage_redirects_permanently_to_hub(self) -> None:
-        """/account/manage/ 301s to the hub, for old bookmarks and emails."""
-        client = _client_for(AccountFactory.create())
-        response = client.get("/account/manage/")
+    @pytest.mark.parametrize("path", ["/account/", "/account/manage/"])
+    def test_root_and_manage_redirect_to_the_pins_sheet(self, path: str) -> None:
+        """Signed in, both land on the map with the pins sheet open."""
+        response = _client_for(AccountFactory.create()).get(path)
         assert response.status_code == 301
-        assert response["Location"] == reverse("accounts:hub")
+        assert response["Location"] == "/?panel=favourites"
+
+    @pytest.mark.parametrize("path", ["/account/", "/account/manage/"])
+    def test_anonymous_gets_the_same_redirect(self, path: str) -> None:
+        """A redirect renders nothing per-user, so there is no sign-in wall."""
+        response = Client().get(path)
+        assert response.status_code == 301
+        assert response["Location"] == "/?panel=favourites"
 
     def test_manage_url_name_still_resolves(self) -> None:
-        """``reverse("accounts:manage")`` keeps working after the split.
-
-        The name is retained deliberately — dropping it would turn every
-        stale reverse into a ``NoReverseMatch`` at render time rather than a
-        redirect at request time.
-        """
+        """``reverse("accounts:manage")`` keeps working after the split."""
         assert reverse("accounts:manage") == "/account/manage/"
 
-    def test_subscribe_moved_but_keeps_its_url_name(self) -> None:
-        """subscribe_partial answers on its new path under the same name."""
-        assert reverse("accounts:subscribe") == "/account/subscribe/"
-
-    def test_subscribe_still_rejects_a_plain_get(self) -> None:
-        """The moved view keeps @require_POST + @require_htmx.
-
-        Asserted so the move cannot silently relax the guards: a GET must
-        still be refused, exactly as it was on the old path.
-        """
-        response = Client().get(reverse("accounts:subscribe"))
-        assert response.status_code == 405
+    @pytest.mark.parametrize(
+        "name",
+        ["accounts:subscribe", "accounts:add_region", "accounts:remove_region"],
+    )
+    def test_the_subscription_write_paths_are_gone(self, name: str) -> None:
+        """No code path creates or deletes a Subscription row any more."""
+        with pytest.raises(NoReverseMatch):
+            reverse(name, kwargs={"region_id": "CH-4115"} if "region" in name else {})
 
     def test_settings_get_renders(self) -> None:
         """GET /account/settings/ renders the settings page."""
-        client = _client_for(AccountFactory.create())
-        response = client.get(reverse("accounts:settings"))
+        response = _client_for(AccountFactory.create()).get(
+            reverse("accounts:settings")
+        )
         assert response.status_code == 200
 
-    @pytest.mark.parametrize("name", ["accounts:hub", "accounts:settings"])
-    def test_anonymous_is_redirected_to_sign_in(self, name: str) -> None:
-        """Neither child route is readable signed out."""
-        response = Client().get(reverse(name))
+    def test_anonymous_settings_is_redirected_to_sign_in(self) -> None:
+        """The one account page is not readable signed out."""
+        response = Client().get(reverse("accounts:settings"))
         assert response.status_code == 302
         assert response["Location"] == reverse("accounts:sign_in")
 
@@ -124,16 +106,11 @@ class TestAccountRouting:
 
 @pytest.mark.django_db
 class TestSettingsIsReachable:
-    """Settings has no on-page navigation, so the nav menu is the only route.
-
-    Pinned because it is easy to lose: nothing else on the hub links to
-    /account/settings/, and SNOW-705 will replace this arrangement. If that
-    nav entry disappears before the design lands, the page is orphaned.
-    """
+    """Settings has no on-page navigation, so the nav menu is the only route."""
 
     def test_nav_menu_links_to_settings(self) -> None:
         client = _client_for(AccountFactory.create())
-        html = client.get(reverse("accounts:hub")).content.decode()
+        html = client.get(reverse("accounts:settings")).content.decode()
         assert reverse("accounts:settings") in html
 
 
@@ -160,10 +137,10 @@ class TestDeleteAccountControl:
         assert reverse("accounts:delete_account") in html
 
     def test_delete_account_still_hard_deletes(self) -> None:
-        """Behaviour is unchanged: the User goes, and the Account with it."""
+        """Behaviour is unchanged: the User goes, and the Account and pins with it."""
         account = AccountFactory.create()
         region = MicroRegionFactory.create()
-        SubscriptionFactory.create(account=account, region=region)
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
         user_pk = account.user.pk
 
         client = _client_for(account)
@@ -179,49 +156,13 @@ class TestDeleteAccountControl:
 
 
 # ---------------------------------------------------------------------------
-# The two Remove controls (SNOW-711)
+# The Remove control on settings (SNOW-711)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestRemoveControlsAreIconControls:
-    """A subscription and a passkey are removed the same way as everything else.
-
-    SNOW-658 gave every UGC row one icon language — a pencil, a trash, the
-    trash always last. These two cards were the last controls outside it:
-    bordered "Remove" pills wearing a class string nothing else in the
-    codebase used. Losing the visible word is what makes the aria-label
-    load-bearing, so both are asserted by the name they now carry.
-    """
-
-    def test_subscription_remove_is_a_trash_naming_its_region(self) -> None:
-        account = AccountFactory.create()
-        region = MicroRegionFactory.create(name="Alpstein")
-        SubscriptionFactory.create(account=account, region=region)
-
-        html = _client_for(account).get(reverse("accounts:hub")).content.decode()
-
-        assert 'aria-label="Remove Alpstein"' in html
-        # The shared 44x44 icon control, destructive variant — the same one
-        # every UGC row's trash carries.
-        assert "hover:text-status-error-text" in html
-        # The pill it replaced, and the class string only it and the passkey
-        # card ever used.
-        assert "border border-text-3/30 rounded-sm px-3 py-1.5" not in html
-
-    def test_subscription_remove_still_posts_to_remove_region(self) -> None:
-        """Restyling the control must not have moved its target."""
-        account = AccountFactory.create()
-        region = MicroRegionFactory.create(name="Alpstein")
-        SubscriptionFactory.create(account=account, region=region)
-
-        html = _client_for(account).get(reverse("accounts:hub")).content.decode()
-
-        assert (
-            reverse("accounts:remove_region", kwargs={"region_id": region.region_id})
-            in html
-        )
-        assert 'hx-target="closest .subscription-card"' in html
+    """A passkey is removed the same way as everything else — a trash, named."""
 
     def test_passkey_remove_is_a_trash_naming_its_passkey(self) -> None:
         account = AccountFactory.create()
@@ -238,11 +179,7 @@ class TestRemoveControlsAreIconControls:
         )
 
     def test_passkey_remove_keeps_its_confirmation(self) -> None:
-        """The one guard on an irreversible action that just lost its words.
-
-        Losing a device's passkey is losing a way in, and the control is now
-        a glyph — so the confirm matters more than it did, not less.
-        """
+        """The one guard on an irreversible action that just lost its words."""
         account = AccountFactory.create()
         PasskeyCredentialFactory.create(user=account.user)
 
@@ -258,6 +195,3 @@ class TestRemoveControlsAreIconControls:
 
         assert "Change email" in html
         assert reverse("accounts:change_email") in html
-        # includes/_button.html's ghost variant, in place of the pill.
-        assert "border border-text-3/30" in html
-        assert "border border-text-3/30 rounded-sm px-3 py-1.5" not in html

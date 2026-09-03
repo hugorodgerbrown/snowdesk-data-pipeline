@@ -6,12 +6,12 @@ trigger button, and a right-side auth/admin area.
 
 Right-side auth area
 --------------------
-Authenticated subscriber:
-  An avatar button (first letter of email) opens a dropdown showing up to
-  three subscribed region links, then Subscriptions, Settings and a "Sign
-  out" button (SNOW-803 removed the Favourites, Routes and Observations
-  entries — those lists are map sheets now). Region links are provided by
-  the nav_subscriptions context processor (accounts/context_processors.py).
+Authenticated user:
+  An avatar button (first letter of email) opens a dropdown holding the
+  offline-mode switch, Settings and a "Sign out" button. SNOW-803 removed
+  the Favourites, Routes and Observations entries and SNOW-802 the
+  Subscriptions entry and the subscribed-region links above it — every one
+  of those is a map object now, listed in the map's pins sheet.
 
 Not authenticated:
   A single "Sign in" button routes to /account/sign-in/; that page carries
@@ -276,34 +276,6 @@ Usage
                         role="menu"
                         class="absolute right-0 top-full mt-1.5 min-w-[200px] rounded-card border border-border bg-card shadow-md py-1.5 z-50"
                     >
-                        {# Subscribed region links from context processor #}
-                        {% for sub in nav_subscriptions %}
-                            <a
-                                role="menuitem"
-                                href="/{{ sub.region.region_id }}/"
-                                class="flex items-center gap-2 px-3 py-1.5 text-sm text-text-1 hover:bg-tag"
-                            >
-                                <svg
-                                    width="13"
-                                    height="13"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    aria-hidden="true"
-                                    class="shrink-0 text-text-3"
-                                >
-                                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                                    <circle cx="12" cy="10" r="3" />
-                                </svg>
-                                <span class="truncate">{{ sub.region.name }}</span>
-                            </a>
-                        {% endfor %}
-                        {% if nav_subscriptions %}
-                            <div class="my-1 border-t border-border" aria-hidden="true"></div>
-                        {% endif %}
                         {% comment %}
                             SNOW-748: offline mode — the switch half of the
                             aeroplane-mode model, whose status-bar half is the
@@ -421,28 +393,16 @@ Usage
                             ship the same way again.
 
                             SNOW-803 removed the three lists of saved things
-                            (Favourites, Routes, Observations): a favourite,
-                            a route and a report are map objects and live in
-                            the map's sheets, which the old URLs now redirect
-                            to. What is left is the SNOW-705 order minus
-                            them: Subscriptions (the thing an account is for),
-                            then a rule, then Settings and — under the rule
-                            that was already here — Sign out. The last two
-                            are account machinery rather than content.
-
-                            "Subscriptions", not "My account": the hub stopped
-                            being a hub when SNOW-668 lifted favourites off it,
-                            and inside /account/ a possessive carries no
-                            information (see accounts/hub.html).
+                            (Favourites, Routes, Observations) and SNOW-802
+                            the Subscriptions entry: a favourite, a route, a
+                            report and a pinned region are map objects and
+                            live in the map's sheets, which the old URLs now
+                            redirect to. What is left is account machinery —
+                            Settings and, under the rule that was already
+                            here, Sign out. The nav-is-the-navigation ruling
+                            (docs/decisions/account-area-navigation-lives-in-
+                            the-nav-menu.md) holds with two entries.
                         {% endcomment %}
-                        <a
-                            role="menuitem"
-                            href="{% url 'accounts:hub' %}"
-                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
-                        >
-                            {% trans "Subscriptions" %}
-                        </a>
-                        <div class="my-1 border-t border-border" aria-hidden="true"></div>
                         <a
                             role="menuitem"
                             href="{% url 'accounts:settings' %}"

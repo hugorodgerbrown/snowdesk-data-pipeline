@@ -98,6 +98,7 @@ from apps.bulletins.models import (
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
+from apps.favourites.context import region_pin_context
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.observations.models import FieldObservation
@@ -1211,6 +1212,10 @@ def region_summary(request: HttpRequest, region_id: str) -> JsonResponse:
                     "target_date": target_date,
                     "covered": covered,
                     "provider_name": provider_name,
+                    # SNOW-802: the pin control beside the bulletin link.
+                    # Per-user state, which is fine here — this endpoint
+                    # has never been cached, for the same reason.
+                    **region_pin_context(region, request.user),
                 },
                 request=request,
             ),

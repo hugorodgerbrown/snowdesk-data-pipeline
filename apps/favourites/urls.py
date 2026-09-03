@@ -10,6 +10,9 @@ URL structure:
   favourites/partials/resort/create/        POST — save a resort favourite (SNOW-499)
   favourites/partials/resort/<slug>/toggle/  POST — toggle a resort favourite,
                                              online-only (SNOW-504)
+  favourites/partials/region/<region_id>/toggle/
+                                             POST — toggle a region pin,
+                                             online-only (SNOW-802)
   favourites/partials/<uuid>/rename/         POST — rename a favourite
   favourites/partials/<uuid>/delete/         POST — delete a favourite
   favourites/partials/<uuid>/card/           GET  — detail card (SNOW-415)
@@ -41,6 +44,13 @@ urlpatterns = [
         "partials/resort/<slug:slug>/toggle/",
         views.favourite_resort_toggle,
         name="resort_toggle",
+    ),
+    # SNOW-802: the region pin — the control the region + date panel and
+    # the region popup carry beside the bulletin link.
+    path(
+        "partials/region/<region_id:region_id>/toggle/",
+        views.favourite_region_toggle,
+        name="region_toggle",
     ),
     path(
         "partials/<uuid:uuid>/rename/",

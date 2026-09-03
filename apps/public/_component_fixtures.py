@@ -1704,11 +1704,8 @@ TENDENCY_OUTLOOK_VARIANTS: tuple[dict[str, Any], ...] = (
 # ── Nav (SNOW-201) ──────────────────────────────────────────────────────────
 # Covers the four meaningful states of the persistent top bar:
 # bare logo, back-link variant, season-trigger variant, and authed subscriber.
-# ``request.user`` and ``nav_subscriptions`` are overridden via SimpleNamespace
-# so the partial's auth-area branches can be exercised without touching the
-# context processor.
-
-_NAV_REGION = SimpleNamespace(region_id="CH-VS-3431", name="Bex-Villars")
+# ``request.user`` is overridden via SimpleNamespace so the partial's
+# auth-area branches can be exercised without a real request.
 
 NAV_VARIANTS: tuple[dict[str, Any], ...] = (
     {
@@ -1722,7 +1719,6 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                 ),
                 csp_nonce="",
             ),
-            "nav_subscriptions": [],
         },
     },
     {
@@ -1738,7 +1734,6 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                 ),
                 csp_nonce="",
             ),
-            "nav_subscriptions": [],
         },
     },
     {
@@ -1753,11 +1748,10 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                 ),
                 csp_nonce="",
             ),
-            "nav_subscriptions": [],
         },
     },
     {
-        "caption": "Authenticated subscriber",
+        "caption": "Authenticated",
         "context": {
             "request": SimpleNamespace(
                 user=SimpleNamespace(
@@ -1767,9 +1761,6 @@ NAV_VARIANTS: tuple[dict[str, Any], ...] = (
                 ),
                 csp_nonce="",
             ),
-            "nav_subscriptions": [
-                SimpleNamespace(region=_NAV_REGION),
-            ],
         },
     },
 )
@@ -2254,101 +2245,6 @@ REGION_TOOLTIP_VARIANTS: tuple[dict[str, Any], ...] = (
             "covered": False,
             "provider_name": "SLF",
         },
-    },
-)
-
-
-# ── Subscribe form (SNOW-222) ───────────────────────────────────────────────
-# Four variants covering every auth/subscription state:
-#   1. Anonymous — empty email-input form (original state).
-#   2. Anonymous with validation error — form re-displayed with an error.
-#   3. Authenticated, not yet subscribed — one-click "Add region" CTA.
-#   4. Authenticated, already subscribed — one-click "Unsubscribe" CTA.
-#
-# Variants 3 and 4 supply a SimpleNamespace ``request.user`` so the partial's
-# ``{% if not request.user.is_authenticated %}`` branch can be exercised without
-# a real HTTP request.
-
-_SUBSCRIBE_ANON_REQUEST = SimpleNamespace(user=SimpleNamespace(is_authenticated=False))
-
-_SUBSCRIBE_AUTHED_REQUEST = SimpleNamespace(user=SimpleNamespace(is_authenticated=True))
-
-SUBSCRIBE_FORM_VARIANTS: tuple[dict[str, Any], ...] = (
-    {
-        "caption": "Anonymous — empty form",
-        "context": {
-            "region_id": "CH-VS-3431",
-            "region_name": "Bex–Villars",
-            "request": _SUBSCRIBE_ANON_REQUEST,
-            "user_subscribed_to_region": False,
-        },
-    },
-    {
-        "caption": "Anonymous — with validation error",
-        "context": {
-            "region_id": "CH-VS-3431",
-            "region_name": "Bex–Villars",
-            "request": _SUBSCRIBE_ANON_REQUEST,
-            "user_subscribed_to_region": False,
-            "form": SimpleNamespace(
-                email=SimpleNamespace(
-                    errors=["Enter a valid email address."],
-                )
-            ),
-        },
-    },
-    {
-        "caption": "Authenticated — not yet subscribed",
-        "context": {
-            "region_id": "CH-VS-3431",
-            "region_name": "Bex–Villars",
-            "request": _SUBSCRIBE_AUTHED_REQUEST,
-            "user_subscribed_to_region": False,
-        },
-    },
-    {
-        "caption": "Authenticated — already subscribed",
-        "context": {
-            "region_id": "CH-VS-3431",
-            "region_name": "Bex–Villars",
-            "request": _SUBSCRIBE_AUTHED_REQUEST,
-            "user_subscribed_to_region": True,
-        },
-    },
-)
-
-
-# ── Subscribe outcomes (SNOW-201) ───────────────────────────────────────────
-# Five distinct outcome templates, each rendered as a separate variant under
-# one sidebar entry.  The ``"partial"`` key in each variant overrides the
-# category's default ``partial`` field via the widened ``include_variant``
-# tag (Option A from the plan).
-
-SUBSCRIBE_OUTCOMES_VARIANTS: tuple[dict[str, Any], ...] = (
-    {
-        "caption": "Success — check inbox (generic)",
-        "partial": "accounts/partials/subscribe_success.html",
-        "context": {},
-    },
-    {
-        "caption": "Success — access link sent",
-        "partial": "accounts/partials/subscribe_success_access.html",
-        "context": {},
-    },
-    {
-        "caption": "Success — region added",
-        "partial": "accounts/partials/subscribe_success_added.html",
-        "context": {"region_name": "Bex–Villars"},
-    },
-    {
-        "caption": "Success — already subscribed",
-        "partial": "accounts/partials/subscribe_success_already.html",
-        "context": {"region_name": "Bex–Villars"},
-    },
-    {
-        "caption": "Error — region not found",
-        "partial": "accounts/partials/subscribe_error.html",
-        "context": {},
     },
 )
 

@@ -40,7 +40,7 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 from pytest_django import DjangoDbBlocker
 
-from apps.accounts.models import Account, Subscription
+from apps.accounts.models import Account
 from apps.bulletins.management.commands.seed_test_data import (
     _EAWS_CH_FIXTURE,
     DEV_USER_PASSWORD,
@@ -276,7 +276,8 @@ class TestCommit:
         """--all seeds the stage-2 Location/Favourite layer."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
         assert Location.objects.count() == _EXPECTED_LOCATIONS
-        assert Favourite.objects.count() == _EXPECTED_FAVOURITES
+        # SNOW-802: placed pins only — the dev user's region pin is not one.
+        assert Favourite.objects.placed().count() == _EXPECTED_FAVOURITES
 
     def test_include_location_only(self) -> None:
         """--include location seeds locations but no favourites."""
@@ -292,13 +293,14 @@ class TestCommit:
             "seed_test_data", "--include", "favourite", commit=True, verbosity=0
         )
         assert Location.objects.count() == _EXPECTED_LOCATIONS
-        assert Favourite.objects.count() == _EXPECTED_FAVOURITES
+        # SNOW-802: placed pins only — the dev user's region pin is not one.
+        assert Favourite.objects.placed().count() == _EXPECTED_FAVOURITES
 
     def test_favourites_reference_seeded_locations(self) -> None:
         """Each Favourite points at a seeded Location with matching coords."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
         seeded_ids = set(Location.objects.values_list("pk", flat=True))
-        for favourite in Favourite.objects.select_related("location"):
+        for favourite in Favourite.objects.placed().select_related("location"):
             assert favourite.location is not None
             assert favourite.location.pk in seeded_ids
             assert favourite.latitude == favourite.location.latitude
@@ -342,17 +344,22 @@ class TestUserSeeding:
         assert user.check_password(DEV_USER_PASSWORD)
         account = Account.objects.get(user=user)
         assert account.is_verified
-        sub = Subscription.objects.get(
-            account=account, region__region_id=SUBSCRIBED_REGION_ID
+        # SNOW-802: the region is a region pin, not a Subscription row.
+        pin = (
+            Favourite.objects.for_user(user)
+            .region_pins()
+            .get(region__region_id=SUBSCRIBED_REGION_ID)
         )
-        assert sub.geo_match_kind == Subscription.GeoMatchKind.IN_REGION
+        assert pin.is_region_pin
 
     def test_include_user_seeds_nothing_else(self) -> None:
         """--include user creates only the accounts, no bulletin/point rows."""
         call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
         assert Bulletin.objects.count() == 0
         assert Location.objects.count() == 0
-        assert Favourite.objects.count() == 0
+        # The dev user's region pin is the one favourite — and it mints no Location.
+        assert Favourite.objects.region_pins().count() == 1
+        assert Favourite.objects.placed().count() == 0
 
     def test_include_user_is_idempotent(self) -> None:
         """--include user twice creates no duplicate users or subscriptions.
@@ -366,9 +373,10 @@ class TestUserSeeding:
         assert User.objects.filter(username=NORMAL_USER_EMAIL.lower()).count() == 1
         account = Account.objects.get(user__username=NORMAL_USER_EMAIL.lower())
         assert (
-            Subscription.objects.filter(
-                account=account, region__region_id=SUBSCRIBED_REGION_ID
-            ).count()
+            Favourite.objects.for_user(account.user)
+            .region_pins()
+            .filter(region__region_id=SUBSCRIBED_REGION_ID)
+            .count()
             == 1
         )
 

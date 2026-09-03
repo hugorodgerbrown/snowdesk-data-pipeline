@@ -553,6 +553,15 @@ class FavouriteFactory(factory.django.DjangoModelFactory[Favourite]):
 
         model = Favourite
 
+    class Params:
+        """Traits for common variations."""
+
+        # SNOW-802: a region pin — the region is the subject, and there is
+        # no coordinate, no elevation and no Location. Pass ``region=`` too.
+        region_pin = factory.Trait(
+            location=None, latitude=None, longitude=None, elevation=None
+        )
+
     user = factory.SubFactory(UserFactory)
     name = ""
     latitude = factory.Sequence(lambda n: 46.1 + n * 0.05)

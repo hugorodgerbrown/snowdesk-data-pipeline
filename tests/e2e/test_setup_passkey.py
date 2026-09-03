@@ -62,13 +62,13 @@ def test_passkey_cta_registers_and_advances(
         assert page.is_visible("#btn-register-passkey")
 
         page.click("#btn-register-passkey")
-        # On passkey:registered the inline script sets window.location to the
-        # account hub (SNOW-667 renamed /account/manage/ to /account/).
-        # Anchored: a "**/account/**" glob would also match /account/setup/,
-        # the page we started on, and pass without any navigation at all.
-        page.wait_for_url(re.compile(r"/account/(\?.*)?$"), timeout=15000)
+        # On passkey:registered the inline script sets window.location to
+        # settings — the one account page left after SNOW-802 sent the hub
+        # to the map. Anchored: a "**/account/**" glob would also match
+        # /account/setup/, the page we started on.
+        page.wait_for_url(re.compile(r"/account/settings/(\?.*)?$"), timeout=15000)
 
-    assert re.search(r"/account/(\?.*)?$", page.url), page.url
+    assert re.search(r"/account/settings/(\?.*)?$", page.url), page.url
     assert page_errors == [], f"JS errors: {page_errors}"
 
     # The credential was persisted for the user.
