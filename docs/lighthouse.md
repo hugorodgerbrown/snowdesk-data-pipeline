@@ -79,8 +79,8 @@ severity judgement an audit that never runs cannot make.
 The fix is always an entry in `package.json`'s `overrides` block, with its
 reason and its removal condition in the sibling `comments` object. Never
 `npm audit fix --force`: it only offers a breaking downgrade to
-`@lhci/cli@0.12.0`. Current entries: `tmp`, `uuid`, `cookie` (SNOW-440) and
-`@puppeteer/browsers` (SNOW-688).
+`@lhci/cli@0.12.0`. Current entries: `tmp`, `uuid`, `cookie` (SNOW-440),
+`@puppeteer/browsers` (SNOW-688) and `qs` (SNOW-809).
 
 `@puppeteer/browsers` is the one worth understanding, because it breaks the
 usual shape twice. It does not pin a patched version of the vulnerable
