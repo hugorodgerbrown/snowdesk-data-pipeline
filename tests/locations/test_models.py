@@ -64,10 +64,32 @@ class TestLocationModel:
             LocationFactory.create(short_id=location.short_id)
 
     def test_get_absolute_url_is_the_weather_page_keyed_on_short_id(self) -> None:
-        """The weather page is the location's document — no pk in its URL."""
+        """The weather page is the location's document — no pk in its URL.
+
+        The "no pk" half asserts on the URL's own SEGMENT rather than
+        searching the whole string for the pk. A substring test flaked
+        roughly one run in three: the pk of the first row in a fresh test
+        database is ``1``, and a token drawn from a 64-character alphabet
+        contains a given digit often — so ``"1" not in
+        "/weather/fSYFEn1-8IA/"`` failed on a URL that is entirely correct.
+        """
         location = LocationFactory.create()
         assert location.get_absolute_url() == f"/weather/{location.short_id}/"
-        assert str(location.pk) not in location.get_absolute_url()
+        segment = location.get_absolute_url().rstrip("/").rsplit("/", 1)[1]
+        assert segment == location.short_id
+        assert segment != str(location.pk)
+
+    def test_get_absolute_url_is_empty_without_a_short_id(self) -> None:
+        """A row the backfill has not reached has no page (SNOW-810).
+
+        ``short_id`` is nullable until a later migration tightens it, so
+        every environment spends time between the SNOW-797 migration and
+        ``backfill_location_short_ids``. Reversing on ``None`` raises
+        ``NoReverseMatch``, which is a 500 on every surface that links to a
+        location; the empty string is the answer a caller can act on.
+        """
+        location = LocationFactory.create(short_id=None)
+        assert location.get_absolute_url() == ""
 
     def test_unresolved_by_default(self) -> None:
         """A fresh location has no elevation.

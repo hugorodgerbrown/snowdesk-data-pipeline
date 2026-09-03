@@ -339,7 +339,25 @@ class Location(BaseModel):
 
         Document two of the two-document IA (SNOW-795): one location, one
         day. Keyed on the opaque short id, never the primary key.
+
+        Returns ``""`` when ``short_id`` is null — a row that
+        ``backfill_location_short_ids`` has not reached yet has no page, and
+        saying so is the only answer a caller can use. SNOW-810: reversing
+        with ``short_id=None`` raises ``NoReverseMatch``, which is a 500 on
+        every surface that renders a link to a location, so an environment
+        between the SNOW-797 migration and its backfill served a 500 from
+        the favourites list partial and from ``/sitemap.xml``. The window is
+        a real state — the field is nullable on purpose until a later
+        migration tightens it — so it has to degrade rather than raise.
+
+        Callers that render a LINK need nothing further: the row partials
+        already drop an ``href`` they were handed empty (SNOW-800 built that
+        path for a favourite whose pin has no location at all). Callers that
+        treat the return as a DESTINATION — a redirect target, a sitemap
+        entry — must check it, because "" is not one.
         """
+        if not self.short_id:
+            return ""
         return reverse("public:location_weather", kwargs={"short_id": self.short_id})
 
     def to_string(self) -> str:

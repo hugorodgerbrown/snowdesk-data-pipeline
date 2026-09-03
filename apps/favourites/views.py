@@ -748,7 +748,11 @@ def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
     anonymous request, and 404 (never 403) for a non-owner or unknown
     uuid — no existence oracle. A favourite with no ``location`` (a row
     the SNOW-704 backfill has not reached) has no page to reach, so it is
-    a 404 rather than a redirect to a broken target.
+    a 404 rather than a redirect to a broken target. SNOW-810: so is one
+    whose location has no ``short_id`` yet (a row
+    ``backfill_location_short_ids`` has not reached) — ``get_absolute_url``
+    answers "" for it, and redirecting to "" would send the browser back to
+    this same URL in a loop.
 
     No ``Cache-Control: private, no-store``: the old page carried it
     because the whole response was per-user, and a redirect carries only
@@ -776,7 +780,10 @@ def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
     if favourite.location is None:
         return HttpResponse("Favourite not found.", status=404)
-    return redirect(favourite.location.get_absolute_url(), permanent=True)
+    destination = favourite.location.get_absolute_url()
+    if not destination:
+        return HttpResponse("Favourite not found.", status=404)
+    return redirect(destination, permanent=True)
 
 
 @require_htmx

@@ -1114,6 +1114,24 @@ class TestFavouriteDetailRedirect:
 
         assert response.status_code == 404
 
+    def test_location_without_a_short_id_is_404(self, client: Client) -> None:
+        """A location the short-id backfill has not reached has no page (SNOW-810).
+
+        ``get_absolute_url`` answers "" for it, and redirecting to "" would
+        send the browser back to this same URL — a redirect loop where a
+        404 is the honest answer.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user)
+        assert favourite.location is not None
+        favourite.location.short_id = None
+        favourite.location.save(update_fields=["short_id"])
+
+        response = client.get(_detail_url(favourite.uuid))
+
+        assert response.status_code == 404
+
     def test_non_owner_uuid_returns_404(self, client: Client) -> None:
         """A different user's uuid returns 404, not 403 — no existence oracle."""
         owner = UserFactory.create()
@@ -1425,6 +1443,38 @@ class TestFavouriteList:
             favourite.longitude,
             favourite.latitude,
         ]
+
+    def test_renders_when_a_location_has_no_short_id(self, client: Client) -> None:
+        """The panel survives an environment the short-id backfill has not reached.
+
+        SNOW-810, and the reason this ticket exists: ``short_id`` is
+        nullable between the SNOW-797 migration and
+        ``backfill_location_short_ids``, and this endpoint reached
+        ``Location.get_absolute_url()`` for every row's chevron target.
+        Reversing on ``None`` raised ``NoReverseMatch``, so the whole
+        partial 500'd — HTMX fired ``htmx:responseError`` and
+        ``favourites_offline.js`` repainted the sheet from its IndexedDB
+        cache, which is a list with no rename, no delete and no zoom.
+
+        The row must render in full: an unaddressable location costs the
+        pin its detail href, nothing else.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(
+            user=user, name="Mine", latitude=46.1, longitude=7.5
+        )
+        assert favourite.location is not None
+        favourite.location.short_id = None
+        favourite.location.save(update_fields=["short_id"])
+
+        response = client.get(LIST_URL, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Mine" in content
+        assert 'data-row-focus="7.500000,46.100000"' in content
+        assert f'data-favourite-rename="{favourite.uuid}"' in content
 
     def test_map_variant_keeps_the_roster_sidecar(self, client: Client) -> None:
         """The sheet still caches the roster for offline reads."""
