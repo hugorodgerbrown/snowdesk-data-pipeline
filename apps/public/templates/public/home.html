@@ -163,11 +163,11 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/row_rename_commit.js' %}"></script>
     {# The other half of a UGC row's name: pressing it frames that item on   #}
     {# the map. Loaded here for the same reason as the two above — the       #}
-    {# routes, favourites and field-observation surfaces below all delegate  #}
-    {# to window.pwaRowFocus, and deferred classic scripts run in document   #}
-    {# order. Not loaded on the account pages: their rows name the same      #}
-    {# places, but there is no map on those pages to fly, so those rows      #}
-    {# render no focus button at all.                                        #}
+    {# routes, favourites, field-observation and (SNOW-811) downloads        #}
+    {# surfaces below all delegate to window.pwaRowFocus, and deferred       #}
+    {# classic scripts run in document order. Not loaded on the account      #}
+    {# pages: their rows name the same places, but there is no map on those  #}
+    {# pages to fly, so those rows render no focus button at all.            #}
     <script defer src="{% static 'js/row_focus.js' %}"></script>
     {# SNOW-752: the third shared row module — recognise a row's own Remove #}
     {# landing, so the surface that owns the list can re-read it and tell   #}

@@ -4739,6 +4739,44 @@
   // the number.
   const POINT_FOCUS_ZOOM = 11;
 
+  // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
+  // MapLibre's fitBounds takes [[west, south], [east, north]].
+  //
+  // Module scope since SNOW-811: the region popup's own fits used it from a
+  // nested block, and `pwaMapFocus.region()` below needs the same answer for
+  // a downloads row naming a region. One definition, two scopes — a second
+  // copy is how the popup's framing and the panel's would come to disagree
+  // about where a region is.
+  const featureBBox = (feature) => {
+    const coords = feature.geometry.type === 'Polygon'
+      ? feature.geometry.coordinates
+      : feature.geometry.coordinates.flat();  // MultiPolygon → concat rings
+    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    for (const ring of coords) {
+      for (const [lng, lat] of ring) {
+        if (lng < w) w = lng;
+        if (lng > e) e = lng;
+        if (lat < s) s = lat;
+        if (lat > n) n = lat;
+      }
+    }
+    return [[w, s], [e, n]];
+  };
+
+  // The fit behind both `bounds` and `region` below. A module-scope
+  // function rather than one bridge method calling another through `this`:
+  // a caller that destructures the frozen bridge (`const { region } =
+  // window.pwaMapFocus`) would lose `this` and take the method with it.
+  const focusBounds = (bbox) => {
+    if (!map || !Array.isArray(bbox) || bbox.length !== 4) return;
+    if (!bbox.every((n) => Number.isFinite(n))) return;
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
+      padding: { top: 60, right: 40, bottom: 40, left: 40 },
+      maxZoom: 10,
+      duration: 400,
+    });
+  };
+
   window.pwaMapFocus = Object.freeze({
     /**
      * Centre the map on one point.
@@ -4774,13 +4812,40 @@
      * @returns {void}
      */
     bounds(bbox) {
-      if (!map || !Array.isArray(bbox) || bbox.length !== 4) return;
-      if (!bbox.every((n) => Number.isFinite(n))) return;
-      map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
-        padding: { top: 60, right: 40, bottom: 40, left: 40 },
-        maxZoom: 10,
-        duration: 400,
-      });
+      focusBounds(bbox);
+    },
+
+    /**
+     * Frame one EAWS micro-region by its id (SNOW-811).
+     *
+     * The downloads panel's region rows are the caller. A region download
+     * is recorded against a ``region_id`` and carries no geometry of its
+     * own — ``reconcileAreas`` leaves its ``bbox`` null — because the
+     * polygon is already on the map, in ``FEATURE_BY_REGION_ID``. So the
+     * row names the region and this resolves it, rather than the record
+     * growing a copy of a boundary the map is drawing anyway.
+     *
+     * Runs the same ``focusBounds`` fit as ``bounds`` above, so a region
+     * framed from a downloads row comes to rest exactly where a custom
+     * area's bbox would — and reads the same ``featureBBox`` the region
+     * popup's own fits use, so the two cannot disagree about where a
+     * region is.
+     *
+     * Returns silently for an id the map has no feature for: regions load
+     * per country as the viewport moves, so a row can name a region this
+     * session has not fetched. Nothing to say about it — see
+     * static/js/row_focus.js on why a press that cannot be served moves
+     * nothing rather than explaining itself.
+     *
+     * @param {string} regionId An EAWS micro-region id ("CH-4242").
+     * @returns {void}
+     */
+    region(regionId) {
+      if (!map || !regionId) return;
+      const feature = FEATURE_BY_REGION_ID[regionId];
+      if (!feature || !feature.geometry) return;
+      const [[w, s], [e, n]] = featureBBox(feature);
+      focusBounds([w, s, e, n]);
     },
   });
 
@@ -5263,23 +5328,10 @@
     let popupHashWasPushed = false;
     let popstateInProgress = false;
 
-    // Compute the lng/lat bounding box of a GeoJSON Polygon or MultiPolygon.
-    // MapLibre's fitBounds takes [[west, south], [east, north]].
-    const featureBBox = (feature) => {
-      const coords = feature.geometry.type === 'Polygon'
-        ? feature.geometry.coordinates
-        : feature.geometry.coordinates.flat();  // MultiPolygon → concat rings
-      let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
-      for (const ring of coords) {
-        for (const [lng, lat] of ring) {
-          if (lng < w) w = lng;
-          if (lng > e) e = lng;
-          if (lat < s) s = lat;
-          if (lat > n) n = lat;
-        }
-      }
-      return [[w, s], [e, n]];
-    };
+    // `featureBBox` was declared here until SNOW-811, which needed the same
+    // computation from `window.pwaMapFocus.region()` — outside this block.
+    // It moved to module scope rather than being copied; the name resolves
+    // to the one definition and every call site below is unchanged.
 
     // Fit the viewport to a region's bounds. Shared between AUTOZOOM click-fits
     // and the double-click gesture so both use the same padding, maxZoom, and

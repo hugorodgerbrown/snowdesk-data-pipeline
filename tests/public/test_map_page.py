@@ -1500,3 +1500,52 @@ def test_map_calendar_is_in_the_help_tour() -> None:
     assert steps.index("#season-scrubber") < steps.index("#map-calendar-toggle")
     assert steps.index("#map-help-toggle") < steps.index("#map-legend-toggle")
     assert steps.index("#map-legend-toggle") < steps.index("#map-calendar-toggle")
+
+
+@pytest.mark.django_db
+def test_downloads_row_template_renders_a_pressable_name() -> None:
+    """SNOW-811: the downloads row's name is a button that frames its area.
+
+    The other three map panels reach the shared row's focus slot by passing
+    ``focus_target`` with a coordinate they already have. This panel's rows
+    are cloned from a ``<template>`` and filled by JS, so it reaches the
+    same slot through ``js_filled`` and gets the button with an EMPTY
+    ``data-row-focus`` for ``buildRow`` to stamp — the same value-less-here
+    shape ``data-downloads-rename`` and ``data-downloads-delete`` use.
+
+    Asserted on the rendered template rather than trusted to the Vitest
+    fixture, which is a hand-copy of this markup: the two drifting apart is
+    exactly what a server-side assertion catches.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    row_template = content.split('id="map-downloads-row-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert "data-row-label" in row_template
+    assert 'data-row-focus=""' in row_template
+    # The inert span branch is what this ticket replaced; a row template
+    # carrying it again would be the regression.
+    assert "<span data-row-label" not in row_template
+
+
+@pytest.mark.django_db
+def test_downloads_strings_template_carries_the_focus_label() -> None:
+    """The focus button's accessible name is server-translated (SNOW-811).
+
+    ``buildRow`` fills the label, so "Zoom to <name>" cannot be a literal in
+    ``map_downloads_manager.js`` — ``makemessages`` never scans JavaScript,
+    and ``tox -e i18n-lint`` fails the build for one. It is rendered here
+    and read back through ``window.pwaStrings``.
+    """
+    client = Client()
+    response = client.get(reverse("public:home"))
+    content = response.content.decode()
+
+    strings = content.split('id="map-downloads-strings-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert 'data-string="focus-row-label"' in strings
+    assert "Zoom to" in strings

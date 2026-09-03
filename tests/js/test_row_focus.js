@@ -43,6 +43,24 @@ function buildSheet(target) {
   return document.getElementById('sheet');
 }
 
+/**
+ * A sheet whose row names a REGION rather than a coordinate (SNOW-811) —
+ * the downloads panel's region rows, which carry no bbox because the
+ * polygon is already on the map.
+ */
+function buildRegionSheet(regionId) {
+  document.body.innerHTML = `
+    <div id="sheet">
+      <ul>
+        <li>
+          <button data-row-label data-row-focus-region="${regionId}">Binntal</button>
+        </li>
+      </ul>
+      <button data-panel-add>Download a custom area</button>
+    </div>`;
+  return document.getElementById('sheet');
+}
+
 /** A stub overlay bridge in the shape map.js publishes. */
 function stubOverlay(enabled) {
   return {
@@ -89,7 +107,7 @@ describe('window.pwaRowFocus.handleClick', () => {
   let focus;
 
   beforeEach(() => {
-    focus = { point: vi.fn(), bounds: vi.fn() };
+    focus = { point: vi.fn(), bounds: vi.fn(), region: vi.fn() };
     window.pwaMapFocus = focus;
   });
 
@@ -162,6 +180,65 @@ describe('window.pwaRowFocus.handleClick', () => {
     expect(overlay.show).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
     expect(focus.point).not.toHaveBeenCalled();
+    expect(focus.bounds).not.toHaveBeenCalled();
+  });
+
+  it('resolves a region row through pwaMapFocus.region', () => {
+    // SNOW-811: a region download is recorded against its id and carries no
+    // bbox on purpose — the polygon is already on the map, and a stored box
+    // would be a second, coarser copy of it.
+    const sheet = buildRegionSheet('CH-4242');
+    const overlay = stubOverlay(false);
+    const close = vi.fn();
+
+    const answer = clickAndHandle(sheet, '[data-row-focus-region]', {
+      overlay,
+      close,
+    });
+
+    expect(answer).toBe(true);
+    expect(overlay.show).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(focus.region).toHaveBeenCalledWith('CH-4242');
+    expect(focus.bounds).not.toHaveBeenCalled();
+    expect(focus.point).not.toHaveBeenCalled();
+  });
+
+  it('claims a region row an older map bundle cannot resolve', () => {
+    // window.pwaMapFocus is published by map.js, which a cached shell can
+    // still be serving from before region() existed. The press is claimed —
+    // it WAS a focus — and moves nothing, the same answer a malformed
+    // coordinate gets.
+    delete focus.region;
+    const sheet = buildRegionSheet('CH-4242');
+
+    const answer = clickAndHandle(sheet, '[data-row-focus-region]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(answer).toBe(true);
+    expect(focus.bounds).not.toHaveBeenCalled();
+  });
+
+  it('claims a row carrying neither form without moving the map', () => {
+    // What buildRow leaves on an orphaned download bucket: no record, so no
+    // region to name and no box to frame.
+    document.body.innerHTML = `
+      <div id="sheet"><ul><li>
+        <button data-row-label data-row-focus="">basemap-pinned-abc123</button>
+      </li></ul></div>`;
+    const sheet = document.getElementById('sheet');
+    const close = vi.fn();
+
+    const answer = clickAndHandle(sheet, '[data-row-label]', {
+      overlay: stubOverlay(false),
+      close,
+    });
+
+    expect(answer).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+    expect(focus.region).not.toHaveBeenCalled();
     expect(focus.bounds).not.toHaveBeenCalled();
   });
 

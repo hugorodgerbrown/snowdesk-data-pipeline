@@ -302,6 +302,9 @@
     // from a <template> has no name at render time, so it is done here.
     'rename-row-label': 'Rename %(name)s',
     'remove-row-label': 'Remove %(name)s',
+    // SNOW-811: the row's NAME frames its area, as on the other three
+    // panels. Same reason as the two above for being interpolated here.
+    'focus-row-label': 'Zoom to %(name)s',
     // SNOW-749: an area on the account that this device does not hold.
     // The subtitle replaces the basemap name for such a row — which
     // basemap it was fetched under elsewhere is a fact about a device the
@@ -755,6 +758,72 @@
   }
 
   /**
+   * Stamp a cloned row's label with what the map should frame (SNOW-811).
+   *
+   * The row template renders the `<button>` label with an EMPTY
+   * `data-row-focus`, the same value-less-here shape the rename and delete
+   * hooks use; this fills it, per row, after the clone.
+   *
+   * Two shapes, because a downloaded area is recorded two ways. A custom
+   * area carries its own `bbox`, which is exactly what
+   * `includes/_ugc_panel_row.html`'s `focus_target` slot expects — four
+   * comma-separated ordinates, west,south,east,north. A region carries a
+   * `regionId` and NO bbox on purpose (`reconcileAreas`: its tiles come
+   * from the real boundary server-side, so a box would be a second,
+   * coarser answer), so it is stamped on `data-row-focus-region` instead
+   * and resolved against the map's own polygon at press time.
+   *
+   * `toFixed(6)` rather than plain interpolation, matching the `%f` the
+   * server's `{% focus_target %}` writes for the other three panels: six
+   * decimals is ~11cm, and a fixed shape means one attribute format for
+   * `row_focus.js` to parse whether the row came from a template or from
+   * here. (`Number.prototype.toFixed` is locale-independent — this is not
+   * the `toLocaleString` trap `map_focus.py` exists to avoid.)
+   *
+   * A row with NEITHER — an orphaned bucket (SNOW-612), which has no
+   * record left to name a region or a box — has both attributes removed,
+   * so `row_focus.js`'s `[data-row-focus]` selector does not match it and
+   * the click falls through to the other row controls. Its affordance
+   * classes go with them: a label that cannot be pressed must not look
+   * pressable. Remove is the only action an orphan gets, and that is still
+   * true.
+   *
+   * @param {HTMLElement} label The cloned row's `[data-row-label]`.
+   * @param {{label: string, orphaned?: boolean, bbox?: number[]|null,
+   *   regionId?: string}} row
+   * @returns {void}
+   */
+  function applyRowFocus(label, row) {
+    const bbox = Array.isArray(row.bbox) && row.bbox.length === 4
+      ? row.bbox
+      : null;
+    const framable = bbox
+      ? bbox.every((n) => Number.isFinite(Number(n)))
+      : Boolean(row.regionId);
+
+    if (!framable) {
+      label.removeAttribute('data-row-focus');
+      label.removeAttribute('aria-label');
+      label.classList.remove('hover-affordance');
+      return;
+    }
+
+    if (bbox) {
+      label.setAttribute(
+        'data-row-focus',
+        bbox.map((n) => Number(n).toFixed(6)).join(','),
+      );
+    } else {
+      label.removeAttribute('data-row-focus');
+      label.setAttribute('data-row-focus-region', row.regionId);
+    }
+    label.setAttribute(
+      'aria-label',
+      interpolate(STRINGS['focus-row-label'], { name: row.label }),
+    );
+  }
+
+  /**
    * Build one list row.
    *
    * SNOW-645 review: the row's title is the plain name again — no longer
@@ -800,6 +869,7 @@
         label.classList.remove('text-text-1');
         label.classList.add('text-text-2');
       }
+      applyRowFocus(label, row);
     }
 
     // The subtitle is either which basemap this was downloaded under, or
@@ -1141,6 +1211,25 @@
       // handler ever calls hide() now (see this module's header and
       // open()'s own comment for why closing no longer implies off).
       window.pwaCustomAreaDownload?.openFraming();
+      return;
+    }
+    // SNOW-811: the row's name frames its area. First of the row tests,
+    // matching the order the other three panels use — the label is the
+    // widest target on the row, so a press that IS a focus must be claimed
+    // before the action hooks are offered it.
+    //
+    // The overlay handed over is this panel's own, so a press switches the
+    // downloaded-areas squares on through the same bridge the "Display on
+    // the map" switch uses (persisting the preference), and `close` is
+    // this module's own: below `sm` the sheet covers the map, so a flight
+    // behind it would be invisible on the device most likely to be holding
+    // the panel open.
+    if (
+      window.pwaRowFocus?.handleClick(event, {
+        overlay: window.pwaDownloadedOverlay,
+        close: close,
+      })
+    ) {
       return;
     }
     if (_handleDownloadHereClick(event)) return;
