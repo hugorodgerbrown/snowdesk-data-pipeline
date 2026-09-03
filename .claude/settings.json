@@ -26,10 +26,10 @@
       "Skill(update-config)",
       "Skill(update-config:*)",
 
-      "mcp__Linear__*",
-      "mcp__claude_ai_Linear__*",
-      "mcp__Render__*",
-      "mcp__claude_ai_Render__*"
+      "mcp__Linear",
+      "mcp__claude_ai_Linear",
+      "mcp__Render",
+      "mcp__claude_ai_Render"
     ],
     "deny": [
       "Read(./.venv/**)",
@@ -51,13 +51,20 @@
       "Read(~/.claude/.credentials.json)",
       "Read(**/.env)",
 
-      "mcp__*__trigger_deploy",
-      "mcp__*__update_environment_variables",
-      "mcp__*__create_web_service",
-      "mcp__*__create_static_site",
-      "mcp__*__create_cron_job",
-      "mcp__*__create_postgres",
-      "mcp__*__create_key_value"
+      "mcp__Render__trigger_deploy",
+      "mcp__claude_ai_Render__trigger_deploy",
+      "mcp__Render__update_environment_variables",
+      "mcp__claude_ai_Render__update_environment_variables",
+      "mcp__Render__create_web_service",
+      "mcp__claude_ai_Render__create_web_service",
+      "mcp__Render__create_static_site",
+      "mcp__claude_ai_Render__create_static_site",
+      "mcp__Render__create_cron_job",
+      "mcp__claude_ai_Render__create_cron_job",
+      "mcp__Render__create_postgres",
+      "mcp__claude_ai_Render__create_postgres",
+      "mcp__Render__create_key_value",
+      "mcp__claude_ai_Render__create_key_value"
     ]
   },
   "hooks": {
