@@ -17,29 +17,32 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 
 # Write a Snowdesk help article
 
-You are writing for someone who is trying to *do something* in Snowdesk and
-cannot work out how. Not for a developer, not for a reviewer, and not for
-someone who wants to understand avalanches. Everything below follows from
-that one fact.
+You are writing for someone finding out what Snowdesk can do. Not for a
+developer, not for a reviewer, and not for someone who wants to understand
+avalanches. Everything below follows from that one fact.
 
 ## The reader
 
-A skier or ski tourer, on a phone more often than a laptop, reading either
-the night before a day out or standing at a trailhead with one glove off.
-Signal may be poor. English may be their second language — the site is
-translated, so your copy will be too. They are looking up one specific
-thing and they will stop reading the moment they think they have found it.
+Someone sitting down with the app and time to spare — exploring after signing
+up, or planning ahead of a trip. They are curious, not stuck. English may be
+their second language; the site is translated, so your copy will be too.
 
-Two consequences worth holding on to:
+**Help is read at leisure, not in the field.** If someone is looking this up
+mid-decision, something has already gone wrong: a control that can only be
+understood by reading about it is a design problem, not a documentation gap.
+When you hit one while writing, raise it as a UI finding rather than writing
+a paragraph that compensates for it.
 
-- **They scan, they don't read.** The first line of a panel has to tell them
-  whether they are in the right place. Bury the answer in paragraph three
-  and it does not exist.
-- **They are making a safety decision somewhere downstream.** That is not a
-  licence to hedge every sentence — it is a reason to be exact about what
-  the product does and does not do. "Downloads work offline" is a promise;
-  if what actually happens is that map tiles are cached but bulletins are
-  not, say that.
+That single fact settles most questions of tone:
+
+- **Simple and informative beats terse.** You are not competing with a
+  stopwatch. Explain the whole feature — what it is, how to use it, what it
+  won't do — in plain words, and don't clip a useful sentence for brevity's
+  sake.
+- **Be exact about what the product does and does not do.** "Downloads work
+  offline" is a promise; if what actually happens is that map tiles are saved
+  but bulletins are not, say that. A reader with time will notice the gap
+  later, and the whole page loses credit when they do.
 
 ## The line you must not cross
 
@@ -78,30 +81,32 @@ existing panels also carry hard-won detail in their `{% comment %}` blocks —
 live in the layers menu, which is exactly the kind of thing that sends a
 reader hunting.
 
-## Step 2 — Name the task, not the feature
+## Step 2 — One panel per feature, named for the feature
 
-Panel titles today name surfaces: "Favourites", "Layers", "Routes". That is a
-reference index and it works for someone who already knows the vocabulary.
-Steps are for someone who doesn't, and they are looking up a *task*.
+`/help/` is organised by feature — "Favourites", "Layers", "Routes" — and
+that is the right shape. Someone reading at leisure is working out what the
+product offers, and a list of features is the honest index of that. Give them
+one panel per feature, titled with the name the interface itself uses, and
+explain that feature completely inside it.
 
-You do not have to rename the panel to fix this — put the task in the first
-line:
+Resist the pull towards task- or journey-shaped articles ("Get set up for a
+day with no signal", "Plan your first tour"). They read well in isolation and
+then age badly: they duplicate each other, they leave features undocumented
+because no journey happened to touch them, and they answer a question the
+reader only has when they are already in trouble. The feature list has none
+of those problems — every feature has exactly one home, and coverage is
+checkable.
 
-> **Favourites**
-> Pin a spot you ski often so you can jump straight to its bulletin.
+So when a feature is used in more than one way, both ways go in its panel.
+When two features genuinely relate — Downloads and Install, say — each panel
+explains itself and links to the other. A new panel is for a new feature, not
+for a new combination of existing ones.
 
-If the task genuinely spans two panels — "get set up for a day with no
-signal" touches Downloads, Favourites and Install — do not smear it across
-three panels or invent a fourth. Write it in the panel where the work starts,
-and cross-link. Whether Snowdesk grows standalone `/help/<slug>/` article
-pages is an open product decision; write so that lifting an article out later
-is a copy-paste, not a rewrite.
+## Step 3 — The shape of a panel
 
-## Step 3 — The shape of an article
+Four parts, in this order.
 
-Four parts, in this order. It maps onto how someone in a hurry reads.
-
-1. **Orientation — one sentence.** What this does and why you'd want it.
+1. **Orientation — one sentence.** What the feature is and what it is for.
    No preamble, no "Snowdesk allows you to".
 2. **Preconditions, if any — one short sentence.** "You need to be signed in."
    Before the steps, never as step zero.
@@ -120,8 +125,8 @@ Each step is one action, starting with the verb, naming the control by its
 visible label, and saying what happens.
 
 > 1. Sign in, then tap the star button on the right of the map.
-> 2. Choose **Add a favourite**. The map moves under a fixed pin, so you can
->    place it one-handed.
+> 2. Choose **Add a favourite**. A pin appears in the centre and stays there
+>    while the map moves beneath it, so you aim by moving the map.
 > 3. Drag the map until the pin sits where you want it, then tap **Save**.
 > 4. Give it a name and tap **Done**. It appears in the list below, and on the
 >    map once **Display on the map** is on.
@@ -141,8 +146,8 @@ What that example is doing, and why:
 - **Sequential only.** If the order doesn't matter it isn't steps — it's a
   list of things you can do, and it should read as prose.
 
-Keep it to four or five steps. Longer than that usually means two tasks, or a
-UI problem you are papering over.
+Keep it to four or five steps. Longer than that usually means two features
+that want separate panels, or a UI problem you are papering over.
 
 ## Step 5 — The words themselves
 
@@ -207,11 +212,12 @@ commit prefixed with the ticket, a PR. If there is a scoped ticket, use the
 
 ## Things that look like help and aren't
 
-- **A description of a feature.** "The layers menu lets you control which
-  data appears on the map" tells someone who already found the menu what they
-  already know.
-- **A tour of the UI.** Screens in layout order rather than tasks in the order
-  someone does them.
+- **A definition with no instructions.** "The layers menu lets you control
+  which data appears on the map" names the feature and stops. Naming it is
+  the first sentence, not the whole panel — say how to use it and what it
+  won't do.
+- **A tour of the UI.** Controls listed in the order they appear on screen,
+  with no account of what any of them is for.
 - **Release notes.** "New in this version" is not help; it is dated the moment
   it ships.
 - **Reassurance instead of information.** "Don't worry, it's easy!" costs a
