@@ -16,6 +16,8 @@ Covers:
     "help/routes/" matches that two-segment shape too, so registration order
     is load-bearing and silently reversible in a refactor.
   * Every section of the Routes article renders.
+  * The routes panel illustration renders, and renders inert: it is the real
+    panel with real controls, and a help page wires none of them.
   * The Routes FAQ panel links to the article. The pair is the point: a link
     dropped in a refactor leaves two help surfaces that no longer know about
     each other, which is how the panels and the map's coachmark tour drifted
@@ -33,11 +35,12 @@ from django.urls import resolve, reverse
 
 # Each section of the Routes article, by the testid its <section> carries.
 ROUTES_SECTION_TESTIDS = [
-    "help-article-routes-what",
+    "help-article-routes-lead",
     "help-article-routes-where",
     "help-article-routes-how",
-    "help-article-routes-sharing",
-    "help-article-routes-limits",
+    "help-article-routes-popup",
+    "help-article-routes-row",
+    "help-article-routes-notes",
 ]
 
 
@@ -74,6 +77,40 @@ class TestRoutesArticle:
 
         assert f'data-testid="{testid}"'.encode() in response.content, testid
 
+    def test_illustrates_the_routes_panel_inertly(self, client: Client) -> None:
+        """The article shows the real panel, dead to the keyboard and to AT.
+
+        The wrapper is includes/_help_illustration.html; ``inert`` is what
+        keeps the panel's real buttons out of the tab order, and the rows
+        carry the real action cluster, so the Remove form's presence is the
+        proof the cluster rendered.
+        """
+        content = client.get(reverse("public:help_article", args=["routes"])).content
+
+        assert b'data-testid="help-article-routes-panel-illustration"' in content
+        wrapper_start = content.index(
+            b'data-testid="help-article-routes-panel-illustration"'
+        )
+        tag = content[content.rfind(b"<div", 0, wrapper_start) : wrapper_start]
+        assert b"inert" in tag
+        assert b'aria-hidden="true"' in tag
+        assert b"data-row-remove" in content
+
+    def test_illustrates_the_popup_with_a_profile(self, client: Client) -> None:
+        """The popup illustration carries a drawn profile and the timings note.
+
+        The chart is the mirror of the JavaScript-built popup, so the thing
+        to pin is that its path data made it into the page: an empty
+        ``paths`` list would render the popup's text with a bare baseline
+        and nothing would fail.
+        """
+        content = client.get(reverse("public:help_article", args=["routes"])).content
+
+        assert b'data-testid="help-article-routes-popup-illustration"' in content
+        assert b'class="mt-1.5 block h-auto w-full text-route-line"' in content
+        assert b'fill-opacity="0.16"' in content
+        assert b'data-testid="help-article-routes-timings"' in content
+
     def test_says_where_to_find_routes_in_both_places(self, client: Client) -> None:
         """Both places a reader can find their routes are named.
 
@@ -90,9 +127,19 @@ class TestRoutesArticle:
     def test_issues_no_queries(
         self, client: Client, django_assert_num_queries: pytest.FixtureRequest
     ) -> None:
-        """An article is static text and must not touch the ORM."""
+        """An article is static text and must not touch the ORM.
+
+        The illustrations are in-memory contexts, and the row illustration's
+        Remove form takes the request's CSRF token — a cookie read, not a
+        query. The first request is a warm-up outside the window: the CSP
+        middleware fills its rule cache with one query on a cold worker, and
+        that query is not this page's — see the same pattern on
+        ``test_help_page_issues_no_queries``.
+        """
+        url = reverse("public:help_article", args=["routes"])
+        client.get(url)
         with django_assert_num_queries(0):  # type: ignore[operator]
-            client.get(reverse("public:help_article", args=["routes"]))
+            client.get(url)
 
 
 @pytest.mark.django_db

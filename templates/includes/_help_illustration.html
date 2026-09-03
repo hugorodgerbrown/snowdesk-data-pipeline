@@ -1,0 +1,53 @@
+{% comment %}
+templates/includes/_help_illustration.html — the wrapper a help surface puts a
+live illustration in (SNOW-744; extracted when the first article needed it).
+
+Renders a REAL component from a synthetic context — see
+docs/decisions/help-illustrations-are-live-mocks.md — as decoration beside
+prose that has to stand on its own. Two callers: includes/_collapsible_panel.html
+for the /help/ FAQ panels, and the long-form articles under
+public/help/articles/.
+
+`inert` is doing the load-bearing work here, not aria-hidden. These
+illustrations render real components, so each contains real switches,
+buttons and a close X — all focusable, and all of them dead, because nothing
+binds a listener to them on a help page. aria-hidden alone would leave them
+in the tab order, which is the classic focusable-inside-aria-hidden fault: a
+keyboard user tabs into a control a screen reader has just been told is not
+there. `inert` takes them out of the tab order, drops them from the
+accessibility tree and swallows clicks, so the X cannot be pressed either.
+aria-hidden stays beside it for anything that does not honour inert.
+
+`overflow-x-auto` because the heatmap is wider than a phone and must scroll
+inside its own box rather than widening the page.
+
+Parameters (passed via {% include … with … %}):
+  illustration (string) — template path rendered inside the wrapper. It is
+                 included with the caller's full context, so whatever the
+                 illustration reads (``panel``, ``season_calendar``, …) has
+                 to be in scope at the call site.
+  data_testid  (string, optional) — testid stem; the wrapper carries
+                 ``<data_testid>-illustration``, the hook the help tests
+                 assert on.
+  framed       (bool, optional) — draw the wrapper as a card (surface,
+                 hairline, card radius) rather than as a recessed well. The
+                 FAQ panels sit on a card already, so their well is the page
+                 colour; an article sits on the page, where the same well
+                 would vanish into it.
+  width        (string, optional) — hold the illustration to the width the
+                 reader will meet it at, centred: ``"sheet"`` for a map
+                 panel, ``"popup"`` for a map popup. A panel drawn across a
+                 whole article column is not the panel they will see; the
+                 heatmap and the bulletin blocks are as wide as their surface
+                 and omit this.
+{% endcomment %}
+<div
+    class="mb-4 overflow-x-auto {% if framed %}rounded-card border border-border bg-card p-4{% else %}rounded-sm bg-bg p-3{% endif %}"
+    inert
+    aria-hidden="true"
+    {% if data_testid %}data-testid="{{ data_testid }}-illustration"{% endif %}
+>
+    <div class="{% if width == 'sheet' %}mx-auto max-w-sm{% elif width == 'popup' %}mx-auto max-w-xs{% endif %}">
+        {% include illustration %}
+    </div>
+</div>
