@@ -215,6 +215,16 @@ class LocationWeatherSitemap(Sitemap):
     inside the page, not a different page
     (``docs/decisions/weather-day-picker-is-a-selector-not-navigation.md``),
     the same convention as ``BulletinSitemap``'s today-only entries.
+
+    A location with no ``short_id`` is excluded (SNOW-810). It has no
+    address — ``get_absolute_url`` answers "" for it — and Django's
+    ``Sitemap`` interpolates that answer into ``protocol://domain`` with no
+    check, so listing one would publish a bare-domain entry as though it
+    were a page. Before this exclusion the empty answer did not arise:
+    ``get_absolute_url`` raised ``NoReverseMatch`` instead, and the whole
+    of ``/sitemap.xml`` was a 500 in any environment between the SNOW-797
+    migration and its backfill. Filtering here rather than trusting the
+    backfill keeps that window a smaller sitemap instead of no sitemap.
     """
 
     changefreq = "daily"
@@ -227,6 +237,8 @@ class LocationWeatherSitemap(Sitemap):
         Annotated with the newest ``fetched_at`` across the location's
         weather rows so ``lastmod()`` reads it without a query per row.
 
+        Rows with no ``short_id`` are excluded — see the class docstring.
+
         Returns:
             A queryset of ``Location`` instances annotated with
             ``latest_weather_fetched_at``.
@@ -235,6 +247,7 @@ class LocationWeatherSitemap(Sitemap):
         return (
             Location.objects.public()
             .named()
+            .exclude(short_id__isnull=True)
             .annotate(latest_weather_fetched_at=Max("weather__fetched_at"))
             .distinct()
             .order_by("id")
