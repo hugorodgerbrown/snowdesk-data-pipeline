@@ -1,0 +1,43 @@
+{% comment %}
+apps/public/templates/public/help/articles/_routes_notes.html — the "good to
+know" notes of the Routes article.
+
+The <li> items for includes/_help_steps.html in its bulleted form. Each is one
+fact a reader is glad to have and none is a step: privacy, what works
+offline, the two caps, thinning, and where to fix a file first. Same file
+arrangement as _routes_steps.html, for the same translation reason.
+
+The caps carry no numbers: ROUTES_MAX_PER_USER and ROUTE_UPLOAD_MAX_BYTES
+are env-overridable, so a figure here would be a claim the page cannot keep
+true. The editor is not named or linked either — the FAQ panel does that,
+and one link to a third party is enough.
+{% endcomment %}
+{% load i18n %}
+<li data-testid="help-article-routes-private">
+    {% blocktrans trimmed %}
+        Routes are private. Nothing is published, and nobody sees one unless you send them its link.
+    {% endblocktrans %}
+</li>
+<li data-testid="help-article-routes-offline">
+    {% blocktrans trimmed %}
+        Once loaded on a device, the lines stay on the map without a connection. The list in the panel needs one, and
+        says so.
+    {% endblocktrans %}
+</li>
+<li>
+    {% blocktrans trimmed %}
+        There is a limit on the size of one file and on how many routes an account keeps. The panel tells you when you
+        reach either.
+    {% endblocktrans %}
+</li>
+<li>
+    {% blocktrans trimmed %}
+        A very long track is thinned before it is stored. Its shape, distance and profile are kept.
+    {% endblocktrans %}
+</li>
+<li>
+    {% blocktrans trimmed %}
+        The file you exported is not always the file you want on the map. The panel points you at a free browser tool
+        for cropping or splitting a track first.
+    {% endblocktrans %}
+</li>

@@ -1,0 +1,45 @@
+{% comment %}
+public/help/illustrations/_route_popup.html — the route popup, for the
+Routes article.
+
+THE ONE ILLUSTRATION THAT IS NOT A REAL PARTIAL, and why. The popup a tap
+on a route opens is assembled in JavaScript — map.js's ``activateRoute``
+builds the title, the figures line and the caption, and
+static/js/elevation_profile_core.js's ``createProfileSvg`` draws the chart —
+so there is no server template to include. This file mirrors that markup,
+class for class and attribute for attribute, and takes its path data from
+the Python port of the chart's projection in
+apps.public.component_previews. Change one and change the other.
+
+Not the popup's chrome (the box, its arrow, its close X): those are
+MapLibre's and static/css/map.css's, which a help page does not load. The
+framed wrapper this sits in stands in for the box, at the popup's own
+width.
+
+The <svg> is aria-hidden here where the real one has a label: the wrapper
+already hides the whole illustration from assistive technology, and a
+labelled image inside a hidden block is a contradiction.
+
+Context expected:
+  route_popup — component_previews._ROUTE_POPUP: ``name``, ``meta``,
+                ``caption`` and ``paths`` (line/area ``d`` strings).
+{% endcomment %}
+<div class="mx-auto max-w-xs">
+    <div class="text-sm font-semibold text-text-1">{{ route_popup.name }}</div>
+    <div class="mt-0.5 text-xs text-text-2">{{ route_popup.meta }}</div>
+    <svg viewBox="0 0 288 72" class="mt-1.5 block h-auto w-full text-route-line" aria-hidden="true">
+        <line x1="0" x2="288" y1="66" y2="66" stroke="currentColor" stroke-width="1" class="text-border" />
+        {% for path in route_popup.paths %}
+            <path d="{{ path.area }}" fill="currentColor" fill-opacity="0.16" stroke="none" />
+            <path
+                d="{{ path.line }}"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+            />
+        {% endfor %}
+    </svg>
+    <div class="text-xs text-text-3">{{ route_popup.caption }}</div>
+</div>

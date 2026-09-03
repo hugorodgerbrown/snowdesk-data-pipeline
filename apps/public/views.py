@@ -1246,6 +1246,43 @@ def help_page(request: HttpRequest) -> HttpResponse:
     return render(request, "public/help.html", context)
 
 
+#: Slug → template for every published help article. A slug that is absent
+#: here 404s, so this mapping — not the presence of a file on disk — is what
+#: publishes an article.
+HELP_ARTICLES = {
+    "routes": "public/help/articles/routes.html",
+}
+
+
+def help_article(request: HttpRequest, slug: str) -> HttpResponse:
+    """
+    Render one long-form help article.
+
+    The companion to ``help_page``: that view renders the FAQ accordion, which
+    answers a question in a few paragraphs; these pages walk a reader through
+    one feature. Both are static text and neither touches the ORM — a property
+    each has its own test for. Both render the live illustrations from
+    ``apps.public.component_previews``.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article's URL slug, looked up in ``HELP_ARTICLES``.
+
+    Returns:
+        The rendered article page.
+
+    Raises:
+        Http404: If the slug names no published article.
+
+    """
+    template = HELP_ARTICLES.get(slug)
+    if template is None:
+        raise Http404(f"No help article for slug {slug!r}")
+    # The same illustration context the FAQ gets, so an article can show
+    # any surface /help/ can. Built in memory: still no queries.
+    return render(request, template, help_illustrations())
+
+
 def observations_list(request: HttpRequest) -> HttpResponse:
     """
     Render the /observations page — a signed-in stream of recent reports.

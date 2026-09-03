@@ -1,0 +1,181 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/public/templates/public/help/articles/routes.html — "Routes" help article.
+
+The first long-form help article, and THE TEMPLATE FOR THE ONES THAT FOLLOW:
+copy its skeleton, not its words. Companion to the FAQ panel at
+public/help/_topic_routes.html, which stays the short answer; this page is
+the walkthrough. Every claim here has to agree with that panel, and the
+panel's own copy is untouched apart from the one link it now carries here.
+
+THE SKELETON. A title and a one-line lead; then sections, each a real <h2>
+over at most a few short paragraphs, a list, or an illustration; then the
+link back to /help/. `legal-prose` is the site's long-form document style
+(the colophon, the terms) — it sizes the section prose and the h2, so a
+section carries no class of its own. `max-w-narrow` keeps the measure
+readable; the page shell's default width is for pages with panels in them.
+
+WHAT GOES WHERE. Prose for the shape of a thing; numbered steps
+(includes/_help_steps.html) for something done in order; bullets (the same
+partial, `unordered`) for facts with no order; a definition list for a row of
+controls, each named and given one line. One illustration per surface the
+reader has to recognise, through includes/_help_illustration.html — a live
+mock of the real partial, never a screenshot
+(docs/decisions/help-illustrations-are-live-mocks.md). The illustration is
+inert and hidden from assistive technology, so the prose beside it has to
+stand alone: nothing here says "as shown".
+
+LENGTH. Around three hundred words. The first draft was twice that and read
+as a wall; what it lost was repetition of the FAQ panel, not facts.
+
+Brief: "what they are, how they work, where to find them". "What they are" is
+the lead line. "Where to find them" comes before "how they work" because the
+steps start by tapping a control the reader has to be able to find first.
+
+Two things this page carries that the panel does not, both verified against
+the running app rather than the templates:
+
+  * The routes button's accessible name is "Your routes", not "Routes" —
+    #route-add-btn in public/partials/_map_embed.html.
+  * /account/routes/ is view-and-manage only. It renders
+    includes/_ugc_panel_row.html rather than includes/_ugc_panel.html, so it
+    has no "Add a route" control: uploading happens from the map panel alone.
+    A reader who goes to the Routes page to add their first route finds
+    nothing to press, which is why this page says where uploading lives.
+
+The routes roundel itself is not illustrated: its circle is styled from
+static/css/map.css, which this page does not load. The panel's header carries
+the same glyph, which is how the reader matches one to the other. The popup
+IS illustrated, though it is built in JavaScript rather than by a partial:
+illustrations/_route_popup.html mirrors that markup, with the chart's
+geometry from a Python port of the projection — the one illustration that
+is a mirror rather than an include, and its header says so.
+{% endcomment %}
+{% load i18n components %}
+
+{% block page_meta %}
+    {% trans "Routes" as page_name %}
+    {% trans "How routes work in Snowdesk: upload a GPX track, draw it on the map beside the avalanche picture, rename, share or remove it." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes 'legal-prose max-w-narrow' %}">
+        {% trans "Routes" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="help-article-heading" %}
+        <p class="mb-8 text-base leading-prose text-text-2" data-testid="help-article-routes-lead">
+            {% blocktrans trimmed %}
+                Your own GPX tracks, drawn on the map beside the avalanche picture.
+            {% endblocktrans %}
+        </p>
+
+        <section data-testid="help-article-routes-where">
+            <h2>{% trans "Where to find them" %}</h2>
+            {% include "includes/_help_illustration.html" with illustration="public/help/illustrations/_panel.html" panel=panels.routes rows_template="public/help/illustrations/_routes_rows.html" framed=True width="sheet" data_testid="help-article-routes-panel" %}
+            <p class="mb-3 last:mb-0" data-testid="help-article-routes-where-map">
+                {% blocktrans trimmed %}
+                    On the map, the routes button in the column on the right opens the Routes panel: your routes, an
+                    "Add a route" button, and a "Display on the map" switch that draws them all.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0" data-testid="help-article-routes-where-page">
+                {% blocktrans trimmed %}
+                    "Routes" in the account menu opens the same list as a full page. You can rename, remove and share
+                    from there; adding a route is done from the map panel.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section data-testid="help-article-routes-how">
+            <h2>{% trans "Adding a route" %}</h2>
+            {% include "includes/_help_steps.html" with body_template="public/help/articles/_routes_steps.html" %}
+        </section>
+
+        <section data-testid="help-article-routes-popup">
+            <h2>{% trans "On the map" %}</h2>
+            {% include "includes/_help_illustration.html" with illustration="public/help/illustrations/_route_popup.html" framed=True width="popup" data_testid="help-article-routes-popup" %}
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    Tap a line for the route's popup: its name, its figures, an elevation profile of the whole track,
+                    and how long it took.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3 last:mb-0" data-testid="help-article-routes-timings">
+                {% blocktrans trimmed %}
+                    Heights and times come from the file, so a track recorded without heights shows no profile rather
+                    than a flat one, and one without times shows no duration. If your app offers to export a "Route" or
+                    a "Workout", choose the workout &mdash; a route is the line alone, and a workout carries the times.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section data-testid="help-article-routes-row">
+            <h2>{% trans "On each row" %}</h2>
+            {# The three controls a row carries, in the order the row draws them — #}
+            {# routes/partials/_route_row_actions.html: Share first, trash last.   #}
+            {# The glyph beside each name is the same include the row uses, so    #}
+            {# the reader matches a control by its mark and not by a description. #}
+            <dl class="mb-4 last:mb-0 space-y-3">
+                <div class="flex gap-3">
+                    <span
+                        class="mt-0.5 shrink-0 text-text-2"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_share.html" only %}</span>
+                    <div>
+                        <dt class="font-medium text-text-1">{% trans "Share" %}</dt>
+                        <dd data-testid="help-article-routes-share">
+                            {% blocktrans trimmed %}
+                                A link to send someone. They see the route on their map and can save their own copy,
+                                before or after signing in; their copy and yours never affect each other. The link lasts
+                                a few weeks, and stops working if you remove the route.
+                            {% endblocktrans %}
+                        </dd>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <span
+                        class="mt-0.5 shrink-0 text-text-2"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_pencil.html" only %}</span>
+                    <div>
+                        <dt class="font-medium text-text-1">{% trans "Rename" %}</dt>
+                        <dd>
+                            {% blocktrans trimmed %}
+                                Edits the name in place.
+                            {% endblocktrans %}
+                        </dd>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <span
+                        class="mt-0.5 shrink-0 text-text-2"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_trash.html" only %}</span>
+                    <div>
+                        <dt class="font-medium text-text-1">{% trans "Remove" %}</dt>
+                        <dd>
+                            {% blocktrans trimmed %}
+                                Deletes the route. Removing needs a connection, as do uploading and renaming.
+                            {% endblocktrans %}
+                        </dd>
+                    </div>
+                </div>
+            </dl>
+        </section>
+
+        <section data-testid="help-article-routes-notes">
+            <h2>{% trans "Good to know" %}</h2>
+            {% include "includes/_help_steps.html" with body_template="public/help/articles/_routes_notes.html" unordered=True %}
+        </section>
+
+        <p class="text-sm leading-prose text-text-2" data-testid="help-article-routes-back">
+            {% url 'public:help' as help_url %}
+            {% blocktrans trimmed %}
+                More about the rest of Snowdesk is on the <a
+                    href="{{ help_url }}"
+                    class="text-status-info-text underline"
+                >help page</a>.
+            {% endblocktrans %}
+        </p>
+    </main>
+{% endblock content %}

@@ -1,8 +1,8 @@
 ---
 name: worktrees
-description: init-worktree seed recipe, sync_waffle_flags step, dev credentials, seed_test_data coverage, reseed procedure, shell-cache bypass toggle
+description: init-worktree seed recipe, dev credentials, seed_test_data coverage, seed_test_week, seed_test_routes, reseed procedure
 status: current
-last-reviewed: 2026-08-02
+last-reviewed: 2026-09-03
 ---
 
 # Worktrees and DB seeding
@@ -244,6 +244,26 @@ be made against a flat `moderate` blob.
 It writes to different dates than the factory dataset (February rather than
 April), so the two coexist in one database without colliding. Full command
 reference: [`docs/management-commands.md`](management-commands.md#seed_test_week--load-the-golden-week-of-real-bulletins).
+
+### Routes for the dev user (opt-in)
+
+Neither dataset above creates a `Route`, so the map's routes panel,
+`/account/routes/` and the share flow all render empty. To see them with
+content, seed the two bundled GPX fixtures onto the normal dev user:
+
+```bash
+uv run python manage.py seed_test_routes --commit
+```
+
+One track (Mont Fort from Les Ruinettes) carries elevation and timestamps,
+so its row shows ascent and its popup draws a profile; the other (Col des
+Mines traverse) carries neither, which is the no-profile case
+[`/help/routes/`](../apps/public/templates/public/help/articles/routes.html)
+describes. Both sit inside CH-4115, where the dev user is already looking.
+It is not part of `bin/init-worktree` or `seed_test_data` on purpose: those
+build the query-count baseline dataset, and it must not grow to suit a
+manual look at one panel. Command reference:
+[`docs/management-commands.md`](management-commands.md#development--one-shot-setup-commands).
 
 ### Changing the dataset
 

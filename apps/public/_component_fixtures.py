@@ -811,6 +811,55 @@ COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# ── Help steps ──────────────────────────────────────────────────────────────
+# One variant, and one is enough: the partial has a single parameter and a
+# single state. The body is the REAL steps from the Routes help article rather
+# than invented lorem — the library's job here is to show what a step list
+# looks like at the length articles actually use it, and four short imperative
+# sentences is that length.
+
+HELP_STEPS_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Four steps",
+        "context": {"body_template": "public/help/articles/_routes_steps.html"},
+    },
+    {
+        "caption": "Bulleted notes",
+        "context": {
+            "body_template": "public/help/articles/_routes_notes.html",
+            "unordered": True,
+        },
+    },
+)
+
+
+# ── Help illustration ───────────────────────────────────────────────────────
+# The wrapper alone, around the smallest component that shows it is there.
+# The real illustrations need the synthetic contexts in
+# apps.public.component_previews, which this module does not import — see
+# docs/decisions/help-illustrations-are-live-mocks.md for the boundary.
+
+HELP_ILLUSTRATION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Recessed well (FAQ panel)",
+        "context": {
+            "illustration": "includes/_eyebrow.html",
+            "text": "A live component renders here",
+            "data_testid": "demo-well",
+        },
+    },
+    {
+        "caption": "Framed (article)",
+        "context": {
+            "illustration": "includes/_eyebrow.html",
+            "text": "A live component renders here",
+            "framed": True,
+            "data_testid": "demo-framed",
+        },
+    },
+)
+
+
 # ── Form field (SNOW-672) ───────────────────────────────────────────────────
 # A real Django form rather than a SimpleNamespace, because the partial
 # renders the widget: ``{{ field }}`` has to produce an <input>, not a repr.

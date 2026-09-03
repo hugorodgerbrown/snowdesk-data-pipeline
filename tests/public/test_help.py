@@ -418,7 +418,15 @@ class TestHelpIllustrations:
         The season grid is the one that could regress: the real builder
         reads RegionDayRating, and a future edit that reached for it
         instead of the synthetic cells would put a query on a static page.
+
+        The first request is a warm-up and is outside the window. Two
+        middleware-level caches fill on a cold worker — django-csp-plus's
+        rule policy and waffle's ``sync_log`` flag — and each fills with a
+        query that is not this page's. Asserting on the first request made
+        the test a claim about which test ran first in the xdist worker: it
+        held for weeks and failed the day a sibling file gained a test.
         """
+        client.get(reverse("public:help"))
         with django_assert_num_queries(0):
             client.get(reverse("public:help"))
 

@@ -1,0 +1,31 @@
+{% load i18n %}
+{% comment %}
+public/help/illustrations/_routes_rows.html — the rows slot for the Routes
+article's panel illustration.
+
+The sibling of _panel_rows.html, which every FAQ panel shares and which
+renders a row as label + meta and nothing else. The article explains what the
+three controls on a row do, so its rows have to show them: each row here
+takes the REAL action cluster — routes/partials/_route_row_actions.html,
+Share then Rename then Remove — exactly as the map's routes panel renders it.
+
+``route=row`` because that cluster addresses its Remove form by
+``route.uuid``; the rows in component_previews carry a uuid for that reason
+and no other. Nothing can post to it: the wrapper this sits in is inert.
+
+``csrf_token="NOTPROVIDED"`` is Django's own sentinel for "no token here" —
+what RequestContext carries when the CSRF middleware is not in play — and
+the token tag renders nothing for it, without the warning an absent value
+logs. The real value is a lazy read of the session (CSRF_USE_SESSIONS), and
+that read is a query; a help page issues none, and a decoration has no use
+for a token.
+
+Context expected:
+  panel — component_previews._PANELS["routes"].
+{% endcomment %}
+{% trans "Route name" as rename_label %}
+<ul class="flex flex-col">
+    {% for row in panel.rows %}
+        {% include "includes/_ugc_panel_row.html" with label=row.label meta=row.meta renameable=True rename_label=rename_label actions_template="routes/partials/_route_row_actions.html" route=row sharing_enabled=True csrf_token=csrf_token only %}
+    {% endfor %}
+</ul>
