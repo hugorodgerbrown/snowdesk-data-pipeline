@@ -742,7 +742,7 @@
     if (!star) return;
     event.preventDefault();
 
-    const resortId = star.dataset.resortId;
+    const resortSlug = star.dataset.resortSlug;
     const lat = parseFloat(star.dataset.resortLat);
     const lon = parseFloat(star.dataset.resortLon);
     const name = star.dataset.resortName || '';
@@ -760,7 +760,7 @@
 
       const body = new URLSearchParams({
         csrfmiddlewaretoken: getCsrfToken(),
-        resort_id: resortId,
+        resort_slug: resortSlug,
       }).toString();
 
       window.pwaMutationQueue

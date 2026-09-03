@@ -139,6 +139,10 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     coordinates (46.1, 7.4) plus ``geocode_source="MANUAL"``, so
     ``ResortFactory.create(geocoded=True)`` builds a resort that
     ``Resort.objects.geocoded()`` can pick up.
+
+    ``slug`` is deliberately not declared here: ``Resort.save()`` mints it
+    from ``name`` (SNOW-796), and a test that creates two resorts with the
+    same name gets ``-2`` suffixed rather than an IntegrityError.
     """
 
     class Meta:

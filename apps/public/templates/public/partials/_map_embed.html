@@ -82,11 +82,11 @@ Optional context:
     {# SNOW-801: read by map_region_panel.js for the region panel's resorts.  #}
     data-resorts-by-region-url="{% url 'api:resorts_by_region' %}"
     {# SNOW-499: resort-pin popup URL — public endpoint, always emitted. #}
-    {# The '0' resort_id is a placeholder the JS string-replaces with the  #}
-    {# tapped resort's real id before each fetch (mirrors the region-      #}
-    {# summary 'XX-0000' token above; a literal string placeholder isn't   #}
-    {# possible here since the URL uses an <int:resort_id> converter).     #}
-    data-resort-popup-url="{% url 'api:resort_popup' resort_id=0 %}"
+    {# '__SLUG__' is a placeholder the JS string-replaces with the tapped   #}
+    {# resort's slug before each fetch (mirrors the region-summary         #}
+    {# 'XX-0000' token above). The slug is the resorts feed's ``id``       #}
+    {# (SNOW-796) — no integer key reaches the page.                       #}
+    data-resort-popup-url="{% url 'api:resort_popup' slug='__SLUG__' %}"
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     {% if favourites_eligible %}data-favourites-url="{{ favourites_geojson_url }}"{% endif %}

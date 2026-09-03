@@ -163,7 +163,7 @@ class ResortSitemap(Sitemap):
             item: A ``Resort`` instance from ``items()``.
 
         Returns:
-            The path string (e.g. ``"/resorts/109/adelboden/"``).
+            The path string (e.g. ``"/resorts/adelboden/"``).
 
         """
         return item.get_absolute_url()

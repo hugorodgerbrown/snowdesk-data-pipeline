@@ -898,7 +898,7 @@ def test_resort_popup_returns_html_for_known_resort() -> None:
     )
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     data = response.json()
@@ -916,7 +916,7 @@ def test_resort_popup_cta_links_to_resort_page() -> None:
     )
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -927,10 +927,24 @@ def test_resort_popup_cta_links_to_resort_page() -> None:
 
 @pytest.mark.django_db
 def test_resort_popup_unknown_resort_returns_404() -> None:
-    """An unknown resort_id returns 404."""
+    """An unknown slug returns 404."""
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[999999]))
+    response = client.get(reverse("api:resort_popup", args=["nowhere"]))
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_resorts_geojson_id_is_the_slug_not_the_pk() -> None:
+    """The feed is public and cacheable, so ``id`` is the slug (SNOW-796)."""
+    region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+    resort = ResortFactory.create(
+        region=region, name="Crans-Montana", latitude=46.3, longitude=7.5
+    )
+
+    data = Client().get(reverse("api:resorts_geojson")).json()
+
+    assert [f["properties"]["id"] for f in data["features"]] == ["crans-montana"]
+    assert str(resort.pk) not in {f["properties"]["id"] for f in data["features"]}
 
 
 @pytest.mark.django_db
@@ -939,7 +953,7 @@ def test_resort_popup_anonymous_shows_signin_cta_no_star() -> None:
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -955,7 +969,7 @@ def test_resort_popup_authenticated_not_favourited_shows_star() -> None:
 
     client = Client()
     client.force_login(user)
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -977,7 +991,7 @@ def test_resort_popup_authenticated_already_favourited_shows_saved_state() -> No
 
     client = Client()
     client.force_login(user)
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -991,7 +1005,7 @@ def test_resort_popup_not_cached() -> None:
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert "public" not in response.get("Cache-Control", "")
 
@@ -1018,7 +1032,7 @@ def test_resort_popup_populated_metadata_renders_values() -> None:
     )
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1040,7 +1054,7 @@ def test_resort_popup_blank_metadata_anonymous_shows_em_dash_placeholder() -> No
     resort = ResortFactory.create(latitude=46.1, longitude=7.4)
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1058,7 +1072,7 @@ def test_resort_popup_blank_metadata_staff_shows_curation_hints() -> None:
 
     client = Client()
     client.force_login(staff_user)
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1079,7 +1093,7 @@ def test_resort_popup_blank_metadata_non_staff_shows_em_dash_placeholder() -> No
 
     client = Client()
     client.force_login(user)
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1094,7 +1108,7 @@ def test_resort_popup_zero_lifts_renders_zero_not_placeholder() -> None:
     resort = ResortFactory.create(latitude=46.1, longitude=7.4, num_lifts=0)
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -1119,7 +1133,7 @@ def test_resort_popup_unparseable_season_half_shows_placeholder() -> None:
     )
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     assert response.status_code == 200
     html = response.json()["html"]
@@ -2716,7 +2730,7 @@ def test_resort_popup_renders_why_it_matters_line() -> None:
     )
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     html = response.json()["html"]
     assert 'data-testid="resort-why-it-matters"' in html
@@ -2732,7 +2746,7 @@ def test_resort_popup_blank_why_it_matters_anonymous_prompts_register() -> None:
     resort = ResortFactory.create(name="Haldigrat", latitude=46.1, longitude=7.4)
 
     client = Client()
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     html = response.json()["html"]
     assert 'data-testid="resort-why-it-matters-signup"' in html
@@ -2747,7 +2761,7 @@ def test_resort_popup_blank_why_it_matters_staff_shows_curation_hint() -> None:
 
     client = Client()
     client.force_login(UserFactory.create(is_staff=True))
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     html = response.json()["html"]
     assert 'data-testid="resort-why-it-matters-hint"' in html
@@ -2762,7 +2776,7 @@ def test_resort_popup_blank_why_it_matters_signed_in_renders_nothing() -> None:
 
     client = Client()
     client.force_login(UserFactory.create(is_staff=False))
-    response = client.get(reverse("api:resort_popup", args=[resort.pk]))
+    response = client.get(reverse("api:resort_popup", args=[resort.slug]))
 
     html = response.json()["html"]
     assert "resort-why-it-matters" not in html

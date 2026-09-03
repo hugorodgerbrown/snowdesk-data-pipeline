@@ -8,7 +8,7 @@ swallow this prefix).
 URL structure:
   favourites/partials/create/               POST — save a new favourite
   favourites/partials/resort/create/        POST — save a resort favourite (SNOW-499)
-  favourites/partials/resort/<id>/toggle/    POST — toggle a resort favourite,
+  favourites/partials/resort/<slug>/toggle/  POST — toggle a resort favourite,
                                              online-only (SNOW-504)
   favourites/partials/<uuid>/rename/         POST — rename a favourite
   favourites/partials/<uuid>/delete/         POST — delete a favourite
@@ -36,7 +36,7 @@ urlpatterns = [
         name="resort_create",
     ),
     path(
-        "partials/resort/<int:resort_id>/toggle/",
+        "partials/resort/<slug:slug>/toggle/",
         views.favourite_resort_toggle,
         name="resort_toggle",
     ),

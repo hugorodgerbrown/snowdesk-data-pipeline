@@ -717,6 +717,19 @@ class Resort(BaseModel):
         MINOR = "MINOR", "Minor"
 
     name = models.CharField(max_length=255)
+    slug = models.SlugField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=(
+            "URL identifier — /resorts/<slug>/ — and the id resorts.geojson "
+            "emits (SNOW-796). Minted from the name the first time the row is "
+            "saved and NEVER regenerated on rename: the resort page is an "
+            "indexed landing page, so a changed slug is a broken URL. Null "
+            "only on a row backfill_resort_slugs has not reached yet."
+        ),
+    )
     kind = models.CharField(
         max_length=20,
         choices=Kind.choices,
@@ -835,24 +848,51 @@ class Resort(BaseModel):
         """Return a concise canonical string (name + region_id)."""
         return f"{self.name} ({self.region.region_id})"
 
-    @property
-    def name_slug(self) -> str:
-        """Slugified resort name for the resort-page URL's second path component.
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Persist the row, minting ``slug`` from ``name`` on first save.
 
-        Mirrors ``MicroRegion.name_slug`` — re-derived from ``self.name`` on
-        every access rather than stored, so an edited resort name is
-        reflected immediately without a migration/backfill step.
+        Only an EMPTY slug is filled in — a rename never regenerates it
+        (``docs/decisions/no-integer-pks-in-urls.md``: the page is indexed,
+        and a changed slug is a broken URL). Every creation path — the
+        admin, the ``?edit=resorts`` panel, ``import_resorts`` — comes
+        through here, so none can mint a row with no slug. Rows that
+        pre-date the column are ``backfill_resort_slugs``'s job.
         """
-        return slugify(self.name)
+        if not self.slug:
+            self.slug = unique_resort_slug(self.name)
+        super().save(*args, **kwargs)
 
     def get_absolute_url(self) -> str:
-        """Return the canonical resort-page URL (SNOW-504).
+        """Return the canonical resort-page URL — ``/resorts/<slug>/``.
 
-        Mirrors ``MicroRegion.get_absolute_url`` — ``/resorts/<id>/<slug>/``,
-        always the primary key plus the name-derived slug, so callers and
-        search engines see a single canonical URL per resort.
+        The slug is the resort's whole identity in the URL (SNOW-796): no
+        primary key, no name-derived suffix to keep in step with the name.
         """
-        return reverse(
-            "public:resort",
-            kwargs={"resort_id": self.pk, "slug": self.name_slug},
-        )
+        return reverse("public:resort", kwargs={"slug": self.slug})
+
+
+def unique_resort_slug(name: str) -> str:
+    """Return the slug a resort called ``name`` should take.
+
+    ``slugify(name)`` when no row holds it; otherwise the first free
+    ``-2``, ``-3``… suffix. All curated resorts slugify distinctly today,
+    so the suffix is for a future import or a hand-created duplicate, and
+    it is applied at creation only — an existing slug is never rewritten.
+
+    Args:
+        name: The resort's display name.
+
+    Returns:
+        A slug no other resort row currently holds.
+
+    """
+    base = slugify(name) or "resort"
+    taken = set(
+        Resort.objects.filter(slug__startswith=base).values_list("slug", flat=True)
+    )
+    candidate = base
+    suffix = 2
+    while candidate in taken:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate

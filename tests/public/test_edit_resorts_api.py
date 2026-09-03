@@ -88,7 +88,7 @@ class TestResortsGeojson:
         feature = body["features"][0]
         # GeoJSON ordering: [longitude, latitude].
         assert feature["geometry"]["coordinates"] == [7.5, 46.5]
-        assert feature["properties"]["id"] == geocoded.pk
+        assert feature["properties"]["id"] == geocoded.slug
         assert feature["properties"]["name"] == "Both"
         assert feature["properties"]["region_id"] == geocoded.region.region_id
         assert feature["properties"]["needs_review"] is False
@@ -111,8 +111,8 @@ class TestResortsGeojson:
             f["properties"]["id"]: f["properties"] for f in resp.json()["features"]
         }
 
-        assert by_id[core.pk]["tier"] == "CORE"
-        assert by_id[minor.pk]["tier"] == "MINOR"
+        assert by_id[core.slug]["tier"] == "CORE"
+        assert by_id[minor.slug]["tier"] == "MINOR"
 
     @override_settings(DEBUG=False)
     def test_works_with_debug_off(self) -> None:

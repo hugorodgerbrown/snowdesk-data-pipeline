@@ -124,7 +124,7 @@ class ResortAdmin(admin.ModelAdmin):
         "needs_review",
     ]
     list_filter = ["kind", "tier", "canton", "geocode_source", "needs_review"]
-    search_fields = ["name", "name_alt", "region__region_id"]
+    search_fields = ["name", "slug", "name_alt", "region__region_id"]
     ordering = ["name"]
     readonly_fields = [
         "id",
@@ -134,7 +134,10 @@ class ResortAdmin(admin.ModelAdmin):
         "updated_at",
     ]
     fieldsets = (
-        (None, {"fields": ("name", "name_alt", "region", "canton", "notes")}),
+        # ``slug`` is shown and editable, but leave it alone on a rename:
+        # it is the resort's indexed URL (SNOW-796). Blank on a new row
+        # and ``Resort.save()`` mints it from the name.
+        (None, {"fields": ("name", "slug", "name_alt", "region", "canton", "notes")}),
         (
             "Resort details",
             {

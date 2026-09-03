@@ -1,13 +1,14 @@
 """
 tests/public/test_resort_detail.py — Tests for the resort detail page (SNOW-504).
 
-Covers ``apps.public.views.resort_detail`` (``/resorts/<id>/<slug>/``):
+Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
   - 200 + content: resort name, canton, parent region name, today's danger
     chip, and a "View bulletin" link to the region's evergreen bulletin.
-  - Slug mismatch 301s to the canonical URL (mirrors the region
-    canonical-slug behaviour); a rubbish slug does not loop.
+  - The pre-slug ``/resorts/<id>/<slug>/`` form 301s to the canonical URL
+    whatever suffix it carries (``resort_legacy_redirect``), and does not
+    loop.
   - A resort with ``needs_review=True`` or null coordinates still renders.
-  - An unknown resort_id returns 404.
+  - An unknown slug returns 404.
   - Favourite-star state: sign-in CTA for anonymous/ineligible visitors,
     the button (unfavourited or favourited) for eligible ones.
   - Distance-scoped field observations (SNOW-508): point-local when the
@@ -105,11 +106,21 @@ class TestResortDetailContent:
 
 
 @pytest.mark.django_db
-class TestResortDetailCanonicalSlug:
-    """Slug-mismatch redirects to the canonical URL."""
+class TestResortLegacyRedirect:
+    """The pre-SNOW-796 ``/resorts/<id>/<slug>/`` form 301s to ``/resorts/<slug>/``."""
 
-    def test_wrong_slug_301s_to_canonical(self) -> None:
-        """A stale/incorrect slug 301-redirects to resort.get_absolute_url()."""
+    def test_legacy_url_301s_to_canonical(self) -> None:
+        """The integer form redirects to resort.get_absolute_url()."""
+        resort = ResortFactory.create(name="Verbier")
+
+        client = Client()
+        response = client.get(f"/resorts/{resort.pk}/verbier/")
+
+        assert response.status_code == 301
+        assert response["Location"] == "/resorts/verbier/"
+
+    def test_legacy_suffix_is_ignored(self) -> None:
+        """A stale name suffix still lands on the stored slug's page."""
         resort = ResortFactory.create(name="Verbier")
 
         client = Client()
@@ -137,6 +148,12 @@ class TestResortDetailCanonicalSlug:
         assert response.status_code == 200
         assert response.redirect_chain == [(resort.get_absolute_url(), 301)]
 
+    def test_unknown_pk_returns_404(self) -> None:
+        """An integer nothing owns is a 404, not a redirect to nowhere."""
+        client = Client()
+        response = client.get("/resorts/999999/nowhere/")
+        assert response.status_code == 404
+
 
 @pytest.mark.django_db
 class TestResortDetailEdgeCases:
@@ -160,10 +177,10 @@ class TestResortDetailEdgeCases:
 
         assert response.status_code == 200
 
-    def test_unknown_resort_id_returns_404(self) -> None:
-        """An unknown resort_id returns 404."""
+    def test_unknown_slug_returns_404(self) -> None:
+        """An unknown slug returns 404."""
         client = Client()
-        response = client.get("/resorts/999999/nowhere/")
+        response = client.get("/resorts/nowhere/")
         assert response.status_code == 404
 
 
@@ -218,12 +235,11 @@ class TestResortDetailUrl:
     """URL-reversal sanity check."""
 
     def test_url_reverses_to_expected_path(self) -> None:
-        """public:resort reverses to /resorts/<id>/<slug>/."""
+        """public:resort reverses to /resorts/<slug>/ — no pk in it."""
         resort = ResortFactory.create(name="Verbier")
-        url = reverse(
-            "public:resort", kwargs={"resort_id": resort.pk, "slug": "verbier"}
-        )
-        assert url == f"/resorts/{resort.pk}/verbier/"
+        url = reverse("public:resort", kwargs={"slug": resort.slug})
+        assert url == "/resorts/verbier/"
+        assert str(resort.pk) not in url
 
 
 @pytest.mark.django_db

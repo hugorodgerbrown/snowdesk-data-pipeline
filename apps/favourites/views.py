@@ -342,8 +342,8 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
     path as ``favourite_create`` (SNOW-499).
 
     Request body:
-    - ``resort_id`` — the Resort's primary key. 400 if missing/non-integer,
-      404 if no such Resort exists.
+    - ``resort_slug`` — the Resort's slug (SNOW-796; the ``id`` the resorts
+      feed emits). 400 if missing, 404 if no such Resort exists.
 
     Mirrors ``favourite_create``'s error-status contract so the mutation
     queue classifies each outcome the same way: 409 (not 200/429) at the
@@ -353,8 +353,8 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
 
     Errors:
         403 — anonymous request.
-        400 — non-HTMX request; missing/non-integer ``resort_id``.
-        404 — unknown ``resort_id``.
+        400 — non-HTMX request; missing ``resort_slug``.
+        404 — unknown ``resort_slug``.
         409 — the user has reached ``settings.FAVOURITES_MAX_PER_USER``.
         422 — the resort has no latitude/longitude set.
         429 — rate limit exceeded (> 10 creations/min per user).
@@ -375,16 +375,12 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
             status=429,
         )
 
-    raw_resort_id = request.POST.get("resort_id")
-    if not raw_resort_id:
-        return HttpResponse("resort_id is required.", status=400)
-    try:
-        resort_id = int(raw_resort_id)
-    except TypeError, ValueError:
-        return HttpResponse("resort_id must be an integer.", status=400)
+    slug = request.POST.get("resort_slug", "").strip()
+    if not slug:
+        return HttpResponse("resort_slug is required.", status=400)
 
     try:
-        resort = Resort.objects.select_related("region").get(pk=resort_id)
+        resort = Resort.objects.select_related("region").get(slug=slug)
     except Resort.DoesNotExist:
         return HttpResponse("Resort not found.", status=404)
 
@@ -410,7 +406,7 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
 @require_htmx
 @require_POST
 @ratelimit(key="user", rate="10/m", block=False)
-def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpResponse:
+def favourite_resort_toggle(request: HttpRequest, slug: str) -> HttpResponse:
     """Toggle the requesting user's Favourite for a resort; return the button partial.
 
     Entry point is the resort detail page's favourite button
@@ -431,14 +427,14 @@ def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpRespons
     Errors:
         403 — anonymous request.
         400 — non-HTMX request.
-        404 — unknown ``resort_id``.
+        404 — unknown ``slug``.
         409 — creating would exceed ``settings.FAVOURITES_MAX_PER_USER``.
         422 — the resort has no latitude/longitude set (can't be favourited).
         429 — rate limit exceeded (> 10 toggles/min per user).
 
     Args:
         request: The incoming HTMX POST request.
-        resort_id: The Resort's primary key, from the URL.
+        slug: The Resort's slug, from the URL (SNOW-796).
 
     Returns:
         The rendered favourite-button partial in its new state, or an
@@ -455,7 +451,7 @@ def favourite_resort_toggle(request: HttpRequest, resort_id: int) -> HttpRespons
         )
 
     try:
-        resort = Resort.objects.select_related("region").get(pk=resort_id)
+        resort = Resort.objects.select_related("region").get(slug=slug)
     except Resort.DoesNotExist:
         return HttpResponse("Resort not found.", status=404)
 
@@ -871,10 +867,12 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
     (RFC 7946) and properties ``uuid``, ``name``, ``created_at`` and
-    ``resort_id`` (SNOW-499; ``null`` for a plain dropped-pin favourite).
-    ``resort_id`` lets the map client hide a favourited resort from the
+    ``resort_slug`` (SNOW-499; ``null`` for a plain dropped-pin favourite).
+    ``resort_slug`` lets the map client hide a favourited resort from the
     public resorts layer — it should render only as a favourite star, never
-    as a plain dot as well. Not ``@require_htmx`` — consumed by the map's
+    as a plain dot as well. It is the slug, not the pk, because it has to
+    match ``resorts.geojson``'s ``id`` (SNOW-796) and because this feed,
+    though per-user, is still a feed. Not ``@require_htmx`` — consumed by the map's
     saved-pins layer via a JS ``fetch()`` call, not an HTMX swap.
 
     SNOW-658: ``created_at`` is an ISO-8601 timestamp, and it is on the
@@ -897,7 +895,7 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
 
-    favourites = list(Favourite.objects.for_user(request.user))
+    favourites = list(Favourite.objects.for_user(request.user).select_related("resort"))
 
     features: list[dict[str, Any]] = []
     for favourite in favourites:
@@ -905,7 +903,9 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
             "uuid": str(favourite.uuid),
             "name": favourite.name,
             "created_at": favourite.created_at.isoformat(),
-            "resort_id": favourite.resort_id,
+            "resort_slug": (
+                favourite.resort.slug if favourite.resort is not None else None
+            ),
         }
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(

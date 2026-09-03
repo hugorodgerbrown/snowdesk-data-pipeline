@@ -93,7 +93,7 @@ urlpatterns = [
     # SNOW-499: minimal resort-pin popup — public (unlike favourites.geojson),
     # per-user favourite star state resolved inline; never cached.
     path(
-        "resorts/<int:resort_id>/popup/",
+        "resorts/<slug:slug>/popup/",
         api.resort_popup,
         name="resort_popup",
     ),

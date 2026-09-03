@@ -22,7 +22,7 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
   MapLibre Popup anchored to the region's bbox centre; shows the day's danger
   rating chip (``?d=YYYY-MM-DD``-aware), breadcrumb, and resort list.
-* ``/api/resorts/<resort_id>/popup/``      — SNOW-499: pre-rendered minimal
+* ``/api/resorts/<slug>/popup/``           — SNOW-499: pre-rendered minimal
   popup HTML for a resort pin (name, region, favourite star, bulletin link).
   Public (no auth gate — resorts are a public layer); the favourite star
   itself is gated on authentication.
@@ -425,6 +425,12 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
     ``needs_review``, ``tier``. Resorts missing latitude or longitude are
     skipped.
 
+    ``id`` is the resort's **slug**, not its primary key (SNOW-796,
+    ``docs/decisions/no-integer-pks-in-urls.md``): this feed is public and
+    cacheable, so anything it emits is exported. The slug is also what the
+    map hands to ``resort_popup`` and what ``favourites.geojson`` carries as
+    ``resort_slug``, so the two feeds share one key.
+
     SNOW-543: ``tier`` (``CORE`` / ``STANDARD`` / ``MINOR``) is the curated
     map-prominence verdict, and the public map sizes its pins from it. This
     response is shared by the public map and the edit panel and cached for
@@ -461,7 +467,7 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
                     "coordinates": [resort.longitude, resort.latitude],
                 },
                 "properties": {
-                    "id": resort.pk,
+                    "id": resort.slug,
                     "name": resort.name,
                     "region_id": resort.region.region_id,
                     "needs_review": resort.needs_review,
@@ -1357,7 +1363,7 @@ def _weather_detail_heading(location: Location) -> str:
     return str(_("Weather station"))
 
 
-def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
+def resort_popup(request: HttpRequest, slug: str) -> JsonResponse:
     """Return pre-rendered minimal popup HTML for a resort-pin tap.
 
     Response shape::
@@ -1398,11 +1404,11 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     problem).
 
     Errors:
-        404 — unknown ``resort_id``.
+        404 — unknown ``slug``.
 
     Args:
         request: The incoming HTTP request.
-        resort_id: The Resort's primary key.
+        slug: The Resort's slug — the ``id`` the resorts feed emits.
 
     Returns:
         A JsonResponse with a single ``html`` key containing the popup markup.
@@ -1410,7 +1416,7 @@ def resort_popup(request: HttpRequest, resort_id: int) -> JsonResponse:
     """
     resort = get_object_or_404(
         Resort.objects.select_related("region"),
-        pk=resort_id,
+        slug=slug,
     )
 
     can_favourite = False

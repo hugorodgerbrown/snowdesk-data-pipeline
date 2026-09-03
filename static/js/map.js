@@ -132,10 +132,11 @@
   // renders the literal placeholder through {% url 'api:region_summary'
   // region_id='XX-0000' %} so the JS never has to reconstruct URL structure.
   const REGION_SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl || '';
-  // SNOW-499: The resort-pin popup URL template — the literal '0' resort_id
-  // is string-replaced with the tapped resort's real id before each fetch.
-  // Rendered via {% url 'api:resort_popup' resort_id=0 %}; public endpoint,
-  // always present regardless of favourites eligibility.
+  // SNOW-499: The resort-pin popup URL template — the literal '__SLUG__'
+  // is string-replaced with the tapped resort's slug before each fetch.
+  // Rendered via {% url 'api:resort_popup' slug='__SLUG__' %}; public
+  // endpoint, always present regardless of favourites eligibility. The
+  // slug is the feed's ``id`` (SNOW-796) — no integer key anywhere here.
   const RESORT_POPUP_URL_TEMPLATE = mapEl.dataset.resortPopupUrl || '';
 
   // SNOW-660: ``bootDateKey`` — min(today, seasonEnd), SNOW-236's cold-open
@@ -1651,13 +1652,16 @@
 
   // SNOW-499: recompute favouritedResortIds from a favourites
   // FeatureCollection and reapply the exclusion filter. Called whenever
-  // favouritesGeojsonCache is set to a new authoritative payload.
+  // favouritesGeojsonCache is set to a new authoritative payload. The key
+  // is the resort SLUG (SNOW-796): favourites.geojson carries it as
+  // ``resort_slug`` and resorts.geojson as ``id``, so the exclusion filter
+  // compares like with like.
   const syncFavouritedResortIds = (geojson) => {
     favouritedResortIds = [];
     if (geojson && Array.isArray(geojson.features)) {
       for (const feature of geojson.features) {
-        const resortId = feature.properties && feature.properties.resort_id;
-        if (resortId != null) favouritedResortIds.push(resortId);
+        const resortSlug = feature.properties && feature.properties.resort_slug;
+        if (resortSlug != null) favouritedResortIds.push(resortSlug);
       }
     }
     applyResortsFavouritedFilter();
@@ -5428,7 +5432,7 @@
       if (resortId == null || !RESORT_POPUP_URL_TEMPLATE) return false;
 
       const url = RESORT_POPUP_URL_TEMPLATE.replace(
-        '/resorts/0/popup/', `/resorts/${encodeURIComponent(resortId)}/popup/`,
+        '__SLUG__', encodeURIComponent(String(resortId)),
       );
       try {
         const resp = await fetch(url, { headers: { Accept: 'application/json' } });

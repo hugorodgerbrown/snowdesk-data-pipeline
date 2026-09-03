@@ -43,7 +43,7 @@ Context variables expected:
   is_staff       — bool: True when the requesting user is staff (SNOW-501)
                    — switches metadata placeholders to curation hints.
 {% endcomment %}
-<div class="flex flex-col gap-2" data-testid="resort-popup" data-resort-id="{{ resort.pk }}">
+<div class="flex flex-col gap-2" data-testid="resort-popup" data-resort-slug="{{ resort.slug }}">
     <div>
         <h2 class="text-sm font-semibold text-text-1">{{ resort.name }}</h2>
         {% if resort.name_alt %}
@@ -133,7 +133,7 @@ Context variables expected:
         <button
             type="button"
             data-resort-star
-            data-resort-id="{{ resort.pk }}"
+            data-resort-slug="{{ resort.slug }}"
             data-resort-name="{{ resort.name }}"
             data-resort-lat="{{ resort.latitude|default:'' }}"
             data-resort-lon="{{ resort.longitude|default:'' }}"

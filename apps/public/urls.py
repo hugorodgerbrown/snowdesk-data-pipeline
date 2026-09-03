@@ -10,9 +10,12 @@ URL structure:
                                                help page (SNOW-456).
   /observations/                                Signed-in stream of recent
                                                field observations (SNOW-476).
-  /resorts/<id>/<slug>/                         Resort detail page — danger
+  /resorts/<slug>/                             Resort detail page — danger
                                                chip, bulletin link, favourite
-                                               toggle (SNOW-504).
+                                               toggle (SNOW-504; slug-keyed
+                                               since SNOW-796).
+  /resorts/<id>/<slug>/                         Permanent 301 redirect to the
+                                               slug-keyed page (SNOW-796).
   /examples/random/                            Renders a random bulletin inline
                                                using the canonical view.
   /examples/category/<danger_level>/           Renders a random bulletin matching
@@ -99,9 +102,17 @@ urlpatterns = [
     # region id (though the RegionIdConverter regex already rejects it,
     # since it requires a two-letter-country-code + digit prefix).
     path(
-        "resorts/<int:resort_id>/<slug:slug>/",
+        "resorts/<slug:slug>/",
         views.resort_detail,
         name="resort",
+    ),
+    # SNOW-796: the pre-slug shape. Indexed and bookmarked, so it stays as
+    # a permanent redirect to the slug-keyed page — the ADR's "every changed
+    # route keeps a permanent redirect from its integer form".
+    path(
+        "resorts/<int:resort_id>/<slug:slug>/",
+        views.resort_legacy_redirect,
+        name="resort_legacy",
     ),
     # SNOW-761: the full forecast for one Location — the page the map's
     # weather card hands off to via "View forecast". Keyed on Location

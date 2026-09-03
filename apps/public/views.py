@@ -4488,20 +4488,42 @@ def location_weather(request: HttpRequest, location_id: int) -> HttpResponse:
     return render(request, "public/location_weather.html", context)
 
 
-def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpResponse:
+def resort_legacy_redirect(
+    request: HttpRequest, resort_id: int, slug: str
+) -> HttpResponse:
+    """301 the pre-SNOW-796 ``/resorts/<id>/<slug>/`` shape to ``/resorts/<slug>/``.
+
+    The integer form was indexed and bookmarked for months, so it keeps a
+    permanent redirect (``docs/decisions/no-integer-pks-in-urls.md``). The
+    inbound ``slug`` is ignored: the row's stored slug is the canonical one,
+    and this route is the last place a resort's primary key is accepted.
+
+    Args:
+        request: The incoming HTTP request.
+        resort_id: The Resort's primary key, from the legacy URL.
+        slug: The legacy name-derived suffix — not checked.
+
+    Returns:
+        A 301 to the resort's canonical page, or 404 for an unknown pk.
+
+    """
+    resort = get_object_or_404(Resort, pk=resort_id)
+    return redirect(resort.get_absolute_url(), permanent=True)
+
+
+def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     """
     Render the public resort detail page.
 
-    Gives a Resort its own indexable URL (``/resorts/<id>/<slug>/``),
+    Gives a Resort its own indexable URL (``/resorts/<slug>/``, SNOW-796),
     cross-linking with the bulletin page (which lists "Resorts in this
     region" — see ``_bulletin_detail_response``) and the map's resort-pin
     popup (``apps.public.api.resort_popup``, whose CTA now reads "View resort →"
     and links here instead of straight to the bulletin).
 
-    301-redirects to the canonical slug when the inbound ``slug`` doesn't
-    match ``resort.name_slug`` — mirrors the region canonical-slug
-    behaviour (``_redirect_to_canonical``) so search engines index one URL
-    per resort.
+    The slug is stored and never regenerated, so there is no canonical-slug
+    redirect to perform here: the URL either names a resort or it 404s.
+    The pre-slug ``/resorts/<id>/<slug>/`` form is ``resort_legacy_redirect``.
 
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
     (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``)
@@ -4513,21 +4535,16 @@ def resort_detail(request: HttpRequest, resort_id: int, slug: str) -> HttpRespon
 
     Args:
         request: The incoming HTTP request.
-        resort_id: The Resort's primary key, from the URL.
-        slug: The inbound URL slug — checked against ``resort.name_slug``;
-            a mismatch 301s to the canonical URL.
+        slug: The Resort's slug, from the URL.
 
     Returns:
-        The rendered resort page, or a 301 redirect to the canonical URL.
+        The rendered resort page.
 
     """
     resort = get_object_or_404(
         Resort.objects.select_related("region"),
-        pk=resort_id,
+        slug=slug,
     )
-
-    if slug != resort.name_slug:
-        return redirect(resort.get_absolute_url(), permanent=True)
 
     region = resort.region
     today = timezone.localdate()

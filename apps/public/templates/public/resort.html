@@ -88,7 +88,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
     <main
         class="{% page_shell_classes %}"
         data-testid="resort-detail"
-        data-resort-id="{{ resort.pk }}"
+        data-resort-slug="{{ resort.slug }}"
     >
         <div class="mb-6">
             {% include "includes/_page_title.html" with text=resort.name class_extra="mb-0" data_testid="resort-heading" %}
