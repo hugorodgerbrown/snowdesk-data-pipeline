@@ -109,7 +109,14 @@ Parameters (passed via {% include … with … %}):
   js_filled     (bool, optional) — render every hook, and the rename
                 input, even with no text: this copy is a `<template>`
                 that JS clones and fills. buildRow strips the rename
-                affordance from a row that cannot be renamed.
+                affordance from a row that cannot be renamed, and the
+                focus hook from a row with nothing to fly to. A JS-filled
+                row therefore gets the `<button>` label and an EMPTY
+                `data-row-focus` (SNOW-811) — the same value-less-here,
+                stamped-on-clone shape `data-downloads-rename` and
+                `data-downloads-delete` already use. row_focus.js reads an
+                empty attribute as "nothing to frame" and moves nothing,
+                so an unstamped clone is inert without a branch of its own.
   row_id        (string, optional) — DOM id. The favourite and
                 observation rows carry one so their Remove form can
                 `hx-target` exactly this row and swap it out on the
@@ -203,8 +210,15 @@ buildRow still finds its hooks by attribute, not by depth.
             {# The three panels whose rows are places (routes, favourites,        #}
             {# observations) pass it on the MAP only. On /account/ there is no    #}
             {# map to fly, so those rows keep the inert span rather than offering #}
-            {# a button that would do nothing — and so does a downloads row,      #}
-            {# whose "item" is a basemap area, not a place.                       #}
+            {# a button that would do nothing.                                    #}
+            {#                                                                    #}
+            {# SNOW-811: the downloads panel is the fourth, reached through        #}
+            {# `js_filled` rather than `focus_target` because its rows are cloned  #}
+            {# from this copy and stamped by map_downloads_manager.js. It was      #}
+            {# excluded here on the grounds that "a basemap area is not a place",  #}
+            {# which does not survive contact with the panel: a downloaded area IS #}
+            {# a region or a framed box on the map, and it was the only row on any #}
+            {# panel a user could not get back to from its own name.               #}
             {#                                                                    #}
             {# Both branches carry the SAME box — identical padding, radius and   #}
             {# negative margins — because the editor beneath them has to line up  #}
@@ -218,7 +232,7 @@ buildRow still finds its hooks by attribute, not by depth.
             {# What made it visible as a defect was the scroll container it     #}
             {# bled out of — fixed where that container is declared, in         #}
             {# includes/_ugc_panel.html.                                        #}
-            {% if focus_target %}
+            {% if focus_target or js_filled %}
                 <button
                     type="button"
                     data-row-label

@@ -122,7 +122,8 @@ function buildFixture() {
       <li>
         <span data-row-rule class="basemap-identity-fill" aria-hidden="true"></span>
         <span>
-          <span data-row-label class="text-text-1"></span>
+          <button type="button" data-row-label data-row-focus=""
+                  class="hover-affordance text-text-1"></button>
           <input type="text" data-row-rename-input hidden aria-label="Area name">
           <span data-row-meta class="text-text-2"></span>
         </span>
@@ -153,6 +154,7 @@ function buildFixture() {
       <span data-string="add-signin">Sign in to download a new area.</span>
       <span data-string="add-signin-disabled">Downloading needs an account</span>
       <span data-string="not-on-device">On your account — not downloaded here</span>
+      <span data-string="focus-row-label">Zoom to %(name)s</span>
       <span data-string="download-here-row-label">Download %(name)s to this device</span>
       <span data-string="free-space-row-label">Free up the space %(name)s uses on this device</span>
       <span data-string="confirm-free-space">Remove the offline map for %(name)s from this
@@ -224,6 +226,11 @@ function installDownloadsBridge(rows, cachesStub) {
         // SNOW-645: mirrors map.js's own basemapDownloadedAreas — absent
         // on a record written before this ticket shipped.
         basemapKey: entry.basemapKey || null,
+        // SNOW-749: the region id travels with the area, so reconcileAreas
+        // can compare and downloads_sync.js can describe it to the account
+        // without reverse-engineering the bucket id. SNOW-811 reads it back
+        // off the row to frame the region on the map.
+        regionId: entry.region_id,
       });
     }
     for (const entry of rows.get('basemap.customAreas') || []) {
@@ -239,6 +246,10 @@ function installDownloadsBridge(rows, cachesStub) {
         bytes: Number(entry.bytes) || 0,
         savedAt: entry.savedAt,
         basemapKey: entry.basemapKey || null,
+        // SNOW-749: a custom area IS its box — the only thing that lets
+        // another device fetch the same ground. SNOW-811 frames the map
+        // with it.
+        bbox: entry.bbox,
       });
     }
     return out;
@@ -756,6 +767,93 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
     await settle();
 
     expect(document.querySelector('#map-downloads-sheet [data-row-meta]')).toBeNull();
+  });
+});
+
+describe("a row's name frames its area (SNOW-811)", () => {
+  // Hugo's rule for every map panel: "clicking on the name of an item
+  // should zoom in to it". The downloads panel was the one sheet that
+  // opted out, on the grounds that a basemap area is not a place. What
+  // buildRow stamps is asserted here; that the stamp then MOVES the map is
+  // tests/js/test_row_focus.js's, which owns the shared click.
+  function firstRow() {
+    return document.querySelector('#map-downloads-sheet [data-row-rule]').closest('li');
+  }
+
+  it('stamps a custom area with its own bbox', async () => {
+    seed({ 'basemap.customAreas': CUSTOM_AREAS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    // Six decimals, matching the `%f` the server's {% focus_target %}
+    // writes for the other three panels — one attribute format for
+    // row_focus.js to parse whichever end built it.
+    expect(label.getAttribute('data-row-focus')).toBe(
+      '7.900000,46.400000,8.100000,46.600000',
+    );
+    expect(label.hasAttribute('data-row-focus-region')).toBe(false);
+    expect(label.getAttribute('aria-label')).toBe('Zoom to Custom area 1');
+  });
+
+  it('stamps a region with its id, never a bbox', async () => {
+    // reconcileAreas leaves a region's bbox null on purpose: its tiles come
+    // from the real boundary server-side, so a stored box would be a
+    // second, coarser answer. The polygon is already on the map, so the row
+    // names the region and pwaMapFocus.region resolves it.
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    expect(label.getAttribute('data-row-focus-region')).toBe('CH-2101');
+    expect(label.hasAttribute('data-row-focus')).toBe(false);
+    expect(label.getAttribute('aria-label')).toBe('Zoom to Aletsch');
+  });
+
+  it('leaves an orphaned bucket inert, and not looking pressable', async () => {
+    // An orphan has no record left — no region to name, no box to frame.
+    // Remove stays its only action, which was true before this ticket and
+    // is still true after it.
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
+    ]);
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    expect(label.hasAttribute('data-row-focus')).toBe(false);
+    expect(label.hasAttribute('data-row-focus-region')).toBe(false);
+    expect(label.hasAttribute('aria-label')).toBe(false);
+    expect(label.classList.contains('hover-affordance')).toBe(false);
+  });
+
+  it('frames an account-only row, which is still somewhere on the map', async () => {
+    // SNOW-749's "on your account — not downloaded here". Nothing of it is
+    // on this device, but the ground it names is still ground.
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      {
+        id: 'region-CH-4242',
+        name: 'Binntal',
+        bytes: 0,
+        onDevice: false,
+        synced: true,
+        regionId: 'CH-4242',
+        savedAt: '2026-08-30T10:00:00.000Z',
+      },
+    ]);
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    expect(label.getAttribute('data-row-focus-region')).toBe('CH-4242');
+    expect(label.getAttribute('aria-label')).toBe('Zoom to Binntal');
   });
 });
 

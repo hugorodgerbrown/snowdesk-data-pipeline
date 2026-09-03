@@ -188,6 +188,12 @@ the row's own label, so home.html loads that module once for both.
     {# row cloned from a <template> has no name until buildRow fills it.    #}
     <span data-string="rename-row-label">{% blocktrans %}Rename %(name)s{% endblocktrans %}</span>
     <span data-string="remove-row-label">{% blocktrans %}Remove %(name)s{% endblocktrans %}</span>
+    {# SNOW-811: the row's NAME frames its area on the map, as it does on  #}
+    {# the other three panels. Same reason as the two above for living     #}
+    {# here — the label is filled by buildRow, so the accessible name has  #}
+    {# to reach it through window.pwaStrings rather than as a literal      #}
+    {# makemessages would never see (tox -e i18n-lint).                    #}
+    <span data-string="focus-row-label">{% blocktrans %}Zoom to %(name)s{% endblocktrans %}</span>
     {# SNOW-749: an area on the ACCOUNT that this device has not          #}
     {# downloaded — saved on another device, or evicted here to make      #}
     {# room. The subtitle replaces the basemap name on such a row: which  #}

@@ -41,7 +41,15 @@
 (function rowFocusInit() {
   'use strict';
 
-  var FOCUS_SELECTOR = '[data-row-focus]';
+  // Two attributes, one control. `data-row-focus` carries degrees — the
+  // three server-rendered panels' only form. `data-row-focus-region`
+  // (SNOW-811) carries an EAWS micro-region id instead, for the downloads
+  // panel's region rows: a region download is recorded against its id and
+  // deliberately carries no bbox, because the polygon is already on the map
+  // and a stored box would be a second, coarser copy of a boundary
+  // MapLibre is drawing anyway. Resolving it is window.pwaMapFocus's job,
+  // not this module's.
+  var FOCUS_SELECTOR = '[data-row-focus], [data-row-focus-region]';
 
   /**
    * Parse a row's `data-row-focus` into numbers.
@@ -100,8 +108,13 @@
     var button = target && target.closest ? target.closest(FOCUS_SELECTOR) : null;
     if (!button) return false;
 
+    var regionId = button.getAttribute('data-row-focus-region');
     var coordinates = parse(button.getAttribute('data-row-focus'));
-    if (!coordinates) return true;
+    // Neither form resolved — a region row and a coordinate row are the
+    // only two there are, so this is a button with nothing behind it. The
+    // press WAS a focus (see the note above), so it is claimed and
+    // silently dropped rather than passed on.
+    if (!coordinates && !regionId) return true;
 
     var overlay = options && options.overlay;
     // isEnabled(), the persisted preference — not isVisible(), which is
@@ -116,8 +129,16 @@
 
     var focus = window.pwaMapFocus;
     if (!focus) return true;
-    if (coordinates.length === 2) focus.point(coordinates[0], coordinates[1]);
-    else focus.bounds(coordinates);
+    // Degrees win when a row somehow carries both: they are the exact
+    // extent, where the region id is a lookup that can miss (see
+    // pwaMapFocus.region on regions loading per country).
+    if (coordinates && coordinates.length === 2) {
+      focus.point(coordinates[0], coordinates[1]);
+    } else if (coordinates) {
+      focus.bounds(coordinates);
+    } else if (focus.region) {
+      focus.region(regionId);
+    }
     return true;
   }
 
