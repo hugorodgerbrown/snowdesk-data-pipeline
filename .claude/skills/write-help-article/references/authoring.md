@@ -1,219 +1,213 @@
-# Authoring reference — help panels
+# Authoring reference — help article pages
 
-Everything mechanical about getting a help article onto `/help/`. Read this
-before editing a template; the writing rules are in `SKILL.md`.
+Everything mechanical about getting an article onto the site. Read this before
+creating a file; the writing rules are in `SKILL.md`.
 
-## How the page is built
+## The shape of the change
 
-`/help/` is one Django template — `apps/public/templates/public/help.html` —
-holding ~18 collapsible panels grouped under four eyebrow headings:
+An article is one new page plus one link:
 
-| Group | What belongs there |
+| File | Change |
 |---|---|
-| Getting started | What Snowdesk is |
-| Bulletins | Anything read on a bulletin page — rating, problems, calendar, weather |
-| The map | Map controls, **in the order the control column runs** |
-| Your account and this device | Accounts, the Observations page, install & offline |
+| `apps/public/urls.py` | one `path()` for the article route |
+| `apps/public/views.py` | one view (the first article creates it; later ones reuse it) |
+| `apps/public/templates/public/help/articles/<slug>.html` | the article |
+| `apps/public/templates/public/help/_topic_<slug>.html` | **one added link, nothing else** |
+| `tests/public/test_help_articles.py` | coverage for the new page |
 
-Each panel is `templates/includes/_collapsible_panel.html`, and each panel's
-body copy is its own partial under
-`apps/public/templates/public/help/_topic_<slug>.html`.
+## Routing — the trap that will bite you
 
-The view is `apps/public/views.py::help_page`. It issues **no database
-queries** and a test pins that — so nothing you add may touch the ORM.
+`/help/` is registered **before** the generic `<region_id>/` patterns, or the
+string "help" resolves as a region id. Your article route has the same
+problem one level down: `help/<slug>/` has two path segments, which is the
+exact shape of `<region_id>/<slug>/`.
 
-## The panel include
+Register it immediately after the `help/` route, well above the generic
+patterns:
 
-```django
-{% translate "The day's weather" as t_weather %}
-{% include "includes/_collapsible_panel.html" with title=t_weather data_testid="help-topic-weather" illustration="public/help/illustrations/_weather_panel.html" body_template="public/help/_topic_weather.html" %}
+```python
+# Plain-language "how it works" help page (SNOW-456) — registered before
+# the generic <region_id:region_id>/ patterns so "help" never resolves
+# as a region id.
+path("help/", views.help_page, name="help"),
+# Long-form help articles. MUST stay above the generic
+# <region_id>/<slug>/ pattern — "help/routes/" matches that shape too, and
+# whichever is registered first wins.
+path("help/<slug:slug>/", views.help_article, name="help_article"),
 ```
 
-| Parameter | Purpose |
-|---|---|
-| `title` | Panel heading. Always a `{% translate %}`d variable. |
-| `data_testid` | `help-topic-<slug>`. Tests pin this; pick it deliberately. |
-| `body_template` | Your content partial. |
-| `illustration` | Optional, rendered above the copy, `aria-hidden`. |
+## The view
 
-Full parameter list is in the partial's own `{% comment %}` block.
+One view for every article, keyed by slug. Articles are static content with
+no per-article logic, so a view each would be five copies of the same three
+lines — and the project's rule is no abstraction until two callers need it,
+which is satisfied the moment there is a second article.
 
-## The content partial
+```python
+#: Slug → template for every published help article. A slug absent here is a
+#: 404, so an article is reachable only once it is listed.
+HELP_ARTICLES = {
+    "routes": "public/help/articles/routes.html",
+}
 
-Copy this shape:
+
+def help_article(request: HttpRequest, slug: str) -> HttpResponse:
+    """
+    Render one long-form help article.
+
+    Args:
+        request: The incoming HTTP request.
+        slug: The article's URL slug, looked up in ``HELP_ARTICLES``.
+
+    Returns:
+        The rendered article page.
+
+    Raises:
+        Http404: If the slug names no published article.
+
+    """
+    template = HELP_ARTICLES.get(slug)
+    if template is None:
+        raise Http404(f"No help article for slug {slug!r}")
+    return render(request, template)
+```
+
+Keep it query-free, like `help_page` — an article is static text and has no
+business touching the ORM.
+
+## The template
+
+Model it on `public/how_to_read_bulletin.html`, the site's existing long-form
+page. The skeleton:
 
 ```django
+{% extends "public/base.html" %}
 {% comment %}
-apps/public/templates/public/help/_topic_<slug>.html — "<Panel title>" panel body.
+apps/public/templates/public/help/articles/<slug>.html — "<Title>" help article.
 
-Content partial for the help page; included via the body_template parameter
-of includes/_collapsible_panel.html.
+<Which feature, and which brief this answers. If you reordered the brief's
+sections, say so and why here — that is the record of a deliberate choice.>
 
-<Why this topic exists, and any detail a future editor would otherwise have
-to rediscover — a control that moved, a claim that was wrong before, a
-behaviour that surprises people.>
+Companion to the FAQ panel at public/help/_topic_<slug>.html, which stays the
+short answer; this page is the walkthrough. Anything asserted here must agree
+with that panel.
 {% endcomment %}
-{% load i18n %}
-<div class="text-sm leading-prose text-text-2">
-    <p class="mb-3 last:mb-0">
-        {% blocktrans trimmed %}
-            One sentence saying what this does and why you would use it.
-        {% endblocktrans %}
-    </p>
-</div>
+{% load i18n components %}
+
+{% block page_meta %}
+    {% trans "<Title>" as page_name %}
+    {% trans "<One sentence, front-loading the feature noun.>" as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}">
+        {% trans "<Title>" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="help-article-heading" %}
+
+        <section class="mb-10 text-sm leading-prose text-text-2" data-testid="help-article-<section>">
+            {% translate "<Section heading>" as t_section %}
+            {% include "includes/_eyebrow.html" with text=t_section class_extra="mb-4" only %}
+            <p class="mb-3 last:mb-0">
+                {% blocktrans trimmed %}
+                    …
+                {% endblocktrans %}
+            </p>
+        </section>
+    </main>
+{% endblock content %}
 ```
 
 Rules that bite if you skip them:
 
-- **The header comment is not optional** — CLAUDE.md requires one on every
-  module, and these partials are where the "why" of a wording choice lives.
+- **`page_meta` is mandatory.** `tests/public/test_page_meta.py` walks every
+  public URL; a new page inherits `base.html`'s empty fallback and fails until
+  you give it a title and description. The alternative state is an explicit
+  `sharing=False` plus a comment saying why — an article wants a card, so use
+  the block above.
 - **Every string is inside `{% blocktrans trimmed %}` or `{% translate %}`.**
   A bare string ships as English to every locale.
-- **Tokens only** — `text-text-2`, `mb-3`, `leading-prose`. Never
+- **Tokens only** — `text-text-2`, `leading-prose`, `mb-3`. Never
   `text-slate-500`, never `rounded-[12px]`. `tox -e ds-lint` blocks the PR.
-- **`mb-3 last:mb-0` on every paragraph**, so the final one doesn't add a gap.
-- **`data-testid` on any paragraph a test needs to find**, named
-  `help-<topic>-<claim>` (e.g. `help-favourites-private`).
-- Use `&mdash;` for em dashes, matching the existing partials.
+- **Reuse the partials** — `_page_title`, `_eyebrow`, `_card`, `_button`.
+  Rule one of the design system is reuse first, extract second, inline never.
+- **`data-testid` on each section**, so tests can pin a claim without matching
+  prose.
+- `&mdash;` for em dashes, matching the rest of the templates.
 
 ## Numbered steps: there is no `<ol>` yet
 
 There is not a single `<ol>` anywhere in the template tree, and `slf-prose`
-styles `ul`/`li` but no ordered list. So the first article that needs steps
-has to create the markup — and the design system's rule is
-**reuse first, extract second, inline never**. Inlining a step list into one
-topic partial means the second one copies it and the third diverges.
+styles `ul`/`li` but no ordered list. The first article that needs numbered
+steps has to create that markup — and the design system's rule is **reuse
+first, extract second, inline never**, so it belongs in a shared partial from
+the start, not inlined into one article.
 
-Extract `templates/includes/_help_steps.html` instead:
+Extract `templates/includes/_help_steps.html`:
 
-- takes a list of step strings (already translated by the caller) and renders
-  an `<ol>` with the number as a visible marker;
-- uses tokens for the marker and the text — no hex, no raw palette utilities;
-- earns a registry entry in the staff component library at `/_components/`
-  (`apps/public/design_tokens.py` + `apps/public/_component_fixtures.py`), like
-  every other shared partial, so the next person finds it instead of
-  reinventing it;
-- gets the styling that doesn't exist yet added to `src/css/main.css`
-  **only** if Tailwind utilities genuinely can't express it. Marker
-  positioning usually can.
+- takes a list of already-translated step strings and renders an `<ol>` with
+  a visible number;
+- tokens for the marker and the text — no hex, no raw palette utilities;
+- a registry entry in the staff component library at `/_components/`
+  (`apps/public/design_tokens.py` + `apps/public/_component_fixtures.py`), so
+  the next person finds it instead of reinventing it;
+- new CSS in `src/css/main.css` only if Tailwind utilities genuinely can't
+  express the marker positioning. They usually can.
 
-That is a small piece of implementation work. If the ticket in hand is
-copy-only, raise it as its own ticket rather than smuggling a new shared
-component into a content PR — and say so, don't quietly inline a class string.
+If the ticket in hand is copy-only, raise the partial as its own ticket rather
+than smuggling a new shared component into a content PR — and say so, don't
+quietly inline a class string.
 
-## Illustrations are live mocks
+## The one permitted edit to the FAQ panel
 
-Decision doc:
+Add a link to the article. Change nothing else — the panel's other strings are
+translated msgids, and rewording one throws its translations away.
+
+```django
+<p class="mb-3 last:mb-0" data-testid="help-routes-article-link">
+    {% url 'public:help_article' slug='routes' as article_url %}
+    {% blocktrans trimmed %}
+        There is more in <a href="{{ article_url }}" class="text-status-info-text underline">the full guide to routes</a>.
+    {% endblocktrans %}
+</p>
+```
+
+The anchor sits **inside** the msgid so a translator can move it within the
+sentence; the URL is a context variable and stays **outside**, so changing
+where it points doesn't invalidate every translation. That is the shape
+`_topic_routes.html` already uses for its gpx.studio link — follow it.
+
+## Illustrations
+
+If the article shows a component, render the **real partial** fed by a
+synthetic in-memory context, never a screenshot — see
 [`docs/decisions/help-illustrations-are-live-mocks.md`](../../../../docs/decisions/help-illustrations-are-live-mocks.md).
+A PNG has no linter and no test, so it goes stale silently; four claims on
+`/help/` had rotted exactly that way before SNOW-744.
 
-Illustrate a topic by rendering the **real partial** for the surface it
-describes, fed by a synthetic in-memory context from
-`apps/public/component_previews.py`. Never a screenshot: a PNG has no linter
-and no test, so it goes stale silently — four claims on this page had rotted
-exactly that way before SNOW-744.
+Three constraints:
 
-Three constraints that catch people out:
-
-1. **No queries.** Contexts are hand-built dataclasses and dicts. The
-   no-queries test on `/help/` is not negotiable.
-2. **`/help/` loads `output.css` only.** A component whose rules live in
+1. **No queries** — hand-built dataclasses and dicts, as in
+   `apps/public/component_previews.py`.
+2. **Only `output.css` is loaded.** A component styled from
    `static/css/map.css` — the season scrubber is the standing example —
-   cannot be illustrated here; it collapses to unstyled fragments. Leave a
-   comment saying why the topic is unillustrated rather than shipping a
-   broken mock.
-3. **The illustration is decoration** — its wrapper is `aria-hidden`, so a
-   screen-reader user gets the prose alone. The copy has to make sense with
-   the picture removed. Never write "as shown below".
+   cannot be shown on a help page; it collapses to unstyled fragments. Say so
+   in a comment rather than shipping a broken mock.
+3. **Decoration only** — the illustration wrapper is `aria-hidden`, so the
+   prose must stand alone. Never write "as shown below".
 
-## Registering a new panel
+## Tests
 
-1. **Create the content partial** at
-   `apps/public/templates/public/help/_topic_<slug>.html`.
-2. **Include it in `help.html`** under the right eyebrow group. For a map
-   topic, insert it in the position matching the control column's order — a
-   reader working down the group is working down the right-hand side of the
-   map, and that's the whole reason the grouping exists.
-3. **Add the testid to `ALWAYS_ON_TESTIDS`** in `tests/public/test_help.py`.
-   A panel only visible to some users is gated instead, like the Sync-log
-   panel's `sync_log` waffle flag, and stays out of that list.
+Add `tests/public/test_help_articles.py` covering, for each article:
 
-   While you are in there, check the list still covers every ungated panel.
-   It is a hand-maintained mirror of the template with nothing enforcing the
-   correspondence, so it drifts quietly — a panel added without a matching
-   entry is silently unguarded, and the missing entry looks exactly like a
-   deliberately gated one. If you find a gap, close it in the same PR.
+- `GET` the URL returns 200 for an anonymous user and the heading testid is
+  present;
+- an unknown slug 404s (this is what makes `HELP_ARTICLES` the publication
+  gate rather than a decoration);
+- each section's `data-testid` renders;
+- the FAQ panel links to the article — the pair is the point, and a link that
+  silently disappears in a refactor is how the two surfaces drift apart;
+- the page issues no queries, matching `/help/`.
 
-**If the topic documents a map control, that is not enough.** The map's
-coachmark tour is the other half of the same job:
-
-4. Add a step to `#map-help-steps` in
-   `apps/public/templates/public/partials/_map_embed.html`:
-   ```django
-   <li data-help-target="#<control-id>" data-help-title='{% trans "Short title" %}'>
-       {% trans "One sentence on what this control does." %}
-   </li>
-   ```
-   Keep the list in DOM order so the tour walks the screen top to bottom
-   instead of zig-zagging.
-5. Add the pair to `CONTROL_TO_TOPIC` in
-   `tests/public/test_help.py::TestHelpCoversTheMapControls`.
-
-Routes shipped with neither a panel nor a coachmark step and stayed
-undocumented through two more tickets that touched the stack. That test pair
-exists to make it impossible to repeat.
-
-## Worked rewrite
-
-The current Favourites copy, and what steps do to it.
-
-**Before** — accurate and complete, but the instructions are dissolved into
-the description. The two taps that place a pin are three clauses deep in a
-sentence that is also defining what a favourite is:
-
-> Favourites let you pin specific spots — a resort, a trailhead, a favourite
-> line — directly on the map. Sign in, open the star button on the right of
-> the map, and use "Add a favourite": the map moves under a fixed pin, so you
-> place it with one hand. You can also save a resort straight from its pin's
-> popup.
-
-**After** — same facts, same feature, structured:
-
-> Favourites are your own pins on the map — a resort, a trailhead, a line you
-> keep coming back to — each one a shortcut to that spot's bulletin.
->
-> You need to be signed in.
->
-> 1. Tap the star button on the right of the map.
-> 2. Choose **Add a favourite**. A pin appears in the centre and stays there
->    while the map moves beneath it, so you aim by moving the map.
-> 3. Drag the map until the pin sits where you want it, then tap **Save**.
-> 4. Give it a name. It appears in the list below the button.
->
-> Quicker for a resort: open its pin on the map and save it from the popup.
->
-> Favourites are private — never shown to other users. Each one gets its own
-> page you can bookmark or share. To draw them all on the map, turn on
-> **Display on the map** at the foot of the same panel; it lives there rather
-> than in the layers menu. A pin dropped with no connection is saved on the
-> device and sent when you are back online.
-
-What changed, and why each move is worth copying:
-
-- **The feature is still the subject.** The panel is called Favourites and
-  the first line says what a favourite *is*. The rewrite is about structure,
-  not about renaming the feature after a task someone might be doing.
-- **The definition stops after one sentence.** The old copy kept explaining in
-  prose; here the opening hands straight over to the steps.
-- **The precondition came out of the step list.** Signing in is not step one
-  of placing a pin; it is a gate, and a signed-out reader needs to hit it
-  before they start counting taps.
-- **Each tap got its own number and its consequence.** The fixed centre pin
-  now sits with the action that causes it, instead of trailing a colon in the
-  middle of a paragraph.
-- **The alternative path stopped competing with the main one.** "You can also
-  save a resort straight from its pin's popup" was a third clause in the
-  primary flow; as a one-line aside after the steps it is findable without
-  interrupting.
-- **The limits got their own closing block** — private, own page, the switch
-  that isn't where you'd look for it, and the offline behaviour. Nothing was
-  cut; the offline sentence was pulled up from the original's last paragraph.
+A 404 and a rendered page both need only the Django test client. Neither
+belongs in Playwright — see the test-layer rules in CLAUDE.md.
