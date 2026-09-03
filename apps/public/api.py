@@ -35,7 +35,7 @@ Superuser-only endpoints powering the in-map resort editor (SNOW-74,
 ``request.user.is_superuser`` (SNOW-724) and 404s for everyone else:
 
 * ``GET  /api/edit/resorts/queue/``               — queue + catalogue payload.
-* ``POST /api/edit/resorts/<int:resort_id>/save/`` — persist the placed
+* ``POST /api/edit/resorts/<slug>/save/`` — persist the placed
   coordinates and the hand-curated detail fields.
 * ``POST /api/edit/resorts/create/``              — create a resort from a
   placed pin, deriving its parent region from that pin.
@@ -49,9 +49,9 @@ resort so Mont Fort stays one row that four resorts share:
   location's links, and the resort catalogue to link against.
 * ``POST /api/edit/locations/create/``                — mint a location
   from a placed pin and link it to one resort.
-* ``POST /api/edit/locations/<int:location_id>/save/`` — move, rename or
+* ``POST /api/edit/locations/<short_id>/save/`` — move, rename or
   re-classify an existing location.
-* ``POST /api/edit/locations/<int:location_id>/link/`` — attach it to
+* ``POST /api/edit/locations/<short_id>/link/`` — attach it to
   another resort.
 * ``POST /api/edit/locations/links/<int:link_id>/unlink/`` — drop one
   link, keeping the location.
@@ -67,6 +67,7 @@ import json
 import logging
 import re
 import secrets
+import uuid
 from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, cast
@@ -1854,7 +1855,8 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     from ``sub_regions``.
 
     Each catalogue entry carries the fields the side panel needs to
-    render a row and (on click) a full target readout: ``id``,
+    render a row and (on click) a full target readout: ``id``, ``slug``
+    (the key the panel selects on and builds its save URL from, SNOW-798),
     ``name``, ``region_id``, ``region_name``, ``canton``, ``latitude``,
     ``longitude``, ``has_coords``, ``needs_review``, plus a ``details``
     object holding every hand-curated metadata field
@@ -1880,6 +1882,7 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
     all_resorts = [
         {
             "id": row["pk"],
+            "slug": row["slug"],
             "name": row["name"],
             "region_id": row["region__region_id"],
             "region_name": row["region__name"],
@@ -1897,6 +1900,7 @@ def edit_resorts_queue(request: HttpRequest) -> JsonResponse:
             # order. ``name`` breaks ties within a region.
             .order_by("region__region_id", "name").values(
                 "pk",
+                "slug",
                 "name",
                 "region__region_id",
                 "region__name",
@@ -2072,6 +2076,7 @@ def _resort_save_payload(resort: Resort) -> dict[str, Any]:
     """
     return {
         "id": resort.pk,
+        "slug": resort.slug,
         "name": resort.name,
         "region_id": resort.region.region_id,
         "region_name": resort.region.name,
@@ -2088,7 +2093,7 @@ def _resort_save_payload(resort: Resort) -> dict[str, Any]:
 
 
 @require_POST
-def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
+def edit_resort_save(request: HttpRequest, slug: str) -> JsonResponse:
     """Persist the placed coordinates and detail fields of a resort (flag-gated).
 
     Request body (JSON)::
@@ -2115,7 +2120,7 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
     catalogue without a follow-up GET.
 
     Errors:
-        404 — request user is not a superuser, or unknown ``resort_id``.
+        404 — request user is not a superuser, or unknown ``slug``.
         400 — invalid JSON; missing or non-float lat/lon; coordinates
               outside the Swiss bounding box; a detail field that fails
               model validation (``{"error": "invalid_details", "fields":
@@ -2134,7 +2139,7 @@ def edit_resort_save(request: HttpRequest, resort_id: int) -> JsonResponse:
 
     resort = get_object_or_404(
         Resort.objects.select_related("region"),
-        pk=resort_id,
+        slug=slug,
     )
 
     details_error, changed_details = _bind_resort_details(
@@ -2451,12 +2456,14 @@ def _location_link_payload(link: ResortLocation) -> dict[str, Any]:
             selected (the queue endpoint prefetches both).
 
     Returns:
-        The link's JSON shape — its own id, so unlink can name it, plus
-        enough of the resort to render a row without a second request.
+        The link's JSON shape — its own ``uuid``, so unlink can name it
+        (SNOW-798), plus enough of the resort to render a row without a
+        second request.
 
     """
     return {
         "id": link.pk,
+        "uuid": str(link.uuid),
         "resort_id": link.resort_id,
         "resort_name": link.resort.name,
         "region_id": link.resort.region.region_id,
@@ -2485,6 +2492,9 @@ def _location_payload(location: Location) -> dict[str, Any]:
     return {
         "id": location.pk,
         "uuid": str(location.uuid),
+        # SNOW-798: what the panel selects on and builds save/link URLs
+        # from — the same identifier the public weather surfaces use.
+        "short_id": location.short_id,
         "name": location.name,
         "kind": location.kind,
         "latitude": location.latitude,
@@ -2838,7 +2848,7 @@ def edit_location_create(request: HttpRequest) -> JsonResponse:
 
 
 @require_POST
-def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
+def edit_location_save(request: HttpRequest, short_id: str) -> JsonResponse:
     """Move, rename or re-classify an existing location.
 
     Request body (JSON)::
@@ -2876,7 +2886,7 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
               missing, non-float or out-of-bbox coordinates.
     """
     _require_edit_map_admin(request)
-    location = get_object_or_404(Location.objects.named(), pk=location_id)
+    location = get_object_or_404(Location.objects.named(), short_id=short_id)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:
@@ -2934,7 +2944,7 @@ def edit_location_save(request: HttpRequest, location_id: int) -> JsonResponse:
 
 
 @require_POST
-def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
+def edit_location_link(request: HttpRequest, short_id: str) -> JsonResponse:
     """Attach an existing location to another resort.
 
     Request body (JSON)::
@@ -2967,7 +2977,7 @@ def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
               location (``duplicate_link``).
     """
     _require_edit_map_admin(request)
-    location = get_object_or_404(Location.objects.named(), pk=location_id)
+    location = get_object_or_404(Location.objects.named(), short_id=short_id)
 
     body_error, payload = _parse_edit_body(request)
     if body_error is not None:
@@ -2992,7 +3002,7 @@ def edit_location_link(request: HttpRequest, location_id: int) -> JsonResponse:
 
 
 @require_POST
-def edit_location_unlink(request: HttpRequest, link_id: int) -> JsonResponse:
+def edit_location_unlink(request: HttpRequest, link_uuid: uuid.UUID) -> JsonResponse:
     """Remove one resort's link to a location, keeping the location.
 
     The inverse of :func:`edit_location_link`, and deliberately not a
@@ -3010,7 +3020,7 @@ def edit_location_unlink(request: HttpRequest, link_id: int) -> JsonResponse:
     """
     _require_edit_map_admin(request)
     link = get_object_or_404(
-        ResortLocation.objects.select_related("resort", "location"), pk=link_id
+        ResortLocation.objects.select_related("resort", "location"), uuid=link_uuid
     )
     location = link.location
     logger.info(

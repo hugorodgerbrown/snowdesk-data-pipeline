@@ -252,7 +252,7 @@
     }
     for (const row of rows) {
       const li = document.createElement('li');
-      const isCurrent = selected && selected.id === row.id;
+      const isCurrent = selected && selected.short_id === row.short_id;
       li.className = [
         'flex cursor-pointer items-center justify-between gap-2 rounded-sm px-2 py-1',
         isCurrent
@@ -519,7 +519,7 @@
   // the thing they just changed.
   const absorb = (data, message) => {
     allLocations = core.upsertLocation(allLocations, data);
-    selected = allLocations.find((row) => row.id === data.id) || null;
+    selected = allLocations.find((row) => row.short_id === data.short_id) || null;
     mode = MODE.EDIT;
     nameInput.value = selected ? selected.name : '';
     kindSelect.value = selected ? selected.kind : '';
@@ -578,7 +578,9 @@
 
   const save = async () => {
     const coords = draftCoords();
-    const url = SAVE_URL_TEMPLATE.replace('__ID__', String(selected.id));
+    // SNOW-798: the panel addresses a location by its short id and a link
+    // by its uuid — the same identifiers the public surfaces use.
+    const url = SAVE_URL_TEMPLATE.replace('__SHORTID__', encodeURIComponent(selected.short_id));
     const data = await submit(
       url,
       core.savePayload({
@@ -595,7 +597,7 @@
   };
 
   const link = async () => {
-    const url = LINK_URL_TEMPLATE.replace('__ID__', String(selected.id));
+    const url = LINK_URL_TEMPLATE.replace('__SHORTID__', encodeURIComponent(selected.short_id));
     const data = await submit(
       url,
       core.linkPayload({
@@ -611,7 +613,7 @@
   };
 
   const unlink = async (linkRow) => {
-    const url = UNLINK_URL_TEMPLATE.replace('__ID__', String(linkRow.id));
+    const url = UNLINK_URL_TEMPLATE.replace('__UUID__', encodeURIComponent(linkRow.uuid));
     const data = await submit(
       url,
       {},

@@ -737,26 +737,33 @@ def _get_name_slug(region: MicroRegion) -> str:
 def _edit_locations_context() -> dict[str, str]:
     """Return the URL context the location editor's panel is wired with.
 
-    Three of the five endpoints take a row id, so they are reversed with a
-    dummy and string-replaced at runtime in the JS — the same
-    ``__ID__`` placeholder trick ``edit_save_url_template`` above uses, and
-    the same one ``static/js/map.js`` uses for the region-summary URL.
+    Three of the five endpoints take an identifier, so they are reversed
+    with a placeholder the JS swaps at runtime — the same trick
+    ``edit_save_url_template`` above and ``static/js/map.js``'s
+    region-summary URL use. SNOW-798: save and link take the location's
+    short id (``__SHORTID__`` is eleven characters with a non-digit, so
+    the ``short_id`` converter accepts it verbatim); unlink takes the
+    link's uuid, reversed with the nil uuid and swapped for ``__UUID__``,
+    the pattern ``_favourites_context`` established.
 
     Returns:
         The five URLs the panel's data attributes carry.
 
     """
-
-    def _templated(name: str) -> str:
-        """Reverse ``name`` with a dummy id and swap in the placeholder."""
-        return reverse(name, args=[0]).replace("/0/", "/__ID__/")
-
+    nil_uuid = uuid.UUID(int=0)
+    unlink_template = reverse("api:edit_location_unlink", args=[nil_uuid]).replace(
+        str(nil_uuid), "__UUID__"
+    )
     return {
         "edit_locations_queue_url": reverse("api:edit_locations_queue"),
         "edit_location_create_url": reverse("api:edit_location_create"),
-        "edit_location_save_url_template": _templated("api:edit_location_save"),
-        "edit_location_link_url_template": _templated("api:edit_location_link"),
-        "edit_location_unlink_url_template": _templated("api:edit_location_unlink"),
+        "edit_location_save_url_template": reverse(
+            "api:edit_location_save", args=["__SHORTID__"]
+        ),
+        "edit_location_link_url_template": reverse(
+            "api:edit_location_link", args=["__SHORTID__"]
+        ),
+        "edit_location_unlink_url_template": unlink_template,
     }
 
 
@@ -823,7 +830,7 @@ def home(request: HttpRequest) -> HttpResponse:
       ``edit_target``         — "resorts" when resort-edit mode is active,
                                 else "". The empty string is the normal map.
       ``edit_queue_url``      — URL for the edit queue API (resorts only).
-      ``edit_save_url_template`` — Save URL with ``__ID__`` placeholder (resorts).
+      ``edit_save_url_template`` — Save URL with ``__SLUG__`` placeholder (resorts).
       ``edit_create_url``     — URL for the resort-create API (resorts only).
       ``edit_resorts_geojson_url`` — URL for the resorts GeoJSON endpoint (resorts).
       ``edit_locations_*``     — the five location-editor URLs, present only
@@ -883,12 +890,11 @@ def home(request: HttpRequest) -> HttpResponse:
     edit_target = _edit_target(request)
     edit_context: dict[str, Any] = {"edit_target": edit_target}
     if edit_target == "resorts":
-        # The save URL contains an :resort_id placeholder — same trick as
-        # the region_summary URL in static/js/map.js: reverse with a
-        # dummy id, then string-replace at runtime in the JS.
-        save_url_template = reverse("api:edit_resort_save", args=[0]).replace(
-            "/0/", "/__ID__/"
-        )
+        # The save URL carries a ``__SLUG__`` placeholder the JS swaps for
+        # the selected resort's slug (SNOW-798) — same trick as the
+        # region_summary URL in static/js/map.js. The slug converter
+        # accepts the placeholder as-is, so no string-replace is needed.
+        save_url_template = reverse("api:edit_resort_save", args=["__SLUG__"])
         edit_context.update(
             {
                 "edit_queue_url": reverse("api:edit_resorts_queue"),
@@ -1616,7 +1622,7 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 
     """
     favourites_eligible = request.user.is_authenticated
-    # __UUID__ placeholder, mirroring the __ID__ trick used above for
+    # __UUID__ placeholder, mirroring the __SLUG__ trick used above for
     # edit_save_url_template — reverse with a dummy uuid, then string-
     # replace at runtime with the uuid of the pin actually selected.
     dummy_uuid = uuid.UUID(int=0)

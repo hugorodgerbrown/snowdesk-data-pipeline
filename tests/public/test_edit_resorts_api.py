@@ -322,11 +322,11 @@ class TestEditResortsQueueAdminGate:
 
 
 def _post_save(
-    client: Client, resort_id: int, **body: Any
+    client: Client, slug: str | None, **body: Any
 ) -> Any:  # mock-typing-impractical
-    """Helper — POST JSON to the save endpoint."""
+    """Helper — POST JSON to the save endpoint, keyed on the slug (SNOW-798)."""
     return client.post(
-        reverse("api:edit_resort_save", args=[resort_id]),
+        reverse("api:edit_resort_save", args=[slug]),
         data=json.dumps(body),
         content_type="application/json",
     )
@@ -340,7 +340,7 @@ class TestEditResortSave:
         """A valid POST sets coords + provenance + clears needs_review."""
         resort = ResortFactory.create(name="A", needs_review=True)
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, latitude=46.0961, longitude=7.2275)
+        resp = _post_save(client, resort.slug, latitude=46.0961, longitude=7.2275)
         assert resp.status_code == 200, resp.content
 
         resort.refresh_from_db()
@@ -355,14 +355,14 @@ class TestEditResortSave:
         """SNOW-85 dropped auto-advance; ``next_in_queue`` is gone."""
         resort = ResortFactory.create(name="A")
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
+        resp = _post_save(client, resort.slug, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         assert "next_in_queue" not in resp.json()
 
     def test_unknown_resort_returns_404(self) -> None:
         """Posting against a non-existent resort id returns 404."""
         client = _superuser_client()
-        resp = _post_save(client, 99999, latitude=46.0, longitude=7.0)
+        resp = _post_save(client, "nowhere", latitude=46.0, longitude=7.0)
         assert resp.status_code == 404
 
     def test_invalid_json_returns_400(self) -> None:
@@ -370,7 +370,7 @@ class TestEditResortSave:
         resort = ResortFactory.create(name="A")
         client = _superuser_client()
         resp = client.post(
-            reverse("api:edit_resort_save", args=[resort.pk]),
+            reverse("api:edit_resort_save", args=[resort.slug]),
             data="not json",
             content_type="application/json",
         )
@@ -381,7 +381,7 @@ class TestEditResortSave:
         """Missing fields return 400 invalid_coords."""
         resort = ResortFactory.create(name="A")
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, longitude=7.0)
+        resp = _post_save(client, resort.slug, longitude=7.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_coords"
 
@@ -389,7 +389,7 @@ class TestEditResortSave:
         """Coordinates north of Switzerland are rejected."""
         resort = ResortFactory.create(name="A")
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, latitude=50.0, longitude=7.0)
+        resp = _post_save(client, resort.slug, latitude=50.0, longitude=7.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "out_of_bounds"
 
@@ -397,7 +397,7 @@ class TestEditResortSave:
         """Coordinates east of Switzerland are rejected."""
         resort = ResortFactory.create(name="A")
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, latitude=46.0, longitude=12.0)
+        resp = _post_save(client, resort.slug, latitude=46.0, longitude=12.0)
         assert resp.status_code == 400
         assert resp.json()["error"] == "out_of_bounds"
 
@@ -406,14 +406,14 @@ class TestEditResortSave:
         resort = ResortFactory.create(name="A")
         client = _superuser_client()
         # _SWISS_BBOX = (5.9, 45.8, 10.5, 47.8).
-        resp = _post_save(client, resort.pk, latitude=45.8, longitude=7.0)
+        resp = _post_save(client, resort.slug, latitude=45.8, longitude=7.0)
         assert resp.status_code == 200
 
     def test_save_clears_needs_review(self) -> None:
         """Saving a resort flagged for review clears the flag."""
         resort = ResortFactory.create(name="A", needs_review=True)
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
+        resp = _post_save(client, resort.slug, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         resort.refresh_from_db()
         assert resort.needs_review is False
@@ -450,7 +450,7 @@ class TestEditResortSave:
         resort = ResortFactory.create(name="Villars-sur-Ollon", region=wrong_region)
         client = _superuser_client()
         # Pin at lon=7.75, lat=46.25 — inside correct_region's polygon.
-        resp = _post_save(client, resort.pk, latitude=46.25, longitude=7.75)
+        resp = _post_save(client, resort.slug, latitude=46.25, longitude=7.75)
         assert resp.status_code == 200
         body = resp.json()
         # Response carries the rebound region in both id and name.
@@ -477,7 +477,7 @@ class TestEditResortSave:
         )
         resort = ResortFactory.create(name="Aigle", region=region)
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, latitude=46.318, longitude=6.969)
+        resp = _post_save(client, resort.slug, latitude=46.318, longitude=6.969)
         assert resp.status_code == 200
         assert resp.json()["region_id"] == "CH-1111"
         resort.refresh_from_db()
@@ -508,7 +508,7 @@ class TestEditResortSave:
         resort = ResortFactory.create(name="Edge", region=original_region)
         client = _superuser_client()
         # Pin in the middle of Switzerland, well outside far_region.
-        resp = _post_save(client, resort.pk, latitude=46.5, longitude=7.5)
+        resp = _post_save(client, resort.slug, latitude=46.5, longitude=7.5)
         assert resp.status_code == 200
         assert resp.json()["region_id"] == "CH-1100"
         resort.refresh_from_db()
@@ -526,7 +526,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0961,
             longitude=7.2275,
             details={
@@ -568,7 +568,7 @@ class TestEditResortSaveDetails:
         """Omitting ``details`` entirely leaves every stored value alone."""
         resort = ResortFactory.create(name="A", num_lifts=7)
         client = _superuser_client()
-        resp = _post_save(client, resort.pk, latitude=46.0, longitude=7.0)
+        resp = _post_save(client, resort.slug, latitude=46.0, longitude=7.0)
         assert resp.status_code == 200
         resort.refresh_from_db()
         assert resort.num_lifts == 7
@@ -583,7 +583,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0,
             longitude=7.0,
             details={"num_lifts": 9},
@@ -603,7 +603,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0,
             longitude=7.0,
             details={"num_lifts": "", "operator_name": ""},
@@ -619,7 +619,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0,
             longitude=7.0,
             details={"num_lifts": "12", "total_piste_km": "88.5"},
@@ -653,7 +653,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0,
             longitude=7.0,
             details={field: value},
@@ -669,7 +669,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0,
             longitude=7.0,
             details={"base_elevation_m": 2000, "top_elevation_m": 1500},
@@ -683,7 +683,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0,
             longitude=7.0,
             details=["num_lifts"],
@@ -697,7 +697,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.5,
             longitude=7.5,
             details={"num_lifts": "nope"},
@@ -716,7 +716,7 @@ class TestEditResortSaveDetails:
         client = _superuser_client()
         resp = _post_save(
             client,
-            resort.pk,
+            resort.slug,
             latitude=46.0,
             longitude=7.0,
             details={"needs_review": True, "canton": "ZZ", "num_lifts": 3},
@@ -743,7 +743,7 @@ class TestEditResortSaveAdminGate:
         """
         resort = ResortFactory.create(name="A")
         resp = client_factory().post(
-            reverse("api:edit_resort_save", args=[resort.pk]),
+            reverse("api:edit_resort_save", args=[resort.slug]),
             data=json.dumps({"latitude": 46.0, "longitude": 7.0}),
             content_type="application/json",
         )
@@ -757,7 +757,7 @@ class TestEditResortSaveAdminGate:
         """The other half of the gate: a superuser's save lands."""
         resort = ResortFactory.create(name="A")
         resp = _post_save(
-            _superuser_client(), resort.pk, latitude=46.0961, longitude=7.2275
+            _superuser_client(), resort.slug, latitude=46.0961, longitude=7.2275
         )
         assert resp.status_code == 200
         resort.refresh_from_db()
@@ -1406,3 +1406,37 @@ class TestMapViewEditMode:
         resp = _superuser_client().get(reverse("public:home"))
         assert resp.status_code == 200
         assert b"edit-resorts-panel" not in resp.content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-798 — the editor is keyed on the slug, not the pk
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestEditorIsSlugKeyed:
+    """Every payload the panel builds a URL from carries the slug."""
+
+    def test_queue_entries_carry_the_slug(self) -> None:
+        """The catalogue row is what the panel selects on and saves through."""
+        resort = ResortFactory.create(name="Verbier")
+        body = _superuser_client().get(reverse("api:edit_resorts_queue")).json()
+        entry = next(e for e in body["all_resorts"] if e["id"] == resort.pk)
+        assert entry["slug"] == "verbier"
+
+    def test_save_payload_carries_the_slug(self) -> None:
+        """A save answers with the slug so the panel can re-key the row."""
+        resort = ResortFactory.create(name="Verbier")
+        resp = _post_save(
+            _superuser_client(), resort.slug, latitude=46.0961, longitude=7.2275
+        )
+        assert resp.status_code == 200
+        assert resp.json()["slug"] == "verbier"
+
+    def test_the_pk_no_longer_addresses_a_resort(self) -> None:
+        """The integer key is not accepted — a numeric slug is just an unknown slug."""
+        resort = ResortFactory.create(name="Verbier")
+        resp = _post_save(
+            _superuser_client(), str(resort.pk), latitude=46.0961, longitude=7.2275
+        )
+        assert resp.status_code == 404
