@@ -59,6 +59,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import waffle
 from django.conf import settings
@@ -72,6 +73,7 @@ from django.contrib.auth import (
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -94,6 +96,7 @@ from .forms import (
 from .identity import user_identity
 from .logging_utils import mask_email
 from .models import Account
+from .redirects import safe_next
 from .services.deletion import erase_account
 from .services.email import (
     send_account_access_email,
@@ -170,7 +173,9 @@ def _get_account(request: HttpRequest) -> Account | None:
 # ---------------------------------------------------------------------------
 
 
-def _password_sign_in(request: HttpRequest) -> HttpResponse | None:
+def _password_sign_in(
+    request: HttpRequest, next_url: str | None
+) -> HttpResponse | None:
     """Attempt password sign-in when a password is supplied (SNOW-431).
 
     A wrong password, an unknown email, and an account with no usable password
@@ -179,11 +184,14 @@ def _password_sign_in(request: HttpRequest) -> HttpResponse | None:
 
     Args:
         request: The current POST request.
+        next_url: The already-validated ``next`` destination (SNOW-825), or
+            ``None`` to land on the map. Carried back into the error
+            re-render so a mistyped password does not lose the destination.
 
     Returns:
-        A redirect to manage on success, the sign-in page with a generic error
-        on failure, or ``None`` when no password was supplied (the caller then
-        continues with the magic-link flow).
+        A redirect to ``next_url`` (or the map) on success, the sign-in page
+        with a generic error on failure, or ``None`` when no password was
+        supplied (the caller then continues with the magic-link flow).
 
     """
     if not request.POST.get("password"):
@@ -198,12 +206,12 @@ def _password_sign_in(request: HttpRequest) -> HttpResponse | None:
         )
         if user is not None:
             login(request, user)
-            return redirect("public:home")
+            return redirect(next_url or reverse("public:home"))
 
     return render(
         request,
         "accounts/sign_in.html",
-        {"form": EmailForm(), "password_error": True},
+        {"form": EmailForm(), "password_error": True, "next_url": next_url},
         status=200,
     )
 
@@ -222,6 +230,13 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     returns the same "check your inbox" response regardless of whether the
     email is known.
 
+    ``?next=`` (SNOW-825): a same-site destination to return to after signing
+    in, so a recipient who opened a trip share link and signed in lands back
+    on the trip rather than on the map. All three paths honour it — the
+    password redirect, the magic-link email's URL, and the passkey response's
+    ``next`` — and every one of them validates it through
+    ``apps.accounts.redirects.safe_next`` first.
+
     Args:
         request: Incoming HTTP request.
 
@@ -229,11 +244,36 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         Rendered sign-in page or redirect.
 
     """
+    # SNOW-825: where to land afterwards. Read from the query string on GET
+    # and from the form's hidden field on POST, and validated by ``safe_next``
+    # on every read — the raw value is attacker-supplied, and an unchecked one
+    # would make this page an open redirector.
+    next_url = safe_next(
+        request,
+        request.GET.get("next")
+        if request.method == "GET"
+        else request.POST.get("next"),
+    )
+
+    # A ``next`` pointing back at THIS page is a bounce rather than a
+    # destination: the already-authenticated branch below would redirect
+    # here, and this page would then redirect onward carrying no ``next``
+    # at all. It terminates — each hop consumes one level — but it spends
+    # two redirects to land exactly where a missing ``next`` lands in none.
+    # Dropped here rather than in ``safe_next``, which answers "is this
+    # destination safe" and not "is it worth going to".
+    if next_url and urlsplit(next_url).path == reverse("accounts:sign_in"):
+        next_url = None
+
     if request.user.is_authenticated:
-        return redirect("public:home")
+        return redirect(next_url or reverse("public:home"))
 
     if request.method == "GET":
-        return render(request, "accounts/sign_in.html", {"form": EmailForm()})
+        return render(
+            request,
+            "accounts/sign_in.html",
+            {"form": EmailForm(), "next_url": next_url},
+        )
 
     # POST — rate-limit then send (or noop).
     usage = get_usage(
@@ -249,13 +289,15 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
 
     # Password sign-in branch (SNOW-431) — returns a response when a password
     # was supplied, else None to fall through to the magic-link flow.
-    pw_response = _password_sign_in(request)
+    pw_response = _password_sign_in(request, next_url)
     if pw_response is not None:
         return pw_response
 
     form = EmailForm(request.POST)
     if not form.is_valid():
-        return render(request, "accounts/sign_in.html", {"form": form})
+        return render(
+            request, "accounts/sign_in.html", {"form": form, "next_url": next_url}
+        )
 
     email: str = form.cleaned_data["email"]
 
@@ -267,7 +309,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         email,
         defaults={"acquisition_request": req_log},
     )
-    send_account_access_email(email, request=request)
+    send_account_access_email(email, request=request, next_url=next_url)
     logger.info(
         "Account-access email sent to account pk=%s via sign-in page", account.pk
     )
@@ -898,13 +940,24 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
     On a bad, tampered, or expired token — or a token for an unknown user —
     renders ``link_expired.html`` (400) for both verbs.
 
+    **The ``?next=`` query parameter (SNOW-825).** The emailed link carries
+    the destination the person was heading for — a trip share page, say — as
+    an ordinary query parameter rather than as a claim baked into the signed
+    token, and that is deliberate. The TOKEN is what authenticates; ``next``
+    is only a destination, so signing it would protect nothing that matters
+    and would fix the destination at send time for a link that lives for a
+    day. Tampering with the query is a person redirecting THEMSELVES: it
+    grants no access the token did not already grant, and it cannot reach a
+    foreign host, because the value is re-validated with ``safe_next`` here,
+    on arrival, at the moment of the redirect.
+
     Args:
         request: Incoming HTTP request.
         token: The signed token from the URL path.
 
     Returns:
-        The confirm page (GET), a 302 redirect to manage (POST success), or the
-        link-expired error page.
+        The confirm page (GET), a 302 redirect to the ``next`` destination or
+        the map (POST success), or the link-expired error page.
 
     """
     max_age = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400)
@@ -922,10 +975,22 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         )
         return _link_expired(request)
 
+    # The destination the emailed link was minted for, re-validated on arrival
+    # (SNOW-825). GET carries it in the query string and hands it to the
+    # confirm form as a hidden field; POST reads it back from there.
+    next_url = safe_next(
+        request,
+        request.GET.get("next")
+        if request.method == "GET"
+        else request.POST.get("next"),
+    )
+
     if request.method == "GET":
         # No state change on GET — the token is carried in the form action (the
         # same URL) so the POST re-verifies it.
-        response = render(request, "accounts/access.html", {"token": token})
+        response = render(
+            request, "accounts/access.html", {"token": token, "next_url": next_url}
+        )
         response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
         return response
 
@@ -964,7 +1029,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
                 alias_id=anon_id,
             )
     login(request, user, backend=_TOKEN_BACKEND)
-    response = redirect(_VERIFIED_LANDING_URL)
+    response = redirect(next_url or _VERIFIED_LANDING_URL)
     # Tokens appear in this view's URL path — suppress Referer leakage.
     response["Referrer-Policy"] = _REFERRER_NO_REFERRER
     return response

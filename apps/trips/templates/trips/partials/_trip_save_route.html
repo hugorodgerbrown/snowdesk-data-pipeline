@@ -38,9 +38,18 @@ Context:
 {% endcomment %}
 <div id="trip-save-route" data-testid="trip-save-route">
     {% if not request.user.is_authenticated %}
+        {% comment %}
+            `?next=` returns the visitor to this page after signing in
+            (SNOW-825) — sign-in honours it on all three paths, validating
+            it through apps.accounts.redirects.safe_next. Without it they
+            would land on the map and have to reopen the link they were
+            sent.
+        {% endcomment %}
         {% trans "Sign in to save this route" as trip_save_signin_label %}
-        {% url 'accounts:sign_in' as trip_save_signin_url %}
-        {% include "includes/_button.html" with label=trip_save_signin_label href=trip_save_signin_url variant="secondary" size="compact" %}
+        {% url 'accounts:sign_in' as trip_save_signin_path %}
+        {% with trip_save_next=request.get_full_path|urlencode %}
+            {% include "includes/_button.html" with label=trip_save_signin_label href=trip_save_signin_path|add:"?next="|add:trip_save_next variant="secondary" size="compact" %}
+        {% endwith %}
     {% elif route_already_saved %}
         <p class="text-sm text-text-2" data-testid="trip-route-saved">
             {% trans "This route is saved to your routes." %}

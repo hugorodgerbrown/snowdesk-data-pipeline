@@ -6,10 +6,13 @@ apps/accounts/services/email.py — Email delivery for the subscription flow.
 
 Provides two public functions:
 
-``send_account_access_email(email, *, request=None)``
+``send_account_access_email(email, *, request=None, next_url=None)``
     Generates an account-access token, builds an absolute URL pointing at
     ``/account/access/<token>/``, renders plain-text and HTML templates,
-    and dispatches via Django's configured mail backend.
+    and dispatches via Django's configured mail backend.  A ``next_url``
+    (already validated by the calling view) rides along as a URL-encoded
+    ``?next=`` parameter so the recipient lands where they were heading
+    before sign-in (SNOW-825).
 
 ``send_verification_email(email, *, request=None)``
     Generates an email-verification token (``SALT_EMAIL_VERIFICATION``),
@@ -59,6 +62,7 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.http import HttpRequest
 from django.template.loader import render_to_string
+from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy
 from django_tasks import task
 
@@ -104,7 +108,9 @@ _SUBJECT_EMAIL_CHANGE = gettext_lazy("Confirm your new Snowdesk email address")
 _SUBJECT_EMAIL_CHANGE_NOTICE = gettext_lazy("Your Snowdesk email address is changing")
 
 
-def _build_account_url(token: str, base_url: str | None) -> str:
+def _build_account_url(
+    token: str, base_url: str | None, next_url: str | None = None
+) -> str:
     """
     Build the absolute account-access URL for a given token.
 
@@ -112,10 +118,20 @@ def _build_account_url(token: str, base_url: str | None) -> str:
     so that callers outside a request context (management commands, background
     tasks) still produce a valid URL.
 
+    ``next_url`` is appended as a URL-encoded ``?next=`` query parameter
+    (SNOW-825) so the person following the link lands where they were heading
+    before they were asked to sign in. It rides in the query string rather
+    than inside the signed token because the token is what authenticates and
+    ``next`` is only a destination; ``apps.accounts.views.account_view``
+    re-validates it with ``safe_next`` on arrival, so a tampered value can
+    only redirect the tamperer, and never off-site.
+
     Args:
         token: The signed token string.
         base_url: Optional absolute base URL (scheme + host) extracted from
             the originating request before enqueueing.
+        next_url: Optional same-site destination, already validated by the
+            view that accepted it.
 
     Returns:
         Absolute URL string, e.g. ``https://example.com/account/access/<token>/``.
@@ -127,7 +143,8 @@ def _build_account_url(token: str, base_url: str | None) -> str:
         if base_url is not None
         else getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")
     )
-    return f"{resolved_base.rstrip('/')}{path}"
+    query = f"?{urlencode({'next': next_url})}" if next_url else ""
+    return f"{resolved_base.rstrip('/')}{path}{query}"
 
 
 def _build_verify_url(token: str, base_url: str | None) -> str:
@@ -225,7 +242,9 @@ def _extract_base_url(request: HttpRequest | None) -> str | None:
 
 
 @task()
-def _worker_send_account_access_email(email: str, base_url: str | None) -> None:
+def _worker_send_account_access_email(
+    email: str, base_url: str | None, next_url: str | None = None
+) -> None:
     """
     Background worker: generate a token and send the account-access email.
 
@@ -236,10 +255,14 @@ def _worker_send_account_access_email(email: str, base_url: str | None) -> None:
         email: Recipient email address.
         base_url: Absolute base URL (scheme + host) extracted from the
             originating request, or ``None`` to fall back to SITE_BASE_URL.
+        next_url: Optional same-site destination to return the recipient to
+            after they sign in (SNOW-825), already validated by the view.
+            Defaults to ``None`` so a task row enqueued before this argument
+            existed still replays.
 
     """
     token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
-    account_url = _build_account_url(token, base_url)
+    account_url = _build_account_url(token, base_url, next_url)
     expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
 
     context = {
@@ -491,6 +514,7 @@ def send_account_access_email(
     email: str,
     *,
     request: HttpRequest | None = None,
+    next_url: str | None = None,
 ) -> None:
     """
     Enqueue an account-access email to ``email``.
@@ -502,10 +526,14 @@ def send_account_access_email(
     Args:
         email: Recipient email address.
         request: Optional HttpRequest used to derive the absolute base URL.
+        next_url: Optional same-site destination for the link to return to
+            after sign-in (SNOW-825). The CALLER validates it — pass the
+            output of ``apps.accounts.redirects.safe_next``, never a raw
+            request value.
 
     """
     base_url = _extract_base_url(request)
-    _worker_send_account_access_email.enqueue(email, base_url)
+    _worker_send_account_access_email.enqueue(email, base_url, next_url)
 
 
 def send_subscription_confirmation_email(

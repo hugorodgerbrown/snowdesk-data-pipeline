@@ -44,8 +44,16 @@ the manage page can be authenticated-only.
                     {% trans "Invalid email or password." %}
                 </div>
             {% endif %}
-            <form method="post" novalidate>
+            {% comment %}
+                SNOW-825: ``next_url`` is the server's already-validated
+                answer for where to go after signing in — never the raw
+                query parameter. It rides the form as a hidden field for the
+                password and magic-link paths, and as ``data-next`` for
+                passkey.js, which posts it with the credential.
+            {% endcomment %}
+            <form method="post" novalidate {% if next_url %}data-next="{{ next_url }}"{% endif %}>
                 {% csrf_token %}
+                {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
                 {% trans "Email address" as field_label %}
                 {% include "includes/_form_field.html" with field=form.email label=field_label %}
                 {% comment %}
