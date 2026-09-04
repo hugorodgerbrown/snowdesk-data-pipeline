@@ -202,16 +202,20 @@ class TestNavAccountMenuEntries:
     def test_every_entry_is_present(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Settings and Sign out — each asserted by name.
+        """Trips, Settings and Sign out — each asserted by name.
 
         SNOW-803 removed Favourites, Routes and Observations and SNOW-802
         Subscriptions: those are map sheets now, reached from the map's
-        roundels. The survivors keep a positive assertion each, so one
-        cannot vanish the way the two orphaned pages once shipped.
+        roundels. SNOW-823 added Trips, which is not a fourth of those —
+        a trip is indexed by WHEN and the map indexes by where
+        (docs/decisions/two-documents-and-a-map.md). Every entry keeps a
+        positive assertion, so one cannot vanish the way the two orphaned
+        pages once shipped.
         """
         html = _render_nav_for(rf, regular_user)
 
         for url_name, label in (
+            ("trips:list", "Trips"),
             ("accounts:settings", "Settings"),
             ("accounts:sign_out", "Sign out"),
         ):
@@ -224,13 +228,17 @@ class TestNavAccountMenuEntries:
     def test_entries_render_in_the_ranked_order(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Settings before Sign out (SNOW-705's ranking, minus the content).
+        """Trips, then Settings, then Sign out (SNOW-705's ranking).
 
-        Order is the ranking, so a reshuffle that puts Sign out above
-        Settings is a real regression.
+        Order is the ranking, so a reshuffle is a real regression. Trips is
+        a destination a signed-in user goes to; Settings is machinery they
+        visit rarely; Sign out is last on the rule that was already here.
         """
         html = _render_nav_for(rf, regular_user)
 
+        assert html.index(f'href="{reverse("trips:list")}"') < html.index(
+            f'href="{reverse("accounts:settings")}"'
+        )
         assert html.index(f'href="{reverse("accounts:settings")}"') < html.index(
             f'action="{reverse("accounts:sign_out")}"'
         )

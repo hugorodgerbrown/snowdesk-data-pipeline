@@ -66,7 +66,27 @@ with the other pins.
 This retires the reasoning that cancelled SNOW-665 — that a subscription is
 a notification channel and a favourite is a bookmark, so the two must stay
 apart. The conclusion it reached (do not build one unified *list page*)
-survives here for a different reason: there is no list page at all.
+survives here for a different reason: no SAVED-THING list page is a page.
+
+**Amended by SNOW-823: `/trips/` is a list page, and the rule that admits
+it is about the INDEX.** A route, a favourite and an observation are indexed
+*spatially* — where they are is what you look them up by — and the map IS
+that index, which is exactly why SNOW-803 could delete their list pages
+without losing anything. A trip is indexed *temporally*: what you want to
+know is what is coming up, and in what order.
+
+The map has no index for that. Its scrubber picks a date to read the
+BULLETIN for; it does not filter the reader's own objects by date, and
+teaching it to would make one control mean two things. Nor could it: a trip
+dated three weeks out is not a thing you find by looking at a place.
+
+Put the other way round: **a collection of routes is an inventory, and a
+collection of trips is an agenda.** An inventory is browsed by attribute —
+a map is a very good attribute browser. An agenda is read in order, forwards
+from today, and that is a list.
+
+So the sentence above is narrowed, not reversed. The map is still the index
+for everything indexed by place; `/trips/` exists because a trip is not.
 
 ## Consequences
 
@@ -100,6 +120,17 @@ survives here for a different reason: there is no list page at all.
 - **The nav avatar menu drops from five destinations to two** (Settings,
   Sign out), which the account-area navigation decision already anticipated
   — see [`account-area-navigation-lives-in-the-nav-menu`](account-area-navigation-lives-in-the-nav-menu.md).
+  SNOW-823 adds a third, Trips. That is not a reversal of SNOW-803's
+  removal: what came out were three lists of MAP OBJECTS, and this is the
+  time-indexed exception the amendment above establishes. The menu's own
+  rule already said adding a destination is adding one `<a>`.
+- **A trip is the first INTERACTIVE, MULTI-USER object.** Everything else
+  the map holds is one account's own data drawn on shared reference data —
+  authored by one person, read by that person. A trip is authored by one
+  account and read, then joined, by others, which is a new category. It is
+  written down here and in
+  [`a-trip-is-one-object-with-a-roster`](a-trip-is-one-object-with-a-roster.md)
+  so the next such object does not have to re-argue it.
 - **Every removed page keeps a redirect.** `/favourites/<uuid>/` → the
   location's weather page; the account list pages → the map with the
   matching sheet open.

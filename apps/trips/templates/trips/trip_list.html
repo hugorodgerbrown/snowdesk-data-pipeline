@@ -1,0 +1,75 @@
+{% extends "public/base.html" %}
+{% comment %}
+trips/trip_list.html — the reader's own trips (SNOW-823).
+
+A LIST PAGE, which is an exception to
+docs/decisions/two-documents-and-a-map.md and is argued there rather than
+here. In short: a route, a favourite and an observation are indexed
+SPATIALLY and the map is that index, which is why SNOW-803 could delete
+their list pages. A trip is indexed TEMPORALLY, and the map has no index for
+that — its scrubber picks a date to read the bulletin for, not a date to
+filter the reader's own objects by. A collection of routes is an inventory;
+a collection of trips is an agenda.
+
+Two sections, split against the trip's own date. Upcoming reads
+soonest-first because an agenda reads forwards; past reads most-recent-first
+because a history reads backwards. A trip dated TODAY is upcoming — the day
+it exists for has not finished.
+
+No share card: this page is one signed-in reader's own agenda, so a preview
+of it is meaningless to anyone who could see one, and it is behind auth so
+no unfurler will ever reach it.
+
+Unpaginated by design. A person organises a handful of trips a season and
+the cap is 25 organised each; a page that long needs no pagination and no
+new index.
+{% endcomment %}
+{% load i18n components %}
+
+{% block page_meta %}
+    {% trans "Your trips" as page_name %}
+    {% trans "Every trip you're on, upcoming and past — the day, the meeting time and who else is going." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}">
+        {% trans "Your trips" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="trips-heading" %}
+
+        {% if not upcoming_trips and not past_trips %}
+            {% card padding="p-6" %}
+            <p class="text-text-2" data-testid="trips-empty">
+                {% blocktrans trimmed %}
+                    You're not on any trips yet. Plan one from a route in the map's routes panel, or open a link
+                    somebody sent you.
+                {% endblocktrans %}
+            </p>
+            {% endcard %}
+        {% endif %}
+
+        {% if upcoming_trips %}
+            <section class="mb-8" data-testid="trips-upcoming">
+                {% trans "Coming up" as upcoming_heading %}
+                {% include "includes/_eyebrow.html" with text=upcoming_heading class_extra="mb-3" %}
+                <ul>
+                    {% for trip in upcoming_trips %}
+                        {% include "trips/partials/_trip_list_row.html" with trip=trip %}
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+
+        {% if past_trips %}
+            <section data-testid="trips-past">
+                {% trans "Past" as past_heading %}
+                {% include "includes/_eyebrow.html" with text=past_heading class_extra="mb-3" %}
+                <ul>
+                    {% for trip in past_trips %}
+                        {% include "trips/partials/_trip_list_row.html" with trip=trip %}
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+    </main>
+{% endblock content %}

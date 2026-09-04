@@ -82,7 +82,9 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
                  owns, on a named day, at a stated time and meeting point)
                  and ``TripParticipant`` (every account on it, organiser
-                 included). The geometry is a SNAPSHOT copied at creation
+                 included). ``/trips/`` is the one saved-thing LIST page
+                 that survived SNOW-803, because a trip is indexed by WHEN
+                 and the map indexes by where. The geometry is a SNAPSHOT copied at creation
                  and never re-read, so a trip survives the source route
                  being renamed or deleted. The first Snowdesk object that
                  is interactive and multi-user; read

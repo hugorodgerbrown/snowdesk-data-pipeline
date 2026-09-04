@@ -1,9 +1,12 @@
 """
 apps/trips/views.py — the trip page and the fragments that author one.
 
-Two full pages, which share none of the fragment rules because they are not
-fragments:
+Three full pages, which share none of the fragment rules because they are
+not fragments:
 
+- ``trip_list`` (GET) — ``/trips/``: the reader's own agenda, split
+  upcoming / past. Scoped by PARTICIPATION, so a trip they joined is on it
+  and one they organised is labelled rather than filed separately.
 - ``trip_new`` (GET) — ``/trips/new/?route=<uuid>``: the authoring form for
   a trip planned from one of the requesting user's own routes.
 - ``trip_detail`` (GET) — ``/trips/<uuid>/``: the trip itself. A REAL PAGE
@@ -59,9 +62,11 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.conf import settings
+from django.db.models import Count
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import (
     require_GET,
     require_http_methods,
@@ -543,9 +548,10 @@ def trip_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
         return HttpResponse("Trip not found.", status=404)
 
     response = HttpResponse("")
-    # SNOW-823 points this at the trips list. Until that commit there is no
-    # list to land on, so a deleted trip returns the organiser to the map.
-    response["HX-Redirect"] = reverse("public:home")
+    # The list, not the map: a deleted trip leaves the organiser looking at
+    # the other trips they still have, which is where the thing they just
+    # removed used to be.
+    response["HX-Redirect"] = reverse("trips:list")
     return response
 
 
@@ -1042,4 +1048,68 @@ def trip_route_save(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
     return _save_route(
         request, request.user, trip, reverse("trips:save_route", args=[uuid])
+    )
+
+
+# ---------------------------------------------------------------------------
+# The list (SNOW-823)
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def trip_list(request: HttpRequest) -> HttpResponse:
+    """Render the reader's own trips, split upcoming and past.
+
+    **Scoped by PARTICIPATION**, through ``Trip.objects.for_user`` — a trip
+    they joined belongs on their agenda exactly as much as one they
+    organised. Organising is a LABEL on the row rather than a section of
+    its own: splitting by authorship would file two trips on the same
+    morning under different headings, and the reader's question is "what
+    am I doing", not "what did I write".
+
+    **Split against the trip's own date, and a trip dated TODAY counts as
+    upcoming** — the day it exists for has not finished, and a group still
+    meeting this afternoon must not find their trip filed under "past" over
+    breakfast. Upcoming reads soonest-first (an agenda reads forwards) and
+    past most-recent-first (a history reads backwards).
+
+    Unpaginated and unindexed, both deliberately. A person organises a
+    handful of trips a season and the cap is 25 organised each; a page that
+    long needs neither.
+
+    Anonymous visitors are redirected to sign-in rather than answered 403,
+    matching this module's other pages — see ``trip_new`` for why
+    ``@login_required`` is not used.
+
+    Args:
+        request: The incoming GET request.
+
+    Returns:
+        The rendered list page, or a redirect to sign-in.
+
+    """
+    if not request.user.is_authenticated:
+        return redirect("accounts:sign_in")
+
+    # ``timezone.localdate()`` and not ``date.today()``: the split is
+    # against the site's own current day, which is what a reader means by
+    # "today" — and the only clock either half of the split may use, or a
+    # trip could fall into both or neither.
+    today = timezone.localdate()
+    # ``participant_count`` is annotated rather than read as
+    # ``trip.participants.count`` in the row partial: the template renders
+    # one row per trip, so the property form is one COUNT query per row and
+    # the page's query count grows with the reader's own agenda. One
+    # aggregate over the join answers every row.
+    trips = Trip.objects.for_user(request.user).annotate(
+        participant_count=Count("participants")
+    )
+
+    return render(
+        request,
+        "trips/trip_list.html",
+        {
+            "upcoming_trips": list(trips.upcoming(today)),
+            "past_trips": list(trips.past(today)),
+        },
     )

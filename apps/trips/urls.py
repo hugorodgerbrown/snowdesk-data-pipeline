@@ -7,6 +7,7 @@ does not resolve "trips" as a region — the same ordering constraint
 ``favourites/``, ``routes/`` and ``downloads/`` carry.
 
 URL structure:
+  trips/                             GET  — the reader's own trips (SNOW-823)
   trips/new/                         GET  — the authoring form
   trips/partials/create/             POST — write a trip (SNOW-820)
   trips/partials/<uuid>/edit/        POST — update the plan
@@ -46,6 +47,11 @@ from . import views
 app_name = "trips"
 
 urlpatterns = [
+    path(
+        "",
+        views.trip_list,
+        name="list",
+    ),
     path(
         "new/",
         views.trip_new,

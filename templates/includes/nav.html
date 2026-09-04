@@ -8,10 +8,12 @@ Right-side auth area
 --------------------
 Authenticated user:
   An avatar button (first letter of email) opens a dropdown holding the
-  offline-mode switch, Settings and a "Sign out" button. SNOW-803 removed
-  the Favourites, Routes and Observations entries and SNOW-802 the
+  offline-mode switch, Trips, Settings and a "Sign out" button. SNOW-803
+  removed the Favourites, Routes and Observations entries and SNOW-802 the
   Subscriptions entry and the subscribed-region links above it — every one
-  of those is a map object now, listed in the map's pins sheet.
+  of those is a map object now, listed in the map's pins sheet. SNOW-823
+  added Trips, which is not one: a trip is indexed by WHEN, and the map
+  indexes by where.
 
 Not authenticated:
   A single "Sign in" button routes to /account/sign-in/; that page carries
@@ -403,6 +405,32 @@ Usage
                             (docs/decisions/account-area-navigation-lives-in-
                             the-nav-menu.md) holds with two entries.
                         {% endcomment %}
+                        {% comment %}
+                            SNOW-823 adds Trips, taking the menu back to
+                            three destinations. That is not a reversal of
+                            SNOW-803's removal: what came out were three
+                            lists of MAP OBJECTS — favourites, routes,
+                            reports — each of which the map already indexes
+                            spatially and each of which now lives in a
+                            sheet. A trip is indexed TEMPORALLY, and the
+                            map has no index for that, which is the whole
+                            argument in
+                            docs/decisions/two-documents-and-a-map.md.
+
+                            It is FIRST, above Settings: Trips is a
+                            destination a signed-in user goes to (what am I
+                            doing this week), and Settings is machinery
+                            they visit rarely. The rule this menu already
+                            states — adding a section is adding one <a> —
+                            is what makes this a one-line change.
+                        {% endcomment %}
+                        <a
+                            role="menuitem"
+                            href="{% url 'trips:list' %}"
+                            class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        >
+                            {% trans "Trips" %}
+                        </a>
                         <a
                             role="menuitem"
                             href="{% url 'accounts:settings' %}"
