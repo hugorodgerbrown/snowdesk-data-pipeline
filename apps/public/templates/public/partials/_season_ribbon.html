@@ -136,11 +136,28 @@ for it was dead.
             (docs/decisions — the #home-intro / _overlay_sheet rule). dvh, not
             vh, so a mobile URL bar does not push the bottom off screen.
             {% endcomment %}
+                {% comment %}
+            SNOW-814: ``data-region-pin-list-url`` is what turns this panel into
+            the home of the user's pinned regions. Rendered for a signed-in user
+            only — its absence is how map_region_panel.js knows there is no list
+            to load, which is also why the chip stays inert for a visitor with
+            nothing selected. The list itself arrives over HTMX from
+            favourites:region_list, so every row is the server's own
+            (includes/_ugc_panel_row.html) with its Remove form already wired.
+                {% endcomment %}
                 <div
                     id="region-panel"
                     class="region-panel"
                     role="group"
                     aria-labelledby="region-readout"
+                    {% if request.user.is_authenticated %}
+                        data-region-pin-list-url="{% url 'favourites:region_list' %}"
+                        {# The 'XX-0000' token is the codebase's placeholder for  #}
+                        {# a region id in a JS-built URL — see _map_embed.html's  #}
+                        {# data-region-summary-url, which map_region_panel.js     #}
+                        {# already substitutes into the same way.                 #}
+                        data-region-pin-toggle-url="{% url 'favourites:region_toggle' region_id='XX-0000' %}"
+                    {% endif %}
                     hidden
                 >
                 </div>
@@ -155,6 +172,11 @@ for it was dead.
             {# state with nothing selected rather than being hidden by a       #}
             {# `.has-region` sibling rule. It is the only roundel left in this #}
             {# header now that the view-bulletin one has gone.                 #}
+            {# SNOW-814: the pin roundel, between the chip it acts on and the #}
+            {# download roundel. Both are verbs on the region the chip names,  #}
+            {# so they sit together; see the partial for why pinning stopped   #}
+            {# being a pill inside the panel.                                  #}
+            {% include "public/partials/_map_region_pin_control.html" %}
             {% include "public/partials/_map_download_control.html" %}
         </div>
         {# Strings the panel writes from JS. makemessages does not scan JS,   #}
@@ -163,6 +185,19 @@ for it was dead.
         <template id="region-panel-strings-template">
             <span data-string="resorts">{% trans "Resorts in this region" %}</span>
             <span data-string="unavailable">{% trans "Region details are unavailable offline." %}</span>
+            {# SNOW-814: the pinned-regions section's eyebrow, and the line it #}
+            {# shows when the list cannot be fetched. The empty state is the   #}
+            {# server's (favourites/partials/_region_pin_list.html) and is     #}
+            {# deliberately a different sentence: "you have pinned nothing" is #}
+            {# a claim about the user's data that a failed request cannot make.#}
+            <span data-string="pinned">{% trans "Pinned regions" %}</span>
+            <span data-string="pinned-failed">{% trans "Your pinned regions couldn't be loaded." %}</span>
+            {# SNOW-814: the pin roundel's labels and its failure toast. The  #}
+            {# roundel's own aria-label/title are rewritten as its state      #}
+            {# changes, so every one of them has to pass through a template.  #}
+            <span data-string="pin-region">{% trans "Pin this region" %}</span>
+            <span data-string="unpin-region">{% trans "Unpin this region" %}</span>
+            <span data-string="pin-failed">{% trans "That region couldn't be pinned. Try again." %}</span>
         </template>
     </div>
 {% endif %}

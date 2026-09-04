@@ -1,0 +1,72 @@
+{% load i18n %}
+{% comment %}
+favourites/partials/_region_pin_list.html — the user's pinned regions, as a
+list (SNOW-814).
+
+Rendered by apps.favourites.views.region_pin_list and swapped by
+static/js/map_region_panel.js into the pinned-regions section of the region
++ date panel — the surface the #region-readout chip discloses.
+
+WHY IT IS HERE AND NOT IN THE FAVOURITES SHEET. A region pin was a row in
+the pins sheet from SNOW-802 until SNOW-814, beside dropped pins and saved
+resorts, and it never fitted: it has no coordinate for the map layer to
+draw, no name of the user's own to rename, and no forecast to expand — so
+that sheet's every other affordance was absent from it, and its "Display on
+the map" switch could not include it. The chip that names the selected
+region is where a list of regions belongs: the pin control is the star
+roundel in the same header (public/partials/_map_region_pin_control.html),
+so pinning and finding what you pinned are one surface, and the chip stops
+being a dead control when nothing is selected.
+
+Rows are the shared UGC row (includes/_ugc_panel_row.html), not a shape of
+this panel's own. Two slots, and both differ from the pin row's because a
+region is not a place:
+
+  the name frames the REGION — ``focus_region`` rather than
+  ``focus_target``, since a region carries no coordinate and its polygon is
+  already on the map (SNOW-811 set that precedent for the downloads panel's
+  region rows);
+  the action is a filled star, not a trash. Unpinning removes the user's
+  pin, not the region — see _region_pin_row_actions.html.
+
+NO META LINE, and that is the shape of this list. It carried today's rating
+and a dated bulletin link for a day, and both were wrong HERE: the panel
+above them follows the scrubber (``snowdesk:date-changed`` repaints the
+summary), while these rows are fetched once and stamped with the date of
+the fetch. A user who scrubbed to April read "Open bulletin for 8 Apr 2026"
+in the summary and "No bulletin available for 4 Sep 2026" in every row
+beneath it — one live date and one dead one, a few pixels apart.
+
+Making it live was the alternative and it is not worth the machinery: the
+rows would refetch on every scrub, to show a rating for a date the user is
+passing through, which is not what a list of pinned regions is for. Hugo:
+"If it's not 'live' then we should remove it completely — which would
+simplify things. It's then just navigation." A row answers one question,
+take me there; the region it takes you to answers the rest, in the panel
+above, for whichever date is showing.
+
+Context:
+    region_pins : list[Favourite] — the requesting user's region pins, each
+                  with ``day_rating`` set by the view.
+{% endcomment %}
+{% if region_pins %}
+    <ul class="flex flex-col" data-testid="region-pin-list">
+        {% for favourite in region_pins %}
+            {% with uuid=favourite.uuid|stringformat:"s" when=favourite.created_at|date:"j M Y" %}
+                {% firstof "region-pin-"|add:uuid as row_dom_id %}
+                {% blocktrans trimmed with name=favourite.region.name asvar row_focus_label %}
+                    Show {{ name }} on the map
+                {% endblocktrans %}
+                {% include "includes/_ugc_panel_row.html" with row_id=row_dom_id row_target="#"|add:row_dom_id label=favourite.region.name label_testid="region-pin-row-label" focus_region=favourite.region.region_id focus_label=row_focus_label actions_template="favourites/partials/_region_pin_row_actions.html" %}
+            {% endwith %}
+        {% endfor %}
+    </ul>
+{% else %}
+    {# The honest empty state. Distinct from the "couldn't load" line the  #}
+    {# JS writes: this panel opens offline and its list does not load      #}
+    {# there, and telling a user they have pinned nothing when the request #}
+    {# merely failed is a wrong statement about their own data.            #}
+    <p class="text-summary text-text-3" data-testid="region-pin-list-empty">
+        {% trans "Pin a region and it will be listed here." %}
+    </p>
+{% endif %}

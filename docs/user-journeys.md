@@ -158,7 +158,11 @@ account-access link, and comes back to a map that remembers the region.
   (`is_verified → True`, stamps `verified_at`), signs the account in and
   lands on `/?panel=favourites` — the map with the pins sheet open.
 - `POST /favourites/partials/region/<region_id>/toggle/` — pins or unpins
-  the region (SNOW-802); the response is the control in its new state.
+  the region (SNOW-802); answers `{"pinned": bool}` (SNOW-814 — the control
+  is a roundel rendered once in the ribbon header, so what the caller needs
+  back is the fact, not a rendered control).
+- `GET /favourites/partials/regions/` — the user's pinned regions, listed
+  in the region + date panel (SNOW-814).
 
 **Key invariants:**
 - Email normalisation happens at every entry point: `email.lower()`
@@ -167,7 +171,9 @@ account-access link, and comes back to a map that remembers the region.
 - Token verification is salt-scoped: account-access tokens cannot be
   replayed as unsubscribe tokens, and vice versa.
 - A region pin has no coordinate and never appears in
-  `favourites.geojson`; it is a row in the pins sheet, nothing on the map.
+  `favourites.geojson`; it is a row in the region + date panel the map's
+  readout chip opens (SNOW-814 — it was in the pins sheet until then, where
+  none of that sheet's affordances applied to it), and nothing on the map.
 - The favourites cap applies to region pins as to any other pin; the
   one-time backfill from `Subscription` rows bypassed it.
 

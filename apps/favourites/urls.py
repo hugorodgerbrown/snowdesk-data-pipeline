@@ -72,6 +72,17 @@ urlpatterns = [
         views.favourite_list,
         name="list",
     ),
+    # SNOW-814: the pinned regions, listed in the region + date panel rather
+    # than in the pins sheet. A separate endpoint from ``list`` above because
+    # they are a separate list on a separate surface — the sheet lists places
+    # and this lists regions, and the two answer with different things (that
+    # one carries ratings, freshness headers and an offline roster; this one
+    # carries names).
+    path(
+        "partials/regions/",
+        views.region_pin_list,
+        name="region_list",
+    ),
     path(
         "favourites.geojson",
         views.favourites_geojson,

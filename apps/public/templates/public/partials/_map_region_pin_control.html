@@ -1,0 +1,62 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_region_pin_control.html — the region pin roundel
+(SNOW-814).
+
+Lives in the ribbon header (public/partials/_season_ribbon.html), between
+the #region-readout chip and the download roundel, and pins or unpins the
+region the chip names. Driven by static/js/map_region_panel.js, which owns
+the pinned list this control's state is read from.
+
+WHAT IT REPLACED. Until SNOW-814 this was a pill INSIDE the region summary
+— "☆ Pin this region" / "★ Pinned"
+(favourites/partials/_region_pin_button.html) — rendered by the server into
+the tooltip HTML the panel and the popup both injected. Two problems, and
+both are why it is a roundel now:
+
+  the "★ Pinned" state was a second statement of a fact the panel was
+  already making. The pinned regions are listed six rows below it, each
+  with a filled star that unpins — so a pinned region said "Pinned" twice
+  on one surface, in two shapes, and only one of them could be pressed to
+  undo. Hugo: "we don't need the '★ Pinned' CTA when a region is pinned —
+  it goes into the list, and the list has the unpin filled star on it";
+  it was only reachable with the panel OPEN, though what it does — mark
+  this region — has nothing to do with the panel. Pinning is a verb on the
+  region, so it belongs beside the control that names the region, next to
+  the other verb (download) that is already there.
+
+THE STATE IS DERIVED, NOT SERVER-RENDERED. The button ships in its
+"no-region" state and map_region_panel.js sets `data-pin-state` from the
+pinned list it loads for the panel — so the roundel and the list are the
+same fact read twice, and cannot disagree the way the pill and the list
+could. See that module's syncPinControl.
+
+A visitor gets an <a> to the sign-in page rather than nothing: show the
+control, offer the way in. It is the same choice the download roundel's
+'signin' state makes, in the same corner of the same header.
+{% endcomment %}
+{% if request.user.is_authenticated %}
+    <button
+        type="button"
+        id="map-region-pin-control"
+        class="map-glass-roundel map-region-pin-control hover-affordance"
+        data-pin-state="no-region"
+        aria-disabled="true"
+        aria-pressed="false"
+        aria-label="{% trans 'Select a region to pin it' %}"
+        title="{% trans 'Select a region to pin it' %}"
+    >
+        {% include "includes/_icon_favourite.html" with size=18 svg_class="map-region-pin-control-icon" only %}
+    </button>
+{% else %}
+    <a
+        id="map-region-pin-control"
+        class="map-glass-roundel map-region-pin-control hover-affordance"
+        data-pin-state="signin"
+        href="{% url 'accounts:sign_in' %}"
+        aria-label="{% trans 'Sign in to pin a region' %}"
+        title="{% trans 'Sign in to pin a region' %}"
+    >
+        {% include "includes/_icon_favourite.html" with size=18 svg_class="map-region-pin-control-icon" only %}
+    </a>
+{% endif %}

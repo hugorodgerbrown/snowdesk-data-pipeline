@@ -70,7 +70,11 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
   favourites/    The one saved-place model — ``Favourite`` is a map pin, a
                  saved resort, or a region pin (a region with no
                  coordinate, SNOW-802) — plus its relevance scoring and the
-                 HTMX partials under /favourites/
+                 HTMX partials under /favourites/. The two kinds are listed
+                 on two surfaces (SNOW-814): places in the map's pins sheet
+                 (``favourites:list``, ``placed()`` only), regions in the
+                 region + date panel the readout chip opens
+                 (``favourites:region_list``)
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model

@@ -68,9 +68,21 @@ survives here for a different reason: there is no list page at all.
 - **`Favourite` becomes the one saved-place model**, absorbing what
   `Subscription` recorded. A region pin is a `Favourite` with `region` set
   and no coordinate, elevation or `Location` — it is deliberately excluded
-  from `favourites.geojson`, because it has nothing to place, and lives in
-  the pins sheet only (SNOW-802). Nothing user-facing is called
-  "Favourites" once the list is a map sheet whose rows are pins.
+  from `favourites.geojson`, because it has nothing to place (SNOW-802).
+  Nothing user-facing is called "Favourites" once the list is a map sheet
+  whose rows are pins.
+
+  It lived in the pins sheet for one ticket, and that was the wrong home
+  (SNOW-814). "One model" was read as "one list", but the sheet's whole
+  vocabulary is a place's: a coordinate for the map layer and its "Display
+  on the map" switch, a name of the user's own to rename, a forecast card to
+  expand. A region has none of those, so its row was a hole in every column,
+  and the pin control that creates one was on a different surface entirely.
+  Pinned regions now list in the region + date panel the readout chip opens,
+  and pinning is a star roundel in that chip's own header beside the
+  download roundel — the region's two verbs together, on the surface that
+  already names it — while the sheet is places again. One model, two lists, and the second one is
+  what makes the chip mean something with nothing selected.
 - **The weather page is promoted, and it is the weaker of the two.** It had
   full sharing metadata but no sitemap entry, and none of the MCP server's
   thirteen tools reached it — every one was region- or bulletin-scoped. It
