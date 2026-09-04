@@ -139,9 +139,18 @@ anything `Disallow`ed in robots.txt.
 
 Every template extending `public/base.html` must override
 `{% block page_meta %}` exactly once, or opt out explicitly with `sharing=False`
-plus a reason. `tests/public/test_page_meta.py` walks every public URL above and
-fails a page in neither state — so a new route here needs a metadata decision
-before it can merge. See
+plus a reason.
+
+`tests/public/test_page_meta.py` checks that rule, **but it does not walk the
+URL conf** — this file used to say it did, and it never has. The module works
+off two hand-maintained fixture dicts, `sharing_pages` and `opted_out_pages`,
+and a page in neither is not tested at all rather than failed. So adding a
+route here does **not** force a metadata decision on its own: **add the new
+page to one of those two dicts by hand**, or nothing checks it. A page
+addressed by a token or a uuid needs a factory-minted URL to be listed, the way
+`resort` and `bulletin` already are.
+
+See
 [`docs/decisions/page-metadata-is-explicit-or-opted-out.md`](decisions/page-metadata-is-explicit-or-opted-out.md).
 
 ---
