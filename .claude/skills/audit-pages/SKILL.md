@@ -14,7 +14,7 @@ description: >-
 user-invocable: true
 # Both Linear server names: the local MCP config and the claude.ai connector
 # (UUID), which is the only one a remote Routine session sees. See .claude/README.md.
-allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Artifact, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
+allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Artifact, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Page audit

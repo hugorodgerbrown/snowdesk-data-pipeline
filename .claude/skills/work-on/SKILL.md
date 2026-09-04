@@ -13,7 +13,7 @@ description: |
   already-scoped ticket when the user only asks to implement (`implement`
   skill), resuming work on an existing branch, or any message without a
   ticket reference.
-allowed-tools: Skill, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
+allowed-tools: Skill, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Work on SNOW-$1
