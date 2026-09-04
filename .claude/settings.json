@@ -5,15 +5,55 @@
   },
   "permissions": {
     "allow": [
-      "Bash(python3 -c ':*)",
-      "Bash(git commit -m ':*)",
-      "Bash(git log *)",
-      "Bash(pre-commit run *)",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(uv add:*)",
+      "Bash(npm run:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm install:*)",
+      "Bash(npm audit:*)",
+      "Bash(npx:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(python3 -c:*)",
       "Bash(sqlite3 db.sqlite3:*)",
+      "Bash(bin/:*)",
+
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git push:*)",
+      "Bash(git worktree:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git merge-base:*)",
+      "Bash(git tag:*)",
+      "Bash(git stash:*)",
+
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run watch:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh api:*)",
+
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost*)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1*)",
       "Bash(open http://localhost*)",
-      "Bash(mkdir -p ~/.claude/logs/project-update)",
 
       "WebFetch(domain:aws.slf.ch)",
       "WebFetch(domain:caaml.org)",
@@ -28,8 +68,22 @@
 
       "mcp__Linear__*",
       "mcp__claude_ai_Linear__*",
-      "mcp__Render__*",
-      "mcp__claude_ai_Render__*"
+      "mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__*",
+
+      "mcp__Render__get_*",
+      "mcp__Render__list_*",
+      "mcp__Render__select_workspace",
+      "mcp__claude_ai_Render__get_*",
+      "mcp__claude_ai_Render__list_*",
+      "mcp__claude_ai_Render__select_workspace",
+      "mcp__f5febe82-aeb9-4554-8972-72e0c42f00ec__get_*",
+      "mcp__f5febe82-aeb9-4554-8972-72e0c42f00ec__list_*",
+      "mcp__f5febe82-aeb9-4554-8972-72e0c42f00ec__select_workspace"
+    ],
+    "ask": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(gh pr merge*)"
     ],
     "deny": [
       "Read(./.venv/**)",
@@ -57,7 +111,13 @@
       "mcp__*__create_static_site",
       "mcp__*__create_cron_job",
       "mcp__*__create_postgres",
-      "mcp__*__create_key_value"
+      "mcp__*__create_key_value",
+
+      "mcp__*__get_postgres",
+      "mcp__*__list_postgres_instances",
+      "mcp__*__query_render_postgres",
+      "mcp__*__get_key_value",
+      "mcp__*__list_key_value"
     ]
   },
   "hooks": {

@@ -9,7 +9,7 @@ description: |
   use for: starting work on an already-scoped ticket, asking questions about a
   ticket without producing a scope, or any message that doesn't explicitly
   reference a SNOW-NN identifier.
-allowed-tools: Agent, Bash, Read, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
+allowed-tools: Agent, Bash, Read, Grep, Glob, EnterPlanMode, ExitPlanMode, mcp__Linear, mcp__claude_ai_Linear, mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8
 ---
 
 # Scope SNOW-$1

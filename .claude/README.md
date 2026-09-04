@@ -174,42 +174,110 @@ so the remote Routine environment can find it after cloning.
 When you invoke it interactively (e.g. "post a project update for Snowdesk"),
 the approval gate is restored: draft → review → post.
 
-## Linear MCP permissions
+## MCP permissions
 
-Every skill here talks to Linear over MCP through **one** server: the claude.ai
-**Linear connector**, whose tools are namespaced by a connector UUID —
-`mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__<toolName>`. OAuth is held against
-the Anthropic account, so it works in local, remote and Routine sessions alike.
-The UUID is specific to this account's connector install; it is committed
-because this repo is single-author.
+Two connectors, both from claude.ai, both authorised against the Anthropic
+account so they work in local, remote and Routine sessions alike:
 
-A second local server named `linear-server` pointed at the same URL until
-SNOW-717 and was removed: it could only be authorised interactively, so it
-reported "needs authentication" in every unattended session while the connector
-worked throughout, and it *shadowed* the connector in `claude mcp list`.
+- **Linear** — full read/write. Every skill here talks to Linear through it.
+- **Render** — read-only. Services, deploys, logs, metrics and workspaces are
+  pre-approved; the write tools are denied outright, and the Postgres and Key
+  Value tools are denied too (`query_render_postgres` runs SQL against the
+  production database, and the Key Value tools can surface secrets).
 
-**Every skill's `allowed-tools` must name the connector UUID.** This is the only
-grant that survives a Routine: a remote run starts in a fresh checkout that has
-never been trusted, and Claude Code discards `permissions.allow` from a
-project's `settings.json` in an untrusted folder — but **workspace trust never
-gates a skill's `allowed-tools`**. A skill still naming `mcp__linear-server`
-gets no pre-approval at all, and its Linear calls stall an unattended run on an
-approval prompt nobody can answer. That is exactly what happened on 2026-08-23:
-`scope`, `implement`, `work-on` and `create-ticket` were left on the old name
-when the other three skills were migrated, and a Routine blocked on
-"Allow Claude to use Get issue (Linear)?".
+### The server name depends on the client surface
 
-Note this is separate from the connector's **own** per-tool permissions, set at
-claude.ai → Settings → Connectors. A tool set to `ask` there prompts on every
-call and no allow rule or permission mode overrides it; keep the tools these
-skills use on *allow*.
+A permission rule matches the tool NAME, and **the prefix differs between
+clients**. Three prefixes have each been observed actually invoking Linear:
 
-**Do not add a `.mcp.json` for Linear.** It would declare an OAuth-only server
-that a remote container cannot authenticate (the OAuth flow needs an
-interactive session), and project-scoped servers carry their own first-use
-trust prompt on top. Remote access already works via the connector. A Linear
-API key must never be committed here, including through `${VAR}` interpolation
-— see invariant 5 in [`CLAUDE.md`](../CLAUDE.md).
+| Prefix | `entrypoint` | Sessions observed |
+|---|---|---|
+| `mcp__bee16520-0a2b-446d-b267-fbf9f62cf3a8__` | `claude-desktop` | 75 |
+| `mcp__claude_ai_Linear__` | `cli` | 1 (2026-09-04) |
+| `mcp__Linear__` | cloud | 1 (2026-09-04 probe) |
+
+**How much to trust this.** The Desktop row is solid. The other two rest on a
+single observation each, because the local transcript history is almost
+entirely Desktop (~101k desktop records against ~1.7k cli). No client has ever
+been recorded using another client's prefix, so there is no counterexample —
+but absence of one across a lopsided sample is weak evidence, not proof.
+
+**The mechanism is unknown.** Whether this is one connector rendering a
+different name per client, or a separate connector install per client, is
+undetermined — the transcripts cannot distinguish them, and neither id appears
+in `~/.claude.json`. Do not reason from a causal story here; reason from the
+table.
+
+Render is assumed to behave the same way: `mcp__f5febe82-…__` is observed on
+`claude-desktop` (6 sessions), and `mcp__Render__` is #783's claim for cloud.
+The CLI and cloud rows for Render are unobserved.
+
+**Regardless of mechanism, list every prefix and remove none.** The argument is
+cost asymmetry, not sample size: a prefix absent from this client is inert and
+silent, while a missing one costs an approval prompt — or, unattended, a stall.
+That asymmetry is what #783 got wrong on 2026-09-02, concluding from a tool
+listing that the UUID "never appears in a tool name" and swapping it out.
+
+**Confirm a name by invocation, never by reading a tool listing** — and when
+you check the transcripts, the client field is `entrypoint`.
+
+The failure is silent in both directions, which is what makes this so easy to
+get wrong: a rule naming a server that is not present on this surface is inert
+and raises no error, and the only symptom of a missing one is an approval
+prompt where you expected none — or, in an unattended run, a stall.
+
+### Two gates, and only one is in this repo
+
+**Gate 1 — the connector's own per-tool permissions**, at claude.ai →
+Settings → Connectors. A tool set to `ask` there prompts on every call and no
+allow rule or permission mode overrides it. Check here first; it is usually
+already `allow`.
+
+The 2026-09-04 cloud probe demonstrated this gate directly: `get_issue` and
+`save_comment` ran unprompted while `delete_comment` asked, in a session whose
+`settings.json` allowed `mcp__Linear__*` wholesale. An allow rule cannot widen
+past Gate 1. That also makes Gate 1 the **strongest** place to enforce Render
+read-only — setting Render's write tools to `block` at claude.ai holds in every
+environment, needs no name guessing, and survives an untrusted checkout.
+
+**Gate 2 — Claude Code's permission system.** `permissions.allow` in
+`.claude/settings.json` is discarded entirely in an untrusted folder, and a
+remote Routine starts in a fresh checkout that has never seen a trust dialog.
+**Workspace trust never gates a skill's `allowed-tools`**, so that frontmatter
+is the grant that survives — which is why every Linear-touching skill carries
+the names itself rather than relying on `settings.json`.
+
+That failure mode is not hypothetical: on 2026-08-23 a Routine blocked on
+"Allow Claude to use Get issue (Linear)?" because `scope`, `implement`,
+`work-on` and `create-ticket` still named a deleted `linear-server` while the
+other three skills had been migrated.
+
+Diagnosis order when a session stalls on a connector prompt: the connector's
+tool permission at claude.ai → the skill's `allowed-tools` → and only then
+`settings.json`, which cannot help an untrusted run.
+
+**Do not add a `.mcp.json`.** It would declare an OAuth-only server that a
+remote container cannot authenticate (the flow needs an interactive session),
+and project-scoped servers carry their own first-use trust prompt on top. A
+local server also *shadows* the connector of the same name — that is what
+`linear-server` and `render` did until SNOW-717, reporting "needs
+authentication" forever while the connectors worked and stayed invisible.
+Remote access already works via the connectors. An API key must never be
+committed here, including through `${VAR}` interpolation — see invariant 5 in
+[`CLAUDE.md`](../CLAUDE.md).
+
+### Where the Bash grants live
+
+`.claude/settings.local.json` is **gitignored**, so nothing in it reaches a
+cloud session. Every grant the documented dev loop needs — `uv`, `npm`, `gh`,
+`git`, `bin/*`, `pre-commit` — therefore lives in the committed
+`settings.json`. Keep `settings.local.json` for genuinely machine-local things
+only; a grant parked there is invisible to Cloud and to Routines.
+
+`gh pr merge` and `git push --force` sit in `permissions.ask` rather than
+`allow` or `deny`: possible when you invoke `merge-prs` or the commit
+re-signing flow, never silent, and blocked by default in an unattended run
+where nobody can answer the prompt.
 
 ## What's NOT here
 
