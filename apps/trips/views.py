@@ -207,6 +207,85 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     }
 
 
+def _picker_payload(
+    points: list[list[float]],
+    bounds: list[float],
+    latitude: float,
+    longitude: float,
+) -> dict[str, Any]:
+    """Build the payload ``static/js/trip_meeting_picker.js`` draws.
+
+    The same route Feature ``_trip_map_payload`` emits — the picker reuses
+    ``pwaTripMapCore.routeSourceData`` to draw it, so the two must agree on
+    its shape — plus the bounds to frame it and the pin's starting
+    position.
+
+    ``meeting`` is a bare ``[lon, lat]`` pair here rather than the Point
+    Feature the trip map takes. The picker owns a draggable
+    ``maplibregl.Marker`` rather than a symbol layer (a marker can be
+    dragged; a symbol cannot), so the coordinate never becomes a source and
+    wrapping it in a Feature would be a shape nothing reads.
+
+    Takes the geometry as values rather than a ``Route`` or a ``Trip``
+    because both call it: creating reads a route, editing reads a trip's
+    snapshot, and the picker cannot tell the difference.
+
+    Args:
+        points: The track as ``[[lon, lat, ele], …]``, GeoJSON axis order.
+        bounds: The GeoJSON bbox ``[min_lon, min_lat, max_lon, max_lat]``.
+        latitude: The pin's starting latitude.
+        longitude: The pin's starting longitude.
+
+    Returns:
+        A JSON-serialisable dict with ``route``, ``meeting`` and ``bounds``.
+
+    """
+    return {
+        "route": {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": points},
+            "properties": {},
+        },
+        # Longitude first — GeoJSON axis order, as the marker's own
+        # setLngLat takes it.
+        "meeting": [longitude, latitude],
+        "bounds": bounds,
+    }
+
+
+def _submitted_picker_payload(
+    request: HttpRequest,
+    points: list[list[float]],
+    bounds: list[float],
+) -> dict[str, Any]:
+    """Build the picker payload for a form that failed validation.
+
+    The pin goes back where the organiser left it, not back to the route's
+    start: they may well have moved it correctly and mistyped the date, and
+    silently resetting the one part they got right is the worst answer
+    available. The submitted coordinates are read raw and unvalidated —
+    ``form.cleaned_data`` is empty or partial here by definition — and
+    anything unparseable falls back to the route's first point, which is
+    the same default the unbound form arrives with.
+
+    Args:
+        request: The POST request, read for the submitted coordinates.
+        points: The source track, or empty when the route is unavailable.
+        bounds: The source bbox, or empty on the same condition.
+
+    Returns:
+        The picker payload.
+
+    """
+    first = points[0] if points else [0.0, 0.0]
+    try:
+        latitude = float(request.POST.get("latitude", ""))
+        longitude = float(request.POST.get("longitude", ""))
+    except TypeError, ValueError:
+        latitude, longitude = first[1], first[0]
+    return _picker_payload(points, bounds, latitude, longitude)
+
+
 def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
     """Build the context every trip surface renders from.
 
@@ -248,6 +327,21 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # explore, and the picker's persisted choice lives in the map
         # page's own localStorage where this page cannot read it.
         "basemap_url": settings.BASEMAP_STYLE_URL,
+        # The meeting picker's own payload, for the edit form. ORGANISER
+        # ONLY, and None for everybody else on purpose: it repeats the
+        # whole track, which ``map_payload`` above already carries, so
+        # emitting it on the public share page would double that page's
+        # weight to draw a control only the organiser can see.
+        "picker_payload": (
+            _picker_payload(
+                trip.points,
+                trip.bounds,
+                trip.meeting_point.latitude,
+                trip.meeting_point.longitude,
+            )
+            if is_organiser
+            else None
+        ),
         # The organiser's edit form, bound to nothing and prefilled from
         # the trip. Built here rather than in the template because a form
         # is Python; rendered only inside the ``is_organiser`` branch.
@@ -331,7 +425,14 @@ def trip_new(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "trips/trip_new.html",
-        {"form": form, "route": route},
+        {
+            "form": form,
+            "route": route,
+            "picker_payload": _picker_payload(
+                route.points, route.bounds, first[1], first[0]
+            ),
+            "basemap_url": settings.BASEMAP_STYLE_URL,
+        },
     )
 
 
@@ -425,10 +526,25 @@ def trip_create(request: HttpRequest) -> HttpResponse:
 
     form = TripForm(request.POST)
     if not form.is_valid():
+        # The re-rendered form carries the picker's payload too, or the map
+        # would vanish on the first validation error and leave the
+        # organiser with the bare coordinate fields this control exists to
+        # replace. Owner-scoped, and tolerant of a route that has since
+        # gone: a missing payload costs the map, not the form.
+        route = Route.objects.for_user(request.user).filter(uuid=route_uuid).first()
         return render(
             request,
             "trips/partials/_trip_form.html",
-            {"form": form, "route_uuid": raw_uuid},
+            {
+                "form": form,
+                "route_uuid": raw_uuid,
+                "picker_payload": _submitted_picker_payload(
+                    request,
+                    route.points if route else [],
+                    route.bounds if route else [],
+                ),
+                "basemap_url": settings.BASEMAP_STYLE_URL,
+            },
             status=400,
         )
 
@@ -491,10 +607,24 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
     form = TripForm(request.POST)
     if not form.is_valid():
+        # Looked up only to redraw the picker's route, and owner-scoped so
+        # an invalid submission against someone else's trip still learns
+        # nothing. A missing trip costs the map, not the form — the 404 for
+        # that case is ``update_trip``'s to raise on a valid submission.
+        trip = Trip.objects.filter(created_by=request.user, uuid=uuid).first()
         return render(
             request,
             "trips/partials/_trip_form.html",
-            {"form": form, "trip_uuid": str(uuid)},
+            {
+                "form": form,
+                "trip_uuid": str(uuid),
+                # The snapshot, not the route FK — the same rule every
+                # other rendering path here follows.
+                "picker_payload": _submitted_picker_payload(
+                    request, trip.points if trip else [], trip.bounds if trip else []
+                ),
+                "basemap_url": settings.BASEMAP_STYLE_URL,
+            },
             status=400,
         )
 

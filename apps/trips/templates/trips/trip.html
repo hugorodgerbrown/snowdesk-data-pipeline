@@ -121,5 +121,11 @@ its own metadata.
         <script defer src="{% static 'js/i18n_strings.js' %}"></script>
         <script defer src="{% static 'js/share.js' %}"></script>
         <script defer src="{% static 'js/trip_share.js' %}"></script>
+        {# The meeting picker, for the edit form in the panel below. Only  #}
+        {# the module itself: MapLibre and trip_map.js (whose frozen core  #}
+        {# the picker reuses) are already loaded by _trip_map.html higher  #}
+        {# up this same document, and a second <script> for either would   #}
+        {# execute the library twice.                                      #}
+        <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
     {% endif %}
 {% endblock extra_js %}

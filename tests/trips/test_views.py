@@ -86,6 +86,45 @@ class TestTripNewPage:
         assert 'value="46.1"' in html
         assert 'value="7.4"' in html
 
+    def test_the_meeting_point_is_a_map_with_the_route_on_it(
+        self, client: Client
+    ) -> None:
+        """The pin picker renders, with the track to place the pin against.
+
+        Asserted from the page rather than from the template, on SNOW-668's
+        rule: a control that is merely rendered somewhere is not a control
+        a user can reach. The payload carries the route so the organiser
+        places the pin against the track rather than against blank tiles.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert "data-trip-meeting-picker" in html
+        assert 'id="trip-meeting-payload"' in html
+        assert "trip_meeting_picker.js" in html
+        # The track itself, not just an empty payload envelope.
+        assert "LineString" in html
+
+    def test_the_coordinate_fields_survive_as_the_manual_escape_hatch(
+        self, client: Client
+    ) -> None:
+        """A keyboard visitor, and anyone with no JavaScript, still has them.
+
+        The pin WRITES to these; it does not replace them. If they ever
+        stop rendering, the no-JavaScript path submits nothing for the
+        meeting point and the form 400s for a field the visitor was never
+        shown.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert "data-meeting-latitude" in html
+        assert "data-meeting-longitude" in html
+
     def test_404_for_another_users_route(self, client: Client) -> None:
         """Never 403 — no existence oracle."""
         route = RouteFactory.create()

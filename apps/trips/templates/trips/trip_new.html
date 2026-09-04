@@ -14,7 +14,14 @@ No share card: this page is one signed-in user's authoring surface for
 their own data, so a preview of it is meaningless to anyone who could see
 one. It is also behind auth, so no unfurler will ever reach it.
 {% endcomment %}
-{% load i18n components %}
+{% load i18n components static %}
+
+{% block extra_head %}
+    {# MapLibre's control chrome must be styled before first paint, so the #}
+    {# stylesheet is here and the scripts are at the end of the document — #}
+    {# the split trips/partials/_trip_map.html documents.                  #}
+    <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
+{% endblock extra_head %}
 
 {% block page_meta %}
     {% trans "Plan a trip" as page_name %}
@@ -39,3 +46,16 @@ one. It is also behind auth, so no unfurler will ever reach it.
         {% endcard %}
     </main>
 {% endblock content %}
+
+{% block extra_js %}
+    {# The picker's dependency chain, in DOCUMENT ORDER — deferred scripts #}
+    {# run in the order they appear, so this listing IS the order.         #}
+    {# trip_map.js is here for its frozen core alone (routeSourceData and  #}
+    {# fitBoundsFor, which the picker reuses to draw and frame the same    #}
+    {# track the trip page draws); its own init finds no [data-trip-map]   #}
+    {# on this page and returns.                                           #}
+    <script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
+    <script defer src="{% static 'js/i18n_strings.js' %}"></script>
+    <script defer src="{% static 'js/trip_map.js' %}"></script>
+    <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
+{% endblock extra_js %}

@@ -1,0 +1,72 @@
+{% load i18n static %}
+{% comment %}
+trips/partials/_trip_meeting_picker.html — dropping the meeting pin.
+
+THE MAP IS THE CONTROL. This replaced two bare number inputs, which asked
+the organiser to know that 46.080012, 7.318197 is the top car park. Nobody
+knows that. A group agrees to meet at a place they can see, so the route is
+drawn and the pin is dragged — or tapped — to where they mean.
+
+The pin still WRITES to the form's own latitude/longitude fields rather
+than holding the value itself, which is what keeps the no-JavaScript path
+working: those fields arrive prefilled with the route's first coordinate,
+and a visitor who never runs this module submits exactly what the form
+submitted before it existed. The manual fields stay reachable under the
+map for a keyboard visitor and for anyone pasting a coordinate they
+already have — see _trip_meeting_manual.html for why all three cases are
+served rather than only the first.
+
+The <div> has an explicit height for the reason _trip_map.html states:
+MapLibre measures its container on construction, and a container whose
+height is still resolving gives a canvas of zero pixels that never
+repaints.
+
+Context:
+    picker_payload : dict — the route line, its bounds and the initial pin,
+                     built by apps.trips.views._picker_payload.
+    basemap_url    : str — settings.BASEMAP_STYLE_URL.
+    form           : TripForm — passed through to the manual fields.
+{% endcomment %}
+{{ picker_payload|json_script:"trip-meeting-payload" }}
+<p class="mb-1.5 text-sm font-medium text-text-1">{% trans "Meeting point" %}</p>
+<p class="mb-2 text-xs text-text-3">
+    {% trans "Drag the pin, or tap the map, to say where the group meets. It starts at the route's own start." %}
+</p>
+<div
+    id="trip-meeting-picker"
+    data-trip-meeting-picker
+    data-basemap-url="{{ basemap_url }}"
+    {# h-80, the same height _trip_map.html gives the trip page's own map.  #}
+    {# The organiser places the pin on this canvas and then reads it back   #}
+    {# on that one, and the same track at two sizes reads as two routes.    #}
+    class="h-80 w-full overflow-hidden rounded-card border border-border bg-card"
+>
+</div>
+<div class="mt-2 mb-3 flex flex-wrap items-center justify-between gap-2">
+    <p class="text-xs text-text-3">
+        {# Filled by the picker on load and on every move. Empty until then #}
+        {# rather than seeded server-side: one writer for this string means #}
+        {# it cannot show a coordinate the marker is not standing on.       #}
+        <span class="font-mono" data-meeting-readout></span>
+    </p>
+    <button
+        type="button"
+        data-meeting-reset
+        class="text-xs text-text-2 underline underline-offset-2 hover:text-text-1"
+    >
+        {% trans "Reset to the route's start" %}
+    </button>
+</div>
+{% trans "Enter coordinates manually" as manual_title %}
+{% include "includes/_collapsible_panel.html" with title=manual_title data_testid="trip-meeting-manual" bare=True body_template="trips/partials/_trip_meeting_manual.html" %}
+{# Every user-facing string trip_meeting_picker.js writes into the DOM.    #}
+{# makemessages never scans static/js, so a literal there ships as English #}
+{# to every locale — `tox -e i18n-lint` fails the build on one.           #}
+<template id="trip-picker-strings-template">
+    <span data-string="meeting-point">{% trans "Meeting point" %}</span>
+    {# The map is an enhancement over the fields below it, so a failure    #}
+    {# points at what still works rather than apologising.                 #}
+    <span
+        data-string="map-failed"
+    >{% trans "The map couldn't be loaded. You can still type the coordinates below." %}</span>
+</template>

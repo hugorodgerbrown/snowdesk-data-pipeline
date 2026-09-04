@@ -1,0 +1,30 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_meeting_manual.html — the meeting point's two number
+fields, as the manual half of the picker.
+
+The map is the control; this is the escape hatch. It exists for three
+cases the map cannot serve, and it is worth naming them because "the map
+is enough" is the obvious argument against having this at all:
+
+  - a keyboard-only visitor, who cannot drag a MapLibre marker;
+  - someone who already HAS a coordinate — read off a guidebook, a
+    screenshot or another app — and wants to paste it rather than hunt for
+    the same spot by eye;
+  - a visitor with no JavaScript, for whom these two fields and their
+    prefilled route-start values are the whole control.
+
+Kept collapsed because the third case is rare and the first two are
+deliberate acts: someone who wants to type knows they want to type.
+static/js/trip_meeting_picker.js keeps these and the marker in step in
+both directions, so neither can be stale with respect to the other.
+
+Context (inherited from _trip_form.html, which includes the panel):
+    form : TripForm — read for its latitude and longitude fields.
+{% endcomment %}
+<div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+    {% trans "Latitude" as latitude_label %}
+    {% include "includes/_form_field.html" with field=form.latitude label=latitude_label %}
+    {% trans "Longitude" as longitude_label %}
+    {% include "includes/_form_field.html" with field=form.longitude label=longitude_label %}
+</div>

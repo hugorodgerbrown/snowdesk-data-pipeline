@@ -12,13 +12,26 @@ and ``update_trip``).
 07:30 is at 07:30 for everyone on it, whatever timezone their phone is set
 to.
 
-**The meeting point is two number inputs, not a pin drop.** Dropping a pin
-means arming the map page's placement machinery
-(``static/js/place_picker.js``, ``PlacementFocus``) off the map page, which
-is real surgery for a control that has a working default: the fields are
-prefilled with the route's first coordinate, which is where a group meets
-far more often than not. A map-based override is a follow-up, not a
-prerequisite.
+**The meeting point is a pin on a map**, and these two coordinate fields
+are what that pin writes into. They shipped briefly as the whole control
+and that was a defect: a coordinate is not something an organiser knows.
+A group agrees to meet at the top car park, and asking them to express
+that as 46.080012, 7.318197 asks them for a fact they would have to go and
+look up.
+
+The fields stay for three reasons the map cannot cover — a keyboard-only
+visitor cannot drag a marker, someone holding a coordinate from elsewhere
+would rather paste it than hunt for the same spot by eye, and a visitor
+with no JavaScript has nothing else. They are still what the form posts and
+validates, so none of that path changed; only what sits in front of them
+did. See ``apps/trips/templates/trips/partials/_trip_meeting_picker.html``
+and ``static/js/trip_meeting_picker.js``.
+
+The two ``data-meeting-*`` attributes are how the picker finds these
+fields. They are attributes rather than ids because the form is re-rendered
+wholesale by an HTMX swap on a validation error, and the picker re-queries
+the document on every write rather than holding a node that a swap may
+already have detached.
 """
 
 from __future__ import annotations
@@ -79,12 +92,24 @@ class TripForm(forms.Form):
     latitude = forms.FloatField(
         min_value=_LATITUDE_MIN,
         max_value=_LATITUDE_MAX,
-        widget=forms.NumberInput(attrs={"class": _INPUT_CLASSES, "step": "any"}),
+        widget=forms.NumberInput(
+            attrs={
+                "class": _INPUT_CLASSES,
+                "step": "any",
+                "data-meeting-latitude": "",
+            }
+        ),
     )
     longitude = forms.FloatField(
         min_value=_LONGITUDE_MIN,
         max_value=_LONGITUDE_MAX,
-        widget=forms.NumberInput(attrs={"class": _INPUT_CLASSES, "step": "any"}),
+        widget=forms.NumberInput(
+            attrs={
+                "class": _INPUT_CLASSES,
+                "step": "any",
+                "data-meeting-longitude": "",
+            }
+        ),
     )
 
     def clean_name(self) -> str:
