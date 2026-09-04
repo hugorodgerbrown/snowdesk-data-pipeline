@@ -27,6 +27,20 @@ description  (required) One or two sentences. Goes in the description
 sharing      (optional, default True) Set False to emit the title and
              description but no og:*/twitter:* page identity. Only for
              pages that should never produce a share card — see below.
+noindex      (optional, default False) Set True to emit
+             <meta name="robots" content="noindex, nofollow">. It lives
+             here rather than in the calling page because this partial is
+             the ONE emitter for head metadata, and a second emitter is
+             how a page ends up with two conflicting robots directives.
+
+             `noindex` and `sharing` are INDEPENDENT, and the combination
+             that looks contradictory is the one that matters: a tokenised
+             trip page (SNOW-821) wants a full share card — unfurling in a
+             message is the entire point of the link — AND wants never to
+             be indexed, because the URL is unguessable and a search result
+             for it would defeat that. robots.txt cannot express this:
+             `Disallow: /trips/` would prefix-match the token path and
+             block the very unfurlers the page exists to serve.
 og_type      (optional, default "website") The og:type value. Pass
              "article" for dated, revisable content — a bulletin — which
              also unlocks the two properties below. og:type lives here
@@ -70,6 +84,10 @@ don't vary per page, so they don't belong in a per-page emitter.
 {% endcomment %}
 <title>{{ title|squish }}{{ PWA_TITLE_SUFFIX }}</title>
 <meta name="description" content="{{ description|squish }}">
+{# `is True` rather than a truthiness test, matching `sharing`'s own note #}
+{# below: an omitted `noindex` resolves to the empty string, and a page   #}
+{# that acquired one by accident must stay indexable.                     #}
+{% if noindex is True %}<meta name="robots" content="noindex, nofollow">{% endif %}
 <meta property="og:url" content="{% if url %}{{ url }}{% else %}{{ SITE_BASE_URL }}{{ request.path }}{% endif %}">
 <meta property="og:type" content="{% firstof og_type 'website' %}">
 {% if og_type == "article" %}

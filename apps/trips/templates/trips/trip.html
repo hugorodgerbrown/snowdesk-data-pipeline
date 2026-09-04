@@ -59,7 +59,19 @@ its own metadata.
                 machinery for changing it is secondary to reading it. Both
                 are disclosures so neither competes with the summary.
             {% endcomment %}
-            <div class="mt-8 flex flex-col gap-4" data-testid="trip-organiser-controls">
+            <div
+                class="mt-8 flex flex-col gap-4"
+                data-testid="trip-organiser-controls"
+                {# The URL templates, handed to the page rather than spelled #}
+                {# out in JS: static/js/trip_share.js must not know how this #}
+                {# project spells its URLs. The same __UUID__ trick the      #}
+                {# routes panel's rename control uses.                       #}
+                data-trip-share-url="{{ share_url_template }}"
+                data-trip-share-revoke-url="{{ share_revoke_url_template }}"
+            >
+                {% card padding="p-4" %}
+                {% include "trips/partials/_trip_share_controls.html" with trip=trip %}
+                {% endcard %}
                 <details class="rounded-card border border-border bg-card p-4">
                     <summary class="cursor-pointer text-sm font-medium text-text-1">
                         {% trans "Edit this trip" %}
@@ -80,3 +92,14 @@ its own metadata.
         {% endif %}
     </main>
 {% endblock content %}
+
+{% block extra_js %}
+    {% if is_organiser %}
+        {# The native-share/clipboard helper, loaded BEFORE trip_share.js —  #}
+        {# deferred scripts run in document order, so window.pwaShare exists #}
+        {# by the time that module's own top level runs.                     #}
+        <script defer src="{% static 'js/i18n_strings.js' %}"></script>
+        <script defer src="{% static 'js/share.js' %}"></script>
+        <script defer src="{% static 'js/trip_share.js' %}"></script>
+    {% endif %}
+{% endblock extra_js %}

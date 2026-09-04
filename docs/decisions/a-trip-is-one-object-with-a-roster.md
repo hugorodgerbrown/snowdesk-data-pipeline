@@ -83,7 +83,20 @@ would show a group member abroad a different time for the same meeting.
   trip has one roster, so it has one link. The cost is stated rather than
   hidden: no per-link audit trail, and no way to hand two groups different
   links. Neither is a thing a trip needs — the roster is the record of who
-  came.
+  came. Sharing a trip that already has a link **rotates** it, which is the
+  organiser's whole revoke-and-reshare and the reason a link sent to the
+  wrong person is recoverable.
+- **The link's window is measured from the trip's DATE**, not from when it
+  was minted (`share_expiry_for`). `ROUTE_SHARE_MAX_AGE_DAYS` measures from
+  the mint because a route has no date of its own; a trip does, and a
+  mint-time window would kill the link of a trip planned three months out
+  two months before the day it exists for.
+- **The share page is `noindex`, and robots.txt is left alone.**
+  `Disallow: /trips/` would prefix-match `/trips/s/<token>/` and block the
+  unfurlers a share link exists to serve. `noindex` is the correct
+  instrument for an unguessable URL, and it lives in
+  `includes/_page_meta.html` beside `sharing` because that partial is the
+  one emitter for head metadata.
 - **The organiser cannot leave their own trip**, and cannot remove anybody
   else (SNOW-822). A trip whose organiser is not on it is incoherent, and
   removal is a moderation surface with its own questions for an object that

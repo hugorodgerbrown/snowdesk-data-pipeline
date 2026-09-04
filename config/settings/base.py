@@ -1034,6 +1034,21 @@ ROUTE_SHARE_MAX_PENDING = config("ROUTE_SHARE_MAX_PENDING", default=5, cast=int)
 
 TRIPS_MAX_PER_USER = config("TRIPS_MAX_PER_USER", default=25, cast=int)
 
+# SNOW-821 — trip sharing.
+#
+# How long a trip's share link outlives THE TRIP'S OWN DATE, in days, applied
+# by apps.trips.services.shares.share_expiry_for. Measured from the date and
+# not from the mint time, which is the whole difference from
+# ROUTE_SHARE_MAX_AGE_DAYS above: a trip planned three months out would
+# otherwise have its link die two months before the day it exists for, which
+# is precisely when the group still needs it.
+#
+# 30 days past the day itself is long enough that a participant can still open
+# the link to check what they did, and short enough that a link forwarded out
+# of a group chat stops working within the season.
+
+TRIP_SHARE_MAX_AGE_DAYS = config("TRIP_SHARE_MAX_AGE_DAYS", default=30, cast=int)
+
 
 # ---------------------------------------------------------------------------
 # Offline download areas (SNOW-749)

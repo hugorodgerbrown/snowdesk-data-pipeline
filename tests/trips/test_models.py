@@ -11,6 +11,9 @@ apps.trips.models.Trip:
   upcoming()/past() split on the trip's own date, and a trip dated today
     counts as upcoming.
 
+  share_is_live is asserted equivalent to shared(), the pair being the
+    Python and SQL statements of one predicate.
+
 apps.trips.models.TripParticipant:
   to_string();
   the (trip, user) uniqueness constraint;
@@ -23,6 +26,7 @@ import datetime
 
 import pytest
 from django.db import IntegrityError
+from freezegun import freeze_time
 
 from apps.trips.models import Trip, TripParticipant
 from tests.factories import (
@@ -145,6 +149,42 @@ class TestTripUpcomingAndPast:
         old = TripFactory.create(date=datetime.date(2026, 1, 5))
         recent = TripFactory.create(date=datetime.date(2026, 3, 19))
         assert list(Trip.objects.past(today)) == [recent, old]
+
+
+@freeze_time("2026-01-10T09:00:00+00:00")
+@pytest.mark.django_db
+class TestShareIsLive:
+    """The row-level predicate and its SQL twin must never disagree.
+
+    Django cannot share a predicate between Python and SQL, so the two
+    conditions are written twice — once in ``Trip.share_is_live`` and once
+    in ``TripQuerySet.shared()``. This is the assertion that keeps them in
+    step, and it is the same one ``tests/routes/test_models.py`` makes for
+    ``RouteShare.is_claimable`` / ``active()``.
+    """
+
+    @pytest.mark.parametrize(
+        ("token", "expires_at"),
+        [
+            # Live: a token, and a window still open.
+            ("livetoken01", datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC)),
+            # Revoked: no token at all.
+            (None, datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC)),
+            # Expired: a token whose window has closed.
+            ("deadtoken01", datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)),
+            # Never shared: neither half.
+            (None, None),
+        ],
+    )
+    def test_the_predicate_and_the_queryset_agree(
+        self, token: str | None, expires_at: datetime.datetime | None
+    ) -> None:
+        """Every state the two halves can be in, checked both ways."""
+        trip = TripFactory.create(share_token=token, share_expires_at=expires_at)
+
+        in_queryset = Trip.objects.shared().filter(pk=trip.pk).exists()
+
+        assert trip.share_is_live == in_queryset
 
 
 @pytest.mark.django_db

@@ -68,19 +68,16 @@
   /** The image ids the meeting marker is registered under. */
   var MEETING_ICON = 'trip-meeting-point';
 
-  var STRINGS = self.pwaStrings
-    ? self.pwaStrings.read('trip-strings-template', {
-        'meeting-point': 'Meeting point',
-        'elevation-profile': 'Elevation profile of the route',
-        'map-failed':
-          "The map couldn't be loaded. The route details above are unaffected.",
-      })
-    : {
-        'meeting-point': 'Meeting point',
-        'elevation-profile': 'Elevation profile of the route',
-        'map-failed':
-          "The map couldn't be loaded. The route details above are unaffected.",
-      };
+  // The English fallbacks are the only copy of these strings a reader of
+  // this file can see, so they double as documentation of what each key
+  // means. `i18n_strings.js` is loaded first by `_trip_map.html`, in
+  // document order, so `self.pwaStrings` is here.
+  var STRINGS = self.pwaStrings.read('trip-strings-template', {
+    'meeting-point': 'Meeting point',
+    'elevation-profile': 'Elevation profile of the route',
+    'map-failed':
+      "The map couldn't be loaded. The route details above are unaffected.",
+  });
 
   /**
    * Read and parse the inline payload.

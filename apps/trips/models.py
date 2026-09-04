@@ -92,6 +92,23 @@ class TripQuerySet(models.QuerySet["Trip"]):
         """
         return self.filter(date__lt=on).order_by("-date", "-start_time")
 
+    def shared(self) -> "TripQuerySet":
+        """Return trips whose share link works right now.
+
+        The SQL twin of ``Trip.share_is_live``. Every read of a tokenised
+        trip goes through here, so "unknown token", "revoked" and "expired"
+        are decided in one place and answered identically — a holder of a
+        real link and a guesser walking the token space must not be able to
+        tell them apart.
+
+        Returns:
+            Filtered queryset of live-linked trips.
+
+        """
+        return self.filter(
+            share_token__isnull=False, share_expires_at__gt=timezone.now()
+        )
+
 
 # ---------------------------------------------------------------------------
 # Trip
@@ -138,6 +155,12 @@ class Trip(BaseModel):
     ``ProtectedError``; a ``SET_NULL`` or ``CASCADE`` referent would answer
     "no" while still pointing at the row, and would silently break that
     sweep for every app that mints anonymous locations.
+
+    ``share_token`` and ``share_expires_at`` are the ONE link a trip has
+    (SNOW-821), and there is no ``TripShare`` table — see the fields' own
+    comment. The expiry derives from ``date``, not from the mint time: a
+    trip planned three months out must not have its link die two months
+    before the day it exists for.
     """
 
     created_by = models.ForeignKey(
@@ -245,6 +268,38 @@ class Trip(BaseModel):
         ),
     )
 
+    # --- Sharing (SNOW-821) ------------------------------------------------
+    #
+    # ONE LINK PER TRIP, and the token lives here rather than on a TripShare
+    # table. ``RouteShare`` is a separate model because a route is handed out
+    # in many independent grants, each with its own claim counters worth
+    # auditing; a trip is one object with one roster, so a second grant would
+    # be a second name for the same thing. The cost is stated so it is a
+    # choice: no per-link audit trail, and no way to hand two groups
+    # different links. Neither is a thing a trip needs — the roster is the
+    # record of who came.
+    share_token = models.CharField(
+        max_length=32,
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text=(
+            "URL-safe random token used in the /trips/s/<token>/ short URL. "
+            "Null until the organiser shares the trip, and nulled again when "
+            "they revoke it."
+        ),
+    )
+    share_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the link stops working. Derived from the trip's own DATE "
+            "plus settings.TRIP_SHARE_MAX_AGE_DAYS, never from the mint "
+            "time — see share_is_live."
+        ),
+    )
+
     objects = TripQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
@@ -255,6 +310,24 @@ class Trip(BaseModel):
         # other model in this project orders by ``-created_at``, which for a
         # trip would sort by when it was planned — a fact nobody reads.
         ordering = ["date", "start_time"]
+
+    @property
+    def share_is_live(self) -> bool:
+        """Whether this trip's share link works right now.
+
+        The row-level twin of ``TripQuerySet.shared()``, for a trip already
+        in hand. Both state the same two conditions — a token exists, and
+        the window is still open — because Django has no way to share a
+        predicate between Python and SQL; the pair is asserted equivalent
+        by ``tests/trips/test_models.py``, exactly as ``RouteShare``'s is.
+
+        Returns:
+            True when the token is set and has not expired.
+
+        """
+        return self.share_token is not None and (
+            self.share_expires_at is not None and self.share_expires_at > timezone.now()
+        )
 
     @property
     def distance_km(self) -> float:

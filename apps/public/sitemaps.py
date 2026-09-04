@@ -311,6 +311,12 @@ class StaticViewSitemap(Sitemap):
       would contradict that file. (``/favourites/<uuid>/`` has been a
       redirect to the pin's weather page since SNOW-800; the weather page
       itself is listed in the ``locations`` section when it is public.)
+    * ``/trips/…`` — per-user or token-bearing, and kept out of search by
+      ``noindex`` rather than by a robots.txt ``Disallow`` (SNOW-821).
+      ``Disallow: /trips/`` would prefix-match ``/trips/s/<token>/`` and
+      block the very unfurlers that page exists to serve — a share link has
+      to render a card in a message. ``noindex`` is the correct instrument
+      for an unguessable URL, and the list page is behind auth anyway.
     """
 
     # Route name → (changefreq, priority).

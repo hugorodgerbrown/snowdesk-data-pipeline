@@ -1,0 +1,61 @@
+{% extends "public/base.html" %}
+{% comment %}
+trips/trip_share.html — the page behind a trip's share link (SNOW-821).
+
+What a recipient opens. It renders the SAME summary and the SAME map the
+organiser's own page does, from the same context builder
+(apps.trips.views._trip_context), because the difference between the two
+surfaces is who may see the trip — never what it says about it.
+
+SHARING ON, INDEXING OFF, and the pair only looks contradictory. Unfurling
+as a card in a message is the entire point of this link, so the full
+og/twitter set is emitted. Being findable in a search result would defeat
+the token that makes the URL private, so `noindex` is emitted too. They are
+independent parameters of includes/_page_meta.html for exactly this page.
+
+The title and description are the TRIP's, not the site's. A card reading
+"Snowdesk" tells a recipient nothing; "Rosablanche · Saturday 14 March,
+07:30" is the message.
+
+No organiser controls, ever. This page has no `is_organiser` branch even
+though _trip_context computes one — an organiser opening their own link is
+looking at what their friends see, and edit and delete belong on the object
+page. SNOW-822 adds the join control here, which is the recipient's own
+verb.
+{% endcomment %}
+{% load i18n static components %}
+
+{% block page_meta %}
+    {% trans "Trip" as page_name_fallback %}
+    {% firstof trip.display_name page_name_fallback as page_name %}
+    {% blocktrans trimmed with day=trip.date|date:"l j F Y" at=trip.start_time|time:"H:i" asvar page_title %}
+        {{ page_name }} · {{ day }}, {{ at }}
+    {% endblocktrans %}
+    {% blocktrans trimmed with km=trip.distance_km|floatformat:1 day=trip.date|date:"l j F" at=trip.start_time|time:"H:i" asvar page_description %}
+        A trip on Snowdesk: {{ km }} km on {{ day }}, meeting at {{ at }}.
+    {% endblocktrans %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description noindex=True %}
+{% endblock page_meta %}
+
+{% block extra_head %}
+    {# MapLibre's control chrome must be styled before first paint, so the  #}
+    {# stylesheet is here and the scripts are in _trip_map.html — see that  #}
+    {# partial's note on the split.                                         #}
+    <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
+{% endblock extra_head %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}">
+        {% trans "You've been invited on a trip" as trip_eyebrow %}
+        {% include "includes/_eyebrow.html" with text=trip_eyebrow class_extra="mb-2" %}
+        {% trans "Untitled trip" as untitled_trip %}
+        {% firstof trip.display_name untitled_trip as trip_heading %}
+        {% include "includes/_page_title.html" with text=trip_heading class_extra="mb-6" data_testid="trip-heading" %}
+
+        {% card padding="p-6" extra="mb-6" %}
+        {% include "trips/partials/_trip_summary.html" with trip=trip %}
+        {% endcard %}
+
+        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload basemap_url=basemap_url %}
+    </main>
+{% endblock content %}

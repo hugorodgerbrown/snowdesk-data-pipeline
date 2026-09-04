@@ -336,6 +336,11 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="Largest accepted .gpx upload (bytes)",
     ),
     SettingSpec(
+        "TRIP_SHARE_MAX_AGE_DAYS",
+        validator=positive_int,
+        note="How long a trip-share link outlives the trip's own date (days)",
+    ),
+    SettingSpec(
         "ROUTE_SHARE_MAX_AGE_DAYS",
         validator=positive_int,
         note="How long a route-share link stays claimable (days)",

@@ -21,6 +21,17 @@ plus three HTMX fragments under the ``partials/`` prefix, every one
   invalid.
 - ``trip_delete`` (POST) — deletes the trip and answers ``HX-Redirect``.
 
+plus the sharing pair (SNOW-821), neither of which is a fragment:
+
+- ``trip_share_create`` (POST) — mints (or rotates) the trip's ONE link and
+  answers JSON with its absolute URL, for the native share sheet. NOT
+  ``@require_htmx``: its body goes to ``navigator.share``, not into the page.
+- ``trip_share_revoke`` (POST) — nulls the token, same shape.
+- ``trip_share_page`` (GET/HEAD) — ``/trips/s/<token>/``, the public page a
+  recipient opens. The one endpoint here an anonymous stranger can reach, so
+  it is rate-limited on the (token, IP) key ``apps.routes.views`` established
+  for the routes twin: this is the token-guessing surface.
+
 **Why the form is a page and the writes are fragments.** The "Plan a trip"
 control lives on a route row inside the map's routes panel, whose body is
 re-cloned from a ``<template>`` on every open — a form swapped into it would
@@ -44,16 +55,26 @@ from typing import Any
 from uuid import UUID
 
 from django.conf import settings
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import (
+    require_GET,
+    require_http_methods,
+    require_POST,
+)
 from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
+from apps.core.http import client_ip
 from apps.routes.models import Route
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
+from apps.trips.services.shares import (
+    TripShareTokenCollision,
+    mint_trip_share,
+    revoke_trip_share,
+)
 from apps.trips.services.trips import (
     TripLimitReached,
     create_trip,
@@ -62,6 +83,49 @@ from apps.trips.services.trips import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Stand-in uuid for reversing a ``__UUID__``-templated share URL. Mirrors
+# ``apps.routes.views._DUMMY_UUID``.
+_DUMMY_UUID = UUID(int=0)
+
+
+def _share_url_templates() -> dict[str, str]:
+    """Return the two share URLs with ``__UUID__`` where the uuid goes.
+
+    Handed to the trip page so ``static/js/trip_share.js`` can build the
+    endpoints at click time from the uuid riding on the button — the module
+    must not know how this project spells its URLs. The same trick
+    ``apps.routes.views._rename_url_template`` uses.
+
+    Reversed per call rather than once at import: this module is imported
+    by ``apps.trips.urls``, so reversing at import time would ask the
+    URLconf to resolve itself while it is still being built.
+
+    Returns:
+        A dict of the two templated paths, ready for the page's context.
+
+    """
+    dummy = str(_DUMMY_UUID)
+    return {
+        "share_url_template": reverse("trips:share_create", args=[_DUMMY_UUID]).replace(
+            dummy, "__UUID__"
+        ),
+        "share_revoke_url_template": reverse(
+            "trips:share_revoke", args=[_DUMMY_UUID]
+        ).replace(dummy, "__UUID__"),
+    }
+
+
+# The share-page follow's budget, keyed on (token, IP). Mirrors
+# ``apps.routes.views._SHARE_FOLLOW_RATE`` and its reasoning: a real
+# recipient re-opening their own link never approaches it, while a scanner
+# walking the token space cannot do so quickly, and a NATed office network
+# does not share one budget across unrelated links.
+_SHARE_PAGE_RATE = "30/h"
+
+# The organiser's Share button's budget. Keyed on ``user`` because the
+# endpoint is auth-only, matching the authoring limiter below.
+_SHARE_WRITE_RATE = "20/m"
 
 # The authoring endpoints' rate-limit budget, keyed on ``user`` because both
 # are auth-only. Each create writes three rows (a Location, a Trip and the
@@ -162,6 +226,15 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         )
         if is_organiser
         else None,
+        # Only the organiser's page wires the share controls, so only it
+        # needs the templates. The public page gets empty strings rather
+        # than a missing key, so a stray attribute renders as "" rather
+        # than as the string "None".
+        **(
+            _share_url_templates()
+            if is_organiser
+            else {"share_url_template": "", "share_revoke_url_template": ""}
+        ),
     }
 
 
@@ -439,4 +512,178 @@ def trip_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
     # SNOW-823 points this at the trips list. Until that commit there is no
     # list to land on, so a deleted trip returns the organiser to the map.
     response["HX-Redirect"] = reverse("public:home")
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Sharing (SNOW-821)
+# ---------------------------------------------------------------------------
+
+
+def _share_page_rate_limit_key(group: str, request: HttpRequest) -> str:
+    """Return the rate-limit bucket for a share-page read: (token, IP).
+
+    The trips twin of ``apps.routes.views._share_follow_rate_limit_key``,
+    keyed the same way for the same reason: one recipient re-opening their
+    own link is unaffected, a scanner hammering one link is bounded, and a
+    NATed office network does not share one budget across unrelated links.
+
+    Args:
+        group: The django-ratelimit group name (unused — one group here).
+        request: The current HTTP request.
+
+    Returns:
+        An opaque bucket key.
+
+    """
+    match = request.resolver_match
+    token = match.kwargs.get("token", "") if match is not None else ""
+    return f"{token}|{client_ip(request)}"
+
+
+@require_POST
+@ratelimit(key="user", rate=_SHARE_WRITE_RATE, block=False)
+def trip_share_create(request: HttpRequest, uuid: UUID) -> JsonResponse:
+    """Mint (or rotate) the trip's one share link and return its URL.
+
+    Response (200)::
+
+        {"url": "https://snowdesk.info/trips/s/<token>/"}
+
+    Returns JSON rather than a partial because the caller does not render
+    it: ``static/js/share.js`` hands the URL straight to the native share
+    sheet (or the clipboard). The same shape ``routes:share_create``
+    returns, so one JS helper serves both.
+
+    NOT ``@require_htmx``. Its response is a string handed to
+    ``navigator.share``, not swapped into the page, and requiring the
+    header would be asserting a contract that is not the one in force.
+
+    **Calling this twice ROTATES the link** — see ``mint_trip_share``. It
+    is the organiser's only revoke-and-reshare, and it is why a link sent
+    to the wrong person is recoverable.
+
+    Errors:
+        403 — anonymous request.
+        404 — the uuid is not a trip this user organised.
+        429 — rate limit exceeded.
+        500 — a unique token could not be minted (implausible).
+
+    Args:
+        request: The incoming POST request.
+        uuid: The Trip's uuid, from the URL.
+
+    Returns:
+        A JsonResponse carrying the absolute share URL.
+
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
+    try:
+        trip = mint_trip_share(request.user, uuid)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+    except TripShareTokenCollision:
+        logger.error("trip_share_create: token collision, user=%s", request.user.pk)
+        return JsonResponse({"error": "token_collision"}, status=500)
+
+    url = request.build_absolute_uri(
+        reverse("trips:share_page", args=[trip.share_token])
+    )
+    return JsonResponse({"url": url})
+
+
+@require_POST
+@ratelimit(key="user", rate=_SHARE_WRITE_RATE, block=False)
+def trip_share_revoke(request: HttpRequest, uuid: UUID) -> JsonResponse:
+    """Stop the trip being reachable by link.
+
+    Answers ``{"revoked": true}``. JSON rather than a fragment for the same
+    reason its sibling above does — the organiser's controls are wired by
+    ``static/js/share.js`` and neither response goes into the page.
+
+    Idempotent: revoking an unshared trip is a 200, not an error.
+
+    Errors:
+        403 — anonymous request.
+        404 — the uuid is not a trip this user organised.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming POST request.
+        uuid: The Trip's uuid, from the URL.
+
+    Returns:
+        A JsonResponse confirming the revoke.
+
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
+    try:
+        revoke_trip_share(request.user, uuid)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    return JsonResponse({"revoked": True})
+
+
+@require_http_methods(["GET", "HEAD"])
+@ratelimit(key=_share_page_rate_limit_key, rate=_SHARE_PAGE_RATE, block=False)
+def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
+    """Render the public page behind a trip's share link.
+
+    **A page, not a redirect.** The link is what somebody is sent in a
+    message, so it has to unfurl as a card and then open as something the
+    recipient can READ — the day, the meeting time, the meeting point, the
+    route drawn with a marker, the figures and the organiser's note —
+    before being asked for anything. A redirect into the map would show
+    them a track and none of that.
+
+    ``noindex`` is emitted (see ``includes/_page_meta.html``) rather than a
+    ``robots.txt`` disallow: ``Disallow: /trips/`` would prefix-match this
+    very path and block the unfurlers the page exists to serve, while an
+    unguessable URL turning up in a search result would defeat the token.
+
+    ONE ANSWER FOR EVERY DEAD LINK. Unknown, revoked and expired are all
+    404, decided by ``TripQuerySet.shared()``. Distinguishing them would
+    tell a guesser which tokens have ever existed.
+
+    Errors:
+        404 — the token matches no live link.
+        429 — rate limit exceeded (30/hour per token+IP).
+
+    Args:
+        request: The incoming GET or HEAD request.
+        token: The share token, from the URL.
+
+    Returns:
+        The rendered public trip page, or an error response.
+
+    """
+    if getattr(request, "limited", False):
+        return HttpResponse(status=429)
+
+    try:
+        trip = (
+            Trip.objects.shared().select_related("meeting_point").get(share_token=token)
+        )
+    except Trip.DoesNotExist as exc:
+        raise Http404("No such trip.") from exc
+
+    context = _trip_context(trip, request)
+    context["share_token"] = token
+    response = render(request, "trips/trip_share.html", context)
+    # Per-recipient in the sense that matters: the page varies with who is
+    # signed in (SNOW-822 shows the roster's names to participants only), so
+    # it must never be held by an intermediate cache and handed to somebody
+    # else. Matches ``routes:share_redirect``'s own header.
+    response["Cache-Control"] = "no-store"
     return response

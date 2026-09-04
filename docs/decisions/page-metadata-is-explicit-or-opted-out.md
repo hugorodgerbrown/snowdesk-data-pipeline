@@ -2,7 +2,7 @@
 name: page-metadata-is-explicit-or-opted-out
 description: Every page emits page identity via includes/_page_meta.html, or opts out with sharing=False and a written reason; there is no third state
 status: current
-last-reviewed: 2026-07-29
+last-reviewed: 2026-09-04
 ---
 
 # Page metadata is explicit, or opted out in writing
@@ -32,13 +32,25 @@ snippet), and building `og:url` from `settings.SITE_BASE_URL` stops the page
 self-canonicalising to whatever `Host` header a crawler happened to arrive on.
 
 **Consequences.** A new page that forgets `page_meta` inherits base.html's
-empty fallback and fails `tests/public/test_page_meta.py`, which walks every
-public URL and asserts each is in exactly one of the two states. Adding a page
+empty fallback and fails `tests/public/test_page_meta.py`, which asserts each
+of its listed pages is in exactly one of the two states. Adding a page
 therefore means deciding, in the template, whether it is shareable.
 
 `og:url` is emitted even for opted-out pages: it is the page's own identity,
 not a sharing affordance, and a page that declines a card still benefits from
 crawlers agreeing on which URL it is.
+
+**`noindex` is a third, independent parameter — not a third state**
+(SNOW-821). The two states above are about the CARD; whether a page may be
+INDEXED is a separate question, and the trip share page is the case that
+proves they are separate: it wants a full card, because unfurling in a
+message is the whole point of the link, and it wants never to be indexed,
+because an unguessable URL in a search result would defeat the token.
+robots.txt cannot express it — `Disallow: /trips/` would prefix-match
+`/trips/s/<token>/` and block the very unfurlers the page exists to serve —
+so `noindex` lives in this partial, which is the one emitter for head
+metadata. A second emitter is how a page ends up with two conflicting
+robots directives.
 
 Site-wide constants — `og:site_name`, `og:type`, `og:locale`, `og:image` and
 its dimensions and alt text, `twitter:card` — stay in base.html's `og_tags`

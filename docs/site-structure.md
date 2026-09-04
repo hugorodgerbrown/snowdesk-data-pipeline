@@ -52,6 +52,7 @@ prefixes depend on this ordering — don't reorder
 | `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location. |
 | `/observations/` | redirect | Permanent 301 to `/?panel=reports` — the map with the reports sheet open (SNOW-804). |
 | `/trips/new/` | `trips.views.trip_new` | The authoring form for a trip planned from one of your own routes, named by `?route=<uuid>` (SNOW-820). A page rather than a fragment in the map's routes panel, whose body is re-cloned on every open. Anonymous visitors redirect to sign-in. |
+| `/trips/s/<token>/` | `trips.views.trip_share_page` | **The page behind a trip's share link** (SNOW-821). Public, rate-limited on the (token, IP) key, `Cache-Control: no-store`. Renders the same summary and map the object page does; unknown, revoked and expired tokens are one 404. Emits the full sharing set AND `noindex` — unfurling as a card is the point of the link, being findable in search would defeat the token, and `Disallow: /trips/` in robots.txt would block the unfurlers themselves. |
 | `/trips/<uuid>/` | `trips.views.trip_detail` | **One trip's own page** — the day, the meeting time and point, the route drawn with a marker, the figures, the elevation profile and the organiser's note (SNOW-820). Organiser-only; SNOW-821 adds the tokenised public page and SNOW-822 opens this one to the roster. A page, not a redirect into the map, because a trip is authored to be sent ([why](decisions/two-documents-and-a-map.md)). |
 | `/how-to-read-a-bulletin/` | `how_to_read_bulletin` | Domain primer for readers. |
 | `/help/` | `help_page` | Help, including the PWA/offline sections. |
@@ -93,10 +94,12 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
   account-page variants); the surface that reaches these is open to every
   visitor and its contents to every signed-in one
   ([`docs/map-and-api.md`](map-and-api.md))
-- `/trips/partials/…` — create, edit, delete (SNOW-819). The two trip
-  PAGES sit outside this prefix because they are navigations; only the
-  writes are fragments, so an invalid submission can come back as the form
-  with its errors
+- `/trips/partials/…` — create, edit, delete (SNOW-819). The trip PAGES
+  sit outside this prefix because they are navigations, and so do
+  `/trips/<uuid>/share/` and `.../share/revoke/`, which answer JSON to a
+  plain `fetch()` for the native share sheet; only the writes above are
+  fragments, so an invalid submission can come back as the form with its
+  errors
 - `/partials/_components/<slug>/` — component-library panels
 
 ## Non-HTML routes
