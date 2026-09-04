@@ -75,7 +75,6 @@ from apps.core.freshness import (
     apply_freshness_headers,
     freshness_state as compute_freshness_state,
 )
-from apps.favourites.context import region_pin_context
 from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
 from apps.favourites.services import (
@@ -790,19 +789,25 @@ def favourite_detail_redirect(request: HttpRequest, uuid: UUID) -> HttpResponse:
 @require_POST
 @ratelimit(key="user", rate="10/m", block=False)
 def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpResponse:
-    """Toggle the requesting user's region pin; return the pin control partial.
+    """Toggle the requesting user's region pin; return the resulting state.
 
-    The control lives in ``public/_region_tooltip.html`` — the region + date
-    panel and the region popup both render it (SNOW-802) — and is driven by
-    ``static/js/favourites.js`` as a plain, online-only fetch, the shape
-    ``favourite_resort_toggle`` has on the resort page. A region pin has no
-    coordinate, so nothing here touches the map's mutation queue: there is
-    no pin to draw optimistically.
+    The control is the roundel in the map's ribbon header
+    (``public/partials/_map_region_pin_control.html``), driven by
+    ``static/js/map_region_panel.js`` as a plain, online-only fetch — the
+    shape ``favourite_resort_toggle`` has on the resort page. A region pin
+    has no coordinate, so nothing here touches the map's mutation queue:
+    there is no pin to draw optimistically.
 
     When the user already holds a region pin for this region it is deleted;
-    otherwise one is created via ``create_region_favourite``. Either way the
-    response is the control rendered in its NEW state, which the JS swaps
-    in with ``outerHTML``.
+    otherwise one is created via ``create_region_favourite``.
+
+    ANSWERS JSON, not a partial. Until SNOW-814 the control was a
+    server-rendered pill and the response was that pill in its new state,
+    swapped in with ``outerHTML``. The roundel that replaced it is rendered
+    once, in the ribbon, and reads its state from the pinned list — so what
+    the caller needs back is the fact, not a control. It re-reads the list
+    either way; this is what lets the roundel flip on the same frame rather
+    than a request later.
 
     Errors:
         403 — anonymous request.
@@ -816,7 +821,7 @@ def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpRespons
         region_id: The EAWS region identifier, from the URL.
 
     Returns:
-        The rendered pin-control partial in its new state, or an error.
+        ``{"pinned": bool}`` — the state the region is now in, or an error.
 
     """
     if not request.user.is_authenticated:
@@ -856,10 +861,51 @@ def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpRespons
             {"region_id": region.region_id, "source": "map"},
         )
 
+    return JsonResponse({"pinned": pinned})
+
+
+@require_htmx
+@require_GET
+def region_pin_list(request: HttpRequest) -> HttpResponse:
+    """Render the requesting user's pinned regions (SNOW-814).
+
+    Loaded over HTMX by ``static/js/map_region_panel.js`` into the region +
+    date panel's pinned-regions section — the surface the ``#region-readout``
+    chip discloses. Until SNOW-814 these rows sat in the map's pins sheet
+    beside dropped pins and saved resorts, where none of that sheet's
+    affordances (the map layer, rename, the forecast card) applied to them;
+    see ``favourites/partials/_region_pin_list.html`` for the full argument.
+
+    NAMES ONLY. The rows carried today's ``RegionDayRating`` and a dated
+    bulletin link for a day, which meant a batched ratings query here and a
+    freshness stamp on the response. Both are gone with the meta line they
+    served: a date fetched once cannot follow the scrubber the panel above
+    these rows follows, and a stale date under a live one is worse than no
+    date. The list is navigation now — see the template. It is also, as a
+    result, one query with nothing time-sensitive in it, so it carries no
+    freshness headers.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        Rendered ``_region_pin_list.html``, or 403 for an anonymous request.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    region_pins = list(
+        Favourite.objects.for_user(request.user)
+        .region_pins()
+        .select_related("region")
+        .order_by("region__name")
+    )
+
     return render(
         request,
-        "favourites/partials/_region_pin_button.html",
-        region_pin_context(region, request.user, pinned=pinned),
+        "favourites/partials/_region_pin_list.html",
+        {"region_pins": region_pins},
     )
 
 
@@ -895,8 +941,15 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     # ``location`` joined too: each row's chevron links to the pin's weather
     # page (SNOW-800), and a per-row fetch of the FK would be the N+1 the
     # batched rating lookup below exists to avoid.
+    #
+    # SNOW-814: ``placed()`` — a region pin is not a place, and its row now
+    # lives in the region + date panel (``region_pin_list`` above). This is
+    # the same predicate ``favourites_geojson`` has always filtered on, so
+    # the sheet and the map layer finally list the same set of pins.
     favourites = list(
-        Favourite.objects.for_user(request.user).select_related("region", "location")
+        Favourite.objects.for_user(request.user)
+        .placed()
+        .select_related("region", "location")
     )
 
     today = timezone.localdate()

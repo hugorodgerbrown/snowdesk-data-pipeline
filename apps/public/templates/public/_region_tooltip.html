@@ -19,11 +19,15 @@ Content:
   3. Bulletin CTA — when a bulletin exists, a button-styled link to open
      it for the displayed date. When no bulletin is available, a muted
      "No bulletin available for…" label is shown instead.
-  4. Pin control (SNOW-802) — favourites/partials/_region_pin_button.html,
-     beside the bulletin link: a signed-in user pins or unpins the region
-     (the row lands in the map's pins sheet), a visitor gets a sign-in
-     path. Rendered here so the region + date panel and the popup, which
-     both inject this summary, carry the same control.
+  4. NO PIN CONTROL, since SNOW-814. It was a pill here from SNOW-802 —
+     "☆ Pin this region" / "★ Pinned" beside the bulletin link — and it is
+     now a roundel in the ribbon header
+     (public/partials/_map_region_pin_control.html), beside the chip that
+     names the region and the download roundel that is the region's other
+     verb. Pinning has nothing to do with this summary; putting it here
+     also meant it was only reachable with the panel open, and its
+     "★ Pinned" state restated what the pinned list on the same surface was
+     already showing. See that partial for the full argument.
 
 Context variables expected:
   region        — MicroRegion instance, with subregion__major select_related.
@@ -35,9 +39,6 @@ Context variables expected:
                   False for permanently-uncovered regions (e.g. Swiss Lowlands).
   provider_name — Human-readable provider label (e.g. "SLF", "ALBINA",
                   "Météo-France") for the uncovered tooltip copy.
-  region_can_pin, region_pinned, region_pin_toggle_url, signin_url
-                — the pin control's context (apps.favourites.context
-                  .region_pin_context). Optional: absent, no control renders.
 {% endcomment %}
 {% load i18n snowdesk_time static %}
 
@@ -84,8 +85,5 @@ Context variables expected:
             </p>
         {% endif %}
     {% endif %}
-    <div class="region-tooltip-pin" data-testid="region-tooltip-pin">
-        {% include "favourites/partials/_region_pin_button.html" %}
-    </div>
     <div class="region-tooltip-editorial" data-testid="region-tooltip-editorial"></div>
 </div>

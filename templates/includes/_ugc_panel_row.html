@@ -75,10 +75,21 @@ Parameters (passed via {% include … with … %}):
                 {% focus_target … %} (apps/public/templatetags/map_focus.py),
                 which formats each ordinate through `%f` in Python;
                 static/js/row_focus.js parses it back.
+  focus_region  (string, optional) — an EAWS micro-region id ("CH-4115"),
+                the alternative to `focus_target` for a row whose subject
+                is a REGION rather than a point or a box (SNOW-814's
+                pinned-region rows). Renders `data-row-focus-region`, which
+                static/js/row_focus.js has read since SNOW-811 — the
+                downloads panel's region rows stamp the same attribute from
+                JS, and this is the server-rendered half of it. A region
+                carries no coordinate of its own; the polygon is already on
+                the map, so the id is the whole address.
+                Pass one of `focus_target` / `focus_region`, not both.
   focus_label   (string, optional) — the focus button's accessible name
                 ("Zoom to Lac de Vaux hike"). Required alongside
-                `focus_target`: the visible text is truncated and says
-                only what the item is called, not what pressing it does.
+                `focus_target` or `focus_region`: the visible text is
+                truncated and says only what the item is called, not what
+                pressing it does.
   meta          (string, optional) — the muted secondary line, as text.
   meta_template (string, optional) — template path rendering the secondary
                 line instead of `meta`, for a line that needs markup rather
@@ -232,11 +243,15 @@ buildRow still finds its hooks by attribute, not by depth.
             {# What made it visible as a defect was the scroll container it     #}
             {# bled out of — fixed where that container is declared, in         #}
             {# includes/_ugc_panel.html.                                        #}
-            {% if focus_target or js_filled %}
+            {% if focus_target or focus_region or js_filled %}
                 <button
                     type="button"
                     data-row-label
-                    data-row-focus="{{ focus_target }}"
+                    {% if focus_region %}
+                        data-row-focus-region="{{ focus_region }}"
+                    {% else %}
+                        data-row-focus="{{ focus_target }}"
+                    {% endif %}
                     aria-label="{{ focus_label }}"
                     {% if label_testid %}data-testid="{{ label_testid }}"{% endif %}
                     class="hover-affordance -mx-1.5 truncate rounded-pill border border-transparent px-1.5 py-0.5 text-left text-label font-medium text-text-1"

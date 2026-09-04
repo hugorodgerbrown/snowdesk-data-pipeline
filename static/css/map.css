@@ -2104,7 +2104,14 @@
    The now-removed .region-readout-downloads flex wrapper existed only to sit
    three tier roundels in a row inside .ribbon-header. */
 
-.map-download-control {
+/* SNOW-814: the shell is `.map-glass-roundel` — a frosted circular control
+   floating over the map. Three carry it now (the region download, the
+   custom-area download, and the region pin), so the shape has a name of its
+   own rather than being the download control's and borrowed by whatever
+   comes next. Everything BELOW this rule stays `.map-download-control`: the
+   busy fill, the percent readout and the data-download-state machine are
+   that control's, not the shape's. */
+.map-glass-roundel {
     /* SNOW-642: always displayed. This was `display: none` with a
        `#region-readout.has-region ~ .map-download-control` sibling rule
        revealing it once a region was focused — so with nothing selected it
@@ -2156,6 +2163,66 @@
 #map-download-control {
     width: var(--map-control-sm);
     height: var(--map-control-sm);
+}
+
+/* ---------------------------------------------------------------------------
+   SNOW-814: the region pin roundel
+   ---------------------------------------------------------------------------
+   Sits in .ribbon-header between the #region-readout chip and the download
+   roundel, and takes the sm size for the same reason that one does — see
+   "WHY THE RIBBON-HEADER ROUNDELS ARE sm" at the top of this file.
+
+   Three states, driven by static/js/map_region_panel.js from the pinned
+   list: 'no-region' (nothing selected, nothing to pin), 'idle' (selected,
+   not pinned) and 'pinned'. 'signin' is the visitor's <a>, which no script
+   touches.
+
+   The glyph is includes/_icon_favourite.html, outline by default; 'pinned'
+   fills it. One star, two states, the same pairing the row's own unpin
+   control uses — an outline star pins, a solid one unpins, wherever a user
+   meets it.
+   -------------------------------------------------------------------------- */
+#map-region-pin-control {
+    width: var(--map-control-sm);
+    height: var(--map-control-sm);
+}
+
+/* Matches .map-download-control's muted-glyph treatment for the states that
+   cannot act — the shell stays legible, only the mark dims, so the control
+   reads as unavailable rather than missing. */
+.map-region-pin-control[data-pin-state="no-region"] {
+    color: var(--muted);
+    cursor: not-allowed;
+}
+
+.map-region-pin-control[data-pin-state="no-region"] .map-region-pin-control-icon {
+    opacity: 0.45;
+}
+
+/* 'signin' shares the muted mark but NOT the barred cursor: the tap goes to
+   the sign-in page, and a not-allowed cursor on a control that does
+   something is the same lie as hiding it. Copied in spirit from
+   .map-download-control[data-download-state="signin"], which settled this. */
+.map-region-pin-control[data-pin-state="signin"] {
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.map-region-pin-control[data-pin-state="signin"] .map-region-pin-control-icon {
+    opacity: 0.45;
+}
+
+.map-region-pin-control[data-pin-state="pinned"] .map-region-pin-control-icon {
+    fill: currentColor;
+}
+
+.dark .map-region-pin-control {
+    color: var(--ink);
+}
+
+.dark .map-region-pin-control[data-pin-state="no-region"],
+.dark .map-region-pin-control[data-pin-state="signin"] {
+    color: var(--muted);
 }
 
 /* SNOW-522: the custom-area download control shares .map-download-control's
@@ -3840,6 +3907,50 @@ body.map-framing #map-legend {
     flex-wrap: wrap;
     gap: 4px 6px;
     font-size: 13px;
+}
+
+/* SNOW-814: the pinned region the panel is currently describing.
+
+   The list sits directly under that region's own summary, so the row is
+   there twice on the page and needs to say which one you are on. NOT
+   greyed out and not removed: pressing it still recentres the map on the
+   region, which is a real thing to want from a panel that has been open
+   while the user panned away — it is simply not a change of subject like
+   every other row is.
+
+   A leading bar rather than a fill: the rows already carry hairlines, and
+   a filled row inside a frosted panel reads as a selected list item in a
+   sidebar, which this is not. */
+.region-panel .is-current {
+    position: relative;
+}
+
+.region-panel .is-current::before {
+    content: "";
+    position: absolute;
+    left: -14px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--ink);
+}
+
+/* SNOW-814: the shared UGC row truncates its label, which is right on a
+   sheet — a full-width dock, where a truncated name still shows most of
+   itself — and wrong here. This panel's width is capped to keep the ribbon
+   header close to the region name (see .region-panel above), so on a phone
+   a row has roughly 200px and "Northern and Central Grisons" is cut to
+   about half. A region name half-shown is not a name, and the name is the
+   whole row: these rows carry no meta line (see
+   favourites/partials/_region_pin_list.html on why the dated one went).
+
+   So the label WRAPS inside this panel. A second line costs a few pixels
+   of height in a surface that already scrolls. */
+.region-panel [data-row-label] {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
 }
 
 .region-panel-empty {

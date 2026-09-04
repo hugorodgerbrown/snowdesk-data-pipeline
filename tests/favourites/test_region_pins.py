@@ -17,6 +17,7 @@ coordinate, no elevation. Covers:
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 import pytest
@@ -24,6 +25,7 @@ from django.db import IntegrityError
 from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.favourites.models import Favourite
 from apps.favourites.services import (
@@ -139,19 +141,19 @@ class TestRegionPinToggle:
         assert client.post(_toggle_url("XX-0000"), **HTMX).status_code == 404
 
     def test_first_post_pins_second_unpins(self, client: Client) -> None:
-        """The response is the control in its new state each time."""
+        """SNOW-814: the response is the resulting state, not a control."""
         user = UserFactory.create()
         client.force_login(user)
         MicroRegionFactory.create(region_id="CH-4115")
 
         first = client.post(_toggle_url("ch-4115"), **HTMX)
         assert first.status_code == 200
-        assert 'data-pinned="true"' in first.content.decode()
+        assert first.json() == {"pinned": True}
         assert Favourite.objects.for_user(user).region_pins().count() == 1
 
         second = client.post(_toggle_url("CH-4115"), **HTMX)
         assert second.status_code == 200
-        assert 'data-pinned="false"' in second.content.decode()
+        assert second.json() == {"pinned": False}
         assert not Favourite.objects.for_user(user).exists()
 
     @override_settings(FAVOURITES_MAX_PER_USER=1)
@@ -169,7 +171,7 @@ class TestRegionPinSurfaces:
     """Where a region pin does and does not appear."""
 
     def test_never_in_the_geojson_feed(self, client: Client) -> None:
-        """No coordinate, no feature — the sheet is its only surface."""
+        """No coordinate, no feature — the region panel is its only surface."""
         user = UserFactory.create()
         client.force_login(user)
         FavouriteFactory.create(
@@ -181,8 +183,30 @@ class TestRegionPinSurfaces:
 
         assert [f["properties"]["uuid"] for f in data["features"]] == [str(placed.uuid)]
 
-    def test_list_renders_a_region_row(self, client: Client) -> None:
-        """Region name, today's rating, a dated bulletin link, a trash — no more."""
+    def test_region_list_renders_a_region_row(self, client: Client) -> None:
+        """The region's name and an unpin star. SNOW-814: nothing else."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create(
+            region_id="CH-4115", name="Valais", slug="ch-4115"
+        )
+        pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+
+        content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
+
+        assert "Valais" in content
+        assert f'data-favourite-rename="{pin.uuid}"' not in content
+        assert reverse("favourites:delete", kwargs={"uuid": pin.uuid}) in content
+
+    def test_region_list_row_carries_no_dated_metadata(self, client: Client) -> None:
+        """SNOW-814: a date fetched once cannot follow the scrubber, so there is none.
+
+        The row showed today's rating and a dated bulletin link. The summary
+        directly above it repaints on ``snowdesk:date-changed`` and these rows
+        do not, so scrubbing to another day put a live date and a dead one on
+        the same surface. The list is navigation; the panel above answers for
+        whichever date is showing.
+        """
         user = UserFactory.create()
         client.force_login(user)
         region = MicroRegionFactory.create(
@@ -191,46 +215,122 @@ class TestRegionPinSurfaces:
         RegionDayRatingFactory.create(
             region=region, date=timezone.localdate(), max_rating="considerable"
         )
-        pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
 
-        content = client.get(reverse("favourites:list"), **HTMX).content.decode()
+        content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
 
-        assert "Valais" in content
-        assert 'data-testid="region-pin-rating"' in content
-        assert 'data-testid="region-pin-bulletin-link"' in content
-        assert region.get_absolute_url() in content
-        assert f'data-favourite-rename="{pin.uuid}"' not in content
-        assert "Zoom to Valais" not in content
-        assert reverse("favourites:delete", kwargs={"uuid": pin.uuid}) in content
+        assert "data-row-meta" not in content
+        assert 'data-testid="region-pin-rating"' not in content
+        assert 'data-testid="region-pin-bulletin-link"' not in content
+        assert region.get_absolute_url() not in content
+        assert "No bulletin available" not in content
 
-    def test_list_region_row_without_a_rating(self, client: Client) -> None:
-        """No rating today still links to the bulletin."""
+    def test_region_list_row_frames_the_region(self, client: Client) -> None:
+        """SNOW-814: the name is a control carrying the region's id, not a coordinate."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create(region_id="CH-4115", name="Valais")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+
+        content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
+
+        assert 'data-row-focus-region="CH-4115"' in content
+        assert "data-row-focus=" not in content
+        assert "Show Valais on the map" in content
+
+    def test_region_list_unpins_with_a_star_not_a_trash(self, client: Client) -> None:
+        """SNOW-814: unpinning removes the pin, not the region — so it is not a trash."""
         user = UserFactory.create()
         client.force_login(user)
         region = MicroRegionFactory.create(name="Valais")
         FavouriteFactory.create(user=user, region=region, region_pin=True)
 
-        content = client.get(reverse("favourites:list"), **HTMX).content.decode()
+        content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
 
-        assert 'data-testid="region-pin-rating"' not in content
-        assert "No rating today" in content
+        assert 'data-testid="region-pin-unpin"' in content
+        assert "Unpin Valais" in content
+        assert 'aria-pressed="true"' in content
+        assert "Remove Valais" not in content
 
-    def test_region_tooltip_carries_the_control(self, client: Client) -> None:
-        """Signed in: the toggle, in its current state. Signed out: a sign-in path."""
-        region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
-        anonymous = client.get(reverse("api:region_summary", args=["ch-4115"])).json()
-        assert 'data-testid="region-pin-signin"' in anonymous["html"]
-        assert 'data-testid="region-pin-toggle"' not in anonymous["html"]
-
+    def test_region_list_empty_state_is_not_a_place_message(
+        self, client: Client
+    ) -> None:
+        """Nothing pinned reads as nothing pinned, not as an empty favourites list."""
         user = UserFactory.create()
         client.force_login(user)
-        unpinned = client.get(reverse("api:region_summary", args=["ch-4115"])).json()
-        assert 'data-testid="region-pin-toggle"' in unpinned["html"]
-        assert 'data-pinned="false"' in unpinned["html"]
+        FavouriteFactory.create(user=user)
 
+        content = client.get(reverse("favourites:region_list"), **HTMX).content.decode()
+
+        assert 'data-testid="region-pin-list-empty"' in content
+        assert "Pin a region and it will be listed here." in content
+
+    def test_region_list_rejects_an_anonymous_request(self, client: Client) -> None:
+        """It is a list of one user's own data."""
+        response = client.get(reverse("favourites:region_list"), **HTMX)
+        assert response.status_code == 403
+
+    def test_region_pin_is_not_in_the_places_list(self, client: Client) -> None:
+        """SNOW-814: the pins sheet lists places; a region is not one."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create(name="Valais")
+        pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        placed = FavouriteFactory.create(user=user, name="Lac de Vaux")
+
+        content = client.get(reverse("favourites:list"), **HTMX).content.decode()
+
+        assert "Lac de Vaux" in content
+        assert f"favourite-{pin.uuid}" not in content
+        assert "Valais" not in content
+        assert str(placed.uuid) in content
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    @freeze_time("2026-02-17")
+    def test_map_header_carries_the_pin_roundel(self, client: Client) -> None:
+        """SNOW-814: signed in, a toggle; signed out, a way in. Never nothing.
+
+        The roundel lives in the season ribbon's header, which only renders
+        when the season has data — hence the frozen clock and the rating.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        RegionDayRatingFactory.create(
+            region=region, date=datetime.date(2026, 2, 17), max_rating="high"
+        )
+
+        anonymous = client.get(reverse("public:home")).content.decode()
+        assert 'id="map-region-pin-control"' in anonymous
+        assert 'data-pin-state="signin"' in anonymous
+        assert reverse("accounts:sign_in") in anonymous
+
+        client.force_login(UserFactory.create())
+        signed_in = client.get(reverse("public:home")).content.decode()
+        assert 'data-pin-state="no-region"' in signed_in
+        assert 'aria-pressed="false"' in signed_in
+        # The state is derived client-side from the pinned list, so the
+        # toggle endpoint arrives as a template with the region-id token in.
+        assert "XX-0000/toggle/" in signed_in
+
+    def test_region_tooltip_carries_no_pin_control(self, client: Client) -> None:
+        """SNOW-814: the pin control left the summary for the ribbon header.
+
+        It was a pill here from SNOW-802, which made it reachable only with the
+        panel open and made "Pinned" a second statement of what the pinned list
+        on the same surface was already showing. It is a roundel beside the chip
+        now, and this summary is the region's facts again.
+        """
+        region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+        user = UserFactory.create()
+        client.force_login(user)
         FavouriteFactory.create(user=user, region=region, region_pin=True)
-        pinned = client.get(reverse("api:region_summary", args=["ch-4115"])).json()
-        assert 'data-pinned="true"' in pinned["html"]
+
+        html = client.get(reverse("api:region_summary", args=["ch-4115"])).json()[
+            "html"
+        ]
+
+        assert "data-region-pin" not in html
+        assert 'data-testid="region-tooltip-pin"' not in html
+        assert "Pin this region" not in html
 
     def test_card_for_a_region_pin_does_not_500(self, client: Client) -> None:
         """No elevation means no altitude verdict — the card still renders."""

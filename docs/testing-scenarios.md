@@ -316,10 +316,14 @@ screenshots and bug reports.
 
 ## Accounts and Pins
 
-Since SNOW-795 a saved region is a **region pin** in the map's pins sheet,
-not a subscription (nothing ever sent a bulletin). The account area is
-`/account/settings/` alone; `/account/` and the old list pages redirect into
-the map's sheets.
+Since SNOW-795 a saved region is a **region pin**, not a subscription
+(nothing ever sent a bulletin). Since SNOW-814 it is listed in the **region
++ date panel** the map's readout chip opens, not in the pins sheet: that
+sheet lists places, and a region has no coordinate, no name of the user's
+own and no forecast, so none of its affordances reached one. The pin
+control and the list of what you pinned are now the same surface. The
+account area is `/account/settings/` alone; `/account/` and the old list
+pages redirect into the map's sheets.
 
 ### Scenario 10: Sign up and land on the map -- happy path
 
@@ -335,24 +339,26 @@ the map's sheets.
 
 ### Scenario 11: Pin a region from the map
 
-**Goal**: Verify the region + date panel's pin control creates a region pin and the pins sheet lists it.
+**Goal**: Verify the region + date panel's pin control creates a region pin and the same panel lists it.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in (Scenario 10), tap a region on the map and open the region + date panel from the readout chip | The panel shows the region's name, today's rating, "Open bulletin for …" and a "☆ Pin this region" control beside it |
-| 2 | Click "Pin this region" | The control swaps in place to "★ Pinned" (no page reload) |
-| 3 | Open the pins sheet from its roundel | A row for the region is listed: the region's name, today's rating chip, a dated "Bulletin for …" link, a trash — no pencil, no zoom control |
-| 4 | Sign out, reload, open the same panel | The control reads "Sign in to pin this region" and links to the sign-in page |
+| 1 | While signed in (Scenario 10), tap a region on the map | A star roundel sits in the header between the region chip and the download roundel, outlined — the region is not pinned |
+| 2 | Click the star roundel | It fills (no page reload). Open the region + date panel from the chip: a row for the region is in the "Pinned regions" section at the foot, marked as the one on screen |
+| 3 | Read that row | The region's name and a solid star to unpin — nothing else. No rating, no date, no link: the list is navigation, and the summary above it is what follows the scrubber (SNOW-814) |
+| 4 | Open the pins sheet from its roundel | The region is NOT listed there — that sheet lists places (SNOW-814) |
+| 5 | Sign out and reload | The star roundel is still there, muted, and links to the sign-in page. The chip is inert with nothing selected, and no "Pinned regions" section renders |
 
-### Scenario 12: Unpin a region from the pins sheet
+### Scenario 12: Switch region from the pinned list, and unpin
 
-**Goal**: Verify removing a region pin updates the sheet dynamically and the region panel follows.
+**Goal**: Verify the pinned list navigates, and that unpinning keeps the panel's two controls in agreement.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in with two pinned regions (Scenario 11 twice), open the pins sheet | Two region rows are listed |
-| 2 | Click the trash on one region row | The row disappears without a page reload (HTMX swap); one row remains |
-| 3 | Open that region's panel again | The control reads "☆ Pin this region" |
+| 1 | While signed in with two pinned regions (Scenario 11 twice), deselect every region and press the "No region selected" chip | The chip is pressable and opens onto "Pinned regions" alone |
+| 2 | Press one region's name in the list | The map frames that region, the chip renames to it, the URL hash becomes `#<region_id>`, and the panel repaints with that region's summary above the list |
+| 3 | Scrub to another date, then read the list again | That region's row is marked as the current one and the others are not, and no row shows a date — only the summary above changes with the scrubber |
+| 4 | Press the solid star on that row | The row disappears without a page reload, AND the star roundel in the header hollows — the two read the same list and must never disagree |
 
 ### Scenario 13: Delete the account from settings
 
@@ -370,8 +376,8 @@ the map's sheets.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Pin exactly one region (Scenario 11) and open the pins sheet | One region row is listed |
-| 2 | Click its trash | The row goes; the sheet shows its empty state; the user stays signed in |
+| 1 | Pin exactly one region (Scenario 11) and open the region + date panel | One row is listed under "Pinned regions" |
+| 2 | Press its star | The row goes; the section reads "Pin a region and it will be listed here."; the header roundel hollows; the user stays signed in |
 | 3 | Navigate to http://localhost:8000/account/settings/ | The settings page renders — the account survives |
 
 ### Scenario 15: The old account URLs redirect into the map
@@ -393,7 +399,7 @@ the map's sheets.
 |------|--------|-----------------|
 | 1 | In a private window, open an unsubscribe link of the form `http://localhost:8000/account/unsubscribe/<token>/` (build one in a shell with `build_unsubscribe_url(email, region_id)`) | A confirmation page names the region; nothing changes on the GET |
 | 2 | Click "Yes, unsubscribe me" | The done page confirms the region was removed from the account's pins |
-| 3 | Sign in and open the pins sheet | The region row is gone |
+| 3 | Sign in and open the region + date panel | The region is gone from "Pinned regions" |
 
 ### Scenario 17: Submit the registration form with an invalid email address
 

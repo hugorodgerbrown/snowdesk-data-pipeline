@@ -12,9 +12,20 @@ Our own star, not the design mock's drawn one (confirmed with Hugo): the
 mock draws its glyphs from scratch, and matching the roundel a user
 actually tapped matters more than matching a mock's rendering of it.
 
+SNOW-814 gives it a FILLED state. A star means "favourite" everywhere in
+this product, and the region pin control needs the same mark in both of its
+states — outline for "pin this", solid for "pinned, press to unpin" — which
+is the convention the star already carries everywhere else it is used as a
+toggle. Two glyphs for one meaning was what the region pin shipped with:
+a literal ``★``/``☆`` text character in the button and a trash can on the
+row that undid it, so the same act was drawn twice, differently, and one of
+the drawings said "delete".
+
 Parameters (passed via {% include … with … %}):
   size      (int, optional) — rendered px, both axes. Default 18, the
             roundel size; the panel header passes 22.
+  filled    (bool, optional) — solid rather than outline. The "on" state of
+            a star used as a toggle.
   svg_class (string, optional) — classes on the <svg>.
 {% endcomment %}
 <svg
@@ -22,7 +33,7 @@ Parameters (passed via {% include … with … %}):
     width="{{ size|default:18 }}"
     height="{{ size|default:18 }}"
     viewBox="0 0 24 24"
-    fill="none"
+    fill="{% if filled %}currentColor{% else %}none{% endif %}"
     stroke="currentColor"
     stroke-width="2"
     stroke-linecap="round"

@@ -1,0 +1,58 @@
+{% load i18n components %}
+{% comment %}
+favourites/partials/_region_pin_row_actions.html — a pinned region row's one
+control (SNOW-814): a filled star that unpins.
+
+includes/_ugc_panel_row.html's `actions_template` slot, reached from
+favourites/partials/_region_pin_list.html.
+
+NOT THE TRASH, and that is the whole reason this file exists rather than
+reusing _favourite_row_actions.html. Hugo: "the trash can works for a
+deletion (favourite, route) where you are actually deleting the underlying
+record, but in this case you're not — you're just unpinning it. The region
+still exists." The row's subject is a MicroRegion, which this control does
+not touch; what it removes is the user's pin on it, and the mark for that
+is the same star the pin control above the list uses — solid here, because
+this is its "on" state.
+
+So the panel now draws one act one way: an outline star pins, a solid star
+unpins, and the two sit on the same surface saying the same thing. The
+trash stays on the panels whose rows really are the record — a favourite, a
+route, an observation — where pressing it destroys something that will not
+come back.
+
+Mechanically identical to the trash it replaces: a plain HTMX form posting
+to the delete endpoint, which answers an empty 200, with
+`hx-target`/`hx-swap` on the row's own id so the row leaves with no JS
+involved. `data-row-remove` is what tells the owning surface a row-scoped
+action landed (static/js/row_removed.js), and the region panel repaints on
+it so the pin control above cannot go on claiming "Pinned".
+
+`aria-pressed="true"` rather than a bare label: this is a toggle in its on
+state, and the star's fill is the only visual difference between the two.
+
+Context:
+    favourite  : Favourite — the region pin this row describes.
+    label      : str — the row's display name (the shared row's own
+                 parameter), which is the region's name.
+    row_target : str — CSS selector for the row this empties, supplied by
+                 _region_pin_list.html as ``#<the row's id>``.
+{% endcomment %}
+{% blocktrans trimmed with name=label asvar unpin_aria_label %}Unpin {{ name }}{% endblocktrans %}
+<form
+    data-row-remove
+    hx-post="{% url 'favourites:delete' favourite.uuid %}"
+    hx-target="{{ row_target }}"
+    hx-swap="outerHTML"
+>
+    {% csrf_token %}
+    <button
+        type="submit"
+        aria-pressed="true"
+        aria-label="{{ unpin_aria_label }}"
+        data-testid="region-pin-unpin"
+        class="{% icon_button_classes %}"
+    >
+        {% include "includes/_icon_favourite.html" with filled=True only %}
+    </button>
+</form>
