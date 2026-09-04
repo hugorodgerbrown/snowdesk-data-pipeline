@@ -326,6 +326,7 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     ),
     SettingSpec("FAVOURITES_MAX_PER_USER", validator=positive_int, note="Per-user cap"),
     SettingSpec("ROUTES_MAX_PER_USER", validator=positive_int, note="Per-user cap"),
+    SettingSpec("TRIPS_MAX_PER_USER", validator=positive_int, note="Per-user cap"),
     SettingSpec(
         "DOWNLOAD_AREAS_MAX_PER_USER", validator=positive_int, note="Per-user cap"
     ),
@@ -333,6 +334,11 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         "ROUTE_UPLOAD_MAX_BYTES",
         validator=positive_int,
         note="Largest accepted .gpx upload (bytes)",
+    ),
+    SettingSpec(
+        "TRIP_SHARE_MAX_AGE_DAYS",
+        validator=positive_int,
+        note="How long a trip-share link outlives the trip's own date (days)",
     ),
     SettingSpec(
         "ROUTE_SHARE_MAX_AGE_DAYS",

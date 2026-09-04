@@ -33,7 +33,13 @@ from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 
-from tests.factories import MicroRegionFactory, ResortFactory, SubRegionFactory
+from apps.trips.services.shares import mint_trip_share
+from tests.factories import (
+    MicroRegionFactory,
+    ResortFactory,
+    SubRegionFactory,
+    TripFactory,
+)
 
 # Every meta/title tag this module reasons about.
 IDENTITY_PROPERTIES = ("og:title", "og:description")
@@ -66,7 +72,11 @@ def _meta_content(html: str, prop: str) -> str:
 
 @pytest.fixture
 def sharing_pages(db: None) -> dict[str, str]:
-    """URLs of every page expected to emit a full sharing set."""
+    """URLs of every page expected to emit a full sharing set.
+
+    This dict is HAND-MAINTAINED — nothing here walks the URL conf — so a
+    new shareable page has to be added by hand or nothing checks it.
+    """
     subregion = SubRegionFactory.create()
     region = MicroRegionFactory.create(
         region_id="CH-4115", name="Valais", subregion=subregion
@@ -85,7 +95,30 @@ def sharing_pages(db: None) -> dict[str, str]:
         "how_to_read_bulletin": reverse("public:how_to_read_bulletin"),
         "resort": resort.get_absolute_url(),
         "bulletin": region.get_absolute_url(),
+        # SNOW-821. The trip share page carries a full card AND `noindex`,
+        # which are independent (see includes/_page_meta.html): unfurling
+        # in a message is the point of the link, being findable in search
+        # would defeat the token. Dated a week out from the real clock
+        # rather than pinned, because the link's liveness is measured from
+        # the trip's own date — a fixed past date would mint a dead link.
+        #
+        # ``/trips/`` and ``/trips/<uuid>/`` are deliberately in NEITHER
+        # dict: both are behind auth, and this module's client is
+        # anonymous, so either would assert against a 302 with no body.
+        # They are covered in tests/trips/ with a signed-in client.
+        "trip_share": _shared_trip_url(),
     }
+
+
+def _shared_trip_url() -> str:
+    """Return the public URL of a freshly shared, future-dated trip."""
+    trip = TripFactory.create(
+        name="Rosablanche",
+        date=datetime.date.today() + datetime.timedelta(days=7),
+    )
+    mint_trip_share(trip.created_by, trip.uuid)
+    trip.refresh_from_db()
+    return reverse("trips:share_page", args=[trip.share_token])
 
 
 @pytest.fixture

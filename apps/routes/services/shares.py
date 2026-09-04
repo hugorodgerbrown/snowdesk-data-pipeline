@@ -31,6 +31,12 @@ The cap on a claimed copy is ``settings.ROUTES_MAX_PER_USER``, enforced
 through ``routes.py``'s own ``_assert_under_cap`` / ``_locked_cap_recheck``
 rather than re-derived here — a second writer with its own copy of the
 arithmetic is a cap that eventually differs between the two paths.
+
+``write_route_copy`` is that pair plus the create, in one named function.
+SNOW-824 extracted it because a THIRD path now writes a route copy —
+``apps.trips.services.routes.save_trip_route``, which copies a trip's
+snapshot onto a viewer's account — and it takes a field dict rather than a
+source route precisely because that caller has no route to read from.
 """
 
 from __future__ import annotations
@@ -171,6 +177,44 @@ _COPIED_FIELDS = (
 )
 
 
+def write_route_copy(user: "User", fields: dict[str, object]) -> Route:
+    """Write one Route onto ``user``'s account, cap-checked exactly once.
+
+    The cap dance every route COPY has to perform, in one place: the
+    unlocked early exit (so expensive work never happens for a row that
+    cannot be stored), then the locked re-check inside the transaction (so
+    concurrent creators serialise and the cap actually holds), then the
+    create. Extracted from ``claim_route_share`` by SNOW-824 with **no
+    behaviour change** — there is now a second caller,
+    ``apps.trips.services.routes.save_trip_route``, and two copies of this
+    sequence would be two places for a later change to reach one and not
+    the other.
+
+    It takes a plain field dict rather than a source ``Route`` because the
+    second caller has no route to copy from: a trip's geometry is a
+    SNAPSHOT, deliberately not read through the trip's route FK (see
+    ``apps.trips.models.Trip``), so the fields arrive as values rather than
+    as an object.
+
+    Args:
+        user: The account the new route belongs to.
+        fields: The Route field values to write, excluding ``user``.
+
+    Returns:
+        The newly created Route.
+
+    Raises:
+        apps.routes.services.routes.RouteLimitReached: When ``user`` is
+            already at ``settings.ROUTES_MAX_PER_USER``.
+
+    """
+    _assert_under_cap(user)
+
+    with transaction.atomic():
+        _locked_cap_recheck(user)
+        return Route.objects.create(user=user, **fields)
+
+
 def claim_route_share(user: "User", token: str) -> Route:
     """Copy the route behind an active share onto the claiming user's account.
 
@@ -217,14 +261,17 @@ def claim_route_share(user: "User", token: str) -> Route:
         # correct if it ever does happen.
         raise RouteShare.DoesNotExist(f"Share {token} has no route.")
 
-    _assert_under_cap(user)
-
+    # ONE outer block around both writes. ``write_route_copy`` opens an
+    # atomic of its own, so without this the copy would commit before the
+    # counter update ran and a failure there would strand a route with no
+    # record that the link was ever used. Nesting makes the inner block a
+    # savepoint and restores the all-or-nothing guarantee the two writes had
+    # when they shared a single block, before SNOW-824 extracted the copy.
     with transaction.atomic():
-        _locked_cap_recheck(user)
-        route = Route.objects.create(
-            user=user,
-            **{field: getattr(source, field) for field in _COPIED_FIELDS},
+        route = write_route_copy(
+            user, {field: getattr(source, field) for field in _COPIED_FIELDS}
         )
+
         # An atomic UPDATE rather than a read-modify-write. Two people
         # claiming the same link at the same moment both read the same
         # ``claim_count`` and both write it back plus one, so one of the two

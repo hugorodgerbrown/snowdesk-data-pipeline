@@ -52,7 +52,8 @@
    * with mediation:"conditional".  The browser surfaces matching passkeys
    * inline inside the email input's autofill dropdown without a modal.
    *
-   * On success the user is redirected to the account hub, /account/.
+   * On success the user is redirected to the destination the server returned
+   * (the sign-in page's `next`, SNOW-825), falling back to /account/.
    *
    * No-ops if the browser does not support conditional UI, if a conditional
    * ceremony is already pending, or if an explicit ceremony is in flight —
@@ -291,7 +292,28 @@
   // ---------------------------------------------------------------------------
 
   /**
+   * Read the sign-in page's post-sign-in destination, if it has one.
+   *
+   * The sign-in form carries `data-next` when the page was reached with a
+   * `?next=` the server accepted (SNOW-825). It is read from the DOM rather
+   * than passed through the ceremony's arguments so both entry points — the
+   * conditional autofill ceremony and the explicit button — get it without
+   * either caller having to know about it.
+   *
+   * @returns {string} The destination, or '' when there is none.
+   */
+  function _nextDestination() {
+    const form = document.querySelector('form[data-next]');
+    return (form && form.getAttribute('data-next')) || '';
+  }
+
+  /**
    * POST an authentication credential to the server and redirect on success.
+   *
+   * The body is the credential plus, when the page has one, the `next`
+   * destination. The server re-validates `next` and echoes back either a
+   * same-site URL or null, so the navigation below can never be pointed off
+   * this origin by the value this function sent.
    *
    * When the server returns 404 (unknown credential), calls
    * PublicKeyCredential.signalUnknownCredential() if available so the passkey
@@ -302,12 +324,15 @@
    */
   async function _sendAuthResponse(authResponseUrl, credential) {
     let resp, data;
+    const payload = credential.toJSON();
+    const next = _nextDestination();
+    if (next) payload.next = next;
     try {
       resp = await fetch(authResponseUrl, {
         method: 'POST',
         headers: { ..._csrfHeaders(), 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify(credential.toJSON()),
+        body: JSON.stringify(payload),
       });
       data = await resp.json();
     } catch (err) {
@@ -317,7 +342,7 @@
     }
 
     if (resp.ok && data.ok) {
-      window.location.href = '/account/';
+      window.location.href = data.next || '/account/';
       return;
     }
 

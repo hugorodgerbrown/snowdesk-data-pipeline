@@ -1,0 +1,55 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_list_row.html — one row of the trips agenda (SNOW-823).
+
+A row, not a card: a list should read as a list. The day and time lead,
+because an agenda is read by when — the label answers "which one" only after
+the reader has found the right morning.
+
+ORGANISING IS A LABEL, NOT A SECTION. A trip the reader authored gets a chip
+saying so and sits in date order with everything else. Splitting the list by
+authorship would file two trips on the same morning under different
+headings, and the reader's question is "what am I doing", not "what did I
+write".
+
+The whole row is a link to the trip. It is not a UGC panel row
+(includes/_ugc_panel_row.html): that shape carries a rename pencil and a
+trash can for an object edited in place, and a trip is edited on its own
+page by one of the several people on it.
+
+Context:
+    trip : Trip — the trip to render.
+{% endcomment %}
+<li>
+    <a
+        href="{% url 'trips:detail' trip.uuid %}"
+        class="flex flex-col gap-1 border-b border-border py-3 hover:bg-tag"
+        data-testid="trip-list-row"
+    >
+        <span class="flex items-center gap-2">
+            <span class="font-mono text-xs uppercase tracking-widest text-text-3">
+                {{ trip.date|date:"D j M Y" }} · {{ trip.start_time|time:"H:i" }}
+            </span>
+            {% if trip.created_by_id == request.user.pk %}
+                <span
+                    class="rounded-pill bg-tag px-2 py-0.5 text-xs text-text-2"
+                    data-testid="trip-list-organiser-chip"
+                >{% trans "You organised this" %}</span>
+            {% endif %}
+        </span>
+        {% trans "Untitled trip" as untitled_trip %}
+        {% firstof trip.display_name untitled_trip as row_label %}
+        <span class="text-text-1" data-testid="trip-list-row-label">{{ row_label }}</span>
+        <span class="text-sm text-text-2">
+            {# ``participant_count`` is annotated by trip_list, NOT read as     #}
+            {# trip.participants.count — the property form is one COUNT query  #}
+            {# per row rendered, so the page's query count would grow with the  #}
+            {# reader's own agenda.                                            #}
+            {% blocktrans trimmed with km=trip.distance_km|floatformat:1 count counter=trip.participant_count %}
+                {{ km }} km · {{ counter }} person going
+            {% plural %}
+                {{ km }} km · {{ counter }} people going
+            {% endblocktrans %}
+        </span>
+    </a>
+</li>

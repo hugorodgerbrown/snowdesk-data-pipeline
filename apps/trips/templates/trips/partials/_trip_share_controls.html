@@ -1,0 +1,76 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_share_controls.html — the organiser's Share and Revoke
+(SNOW-821).
+
+Two buttons and no form. trips:share_create and trips:share_revoke answer
+JSON to a plain fetch(), because the minted URL goes to the native share
+sheet (window.pwaShare, shared unchanged with the bulletin page and the
+routes panel) rather than into the page.
+
+BOTH CONTROLS ARE ALWAYS RENDERED, and Revoke is disabled rather than absent
+when there is no live link. A control that appears and disappears as state
+changes reads as a bug on a page a user visits twice; a disabled one says
+"this is the thing you would press, and there is nothing to press it on".
+The site's rule anyway: show controls, don't hide them.
+
+SHARING AGAIN ROTATES THE LINK. That is stated in the copy under the
+buttons rather than left for a user to discover, because it is the one
+behaviour here with a consequence somebody else feels — a link already sent
+to a group chat stops working. It is also the only revoke-and-reshare an
+organiser has, so it earns its sentence.
+
+The uuid rides on each button (`data-trip-share`, `data-trip-share-revoke`)
+so the delegated handler needs no closure over the rendered page — the same
+contract the route row's own Share carries.
+
+`{% templatetag openblock %} button_classes {% templatetag closeblock %}`
+directly rather than includes/_button.html: that partial renders the label
+and nothing else, and these two carry data attributes a delegated handler
+reads. The class STRING is still the design system's, which is the part that
+must not be written out by hand.
+
+Context:
+    trip : Trip — the trip whose link these controls manage.
+{% endcomment %}
+<div data-testid="trip-share-controls" class="flex flex-col gap-3">
+    <div class="flex items-center gap-3">
+        {% trans "Share this trip" as trip_share_label %}
+        <button
+            type="button"
+            data-trip-share="{{ trip.uuid }}"
+            class="{% button_classes variant='secondary' size='compact' %}"
+        >
+            {{ trip_share_label }}
+        </button>
+        {% trans "Stop sharing" as trip_revoke_label %}
+        <button
+            type="button"
+            data-trip-share-revoke="{{ trip.uuid }}"
+            {% if not trip.share_is_live %}disabled{% endif %}
+            class="{% button_classes variant='ghost' size='compact' %}"
+        >
+            {{ trip_revoke_label }}
+        </button>
+    </div>
+    <p class="text-xs text-text-3" data-testid="trip-share-state">
+        {% if trip.share_is_live %}
+            {% blocktrans trimmed with until=trip.share_expires_at|date:"j F Y" %}
+                This trip has a live link, working until {{ until }}. Sharing again replaces it, and the link you
+                already sent stops working.
+            {% endblocktrans %}
+        {% else %}
+            {% blocktrans trimmed %}
+                Anyone with the link can see this trip and join it. Sharing again later replaces the link.
+            {% endblocktrans %}
+        {% endif %}
+    </p>
+</div>
+{# Every user-facing string trip_share.js writes into the DOM. See         #}
+{# static/js/i18n_strings.js and docs/i18n.md — makemessages never scans   #}
+{# static/js, so a literal there ships as English to every locale.         #}
+<template id="trip-share-strings-template">
+    <span data-string="share-copied">{% trans "Link copied." %}</span>
+    <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
+    <span data-string="revoke-failed">{% trans "The link couldn't be revoked. Try again." %}</span>
+</template>

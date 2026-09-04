@@ -28,6 +28,14 @@ scanners and GET-only account access). SNOW-439.
 {% block status_cta %}
     <form method="post" class="mt-6">
         {% csrf_token %}
+        {% comment %}
+            SNOW-825: where the emailed link was heading before sign-in. It
+            arrives on the GET as ``?next=``, is validated there, and is
+            carried across this POST so the redirect after login can honour
+            it — where it is validated once more, on the request that
+            actually redirects.
+        {% endcomment %}
+        {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
         {% trans "Sign in to my account" as label %}
         {% include "includes/_button.html" with label=label variant="primary" full_width=True %}
     </form>

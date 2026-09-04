@@ -243,3 +243,51 @@ describe('startConditionalSignIn() vs a running explicit ceremony', () => {
     await explicitPromise;
   });
 });
+
+// ---------------------------------------------------------------------------
+// 7. The auth response carries — and obeys — the sign-in page's `next`.
+// ---------------------------------------------------------------------------
+
+describe('_sendAuthResponse() and the page\'s data-next (SNOW-825)', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /**
+   * Drive an explicit ceremony to the point where the credential is POSTed.
+   *
+   * The auth response is stubbed as a 400 so the success branch — which
+   * assigns window.location.href, and jsdom cannot navigate — is never
+   * taken. What is under test is the REQUEST, which is identical either way.
+   *
+   * @param {object} authResponseBody
+   * @returns {Promise<object>} The RequestInit of the auth-response POST.
+   */
+  async function postCredential(authResponseBody) {
+    fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: false, status: 400, json: async () => authResponseBody });
+    navigator.credentials.get.mockResolvedValue({ toJSON: () => ({ id: 'cred-1' }) });
+
+    await window.Passkey.signInWithPasskey(AUTH_REQUEST_URL, AUTH_RESPONSE_URL);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    return fetch.mock.calls[1][1];
+  }
+
+  it('sends the form\'s data-next alongside the credential', async () => {
+    document.body.innerHTML = '<form data-next="/trips/s/abc123/"></form>';
+
+    const init = await postCredential({ error: 'verification_failed' });
+
+    expect(JSON.parse(init.body)).toEqual({ id: 'cred-1', next: '/trips/s/abc123/' });
+  });
+
+  it('sends no next when the page offers none', async () => {
+    document.body.innerHTML = '<form></form>';
+
+    const init = await postCredential({ error: 'verification_failed' });
+
+    expect(JSON.parse(init.body)).toEqual({ id: 'cred-1' });
+  });
+});

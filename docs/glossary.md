@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-04
 ---
 
 # Glossary — domain terms to code symbols
@@ -84,6 +84,19 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Ascent / descent | A Route's total climb and total drop in metres, both positive magnitudes, measured independently at ingest on the full-resolution track and never netted against each other. Null — not zero — when the source GPX carried no elevation at all | `Route.ascent_m` / `Route.descent_m`; `_total_ascent_descent_m` in `apps/routes/services/gpx.py` |
 | Download area | The DEFINITION of one offline basemap download on a user's account (SNOW-749) — a region id or a `[west, south, east, north]` bbox, plus the basemap key and a name, keyed by the client-minted `area_id` that also names the device's Cache Storage bucket. Never the bytes: those are per-browser, so an area on this list is not thereby available offline here | `apps/downloads/models.py` (`DownloadArea`); client in `static/js/downloads_sync.js`, merged by `reconcileAreas` in `static/js/basemap_manage_core.js` |
 | `onDevice` / `synced` | The two independent facts every reconciled download area carries. `onDevice` means the tiles are in this browser's Cache Storage; `synced` means the account has a `DownloadArea` row for it. They are separate because "in your account" is not "available offline" — a synced-not-here area must never paint a green sync dot | `reconcileAreas` / `manageRows` in `static/js/basemap_manage_core.js` |
+
+## Trips
+
+| Term | Meaning | Code |
+|------|---------|------|
+| Trip | A route the organiser already owns, on a named day, meeting somewhere at a stated time (SNOW-819). One row with a roster, never a thing that gets copied — everyone on it is meeting each other, so they belong on the same row ([why](decisions/a-trip-is-one-object-with-a-roster.md)) | `Trip` in `apps/trips/models.py`; `create_trip` in `apps/trips/services/trips.py` |
+| Trip snapshot | The route geometry and figures COPIED onto a `Trip` at creation and never re-read — `points`, `bounds`, `distance_m`, `ascent_m`, `descent_m`, `point_count`, `route_name`. It is what makes a trip survive the organiser renaming, re-uploading or deleting the route it came from | `Trip.points` and siblings; `_SNAPSHOT_FIELDS` in `apps/trips/services/trips.py` |
+| Organiser | The account that created a trip. Derived from `Trip.created_by`, never a second column on the roster row — they hold a `TripParticipant` row like everybody else, so "everyone on this trip" is one relation | `Trip.created_by`; `is_organiser` in `apps/trips/views.py` |
+| TripParticipant | One account on one trip. `(trip, user)` is unique, and the organiser's row is written at creation | `TripParticipant` in `apps/trips/models.py` |
+| Meeting point | Where a trip's group meets — an anonymous `Location` minted for that trip alone, defaulting to the route's first coordinate. `PROTECT`, so the orphan sweep can ask the database whether anything still references it | `Trip.meeting_point`; `_meeting_coordinates` in `apps/trips/services/trips.py` |
+| Upcoming vs past | The split `/trips/` reads by, against the trip's own `date` and the site's current day. A trip dated TODAY is upcoming — the day it exists for has not finished. Upcoming reads soonest-first, past most-recent-first | `TripQuerySet.upcoming()` / `.past()` in `apps/trips/models.py` |
+| Save route | Copying a trip's SNAPSHOT into the viewer's own routes (SNOW-824) — available to anyone who can see the trip, participant or not. Saving does not join and joining does not save, and nothing links the copy back afterwards; the "already saved" state is an exact geometry match ([why](decisions/a-trip-share-is-a-page-not-a-pending-claim.md)) | `save_trip_route` / `already_saved` in `apps/trips/services/routes.py`; the write is `write_route_copy` in `apps/routes/services/shares.py` |
+| Wall-clock day and time | A trip's `date` and `start_time`, stored as a plain date and time and never converted between timezones. "07:30" is what the organiser typed and what everyone standing at the lift station reads off their own watch | `Trip.date` / `Trip.start_time` |
 
 ## Coordinates and locations
 

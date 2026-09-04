@@ -1,0 +1,76 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_form.html — the organiser's plan, as a form.
+
+ONE form for both halves of authoring. Creating posts to trips:create with
+the source route's uuid riding in a hidden field; editing posts to
+trips:edit, whose URL already names the trip. Which of the two is decided by
+``trip_uuid`` being set, and nothing else differs — the editable fields are
+identical, because the snapshot is not editable and has no field here at all
+(see apps/trips/models.py).
+
+A FRAGMENT POSTED OVER HTMX, from a full page. The form itself lives on a
+page (trips/trip_new.html, or the organiser's own trip page); the POST is a
+fragment endpoint so an invalid submission can come back as this same file
+with its errors and swap itself in place, without a round trip through a
+full re-render that would lose everything else the page holds. A successful
+post answers HX-Redirect and the browser navigates.
+
+`hx-swap="outerHTML"` on the form's own id: the response IS this form, so
+the swap replaces it rather than nesting a second copy inside the first.
+
+THE MEETING POINT IS A PIN ON A MAP, in _trip_meeting_picker.html. It began
+as two number inputs prefilled with the route's start, which only works for
+someone who knows what 46.080012, 7.318197 is — nobody does. The inputs are
+still there, and still the value the form posts; they are now under the map
+rather than in front of it. See that partial for the three cases they serve.
+
+Context:
+    form           : TripForm — bound or unbound.
+    route_uuid     : str, optional — the source route. Set on the CREATE path.
+    trip_uuid      : str, optional — the trip being edited. Set on the EDIT
+                     path. Exactly one of the two is ever set.
+    cancel_url     : str, optional — where Cancel goes. Omitted on the edit
+                     path, where the form is already on the trip's page.
+    picker_payload : dict — the meeting picker's route line, bounds and
+                     initial pin. Passed straight through.
+    basemap_url    : str — likewise.
+{% endcomment %}
+<form
+    id="trip-form"
+    hx-post="{% if trip_uuid %}{% url 'trips:edit' trip_uuid %}{% else %}{% url 'trips:create' %}{% endif %}"
+    hx-target="#trip-form"
+    hx-swap="outerHTML"
+    class="flex flex-col"
+>
+    {% csrf_token %}
+    {% if route_uuid %}<input type="hidden" name="route" value="{{ route_uuid }}">{% endif %}
+    {% if form.non_field_errors %}
+        <ul class="mb-4 space-y-0.5" data-testid="trip-form-errors">
+            {% for error in form.non_field_errors %}<li class="text-xs text-form-error">{{ error }}</li>{% endfor %}
+        </ul>
+    {% endif %}
+    <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+        {% trans "Day" as date_label %}
+        {% include "includes/_form_field.html" with field=form.date label=date_label %}
+        {% trans "Meeting time" as start_time_label %}
+        {% include "includes/_form_field.html" with field=form.start_time label=start_time_label %}
+    </div>
+    {% trans "Trip name" as name_label %}
+    {% include "includes/_form_field.html" with field=form.name label=name_label optional=True %}
+    {% trans "Note for the group" as description_label %}
+    {% include "includes/_form_field.html" with field=form.description label=description_label optional=True %}
+    {% include "trips/partials/_trip_meeting_picker.html" %}
+    <div class="mt-2 flex items-center gap-3">
+        {% if trip_uuid %}
+            {% trans "Save changes" as trip_submit_label %}
+        {% else %}
+            {% trans "Create trip" as trip_submit_label %}
+        {% endif %}
+        {% include "includes/_button.html" with label=trip_submit_label variant="primary" %}
+        {% if cancel_url %}
+            {% trans "Cancel" as trip_cancel_label %}
+            {% include "includes/_button.html" with label=trip_cancel_label href=cancel_url variant="ghost" %}
+        {% endif %}
+    </div>
+</form>

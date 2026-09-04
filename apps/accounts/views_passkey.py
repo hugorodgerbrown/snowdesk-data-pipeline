@@ -39,6 +39,7 @@ from django_ratelimit.decorators import ratelimit
 from apps.core.decorators import require_htmx
 
 from .models import PasskeyCredential
+from .redirects import safe_next
 from .services.passkey import (
     PasskeyError,
     PasskeyUnknownCredentialError,
@@ -85,7 +86,15 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
     Verify a navigator.credentials.get() response and log the user in.
 
     On success: calls ``django.contrib.auth.login()`` to establish the
-    Django session and returns a JSON response containing ``{"ok": true}``.
+    Django session and returns a JSON response containing
+    ``{"ok": true, "next": <url or null>}`` — the browser navigates to
+    ``next`` when it is set (SNOW-825), so a recipient who signed in from a
+    trip share link lands back on the trip. The client sends its ``next``
+    alongside the credential in the same JSON object; the extra key is
+    ignored by the WebAuthn parser, which reads only the fields it names.
+    It is validated here with ``safe_next`` and answered as ``null`` when it
+    is not a same-site destination — this endpoint must never hand the
+    browser somebody else's host.
 
     On failure: returns a 4xx JSON error.  If the credential is unknown (e.g.
     revoked but still cached in the browser), returns HTTP 404 with
@@ -107,9 +116,14 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "empty_body"}, status=400)
 
     try:
-        json.loads(credential_json)
+        payload = json.loads(credential_json)
     except json.JSONDecodeError, TypeError:
         return JsonResponse({"error": "invalid_json"}, status=400)
+
+    # The body is attacker-shaped as well as attacker-supplied: anything that
+    # is not a string is not a destination, and never reaches ``safe_next``.
+    raw_next = payload.get("next") if isinstance(payload, dict) else None
+    next_url = safe_next(request, raw_next if isinstance(raw_next, str) else None)
 
     try:
         user = _verify_auth_response(credential_json, request.session)
@@ -124,7 +138,7 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
 
     login(request, user, backend=_TOKEN_BACKEND)
     logger.info("User pk=%s signed in via passkey", user.pk)
-    return JsonResponse({"ok": True})
+    return JsonResponse({"ok": True, "next": next_url})
 
 
 # ---------------------------------------------------------------------------

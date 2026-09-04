@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-04
 ---
 
 # Snowdesk site structure
@@ -51,12 +51,21 @@ prefixes depend on this ordering — don't reorder
 | `/resorts/<slug>/` | `resort_detail` | A router, not a document (SNOW-807): the resort's own curated facts, then one link to the region's bulletin, a link per curated location to its weather page, and one link to the map with the reports sheet open at the resort. Keyed on `Resort.slug` (SNOW-796); `/resorts/<id>/<slug>/` 301s. |
 | `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location. |
 | `/observations/` | redirect | Permanent 301 to `/?panel=reports` — the map with the reports sheet open (SNOW-804). |
+| `/trips/` | `trips.views.trip_list` | **The reader's own trips**, upcoming and past (SNOW-823). Scoped by participation, split against the trip's own date, and a trip dated today counts as upcoming. A LIST PAGE, which is an exception to [two-documents-and-a-map](decisions/two-documents-and-a-map.md) and argued there: a route and a favourite are indexed spatially and the map is that index, a trip is indexed temporally and the map has no index for that. Unpaginated; behind auth. |
+| `/trips/new/` | `trips.views.trip_new` | The authoring form for a trip planned from one of your own routes, named by `?route=<uuid>` (SNOW-820). A page rather than a fragment in the map's routes panel, whose body is re-cloned on every open. Anonymous visitors redirect to sign-in. |
+| `/trips/s/<token>/` | `trips.views.trip_share_page` | **The page behind a trip's share link** (SNOW-821). Public, rate-limited on the (token, IP) key, `Cache-Control: no-store`. Renders the same summary and map the object page does; unknown, revoked and expired tokens are one 404. Emits the full sharing set AND `noindex` — unfurling as a card is the point of the link, being findable in search would defeat the token, and `Disallow: /trips/` in robots.txt would block the unfurlers themselves. |
+| `/trips/<uuid>/` | `trips.views.trip_detail` | **One trip's own page** — the day, the meeting time and point, the route drawn with a marker, the figures, the elevation profile, the organiser's note and the roster (SNOW-820/822). Scoped by PARTICIPATION, so everyone on the trip gets it and the controls are what differ; a link-holder who has not joined gets 404 here and the share page instead, because the uuid keys the participant-scoped endpoints. A page, not a redirect into the map, because a trip is authored to be sent ([why](decisions/two-documents-and-a-map.md)). |
 | `/how-to-read-a-bulletin/` | `how_to_read_bulletin` | Domain primer for readers. |
 | `/help/` | `help_page` | Help, including the PWA/offline sections. |
 | `/examples/random/` | `examples_random` | A sample bulletin; `/random/` is a deprecated redirect to it. |
 | `/examples/category/<danger_level>/` | `examples_category` | A sample bulletin at a given danger level. |
 | `/s/<token>/` | `share_redirect` | Short share links. |
 | `/privacy/`, `/terms/`, `/terms-of-service/`, `/colophon/` | static pages | Legal and attribution. |
+
+The account menu in `includes/nav.html` links `/trips/` alongside Settings
+and Sign out. That is not a fourth saved-thing list: SNOW-803 removed three
+lists of MAP OBJECTS, and a trip is not one — see the amendment in
+[two-documents-and-a-map](decisions/two-documents-and-a-map.md).
 
 Account routes (`/account/…` — settings, register, verify, setup, sign-in,
 change-email, unsubscribe, WebAuthn, push) are documented in
@@ -91,6 +100,15 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
   account-page variants); the surface that reaches these is open to every
   visitor and its contents to every signed-in one
   ([`docs/map-and-api.md`](map-and-api.md))
+- `/trips/partials/…` — create, edit, delete, join, leave, save-route
+  (SNOW-819). Join and save-route are addressed by share TOKEN and leave by uuid: holding a live link
+  is the whole access rule for joining, and a non-participant must never be
+  handed the uuid. The trip PAGES
+  sit outside this prefix because they are navigations, and so do
+  `/trips/<uuid>/share/` and `.../share/revoke/`, which answer JSON to a
+  plain `fetch()` for the native share sheet; only the writes above are
+  fragments, so an invalid submission can come back as the form with its
+  errors
 - `/partials/_components/<slug>/` — component-library panels
 
 ## Non-HTML routes
@@ -121,9 +139,18 @@ anything `Disallow`ed in robots.txt.
 
 Every template extending `public/base.html` must override
 `{% block page_meta %}` exactly once, or opt out explicitly with `sharing=False`
-plus a reason. `tests/public/test_page_meta.py` walks every public URL above and
-fails a page in neither state — so a new route here needs a metadata decision
-before it can merge. See
+plus a reason.
+
+`tests/public/test_page_meta.py` checks that rule, **but it does not walk the
+URL conf** — this file used to say it did, and it never has. The module works
+off two hand-maintained fixture dicts, `sharing_pages` and `opted_out_pages`,
+and a page in neither is not tested at all rather than failed. So adding a
+route here does **not** force a metadata decision on its own: **add the new
+page to one of those two dicts by hand**, or nothing checks it. A page
+addressed by a token or a uuid needs a factory-minted URL to be listed, the way
+`resort` and `bulletin` already are.
+
+See
 [`docs/decisions/page-metadata-is-explicit-or-opted-out.md`](decisions/page-metadata-is-explicit-or-opted-out.md).
 
 ---
