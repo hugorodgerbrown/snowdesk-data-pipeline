@@ -444,6 +444,44 @@ class TripParticipant(BaseModel):
             ),
         ]
 
+    @property
+    def display_label(self) -> str:
+        """Return how this person is NAMED on a roster.
+
+        Their ``Account.display_name`` when they set one, and otherwise the
+        LOCAL PART of their email address — never the whole address.
+
+        The full address is what an account signs in with and what a
+        stranger would need to attempt one, and a trip roster is read by
+        every other person on the trip, several of whom the organiser may
+        have added and one of whom may have forwarded the link before it
+        was joined. The local part identifies somebody to people who
+        already know them, which is exactly the audience, and is not a
+        deliverable address.
+
+        Reading through ``user.account`` costs no query when the caller
+        used ``roster_for``, which selects it; ``Account`` is a OneToOne
+        that a plain staff superuser may not have, so its absence is
+        handled rather than raised.
+
+        Returns:
+            A short label for this person.
+
+        """
+        # Imported here rather than at module scope: ``apps.accounts``
+        # reaches into ``apps.trips`` for account erasure, and a top-level
+        # import back the other way would close that loop. The same idiom
+        # ``apps.core.models.RequestLogManager.from_request`` uses.
+        from apps.accounts.models import Account  # noqa: PLC0415
+
+        email: str = self.user.email or ""
+        try:
+            name: str = self.user.account.display_name
+        except Account.DoesNotExist:
+            # A plain staff superuser has no Account profile.
+            name = ""
+        return name or email.split("@")[0] or "Somebody"
+
     def to_string(self) -> str:
         """Return a concise human-readable description of this row.
 

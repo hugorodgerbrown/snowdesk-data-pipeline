@@ -98,11 +98,36 @@ would show a group member abroad a different time for the same meeting.
   `includes/_page_meta.html` beside `sharing` because that partial is the
   one emitter for head metadata.
 - **The organiser cannot leave their own trip**, and cannot remove anybody
-  else (SNOW-822). A trip whose organiser is not on it is incoherent, and
-  removal is a moderation surface with its own questions for an object that
-  lasts one day. Deleting the trip is the one exit, and it removes it for
+  else (SNOW-822). A trip whose organiser is not on it is incoherent —
+  nobody is answerable for the plan, and the roster no longer holds the
+  person whose name answers "who sent me this" — so a leave from them is
+  409 with a message pointing at Delete. Removal is a moderation surface
+  with its own questions (who is told, what they see, whether they can
+  rejoin) for an object that lasts one day, so there is no service function
+  for it at all. Deleting the trip is the one exit, and it removes it for
   everyone — which the delete confirmation says out loud, naming the number
   of other people.
+- **Anyone holding the link sees the COUNT; only participants see the
+  NAMES; the organiser is named to everyone** (`roster_names_visible_to`).
+  A trip link travels — forwarded out of a group chat, pasted into another
+  one — and the people on the roster did not agree to be listed to whoever
+  it reached, so joining is what earns the group's names. The organiser is
+  the exception because their name is already the answer to "who is this
+  from", and withholding it would make the page more anonymous than the
+  message that carried it. A person is named by their `display_name`, or
+  by the LOCAL PART of their email — never the whole address, which is what
+  an account signs in with.
+- **Join is addressed by TOKEN and leave by UUID.** Holding a live link is
+  the whole access rule for joining, and the token is the only identifier a
+  non-participant has been given; the uuid keys the participant-scoped
+  endpoints, so a link-holder must never see one. `/trips/<uuid>/` 404s for
+  them, and `/trips/s/<token>/` is their surface.
+- **A signed-out recipient gets a sign-in link and nothing more.** SNOW-764
+  needed `PENDING_SESSION_KEY`, a bounded per-browser pending list and two
+  widened endpoints only because a shared route had nowhere to be *seen*
+  before it was claimed. A trip has a page, and the page shows the plan
+  before it asks for anything, so the whole pending-claim apparatus is
+  unnecessary here.
 - **Account erasure has to delete organised trips in Python.**
   `Trip.created_by` is `CASCADE`, and a bulk cascade runs no Python, so each
   trip's minted meeting-point `Location` would survive the account that

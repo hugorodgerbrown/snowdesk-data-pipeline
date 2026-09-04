@@ -102,19 +102,19 @@ class TestTripForUser:
     def test_omits_a_trip_the_user_created_but_has_no_row_on(self) -> None:
         """created_by alone does not put a trip on the list.
 
-        A factory-built trip has no participant rows — ``create_trip``
-        writes the organiser's, and this asserts the scoping is genuinely
-        the relation rather than a union that happens to include it.
+        The ``without_organiser`` trait builds the one state no real trip
+        is ever in — ``create_trip`` always writes the organiser's row — so
+        that this can assert the scoping is genuinely the participants
+        relation rather than a union that happens to include created_by.
         """
         organiser = UserFactory.create()
-        TripFactory.create(created_by=organiser)
+        TripFactory.create(created_by=organiser, without_organiser=True)
         assert list(Trip.objects.for_user(organiser)) == []
 
     def test_omits_an_unrelated_trip(self) -> None:
         """Somebody else's trip is not on my list."""
         viewer = UserFactory.create()
-        other = TripFactory.create()
-        TripParticipantFactory.create(trip=other)
+        TripParticipantFactory.create()
         assert list(Trip.objects.for_user(viewer)) == []
 
 
@@ -207,7 +207,9 @@ class TestTripParticipant:
 
     def test_the_roster_reads_in_join_order(self) -> None:
         """Meta.ordering is joined_at, so the list reads as it filled up."""
-        trip = TripFactory.create()
+        # ``without_organiser``: this asserts the ORDER of two rows, and
+        # the organiser's own row would be a third, written first.
+        trip = TripFactory.create(without_organiser=True)
         second = TripParticipantFactory.create(
             trip=trip,
             joined_at=datetime.datetime(2026, 3, 2, 9, 0, tzinfo=datetime.UTC),

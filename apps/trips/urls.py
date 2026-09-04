@@ -11,6 +11,8 @@ URL structure:
   trips/partials/create/             POST — write a trip (SNOW-820)
   trips/partials/<uuid>/edit/        POST — update the plan
   trips/partials/<uuid>/delete/      POST — delete the trip
+  trips/partials/s/<token>/join/     POST — join the trip (SNOW-822)
+  trips/partials/<uuid>/leave/       POST — leave it
   trips/<uuid>/                      GET  — the trip's own page
   trips/<uuid>/share/                POST — mint/rotate the link (SNOW-821)
   trips/<uuid>/share/revoke/         POST — null the token
@@ -19,6 +21,12 @@ URL structure:
 The ``partials/`` prefix marks the HTMX fragment endpoints
 (``@require_htmx``); the pages sit outside it because they are navigations
 and not fragments.
+
+JOIN IS ADDRESSED BY TOKEN AND LEAVE BY UUID, deliberately. Holding a live
+link is what lets somebody join, and the token is the only identifier a
+non-participant has been given — the uuid keys the participant-scoped
+endpoints, so a link-holder must never see one. Leaving is a participant's
+act and a participant has the uuid.
 
 The three SNOW-821 endpoints are outside it too, each for its own reason.
 The two ``share/`` writes answer JSON to a plain ``fetch()`` — their bodies
@@ -54,6 +62,16 @@ urlpatterns = [
         "partials/<uuid:uuid>/delete/",
         views.trip_delete,
         name="delete",
+    ),
+    path(
+        "partials/s/<str:token>/join/",
+        views.trip_join,
+        name="join",
+    ),
+    path(
+        "partials/<uuid:uuid>/leave/",
+        views.trip_leave,
+        name="leave",
     ),
     path(
         "<uuid:uuid>/share/",

@@ -20,8 +20,9 @@ The title and description are the TRIP's, not the site's. A card reading
 No organiser controls, ever. This page has no `is_organiser` branch even
 though _trip_context computes one — an organiser opening their own link is
 looking at what their friends see, and edit and delete belong on the object
-page. SNOW-822 adds the join control here, which is the recipient's own
-verb.
+page. The one control it DOES carry is the recipient's own verb: Join
+(SNOW-822), addressed by token, because holding a live link is the whole
+access rule and the token is the only identifier a non-participant has.
 {% endcomment %}
 {% load i18n static components %}
 
@@ -57,5 +58,12 @@ verb.
         {% endcard %}
 
         {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload basemap_url=basemap_url %}
+
+        {# SNOW-822: the count for anyone, the names for participants, and    #}
+        {# the recipient's own verb. This is the reason the link opens a page #}
+        {# rather than a card — Join is the thing it was sent for.            #}
+        {% card padding="p-6" extra="mt-6" %}
+        {% include "trips/partials/_trip_roster.html" %}
+        {% endcard %}
     </main>
 {% endblock content %}

@@ -693,16 +693,35 @@ class TripFactory(factory.django.DjangoModelFactory[Trip]):
     axis flip: ``points`` is ``[lon, lat, ele]`` and the Location's fields are
     named, so latitude reads index 1.
 
-    **The organiser's participant row is NOT created here.** ``create_trip``
-    writes it, and a factory that wrote it too would make "does creation add
-    the organiser to the roster" a test of the factory. Use
-    ``TripParticipantFactory`` explicitly, or go through the service.
+    **The organiser's participant row IS created**, by the ``post_generation``
+    hook below, because every trip that exists in production has one —
+    ``create_trip`` writes it in the same transaction as the trip — and a
+    factory that omitted it would build a row the service can never produce.
+    Every participation-scoped read (``Trip.objects.for_user``,
+    ``trips:detail``) would then 404 for the organiser, which looks like a
+    bug in the view rather than a gap in the fixture.
+
+    The ``without_organiser`` trait opts out, for the one assertion that has
+    to distinguish "on the roster" from "created it".
     """
 
     class Meta:
         """Factory metadata."""
 
         model = Trip
+        # The post_generation hook below writes a SEPARATE row and never
+        # touches the trip, so factory_boy's re-save of the instance after
+        # postgeneration is pure overhead — and it is deprecated, which is
+        # what the warning without this says.
+        skip_postgeneration_save = True
+
+    class Params:
+        """Traits for common variations."""
+
+        # A trip with an EMPTY roster — the state no real trip is ever in.
+        # For asserting that for_user() is genuinely the participants
+        # relation rather than a union that happens to include created_by.
+        without_organiser = factory.Trait(organiser_participation=False)
 
     created_by = factory.SubFactory(UserFactory)
     route = factory.SubFactory(RouteFactory)
@@ -730,6 +749,31 @@ class TripFactory(factory.django.DjangoModelFactory[Trip]):
     descent_m = 0.0
     point_count = 3
     route_name = "Route"
+
+    @factory.post_generation
+    def organiser_participation(
+        obj: Trip,
+        create: bool,
+        extracted: object,
+        **kwargs: object,
+    ) -> None:
+        """Write the organiser's own roster row, as ``create_trip`` does.
+
+        Skipped for ``build()`` — there is no trip row for a participant to
+        point at — and when the caller passes ``False``, which the
+        ``without_organiser`` trait does.
+
+        Args:
+            obj: The trip just built.
+            create: Whether the strategy wrote it to the database.
+            extracted: The value passed for this declaration; ``None`` when
+                the caller said nothing, and ``False`` to opt out.
+            **kwargs: Unused; part of the post_generation signature.
+
+        """
+        if not create or extracted is False:
+            return
+        TripParticipant.objects.get_or_create(trip=obj, user=obj.created_by)
 
 
 class TripParticipantFactory(factory.django.DjangoModelFactory[TripParticipant]):

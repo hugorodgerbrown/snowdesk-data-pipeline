@@ -9,8 +9,14 @@ adds the public share page, which renders the same summary and the same map
 from the same context builder — the difference between the two surfaces is
 who may see the trip, never what it says about it.
 
-ORGANISER-ONLY in this commit (apps/trips/views.py's trip_detail), so every
-control here is the organiser's. The edit form sits inside a <details>
+SCOPED BY PARTICIPATION since SNOW-822 (apps/trips/views.py's trip_detail):
+everybody on the trip gets this page, and what differs between the organiser
+and everyone else is which controls render. Somebody holding the LINK but not
+on the roster gets trips/trip_share.html instead — a different URL and a
+different surface, because the uuid in this one's address is the
+participants' identifier.
+
+The edit form sits inside a <details>
 rather than on a page of its own: editing a trip is a correction to
 something already on screen — a time moved by half an hour, a note added —
 and sending the organiser to a second page to change one field would lose
@@ -51,6 +57,13 @@ its own metadata.
         {% endcard %}
 
         {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload basemap_url=basemap_url %}
+
+        {# SNOW-822: who is going. Below the plan, because the plan is what   #}
+        {# the page is for — but above the organiser's machinery, because the #}
+        {# roster is something every viewer reads and the machinery is not.   #}
+        {% card padding="p-6" extra="mt-6" %}
+        {% include "trips/partials/_trip_roster.html" %}
+        {% endcard %}
 
         {% if is_organiser %}
             {% comment %}

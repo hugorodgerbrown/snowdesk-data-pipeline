@@ -70,6 +70,14 @@ from apps.core.http import client_ip
 from apps.routes.models import Route
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
+from apps.trips.services.participants import (
+    OrganiserCannotLeave,
+    is_participant,
+    join_trip,
+    leave_trip_by_uuid,
+    roster_for,
+    roster_names_visible_to,
+)
 from apps.trips.services.shares import (
     TripShareTokenCollision,
     mint_trip_share,
@@ -205,6 +213,14 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
     return {
         "trip": trip,
         "is_organiser": is_organiser,
+        # SNOW-822. The roster, and the disclosure rule's answer for this
+        # viewer, resolved once here and read by both surfaces — a count
+        # and a names list computed separately would eventually disagree
+        # about which of them the rule applies to.
+        "roster": roster_for(trip),
+        "roster_names_visible": roster_names_visible_to(viewer, trip),
+        "is_participant": is_participant(viewer, trip),
+        "leave_url": reverse("trips:leave", args=[trip.uuid]),
         "map_payload": _trip_map_payload(trip),
         # The site default and nothing else. A trip page has no basemap
         # picker: it is a document about one plan rather than a map to
@@ -326,8 +342,10 @@ def trip_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
         return redirect("accounts:sign_in")
 
     try:
-        trip = Trip.objects.select_related("meeting_point").get(
-            uuid=uuid, created_by=request.user
+        trip = (
+            Trip.objects.for_user(request.user)
+            .select_related("meeting_point")
+            .get(uuid=uuid)
         )
     except Trip.DoesNotExist as exc:
         raise Http404("No such trip.") from exc
@@ -680,6 +698,15 @@ def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
 
     context = _trip_context(trip, request)
     context["share_token"] = token
+    # The join endpoint is addressed by TOKEN, never by uuid: a
+    # link-holder who is not on the roster must not be handed the
+    # identifier the participant-scoped endpoints key on. The routes app's
+    # own pending rows follow the same rule.
+    context["join_url"] = reverse("trips:join", args=[token])
+    # And Leave is NOT offered here. It is uuid-addressed and lives on the
+    # trip's own page, which every participant can reach — one exit, on the
+    # surface that also carries the plan being left.
+    context["leave_url"] = ""
     response = render(request, "trips/trip_share.html", context)
     # Per-recipient in the sense that matters: the page varies with who is
     # signed in (SNOW-822 shows the roster's names to participants only), so
@@ -687,3 +714,152 @@ def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
     # else. Matches ``routes:share_redirect``'s own header.
     response["Cache-Control"] = "no-store"
     return response
+
+
+# ---------------------------------------------------------------------------
+# Joining and leaving (SNOW-822)
+# ---------------------------------------------------------------------------
+
+
+def _roster_fragment(
+    request: HttpRequest, trip: Trip, *, join_url: str = "", leave_url: str = ""
+) -> HttpResponse:
+    """Render the roster partial for one trip, for this viewer.
+
+    The response of BOTH join and leave, so the count, the names and the
+    control are repainted from one read after either write — a fragment
+    that returned only the control would leave the count beside it stating
+    the state before the press.
+
+    Args:
+        request: The current request, read for the viewer's identity.
+        trip: The trip whose roster to render.
+        join_url: The token-addressed join endpoint, when the surface
+            offers one.
+        leave_url: The uuid-addressed leave endpoint, likewise.
+
+    Returns:
+        The rendered roster fragment.
+
+    """
+    viewer = request.user
+    return render(
+        request,
+        "trips/partials/_trip_roster.html",
+        {
+            "trip": trip,
+            "roster": roster_for(trip),
+            "roster_names_visible": roster_names_visible_to(viewer, trip),
+            "is_participant": is_participant(viewer, trip),
+            "is_organiser": viewer.is_authenticated and trip.created_by_id == viewer.pk,
+            "join_url": join_url,
+            "leave_url": leave_url,
+        },
+    )
+
+
+@require_htmx
+@require_POST
+@ratelimit(key="user", rate=_TRIP_WRITE_RATE, block=False)
+def trip_join(request: HttpRequest, token: str) -> HttpResponse:
+    """Put the requesting account on the trip behind a live share link.
+
+    ADDRESSED BY TOKEN, and that is the whole access rule: holding a live
+    link is what lets somebody join, and the token is the only identifier
+    a non-participant has been given. The uuid would be an identifier the
+    participant-scoped endpoints key on, so a link-holder never sees one
+    (the routes app's pending rows follow the same rule).
+
+    Idempotent through ``join_trip``: a double-tapped Join writes one row
+    and answers 200 twice, rather than surfacing the ``(trip, user)``
+    uniqueness constraint on a request path.
+
+    Answers the roster fragment, so the count, the names — which the
+    caller has just earned — and the control all repaint from one read.
+
+    Errors:
+        400 — non-HTMX request.
+        403 — anonymous request. Joining needs an account to join WITH;
+              the share page draws a sign-in link for that visitor rather
+              than a button that posts here.
+        404 — the token matches no live link.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming HTMX POST request.
+        token: The share token, from the URL.
+
+    Returns:
+        The rendered roster fragment, or an error response.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before trying again.",
+            status=429,
+        )
+
+    try:
+        trip = Trip.objects.shared().get(share_token=token)
+    except Trip.DoesNotExist:
+        return HttpResponse("Trip not found.", status=404)
+
+    join_trip(request.user, trip)
+
+    return _roster_fragment(request, trip, join_url=reverse("trips:join", args=[token]))
+
+
+@require_htmx
+@require_POST
+def trip_leave(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Take the requesting account off a trip they are on.
+
+    Participation-scoped by the LOOKUP (``leave_trip_by_uuid``), so a uuid
+    the caller has nothing to do with is a 404 rather than a 403 — this
+    endpoint cannot be used to learn which trip uuids exist.
+
+    THE ORGANISER CANNOT LEAVE. A trip whose organiser is not on it is
+    incoherent: nobody is answerable for the plan, and the roster no
+    longer holds the person whose name answers "who sent me this". They
+    get 409 and a message pointing at Delete, which is the real exit and
+    which says out loud that it removes the trip for everyone. 409 rather
+    than 403 because this is a permanent conflict with the object's own
+    state, not a permissions failure the caller could ever clear.
+
+    Errors:
+        400 — non-HTMX request.
+        403 — anonymous request.
+        404 — the caller is not on a trip with that uuid.
+        409 — the caller organises it.
+
+    Args:
+        request: The incoming HTMX POST request.
+        uuid: The Trip's uuid, from the URL.
+
+    Returns:
+        The rendered roster fragment, or an error response.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    try:
+        leave_trip_by_uuid(request.user, uuid)
+    except Trip.DoesNotExist:
+        return HttpResponse("Trip not found.", status=404)
+    except OrganiserCannotLeave:
+        return HttpResponse(
+            "You organised this trip, so you're always on it. "
+            "Delete it to remove it for everyone.",
+            status=409,
+        )
+
+    # Re-read rather than reuse the instance ``leave_trip_by_uuid`` loaded:
+    # the caller is no longer on the roster, so a stale read would render
+    # the state before the press. This is one query, on a path that has
+    # just written.
+    trip = Trip.objects.get(uuid=uuid)
+    return _roster_fragment(request, trip)
