@@ -52,6 +52,17 @@ class TripQuerySet(models.QuerySet["Trip"]):
         created (see ``TripParticipant``), so one filter answers both
         halves and no caller has to remember to union them.
 
+        **A subquery, not ``filter(participants__user=user)``**, and the
+        difference is not stylistic. That filter JOINS the participant
+        table, and a later ``.annotate(Count("participants"))`` on the
+        result reuses the same join — so the count sees only the rows the
+        filter left standing, which is always exactly one: the viewer's
+        own. A trip with eight people on it renders "1 person going" to
+        every one of them, and nothing about the query looks wrong.
+        Restricting by ``pk__in`` leaves the annotation a join of its own
+        to count across. It also removes the duplicate-row hazard any
+        multi-valued join carries.
+
         Args:
             user: The user to filter by.
 
@@ -59,7 +70,9 @@ class TripQuerySet(models.QuerySet["Trip"]):
             Filtered queryset.
 
         """
-        return self.filter(participants__user=user)
+        return self.filter(
+            pk__in=TripParticipant.objects.filter(user=user).values("trip_id")
+        )
 
     def upcoming(self, on: "datetime.date") -> "TripQuerySet":
         """Return trips dated on or after ``on``, soonest first.

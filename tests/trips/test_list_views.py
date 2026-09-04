@@ -58,6 +58,29 @@ class TestTripListScope:
 
         assert "Mont Fort" in html
 
+    def test_the_row_counts_everyone_on_the_trip_not_just_the_reader(
+        self, client: Client
+    ) -> None:
+        """The count is of the roster, not of the reader's own row.
+
+        The regression: ``for_user`` used to filter on
+        ``participants__user``, and the row's participant count annotates
+        over that SAME relation — so the count saw only the rows the filter
+        had left, which is always exactly one. A trip with three people on
+        it read "1 person going" to every one of them, and nothing about
+        the query looked wrong. Asserted from the reader's own page rather
+        than from the queryset, because the page is where it was visible
+        and a queryset test would have passed either way.
+        """
+        trip = TripFactory.create(name="Rosablanche")
+        join_trip(UserFactory.create(), trip)
+        join_trip(UserFactory.create(), trip)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:list")).content.decode()
+
+        assert "3 people going" in html
+
     def test_omits_an_unrelated_trip(self, client: Client) -> None:
         """Somebody else's trip is not on my agenda."""
         TripFactory.create(name="Not mine")
