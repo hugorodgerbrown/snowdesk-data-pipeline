@@ -106,7 +106,7 @@ owns the sample favourites.
 | Role | Email | Password | Notes |
 |------|-------|----------|-------|
 | Superuser | `admin@snowdesk.dev` | `snowdesk` | Full `/admin/` access |
-| Subscribed user | `dev@snowdesk.dev` | `snowdesk` | Active subscriber, subscribed to CH-4115 (Martigny-Verbier); owns the seeded favourites |
+| Normal user | `dev@snowdesk.dev` | `snowdesk` | Verified account; owns the seeded favourites, including a CH-4115 (Martigny-Verbier) region pin |
 
 The constants are defined in
 `apps/bulletins/management/commands/seed_test_data.py` (`SUPERUSER_EMAIL`,
@@ -145,16 +145,15 @@ contains so it can be relied on and extended safely.
 | `regions.majorregion` | 9 | `eaws_CH` fixture |
 | `regions.subregion` | 21 | `eaws_CH` fixture |
 | `regions.microregion` | 149 | `eaws_CH` fixture |
-| `regions.resort` | 148 | `resorts` fixture |
+| `regions.resort` | 164 | `resorts` fixture |
 | `bulletins.bulletin` | 39 | `seed_test_data` (10 grouped map-date + 29 CH-4115 detail) |
 | `bulletins.regionbulletin` | 178 | `seed_test_data` |
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
 | `bulletins.bulletingrouping` | 39 | `seed_test_data` (one per bulletin) |
 | `locations.location` | 5 | `seed_test_data` |
-| `favourites.favourite` | 5 | `seed_test_data` (owned by the normal dev user) |
-| `auth.user` | 2 | `seed_test_data` (superuser + subscribed normal user) |
-| `accounts.subscriber` | 1 | `seed_test_data` (the normal dev user) |
-| `accounts.subscription` | 1 | `seed_test_data` (normal dev user → CH-4115) |
+| `favourites.favourite` | 6 | `seed_test_data` (5 point pins + 1 CH-4115 region pin, owned by the normal dev user) |
+| `auth.user` | 2 | `seed_test_data` (superuser + normal dev user) |
+| `accounts.account` | 1 | `seed_test_data` (the normal dev user's verified profile) |
 
 ### Data coverage
 
@@ -185,10 +184,11 @@ contains so it can be relied on and extended safely.
   (am/pm separate) or banded (ALBINA-style elevation-band) bulletins.
 - **Multi-problem days:** each bulletin carries a single `persistent_weak_layers`
   problem; wet-snow and dry/wet mixed days are absent.
-- **Locations / favourites:** 5 `Location`s near Verbier, and one
-  `Favourite` per location owned by the seeded normal dev user
+- **Locations / favourites:** 5 `Location`s near Verbier, one `Favourite`
+  per location, plus one CH-4115 region pin (the row a `Subscription`
+  became — SNOW-802). All six are owned by the seeded normal dev user
   (`dev@snowdesk.dev`).
-- **Accounts:** the superuser and the subscribed normal dev user (see
+- **Accounts:** the superuser and the normal dev user (see
   [Dev credentials](#dev-credentials)).
 
 ### Known gaps
