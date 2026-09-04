@@ -1,10 +1,11 @@
 """
 tests/regions/test_fixture_consistency.py — SNOW-178 regression guard.
 
-Loads the committed ``apps/regions/fixtures/eaws_CH.json`` and
-``apps/regions/fixtures/resorts.json`` fixtures and asserts that every geocoded
-resort's (longitude, latitude) point lies inside its FK MicroRegion's
-``boundary`` polygon.
+Loads the committed ``apps/regions/fixtures/eaws_CH.json`` fixture, imports the curated resort
+sheet (``apps/regions/data/resorts.tsv`` — the only file that describes a
+resort since SNOW-817), and asserts that every geocoded resort's
+(longitude, latitude) point lies inside its FK MicroRegion's ``boundary``
+polygon.
 
 This test exists to catch two classes of drift:
   1. SLF renames a region and the EAWS GeoJSON/fixture falls out of sync with
@@ -14,7 +15,8 @@ This test exists to catch two classes of drift:
 
 If this test fails in CI, run:
   uv run python manage.py audit_resort_regions --commit
-  uv run python manage.py loaddata apps/regions/fixtures/resorts.json
+
+then commit the refreshed ``resorts.tsv``.
 
 then re-run the test to confirm the fix.
 """
@@ -31,7 +33,7 @@ from apps.regions.models import Resort
 def test_geocoded_resorts_inside_region_polygon() -> None:
     """Every geocoded resort's lat/lon must be inside its FK polygon.
 
-    Loads the committed eaws_CH.json and resorts.json fixtures, then iterates
+    Loads eaws_CH.json, imports the committed resort sheet, then iterates
     every Resort with non-null latitude/longitude and asserts that
     shapely.geometry.Point(longitude, latitude).within(boundary_polygon)
     is True.
@@ -41,9 +43,9 @@ def test_geocoded_resorts_inside_region_polygon() -> None:
     """
     from shapely.geometry import Point, shape
 
-    # Load the committed fixtures into the test DB.
+    # Load the committed region fixture, then build the resorts from the sheet.
     call_command("loaddata", "apps/regions/fixtures/eaws_CH.json", verbosity=0)
-    call_command("loaddata", "apps/regions/fixtures/resorts.json", verbosity=0)
+    call_command("import_resorts", commit=True, verbosity=0)
 
     geocoded = list(
         Resort.objects.select_related("region")
@@ -51,7 +53,7 @@ def test_geocoded_resorts_inside_region_polygon() -> None:
         .order_by("name")
     )
 
-    assert geocoded, "No geocoded resorts found — was the fixture loaded?"
+    assert geocoded, "No geocoded resorts found — was the sheet imported?"
 
     failures: list[str] = []
 
@@ -75,5 +77,5 @@ def test_geocoded_resorts_inside_region_polygon() -> None:
         f"{len(failures)} resort(s) outside their FK polygon:\n"
         + "\n".join(failures)
         + "\n\nFix: uv run python manage.py audit_resort_regions --commit"
-        + "\n     uv run python manage.py loaddata apps/regions/fixtures/resorts.json"
+        + "\n     then commit the refreshed apps/regions/data/resorts.tsv"
     )

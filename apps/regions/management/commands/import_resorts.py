@@ -1,21 +1,29 @@
 """import_resorts — reconcile the Resort table against the curated sheet.
 
-``Resort``'s editorial columns (operator, website, the ``why_it_matters``
-line, the map ``tier``, elevations, lift/run counts, piste length,
-typical season dates, curator notes) are maintained
-in a spreadsheet, exported to ``apps/regions/data/resorts.tsv``. This command
-reconciles the database against that sheet in up to three modes, selected
-with ``--mode`` (all three by default):
+``apps/regions/data/resorts.tsv`` is **the** file that describes a resort.
+SNOW-817 retired ``apps/regions/fixtures/resorts.json``, which had been a
+second, partially-overlapping description of the same 164 rows: the sheet
+carried the editorial columns, the fixture carried the coordinates placed in
+the map editor, and 77 coordinates plus every ``notes`` value existed in only
+one of them. This command reads the sheet; ``dump_resorts_sheet`` writes it
+back from the database.
+
+The sheet carries ``Resort``'s editorial columns (operator, website, the
+``why_it_matters`` line, the map ``tier``, elevations, lift/run counts, piste
+length, typical season dates, ``notes``), the coordinate pair, and the
+provenance of that coordinate. This command reconciles the database against
+it in up to three modes, selected with ``--mode`` (all three by default):
 
   ``add``     Create a resort for a sheet row with no matching ``uuid``.
   ``update``  Overwrite the editorial fields of rows that do match.
   ``delete``  Remove resorts the sheet does not list.
 
-The sheet's *live* set is every row whose ``note`` does **not** start with
-``NOT_A_SKI_RESORT`` — the marker retires an entry that was never a
-lift-served resort (a pass, a reservoir, a valley town, a touring label).
-``delete`` therefore removes both the marked rows and any resort missing
-from the sheet altogether; ``add`` and ``update`` ignore marked rows.
+The sheet's *live* set is every row whose ``status`` column is blank.
+``NOT_A_SKI_RESORT`` there retires an entry that was never a lift-served
+resort (a pass, a reservoir, a valley town, a touring label), and is the
+only other value the column accepts — anything else is an error, not a
+silent "live". ``delete`` removes both the retired rows and any resort
+missing from the sheet altogether; ``add`` and ``update`` ignore them.
 
 Because ``delete`` deletes anything the sheet does not list, a resort
 created in the admin reaches the sheet on its next export or is removed by
@@ -27,11 +35,14 @@ Adding requires ``region`` (a MicroRegion ``region_id`` such as
 a row that must be created without them is reported as an error rather
 than guessed at. Every other column is optional.
 
-``region``, ``canton`` and the ``latitude``/``longitude`` pair are
-**creation-time only**: they are read when a row is first created and
-never written again. A resort re-pinned in the map editor owns its own
-position afterwards, so re-running the import cannot drag it back to
-whatever the sheet happened to say (SNOW-544).
+``region``, ``canton``, the ``latitude``/``longitude`` pair and the three
+provenance columns (``geocode_source``, ``geocode_confidence``,
+``needs_review``) are **creation-time only**: they are read when a row is
+first created and never written again. A resort re-pinned in the map editor
+owns its own position afterwards, so re-running the import cannot drag it
+back to whatever the sheet happened to say (SNOW-544). The way a coordinate
+edit *does* travel between environments is `dump_resorts_sheet` → commit →
+a fresh database's first import.
 
 Deliberately *not* wired into ``build.sh`` — see
 ``docs/decisions/resorts-are-editable-data.md``. Resort rows are editable
@@ -75,8 +86,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SHEET_PATH = Path(__file__).resolve().parents[2] / "data" / "resorts.tsv"
 
-# A note starting with this marker retires the resort — the sheet's way of
-# saying "this row was never a lift-served ski area".
+# The one non-blank ``status`` the sheet recognises. It retires the resort —
+# the sheet's way of saying "this row was never a lift-served ski area".
+#
+# SNOW-817 gave the marker its own column. It used to be a prefix on the
+# ``note`` column, so one cell carried both the curator's prose and a
+# machine-read verdict, and the prose could not begin with those characters
+# without deleting the resort.
 DELETE_MARKER = "NOT_A_SKI_RESORT"
 
 
@@ -101,6 +117,7 @@ TEXT_FIELDS = (
     "why_it_matters",
     "typical_season_open",
     "typical_season_close",
+    "notes",
 )
 INT_FIELDS = ("top_elevation_m", "base_elevation_m", "num_runs", "num_lifts")
 FLOAT_FIELDS = ("total_piste_km",)
@@ -108,8 +125,14 @@ FLOAT_FIELDS = ("total_piste_km",)
 # Read only when a row is created — see ``_coordinates_from_row``.
 COORDINATE_COLUMNS = ("latitude", "longitude")
 
+# Also creation-time only, and for the same reason: after the first save the
+# database owns the pin and its provenance. Without these the sheet could
+# not say "this coordinate was placed by an operator and reviewed", and
+# every import would demote 77 reviewed pins to IMPORT/needs_review.
+PROVENANCE_COLUMNS = ("geocode_source", "geocode_confidence", "needs_review")
+
 # Without these the sheet cannot be keyed or read at all.
-REQUIRED_COLUMNS = ("uuid", "name", "note")
+REQUIRED_COLUMNS = ("uuid", "name", "status")
 
 
 class Command(BaseCommand):
@@ -335,6 +358,7 @@ def _read_sheet(path: Path, modes: set[Mode]) -> list[dict[str, str]]:
         "region",
         "canton",
         *COORDINATE_COLUMNS,
+        *PROVENANCE_COLUMNS,
     )
     rows = []
     for row in reader:
@@ -376,7 +400,12 @@ def _build_plan(rows: list[dict[str, str]], modes: set[Mode]) -> _Plan:
         uuid = row["uuid"].strip()
         resort = by_uuid.get(uuid)
 
-        if row["note"].strip().startswith(DELETE_MARKER):
+        try:
+            retired = _is_retired(row)
+        except ValueError as exc:
+            plan.errors.append(f"{row['name'].strip() or uuid}: {exc}")
+            continue
+        if retired:
             # Retired by the sheet: excluded from the live set, so ``delete``
             # picks it up below. Never added or updated.
             continue
@@ -420,15 +449,8 @@ def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
     try:
         coordinates = _coordinates_from_row(row)
         if coordinates is not None:
-            # Stamped ``IMPORT``, never ``MANUAL``: the panel's ``MANUAL`` /
-            # ``confidence=1.0`` / ``needs_review=False`` stamp asserts that an
-            # operator placed this pin on a map, which is not true of a
-            # coordinate that arrived as sheet data. Flagging it for review is
-            # the honest record, and the panel re-stamps it on the first save.
             resort.latitude, resort.longitude = coordinates
-            resort.geocode_source = Resort.GeocodeSource.IMPORT
-            resort.geocoded_at = timezone.now()
-            resort.needs_review = True
+            _stamp_provenance(resort, row)
         _apply_row(resort, row)
         resort.full_clean(validate_unique=False, validate_constraints=False)
     except ValueError as exc:
@@ -438,6 +460,93 @@ def _plan_addition(plan: _Plan, row: dict[str, str], uuid: str) -> None:
         plan.errors.append(f"{row['name'].strip() or uuid}: {exc.message_dict}")
         return
     plan.additions.append(resort)
+
+
+def _is_retired(row: dict[str, str]) -> bool:
+    """
+    Read the sheet's ``status`` cell (SNOW-817).
+
+    Blank means a live resort — the overwhelming majority of rows.
+    ``NOT_A_SKI_RESORT`` retires it: the row stays in the sheet as a record
+    of a place that was considered and rejected, and ``--mode delete``
+    removes it from the database.
+
+    An unrecognised value is an error rather than a silent fallback, for
+    the reason ``_kind_from_row`` rejects one: a typo resolving quietly to
+    "live" would put a retired row back on the map as a resort pin, and a
+    typo resolving quietly to "retired" would delete a real resort.
+
+    Args:
+        row: One sheet row.
+
+    Returns:
+        True when the sheet retires this row.
+
+    Raises:
+        ValueError: If the cell holds something that is neither blank nor
+            the marker.
+
+    """
+    raw = (row.get("status") or "").strip().upper()
+    if not raw:
+        return False
+    if raw != DELETE_MARKER:
+        raise ValueError(f"unknown status {raw!r} (expected blank or {DELETE_MARKER})")
+    return True
+
+
+def _stamp_provenance(resort: Resort, row: dict[str, str]) -> None:
+    """
+    Record how a newly-created resort's coordinate was obtained (SNOW-817).
+
+    The sheet is a mirror of a real database, so it can say that a pin was
+    placed by an operator in the map editor and reviewed. When it does, that
+    provenance is carried through verbatim.
+
+    When it does not — a row a curator typed a coordinate into by hand — the
+    fallback is the older, more cautious stamp: ``IMPORT`` and
+    ``needs_review``. The panel's ``MANUAL`` / ``confidence=1.0`` /
+    ``needs_review=False`` combination asserts that somebody placed this pin
+    on a map, which is not true of a coordinate that merely arrived as sheet
+    data. Flagging it for review is the honest record, and the panel
+    re-stamps it on the first save.
+
+    Args:
+        resort: The newly-constructed resort, already carrying coordinates.
+        row: One sheet row.
+
+    Raises:
+        ValueError: If the sheet names a source that is not a
+            ``GeocodeSource``, or a confidence that does not parse.
+
+    """
+    raw_source = (row.get("geocode_source") or "").strip().upper()
+    resort.geocoded_at = timezone.now()
+
+    if not raw_source:
+        resort.geocode_source = Resort.GeocodeSource.IMPORT
+        resort.needs_review = True
+        return
+
+    if raw_source not in Resort.GeocodeSource.values:
+        valid = ", ".join(Resort.GeocodeSource.values)
+        raise ValueError(
+            f"unknown geocode_source {raw_source!r} (expected one of: {valid})"
+        )
+    resort.geocode_source = raw_source
+
+    raw_confidence = (row.get("geocode_confidence") or "").strip()
+    if raw_confidence:
+        try:
+            resort.geocode_confidence = float(raw_confidence)
+        except ValueError as exc:
+            raise ValueError(
+                f"has a non-numeric geocode_confidence ({raw_confidence!r})"
+            ) from exc
+
+    # Anything but an explicit "true" is False — the column is a flag, and a
+    # blank cell on a sheet that names a source means "not flagged".
+    resort.needs_review = (row.get("needs_review") or "").strip().lower() == "true"
 
 
 def _coordinates_from_row(row: dict[str, str]) -> tuple[float, float] | None:
@@ -584,7 +693,6 @@ def _apply_row(resort: Resort, row: dict[str, str]) -> dict[str, tuple[Any, Any]
 
     """
     values: dict[str, Any] = {field: row[field].strip() for field in TEXT_FIELDS}
-    values["notes"] = row["note"].strip()
     values["kind"] = _kind_from_row(row)
     values["tier"] = _tier_from_row(row)
     for field in INT_FIELDS:

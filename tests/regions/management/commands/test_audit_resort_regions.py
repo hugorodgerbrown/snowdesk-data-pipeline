@@ -5,7 +5,7 @@ Covers ``audit_resort_regions``:
   - Dry-run: reports bucket-(b) mismatches and bucket-(c) outsiders,
     exits non-zero when bucket-(b) is non-empty, leaves FK unchanged.
   - ``--commit``: re-FKs bucket-(b) resorts, leaves bucket-(c) untouched,
-    calls _write_resorts_fixture.
+    calls write_resorts_sheet.
   - When all FKs are correct, exits zero and reports success.
 
 Synthetic geometry:
@@ -74,12 +74,12 @@ class TestAuditResortRegionsDryRun:
             longitude=2.5,
         )
 
-        tmp_fixture = tmp_path / "resorts.json"
-        tmp_fixture.write_text("[]", encoding="utf-8")
+        tmp_sheet = tmp_path / "resorts.tsv"
+        tmp_sheet.write_text("uuid\tname\tstatus\n", encoding="utf-8")
 
         from apps.regions.management.commands import audit_resort_regions as mod
 
-        monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
+        monkeypatch.setattr(mod, "_SHEET_PATH", tmp_sheet)
 
         out = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -106,12 +106,12 @@ class TestAuditResortRegionsDryRun:
             longitude=2.5,
         )
 
-        tmp_fixture = tmp_path / "resorts.json"
-        tmp_fixture.write_text("[]", encoding="utf-8")
+        tmp_sheet = tmp_path / "resorts.tsv"
+        tmp_sheet.write_text("uuid\tname\tstatus\n", encoding="utf-8")
 
         from apps.regions.management.commands import audit_resort_regions as mod
 
-        monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
+        monkeypatch.setattr(mod, "_SHEET_PATH", tmp_sheet)
 
         with pytest.raises(SystemExit):
             call_command("audit_resort_regions", stdout=StringIO())
@@ -131,12 +131,12 @@ class TestAuditResortRegionsDryRun:
             longitude=50.0,
         )
 
-        tmp_fixture = tmp_path / "resorts.json"
-        tmp_fixture.write_text("[]", encoding="utf-8")
+        tmp_sheet = tmp_path / "resorts.tsv"
+        tmp_sheet.write_text("uuid\tname\tstatus\n", encoding="utf-8")
 
         from apps.regions.management.commands import audit_resort_regions as mod
 
-        monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
+        monkeypatch.setattr(mod, "_SHEET_PATH", tmp_sheet)
 
         out = StringIO()
         # No bucket-(b) → exits zero despite bucket-(c) existing.
@@ -158,12 +158,12 @@ class TestAuditResortRegionsDryRun:
             longitude=0.5,
         )
 
-        tmp_fixture = tmp_path / "resorts.json"
-        tmp_fixture.write_text("[]", encoding="utf-8")
+        tmp_sheet = tmp_path / "resorts.tsv"
+        tmp_sheet.write_text("uuid\tname\tstatus\n", encoding="utf-8")
 
         from apps.regions.management.commands import audit_resort_regions as mod
 
-        monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
+        monkeypatch.setattr(mod, "_SHEET_PATH", tmp_sheet)
 
         out = StringIO()
         call_command("audit_resort_regions", stdout=out)
@@ -190,25 +190,25 @@ class TestAuditResortRegionsCommit:
             longitude=2.5,
         )
 
-        tmp_fixture = tmp_path / "resorts.json"
-        tmp_fixture.write_text("[]", encoding="utf-8")
+        tmp_sheet = tmp_path / "resorts.tsv"
+        tmp_sheet.write_text("uuid\tname\tstatus\n", encoding="utf-8")
 
-        # Stub _write_resorts_fixture so we don't write to the real fixture.
+        # Stub write_resorts_sheet so we don't write to the real sheet.
         write_calls: list[Path] = []
 
         from apps.regions.management.commands import audit_resort_regions as mod
 
-        monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
+        monkeypatch.setattr(mod, "_SHEET_PATH", tmp_sheet)
 
-        # Patch the imported _write_resorts_fixture inside audit_resort_regions.
-        import apps.regions.management.commands.dump_resorts_fixture as dump_mod
+        # Patch the imported write_resorts_sheet inside audit_resort_regions.
+        import apps.regions.management.commands.dump_resorts_sheet as dump_mod
 
-        original_write = dump_mod._write_resorts_fixture
+        original_write = dump_mod.write_resorts_sheet
 
         def fake_write(fixture_path: Path, verbosity: int = 0) -> None:
             write_calls.append(fixture_path)
 
-        monkeypatch.setattr(dump_mod, "_write_resorts_fixture", fake_write)
+        monkeypatch.setattr(dump_mod, "write_resorts_sheet", fake_write)
 
         call_command("audit_resort_regions", "--commit", stdout=StringIO())
 
@@ -217,7 +217,7 @@ class TestAuditResortRegionsCommit:
         assert len(write_calls) == 1
 
         # Restore for safety (monkeypatch does it automatically but being explicit).
-        monkeypatch.setattr(dump_mod, "_write_resorts_fixture", original_write)
+        monkeypatch.setattr(dump_mod, "write_resorts_sheet", original_write)
 
     def test_commit_leaves_bucket_c_untouched(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -241,16 +241,16 @@ class TestAuditResortRegionsCommit:
             longitude=2.5,
         )
 
-        tmp_fixture = tmp_path / "resorts.json"
-        tmp_fixture.write_text("[]", encoding="utf-8")
+        tmp_sheet = tmp_path / "resorts.tsv"
+        tmp_sheet.write_text("uuid\tname\tstatus\n", encoding="utf-8")
 
         from apps.regions.management.commands import audit_resort_regions as mod
 
-        monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
+        monkeypatch.setattr(mod, "_SHEET_PATH", tmp_sheet)
 
-        import apps.regions.management.commands.dump_resorts_fixture as dump_mod
+        import apps.regions.management.commands.dump_resorts_sheet as dump_mod
 
-        monkeypatch.setattr(dump_mod, "_write_resorts_fixture", lambda *a, **kw: None)
+        monkeypatch.setattr(dump_mod, "write_resorts_sheet", lambda *a, **kw: None)
 
         call_command("audit_resort_regions", "--commit", stdout=StringIO())
 
@@ -272,16 +272,16 @@ class TestAuditResortRegionsCommit:
             longitude=2.5,
         )
 
-        tmp_fixture = tmp_path / "resorts.json"
-        tmp_fixture.write_text("[]", encoding="utf-8")
+        tmp_sheet = tmp_path / "resorts.tsv"
+        tmp_sheet.write_text("uuid\tname\tstatus\n", encoding="utf-8")
 
         from apps.regions.management.commands import audit_resort_regions as mod
 
-        monkeypatch.setattr(mod, "_FIXTURE_PATH", tmp_fixture)
+        monkeypatch.setattr(mod, "_SHEET_PATH", tmp_sheet)
 
-        import apps.regions.management.commands.dump_resorts_fixture as dump_mod
+        import apps.regions.management.commands.dump_resorts_sheet as dump_mod
 
-        monkeypatch.setattr(dump_mod, "_write_resorts_fixture", lambda *a, **kw: None)
+        monkeypatch.setattr(dump_mod, "write_resorts_sheet", lambda *a, **kw: None)
 
         # Should not raise SystemExit.
         call_command("audit_resort_regions", "--commit", stdout=StringIO())

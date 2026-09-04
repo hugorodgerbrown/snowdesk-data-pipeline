@@ -19,7 +19,7 @@ this is the floor, not a replacement for it.
 linked, on three services that deploy concurrently against one database.
 Bulk data writes are management commands for the same reason they are not
 data migrations. Nothing wipes ``ResortLocation`` on deploy either
-(``resorts.json`` is excluded from the deploy-time ``loaddata``), so there
+(resorts are applied by ``import_resorts``, never on deploy), so there
 was never a reason for it to run there.
 
 Run it after geocoding resorts in the map editor, or after an

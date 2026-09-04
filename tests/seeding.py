@@ -16,9 +16,11 @@ from django.core.management import call_command
 def seed_test_dataset() -> None:
     """Load region reference data and seed the full factory dataset.
 
-    Mirrors what a fresh dev/CI database gets: ``loaddata eaws_CH resorts``
+    Mirrors what a fresh dev/CI database gets: ``loaddata eaws_CH``,
+    ``import_resorts --commit``
     followed by ``seed_test_data --all --commit``. Requires ``DEBUG=True`` (the
     default in the test settings), which ``seed_test_data`` enforces.
     """
-    call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+    call_command("loaddata", "eaws_CH", verbosity=0)
+    call_command("import_resorts", commit=True, verbosity=0)
     call_command("seed_test_data", "--all", commit=True, verbosity=0)

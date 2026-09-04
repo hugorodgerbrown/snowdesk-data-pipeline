@@ -3,7 +3,8 @@ tests/public/test_smoke.py — Smoke test: seeded dataset + canonical URLs.
 
 Verifies the contract-level guarantee that seeding a freshly migrated DB brings
 it to a fully navigable state. The dataset is built by ``seed_test_dataset``
-(``loaddata eaws_CH resorts`` + ``seed_test_data --all --commit``) — the
+(``loaddata eaws_CH`` + ``import_resorts --commit`` +
+``seed_test_data --all --commit``) — the
 factory-based path that replaced the old ``loaddata test_data`` fixture.
 
 It asserts that the canonical preview URL ``/ch-4115/martigny-verbier/2026-04-08/``

@@ -14,8 +14,9 @@
 #                    breaks the SNOW-13 query-count baseline). Recipe:
 #                      1. migrate --noinput
 #                      2. sync_waffle_flags --commit
-#                      3. loaddata eaws_CH resorts
-#                      4. seed_test_data --all --commit  (includes dev users)
+#                      3. loaddata eaws_CH
+#                      4. import_resorts --commit
+#                      5. seed_test_data --all --commit  (includes dev users)
 #                    Step 2 mirrors bin/build.sh and lighthouse.yml, and is
 #                    load-bearing: waffle charges three cold queries for a
 #                    flag that has a DB row against one for a name it never
@@ -84,10 +85,11 @@ seed_db_if_missing() {
     if [ -e "db.sqlite3" ]; then
         return
     fi
-    echo "init-worktree: seeding db.sqlite3 (migrate + waffle flags + region fixtures + seed_test_data)"
+    echo "init-worktree: seeding db.sqlite3 (migrate + waffle flags + region fixtures + resorts + seed_test_data)"
     uv run python manage.py migrate --noinput
     uv run python manage.py sync_waffle_flags --commit
-    uv run python manage.py loaddata eaws_CH resorts
+    uv run python manage.py loaddata eaws_CH
+    uv run python manage.py import_resorts --commit
     uv run python manage.py seed_test_data --all --commit
     echo "init-worktree: db.sqlite3 seeded"
     actions=$((actions + 1))

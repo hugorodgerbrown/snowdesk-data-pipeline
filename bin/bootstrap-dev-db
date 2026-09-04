@@ -16,7 +16,8 @@
 #   ./bin/bootstrap-dev-db
 #
 # Fully-offline alternative (no server required):
-#   uv run python manage.py loaddata eaws_CH resorts
+#   uv run python manage.py loaddata eaws_CH
+#   uv run python manage.py import_resorts --commit
 #   uv run python manage.py seed_test_data --all --commit
 # That builds the navigable test dataset (Martigny-Verbier for April 2026,
 # plus map-coverage bulletins) from the factories and is suitable for most UI work.
@@ -26,13 +27,17 @@ set -o errexit
 echo "==> Applying migrations …"
 uv run python manage.py migrate
 
-echo "==> Loading region and resort fixtures …"
+echo "==> Loading region fixtures …"
 uv run python manage.py loaddata \
     apps/regions/fixtures/eaws_CH.json \
     apps/regions/fixtures/eaws_FR.json \
     apps/regions/fixtures/eaws_AT.json \
-    apps/regions/fixtures/eaws_IT.json \
-    apps/regions/fixtures/resorts.json
+    apps/regions/fixtures/eaws_IT.json
+
+echo "==> Importing the curated resort sheet …"
+# Resorts are not a fixture: apps/regions/data/resorts.tsv is the only file
+# that describes one (SNOW-813). See decisions/resorts-are-editable-data.md.
+uv run python manage.py import_resorts --commit
 
 echo "==> Fetching bulletins from all providers (local mirror) …"
 uv run python manage.py fetch_bulletins \

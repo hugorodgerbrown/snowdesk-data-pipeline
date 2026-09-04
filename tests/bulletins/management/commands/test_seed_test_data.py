@@ -88,7 +88,8 @@ def _regions(
 ) -> Iterator[None]:
     """Load the region reference data once per class, then clean the worker DB.
 
-    ``loaddata eaws_CH resorts`` costs ~0.4s, and it used to run per *test* —
+    Loading the region fixture and importing the resort sheet costs ~0.4s,
+    and it used to run per *test* —
     around thirty times in this module alone. Class scope commits the rows
     outside any test transaction, so each test's own writes still roll back
     around them; the ``flush`` on teardown puts the worker database back to
@@ -99,7 +100,8 @@ def _regions(
     """
     del django_db_setup
     with django_db_blocker.unblock():
-        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+        call_command("loaddata", "eaws_CH", verbosity=0)
+        call_command("import_resorts", commit=True, verbosity=0)
 
     yield
 

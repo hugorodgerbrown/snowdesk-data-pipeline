@@ -38,11 +38,15 @@ COLUMNS = [
     "total_piste_km",
     "typical_season_open",
     "typical_season_close",
-    "note",
+    "status",
+    "notes",
     "kind",
     "tier",
     "latitude",
     "longitude",
+    "geocode_source",
+    "geocode_confidence",
+    "needs_review",
 ]
 
 
@@ -106,7 +110,7 @@ class TestImportResortsUpdate:
                     "total_piste_km": "322",
                     "typical_season_open": "11-01",
                     "typical_season_close": "04-30",
-                    "note": "Combined Zermatt-Cervinia domain",
+                    "notes": "Combined Zermatt-Cervinia domain",
                 }
             ],
         )
@@ -126,7 +130,7 @@ class TestImportResortsUpdate:
         resort = ResortFactory.create(name="Braunwald", num_lifts=10)
         sheet = _sheet(
             tmp_path,
-            [{"uuid": str(resort.uuid), "name": "Braunwald", "note": "closed"}],
+            [{"uuid": str(resort.uuid), "name": "Braunwald", "notes": "closed"}],
         )
 
         call_command("import_resorts", "--file", sheet, "--commit", verbosity=0)
@@ -270,7 +274,8 @@ class TestImportResortsAdd:
                     "name": "Aigle",
                     "region": "CH-4115",
                     "canton": "VD",
-                    "note": "NOT_A_SKI_RESORT - valley town",
+                    "status": "NOT_A_SKI_RESORT",
+                    "notes": "valley town",
                 }
             ],
         )
@@ -287,7 +292,7 @@ class TestImportResortsDelete:
     """``delete`` mode — remove resorts the sheet does not list."""
 
     def test_deletes_marked_rows(self, tmp_path: Path) -> None:
-        """A row whose note starts with the delete marker is removed."""
+        """A row whose status column holds the delete marker is removed."""
         kept = ResortFactory.create(name="Verbier")
         retired = ResortFactory.create(name="Aigle")
         sheet = _sheet(
@@ -297,7 +302,8 @@ class TestImportResortsDelete:
                 {
                     "uuid": str(retired.uuid),
                     "name": "Aigle",
-                    "note": "NOT_A_SKI_RESORT - valley town, no lifts",
+                    "status": "NOT_A_SKI_RESORT",
+                    "notes": "valley town, no lifts",
                 },
             ],
         )
@@ -365,7 +371,8 @@ class TestImportResortsBehaviour:
                 {
                     "uuid": str(retired.uuid),
                     "name": "Aigle",
-                    "note": "NOT_A_SKI_RESORT - valley town",
+                    "status": "NOT_A_SKI_RESORT",
+                    "notes": "valley town",
                 },
             ],
         )
@@ -454,8 +461,8 @@ class TestImportResortsBehaviour:
         resort = ResortFactory.create(name="Verbier", operator_name="Old")
         sheet = _sheet(
             tmp_path,
-            [{"uuid": str(resort.uuid), "name": "Verbier", "note": "kept"}],
-            columns=["uuid", "name", "note"],
+            [{"uuid": str(resort.uuid), "name": "Verbier", "notes": "kept"}],
+            columns=["uuid", "name", "status", "notes"],
         )
 
         call_command(
@@ -492,7 +499,8 @@ class TestImportResortsAgainstCommittedSheet:
 
     def test_committed_sheet_is_a_noop_against_the_seed_fixture(self) -> None:
         """A freshly seeded DB is already in the sheet's steady state."""
-        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+        call_command("loaddata", "eaws_CH", verbosity=0)
+        call_command("import_resorts", commit=True, verbosity=0)
 
         out = StringIO()
         call_command("import_resorts", stdout=out)
@@ -768,7 +776,8 @@ class TestImportResortsKind:
                     "uuid": str(marked.uuid),
                     "name": "Aigle",
                     "kind": "TOURING_TERRAIN",
-                    "note": "NOT_A_SKI_RESORT - valley town",
+                    "status": "NOT_A_SKI_RESORT",
+                    "notes": "valley town",
                 }
             ],
         )
@@ -903,3 +912,175 @@ class TestImportResortsTier:
 
         resort.refresh_from_db()
         assert resort.tier == Resort.Tier.CORE
+
+
+@pytest.mark.django_db
+class TestImportResortsStatus:
+    """The ``status`` column — the retirement marker's own home (SNOW-817).
+
+    It used to be a prefix on the ``note`` column, so one cell carried both
+    a curator's prose and a machine-read verdict, and no note could begin
+    with those characters without deleting the resort.
+    """
+
+    def test_blank_status_means_live(self, tmp_path: Path) -> None:
+        """The overwhelming majority of rows say nothing and are kept."""
+        resort = ResortFactory.create(name="Verbier")
+        sheet = _sheet(
+            tmp_path, [{"uuid": str(resort.uuid), "name": "Verbier", "status": ""}]
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit")
+
+        assert Resort.objects.filter(pk=resort.pk).exists()
+
+    def test_status_is_case_insensitive(self, tmp_path: Path) -> None:
+        """Sheet casing is the curator's business, not the importer's."""
+        resort = ResortFactory.create(name="Brig")
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Brig", "status": "not_a_ski_resort"}],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit")
+
+        assert not Resort.objects.filter(pk=resort.pk).exists()
+
+    def test_unknown_status_is_an_error_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """A typo must resolve to neither "live" nor "delete this resort"."""
+        resort = ResortFactory.create(name="Verbier")
+        sheet = _sheet(
+            tmp_path,
+            [{"uuid": str(resort.uuid), "name": "Verbier", "status": "RETIRED"}],
+        )
+
+        with pytest.raises(CommandError):
+            call_command("import_resorts", "--file", sheet, "--commit")
+
+        assert Resort.objects.filter(pk=resort.pk).exists()
+
+    def test_notes_no_longer_carry_the_marker(self, tmp_path: Path) -> None:
+        """A note may now say anything, including the marker's own words."""
+        resort = ResortFactory.create(name="Verbier")
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Verbier",
+                    "status": "",
+                    "notes": "NOT_A_SKI_RESORT was considered and rejected",
+                }
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.notes == "NOT_A_SKI_RESORT was considered and rejected"
+
+
+@pytest.mark.django_db
+class TestImportResortsProvenance:
+    """Coordinate provenance carried by the sheet (SNOW-817).
+
+    The sheet is a mirror of a real database now, so it can say that a pin
+    was placed by an operator in the map editor and reviewed. Without these
+    columns every import demoted 77 reviewed pins to IMPORT/needs_review.
+    """
+
+    def _row(self, **extra: str) -> dict[str, str]:
+        """Build a creatable sheet row carrying a coordinate."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        row = {
+            "uuid": "33333333-3333-4333-8333-333333333333",
+            "name": "Verbier",
+            "region": "CH-4115",
+            "canton": "VS",
+            "latitude": "46.0956",
+            "longitude": "7.2203",
+        }
+        row.update(extra)
+        return row
+
+    def test_sheet_provenance_is_carried_through(self, tmp_path: Path) -> None:
+        """A MANUAL, reviewed pin stays MANUAL and reviewed."""
+        sheet = _sheet(
+            tmp_path,
+            [
+                self._row(
+                    geocode_source="MANUAL",
+                    geocode_confidence="1.0",
+                    needs_review="false",
+                )
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "add")
+
+        resort = Resort.objects.get(name="Verbier")
+        assert resort.geocode_source == Resort.GeocodeSource.MANUAL
+        assert resort.geocode_confidence == 1.0
+        assert resort.needs_review is False
+
+    def test_silent_sheet_falls_back_to_import_and_review(self, tmp_path: Path) -> None:
+        """A hand-typed coordinate is still flagged, as it always was."""
+        sheet = _sheet(tmp_path, [self._row()])
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "add")
+
+        resort = Resort.objects.get(name="Verbier")
+        assert resort.geocode_source == Resort.GeocodeSource.IMPORT
+        assert resort.needs_review is True
+
+    def test_unknown_source_is_an_error_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """A typo must not land as a blank provenance nobody notices."""
+        sheet = _sheet(tmp_path, [self._row(geocode_source="EYEBALLED")])
+
+        with pytest.raises(CommandError):
+            call_command("import_resorts", "--file", sheet, "--commit", "--mode", "add")
+
+        assert not Resort.objects.filter(name="Verbier").exists()
+
+    def test_non_numeric_confidence_is_an_error(self, tmp_path: Path) -> None:
+        """A confidence cell that does not parse stops the import."""
+        sheet = _sheet(
+            tmp_path,
+            [self._row(geocode_source="MANUAL", geocode_confidence="high")],
+        )
+
+        with pytest.raises(CommandError):
+            call_command("import_resorts", "--file", sheet, "--commit", "--mode", "add")
+
+        assert not Resort.objects.filter(name="Verbier").exists()
+
+    def test_provenance_is_never_written_to_an_existing_row(
+        self, tmp_path: Path
+    ) -> None:
+        """The database owns the pin — and its provenance — after creation."""
+        resort = ResortFactory.create(
+            name="Verbier",
+            geocode_source=Resort.GeocodeSource.MANUAL,
+            needs_review=False,
+        )
+        sheet = _sheet(
+            tmp_path,
+            [
+                {
+                    "uuid": str(resort.uuid),
+                    "name": "Verbier",
+                    "geocode_source": "IMPORT",
+                    "needs_review": "true",
+                }
+            ],
+        )
+
+        call_command("import_resorts", "--file", sheet, "--commit", "--mode", "update")
+
+        resort.refresh_from_db()
+        assert resort.geocode_source == Resort.GeocodeSource.MANUAL
+        assert resort.needs_review is False

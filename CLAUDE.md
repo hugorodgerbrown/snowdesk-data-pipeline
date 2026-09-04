@@ -34,7 +34,7 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  reference it (see docs/decisions/)
   regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
-                 (dump_resorts_fixture, refresh_eaws_fixtures) and the
+                 (dump_resorts_sheet, refresh_eaws_fixtures) and the
                  curated resort sheet + its import_resorts command
   bulletins/     Everything that originates from the three CAAML bulletin
                  providers — the models (Bulletin, RegionBulletin,

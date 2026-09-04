@@ -6,17 +6,25 @@ files are maintained by us.
 
 ## `resorts.tsv`
 
-The curation surface for `Resort`'s editorial columns — operator, website,
-elevations, lift/run counts, piste length, typical season dates, and a
-free-text curator note. Exported from the working spreadsheet as
-tab-separated values, one row per resort, keyed by `uuid`.
+**The** file that describes a resort (SNOW-817): the editorial columns —
+operator, website, elevations, lift/run counts, piste length, typical
+season dates and free-text `notes` — plus the coordinate pair and that
+coordinate's provenance. Tab-separated, one row per resort, keyed by
+`uuid`.
 
-It is **not** a fixture and is never loaded on deploy. Apply it with:
+It is **not** a fixture and is never loaded on deploy. The round trip is:
 
 ```bash
-uv run python manage.py import_resorts           # preview the changes
-uv run python manage.py import_resorts --commit  # apply them
+uv run python manage.py import_resorts            # preview sheet -> DB
+uv run python manage.py import_resorts --commit   # apply it
+uv run python manage.py dump_resorts_sheet        # preview DB -> sheet
+uv run python manage.py dump_resorts_sheet --commit  # write it back
 ```
+
+`dump_resorts_sheet` is what carries a coordinate placed in the in-map
+editor back into git. Before SNOW-817 that direction did not exist, so 77
+pins lived only in the retired `resorts.json` fixture and the sheet
+disagreed with the database about most of them.
 
 `import_resorts` reconciles in three modes, all selected by default:
 `add` creates resorts the sheet lists but the database lacks, `update`
@@ -24,12 +32,18 @@ overwrites the editorial fields of ones it has, and `delete` removes any
 resort the sheet does not list. Pick a subset with `--mode`, e.g.
 `--mode update` to refresh fields without creating or deleting anything.
 
-The sheet's *live* set is every row whose `note` does **not** start with
-`NOT_A_SKI_RESORT`, so `delete` removes both the marked rows and any
-resort missing from the export altogether. That second half has teeth: a
-resort created in the admin and not yet re-exported here is deleted by the
-next full run. Re-export the sheet after adding one, or reconcile with
+The sheet's *live* set is every row whose `status` column is blank, so
+`delete` removes both the `NOT_A_SKI_RESORT` rows and any resort missing
+from the export altogether. That second half has teeth: a resort created
+in the admin and not yet dumped here is deleted by the next full run. Run
+`dump_resorts_sheet --commit` after adding one, or reconcile with
 `--mode add update`.
+
+`status` accepts only a blank cell or `NOT_A_SKI_RESORT`; anything else is
+an error, not a silent "live". It had been a prefix on the old `note`
+column, which meant one cell carried both a curator's prose and a
+machine-read verdict — and no note could begin with those characters
+without deleting the resort. The prose half is now `notes`.
 
 `kind` is a separate axis from that marker, and the two do not interact
 (SNOW-544). `NOT_A_SKI_RESORT` means *delete this row*; `kind` says what a
@@ -52,11 +66,20 @@ resort, one with no pin, which then needs placing in the edit-resorts
 panel before it appears on the map. Supplying only one of the two is an
 error rather than a single-axis value.
 
-All four are **creation-time values only** — `import_resorts` reads them
-when it creates a row and never writes them again. That carve-out is what
-makes the sheet safe to re-run: a resort re-pinned in the map editor owns
-its own position and region afterwards, and a later import cannot drag it
-back to whatever the sheet happened to say.
+It also carries the coordinate's provenance — `geocode_source`,
+`geocode_confidence` and `needs_review` — so the sheet can record that a
+pin was placed by an operator in the map editor and reviewed, rather than
+having every import demote it to `IMPORT`/`needs_review`. A row with a
+coordinate but no `geocode_source` still gets that cautious stamp, which
+is the honest record for a coordinate somebody typed in.
+
+All of these are **creation-time values only** — `import_resorts` reads
+them when it creates a row and never writes them again. That carve-out is
+what makes the sheet safe to re-run: a resort re-pinned in the map editor
+owns its own position, region and provenance afterwards, and a later
+import cannot drag it back to whatever the sheet happened to say. The way
+a re-pin *does* travel is `dump_resorts_sheet` → commit → a fresh
+database's first import.
 
 A sheet-supplied coordinate is stamped `geocode_source="IMPORT"` with
 `needs_review=True`, never `MANUAL`. The edit-resorts panel's `MANUAL` /

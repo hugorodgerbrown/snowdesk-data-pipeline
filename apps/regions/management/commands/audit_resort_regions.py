@@ -13,8 +13,8 @@ Read-only by default. Exits non-zero when any bucket-(b) resorts are found
 and ``--commit`` was not passed.
 
 ``--commit`` re-FKs every bucket-(b) resort and calls
-``dump_resorts_fixture._write_resorts_fixture()`` to refresh
-``apps/regions/fixtures/resorts.json``. Bucket-(c) resorts are left untouched
+``dump_resorts_sheet.write_resorts_sheet()`` to refresh
+``apps/regions/data/resorts.tsv``. Bucket-(c) resorts are left untouched
 even with ``--commit`` — manual cleanup via the map editor is the right path.
 
 Safe-by-default (CLAUDE.md Option A): read-only unless ``--commit`` is
@@ -47,9 +47,7 @@ from apps.regions.models import MicroRegion, Resort
 logger = logging.getLogger(__name__)
 
 # Module-level path — can be patched in tests.
-_FIXTURE_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "fixtures" / "resorts.json"
-)
+_SHEET_PATH = Path(__file__).resolve().parent.parent / "data" / "resorts.tsv"
 
 
 class Command(BaseCommand):
@@ -58,7 +56,7 @@ class Command(BaseCommand):
     help = (
         "For every geocoded Resort, check that its region FK polygon "
         "contains its (lat, lon). Report mismatches. "
-        "With --commit: re-FK mismatched resorts and refresh resorts.json. "
+        "With --commit: re-FK mismatched resorts and refresh resorts.tsv. "
         "Read-only unless --commit is passed."
     )
 
@@ -69,7 +67,7 @@ class Command(BaseCommand):
             action="store_true",
             help=(
                 "Re-FK bucket-(b) resorts and refresh "
-                "apps/regions/fixtures/resorts.json. "
+                "apps/regions/data/resorts.tsv. "
                 "Without this flag the command only reports and exits non-zero "
                 "when mismatches are found."
             ),
@@ -159,19 +157,19 @@ class Command(BaseCommand):
         if verbosity >= 1:
             self.stdout.write(self.style.SUCCESS(f"Re-FKed {len(bucket_b)} resort(s)."))
 
-        # Refresh the fixture using the shared helper from dump_resorts_fixture.
-        from apps.regions.management.commands.dump_resorts_fixture import (
-            _write_resorts_fixture,
+        # Refresh the sheet using the shared helper from dump_resorts_sheet.
+        from apps.regions.management.commands.dump_resorts_sheet import (
+            write_resorts_sheet,
         )
 
-        _write_resorts_fixture(_FIXTURE_PATH, verbosity=verbosity)
+        write_resorts_sheet(_SHEET_PATH)
 
         if verbosity >= 1:
             self.stdout.write(
                 self.style.SUCCESS(
-                    "Refreshed apps/regions/fixtures/resorts.json. "
-                    "Run: uv run python manage.py loaddata "
-                    "apps/regions/fixtures/resorts.json"
+                    "Refreshed apps/regions/data/resorts.tsv. "
+                    "Review the diff, then apply it elsewhere with: "
+                    "uv run python manage.py import_resorts --commit"
                 )
             )
 
