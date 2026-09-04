@@ -112,10 +112,10 @@ jobs:
       # ``tox -e e2e`` works too); Node + ``npm ci`` are here only so that
       # ``npx @tailwindcss/cli`` inside commands_pre resolves the pinned CLI
       # from node_modules instead of downloading it at run time.
-      - name: Set up Node (20)
+      - name: Set up Node (22)
         uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install Node dependencies
         run: npm ci

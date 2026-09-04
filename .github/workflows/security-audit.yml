@@ -154,10 +154,10 @@ jobs:
 
       # npm is needed for the `npm audit` step of the tox env. No `npm ci`:
       # the env audits with --package-lock-only, straight from the lockfile.
-      - name: Set up Node (20)
+      - name: Set up Node (22)
         uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install tox
         run: pip install tox tox-uv
