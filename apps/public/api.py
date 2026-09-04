@@ -2178,7 +2178,7 @@ def edit_resort_save(request: HttpRequest, slug: str) -> JsonResponse:
     # get. If the saved point is outside every region polygon (rare,
     # would need to be in a no-coverage gap), leave the FK alone
     # rather than nulling it. We log when a rebind fires so a
-    # subsequent ``dump_resorts_fixture --commit`` makes the data
+    # subsequent ``dump_resorts_sheet --commit`` makes the data
     # change visible in the diff.
     containing = _region_for_point(lat, lon)
     if containing is not None and containing.pk != resort.region_id:
@@ -2324,7 +2324,7 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
 
     A created resort lives only in this environment's database (see
     ``docs/decisions/resorts-are-editable-data.md``); run
-    ``manage.py dump_resorts_fixture --commit`` to carry it to other
+    ``manage.py dump_resorts_sheet --commit`` to carry it to other
     worktrees and CI, and add it to ``apps/regions/data/resorts.tsv`` so the
     next ``import_resorts`` reconciliation does not delete it.
 

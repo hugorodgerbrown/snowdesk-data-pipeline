@@ -125,7 +125,8 @@ jobs:
 
       - name: Seed the test dataset (factories)
         run: |
-          uv run python manage.py loaddata eaws_CH resorts
+          uv run python manage.py loaddata eaws_CH
+          uv run python manage.py import_resorts --commit
           uv run python manage.py seed_test_data --all --commit
 
       - name: Check query-count baseline (SNOW-13)

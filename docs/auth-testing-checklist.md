@@ -16,7 +16,7 @@ the scenario doc does not.
 > **Prerequisites**
 >
 > 1. Dev server running at http://localhost:8000 and Mailhog at http://localhost:8025 (catches all outbound email).
-> 2. Database seeded: `uv run python manage.py loaddata eaws_CH resorts && uv run python manage.py seed_test_data --all --commit`.
+> 2. Database seeded: `uv run python manage.py loaddata eaws_CH && uv run python manage.py import_resorts --commit && uv run python manage.py seed_test_data --all --commit`.
 > 3. Test accounts prepared:
 >    - **A** — password set (via `/account/setup/password/` or reset).
 >    - **B** — magic-link only (never set a password).

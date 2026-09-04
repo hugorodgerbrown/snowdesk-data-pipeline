@@ -16,8 +16,8 @@ Fixtures defined here:
 
 ``_load_test_data``
     Function-scoped fixture that seeds the navigable test dataset (via
-    ``seed_test_dataset`` — ``loaddata eaws_CH resorts`` + ``seed_test_data
-    --all --commit``) before each e2e test.  The seed happens inside
+    ``seed_test_dataset`` — ``loaddata eaws_CH`` + ``import_resorts
+    --commit`` + ``seed_test_data --all --commit``) before each e2e test.  The seed happens inside
     ``django_db_blocker.unblock()`` after the ``transactional_db`` fixture has
     flushed the database (which it does at the start of every
     transaction-enabled test).  The canonical bulletin URL
@@ -165,7 +165,8 @@ def _suppress_home_intro(request: pytest.FixtureRequest) -> None:
 def _load_test_data(django_db_blocker: Any) -> None:
     """Seed the navigable test dataset before each e2e test.
 
-    Builds the dataset via ``seed_test_dataset`` (``loaddata eaws_CH resorts`` +
+    Builds the dataset via ``seed_test_dataset`` (``loaddata eaws_CH`` +
+    ``import_resorts --commit`` +
     ``seed_test_data --all --commit``) — the factory path that replaced the old
     ``loaddata test_data`` fixture.
 

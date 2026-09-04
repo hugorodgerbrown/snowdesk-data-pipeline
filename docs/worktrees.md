@@ -19,7 +19,8 @@ When `db.sqlite3` is absent the script runs four commands in order:
 ```bash
 uv run python manage.py migrate --noinput
 uv run python manage.py sync_waffle_flags --commit
-uv run python manage.py loaddata eaws_CH resorts
+uv run python manage.py loaddata eaws_CH
+uv run python manage.py import_resorts --commit
 uv run python manage.py seed_test_data --all --commit
 ```
 
@@ -134,7 +135,8 @@ uv run python manage.py sync_waffle_flags --commit
 
 ## Seeded dataset coverage
 
-`seed_test_data --all --commit` (run after `loaddata eaws_CH resorts`) is the
+`seed_test_data --all --commit` (run after `loaddata eaws_CH` and
+`import_resorts --commit`) is the
 dataset loaded by CI and by every fresh worktree. This section documents what it
 contains so it can be relied on and extended safely.
 
@@ -145,7 +147,7 @@ contains so it can be relied on and extended safely.
 | `regions.majorregion` | 9 | `eaws_CH` fixture |
 | `regions.subregion` | 21 | `eaws_CH` fixture |
 | `regions.microregion` | 149 | `eaws_CH` fixture |
-| `regions.resort` | 164 | `resorts` fixture |
+| `regions.resort` | 164 | `resorts.tsv` via `import_resorts` |
 | `bulletins.bulletin` | 39 | `seed_test_data` (10 grouped map-date + 29 CH-4115 detail) |
 | `bulletins.regionbulletin` | 178 | `seed_test_data` |
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
@@ -230,7 +232,8 @@ all three providers, selected from the committed `apps/bulletins/local_mirrors/`
 archives.
 
 ```bash
-uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR resorts
+uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR
+uv run python manage.py import_resorts --commit
 uv run python manage.py seed_test_week --commit
 ```
 
@@ -256,5 +259,5 @@ The dataset shape lives in code, not a committed fixture:
 
 After changing either, re-run `monitor_query_counts` (read-only) to verify the
 baseline (home=8, map=7) is unchanged. To refresh the region reference data
-itself, use `dump_resorts_fixture --commit` (resort → MicroRegion mappings) or
+itself, use `dump_resorts_sheet --commit` (resort → MicroRegion mappings) or
 `refresh_eaws_fixtures --commit` (EAWS MicroRegion boundaries).

@@ -30,7 +30,7 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  the monitor_query_counts command
   regions/       Geographic reference data — MicroRegion / MajorRegion /
                  SubRegion / Resort, plus the fixture-maintenance commands
-                 (dump_resorts_fixture, refresh_eaws_fixtures,
+                 (dump_resorts_sheet, refresh_eaws_fixtures,
                  build_france_fixture, build_switzerland_fixture,
                  audit_resort_regions)
   bulletins/     Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,

@@ -654,9 +654,10 @@ class Resort(BaseModel):
     * ``manage.py import_resorts --commit``, which reconciles the table
       against the curated sheet at ``apps/regions/data/resorts.tsv``.
 
-    ``apps/regions/fixtures/resorts.json`` seeds fresh local/CI databases only;
-    run ``manage.py dump_resorts_fixture --commit`` to refresh it after a
-    session of edits, or those edits reach no other worktree.
+    ``apps/regions/data/resorts.tsv`` is the only file that describes a
+    resort (SNOW-817); run ``manage.py dump_resorts_sheet --commit`` to
+    refresh it after a session of edits, or those edits reach no other
+    worktree.
 
     """
 

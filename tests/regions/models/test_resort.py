@@ -2,18 +2,44 @@
 tests/regions/models/test_resort.py — Tests for the Resort model.
 
 Covers model creation, ordering, string representation, cascade
-deletion, natural key support on MicroRegion, fixture loading, the
-SNOW-796 stored ``slug`` (minted once, never regenerated, suffixed on a
+deletion, natural key support on MicroRegion, importing the curated sheet,
+the SNOW-796 stored ``slug`` (minted once, never regenerated, suffixed on a
 collision) and ``get_absolute_url``.
+
+The sheet assertions read ``apps/regions/data/resorts.tsv`` directly.
+SNOW-817 made it the only file that describes a resort — ``resorts.json``
+is gone — so these are checks on committed data, not on a fixture.
 """
+
+import csv
+from pathlib import Path
 
 import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError
 
+from apps.regions.management.commands.import_resorts import DELETE_MARKER
 from apps.regions.models import MicroRegion, Resort
 from tests.factories import MicroRegionFactory, ResortFactory
+
+SHEET_PATH = Path("apps/regions/data/resorts.tsv")
+
+
+def live_sheet_rows() -> list[dict[str, str]]:
+    """Return the sheet's live rows — those the ``status`` column has not retired.
+
+    Returns:
+        One dict per live row, keyed by column name.
+
+    """
+    with SHEET_PATH.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    return [
+        row
+        for row in rows
+        if (row.get("status") or "").strip().upper() != DELETE_MARKER
+    ]
 
 
 @pytest.mark.django_db
@@ -204,27 +230,17 @@ class TestRegionNaturalKey:
 
 
 @pytest.mark.django_db
-class TestResortFixture:
-    """Tests for the resorts.json fixture."""
+class TestResortSheet:
+    """Tests for the curated sheet, apps/regions/data/resorts.tsv."""
 
-    def test_fixture_loads_successfully(self) -> None:
-        """The resorts fixture loads without errors when regions exist."""
-        # The fixture references specific region_ids via natural keys.
-        # Create all referenced regions so the FK lookup succeeds.
-        region_ids = set()
-        import json
-        from pathlib import Path
+    def test_sheet_imports_successfully(self) -> None:
+        """Every live sheet row becomes a Resort when its region exists."""
+        rows = live_sheet_rows()
+        for region_id in {row["region"] for row in rows}:
+            MicroRegionFactory.create(region_id=region_id, name=f"Region {region_id}")
 
-        fixture_path = Path("apps/regions/fixtures/resorts.json")
-        data = json.loads(fixture_path.read_text())
-        for entry in data:
-            region_ids.add(entry["fields"]["region"][0])
-
-        for rid in region_ids:
-            MicroRegionFactory.create(region_id=rid, name=f"Region {rid}")
-
-        call_command("loaddata", "resorts", verbosity=0)
-        assert Resort.objects.count() == len(data)
+        call_command("import_resorts", commit=True, verbosity=0)
+        assert Resort.objects.count() == len(rows)
 
 
 @pytest.mark.django_db
@@ -298,15 +314,9 @@ class TestResortTier:
         assert small.tier == Resort.Tier.CORE
         assert big.tier == Resort.Tier.STANDARD
 
-    def test_committed_fixture_tiers_are_all_valid(self) -> None:
-        """Every seeded row carries a real Tier value, not a stray string."""
-        import json
-        from pathlib import Path
-
-        data = json.loads(
-            Path("apps/regions/fixtures/resorts.json").read_text(encoding="utf-8")
-        )
-        tiers = {entry["fields"]["tier"] for entry in data}
+    def test_committed_sheet_tiers_are_all_valid(self) -> None:
+        """Every live sheet row carries a real Tier value, not a stray string."""
+        tiers = {row["tier"].strip().upper() for row in live_sheet_rows()} - {""}
         assert tiers
         assert tiers <= set(Resort.Tier.values)
 
@@ -320,31 +330,24 @@ class TestResortTier:
         region's bulletin — the one failure mode that is invisible on the
         map but wrong in the product.
         """
-        import json
-        from pathlib import Path
-
         from apps.regions.services.point_match import region_for_point
 
-        call_command("loaddata", "eaws_CH", "resorts", verbosity=0)
+        call_command("loaddata", "eaws_CH", verbosity=0)
 
-        data = json.loads(
-            Path("apps/regions/fixtures/resorts.json").read_text(encoding="utf-8")
-        )
         imported = [
-            entry
-            for entry in data
-            if entry["fields"].get("geocode_source") == Resort.GeocodeSource.IMPORT
+            row
+            for row in live_sheet_rows()
+            if row["geocode_source"].strip().upper() == Resort.GeocodeSource.IMPORT
         ]
-        assert imported, "expected the fixture to carry sheet-imported rows"
+        assert imported, "expected the sheet to carry sheet-imported rows"
 
         mismatched = []
-        for entry in imported:
-            fields = entry["fields"]
-            matched = region_for_point(fields["latitude"], fields["longitude"])
-            expected = fields["region"][0]
+        for row in imported:
+            matched = region_for_point(float(row["latitude"]), float(row["longitude"]))
+            expected = row["region"]
             if matched is None or matched.region_id != expected:
                 found = matched.region_id if matched else None
-                mismatched.append(f"{fields['name']}: {expected} != {found}")
+                mismatched.append(f"{row['name']}: {expected} != {found}")
 
         assert not mismatched, "coordinate/region disagreement: " + "; ".join(
             mismatched
@@ -364,14 +367,10 @@ class TestResortGeocodeSource:
         for value in Resort.GeocodeSource.values:
             assert value == value.upper()
 
-    def test_committed_fixture_geocode_source_values_are_valid(self) -> None:
-        """Every non-blank seeded row carries a real GeocodeSource value."""
-        import json
-        from pathlib import Path
-
-        data = json.loads(
-            Path("apps/regions/fixtures/resorts.json").read_text(encoding="utf-8")
-        )
-        sources = {entry["fields"]["geocode_source"] for entry in data} - {""}
+    def test_committed_sheet_geocode_source_values_are_valid(self) -> None:
+        """Every non-blank sheet row carries a real GeocodeSource value."""
+        sources = {
+            row["geocode_source"].strip().upper() for row in live_sheet_rows()
+        } - {""}
         assert sources
         assert sources <= set(Resort.GeocodeSource.values)

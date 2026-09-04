@@ -13,7 +13,7 @@ last-reviewed: 2026-09-03
 > 2. Mailpit running on localhost:1025 (web UI at http://localhost:8025)
 > 3. Tailwind CSS watcher running: `npx @tailwindcss/cli -i ./src/css/main.css -o ./static/css/output.css --watch`
 > 4. Database migrated: `uv run python manage.py migrate`
-> 5. Dataset seeded: `uv run python manage.py loaddata eaws_CH resorts && uv run python manage.py seed_test_data --all --commit`
+> 5. Dataset seeded: `uv run python manage.py loaddata eaws_CH && uv run python manage.py import_resorts --commit && uv run python manage.py seed_test_data --all --commit`
 >    These commands load the region/resort reference data and seed all the
 >    bulletin and day-rating data needed to navigate every
 >    scenario below. The

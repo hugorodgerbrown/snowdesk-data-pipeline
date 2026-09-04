@@ -700,7 +700,7 @@ button reads "Saving…" and is disabled for the round trip, and a
 confirmation line (`#edit-resorts-status`, `aria-live`) reports the
 outcome before clearing itself; the readout's "Current" row catching up
 with "Draft" is otherwise too quiet to notice. Run
-`manage.py dump_resorts_fixture --commit` afterwards to persist a session
+`manage.py dump_resorts_sheet --commit` afterwards to persist a session
 of edits to git.
 
 **Adding a resort.** The **New resort** button switches the same target
@@ -739,9 +739,10 @@ continues in the ordinary edit flow on the resort they just added.
 
 A created resort lives only in the environment's own database (see
 [`docs/decisions/resorts-are-editable-data.md`](decisions/resorts-are-editable-data.md)):
-run `dump_resorts_fixture --commit` to carry it to other worktrees and
-CI, and add it to `apps/regions/data/resorts.tsv` so the next
-`import_resorts` reconciliation does not delete it as an unlisted row.
+run `dump_resorts_sheet --commit` to write it into
+`apps/regions/data/resorts.tsv`. That both carries it to other worktrees
+and CI *and* lists it, so the next `import_resorts` reconciliation does not
+delete it as an unlisted row — one command now does both jobs.
 
 | URL | Name | Method | Notes |
 |-----|------|--------|-------|
@@ -763,26 +764,31 @@ Coordinate-ordering pitfall (called out in `static/js/map_edit_resorts.js`):
 - GeoJSON: `coordinates: [longitude, latitude]` per RFC 7946.
 - MapLibre marker: `marker.getLngLat()` returns `{lng, lat}` (note `lng`).
 
-### Persisting edits — `dump_resorts_fixture`
+### Persisting edits — `dump_resorts_sheet`
 
 Edits land in the local SQLite only. Run the dump command after a session
-of placements to regenerate the seed fixture at
-`apps/regions/fixtures/resorts.json`, which is what carries them to other
-worktrees and CI:
+of placements to write them back to `apps/regions/data/resorts.tsv` — the
+one file that describes a resort, and what carries them to other worktrees
+and CI:
 
 ```bash
-uv run python manage.py dump_resorts_fixture          # dry-run, prints diff
-uv run python manage.py dump_resorts_fixture --commit # writes the file
-git diff apps/regions/fixtures/resorts.json                    # review
+uv run python manage.py dump_resorts_sheet          # dry-run, prints diff
+uv run python manage.py dump_resorts_sheet --commit # writes the file
+git diff apps/regions/data/resorts.tsv              # review
 ```
 
-The dump uses `use_natural_foreign_keys=True` (so `region` round-trips
-as `["CH-4115"]` not a numeric pk), pretty-prints with `indent=2`, and
-orders by pk — the same shape as the existing fixture. Without the
-dump step, edits live only on the operator's laptop and silently
-disappear on `loaddata` re-runs. Mirrors `refresh_eaws_fixtures`'s
-safe-by-default convention (read-only without `--commit`).
+The dump keeps each existing row in its current position (so a re-pinned
+coordinate is a one-line diff), appends rows the sheet has never seen in
+name order, and carries retired `NOT_A_SKI_RESORT` rows through verbatim —
+they have no database row to dump from, and losing them would un-retire
+those places on the next import. Round-tripping the committed sheet
+through the database and back out is a fixpoint, asserted by
+`tests/regions/management/commands/test_dump_resorts_sheet.py`.
 
-No deploy loads `resorts.json` — production coordinates are edited in that
+Without the dump step, edits live only on the operator's laptop. Mirrors
+`refresh_eaws_fixtures`'s safe-by-default convention (read-only without
+`--commit`).
+
+No deploy loads the sheet — production coordinates are edited in that
 environment, not shipped from git
 ([`resorts-are-editable-data`](decisions/resorts-are-editable-data.md)).

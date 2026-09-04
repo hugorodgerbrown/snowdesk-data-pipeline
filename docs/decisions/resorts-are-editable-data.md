@@ -1,67 +1,107 @@
 ---
 name: resorts-are-editable-data
-description: Resort rows are editable per-environment data applied by import_resorts, not a fixture reloaded on deploy; resorts.json seeds local/CI only
+description: resorts.tsv is the only resort file — import_resorts applies it, dump_resorts_sheet writes it back, no deploy loads it; resorts.json retired
 status: current
-last-reviewed: 2026-08-04
+last-reviewed: 2026-09-04
 ---
 
-# Resorts are editable data, not deploy-time reference data
+# Resorts are editable data, and one file describes them
 
-**Decision.** `apps/regions/fixtures/resorts.json` is **not** in the `loaddata`
-list in `build.sh` / `build_headless.sh`. Each environment's database owns
-its `Resort` rows; they are edited in the admin and the map editor. Bulk
-editorial changes are curated in `apps/regions/data/resorts.tsv` and applied by
-hand with `manage.py import_resorts --commit`. The fixture's only remaining
-job is seeding a fresh local or CI database (`bin/init-worktree`,
-`tests/seeding.py`, `seed_test_data`), refreshed from a local DB by
-`dump_resorts_fixture --commit`.
+**Decision.** `apps/regions/data/resorts.tsv` is the only file that describes
+a resort. `import_resorts --commit` applies it to a database;
+`dump_resorts_sheet --commit` writes it back from one. No deploy runs either
+— each environment's database owns its `Resort` rows, edited in the admin
+and the in-map editor.
 
-The four `eaws_*.json` region fixtures and `region_aliases.json` are
-unaffected — they stay in the deploy-time `loaddata` list.
+The four `eaws_*.json` region fixtures and `region_aliases.json` are a
+different thing and are unaffected: they are upstream reference data, loaded
+by an operator (see [`runbooks/reset-live-db.md`](../runbooks/reset-live-db.md)).
 
-**Why.** The two fixture sets have opposite lifecycles. EAWS regions are
-reference data: their identifiers and geometry come from an upstream source,
-nobody edits them in production, and reloading them on every deploy is how
-an upstream correction ships. Resorts are the opposite — operator names,
-season dates and coordinates are curated by us, and coordinates in
-particular are placed interactively on the map. Reloading `resorts.json` on
-every deploy made the fixture authoritative in production, so any edit made
-there was silently reverted by the next deploy. That is the wrong direction
-for data we want to keep editing.
+## Why one file (SNOW-817)
 
-Applying the sheet by hand also keeps a destructive change visible: the
-import deletes rows the sheet retires, and an operator should see the
-dry-run diff before that runs against production, not discover it in a
-deploy log.
+There used to be two. `apps/regions/fixtures/resorts.json` seeded local and
+CI databases; `resorts.tsv` held the editorial columns a curator maintains
+in a spreadsheet. Both described the same 164 rows, and neither was complete:
 
-**Consequences.**
+- **77 coordinates existed only in the fixture.** The map editor wrote to the
+  database, and `dump_resorts_fixture` dumped the database to JSON. The sheet
+  was maintained by hand and had no way to receive them — there was no DB →
+  sheet direction at all. Verbier, Zermatt and Nendaz were among them.
+- **The sheet's 38 coordinates were the `IMPORT`-stamped ones**, the subset
+  that had originally come *from* the sheet. So the two files disagreed about
+  the majority of pins, and the JSON was the only one that was right.
+- **Provenance existed only in the fixture.** Nothing in the sheet could say
+  a pin had been placed by an operator and reviewed.
 
-- A resort change reaches production in one of two ways: an admin/map edit
-  made directly there, or a sheet edit plus a manual
-  `import_resorts --commit` run against that environment. A deploy alone
-  changes nothing.
-- The fixture and production will drift, by design. The fixture is a
-  snapshot for seeding, not a mirror; don't add a check that asserts they
-  match.
-- `import_resorts --mode delete` (on by default) removes any resort the
-  sheet does not list, not only the ones it marks `NOT_A_SKI_RESORT`. A
-  resort created in the admin must therefore be re-exported to the sheet,
-  or reconciled with `--mode add update`, or the next full run deletes it.
-  The dry-run names every deletion — read it before `--commit`.
-- `add` needs `region` and `canton`. The sheet gained both columns in
-  SNOW-544, so `add` works: the first production run (2026-08-04) reported
-  `0 to add` because every live sheet row already matched a `uuid`, not
-  because the mode was unusable. A row still missing either column is
-  reported as an error rather than guessed at, and the fix is to fill the
-  sheet — not to create the resort in the admin first.
-- The sheet carries **no coordinates**, by design. `import_resorts` never
-  writes `latitude`/`longitude`, so an added resort arrives ungeocoded and
-  gets no `ForecastCell` until someone places it in the map editor. That is
-  also why a coordinate placed on production cannot travel back to the
-  fixture through the sheet — `dump_resorts_fixture` reads the *local* DB.
-- Deleting a resort is safe for user data: `Favourite.resort` is
+Two partial descriptions of one table is a data-loss shape: whichever file a
+reader picks, something is missing, and nothing tells them which. The merge
+put every field the fixture carried into the sheet, added the missing
+direction, and deleted the JSON.
+
+`slug` is the one field that did not need a column: it is always
+`slugify(name)`, there are no duplicate names, and `Resort.save()` mints it
+on first save — so it regenerates identically. That is asserted by the
+round-trip test rather than assumed.
+
+## Why the sheet, and not the fixture
+
+Production is where the latest data is produced. A curator edits the
+spreadsheet; an operator places pins on the production map. The sheet is the
+format a human edits, so it is the one that survives.
+
+## Why no deploy loads it
+
+Reloading `resorts.json` on every deploy used to make the fixture
+authoritative in production, so any edit made there was silently reverted by
+the next deploy. That is the wrong direction for data we want to keep
+editing. Applying the sheet by hand also keeps a destructive change visible:
+the import deletes rows the sheet retires, and an operator should see the
+dry-run diff before that runs against production, not discover it in a deploy
+log.
+
+## The round trip
+
+```
+sheet  --import_resorts --commit-->  database  --dump_resorts_sheet --commit-->  sheet
+```
+
+An edit becomes durable — reaching other worktrees, CI and every other
+environment's next reconciliation — only once it is back in the sheet and
+committed. `tests/regions/management/commands/test_dump_resorts_sheet.py`
+asserts the loop is a fixpoint on the real committed data: import the sheet,
+dump it, get the same bytes.
+
+## Consequences
+
+- **A resort change reaches production** by an admin/map edit made directly
+  there, or a sheet edit plus a manual `import_resorts --commit` against that
+  environment. A deploy alone changes nothing.
+- **`status` is the retirement marker**, in its own column. It is blank or
+  `NOT_A_SKI_RESORT`; any other value is an error rather than a silent
+  "live". It used to be a `NOT_A_SKI_RESORT` prefix on the `note` column, so
+  one cell carried both a curator's prose and a machine-read verdict — and no
+  note could begin with those characters without deleting the resort. The
+  prose half is now `notes`, which maps to `Resort.notes`.
+- **`import_resorts --mode delete` (on by default) removes any resort the
+  sheet does not list**, not only the ones it retires. A resort created in the
+  admin must be re-exported with `dump_resorts_sheet`, or reconciled with
+  `--mode add update`, or the next full run deletes it. The dry-run names
+  every deletion — read it before `--commit`.
+- **Coordinates and provenance are creation-time only.** `import_resorts`
+  reads `latitude`/`longitude`, `geocode_source`, `geocode_confidence` and
+  `needs_review` when it creates a row and never writes them again, so a
+  resort re-pinned in the map editor cannot be dragged back to whatever the
+  sheet said (SNOW-544). A coordinate edit travels between environments
+  through `dump_resorts_sheet` → commit → a fresh database's first import.
+- **A row with a coordinate but no `geocode_source`** — a curator typing one
+  in by hand — is stamped `IMPORT` and `needs_review`. The panel's `MANUAL` /
+  `confidence=1.0` / `needs_review=False` combination asserts that somebody
+  placed the pin on a map, which is not true of sheet data.
+- **`add` needs `region` and `canton`.** A row missing either is reported as
+  an error rather than guessed at, and the fix is to fill the sheet.
+- **Deleting a resort is safe for user data**: `Favourite.resort` is
   `SET_NULL`, so a favourite made from a deleted resort degrades to a plain
-  pin with its snapshotted name, coordinates and region intact. It does
-  leave the resort's `ForecastCell` unreferenced — run
-  `prune_forecast_points --commit` after a bulk deletion to clear those and
-  their cascaded weather rows (SNOW-633).
+  pin with its snapshotted name, coordinates and region intact. It does leave
+  the resort's `ForecastCell` unreferenced — run `prune_forecast_points
+  --commit` after a bulk deletion to clear those and their cascaded weather
+  rows (SNOW-633).

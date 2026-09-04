@@ -168,7 +168,8 @@ against a live DB exercises them as a side benefit.
 Load the region/resort reference data first, then seed:
 
 ```bash
-uv run python manage.py loaddata eaws_CH resorts
+uv run python manage.py loaddata eaws_CH
+uv run python manage.py import_resorts --commit
 uv run python manage.py seed_test_data --all --commit
 ```
 
@@ -216,7 +217,8 @@ previous evening's, whether a past date is genuinely immutable.
 selected from the committed archives under `apps/bulletins/local_mirrors/` (SNOW-528).
 
 ```bash
-uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR resorts
+uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR
+uv run python manage.py import_resorts --commit
 uv run python manage.py seed_test_week --commit
 ```
 
@@ -275,11 +277,13 @@ The operator workflow for a fixture change is therefore:
 `loaddata` is idempotent by primary key and deletes no orphans, so
 re-running it is safe — the hazard is the columns it resets, not repetition.
 
-**`resorts.json` is deliberately not in that list.** `Resort` rows are
-editable data owned by each environment's database (admin + map editor);
-reloading the fixture on every deploy would silently revert every edit.
-The fixture seeds fresh local/CI databases only, and bulk editorial changes
-are applied by hand with `import_resorts` (below). Rationale:
+**Resorts are not a fixture at all.** They are described by one file,
+`apps/regions/data/resorts.tsv`, applied by `import_resorts` and written
+back by `dump_resorts_sheet` (both below). `Resort` rows are editable data
+owned by each environment's database (admin + map editor), so no deploy
+touches them. SNOW-817 retired `apps/regions/fixtures/resorts.json`, which
+had been a second, partially-overlapping description of the same rows.
+Rationale:
 [`resorts-are-editable-data`](decisions/resorts-are-editable-data.md).
 
 ### `compute_basemap_download` — precompute per-region offline tile coverage
@@ -313,10 +317,11 @@ Read-only by default; `--commit` is the only flag.
 
 ### `import_resorts` — reconcile Resort against the curated sheet
 
-`Resort`'s editorial columns (operator, website, the `why_it_matters`
-line, the map `tier`, elevations, lift/run counts, piste length, season
-dates, curator notes) are curated in a
-spreadsheet, exported to `apps/regions/data/resorts.tsv`. `import_resorts`
+`apps/regions/data/resorts.tsv` is **the** file that describes a resort
+(SNOW-817 retired the parallel `resorts.json` fixture). It carries the
+editorial columns (operator, website, the `why_it_matters` line, the map
+`tier`, elevations, lift/run counts, piste length, season dates, `notes`),
+the coordinate pair, and that coordinate's provenance. `import_resorts`
 reconciles the database against it in three modes, all on by default:
 
 | Mode | Effect |
@@ -325,17 +330,24 @@ reconciles the database against it in three modes, all on by default:
 | `update` | Overwrite the editorial fields of rows that do match. |
 | `delete` | Remove resorts the sheet does not list. |
 
-The sheet's *live* set is every row whose `note` does **not** start with
-`NOT_A_SKI_RESORT` — the marker retires an entry that was never a
-lift-served area. `delete` therefore removes both the marked rows and any
-resort absent from the export; `add`/`update` skip marked rows. A resort
-created in the admin must be re-exported to the sheet or it is deleted by
-the next full run — use `--mode add update` to reconcile without that risk.
+The sheet's *live* set is every row whose `status` column is blank.
+`NOT_A_SKI_RESORT` there retires an entry that was never a lift-served
+area, and is the only other value the column accepts — anything else is an
+error rather than a silent "live". `delete` removes both the retired rows
+and any resort absent from the export; `add`/`update` skip them. A resort
+created in the admin must be written back with `dump_resorts_sheet` or it
+is deleted by the next full run — use `--mode add update` to reconcile
+without that risk.
 
-`region` and `canton` are read only when creating, never overwritten, and
-the editorial export does not yet carry them — so a row that would need
-creating is reported as an error rather than guessed at. Geocoding fields
-are never touched.
+**Creation-time only:** `region`, `canton`, `latitude`/`longitude`, and the
+three provenance columns (`geocode_source`, `geocode_confidence`,
+`needs_review`). They are read when a row is first created and never
+written again, so a resort re-pinned in the map editor cannot be dragged
+back to whatever the sheet said. A row carrying a coordinate but no
+`geocode_source` is stamped `IMPORT` and `needs_review` — the cautious
+default for a coordinate somebody typed in rather than placed on a map.
+A row that would need creating without `region`/`canton` is reported as an
+error rather than guessed at.
 
 Read-only by default; the dry-run at `--verbosity 2` prints a field-level
 diff. Validation failures (a bad season date, a non-numeric elevation, an
@@ -349,10 +361,10 @@ uv run python manage.py import_resorts --mode update --commit   # fields only
 uv run python manage.py import_resorts --file /path/to.tsv      # other export
 ```
 
-After applying it locally, refresh the seed fixture with
-`dump_resorts_fixture --commit` so fresh worktrees and CI start from the
-same data. Against staging/production, run it by hand — it is not part of
-any deploy.
+After editing resorts locally, write them back with
+`dump_resorts_sheet --commit` so fresh worktrees and CI start from the same
+data. Against staging/production, run the import by hand — it is not part
+of any deploy.
 
 ### `import_locations` — reconcile the curated location estate
 
@@ -599,8 +611,8 @@ already carries that.
 times out mid-run leaves the estate half linked — on three services that
 deploy concurrently against one database. Bulk data writes are management
 commands for the same reason they are not data migrations. Nothing wipes
-`ResortLocation` on deploy either (`resorts.json` is excluded from the
-deploy-time `loaddata`), so there was never a reason for it to run there.
+`ResortLocation` on deploy either (resorts are applied by `import_resorts`,
+never by a deploy), so there was never a reason for it to run there.
 
 Run it after geocoding resorts in the map editor, or after an
 `import_resorts` that adds coordinates.
@@ -1232,14 +1244,16 @@ uv run python manage.py diagnose_region_coverage --verbose-table       # add per
 
 # Flags: --date YYYY-MM-DD (single day), --verbose-table (per-region table)
 
-# Re-emit pipeline/fixtures/resorts.json from the current DB rows (SNOW-74).
-# Use after a session of placing resort coordinates via the in-map editor
-# at /?edit=resorts (DEBUG only) — without this step, edits live only
-# in the local SQLite and disappear on the next loaddata. Read-only by
-# default; --commit writes the file. Uses natural foreign keys so region
-# round-trips as ["CH-4115"] rather than a numeric pk.
-uv run python manage.py dump_resorts_fixture           # preview diff only
-uv run python manage.py dump_resorts_fixture --commit  # write the fixture
+# Re-emit apps/regions/data/resorts.tsv from the current DB rows (SNOW-74,
+# SNOW-817). Use after a session of placing resort coordinates via the
+# in-map editor at /?edit=resorts — without this step, edits live only in
+# that environment's database. Read-only by default; --commit writes the
+# file. Keeps existing rows in place (so a re-pin is a one-line diff) and
+# carries retired NOT_A_SKI_RESORT rows through verbatim — they have no DB
+# row to dump from. This is the DB -> sheet half of the resort round trip;
+# import_resorts is the other half.
+uv run python manage.py dump_resorts_sheet           # preview diff only
+uv run python manage.py dump_resorts_sheet --commit  # write the sheet
 
 # Detect Resort → MicroRegion FK mismatches (SNOW-178). For every geocoded
 # Resort, builds a Point(lon, lat) and tests which MicroRegion.boundary
@@ -1248,11 +1262,11 @@ uv run python manage.py dump_resorts_fixture --commit  # write the fixture
 #   (b) FK wrong, correct region found — printed as actionable mismatch
 #   (c) Point outside every polygon — warning; never auto-fixed
 # Exits non-zero when bucket-(b) is non-empty and --commit was not passed.
-# --commit re-FKs bucket-(b) resorts and calls dump_resorts_fixture's
-# writer to refresh apps/regions/fixtures/resorts.json. Then run:
-#   loaddata apps/regions/fixtures/resorts.json
+# --commit re-FKs bucket-(b) resorts and calls dump_resorts_sheet's writer
+# to refresh apps/regions/data/resorts.tsv. Review the diff and commit it;
+# other environments pick it up on their next import_resorts --commit.
 uv run python manage.py audit_resort_regions           # detect FK drift
-uv run python manage.py audit_resort_regions --commit  # fix FKs + fixture
+uv run python manage.py audit_resort_regions --commit  # fix FKs + sheet
 
 # Export a CSV of day-character labels and the inputs that feed the
 # five-rule cascade in apps.bulletins.services.render_model.compute_day_character.
@@ -1423,6 +1437,7 @@ Martigny-Verbier region for April 2026 plus map-coverage bulletins and is
 suitable for most UI work:
 
 ```bash
-uv run python manage.py loaddata eaws_CH resorts
+uv run python manage.py loaddata eaws_CH
+uv run python manage.py import_resorts --commit
 uv run python manage.py seed_test_data --all --commit
 ```

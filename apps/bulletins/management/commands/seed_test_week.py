@@ -22,7 +22,8 @@ each provider's target day is resolved.
 Region reference data is a **prerequisite** — the week spans Switzerland,
 Austria, South Tyrol and the French massifs::
 
-    uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR resorts
+    uv run python manage.py loaddata eaws_CH eaws_AT eaws_IT eaws_FR
+    uv run python manage.py import_resorts --commit
     uv run python manage.py seed_test_week --commit
 
 Read-only by default (reports what would be loaded); pass ``--commit`` to
@@ -174,7 +175,7 @@ class Command(BaseCommand):
         raise CommandError(
             "No MicroRegion rows found. The golden week spans CH, AT, IT and FR, "
             "so load the region reference data first: "
-            f"uv run python manage.py loaddata {fixtures} resorts"
+            f"uv run python manage.py loaddata {fixtures}"
         )
 
     def _start_run(self, commit: bool) -> Any:

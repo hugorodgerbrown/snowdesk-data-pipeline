@@ -89,7 +89,7 @@ the only way staging gets weather at all.
 ### Why copying resorts does not contradict the resorts-are-editable ADR
 
 [`resorts-are-editable-data`](../decisions/resorts-are-editable-data.md) keeps
-`resorts.json` out of the deploy-time `loaddata` list, because reloading the
+the resort sheet out of the deploy-time write path, because reloading the
 fixture made it authoritative *over* production and silently reverted edits
 made in the admin and map editor. This sync runs the other way: production is
 the authoritative curated set, and copying it to staging is the only route

@@ -32,7 +32,8 @@ standalone set of Locations and one Favourite per Location (all owned by the
 seeded normal dev user).
 
 Region/resort reference data (MajorRegion/SubRegion/MicroRegion/Resort) is a
-*prerequisite*: it must already be loaded (e.g. ``loaddata eaws_CH resorts``). It
+*prerequisite*: it must already be loaded (``loaddata eaws_CH`` plus
+``import_resorts --commit`` — resorts come from the sheet, not a fixture). It
 is not seeded here and is not addressable by ``--include``/``--exclude``.
 
 Selection: exactly one of ``--all``, ``--include``, or ``--exclude`` is required.
@@ -144,7 +145,7 @@ NORMAL_USER_EMAIL = "dev@snowdesk.dev"
 DEV_USER_PASSWORD = "snowdesk"  # noqa: S105 — dev-only constant, DEBUG-gated (see handle)
 
 # CH-4115 (Martigny-Verbier) is the canonical detail region; the normal dev user
-# is subscribed to it. It must already be loaded (loaddata eaws_CH resorts).
+# is subscribed to it. It must already be loaded (loaddata eaws_CH).
 SUBSCRIBED_REGION_ID = "CH-4115"
 
 
@@ -897,7 +898,7 @@ class Command(BaseCommand):
             raise CommandError(
                 f"MicroRegion {SUBSCRIBED_REGION_ID!r} does not exist. Load the "
                 "region fixtures first: "
-                "uv run python manage.py loaddata eaws_CH resorts"
+                "uv run python manage.py loaddata eaws_CH"
             ) from exc
         # SNOW-802: the dev user's region is a region pin — the row a
         # Subscription became — so the pins sheet has something to show.
