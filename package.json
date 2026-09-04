@@ -9,16 +9,20 @@
     "build:js": "node bin/minify-js",
     "build:css": "node bin/minify-css"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
-    "@lhci/cli": "^0.14.0",
+    "@lhci/cli": "^0.15.1",
     "@tailwindcss/cli": "^4.2.2",
     "esbuild": "^0.28.1",
     "fake-indexeddb": "^6.0.0",
-    "jsdom": "^25.0.1",
+    "jsdom": "^29.1.1",
     "sharp": "^0.35.3",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.11"
   },
   "comments": {
+    "engines": "Node 22 is the floor because the lockfile is resolved against it: @lhci/cli -> lighthouse -> puppeteer-core -> @puppeteer/browsers 3.x pulls the proxy-agent 8.x chain on Node 22 and the 6.x chain on Node 20, so a lock regenerated on Node 20 makes `npm ci` fail on every CI job with EUSAGE / \"Missing: proxy-agent@8.0.2 from lock file\". .nvmrc pins the same version for nvm users. Keep this in step with node-version in .github/workflows/{e2e,js,lighthouse,security-audit}.yml.",
     "overrides": "Force patched versions of vulnerable transitive deps of @lhci/cli (dev-only Lighthouse CI; never shipped to a browser or run in production). The latest @lhci/cli still pins these, and `npm audit fix --force` only offers a breaking downgrade to @lhci/cli@0.1.0 \u2014 do not run it. See SNOW-440 / docs/lighthouse.md.",
     "overrides.@puppeteer/browsers": "SNOW-688: GHSA-jmr9-qjv8-65gv, extract-zip symlink path traversal (high). Unlike the three entries above, this override does NOT pin a patched version of the vulnerable package \u2014 every extract-zip release is affected, so there is nothing to pin. @puppeteer/browsers dropped the dependency entirely in 3.0.2 (it untars with tar-fs / modern-tar now), so the fix is to move that package off the 2.x line and out of the chain: @lhci/cli -> lighthouse -> puppeteer-core -> @puppeteer/browsers -> extract-zip. This is the only override here that crosses a major version, because upstream has not propagated the fix: the latest @lhci/cli (0.15.1) still pins lighthouse 12.6.1, and the advisory covers lighthouse through 13.3.0. REMOVE this override once @lhci/cli ships a lighthouse >= 13.4.0 (whose puppeteer-core 25.x already depends on @puppeteer/browsers 3.x) \u2014 re-check with: npm view @lhci/cli dependencies.lighthouse",
     "overrides.qs": "SNOW-809: GHSA-x5fp-wj9c-mxmx (array-limit bypass via bracket-key comma parsing) and GHSA-4mjr-xmp4-gh2g (denial of service via attacker-controlled isBuffer), both moderate, in qs 2.2.5 - 6.15.3. Reached only via @lhci/cli -> express@4 -> body-parser -> qs, and both express@4 and body-parser@1 declare `qs: ~6.15.1`, so nothing below us can pull in the patched 6.16.0 on its own. Same shape as the tmp / uuid / cookie pins: a patched minor within the major the chain already uses. REMOVE this override once @lhci/cli ships an express on the 5.x line, which no longer depends on the affected qs — re-check with: npm view @lhci/cli dependencies.express"
