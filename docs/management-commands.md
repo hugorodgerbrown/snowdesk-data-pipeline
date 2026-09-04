@@ -252,23 +252,28 @@ Week selection and per-provider target-day resolution live in
 [`decisions/golden-week-derived-not-committed.md`](decisions/golden-week-derived-not-committed.md)
 for why the corpus is derived at seed time rather than committed as a fixture.
 
-### Region fixtures (auto-loaded on deploy)
+### Region fixtures (operator-loaded, NOT auto-loaded on deploy)
 
-`build.sh` and `build_headless.sh` run `loaddata` against all four
-`apps/regions/fixtures/eaws_*.json` files (and `region_aliases.json` on the web
-service) on every deploy. The operator workflow for a fixture change is
-therefore:
+**No deploy loads a fixture.** `build.sh` and `build_headless.sh` both used
+to run `loaddata` over the four `apps/regions/fixtures/eaws_*.json` files on
+every deploy; that was removed, because `loaddata` writes back every field
+its fixture carries and resets every column it does not — silently NULLing
+all 461 `MicroRegion.centroid_location` links on each deploy (SNOW-771).
+The operator workflow for a fixture change is therefore:
 
 1. Edit the source data (vendored EAWS files, CSV).
 2. Rebuild the on-disk fixture (`build_switzerland_fixture --commit`,
    `build_austria_fixture --commit`, `build_italy_fixture --commit`, or
    `build_france_fixture --commit`).
-3. Commit and push. The next deploy reloads the fixture into production.
+3. Commit and push.
+4. Run `loaddata` against the target environment **by hand**, then re-run
+   `link_region_centroid_locations --commit` and
+   `link_resort_locations --commit` to restore the links the reload cleared.
+   The full sequence is in
+   [`runbooks/reset-live-db.md`](runbooks/reset-live-db.md).
 
-`loaddata` is idempotent (upsert by primary key, no orphan deletion),
-so re-running on every deploy is safe. Manual `loaddata` against the
-production DB is no longer required — but it remains the right call
-for a same-day hotfix, before the next deploy lands.
+`loaddata` is idempotent by primary key and deletes no orphans, so
+re-running it is safe — the hazard is the columns it resets, not repetition.
 
 **`resorts.json` is deliberately not in that list.** `Resort` rows are
 editable data owned by each environment's database (admin + map editor);
@@ -508,20 +513,22 @@ uv run python manage.py backfill_weather --commit --floor 2026-01-01
 Gives every `MicroRegion` with a `boundary` a `Location` at that region's
 centroid, which anchors the region in the location estate (SNOW-696).
 
-**This runs on every deploy, from `build.sh` and `build_headless.sh`, and it
-must.** `loaddata` resets every column the EAWS fixtures do not carry, and
-none of them carries `centroid_location` — so each deploy NULLs all 461
-links and orphans the `Location` rows behind them. That was silent data loss
-until SNOW-771: the command reported success, and a deploy hours later undid
-it with nothing in any log to say so. Re-running it immediately after
-`loaddata` is what makes the wipe harmless.
+**Run this immediately after any `loaddata` of the EAWS fixtures, and never
+on its own schedule.** `loaddata` resets every column those fixtures do not
+carry, and none of them carries `centroid_location` — so a reload NULLs all
+461 links and orphans the `Location` rows behind them. That was silent data
+loss until SNOW-771, when the reload still ran on every deploy: the command
+reported success, and a deploy hours later undid it with nothing in any log
+to say so. SNOW-771 took the reload out of both build scripts, so nothing
+wipes the links unattended any more — but an operator reloading a fixture
+still has to re-link behind it.
 
 **Wholly offline — no network at all.** The coordinate is
 `centre_from_bbox(boundary)`, and the boundary is in the fixture; the
 elevation is `MicroRegion.centroid_elevation_m`, resolved once by
-`refresh_centroid_elevations` and committed. That is what makes a per-deploy
-run affordable, and it removes the per-environment backfill entirely — no
-environment pays for elevation lookups.
+`refresh_centroid_elevations` and committed. That is what makes a full
+re-link affordable to run at will, and it removes the per-environment
+backfill entirely — no environment pays for elevation lookups.
 
 SNOW-765 established the coordinate half: `centre` was computed from the
 same polygon by the fixture builders, so the two agree value-for-value
