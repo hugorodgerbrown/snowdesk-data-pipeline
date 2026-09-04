@@ -277,42 +277,10 @@ opt-out for a journey with no manual scenario is
 
 ## Data sources
 
-Three providers, one canonical storage shape (CAAML v6 JSON); all fetched
-via the `fetch_bulletins` command.
-
-- **SLF** (`apps/bulletins/services/slf_fetcher.py`) — paginated CAAML list API,
-  no auth, no date filter:
-  `https://aws.slf.ch/api/bulletin-list/caaml/{lang}/json?limit={n}&offset={n}`.
-  Reverse-chronological; the pipeline pages until it passes the start-date
-  boundary. Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
-- **ALBINA** (`apps/bulletins/services/albina_fetcher.py`) — EUREGIO
-  avalanche.report CDN, no auth; per-day CAAML v6 JSON URLs for the AT-07,
-  IT-32-BZ, and IT-32-TN regions. 404 means "no bulletin".
-- **Météo-France** (`apps/bulletins/services/meteofrance_fetcher.py`,
-  `meteofrance_translator.py`) — DPBRA XML per massif behind an API key
-  (`METEOFRANCE_API_KEY`), translated to the CAAML v6 shape that
-  `upsert_bulletin` expects
-  (mapping spec: [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md)).
-
-Raw bulletins from all three providers are wrapped in a GeoJSON Feature
-envelope before storage — `{ type: "Feature", geometry: null, properties: {…} }`
-([why](docs/decisions/geojson-feature-envelope.md)).
-
-**Canonical payload examples** live in `tests/sentinels/` — three graded
-cases (A single-level, B structurally-enhanced, C split-day multi-problem)
-per provider, each with a README, enforced by a round-trip test. Read a
-sentinel before reasoning about any provider's payload shape; don't trust
-prose descriptions of the schema.
-
-A full 2025/26 season for all three providers is committed under
-`apps/bulletins/local_mirrors/*.ndjson` (~30 MB, git-tracked) — written by
-`fetch_bulletins --stash` and replayed by the dev-mirror views. For testing
-behaviour **across** days, load the *golden week* from it with
-`seed_test_week --commit`: seven consecutive real days, all three providers,
-morning and evening issues, a real danger swing
-([`docs/decisions/golden-week-derived-not-committed.md`](docs/decisions/golden-week-derived-not-committed.md)).
-Don't replay sentinels onto a shared date to simulate a day — that manufactures
-region overlaps that cannot occur upstream.
+Three providers, one canonical storage shape (CAAML v6 JSON), all fetched via
+`fetch_bulletins`. Per-provider APIs, auth and payload details live in
+[`apps/bulletins/CLAUDE.md`](apps/bulletins/CLAUDE.md), which loads when you work
+in that app.
 
 ## Management command design
 
@@ -527,60 +495,11 @@ name or PR body.
 Full lifecycle, entry points, scoping-comment contract, and PR body template:
 [`docs/linear-workflow.md`](docs/linear-workflow.md).
 
-### Commit authorship
-
-Claude commits as itself, with Hugo as committer. Pass `--author` on **every**
-commit:
-
-```bash
-git commit --author="Claude <noreply@anthropic.com>" -m "SNOW-xxx: subject"
-```
-
-Git records author and committer separately, and GitHub checks the signature
-against the **committer** — so the commit reads as "Claude authored, Hugo
-committed" and stays Verified under the `main` ruleset's `required_signatures`
-rule. No `-S` flag is needed; `commit.gpgsign` is true globally.
-
-Do **not** generate a separate GPG key for `noreply@anthropic.com`. No GitHub
-account can verify that address, so a commit whose *committer* is Claude shows
-**Unverified** and the ruleset rejects the merge. Signing as Hugo is the point:
-Claude wrote the change, Hugo vouches for it.
-
-Squash-merge collapses the branch — GitHub takes the sole author when a branch
-has one and the PR opener when authors are mixed, so `main` shows both over
-time. The `Co-Authored-By: Claude …` trailer survives the squash either way.
-
 ## Path to live
 
-Deploys are split across two branches (hosted on Render):
-
-- **`main` → Staging** — every merge auto-deploys one web dyno.
-- **`release` → Production** — three services (web + scheduler + task
-  worker, one shared DB) deploy when `release` is **fast-forwarded** to
-  `main` (`release` behaves like a tag that moves with `main`; no merge
-  commit). The ruleset allows the advance only as a fast-forward whose
-  target commit's checks are already green.
-
-A release is one pull request. `bin/cut-release --commit` opens it against
-`main`: a single commit bumping `VERSION`, with the release note — every
-`SNOW-xx` ticket production has not yet seen — in the description. **Merging
-it is the release**, squashed or not. [`release-sync.yml`](.github/workflows/release-sync.yml)
-sees `VERSION` change on `main`, waits for that commit's required checks,
-fast-forwards `release`, and dispatches
-[`release.yml`](.github/workflows/release.yml) to tag the commit **CalVer**
-(`YYYY.MM.DD`, `.N` for a second release the same day) and create a GitHub
-Release. It dispatches rather than leaning on `release.yml`'s `push:`
-trigger because a `GITHUB_TOKEN` push fires no workflows, which would ship
-production untagged.
-
-The Release's auto-generated notes list the merged PRs — `SNOW-xx:` titles
-make it the record of which tickets reached production. Linear `Done` still
-fires on merge to `main` (work complete, on staging); production shipment is
-the GitHub Release.
-
-Staging and production use **separate databases** — `build.sh` migrates on
-every deploy, so staging must never point at the production DB. Full flow,
-Render topology, and one-time setup: [`docs/deployment.md`](docs/deployment.md).
+`main` deploys to staging, `release` to production. The full flow, the Render
+topology and the release-PR mechanics are in the `release` skill and
+[`docs/deployment.md`](docs/deployment.md).
 
 ## Invariants
 

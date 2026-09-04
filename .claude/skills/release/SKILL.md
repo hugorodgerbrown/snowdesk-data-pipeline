@@ -171,3 +171,35 @@ Tell the user:
   checks are not green) — surface the rejection rather than retrying.
 - A Release already exists for the deployed commit under an unexpected tag
   (do not create a duplicate — investigate first).
+
+## Path to live
+
+Deploys are split across two branches (hosted on Render):
+
+- **`main` → Staging** — every merge auto-deploys one web dyno.
+- **`release` → Production** — three services (web + scheduler + task
+  worker, one shared DB) deploy when `release` is **fast-forwarded** to
+  `main` (`release` behaves like a tag that moves with `main`; no merge
+  commit). The ruleset allows the advance only as a fast-forward whose
+  target commit's checks are already green.
+
+A release is one pull request. `bin/cut-release --commit` opens it against
+`main`: a single commit bumping `VERSION`, with the release note — every
+`SNOW-xx` ticket production has not yet seen — in the description. **Merging
+it is the release**, squashed or not. [`release-sync.yml`](.github/workflows/release-sync.yml)
+sees `VERSION` change on `main`, waits for that commit's required checks,
+fast-forwards `release`, and dispatches
+[`release.yml`](.github/workflows/release.yml) to tag the commit **CalVer**
+(`YYYY.MM.DD`, `.N` for a second release the same day) and create a GitHub
+Release. It dispatches rather than leaning on `release.yml`'s `push:`
+trigger because a `GITHUB_TOKEN` push fires no workflows, which would ship
+production untagged.
+
+The Release's auto-generated notes list the merged PRs — `SNOW-xx:` titles
+make it the record of which tickets reached production. Linear `Done` still
+fires on merge to `main` (work complete, on staging); production shipment is
+the GitHub Release.
+
+Staging and production use **separate databases** — `build.sh` migrates on
+every deploy, so staging must never point at the production DB. Full flow,
+Render topology, and one-time setup: [`docs/deployment.md`](docs/deployment.md).
