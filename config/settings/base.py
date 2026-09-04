@@ -212,6 +212,7 @@ INSTALLED_APPS = [
     "apps.observations",
     "apps.favourites",
     "apps.routes",
+    "apps.trips",
     "apps.downloads",
     "apps.mcp_server",
 ]
@@ -1014,6 +1015,24 @@ ROUTE_SHARE_MAX_AGE_DAYS = config("ROUTE_SHARE_MAX_AGE_DAYS", default=30, cast=i
 # refused, because the link just followed is the one the visitor means.
 
 ROUTE_SHARE_MAX_PENDING = config("ROUTE_SHARE_MAX_PENDING", default=5, cast=int)
+
+
+# ---------------------------------------------------------------------------
+# Trips (SNOW-819)
+# ---------------------------------------------------------------------------
+# Maximum number of Trip rows a single user may ORGANISE at once, enforced by
+# apps.trips.services.trips.create_trip (via _assert_under_cap and the locked
+# re-check beside it). Trips the user has merely JOINED are not counted: a cap
+# that counted joins would let one prolific organiser exhaust everybody else's.
+#
+# 25 matches ROUTES_MAX_PER_USER above, and for the same reason — a trip is
+# planned from a route, so a user cannot have materially more standing trips
+# than they have routes to plan them from. It bounds a scripted client rather
+# than rationing a legitimate one; a person who plans one trip a week through
+# a season never meets it, because a past trip is still a row and 25 is more
+# than most people organise in a lifetime of touring.
+
+TRIPS_MAX_PER_USER = config("TRIPS_MAX_PER_USER", default=25, cast=int)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,82 @@
+{% extends "public/base.html" %}
+{% comment %}
+trips/trip.html — one trip's own page (SNOW-820).
+
+The organiser's view of the object: the day, the meeting time, the meeting
+point, the route drawn with a marker where the group meets, the distance
+and vertical figures, the elevation profile, and their own note. SNOW-821
+adds the public share page, which renders the same summary and the same map
+from the same context builder — the difference between the two surfaces is
+who may see the trip, never what it says about it.
+
+ORGANISER-ONLY in this commit (apps/trips/views.py's trip_detail), so every
+control here is the organiser's. The edit form sits inside a <details>
+rather than on a page of its own: editing a trip is a correction to
+something already on screen — a time moved by half an hour, a note added —
+and sending the organiser to a second page to change one field would lose
+the context that told them it needed changing.
+
+No share card. Until SNOW-821 this page is reachable only by the account
+that created it, so a preview of it is meaningless to anyone who could see
+one — and it is behind auth, so no unfurler will ever reach it. The
+tokenised page SNOW-821 adds is the surface that DOES unfurl, and it carries
+its own metadata.
+{% endcomment %}
+{% load i18n static components %}
+
+{% block page_meta %}
+    {% trans "Trip" as page_name_fallback %}
+    {% firstof trip.display_name page_name_fallback as page_name %}
+    {% trans "A trip planned on Snowdesk — the day, the meeting point and the route." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block extra_head %}
+    {# MapLibre's control chrome must be styled before first paint, so the  #}
+    {# stylesheet is here and the scripts are in _trip_map.html — see that  #}
+    {# partial's note on the split.                                         #}
+    <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
+{% endblock extra_head %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}">
+        {% trans "Trip" as trip_eyebrow %}
+        {% include "includes/_eyebrow.html" with text=trip_eyebrow class_extra="mb-2" %}
+        {% trans "Untitled trip" as untitled_trip %}
+        {% firstof trip.display_name untitled_trip as trip_heading %}
+        {% include "includes/_page_title.html" with text=trip_heading class_extra="mb-6" data_testid="trip-heading" %}
+
+        {% card padding="p-6" extra="mb-6" %}
+        {% include "trips/partials/_trip_summary.html" with trip=trip %}
+        {% endcard %}
+
+        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload basemap_url=basemap_url %}
+
+        {% if is_organiser %}
+            {% comment %}
+                The organiser's controls, below the trip rather than above
+                it: the page's job is to say what the plan is, and the
+                machinery for changing it is secondary to reading it. Both
+                are disclosures so neither competes with the summary.
+            {% endcomment %}
+            <div class="mt-8 flex flex-col gap-4" data-testid="trip-organiser-controls">
+                <details class="rounded-card border border-border bg-card p-4">
+                    <summary class="cursor-pointer text-sm font-medium text-text-1">
+                        {% trans "Edit this trip" %}
+                    </summary>
+                    <div class="mt-4">
+                        {% include "trips/partials/_trip_form.html" with form=edit_form trip_uuid=trip.uuid %}
+                    </div>
+                </details>
+                <details class="rounded-card border border-border bg-card p-4">
+                    <summary class="cursor-pointer text-sm font-medium text-status-error-text">
+                        {% trans "Delete this trip" %}
+                    </summary>
+                    <div class="mt-4">
+                        {% include "trips/partials/_trip_delete_confirm.html" with trip=trip %}
+                    </div>
+                </details>
+            </div>
+        {% endif %}
+    </main>
+{% endblock content %}

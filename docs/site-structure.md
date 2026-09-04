@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-04
 ---
 
 # Snowdesk site structure
@@ -51,6 +51,8 @@ prefixes depend on this ordering — don't reorder
 | `/resorts/<slug>/` | `resort_detail` | A router, not a document (SNOW-807): the resort's own curated facts, then one link to the region's bulletin, a link per curated location to its weather page, and one link to the map with the reports sheet open at the resort. Keyed on `Resort.slug` (SNOW-796); `/resorts/<id>/<slug>/` 301s. |
 | `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location. |
 | `/observations/` | redirect | Permanent 301 to `/?panel=reports` — the map with the reports sheet open (SNOW-804). |
+| `/trips/new/` | `trips.views.trip_new` | The authoring form for a trip planned from one of your own routes, named by `?route=<uuid>` (SNOW-820). A page rather than a fragment in the map's routes panel, whose body is re-cloned on every open. Anonymous visitors redirect to sign-in. |
+| `/trips/<uuid>/` | `trips.views.trip_detail` | **One trip's own page** — the day, the meeting time and point, the route drawn with a marker, the figures, the elevation profile and the organiser's note (SNOW-820). Organiser-only; SNOW-821 adds the tokenised public page and SNOW-822 opens this one to the roster. A page, not a redirect into the map, because a trip is authored to be sent ([why](decisions/two-documents-and-a-map.md)). |
 | `/how-to-read-a-bulletin/` | `how_to_read_bulletin` | Domain primer for readers. |
 | `/help/` | `help_page` | Help, including the PWA/offline sections. |
 | `/examples/random/` | `examples_random` | A sample bulletin; `/random/` is a deprecated redirect to it. |
@@ -91,6 +93,10 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
   account-page variants); the surface that reaches these is open to every
   visitor and its contents to every signed-in one
   ([`docs/map-and-api.md`](map-and-api.md))
+- `/trips/partials/…` — create, edit, delete (SNOW-819). The two trip
+  PAGES sit outside this prefix because they are navigations; only the
+  writes are fragments, so an invalid submission can come back as the form
+  with its errors
 - `/partials/_components/<slug>/` — component-library panels
 
 ## Non-HTML routes

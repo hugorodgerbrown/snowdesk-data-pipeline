@@ -21,6 +21,11 @@ that promise, and both need Python to run:
   is ``CASCADE`` and ``Favourite.location`` is ``PROTECT``, so the cascade
   deletes the favourites in bulk and leaves the locations behind, holding
   real coordinates and elevation and referenced by nothing.
+* **The anonymous ``Location`` each TRIP minted** (SNOW-819). Exactly the
+  same shape: ``Trip.created_by`` is ``CASCADE`` and ``Trip.meeting_point``
+  is ``PROTECT``, so the meeting point of every trip this account organised
+  would outlive the account, holding the real coordinates of a real place
+  somebody agreed to meet at.
 
 This lives in a service rather than in ``delete_account`` because the view
 is not the only caller: deleting an ``Account`` through the Django admin
@@ -36,6 +41,7 @@ from django.db import transaction
 
 from apps.core.models import RequestLog
 from apps.favourites.services import delete_favourites_for_user
+from apps.trips.services.trips import delete_trips_for_user
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User as UserType
@@ -88,11 +94,14 @@ def erase_account(user: "UserType", account: "Account | None") -> None:
        them still exist.
     2. Delete the favourites one row at a time, so each minted anonymous
        ``Location`` is swept as its last referent goes.
-    3. Delete the user — the ``CASCADE`` takes the account, subscriptions,
-       signed-in request rows, observations, routes, passkeys and clicks.
-    4. Delete the collected request rows, now that nothing points at them.
+    3. Delete the organised trips the same way and for the same reason —
+       a trip's meeting point is a minted anonymous ``Location`` too.
+    4. Delete the user — the ``CASCADE`` takes the account, subscriptions,
+       signed-in request rows, observations, routes, trip participations,
+       passkeys and clicks.
+    5. Delete the collected request rows, now that nothing points at them.
 
-    All four commit together or none of them do. Erasure that half succeeds
+    All five commit together or none of them do. Erasure that half succeeds
     is the worst of the three outcomes: the account is gone, so the person
     has no way back in to ask again, while the rows carrying their IP
     address and coordinates are still there and no longer attached to
@@ -112,6 +121,7 @@ def erase_account(user: "UserType", account: "Account | None") -> None:
 
     with transaction.atomic():
         delete_favourites_for_user(user)
+        delete_trips_for_user(user)
         user.delete()
         if orphan_log_ids:
             RequestLog.objects.filter(pk__in=orphan_log_ids).delete()

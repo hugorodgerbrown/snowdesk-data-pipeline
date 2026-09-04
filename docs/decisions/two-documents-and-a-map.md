@@ -1,8 +1,8 @@
 ---
 name: two-documents-and-a-map
-description: Two document pages — bulletin and weather — plus the map; regions, resorts, locations, observations and routes are map objects
+description: Two document pages — bulletin and weather — plus the map; regions, resorts, observations and routes are map objects; a trip is not
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-04
 ---
 
 # Two documents and a map
@@ -21,12 +21,20 @@ issuer*. Nothing else qualifies. Regions, resorts, locations, observations
 and routes are ways of reaching one of the two documents, and they live on
 the map as layers, pins and sheets.
 
-Two pages survive outside that rule, each for a stated reason.
+Three pages survive outside that rule, each for a stated reason.
 `/account/settings/` holds email, passkeys and account deletion, which are
 not map objects. `/resorts/<slug>/` is retained as a **landing page for a
 search term** — people search "Verbier avalanche", not "CH-4115", and
 `ResortSitemap` publishes every resort — but it is a router to the two
-documents, not a third document.
+documents, not a third document. **`/trips/<uuid>/` is a page because a trip
+is authored to be sent** (SNOW-819): it is one person's plan for one day,
+addressed to other people, and a link to it has to unfurl as a card in a
+message and open as something a recipient can read before being asked for
+anything. A redirect into the map would show them a track and nothing else —
+not the day, not the meeting time, not the note. It is also the first
+Snowdesk object that is **interactive and multi-user**: everything the map
+holds is one account's own data drawn on shared reference data, whereas a
+trip is authored by one account and read, then joined, by others.
 
 Consequently these are removed: `/favourites/<uuid>/`, `/observations/`,
 `/account/`, `/account/favourites/`, `/account/observations/`,

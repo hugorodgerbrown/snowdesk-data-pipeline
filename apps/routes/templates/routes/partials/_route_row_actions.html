@@ -78,6 +78,22 @@ takes its own DOM id as a parameter, and a Remove that named the id
 directly would go on addressing the default one whatever the row was
 given. Same contract as the favourite row's actions.
 
+SNOW-819 ADDS "PLAN A TRIP", in the owned branch only. A pending row's
+route is not the viewer's, so trips:new — which looks the route up
+owner-scoped — would 404 for them; a control whose only outcome is a
+404 reads as a broken page.
+
+It sits BETWEEN Share and Rename. Trash stays last, on the design's rule
+that the destructive control is in the same place on every panel, and
+Share stays first, on the rule already written above; that leaves exactly
+one slot, and it is the right one anyway — Share and Plan a trip are the
+two controls that involve somebody else, so they sit together.
+
+It is a LINK and not an icon button. Every other control in this row acts
+on the row in place; this one leaves the panel for a page (see
+apps/trips/views.py for why the form is a page), and a 17px glyph that
+navigates away would be indistinguishable from the three that do not.
+
 Context:
     route           : Route — the saved route this row describes.
     sharing_enabled : bool, optional — draw the Share control. False on a
@@ -170,6 +186,16 @@ Context:
             {% include "includes/_icon_share.html" only %}
         </button>
     {% endif %}
+    {# SNOW-819: Plan a trip. A plain link — it is a navigation to the      #}
+    {# authoring page, not an action on this row (see the note above).      #}
+    {% blocktrans trimmed with name=label asvar plan_trip_aria_label %}Plan a trip using {{ name }}{% endblocktrans %}
+    {% trans "Plan a trip" as plan_trip_label %}
+    <a
+        href="{% url 'trips:new' %}?route={{ route.uuid }}"
+        aria-label="{{ plan_trip_aria_label }}"
+        data-route-plan-trip="{{ route.uuid }}"
+        class="{% icon_button_classes %} w-auto px-3 text-sm"
+    >{{ plan_trip_label }}</a>
     {# Two hooks, two readers: `data-row-rename` is the shared one every       #}
     {# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
     {# recognise a rename click without knowing which panel it is on;          #}

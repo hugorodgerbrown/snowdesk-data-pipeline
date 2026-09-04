@@ -98,6 +98,12 @@ CLEAR_ONLY=(
     bulletins_bulletinshare
     favourites_favourite
     observations_fieldobservation
+    # SNOW-819. trips_tripparticipant first: it points at trips_trip, which
+    # points into locations_location below. A trip's meeting point is minted
+    # from user input like a favourite's pin, so staging's trips are cleared
+    # and never reloaded.
+    trips_tripparticipant
+    trips_trip
 )
 
 # Only rows a ResortLocation references are curated. apps/favourites/services.py

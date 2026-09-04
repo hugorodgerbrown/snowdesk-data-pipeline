@@ -79,6 +79,15 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
                  (FK to auth.User), surfaced in the map's routes panel
+  trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
+                 owns, on a named day, at a stated time and meeting point)
+                 and ``TripParticipant`` (every account on it, organiser
+                 included). The geometry is a SNAPSHOT copied at creation
+                 and never re-read, so a trip survives the source route
+                 being renamed or deleted. The first Snowdesk object that
+                 is interactive and multi-user; read
+                 docs/decisions/a-trip-is-one-object-with-a-roster.md
+                 before changing the roster's shape
   downloads/     Offline basemap areas synced to an account (SNOW-749) — the
                  ``DownloadArea`` model (FK to auth.User) and its sync API.
                  The DEFINITION of an area only: the tiles stay in each
@@ -566,6 +575,7 @@ Read these when working in the relevant area:
 | Why the weather icons are Yr / MET Norway and not MeteoSwiss, AccuWeather or the Met Office (legibility measurements + the licence position for each set) | [`docs/decisions/weather-icons-are-yr-not-meteoswiss.md`](docs/decisions/weather-icons-are-yr-not-meteoswiss.md) |
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a followed-but-unclaimed route share lives in the session (and what it widens) | [`docs/decisions/route-share-pending-claim-in-session.md`](docs/decisions/route-share-pending-claim-in-session.md) |
+| Why a trip is one object with a roster rather than a copy per person (Trip, TripParticipant, the snapshot, the one share link) | [`docs/decisions/a-trip-is-one-object-with-a-roster.md`](docs/decisions/a-trip-is-one-object-with-a-roster.md) |
 | Why a bare `/` on the map shows today, never the last rated day (readDisplayDate, data-today, the SNOW-660 distinction) | [`docs/decisions/map-defaults-to-today-not-the-last-rated-day.md`](docs/decisions/map-defaults-to-today-not-the-last-rated-day.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |

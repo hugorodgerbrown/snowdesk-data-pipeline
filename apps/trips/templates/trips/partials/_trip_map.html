@@ -1,0 +1,75 @@
+{% load i18n static %}
+{% comment %}
+trips/partials/_trip_map.html — the trip's map canvas and its payload.
+
+One MapLibre canvas showing the route as a line with a marker where the
+group meets, plus the elevation profile underneath it. Drawn by
+static/js/trip_map.js from an INLINE payload rather than a fetched one:
+the page already holds every byte of it, it is small, and a public share
+page that had to make a second request to draw its own map would show a
+recipient nothing at all while that request was in flight.
+
+THREE MODULES LOAD BEFORE trip_map.js AND THE ORDER IS LOAD-BEARING.
+Deferred scripts run in document order, so `self.pwaElevationProfileCore`,
+`self.pwaRouteMarkersCore` and `self.pwaStrings` all exist by the time
+trip_map.js's top level runs. The first two are reused UNCHANGED from the
+map page — they already publish frozen globals, own no map state, and the
+elevation profile a trip draws is the same picture a route popup draws of
+the same geometry.
+
+The <div> has an explicit height rather than an aspect ratio: MapLibre
+measures its container on construction, and a container whose height is
+still resolving gives a canvas of zero pixels that never repaints.
+
+Context:
+    trip        : Trip — the trip being drawn.
+    map_payload : dict — the inline GeoJSON, built by
+                  apps.trips.views._trip_map_payload.
+    basemap_url : str — settings.BASEMAP_STYLE_URL. The site default and
+                  nothing else: this canvas has no basemap picker, because
+                  a trip page is a document about one plan rather than a
+                  map to explore, and the picker's persisted choice lives
+                  in the map page's own localStorage.
+{% endcomment %}
+{# The payload. A <script type="application/json"> rather than an inline JS #}
+{# literal: the content is parsed, never executed, so the CSP needs no      #}
+{# script-src exception and no nonce, and json_script escapes the </script> #}
+{# sequence that would otherwise end the block early.                       #}
+{{ map_payload|json_script:"trip-map-payload" }}
+<div
+    id="trip-map"
+    data-trip-map
+    data-basemap-url="{{ basemap_url }}"
+    class="h-80 w-full overflow-hidden rounded-card border border-border bg-card"
+    role="img"
+    aria-label='{% trans "Map of the trip route and meeting point" %}'
+>
+</div>
+<div id="trip-profile" data-trip-profile class="mt-3 text-route-line"></div>
+{# Every user-facing string trip_map.js writes into the DOM. makemessages  #}
+{# never scans static/js, so a literal there ships as English to every     #}
+{# locale — `tox -e i18n-lint` fails the build on one. Read back via       #}
+{# self.pwaStrings.read(); the module keeps the English literal as its     #}
+{# fallback. See static/js/i18n_strings.js and docs/i18n.md.               #}
+<template id="trip-strings-template">
+    <span data-string="meeting-point">{% trans "Meeting point" %}</span>
+    <span data-string="elevation-profile">{% trans "Elevation profile of the route" %}</span>
+    {# The map is a progressive enhancement over the figures above it, so   #}
+    {# a failure says what is still true rather than apologising: the plan  #}
+    {# is in the summary, and only the picture of it is missing.            #}
+    <span
+        data-string="map-failed"
+    >{% trans "The map couldn't be loaded. The route details above are unaffected." %}</span>
+</template>
+{# The renderer, then the three modules trip_map.js reads, then trip_map.js #}
+{# itself. Deferred scripts run in DOCUMENT ORDER, so this listing IS the   #}
+{# dependency order and nothing here waits on a load event.                 #}
+{# The matching stylesheet is loaded from the including page's             #}
+{# {% block extra_head %} — MapLibre's control chrome must be styled before #}
+{# first paint, and a <link> in the body is a render-blocking surprise      #}
+{# halfway down the document.                                               #}
+<script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
+<script defer src="{% static 'js/i18n_strings.js' %}"></script>
+<script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
+<script defer src="{% static 'js/route_markers_core.js' %}"></script>
+<script defer src="{% static 'js/trip_map.js' %}"></script>

@@ -57,6 +57,9 @@ TEMPLATE_ROOTS: tuple[Path, ...] = (
     # UGC row every other panel does — were the one first-party template
     # directory nothing checked.
     REPO_ROOT / "apps" / "routes" / "templates",
+    # SNOW-819. Added with the app, not after it — the routes entry above
+    # records what happens otherwise.
+    REPO_ROOT / "apps" / "trips" / "templates",
 )
 
 # SNOW-619: first-party JavaScript, scanned for the same token rules. Only

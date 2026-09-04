@@ -1,0 +1,18 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_limit.html — the cap, reached.
+
+Answered at HTTP 409 by trips:create, not 429. A cap is a PERMANENT failure
+— only deleting a trip clears it — whereas 429 says "try again shortly",
+which would be a lie. The same distinction routes/partials/_route_limit.html
+makes, and for the same reason.
+
+It replaces the form rather than sitting beside it: there is nothing useful
+to do with a form whose submit can only fail, and the sentence names the one
+action that does clear the state.
+{% endcomment %}
+<div id="trip-form" class="text-sm text-form-error" data-testid="trip-limit">
+    {% blocktrans trimmed %}
+        You've reached your trip limit. Delete a trip you've organised to plan another.
+    {% endblocktrans %}
+</div>

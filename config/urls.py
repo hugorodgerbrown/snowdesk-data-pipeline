@@ -122,6 +122,9 @@ urlpatterns.append(path("favourites/", include("apps.favourites.urls")))
 # routes/ (SNOW-685) — same ordering constraint as favourites/ above: the
 # public catch-all would otherwise resolve "routes" as a region_id.
 urlpatterns.append(path("routes/", include("apps.routes.urls")))
+# trips/ (SNOW-819) — same ordering constraint as routes/ above: the public
+# catch-all would otherwise resolve "trips" as a region_id.
+urlpatterns.append(path("trips/", include("apps.trips.urls")))
 # downloads/ (SNOW-749) — same ordering constraint as favourites/ and
 # routes/ above: the public catch-all would otherwise resolve "downloads"
 # as a region_id.

@@ -1,0 +1,80 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_summary.html — the facts a trip page opens with.
+
+The four things a person reads off a message before deciding whether they
+are going: the day, the time, where the group meets, and how far and how
+much climbing the route carries. Rendered above the map on every trip
+surface — the organiser's object page and the public share page — so a
+recipient who never scrolls has still been told the whole plan.
+
+The meeting point is a COORDINATE PAIR, not a place name. The Location it
+comes from is minted for this trip alone and carries no name, deliberately
+(naming a place is a curation act — see apps/trips/services/trips.py), so
+inventing a label here would be inventing a fact. Six decimal places is
+roughly 0.1 m, which is well inside GPS noise but is what a map app expects
+pasted into its search box.
+
+ASCENT AND DESCENT ARE NULLABLE AND THE NULL IS MEANINGFUL. A route with no
+elevation data anywhere carries null, and Trip's own docstring is explicit
+that "we don't know" and "flat" are different facts — rendering the second
+for the first would be a safety-relevant lie about terrain someone is
+planning to ski. So a trip with no vertical data shows its distance alone
+rather than "0 m ascent". Each branch is a whole phrase rather than
+assembled fragments, so a locale can order it freely — the same rule
+routes/partials/_route.html's meta line follows, and for the same reason.
+
+The organiser's ``description`` is rendered through ordinary Django
+auto-escaping. Nothing here calls ``mark_safe``, and nothing should: it is
+user-supplied prose (invariant 1). ``linebreaksbr`` turns the newlines the
+textarea captured into markup, which is a transform of whitespace only and
+does not admit any tag the escape pass has already neutralised.
+
+Context:
+    trip : Trip — the trip to describe.
+{% endcomment %}
+{% with km=trip.distance_km|floatformat:1 ascent=trip.ascent_m|floatformat:0 descent=trip.descent_m|floatformat:0 %}
+    <dl class="grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="trip-summary">
+        <div>
+            {% trans "Day" as day_label %}
+            {% include "includes/_eyebrow.html" with tag="dt" text=day_label %}
+            <dd class="mt-1 text-text-1" data-testid="trip-date">{{ trip.date|date:"l j F Y" }}</dd>
+        </div>
+        <div>
+            {% trans "Meeting at" as meeting_at_label %}
+            {% include "includes/_eyebrow.html" with tag="dt" text=meeting_at_label %}
+            <dd class="mt-1 text-text-1" data-testid="trip-start-time">{{ trip.start_time|time:"H:i" }}</dd>
+        </div>
+        <div>
+            {% trans "Meeting point" as meeting_point_label %}
+            {% include "includes/_eyebrow.html" with tag="dt" text=meeting_point_label %}
+            <dd class="mt-1 font-mono text-sm text-text-2" data-testid="trip-meeting-point">
+                {{ trip.meeting_point.latitude|floatformat:6 }}, {{ trip.meeting_point.longitude|floatformat:6 }}
+            </dd>
+        </div>
+    </dl>
+    <p class="mt-4 text-text-2" data-testid="trip-figures">
+        {% if trip.ascent_m is not None and trip.descent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent descent=descent %}
+                {{ km }} km · {{ ascent }} m ascent · {{ descent }} m descent
+            {% endblocktrans %}
+        {% elif trip.ascent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent %}
+                {{ km }} km · {{ ascent }} m ascent
+            {% endblocktrans %}
+        {% elif trip.descent_m is not None %}
+            {% blocktrans trimmed with km=km descent=descent %}
+                {{ km }} km · {{ descent }} m descent
+            {% endblocktrans %}
+        {% else %}
+            {% blocktrans trimmed with km=km %}{{ km }} km{% endblocktrans %}
+        {% endif %}
+    </p>
+    {% if trip.description %}
+        <div class="mt-6" data-testid="trip-description">
+            {% trans "From the organiser" as organiser_note_label %}
+            {% include "includes/_eyebrow.html" with text=organiser_note_label %}
+            <p class="mt-2 leading-prose text-text-1">{{ trip.description|linebreaksbr }}</p>
+        </div>
+    {% endif %}
+{% endwith %}

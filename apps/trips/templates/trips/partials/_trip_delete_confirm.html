@@ -1,0 +1,39 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_delete_confirm.html — deleting a trip, said plainly.
+
+A trip is not the organiser's private row: other people have joined it and
+are planning around it. Deleting removes it FOR EVERYONE, and this file's
+whole job is to say so before the press — naming the number of other people
+it affects rather than the abstract fact that there are some.
+
+The organiser cannot remove one participant (SNOW-822): removal is a
+moderation surface with its own questions, and a trip is one day long. This
+control is the only way a person comes off a trip they did not join
+themselves, and the copy is honest that it takes everybody with it.
+
+Context:
+    trip : Trip — the trip to be deleted.
+{% endcomment %}
+{% with others=trip.participants.count|add:"-1" %}
+    <p class="mb-4 text-sm text-text-2" data-testid="trip-delete-warning">
+        {% if others > 0 %}
+            {% blocktrans trimmed count counter=others %}
+                This removes the trip for you and the {{ counter }} other person who has joined it. The link stops
+                working.
+            {% plural %}
+                This removes the trip for you and the {{ counter }} other people who have joined it. The link stops
+                working.
+            {% endblocktrans %}
+        {% else %}
+            {% blocktrans trimmed %}
+                Nobody else has joined this trip yet. Deleting it removes it and stops its link working.
+            {% endblocktrans %}
+        {% endif %}
+    </p>
+    <form hx-post="{% url 'trips:delete' trip.uuid %}" data-testid="trip-delete-form">
+        {% csrf_token %}
+        {% trans "Delete trip" as trip_delete_label %}
+        {% include "includes/_button.html" with label=trip_delete_label variant="destructive" %}
+    </form>
+{% endwith %}

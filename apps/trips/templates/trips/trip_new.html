@@ -1,0 +1,41 @@
+{% extends "public/base.html" %}
+{% comment %}
+trips/trip_new.html — planning a trip from a route you already own
+(SNOW-820).
+
+Reached from the "Plan a trip" control on a route row in the map's routes
+panel. A PAGE and not a fragment swapped into that panel, for a concrete
+reason: the panel's body is re-cloned from its <template> on every open, so
+a form swapped into it would be thrown away the moment the sheet closed —
+mid-typing, with nothing to say it had gone. Planning a trip is a five-field
+authoring task, and that is a page.
+
+No share card: this page is one signed-in user's authoring surface for
+their own data, so a preview of it is meaningless to anyone who could see
+one. It is also behind auth, so no unfurler will ever reach it.
+{% endcomment %}
+{% load i18n components %}
+
+{% block page_meta %}
+    {% trans "Plan a trip" as page_name %}
+    {% trans "Plan a trip from one of your saved routes — pick the day, the meeting time and where the group meets." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}">
+        {% trans "Plan a trip" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="trip-new-heading" %}
+        {% trans "Untitled route" as untitled_route %}
+        {% firstof route.name route.source_filename untitled_route as route_label %}
+        <p class="mb-6 text-text-2" data-testid="trip-new-route">
+            {% blocktrans trimmed with name=route_label %}
+                Using your route “{{ name }}”.
+            {% endblocktrans %}
+        </p>
+        {% card padding="p-6" %}
+        {% url 'public:home' as trip_cancel_url %}
+        {% include "trips/partials/_trip_form.html" with form=form route_uuid=route.uuid cancel_url=trip_cancel_url %}
+        {% endcard %}
+    </main>
+{% endblock content %}
