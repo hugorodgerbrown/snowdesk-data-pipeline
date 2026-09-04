@@ -19,8 +19,13 @@
 # `branch:` field governs which branch it deploys from.
 #
 # Staging and production use SEPARATE Postgres databases. This matters
-# because build.sh runs `migrate` + `loaddata` on every deploy — a staging
-# deploy must never touch the production schema. Full flow: docs/deployment.md.
+# because build.sh runs `migrate` on every deploy — a staging deploy must
+# never touch the production schema. Full flow: docs/deployment.md.
+#
+# ONE MIGRATOR: only the web service migrates. Both workers build with
+# build_headless.sh, which installs dependencies and writes nothing to the
+# database — the three services build CONCURRENTLY against one Postgres, and
+# three racing `migrate` runs deadlock. See docs/deployment.md.
 #
 # `snowdesk-scheduler` (SNOW-238) is a single long-running APScheduler
 # worker that replaces the older per-schedule Render cron jobs.

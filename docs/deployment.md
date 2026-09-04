@@ -61,12 +61,47 @@ branches lands via a PR. Databases and env-group contents remain
 dashboard-managed (no `databases:` block; env vars grouped via
 `fromGroup`).
 
+## One migrator: the web service
+
+All three production services deploy from the same `release` commit, and
+Render builds them **concurrently** against one shared Postgres. Only the
+web service may write to that database during a deploy.
+
+| Service | Build script | Migrates? |
+|---|---|---|
+| `snowdesk-website` | [`build.sh`](../bin/build.sh) | **Yes** — `migrate` + `sync_waffle_flags --commit` |
+| `snowdesk-scheduler` | [`build_headless.sh`](../bin/build_headless.sh) | No — dependencies only |
+| `snowdesk-background-tasks` | [`build_headless.sh`](../bin/build_headless.sh) | No — dependencies only |
+
+Both workers used to run `migrate` too, so every deploy raced three
+processes through the same DDL. Django holds no cross-process lock, so
+nothing serialised them: all three read `django_migrations`, all three
+attempted the same statements, and the losers failed or deadlocked.
+
+Render does not order the three builds, so a worker can boot on new code
+while the web service is still migrating. That is acceptable **only**
+because both workers are asynchronous and retried — the scheduler's next
+tick fires on its interval, and a `django-tasks` job that raises stays
+queued for the next pass. Neither serves a request, so no user sees the
+window. Two consequences follow:
+
+- **Deploy the web service.** A single-service redeploy of a worker from
+  the Render dashboard applies no migrations. If that worker's commit needs
+  a schema it does not have, redeploy `snowdesk-website` too.
+- **A failed web deploy is a schema failure.** The workers will happily run
+  new code against the old schema until it is fixed, rather than failing
+  their own builds and making the problem obvious.
+
+Adding a worker that must be correct the instant it boots means adding a
+real ordering mechanism — a Render pre-deploy command on the web service,
+or a start-up gate that waits on `showmigrations` — not relying on timing.
+
 ## Separate databases (important)
 
 Staging and production use **separate Postgres databases**. This is not
-optional: [`build.sh`](../bin/build.sh) runs `migrate` + `loaddata` on every
-deploy, so a staging deploy applies migrations to whatever database the
-staging service is wired to. If staging pointed at the production database,
+optional: [`build.sh`](../bin/build.sh) runs `migrate` on every deploy, so a
+staging deploy applies migrations to whatever database the staging service
+is wired to. If staging pointed at the production database,
 every merge to `main` would mutate the production schema. Staging therefore
 has its own `DATABASE_URL`, `SECRET_KEY`, `ALLOWED_HOSTS`, and email target
 (its own env group in Render).

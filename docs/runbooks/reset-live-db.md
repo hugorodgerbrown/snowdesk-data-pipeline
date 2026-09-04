@@ -175,8 +175,11 @@ rebuild steps the pipeline needs (`rebuild_render_models`,
 ### 8. Resume workers
 
 In the dashboard, **resume** `snowdesk-scheduler` and `snowdesk-background-tasks`.
-Each redeploys and runs `build_headless.sh` (`migrate` = no-op, `loaddata` =
-idempotent) against the now-populated DB. Confirm both reach **Live**.
+Each redeploys and runs `build_headless.sh`, which installs dependencies and
+nothing else — it applies no migrations and writes no rows, so resuming the
+workers cannot disturb the database you have just rebuilt. The web service is
+the only migrator (see [`deployment.md`](../deployment.md)), so make sure its
+deploy has finished first. Confirm both workers reach **Live**.
 
 ### 9. Verify
 
