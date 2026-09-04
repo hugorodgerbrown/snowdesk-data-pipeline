@@ -20,6 +20,10 @@ plus three HTMX fragments under the ``partials/`` prefix, every one
   success, and re-renders the form with its errors when the submission is
   invalid.
 - ``trip_delete`` (POST) — deletes the trip and answers ``HX-Redirect``.
+- ``trip_join`` / ``trip_leave`` (POST, SNOW-822) — the roster's two verbs;
+  both answer the roster fragment.
+- ``trip_route_save`` (POST, SNOW-824) — copies the trip's SNAPSHOT into the
+  viewer's own routes, and answers the saved-state control.
 
 plus the sharing pair (SNOW-821), neither of which is a fragment:
 
@@ -51,7 +55,7 @@ cannot distinguish "not yours" from "doesn't exist".
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.conf import settings
@@ -68,6 +72,7 @@ from django_ratelimit.decorators import ratelimit
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
 from apps.routes.models import Route
+from apps.routes.services.routes import RouteLimitReached
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
 from apps.trips.services.participants import (
@@ -78,6 +83,7 @@ from apps.trips.services.participants import (
     roster_for,
     roster_names_visible_to,
 )
+from apps.trips.services.routes import already_saved, save_trip_route
 from apps.trips.services.shares import (
     TripShareTokenCollision,
     mint_trip_share,
@@ -89,6 +95,9 @@ from apps.trips.services.trips import (
     delete_trip,
     update_trip,
 )
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +230,13 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         "roster_names_visible": roster_names_visible_to(viewer, trip),
         "is_participant": is_participant(viewer, trip),
         "leave_url": reverse("trips:leave", args=[trip.uuid]),
+        # SNOW-824. Available to ANYONE who can see the trip, participant
+        # or not: saving does not join and joining does not save.
+        "route_already_saved": already_saved(viewer, trip),
+        # Uuid-addressed on the object page. ``trip_share_page`` overrides
+        # this with the token-addressed twin, because a link-holder who has
+        # not joined must never be handed the uuid.
+        "save_route_url": reverse("trips:save_route", args=[trip.uuid]),
         "map_payload": _trip_map_payload(trip),
         # The site default and nothing else. A trip page has no basemap
         # picker: it is a document about one plan rather than a map to
@@ -703,6 +719,9 @@ def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
     # identifier the participant-scoped endpoints key on. The routes app's
     # own pending rows follow the same rule.
     context["join_url"] = reverse("trips:join", args=[token])
+    # Save is token-addressed on this surface for the same reason Join is:
+    # a link-holder must never be handed the uuid.
+    context["save_route_url"] = reverse("trips:save_route_shared", args=[token])
     # And Leave is NOT offered here. It is uuid-addressed and lives on the
     # trip's own page, which every participant can reach — one exit, on the
     # surface that also carries the plan being left.
@@ -863,3 +882,164 @@ def trip_leave(request: HttpRequest, uuid: UUID) -> HttpResponse:
     # just written.
     trip = Trip.objects.get(uuid=uuid)
     return _roster_fragment(request, trip)
+
+
+# ---------------------------------------------------------------------------
+# Saving the route (SNOW-824)
+# ---------------------------------------------------------------------------
+
+
+def _save_route_fragment(
+    request: HttpRequest, *, saved: bool, save_url: str
+) -> HttpResponse:
+    """Render the Save-route control in one of its two states.
+
+    Args:
+        request: The current request.
+        saved: Whether the viewer already holds a matching route.
+        save_url: The endpoint the control posts to.
+
+    Returns:
+        The rendered control fragment.
+
+    """
+    return render(
+        request,
+        "trips/partials/_trip_save_route.html",
+        {"route_already_saved": saved, "save_route_url": save_url},
+    )
+
+
+def _save_route(
+    request: HttpRequest, user: "User", trip: Trip, save_url: str
+) -> HttpResponse:
+    """Copy ``trip``'s route onto the requester's account and answer.
+
+    The shared body of the two entry points below, which differ only in
+    how they resolve the trip — by share token for a link-holder, by uuid
+    for a participant — and therefore in which URL the returned control
+    posts to next.
+
+    Answers the saved-state control rather than a route row: the route row
+    belongs to the routes panel, and swapping one into a trip page would
+    put a rename pencil and a trash can for a route on a page about a
+    trip.
+
+    Args:
+        request: The incoming HTMX POST request.
+        user: The authenticated saver. Passed separately from ``request``
+            because each caller has already narrowed it past its own
+            anonymous check, and that narrowing does not survive the call.
+        trip: The trip whose snapshot is being copied.
+        save_url: The endpoint the returned control posts to.
+
+    Returns:
+        The rendered control, or an error response.
+
+    """
+    if already_saved(user, trip):
+        # Idempotent, on the same reasoning ``join_trip`` is: a
+        # double-tapped Save must not spend a slot of the user's cap on a
+        # second copy of one track. The check is a geometry match — see
+        # ``already_saved`` for why that is the honest question here.
+        return _save_route_fragment(request, saved=True, save_url=save_url)
+
+    try:
+        save_trip_route(user, trip)
+    except RouteLimitReached:
+        logger.info("Trip route save blocked: user=%s hit the cap", user.pk)
+        return render(request, "routes/partials/_route_limit.html", {}, status=409)
+
+    return _save_route_fragment(request, saved=True, save_url=save_url)
+
+
+@require_htmx
+@require_POST
+@ratelimit(key="user", rate=_TRIP_WRITE_RATE, block=False)
+def trip_route_save_shared(request: HttpRequest, token: str) -> HttpResponse:
+    """Save the route of a trip reached by its share link.
+
+    Addressed by TOKEN, on the rule Join follows: holding a live link is
+    what lets somebody act on a trip they are not on, and the uuid keys
+    the participant-scoped endpoints.
+
+    Errors:
+        400 — non-HTMX request.
+        403 — anonymous request. A saved route needs an account to sit on;
+              the page draws a sign-in link for that visitor.
+        404 — the token matches no live link.
+        409 — the viewer is at ``settings.ROUTES_MAX_PER_USER``.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming HTMX POST request.
+        token: The share token, from the URL.
+
+    Returns:
+        The rendered saved-state control, or an error response.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before trying again.",
+            status=429,
+        )
+
+    try:
+        trip = Trip.objects.shared().get(share_token=token)
+    except Trip.DoesNotExist:
+        return HttpResponse("Trip not found.", status=404)
+
+    return _save_route(
+        request,
+        request.user,
+        trip,
+        reverse("trips:save_route_shared", args=[token]),
+    )
+
+
+@require_htmx
+@require_POST
+@ratelimit(key="user", rate=_TRIP_WRITE_RATE, block=False)
+def trip_route_save(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Save the route of a trip the requester is on.
+
+    Participation-scoped by the lookup, so an unrelated uuid is a 404 and
+    never a 403 — this endpoint cannot be used to learn which trip uuids
+    exist.
+
+    Errors:
+        400 — non-HTMX request.
+        403 — anonymous request.
+        404 — the caller is not on a trip with that uuid.
+        409 — the viewer is at ``settings.ROUTES_MAX_PER_USER``.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming HTMX POST request.
+        uuid: The Trip's uuid, from the URL.
+
+    Returns:
+        The rendered saved-state control, or an error response.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before trying again.",
+            status=429,
+        )
+
+    try:
+        trip = Trip.objects.for_user(request.user).get(uuid=uuid)
+    except Trip.DoesNotExist:
+        return HttpResponse("Trip not found.", status=404)
+
+    return _save_route(
+        request, request.user, trip, reverse("trips:save_route", args=[uuid])
+    )

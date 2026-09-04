@@ -1,0 +1,60 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_save_route.html — "Save route" (SNOW-824).
+
+One control in one of three states, and it is its own swap target so a save
+repaints exactly itself.
+
+  signed in, not saved → the Save form.
+  signed in, saved     → a line saying so. Not a disabled button: the thing
+                         the user wanted has happened, and a greyed-out
+                         control invites a second press for an action with
+                         nothing left to do.
+  signed out           → a sign-in link, never a Save button that posts to
+                         a 403. The same shape the roster's Join control
+                         draws for the same visitor, and the route row's
+                         pending branch before that.
+
+AVAILABLE TO ANYONE WHO CAN SEE THE TRIP, participant or not. Saving does
+not join and joining does not save — they are different acts, one putting
+you in a group and the other putting a track on your map — so a recipient
+who wants the line without committing to the day can take it.
+
+WHAT IS SAVED IS THE SNAPSHOT the page is drawing, never a read through the
+trip's route FK: that FK may be null, and the geometry on screen is what
+the viewer is actually being offered. See apps/trips/services/routes.py.
+
+The copy becomes an ordinary route the viewer owns, renameable and
+deletable like any other, and nothing links it back to this trip. So this
+control does not turn into a link to it — there is nothing trip-shaped to
+link to, and the routes panel is where a route is read.
+
+Context:
+    route_already_saved : bool — whether the viewer already holds a route
+                          with this geometry.
+    save_route_url      : str — the endpoint to post to. Token-addressed on
+                          the share page, uuid-addressed on the object
+                          page; a link-holder must never see a uuid.
+{% endcomment %}
+<div id="trip-save-route" data-testid="trip-save-route">
+    {% if not request.user.is_authenticated %}
+        {% trans "Sign in to save this route" as trip_save_signin_label %}
+        {% url 'accounts:sign_in' as trip_save_signin_url %}
+        {% include "includes/_button.html" with label=trip_save_signin_label href=trip_save_signin_url variant="secondary" size="compact" %}
+    {% elif route_already_saved %}
+        <p class="text-sm text-text-2" data-testid="trip-route-saved">
+            {% trans "This route is saved to your routes." %}
+        </p>
+    {% else %}
+        {% trans "Save route" as trip_save_route_label %}
+        <form
+            hx-post="{{ save_route_url }}"
+            hx-target="#trip-save-route"
+            hx-swap="outerHTML"
+            data-testid="trip-save-route-form"
+        >
+            {% csrf_token %}
+            {% include "includes/_button.html" with label=trip_save_route_label variant="secondary" size="compact" %}
+        </form>
+    {% endif %}
+</div>

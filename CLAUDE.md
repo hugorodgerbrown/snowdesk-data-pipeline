@@ -576,6 +576,7 @@ Read these when working in the relevant area:
 | Every coordinate-bearing field — exact vs approximate, how derived, apps/core/geo haversine | [`docs/locations.md`](docs/locations.md) |
 | Why a followed-but-unclaimed route share lives in the session (and what it widens) | [`docs/decisions/route-share-pending-claim-in-session.md`](docs/decisions/route-share-pending-claim-in-session.md) |
 | Why a trip is one object with a roster rather than a copy per person (Trip, TripParticipant, the snapshot, the one share link) | [`docs/decisions/a-trip-is-one-object-with-a-roster.md`](docs/decisions/a-trip-is-one-object-with-a-roster.md) |
+| Why a trip share is a public page and needs none of SNOW-764's session pending-claim machinery (save_trip_route, write_route_copy) | [`docs/decisions/a-trip-share-is-a-page-not-a-pending-claim.md`](docs/decisions/a-trip-share-is-a-page-not-a-pending-claim.md) |
 | Why a bare `/` on the map shows today, never the last rated day (readDisplayDate, data-today, the SNOW-660 distinction) | [`docs/decisions/map-defaults-to-today-not-the-last-rated-day.md`](docs/decisions/map-defaults-to-today-not-the-last-rated-day.md) |
 | Map page and JSON API | [`docs/map-and-api.md`](docs/map-and-api.md) |
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |

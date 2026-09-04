@@ -94,8 +94,8 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
   account-page variants); the surface that reaches these is open to every
   visitor and its contents to every signed-in one
   ([`docs/map-and-api.md`](map-and-api.md))
-- `/trips/partials/…` — create, edit, delete, join, leave (SNOW-819).
-  Join is addressed by share TOKEN and leave by uuid: holding a live link
+- `/trips/partials/…` — create, edit, delete, join, leave, save-route
+  (SNOW-819). Join and save-route are addressed by share TOKEN and leave by uuid: holding a live link
   is the whole access rule for joining, and a non-participant must never be
   handed the uuid. The trip PAGES
   sit outside this prefix because they are navigations, and so do

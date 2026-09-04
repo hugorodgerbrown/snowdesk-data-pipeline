@@ -13,6 +13,9 @@ URL structure:
   trips/partials/<uuid>/delete/      POST — delete the trip
   trips/partials/s/<token>/join/     POST — join the trip (SNOW-822)
   trips/partials/<uuid>/leave/       POST — leave it
+  trips/partials/<uuid>/save-route/  POST — copy the route (SNOW-824)
+  trips/partials/s/<token>/save-route/
+                                     POST — the same, for a link-holder
   trips/<uuid>/                      GET  — the trip's own page
   trips/<uuid>/share/                POST — mint/rotate the link (SNOW-821)
   trips/<uuid>/share/revoke/         POST — null the token
@@ -72,6 +75,16 @@ urlpatterns = [
         "partials/<uuid:uuid>/leave/",
         views.trip_leave,
         name="leave",
+    ),
+    path(
+        "partials/<uuid:uuid>/save-route/",
+        views.trip_route_save,
+        name="save_route",
+    ),
+    path(
+        "partials/s/<str:token>/save-route/",
+        views.trip_route_save_shared,
+        name="save_route_shared",
     ),
     path(
         "<uuid:uuid>/share/",
