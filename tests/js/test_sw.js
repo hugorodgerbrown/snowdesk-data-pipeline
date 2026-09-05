@@ -104,6 +104,12 @@ const SW_EXPORTS = [
   // is the real predicate every read path consults, so asserting on it tests
   // the thing that actually gates behaviour rather than a mirror of it.
   '_staleWhileRevalidate',
+  // SNOW-846: the request ledger. ``_flushDebugLog`` is handed back so a
+  // test can drain the buffer deterministically rather than waiting out
+  // ``DEBUG_LOG_FLUSH_MS``; ``_debugLogPending`` deliberately is NOT, for
+  // the same reason ``_networkMode`` is not — it is a ``let`` the flush
+  // reassigns, so a captured reference would go stale on the first drain.
+  '_flushDebugLog',
   '_boundedFetch',
   '_shouldUseNetwork',
   '_latchOffline',
@@ -2341,5 +2347,259 @@ describe('recovering the network mode after a restart (SNOW-748)', () => {
 
     expect(await readNetworkMode(sw)).toBe('auto');
     expect(await sw._shouldUseNetwork()).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-846: the request ledger
+// ---------------------------------------------------------------------------
+
+describe('the request ledger (SNOW-846)', () => {
+  const TILE = 'https://tiles.example/7/7/7.pbf';
+  const PINNED_BUCKET = 'snowdesk-basemap-pinned-region-CH-4115';
+
+  /** A client stub, so the worker's debug flush has somewhere to go. */
+  function makeClient() {
+    const seen = [];
+    return { postMessage: (data) => seen.push(data), seen };
+  }
+
+  /** A cross-origin tile request, as the fetch listener hands one on. */
+  function tileRequest(url) {
+    return { url, method: 'GET', mode: 'cors', destination: 'empty' };
+  }
+
+  /**
+   * A fetch that answers with a cacheable cross-origin tile — `type: 'cors'`
+   * is what the basemap write path requires, and a 200 is what the ledger's
+   * `status` should read back.
+   */
+  function answeringTileFetch() {
+    return vi.fn(async () => {
+      const real = new Response('tile');
+      return {
+        ok: true,
+        status: 200,
+        type: 'cors',
+        headers: real.headers,
+        arrayBuffer: () => real.clone().arrayBuffer(),
+        clone() {
+          return this;
+        },
+      };
+    });
+  }
+
+  /**
+   * A worker with the trace already recording — the same message
+   * `static/js/debug_log.js` sends when the panel's Record box is ticked.
+   */
+  function recordingSw(options) {
+    const sw = loadSw(options);
+    sw.__listeners.message({ data: { type: 'debug-log-enabled', enabled: true } });
+    return sw;
+  }
+
+  /**
+   * Every `req serve` line the worker has broadcast, oldest first.
+   *
+   * Async because the flush hands its batch to `clients.matchAll().then()`
+   * — the postMessage lands a microtask later, so reading `seen` on the
+   * same tick returns nothing.
+   */
+  async function ledger(sw, client) {
+    sw._flushDebugLog();
+    await flush();
+    return client.seen
+      .filter((message) => message && message.type === 'debug-log')
+      .flatMap((message) => message.entries)
+      .filter((entry) => entry.src === 'req' && entry.evt === 'serve');
+  }
+
+  /** Every `sw` line, for the adjacent detail a serve line points at. */
+  async function swLines(sw, client, evt) {
+    sw._flushDebugLog();
+    await flush();
+    return client.seen
+      .filter((message) => message && message.type === 'debug-log')
+      .flatMap((message) => message.entries)
+      .filter((entry) => entry.src === 'sw' && entry.evt === evt);
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('names the passive cache when a browsed tile answers', async () => {
+    const caches = makeCaches();
+    const client = makeClient();
+    const sw = recordingSw({ caches, fetch: answeringTileFetch(), clients: [client] });
+    caches.seed(sw.BASEMAP_CACHE, TILE, new Response('tile'));
+
+    await sw._basemapStaleWhileRevalidate(tileRequest(TILE));
+
+    // The gap this ticket closes: before it, a tile served from the passive
+    // cache and one served from the network produced the same trace, which
+    // is to say no trace at all.
+    expect(await ledger(sw, client)).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({ strategy: 'basemap', source: 'passive' }),
+      }),
+    );
+  });
+
+  it('names the pinned partition, and which bucket, when a download answers', async () => {
+    const caches = makeCaches();
+    caches.seed(PINNED_BUCKET, TILE, new Response('tile'));
+    const client = makeClient();
+    const sw = recordingSw({ caches, fetch: answeringTileFetch(), clients: [client] });
+
+    await sw._basemapStaleWhileRevalidate(tileRequest(TILE));
+
+
+    expect(await ledger(sw, client)).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({ strategy: 'basemap', source: 'pinned' }),
+      }),
+    );
+    // "Which of my downloads is covering this ground" — the hit line could
+    // not answer that before, and it is the first thing you want when two
+    // areas overlap.
+    expect(await swLines(sw, client, 'pinned.search')).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({ result: 'hit', bucket: PINNED_BUCKET }),
+      }),
+    );
+  });
+
+  it('records the network round trip and its status', async () => {
+    const client = makeClient();
+    const sw = recordingSw({
+      caches: makeCaches(),
+      fetch: answeringTileFetch(),
+      clients: [client],
+    });
+
+    await sw._basemapStaleWhileRevalidate(tileRequest(TILE));
+
+    const line = (await ledger(sw, client)).find((entry) => entry.detail.source === 'network');
+    expect(line).toBeTruthy();
+    expect(line.detail.status).toBe(200);
+    // Elapsed ms rides along, so a budget expiry reads differently from a
+    // fast refusal even when both end in a 504.
+    expect(typeof line.detail.ms).toBe('number');
+  });
+
+  it('records the synthesized 504 when every partition missed offline', async () => {
+    await setStoredNetworkMode('offline-forced');
+    const client = makeClient();
+    const sw = recordingSw({
+      caches: makeCaches(),
+      fetch: answeringTileFetch(),
+      clients: [client],
+    });
+
+    const response = await sw._basemapStaleWhileRevalidate(tileRequest(TILE));
+
+    expect(response.status).toBe(504);
+    // The response the page gets is synthesized, so nothing outside the
+    // worker can tell it apart from a real gateway timeout.
+    expect(await ledger(sw, client)).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({ source: 'timeout-504', status: 504 }),
+      }),
+    );
+  });
+
+  it('names the shell cache for a static asset served from disk', async () => {
+    const caches = makeCaches();
+    caches.seed('snowdesk-shell-UNSUBSTITUTED', `${ORIGIN}/static/css/output.css`, new Response('css'));
+    const client = makeClient();
+    const sw = recordingSw({
+      caches,
+      fetch: () => Promise.reject(new TypeError('Failed to fetch')),
+      clients: [client],
+    });
+
+    await sw._staleWhileRevalidate({
+      url: `${ORIGIN}/static/css/output.css`,
+      method: 'GET',
+      mode: 'no-cors',
+      destination: 'style',
+    });
+
+    expect(await ledger(sw, client)).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({ strategy: 'static', source: 'shell' }),
+      }),
+    );
+  });
+
+  it('tells the offline fallback page apart from the page you asked for', async () => {
+    const caches = makeCaches();
+    caches.seed(
+      'snowdesk-shell-UNSUBSTITUTED',
+      '/static/offline.html',
+      new Response("<h1>This page isn't available offline</h1>"),
+    );
+    const client = makeClient();
+    const sw = recordingSw({
+      caches,
+      fetch: () => Promise.reject(new TypeError('offline')),
+      clients: [client],
+    });
+
+    await sw._networkFirst(navRequest('/map/'));
+
+    // Two different answers to "where did this come from", and the old
+    // trace distinguished neither: the page itself from cache, or
+    // offline.html standing in for it.
+    expect(await ledger(sw, client)).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({ strategy: 'navigate', source: 'offline-html' }),
+      }),
+    );
+  });
+
+  it('records a same-origin API call the worker deliberately never sees', async () => {
+    const client = makeClient();
+    const sw = recordingSw({
+      caches: makeCaches(),
+      fetch: answeringTileFetch(),
+      clients: [client],
+    });
+
+    let responded = false;
+    sw.__listeners.fetch({
+      request: { url: `${ORIGIN}/api/ratings.json?country=CH`, method: 'GET', mode: 'cors', destination: 'empty' },
+      clientId: '',
+      respondWith() {
+        responded = true;
+      },
+    });
+
+    // The worker must NOT start intercepting these — observability is not a
+    // good enough reason to put it on the path of every API call.
+    expect(responded).toBe(false);
+    // But "the worker never saw this, it went straight to the network" is
+    // itself the answer when a feed comes up empty offline, and the trace
+    // said nothing whatsoever about same-origin requests before.
+    expect(await ledger(sw, client)).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({ strategy: 'network', source: 'passthrough' }),
+      }),
+    );
+  });
+
+  it('records nothing at all while the trace is off', async () => {
+    const caches = makeCaches();
+    const client = makeClient();
+    // No 'debug-log-enabled' message: the default state for every user.
+    const sw = loadSw({ caches, fetch: answeringTileFetch(), clients: [client] });
+    caches.seed(sw.BASEMAP_CACHE, TILE, new Response('tile'));
+
+    await sw._basemapStaleWhileRevalidate(tileRequest(TILE));
+
+    expect(await ledger(sw, client)).toEqual([]);
   });
 });
