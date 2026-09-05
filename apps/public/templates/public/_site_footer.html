@@ -25,8 +25,15 @@ The legal link points straight at /terms-of-service/, not at /terms/,
 which SNOW-770 turned into a redirect to it. Its label matches that
 page's own heading, which is the rule SNOW-769 set for this line.
 
+SNOW-836 added "Compare apps" (/compare/). It sits beside Help rather
+than among the legal links because it is orientation, not obligation: it
+is the page that answers "is this the right app for me at all", which is
+a question a first-time visitor asks and has nowhere else to ask.
+
 Kept deliberately minimal: one line. Visual weight should not compete
-with page content.
+with page content. Five links is the ceiling — a sixth wraps on a phone,
+and a wrapped footer reads as two rows of equally-weighted links rather
+than as one quiet line.
 {% endcomment %}
 {% load i18n %}
 <footer
@@ -35,11 +42,14 @@ with page content.
 >
     <p>
         {% url 'public:help' as help_url %}
+        {% url 'public:compare' as compare_url %}
         {% url 'public:terms_of_service' as terms_url %}
         {% url 'public:privacy' as privacy_url %}
         {% url 'public:colophon' as colophon_url %}
         {% blocktrans trimmed %}
             <a class="underline hover:text-text-2" href="{{ help_url }}">Help</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ compare_url }}">Compare apps</a>
             &middot;
             <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Service</a>
             &middot;
