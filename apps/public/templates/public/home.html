@@ -161,12 +161,16 @@ in addition to the shared map assets.
     {# are below, all these scripts are defer, so document order is         #}
     {# execution order and window.pwaInlineRename exists before either.     #}
     {#                                                                      #}
-    {# It replaces overflow_menu.js on this page. That module drove the "…" #}
-    {# menu each panel's rows carried for one day; Hugo's design has no     #}
-    {# ellipsis menu, so nothing on the map opens one and loading it here   #}
-    {# would ship a module with nothing to bind to. The module and its      #}
-    {# partial both remain — retiring a primitive is not this ticket's      #}
-    {# call — and the component library still renders it.                   #}
+    {# It replaced overflow_menu.js on this page. That module drove the "…" #}
+    {# menu each panel's rows carried for one day; Hugo's design took the   #}
+    {# menu off every panel, so nothing here opened one and loading it      #}
+    {# would have shipped a module with nothing to bind to.                 #}
+    {#                                                                      #}
+    {# SNOW-830 brought it back for ONE panel — the routes row outgrew four #}
+    {# inline controls — and it is loaded from that surface's own partial   #}
+    {# (public/partials/_routes_surface.html), not from here, because it is #}
+    {# that surface's dependency and no other page needs it. The other      #}
+    {# three panels keep their visible trash and load nothing extra.        #}
     <script defer src="{% static 'js/inline_rename.js' %}"></script>
     {# SNOW-711: the server half of that rename — read the row's uuid off   #}
     {# the pencil, POST the committed name, hand the response back. The     #}

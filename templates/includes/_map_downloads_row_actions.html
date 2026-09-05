@@ -5,10 +5,17 @@ downloads" row's icon controls (SNOW-658).
 
 includes/_ugc_panel_row.html's `actions_template` slot. Replaces
 _map_downloads_row_menu_items.html, the "…" overflow menu this row carried
-for one day: Hugo's design has no ellipsis menu on any panel. Remove is a
-visible trash control in the same place on every row, and Rename — which
-only a custom area has — is a pencil before it that hands off to the row's
-own inline label edit.
+for one day: Hugo's design took the ellipsis menu off every panel. Remove
+is a visible trash control in the same place on every row, and Rename —
+which only a custom area has — is a pencil before it that hands off to the
+row's own inline label edit.
+
+That still holds HERE, and SNOW-830 narrowed the ruling rather than
+reversing it: the ROUTES row went back to a menu, because SNOW-764 and
+SNOW-819 grew it to four inline controls and squeezed the route's own
+name out of a 380px row. This row has three at most and room for them, so
+it keeps the visible trash — one tap beats two wherever a row can afford
+it.
 
 Both buttons are value-less here. This partial is rendered ONCE, inside
 the sheet's row `<template>`, and map_downloads_manager.js's buildRow
