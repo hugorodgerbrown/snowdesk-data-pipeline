@@ -72,6 +72,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import waffle
 from django.conf import settings
 from django.db.models import Count
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
@@ -88,6 +89,7 @@ from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
+from apps.locations.services.what3words import fill_what3words
 from apps.routes.models import Route
 from apps.routes.services.routes import RouteLimitReached
 from apps.trips.forms import TripForm
@@ -522,6 +524,25 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # could provide it.
         "basemaps": dict(settings.BASEMAP_STYLES),
         "default_basemap_key": settings.BASEMAP,
+        # SNOW-840. The meeting point as ///filled.count.soap, or None,
+        # which the summary partial reads as "print the coordinates" —
+        # there is never a blank where the meeting point was.
+        #
+        # Resolved HERE rather than in the template, following the
+        # codebase's one gating convention (``apps.public.views.help_page``
+        # does the same for ``sync_log``): no template in the tree loads
+        # ``waffle_tags``, and the flag decides whether an outbound HTTP
+        # call happens, which is not a decision to leave to a render.
+        # Flag off means no call, no query and no behaviour change.
+        #
+        # Both surfaces get it because both come through this builder, so
+        # the organiser's page and the public link cannot end up naming
+        # the meeting point two different ways.
+        "meeting_point_w3w": (
+            fill_what3words(trip.meeting_point)
+            if waffle.flag_is_active(request, "what3words")
+            else None
+        ),
         # The meeting picker's own payload, for the edit form. ORGANISER
         # ONLY, and None for everybody else on purpose: it repeats the
         # whole track, which ``map_payload`` above already carries, so

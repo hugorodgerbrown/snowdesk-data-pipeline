@@ -13,7 +13,12 @@ trip_share_page (GET/HEAD /trips/s/<token>/):
   no organiser controls on it, whoever is looking;
   the organiser's note is escaped (invariant 1);
   Cache-Control: no-store;
-  429 past the (token, IP) rate limit.
+  429 past the (token, IP) rate limit;
+  the meeting point renders as a three word address behind the SNOW-840
+    ``what3words`` flag, and as the coordinate pair with the flag off or
+    the conversion failing — the same three states
+    ``tests/trips/test_views.py`` asserts on the organiser's page, because
+    one context builder feeds both and the two must not diverge.
 
 The rate-limit tests patch ``is_ratelimited`` rather than spending a real
 budget: ``RATELIMIT_ENABLE`` is False under the development settings the
@@ -26,15 +31,30 @@ and does no work — and that is what the patch reaches. The same technique
 from __future__ import annotations
 
 import datetime
+import re
 from unittest.mock import patch
 
 import pytest
+import requests
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 from freezegun import freeze_time
+from pytest_django.fixtures import Settings
+from waffle.testutils import override_flag
 
+from apps.locations.models import Location
+from apps.trips.models import Trip
 from apps.trips.services.shares import mint_trip_share, revoke_trip_share
-from tests.factories import TripFactory, UserFactory
+from tests.factories import LocationFactory, TripFactory, UserFactory
+
+# The dd the meeting point renders into, tag and contents. The twin of
+# tests/trips/test_views.py's, matched for the same reason: the map
+# payload carries the same coordinates, so a whole-page search cannot
+# tell "the address replaced the pair" from "the pair is still somewhere".
+_MEETING_POINT_DD = re.compile(
+    r'<dd[^>]*data-testid="trip-meeting-point".*?</dd>', re.DOTALL
+)
 
 # Well before TripFactory's default date, so a minted link is live.
 _NOW = "2026-01-10T09:00:00+00:00"
@@ -341,3 +361,96 @@ def test_the_sitemap_lists_no_trip_url(client: Client) -> None:
     TripFactory.create()
     body = client.get(reverse("sitemap")).content.decode()
     assert "/trips/" not in body
+
+
+@freeze_time(_NOW)
+@pytest.mark.django_db
+class TestSharePageMeetingPoint:
+    """The meeting point on the PUBLIC page (SNOW-840).
+
+    The surface that matters most: the recipient of a link is exactly the
+    person who cannot ask the organiser where 46.080012, 7.318197 is. The
+    assertions mirror the organiser page's, because ``_trip_context``
+    builds both and a divergence would mean two people on one trip
+    reading the meeting point two different ways.
+    """
+
+    def _shared_trip(self, cached: bool = False) -> Trip:
+        """Return a shared trip whose meeting point is at a known square.
+
+        Args:
+            cached: When True, the meeting point carries a FRESH cached
+                three word address, which needs no conversion call.
+
+        Returns:
+            The trip, with a live share token.
+
+        """
+        meeting_point: Location = LocationFactory.create(
+            anonymous=True,
+            latitude=46.080012,
+            longitude=7.318197,
+            what3words="filled.count.soap" if cached else None,
+            what3words_fetched_at=timezone.now() if cached else None,
+        )
+        trip = TripFactory.create(meeting_point=meeting_point)
+        mint_trip_share(trip.created_by, trip.uuid)
+        trip.refresh_from_db()
+        return trip
+
+    def _meeting_point_dd(self, client: Client, trip: Trip) -> str:
+        """Return the meeting-point ``<dd>`` from the rendered share page.
+
+        Args:
+            client: The test client, signed out — a link-holder need not
+                have an account.
+            trip: The shared trip.
+
+        Returns:
+            The element's source, tag and contents.
+
+        """
+        html = client.get(
+            reverse("trips:share_page", args=[trip.share_token])
+        ).content.decode()
+        match = _MEETING_POINT_DD.search(html)
+        assert match is not None, "the page rendered no meeting point"
+        return match.group(0)
+
+    def test_the_coordinates_render_with_the_flag_off(self, client: Client) -> None:
+        """Flag off is today's page, unchanged — and makes no call."""
+        trip = self._shared_trip()
+
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            rendered = self._meeting_point_dd(client, trip)
+
+        assert "46.080012, 7.318197" in rendered
+        assert "///" not in rendered
+        mock_get.assert_not_called()
+
+    @override_flag("what3words", active=True)
+    def test_the_address_renders_with_the_flag_on(self, client: Client) -> None:
+        """An anonymous link-holder gets the address, not the numbers."""
+        trip = self._shared_trip(cached=True)
+
+        rendered = self._meeting_point_dd(client, trip)
+
+        assert "///filled.count.soap" in rendered
+        assert 'title="46.080012, 7.318197"' in rendered
+
+    @override_flag("what3words", active=True)
+    def test_a_failing_conversion_falls_back_to_the_coordinates(
+        self, client: Client, settings: Settings
+    ) -> None:
+        """A what3words outage must not take the public page with it."""
+        settings.WHAT3WORDS_API_KEY = "test-key"
+        trip = self._shared_trip()
+
+        with patch(
+            "apps.locations.services.what3words.requests.get",
+            side_effect=requests.Timeout("too slow"),
+        ):
+            response = client.get(reverse("trips:share_page", args=[trip.share_token]))
+
+        assert response.status_code == 200
+        assert "46.080012, 7.318197" in response.content.decode()

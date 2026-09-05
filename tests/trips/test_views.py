@@ -22,6 +22,14 @@ The three fragments (trips:create / trips:edit / trips:delete):
   create re-renders the form at 400 for an invalid submission;
   create answers 409 at the cap;
   edit and delete are organiser-scoped and 404 otherwise.
+
+The meeting point (SNOW-840):
+  the coordinate pair with the ``what3words`` flag off; the three word
+  address with it on and a cached address on the location; and the
+  coordinate pair again with the flag on but the conversion failing.
+  ``tests/trips/test_share_views.py`` asserts the same three on the public
+  page, because both surfaces are built by one context builder and the
+  point is that they cannot diverge.
 """
 
 from __future__ import annotations
@@ -29,13 +37,67 @@ from __future__ import annotations
 import datetime
 import re
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+import requests
 from django.test import Client, override_settings
 from django.urls import reverse
+from django.utils import timezone
+from pytest_django.fixtures import Settings
+from waffle.testutils import override_flag
 
+from apps.locations.models import Location
 from apps.trips.models import Trip
-from tests.factories import RouteFactory, TripFactory, UserFactory
+from tests.factories import LocationFactory, RouteFactory, TripFactory, UserFactory
+
+# The dd the meeting point renders into, tag and contents. Matched rather
+# than searched for whole-page so "the address replaced the coordinates"
+# and "the coordinates are elsewhere on the page" cannot be confused: the
+# map payload carries the same numbers.
+_MEETING_POINT_DD = re.compile(
+    r'<dd[^>]*data-testid="trip-meeting-point".*?</dd>', re.DOTALL
+)
+
+
+def _meeting_point(cached: bool = False) -> Location:
+    """Return an anonymous Location at a fixed coordinate (SNOW-840).
+
+    Fixed rather than the factory's default so the rendered pair is
+    known, and so a test asserting the fallback is asserting a string
+    only this location could have produced.
+
+    Args:
+        cached: When True, the row carries a FRESH cached three word
+            address, which ``fill_what3words`` returns without a call.
+
+    Returns:
+        The location, saved.
+
+    """
+    return LocationFactory.create(
+        anonymous=True,
+        latitude=46.080012,
+        longitude=7.318197,
+        what3words="filled.count.soap" if cached else None,
+        what3words_fetched_at=timezone.now() if cached else None,
+    )
+
+
+def _meeting_point_dd(html: str) -> str:
+    """Return the meeting-point ``<dd>`` from a rendered trip page.
+
+    Args:
+        html: The rendered page.
+
+    Returns:
+        The element's source, tag and contents.
+
+    """
+    match = _MEETING_POINT_DD.search(html)
+    assert match is not None, "the page rendered no meeting point"
+    return match.group(0)
+
 
 # Annotated ``dict[str, Any]`` so ``**_HTMX`` unpacks into ``Client.post``
 # without mypy matching it against that method's typed keyword parameters.
@@ -231,6 +293,68 @@ class TestTripDetailPage:
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
         assert 'name="start_time" value="07:30"' in html
+
+
+@pytest.mark.django_db
+class TestTripMeetingPointAddress:
+    """The meeting point as ///filled.count.soap (SNOW-840).
+
+    Three states, and the one that matters is the third: the coordinate
+    pair is the fallback for every failure, so there is never a blank
+    where the meeting point was.
+    """
+
+    def test_the_coordinates_render_with_the_flag_off(self, client: Client) -> None:
+        """Flag off is today's page, unchanged — and makes no call."""
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            html = client.get(
+                reverse("trips:detail", args=[trip.uuid])
+            ).content.decode()
+
+        assert "46.080012, 7.318197" in html
+        assert "///" not in _meeting_point_dd(html)
+        mock_get.assert_not_called()
+
+    @override_flag("what3words", active=True)
+    def test_the_address_renders_with_the_flag_on(self, client: Client) -> None:
+        """A cached address replaces the pair, prefixed with ///."""
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert "///filled.count.soap" in _meeting_point_dd(html)
+
+    @override_flag("what3words", active=True)
+    def test_the_coordinates_stay_available_as_the_titles(self, client: Client) -> None:
+        """The paste-into-a-map-app affordance survives the swap."""
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'title="46.080012, 7.318197"' in _meeting_point_dd(html)
+
+    @override_flag("what3words", active=True)
+    def test_a_failing_conversion_falls_back_to_the_coordinates(
+        self, client: Client, settings: Settings
+    ) -> None:
+        """A what3words outage must not take the trip page with it."""
+        settings.WHAT3WORDS_API_KEY = "test-key"
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        with patch(
+            "apps.locations.services.what3words.requests.get",
+            side_effect=requests.Timeout("too slow"),
+        ):
+            response = client.get(reverse("trips:detail", args=[trip.uuid]))
+
+        assert response.status_code == 200
+        assert "46.080012, 7.318197" in response.content.decode()
 
 
 @pytest.mark.django_db

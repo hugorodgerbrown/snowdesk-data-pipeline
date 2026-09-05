@@ -15,6 +15,25 @@ inventing a label here would be inventing a fact. Six decimal places is
 roughly 0.1 m, which is well inside GPS noise but is what a map app expects
 pasted into its search box.
 
+SNOW-840 shows a THREE WORD ADDRESS in its place where there is one, and
+that paragraph is the reason it can. A three word address is not a label
+somebody chose: it is a deterministic encoding of the same 3m square, so
+///filled.count.soap and 46.080012, 7.318197 say exactly the same thing
+and neither invents anything. The objection above still stands against
+NAMING the Location, which this does not do — the row is still anonymous,
+and the address is a cache on it rather than a name for it.
+
+The COORDINATE IS THE FALLBACK, always. Flag off, no API key, the upstream
+down, the cached address past the 30 days its licence allows — every one
+of those renders the pair this partial has always rendered. There is never
+a blank where the meeting point was. When the address is shown, the
+coordinate moves to the dd's title, so the paste-into-a-map-app affordance
+the paragraph above describes survives at no visual cost.
+
+Context (SNOW-840):
+    meeting_point_w3w : str|None — the address WITHOUT its /// prefix,
+        which is presentation and is added here.
+
 ASCENT AND DESCENT ARE NULLABLE AND THE NULL IS MEANINGFUL. A route with no
 elevation data anywhere carries null, and Trip's own docstring is explicit
 that "we don't know" and "flat" are different facts — rendering the second
@@ -69,9 +88,21 @@ Context:
         <div>
             {% trans "Meeting point" as meeting_point_label %}
             {% include "includes/_eyebrow.html" with tag="dt" text=meeting_point_label %}
-            <dd class="mt-1 font-mono text-sm text-text-2" data-testid="trip-meeting-point">
-                {{ trip.meeting_point.latitude|floatformat:6 }}, {{ trip.meeting_point.longitude|floatformat:6 }}
-            </dd>
+            {% with lat=trip.meeting_point.latitude|floatformat:6 lon=trip.meeting_point.longitude|floatformat:6 %}
+                {% if meeting_point_w3w %}
+                    <dd
+                        class="mt-1 font-mono text-sm text-text-2"
+                        data-testid="trip-meeting-point"
+                        title="{{ lat }}, {{ lon }}"
+                    >
+                        ///{{ meeting_point_w3w }}
+                    </dd>
+                {% else %}
+                    <dd class="mt-1 font-mono text-sm text-text-2" data-testid="trip-meeting-point">
+                        {{ lat }}, {{ lon }}
+                    </dd>
+                {% endif %}
+            {% endwith %}
         </div>
     </dl>
     <p class="mt-4 text-text-2" data-testid="trip-figures">
