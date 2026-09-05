@@ -485,7 +485,9 @@ describe('region download byte recording (SNOW-632)', () => {
     const after = await recordedRegion();
     expect(after).toBeDefined();
     expect(after.bytes).toBe(nextReportedBytes);
-    expect(after.template).toBe(TEMPLATE_B);
+    // SNOW-843: the record's `template` field carries the whole
+    // tile-source spec now — see `pwaBasemapDownloadCore.tileSources`.
+    expect(after.template).toEqual([[TEMPLATE_B]]);
     expect(after.bytes).not.toBe(before.bytes + nextReportedBytes);
 
     // The bucket was evicted before the second run wrote to it: TEMPLATE_B's
@@ -553,7 +555,7 @@ describe('the other-basemap roundel state (SNOW-645)', () => {
     await waitFor(() => btn().dataset.downloadState === 'done', 5000);
 
     const recorded = await recordedRegion();
-    expect(recorded.template).toBe(TEMPLATE_B);
+    expect(recorded.template).toEqual([[TEMPLATE_B]]);
     expect(recorded.basemapKey).toBe('swisstopo_winter');
     expect(btn().dataset.basemapKey).toBe('swisstopo_winter');
   });

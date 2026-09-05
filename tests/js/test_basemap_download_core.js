@@ -33,6 +33,14 @@
  * name, is how a re-port with no compiler/typechecker link between the
  * two languages stays honest against drift.
  *
+ * SNOW-843 adds the tile-source group at the end — a basemap is one or
+ * more vector SOURCES, each served from one or more hosts MapLibre
+ * round-robins between, so every function here that builds or reads a tile
+ * URL takes a source spec rather than a template string. Those tests are
+ * written against MapLibre's own selection rule and against the tile
+ * indices from the offline trace that reported the bug, so they fail if
+ * either the rule or our reading of it drifts.
+ *
  * SNOW-569 and the tile-grid rework that followed it add the geometry
  * helpers behind the on-map download progress grid —
  * ``bboxPolygon``/``tileBounds``/``gridZoomFor``/``tileGridPlan``. Like
@@ -988,6 +996,181 @@ describe('planEviction', () => {
       impossible: false,
       evict: [],
       projectedBytes: 10 * MB,
+    });
+  });
+});
+
+describe('tile sources — several sources, several hosts (SNOW-843)', () => {
+  // The real shape this ticket exists for: the swisstopo winter style
+  // declares two vector sources, each served from five hosts.
+  const HOSTS = [0, 1, 2, 3, 4].map((n) => `https://vectortiles${n}.geo.admin.ch`);
+  const RELIEF = HOSTS.map((h) => `${h}/tiles/relief.vt/{z}/{x}/{y}.pbf`);
+  const BASE = HOSTS.map((h) => `${h}/tiles/base.vt/{z}/{x}/{y}.pbf`);
+  const SOURCES = [RELIEF, BASE];
+  /** One tile at z14. (8522 + 5829) % 5 === 1, so MapLibre asks host 1. */
+  const ONE_TILE = { z: { 14: [8522, 8522, 5829, 5829] } };
+
+  describe('tileSources', () => {
+    it('reads a bare template string as one source with one host', () => {
+      // The shape every download record written before this ticket holds.
+      expect(core.tileSources(TEMPLATE)).toEqual([[TEMPLATE]]);
+    });
+
+    it('takes the nested shape as given, dropping empty sources', () => {
+      expect(core.tileSources([RELIEF, [], BASE])).toEqual([RELIEF, BASE]);
+    });
+
+    it('reads a flat list as one single-host source each', () => {
+      expect(core.tileSources(['a', 'b'])).toEqual([['a'], ['b']]);
+    });
+
+    it('answers nothing for anything unusable', () => {
+      expect(core.tileSources(null)).toEqual([]);
+      expect(core.tileSources('')).toEqual([]);
+      expect(core.tileSources({})).toEqual([]);
+      expect(core.tileSources([[], [null, 3]])).toEqual([]);
+    });
+  });
+
+  describe('tileURLs', () => {
+    it("picks each source's host the way MapLibre does", () => {
+      // MapLibre: urls[(x + y) % urls.length] — CanonicalTileID.url in
+      // static/js/maplibre-gl.min.js. Written out here rather than derived,
+      // so this asserts the rule and not our restatement of it. The tiles
+      // are the ones from the SNOW-843 offline trace, whose hosts the
+      // service worker's own log named.
+      expect(core.tileURLs([RELIEF], 14, 8522, 5828)[0]).toContain('vectortiles0.');
+      expect(core.tileURLs([RELIEF], 14, 8522, 5829)[0]).toContain('vectortiles1.');
+      expect(core.tileURLs([RELIEF], 14, 8520, 5827)[0]).toContain('vectortiles2.');
+      expect(core.tileURLs([RELIEF], 14, 8521, 5827)[0]).toContain('vectortiles3.');
+      expect(core.tileURLs([RELIEF], 14, 8521, 5828)[0]).toContain('vectortiles4.');
+    });
+
+    it('emits one URL per source, in style order', () => {
+      expect(core.tileURLs(SOURCES, 14, 8522, 5829)).toEqual([
+        'https://vectortiles1.geo.admin.ch/tiles/relief.vt/14/8522/5829.pbf',
+        'https://vectortiles1.geo.admin.ch/tiles/base.vt/14/8522/5829.pbf',
+      ]);
+    });
+
+    it('leaves a single-host source alone', () => {
+      expect(core.tileURLs([[TEMPLATE]], 14, 8522, 5829)).toEqual([
+        'https://tiles.example.com/14/8522/5829.pbf',
+      ]);
+    });
+  });
+
+  describe('tileSourcesKey', () => {
+    it('reads a legacy string and its normalised form as the same basemap', () => {
+      // What keeps an area downloaded before this ticket, under a
+      // single-source basemap, still matching that basemap afterwards.
+      expect(core.tileSourcesKey(TEMPLATE)).toBe(core.tileSourcesKey([[TEMPLATE]]));
+    });
+
+    it('separates two different source sets', () => {
+      expect(core.tileSourcesKey(SOURCES)).not.toBe(core.tileSourcesKey([RELIEF]));
+    });
+
+    it("answers '' for an unresolved style, which matches nothing", () => {
+      expect(core.tileSourcesKey(null)).toBe('');
+      expect(core.tileSourcesKey(null)).not.toBe(core.tileSourcesKey(SOURCES));
+    });
+  });
+
+  describe('rangesToTileURLs', () => {
+    it('fetches every source of every tile', () => {
+      expect(core.rangesToTileURLs(SOURCES, ONE_TILE)).toEqual([
+        'https://vectortiles1.geo.admin.ch/tiles/relief.vt/14/8522/5829.pbf',
+        'https://vectortiles1.geo.admin.ch/tiles/base.vt/14/8522/5829.pbf',
+      ]);
+    });
+  });
+
+  describe('blobFullyCached', () => {
+    it('is false while one source of a tile is missing', () => {
+      const all = core.rangesToTileURLs(SOURCES, ONE_TILE);
+      expect(core.blobFullyCached(SOURCES, ONE_TILE, all)).toBe(true);
+      // Relief down, base absent — hillshade with no roads or labels, which
+      // is not the area being available offline.
+      expect(core.blobFullyCached(SOURCES, ONE_TILE, all.slice(0, 1))).toBe(false);
+    });
+
+    it('is false when the tiles are cached under another host', () => {
+      // The original bug, stated as an assertion: every tile pinned under
+      // host 0, none of them at the host MapLibre asks for.
+      const wrongHost = core
+        .rangesToTileURLs(SOURCES, ONE_TILE)
+        .map((url) => url.replace('vectortiles1.', 'vectortiles0.'));
+      expect(core.blobFullyCached(SOURCES, ONE_TILE, wrongHost)).toBe(false);
+    });
+  });
+
+  describe('cachedTilesFromURLs', () => {
+    it('counts a tile only when every source holds it', () => {
+      const all = core.rangesToTileURLs(SOURCES, ONE_TILE);
+      expect(core.cachedTilesFromURLs(SOURCES, all, 14)).toEqual([
+        { z: 14, x: 8522, y: 5829 },
+      ]);
+      expect(core.cachedTilesFromURLs(SOURCES, all.slice(0, 1), 14)).toEqual([]);
+    });
+
+    it('reads a tile once, not once per host it could have come from', () => {
+      const all = core.rangesToTileURLs([RELIEF], ONE_TILE);
+      expect(core.cachedTilesFromURLs([RELIEF], all, 14)).toHaveLength(1);
+    });
+  });
+
+  describe('tileGridPlan', () => {
+    it("counts every source in a cell's total, so the grid fills honestly", () => {
+      const plan = core.tileGridPlan(SOURCES, ONE_TILE);
+      expect(plan.urls).toHaveLength(2);
+      // Both URLs belong to the one cell — a square is a patch of ground,
+      // and the ground is not covered until every layer over it is down.
+      expect(plan.cellOfURL).toEqual([0, 0]);
+      expect(plan.cells[0].total).toBe(2);
+    });
+  });
+
+  describe('sourceScaledMb', () => {
+    it('charges one estimate per source', () => {
+      expect(core.sourceScaledMb(50, SOURCES)).toBe(100);
+      expect(core.sourceScaledMb(50, [RELIEF])).toBe(50);
+    });
+
+    it('leaves the estimate alone when the style is unresolved', () => {
+      // An unknown basemap must not inflate an estimate on a guess.
+      expect(core.sourceScaledMb(50, null)).toBe(50);
+    });
+  });
+
+  describe('budgetScaleForBBox', () => {
+    it('sizes a smaller frame for a two-source basemap', () => {
+      const bbox = [7.0, 46.0, 8.0, 47.0];
+      const [minZ, maxZ] = core.MICRO_BAND;
+      const one = core.budgetScaleForBBox(bbox, minZ, maxZ, 1);
+      const two = core.budgetScaleForBBox(bbox, minZ, maxZ, 2);
+      expect(two).toBeLessThan(one);
+      // The default is the single-source answer, which is what the golden
+      // vector above asserts.
+      expect(core.budgetScaleForBBox(bbox, minZ, maxZ)).toBe(one);
+    });
+
+    it('still fits the ceiling at the size it allows', () => {
+      const bbox = [7.0, 46.0, 8.0, 47.0];
+      const [minZ, maxZ] = core.MICRO_BAND;
+      const scale = core.budgetScaleForBBox(bbox, minZ, maxZ, 2);
+      const width = (bbox[2] - bbox[0]) * scale;
+      const height = (bbox[3] - bbox[1]) * scale;
+      const cx = (bbox[0] + bbox[2]) / 2;
+      const cy = (bbox[1] + bbox[3]) / 2;
+      const blob = core.buildBlob(
+        [cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2],
+        minZ,
+        maxZ,
+      );
+      expect(core.sourceScaledMb(blob.mb, SOURCES)).toBeLessThanOrEqual(
+        core.DOWNLOAD_CEILING_MB,
+      );
     });
   });
 });

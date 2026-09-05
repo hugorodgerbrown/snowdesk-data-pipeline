@@ -252,10 +252,14 @@
    * whole total.
    *
    * @param {string} regionId
-   * @param {string} template The tile URL template this run fetched
-   *   (`basemap_download_runner.js`'s `run` resolves it once and hands it
-   *   to both `beforeWarm` and `finish`'s `extras`) — stored so a LATER
-   *   run can tell whether the bucket still matches the active basemap.
+   * @param {string[][]} tileSources The tile sources this run fetched
+   *   (`basemap_download_runner.js`'s `run` resolves them once and hands
+   *   them to both `beforeWarm` and `finish`'s `extras`) — stored so a
+   *   LATER run can tell whether the bucket still matches the active
+   *   basemap. SNOW-843: persisted under the record's existing `template`
+   *   key, which now carries the whole source spec; a record written before
+   *   that ticket holds a bare string there and still normalises through
+   *   `pwaBasemapDownloadCore.tileSources`.
    * @param {Object | null} z The downloaded blob's own tile ranges
    *   (`blob.z` — rectangle or clipped row spans), or null when the run's
    *   blob carried none — in which case nothing is recorded, since an
@@ -264,14 +268,14 @@
    * @param {number} bytes This run's own on-disk size, from `_warmCache`'s
    *   ``warm-cache-done`` reply.
    * @param {string | null} basemapKey SNOW-645: the picker key captured
-   *   alongside `template` at run start (`basemap_download_runner.js`'s
+   *   alongside `tileSources` at run start (`basemap_download_runner.js`'s
    *   `run`), display-only — stored so the Manage downloads sheet and this
    *   control's own roundel can show which basemap the region was
    *   downloaded under. Null on an unresolved picker; never used for the
    *   template-eviction decision above, which stays `template`-only.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, template, z, band, bytes, basemapKey) {
+  async function _recordRegionDownload(regionId, tileSources, z, band, bytes, basemapKey) {
     if (!z || !window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
@@ -284,7 +288,7 @@
         band: band,
         z: z,
         name: name,
-        template: template,
+        template: tileSources,
         basemapKey: basemapKey || null,
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
@@ -339,7 +343,8 @@
    *
    * @param {string} regionId
    * @returns {Promise<{region_id: string, band: number[], z: Object,
-   *   template?: string, basemapKey?: string | null, savedAt: string} |
+   *   template?: string | string[][], basemapKey?: string | null,
+   *   savedAt: string} |
    *   null>} `template` is absent on a record written before SNOW-632 —
    *   callers deciding whether to evict the region's bucket on a template
    *   mismatch treat that absence as "unknown, so different" (see
@@ -401,7 +406,7 @@
    * leaves the record as it was and the next probe tries again.
    *
    * @param {string} regionId
-   * @param {{template: string, basemapKey: string | null}} fields
+   * @param {{template: string[][], basemapKey: string | null}} fields
    * @returns {Promise<void>}
    */
   async function _healRegionRecord(regionId, fields) {
@@ -427,7 +432,7 @@
 
   /**
    * The basemap key some OTHER recorded area already associates with
-   * `template`, or `''` when nothing on record names it.
+   * tile sources, or `''` when nothing on record names it.
    *
    * A pre-SNOW-645 record carries a template but no key, so the ring it
    * drives has no identity colour to take and falls back to the "basemap
@@ -439,14 +444,18 @@
    * one for the same template. No new storage, and no guessing from URL
    * shape: a template on record under a named basemap IS that basemap.
    *
-   * @param {string} template
+   * @param {string | string[][]} tileSources
    * @returns {Promise<string>} `''` when unresolvable — `setState` reads
    *   that as "another basemap, unnamed", the same as before.
    */
-  async function _basemapKeyForTemplate(template) {
+  async function _basemapKeyForTemplate(tileSources) {
     try {
       const pairs = await basemapDownloadedTemplates();
-      const named = pairs.find((pair) => pair.template === template && pair.basemapKey);
+      const core = self.pwaBasemapDownloadCore;
+      const wanted = core ? core.tileSourcesKey(tileSources) : '';
+      const named = pairs.find(
+        (pair) => pair.basemapKey && core && core.tileSourcesKey(pair.tileSources) === wanted,
+      );
       return named ? named.basemapKey : '';
     } catch (_e) {
       return '';
@@ -576,8 +585,15 @@
    */
   async function _probeDone(data) {
     const core = self.pwaBasemapDownloadCore;
-    const template = activeBasemapTileTemplate(MAP);
-    if (!core || !template) return null;
+    const tileSources = activeBasemapTileSources(MAP);
+    if (!core || !tileSources) return null;
+    // SNOW-843: the comparison is between SOURCE SETS now, not template
+    // strings — a basemap is one or more vector sources, each with its own
+    // list of hosts. `tileSourcesKey` is the canonical form of that, and a
+    // record written before this ticket (a bare string) normalises into it,
+    // so a single-source download made then still matches its own basemap
+    // now.
+    const activeKey = core.tileSourcesKey(tileSources);
     // SNOW-586: the cached set is unioned across every per-area pinned
     // bucket, not read from one shared cache. That is the ONLY thing this
     // ticket changes here — SNOW-583's stored-`z` strategy below is kept
@@ -590,8 +606,8 @@
 
     const stored = await _storedRegionRecord(data.regionId);
     if (stored) {
-      if (!stored.template || stored.template === template) {
-        const done = core.blobFullyCached(template, { z: stored.z }, cached);
+      if (!stored.template || core.tileSourcesKey(stored.template) === activeKey) {
+        const done = core.blobFullyCached(tileSources, { z: stored.z }, cached);
         // The tile set is verified present under the ACTIVE template, so
         // an incomplete record can be completed from what was just proven
         // rather than left for the overlay to trip over. Awaited, not
@@ -600,7 +616,7 @@
         // not race the write.
         if (done) {
           await _healRegionRecord(data.regionId, {
-            template: template,
+            template: tileSources,
             basemapKey: activeBasemapKey(),
           });
         }
@@ -627,7 +643,7 @@
 
     try {
       const blob = await _fetchRegionBlob(data.regionId);
-      return { done: core.blobFullyCached(template, blob, cached), otherBasemapKey: null };
+      return { done: core.blobFullyCached(tileSources, blob, cached), otherBasemapKey: null };
     } catch (_e) {
       return null;
     }
@@ -641,7 +657,11 @@
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
    *   'error' | 'disabled' | 'offline' | 'other-basemap' | (SNOW-749)
    *   'signin'.
-   * @param {number} mb
+   * @param {number} mb The region's per-tile size estimate, as the API
+   *   computed it. SNOW-843: scaled here by the number of vector sources
+   *   the active style fetches, so the figure the user reads is the one
+   *   the download will actually spend — a two-source basemap costs twice
+   *   the ground the server priced.
    * @param {number} [pct] - Only meaningful for state 'busy'.
    * @param {string} [basemapKeyOverride] - SNOW-645: overrides the
    *   colour `data-basemap-key` would otherwise take from
@@ -655,7 +675,12 @@
    *   attribute rather than write an empty one.
    * @returns {void}
    */
-  function setState(state, mb, pct, basemapKeyOverride) {
+  function setState(state, rawMb, pct, basemapKeyOverride) {
+    const core = self.pwaBasemapDownloadCore;
+    // SNOW-843: one funnel for every caller's `data.summary.mb`, so no
+    // surface can show the unscaled figure. Unresolved sources (style still
+    // settling) leave it untouched — see `sourceScaledMb`.
+    const mb = core ? core.sourceScaledMb(rawMb, activeBasemapTileSources(MAP)) : rawMb;
     btn.dataset.downloadState = state;
     // SNOW-645: paint the roundel with the ACTIVE basemap's identity colour
     // (map.css's data-basemap-key override) by default — `_probeDone`
@@ -776,7 +801,16 @@
       return;
     }
     if (btn.dataset.downloadState === 'busy') return;
-    if (data.summary.over_ceiling) {
+    // SNOW-843: the ceiling applies to what the download would actually
+    // spend, not to the server's per-tile figure — a region under it on a
+    // single-source basemap can be over it on a two-source one, and the
+    // runner's own budget pre-flight would refuse the run anyway. Better
+    // the control says so before the tap than after it.
+    const core = self.pwaBasemapDownloadCore;
+    const scaledMb = core
+      ? core.sourceScaledMb(data.summary.mb, activeBasemapTileSources(MAP))
+      : data.summary.mb;
+    if (data.summary.over_ceiling || (core && scaledMb > core.DOWNLOAD_CEILING_MB)) {
       setState('disabled', data.summary.mb);
       return;
     }
@@ -920,7 +954,7 @@
       // confirmation needed: this replaces the user's own prior download
       // of the SAME region, not another area — same reasoning as the
       // custom-area control's own `beforeWarm`, which this mirrors.
-      // `template` is what the runner is about to build THIS run's URLs
+      // `tileSources` is what the runner is about to build THIS run's URLs
       // from, so the comparison and the fetch can never disagree about
       // which basemap is active.
       //
@@ -931,17 +965,28 @@
       // than stale — and the evicted tiles were the previous basemap's,
       // which the done-probe already ignored under the new one, so there
       // was nothing usable to lose.
-      beforeWarm: async (_blob, evictAreaId, template) => {
+      beforeWarm: async (_blob, evictAreaId, tileSources) => {
         const previous = await _storedRegionRecord(data.regionId);
         // No usable record (never downloaded, or a pre-SNOW-632 record
         // with no `template`) is treated the same as a mismatch — the
         // safe direction, since it costs one redundant eviction rather
         // than risking a stale bucket read as bigger than it is.
-        if (!previous || previous.template !== template) {
+        // SNOW-843: compared as source SETS via `tileSourcesKey`, which is
+        // also what makes a pre-SNOW-843 record (a bare template string)
+        // still match a single-source basemap it was genuinely fetched
+        // under — and correctly MISMATCH a multi-source one, whose bucket
+        // holds only the fraction of the tiles that ticket's bug fetched.
+        const runCore = self.pwaBasemapDownloadCore;
+        const sameBasemap =
+          previous &&
+          previous.template &&
+          runCore &&
+          runCore.tileSourcesKey(previous.template) === runCore.tileSourcesKey(tileSources);
+        if (!sameBasemap) {
           await evictBasemapAreas([evictAreaId]);
         }
       },
-      finish: async (result, blob, { core: runCore, progressFill, template, basemapKey }) => {
+      finish: async (result, blob, { core: runCore, progressFill, tileSources, basemapKey }) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
         // claim the region is downloaded.
@@ -980,7 +1025,7 @@
         if (ok) {
           await _recordRegionDownload(
             data.regionId,
-            template,
+            tileSources,
             blob.z,
             blob.band || runCore.MICRO_BAND,
             result.bytes,

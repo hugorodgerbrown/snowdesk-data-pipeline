@@ -429,7 +429,7 @@ describe('a record with no stored template', () => {
       .find((entry) => entry.region_id === REGION_NO_TEMPLATE);
     // Healed from the values the cache itself proved: these tiles were
     // found under the ACTIVE template, so that is what the record now says.
-    expect(record.template).toBe(TEMPLATE_LIBERTY);
+    expect(record.template).toEqual([[TEMPLATE_LIBERTY]]);
     expect(record.basemapKey).toBe('openfreemap_liberty');
   });
 });

@@ -202,11 +202,15 @@ entirely Desktop (~101k desktop records against ~1.7k cli). No client has ever
 been recorded using another client's prefix, so there is no counterexample —
 but absence of one across a lopsided sample is weak evidence, not proof.
 
-**The mechanism is unknown.** Whether this is one connector rendering a
-different name per client, or a separate connector install per client, is
-undetermined — the transcripts cannot distinguish them, and neither id appears
-in `~/.claude.json`. Do not reason from a causal story here; reason from the
-table.
+**The mechanism, settled 2026-09-05.** There is ONE Linear connector install.
+`ListConnectors` reports it as `installedServerId:
+bee16520-0a2b-446d-b267-fbf9f62cf3a8`, `installState: connected` — the same id
+the Desktop prefix uses — so the three prefixes are one install rendered under
+different names per client, not three installs. The transcripts could not
+distinguish this and `~/.claude.json` does not carry the id; `ListConnectors`
+does, and it is the cheapest way to check the id is still current after a
+reconnect. The table still governs what to write: the rendering rule per client
+remains unobserved, so list every prefix regardless.
 
 Render is assumed to behave the same way: `mcp__f5febe82-…__` is observed on
 `claude-desktop` (6 sessions), and `mcp__Render__` is #783's claim for cloud.
@@ -225,6 +229,36 @@ The failure is silent in both directions, which is what makes this so easy to
 get wrong: a rule naming a server that is not present on this surface is inert
 and raises no error, and the only symptom of a missing one is an approval
 prompt where you expected none — or, in an unattended run, a stall.
+
+### If you are seeing a Linear approval prompt, read this first
+
+**Do not start by editing `settings.json`.** Four consecutive sessions
+(2026-09-02 to 2026-09-05) "fixed" a recurring Linear prompt there and the
+prompt came back, because Gate 2 was not what was firing. The repo side was
+re-verified end to end on 2026-09-05 and is correct:
+
+| Checked | Result |
+|---|---|
+| `permissions` block nesting in `settings.json` | correct (rules under `permissions`, not top level) |
+| `mcp__<server>__*` allow syntax | valid — [docs](https://code.claude.com/docs/en/permissions#mcp) say a glob is accepted after a literal `mcp__<server>__` prefix |
+| All three Linear prefixes present | yes (`mcp__Linear__*`, `mcp__claude_ai_Linear__*`, `mcp__bee16520-…__*`) |
+| Connector install id still current | yes — `ListConnectors` returns `bee16520-…`, connected |
+| Every Linear-touching skill's `allowed-tools` | all nine carry the three server names |
+| Stale server names (`linear-server`, `mcp__linear__…`) | none anywhere in `.claude/` |
+
+With all of that true, a prompt that still appears is **Gate 1**, below, which
+no file in this repo can override. Go to claude.ai → Settings → Connectors →
+Linear and look at the tool the prompt names; if it reads `Ask`, that is the
+whole cause, and setting it to `Allow` is the whole fix.
+
+**Confirmed 2026-09-05.** That is what it was: the prompts stopped after a
+change at the connector, with no repo change involved. Four days of
+`settings.json` edits could not have worked, and the next session should not
+try a fifth.
+
+Read the tool name off the prompt itself ("Allow Claude to use **Get issue**
+(Linear)?") — it is the one piece of evidence that distinguishes the gates, and
+it is not recoverable afterwards from anything in the repo.
 
 ### Two gates, and only one is in this repo
 

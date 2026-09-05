@@ -593,6 +593,7 @@ Read these when working in the relevant area:
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | On-device debug trace (window.pwaDebugLog, log:debug store, debug_log flag / GRP_DEBUG, the sw.js emitters) | [`docs/debug-log.md`](docs/debug-log.md) |
 | PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
+| Why a basemap is a list of tile sources, not a tile URL (tileSources, MapLibre's `(x+y) % hosts` rotation, the register-basemap-origins allowlist) | [`docs/decisions/a-basemap-is-a-list-of-tile-sources.md`](docs/decisions/a-basemap-is-a-list-of-tile-sources.md) |
 | Why offline read paths are time-bounded and latch (a dead radio hangs, it doesn't reject) | [`docs/decisions/bounded-offline-read-paths.md`](docs/decisions/bounded-offline-read-paths.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
