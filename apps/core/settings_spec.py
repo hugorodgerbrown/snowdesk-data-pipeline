@@ -302,6 +302,11 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="X-Api-Key header; empty means the feature is inert",
     ),
     SettingSpec(
+        "WHAT3WORDS_MAP_BASE_URL",
+        validator=absolute_url,
+        note="where a rendered address links to — their map, not the API host",
+    ),
+    SettingSpec(
         "WHAT3WORDS_FAKE",
         note="local UX work only — invent an address instead of calling the API",
     ),
