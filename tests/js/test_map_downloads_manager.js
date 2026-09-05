@@ -978,6 +978,86 @@ describe("a row's name frames its area (SNOW-811)", () => {
     expect(label.getAttribute('data-row-focus-region')).toBe('CH-4242');
     expect(label.getAttribute('aria-label')).toBe('Zoom to Binntal');
   });
+
+  it('stamps the basemap the area was downloaded against (SNOW-835)', async () => {
+    // Which is what makes the press switch to it before framing: the
+    // downloaded-squares overlay draws only the ACTIVE basemap's tiles, so
+    // a Swisstopo area framed while the map is on OpenFreeMap arrives at
+    // ground with nothing on it. What the attribute then DOES is
+    // tests/js/test_row_focus.js's, which owns the shared click.
+    seed({
+      'basemap.customAreas': [
+        { ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' },
+      ],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    expect(label.getAttribute('data-row-focus-basemap')).toBe('swisstopo_winter');
+  });
+
+  it('withholds the basemap from a row that names none', async () => {
+    // A record written before SNOW-645 reads "downloaded, basemap
+    // unknown" — there is nothing to switch to, and an EMPTY attribute
+    // would be a key of "" for row_focus.js to look up.
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    expect(label.hasAttribute('data-row-focus-basemap')).toBe(false);
+  });
+
+  it('withholds the basemap from an account-only row (SNOW-835)', async () => {
+    // Its `basemapKey` is a fact about a device the reader is not
+    // holding. The tiles are not here either way, so switching THIS
+    // device's persisted preference would be a side effect with nothing
+    // to show for it — the row still frames, it just does not swap.
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      {
+        id: 'region-CH-4242',
+        name: 'Binntal',
+        bytes: 0,
+        onDevice: false,
+        synced: true,
+        basemapKey: 'swisstopo_winter',
+        regionId: 'CH-4242',
+        savedAt: '2026-08-30T10:00:00.000Z',
+      },
+    ]);
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    expect(label.getAttribute('data-row-focus-region')).toBe('CH-4242');
+    expect(label.hasAttribute('data-row-focus-basemap')).toBe(false);
+  });
+
+  it('withholds the basemap from an orphaned bucket', async () => {
+    // An orphan is inert: no region, no box, and therefore no basemap to
+    // take the camera to either.
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      {
+        id: 'orphan-1',
+        orphaned: true,
+        basemapKey: 'swisstopo_winter',
+        bytes: 5 * MB,
+        savedAt: undefined,
+      },
+    ]);
+    openSheet();
+    await settle();
+
+    const label = firstRow().querySelector('[data-row-label]');
+    expect(label.hasAttribute('data-row-focus-basemap')).toBe(false);
+  });
 });
 
 describe('orphan and account-only dimming (SNOW-645 review; SNOW-832)', () => {

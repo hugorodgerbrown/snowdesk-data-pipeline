@@ -947,9 +947,33 @@
    * pressable. Remove is the only action an orphan gets, and that is still
    * true.
    *
+   * A THIRD attribute since SNOW-835: `data-row-focus-basemap`, the
+   * basemap the area was downloaded against. The downloaded-squares
+   * overlay filters to the ACTIVE basemap's tile template
+   * (`refreshDownloadedOverlay` in map.js), so framing a Swisstopo area
+   * while the map is on OpenFreeMap arrives at ground with nothing drawn
+   * on it. Carrying the key lets `row_focus.js` switch the basemap on the
+   * way — the group heading directly above the row already names it
+   * (SNOW-832), which is why the swap needs no announcement of its own.
+   *
+   * WITHHELD, never written empty, in two cases:
+   *
+   *   a KEYLESS row  a record from before SNOW-645, or an orphan — it
+   *     reads "downloaded, basemap unknown", and there is nothing to
+   *     switch to.
+   *   an ACCOUNT-ONLY row (SNOW-749)  its `basemapKey` is a fact about
+   *     another device. The tiles are not here either way, so switching
+   *     THIS device's persisted preference would be a side effect with
+   *     nothing to show for it.
+   *
+   * Withholding is enough on its own: the row template renders no
+   * `data-row-focus-basemap` for a clone to inherit (unlike
+   * `data-row-focus`, which it renders empty), so there is nothing to
+   * remove on the rows that do not get one.
+   *
    * @param {HTMLElement} label The cloned row's `[data-row-label]`.
    * @param {{label: string, orphaned?: boolean, bbox?: number[]|null,
-   *   regionId?: string}} row
+   *   regionId?: string, basemapKey?: ?string, onDevice?: boolean}} row
    * @returns {void}
    */
   function applyRowFocus(label, row) {
@@ -976,6 +1000,14 @@
       label.removeAttribute('data-row-focus');
       label.setAttribute('data-row-focus-region', row.regionId);
     }
+    // SNOW-835: and which basemap to be on when it lands. `onDevice` is
+    // tested against `false` rather than for truthiness, matching every
+    // other reader of it on this row — the flag is absent on a row that
+    // predates the account sync, and absent means "on this device".
+    if (row.basemapKey && row.onDevice !== false) {
+      label.setAttribute('data-row-focus-basemap', row.basemapKey);
+    }
+
     label.setAttribute(
       'aria-label',
       interpolate(STRINGS['focus-row-label'], { name: row.label }),
