@@ -4277,7 +4277,7 @@
   // THE ACTIVE BASEMAP ONLY — the roundels' own scope, and Hugo's call
   // after living with the alternative. SNOW-645 review widened this to
   // paint EVERY downloaded basemap at once, each in its own identity
-  // colour, because switching from Standard to Swisstopo emptied the
+  // colour, because switching from OpenFreeMap to Swisstopo emptied the
   // overlay outright and that read as data loss. The cure was worse: two
   // basemaps' squares stack over the same ground, so what the map showed
   // was neither basemap's coverage. "It should filter to the current

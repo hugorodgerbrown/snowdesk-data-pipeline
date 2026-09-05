@@ -55,7 +55,7 @@ const SWISSTOPO_STYLE = 'https://tiles.example/swisstopo/style.json';
 
 /**
  * Build the #basemap-menu fixture: one row per overlay key plus the two
- * basemap radio rows (Standard active, Swisstopo not) — mirroring
+ * basemap radio rows (OpenFreeMap active, Swisstopo not) — mirroring
  * apps/public/templates/public/partials/_map_embed.html — each carrying a
  * `.sync-dot` starting at `data-sync-state="unknown"`.
  */
@@ -718,7 +718,7 @@ describe('per-basemap rows (no downloads module — style-only fallback)', () =>
 
     await window.pwaLayerSyncStatus.refresh();
 
-    // Standard is the ACTIVE basemap (aria-checked="true"), so its row stays
+    // OpenFreeMap is the ACTIVE basemap (aria-checked="true"), so its row stays
     // selectable — you can't be stranded on a map you can't leave — but its
     // dot reports the truth: nothing is cached.
     expect(basemapDotState('standard')).toBe('unavailable-offline');

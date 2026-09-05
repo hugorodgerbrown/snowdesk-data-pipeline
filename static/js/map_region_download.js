@@ -1036,7 +1036,7 @@
   // this region reads as downloaded. Re-render on every basemap swap (the
   // main IIFE fires this once the new style's overlays are back) so the icon
   // flips done↔idle to match the basemap you're now on — e.g. download on
-  // Standard, switch to Swisstopo, and the icon reverts to "download".
+  // OpenFreeMap, switch to Swisstopo, and the icon reverts to "download".
   document.addEventListener('snowdesk:basemap-changed', () => renderControl());
 
   // Offline-integrity: re-render on every connectivity transition so the

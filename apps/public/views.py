@@ -1253,8 +1253,12 @@ def help_page(request: HttpRequest) -> HttpResponse:
 # same key as ``settings.BASEMAP_STYLES``; ``gettext_lazy`` so a future
 # i18n pass picks them up. Presentation, not config — lives here rather
 # than in settings so the picker UI stays close to the view that renders it.
+#
+# Every label names the organisation publishing the map. SNOW-831 renamed
+# the first entry from "Standard", which named nothing: it said only that
+# it was the default, which the picker already shows by selecting it.
 _BASEMAP_LABELS: dict[str, Promise] = {
-    "openfreemap_liberty": _("Standard"),
+    "openfreemap_liberty": _("OpenFreeMap"),
     # National mapping-agency basemaps. Each covers only its own country
     # (blank elsewhere), so labels carry the ISO country suffix to set the
     # expectation. ``swisstopo_light`` stays in BASEMAP_STYLES as a BASEMAP=

@@ -1175,7 +1175,7 @@ BASEMAP_STYLES = {
     # MapLibre v8 style JSONs (absolute sprite/glyph URLs), free and
     # token-less. Coverage is national — outside their country they render
     # blank, so they are a comparison aid, not a replacement for the global
-    # Standard style. IGN "Plan IGN" covers France; basemap.at covers Austria.
+    # OpenFreeMap style. IGN "Plan IGN" covers France; basemap.at covers Austria.
     # Italy (South Tyrol / Trentino) publishes only raster WMTS, which needs a
     # hand-built style object rather than a URL, so it is not included here.
     "ign_plan": (

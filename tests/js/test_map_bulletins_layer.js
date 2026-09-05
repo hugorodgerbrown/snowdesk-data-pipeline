@@ -149,7 +149,7 @@ function buildFixture() {
               data-basemap-key="openfreemap_liberty"
               data-basemap-url="https://tiles.example.invalid/liberty.json"
               aria-checked="true"
-            >Standard</button>
+            >OpenFreeMap</button>
           </li>
           <li role="none">
             <button class="basemap-menu-item basemap-menu-item--overlay"

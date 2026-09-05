@@ -724,8 +724,8 @@ keys on). The custom-area control's own roundel (below) uses the exact
 same rule, unconditionally — an EARLIER version of this ticket instead
 aggregated over the STORED areas' own `basemapKey`s (an identity colour
 only when every non-orphaned area agreed on one), which Hugo caught: on
-the Swisstopo map, with every custom area downloaded under Standard, the
-roundel painted Standard's blue on a Swisstopo screen. Every roundel and
+the Swisstopo map, with every custom area downloaded under OpenFreeMap, the
+roundel painted OpenFreeMap's blue on a Swisstopo screen. Every roundel and
 overlay on the map reflects the basemap CURRENTLY SHOWING, never what an
 earlier download happened to use — per-AREA basemap identity is the
 "Manage downloads" sheet's job (the swatch and name on each row, one tap
@@ -740,7 +740,7 @@ of the "Manage downloads" sheet (below) — colour alone is never the only
 signal.
 
 **`other-basemap` (SNOW-645).** Hugo's report: download a region on
-Standard, switch to Swisstopo, and the roundel silently reverted to plain
+OpenFreeMap, switch to Swisstopo, and the roundel silently reverted to plain
 `idle` — indistinguishable from never having downloaded it, when nothing
 had actually been deleted (a basemap switch alone evicts nothing; SNOW-632
 only evicts a region's bucket on a SAME-region RE-download). `_probeDone`
@@ -794,10 +794,10 @@ though it was never itself the target of a region download — but cannot
 work offline, since there is nothing to fetch; a region in that state
 reads `offline` until back online. Because the probe keys off the
 **active** basemap's tile template, the state is also still **per-basemap**:
-download the region on Standard, switch to Swisstopo (online), and the
+download the region on OpenFreeMap, switch to Swisstopo (online), and the
 icon no longer reads `done` — it reads `other-basemap` (still downloaded,
 just for the basemap you switched away from — see that state's own
-paragraph above) if Standard's tiles are still on disk, or `idle` if they
+paragraph above) if OpenFreeMap's tiles are still on disk, or `idle` if they
 have since been evicted. The icon re-probes on `snowdesk:basemap-changed`
 (fired by the styledata reinstall once a new basemap's overlays are back)
 and on `snowdesk:connectivity-changed`.
@@ -962,7 +962,7 @@ reverses, and the parts of its mechanism that survive:
 has moved twice. It began as the active basemap alone; SNOW-645's review
 widened it to paint EVERY downloaded basemap at once, each area in the
 identity colour of the basemap it was downloaded under, because switching
-from Standard to Swisstopo emptied the overlay and that read as data loss.
+from OpenFreeMap to Swisstopo emptied the overlay and that read as data loss.
 Hugo's call after living with it: two basemaps' squares stacked over the
 same ground describe neither basemap's coverage — "it should filter to the
 current basemap, so it never overlays downloads. If you are on Swisstopo
@@ -1646,7 +1646,7 @@ left edge replaces the old round swatch — same
 here now the group heading says kind instead, so `row-title` (the format
 string that built it) is deleted rather than left unused. A muted
 subtitle underneath the title carries the basemap's own translated name
-("Swisstopo (CH)", "Standard") when resolvable, dropped entirely when it
+("Swisstopo (CH)", "OpenFreeMap") when resolvable, dropped entirely when it
 isn't (a legacy record, or an unrecognised key) — colour is never the
 only signal, so the rule and the subtitle always agree on whether
 anything is claimed. Trailing: the size, then the row's actions —

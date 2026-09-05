@@ -475,7 +475,7 @@ location" state promptly instead of holding "Finding your location…".
 
 **A first visit lands on:** the intro panel (`#home-intro`, dismissed state
 persisted under `snowdesk.home.intro`), SLF (CH) bulletins, Micro (EAWS L4)
-boundaries, the Standard basemap, and bulletin fill at 50%. Every one of
+boundaries, the OpenFreeMap basemap, and bulletin fill at 50%. Every one of
 those is a localStorage default rather than a server-rendered choice, so a
 returning visitor keeps whatever they last set; the `aria-checked` /
 `data-state` attributes in the template mirror the same values so the
@@ -598,7 +598,7 @@ and the choice persists per-device.
 
 | Basemap | What it is | When you'd use it |
 |---------|------------|-------------------|
-| **Standard** | OpenFreeMap "Liberty" — a general-purpose street/terrain map covering the whole Alps. | The default. The only basemap that covers all four countries, so the sensible choice for any cross-border view. |
+| **OpenFreeMap** | The "Liberty" style — a general-purpose street/terrain map covering the whole Alps. | The default. The only basemap that covers all four countries, so the sensible choice for any cross-border view. |
 | **Swisstopo (CH)** | The official Swiss Federal Office of Topography winter basemap. | Detailed Swiss terrain — ski runs, contours, winter features — when you're focused on Switzerland. Covers CH only. |
 | _Swisstopo light_ | A lighter swisstopo style. | Available as a deployment-level default; not surfaced as a routine picker option. |
 
@@ -616,7 +616,7 @@ under different basemaps can tell them apart. Both download roundels (the
 per-region one, and the custom-area one in the bottom-right stack) always
 paint the ACTIVE basemap's colour, never a basemap some earlier download
 happened to use — a control sitting on the Swisstopo map is never painted
-in Standard's colour, whatever is stored underneath it. Per-area basemap
+in OpenFreeMap's colour, whatever is stored underneath it. Per-area basemap
 identity is the "Manage downloads" sheet's job, one tap away. The
 downloaded-areas overlay follows the same rule: with "Display on the map"
 on, it draws the ACTIVE basemap's downloaded tiles in that basemap's
