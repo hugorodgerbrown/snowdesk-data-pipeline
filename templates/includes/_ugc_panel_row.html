@@ -94,6 +94,15 @@ Parameters (passed via {% include … with … %}):
                 carries no coordinate of its own; the polygon is already on
                 the map, so the id is the whole address.
                 Pass one of `focus_target` / `focus_region`, not both.
+
+                There is no `focus_basemap` to pass alongside either. A
+                THIRD focus attribute exists — `data-row-focus-basemap`
+                (SNOW-835), which makes the press switch to that basemap
+                before framing — but only the downloads panel's rows
+                name a basemap at all, and they are stamped from JS
+                rather than rendered here (see `js_filled` below). It
+                says which basemap to land ON, never where to land, so
+                it never turns a `<span>` into a `<button>` on its own.
   focus_label   (string, optional) — the focus button's accessible name
                 ("Zoom to Lac de Vaux hike"). Required alongside
                 `focus_target` or `focus_region`: the visible text is
@@ -133,6 +142,11 @@ Parameters (passed via {% include … with … %}):
                 `data-downloads-delete` already use. row_focus.js reads an
                 empty attribute as "nothing to frame" and moves nothing,
                 so an unstamped clone is inert without a branch of its own.
+                `data-row-focus-basemap` (SNOW-835) is stamped by the same
+                pass but has NO empty counterpart here: it is not part of
+                row_focus.js's selector, so nothing has to match on it,
+                and a row with no basemap to switch to simply never gets
+                one written.
   row_id        (string, optional) — DOM id. The favourite and
                 observation rows carry one so their Remove form can
                 `hx-target` exactly this row and swap it out on the
