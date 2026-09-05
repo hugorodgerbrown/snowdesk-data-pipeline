@@ -67,6 +67,9 @@ Context (all from _route_row_actions.html's own):
 {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar remove_confirm %}
+    Remove {{ name }}? You'll need the .gpx file again to put it back.
+{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar plan_trip_aria_label %}Plan a trip using {{ name }}{% endblocktrans %}
 <li role="none">
     <a
@@ -125,12 +128,35 @@ Context (all from _route_row_actions.html's own):
 {# fresh response carries — and take the line off the map. The hook is on  #}
 {# the FORM, not the row: see static/js/row_removed.js for the request it  #}
 {# has to be told apart from.                                              #}
+{# SNOW-830: THE CONFIRM IS AN ATTRIBUTE, NOT A LISTENER. The trash used  #}
+{# to be a 44x44 control a user aimed at directly; it is now one item     #}
+{# inside this menu, where a mis-tap costs a route with no way back —     #}
+{# route_delete is immediate and the .gpx is the user's to find again.    #}
+{#                                                                        #}
+{# This shipped for a day as a delegated `submit` on the sheet calling    #}
+{# preventDefault(), on the reasoning that `hx-confirm` could not carry a #}
+{# TRANSLATED string that names the row. That reasoning was wrong twice.  #}
+{# The attribute is rendered by Django, so it carries whatever            #}
+{# {% blocktrans %} puts in it — the same way this row's aria-labels      #}
+{# already name their route. And the listener did not work: htmx binds    #}
+{# its submit handling to the FORM, a descendant of the sheet, so in      #}
+{# bubble phase htmx's handler ran FIRST and the request was already      #}
+{# away by the time preventDefault() was reached. Declining the dialogue  #}
+{# deleted the route anyway. It is the inverse of the ordering            #}
+{# static/js/overflow_menu.js documents for its own listener, applied the #}
+{# wrong way round.                                                       #}
+{#                                                                        #}
+{# htmx's own `hx-confirm` calls window.confirm, which is the native      #}
+{# dialogue this was always meant to use, and it owns the cancellation.   #}
+{# The claim form on a pending row deliberately has none: it is           #}
+{# constructive.                                                          #}
 <li role="none">
     <form
         data-row-remove
         hx-post="{% url 'routes:delete' route.uuid %}"
         hx-target="{{ row_target }}"
         hx-swap="outerHTML"
+        hx-confirm="{{ remove_confirm }}"
     >
         {% csrf_token %}
         {# The one item that does NOT take `hover-affordance`. That class    #}

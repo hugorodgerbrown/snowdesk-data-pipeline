@@ -1003,11 +1003,18 @@ describe("removing a row from inside the row's menu (SNOW-830)", () => {
   // with no way back. The confirm is a delegated `submit` on the sheet
   // rather than `hx-confirm`, because the message is translated and names
   // the row — neither of which a template attribute literal can be.
-  const realConfirm = window.confirm;
-
-  afterEach(() => {
-    window.confirm = realConfirm;
-  });
+  // THE CONFIRM IS NOT TESTED HERE, and the four tests that were are
+  // gone. They dispatched a synthetic `submit` into a jsdom document with
+  // no htmx in it, so the sheet's delegated listener was the only handler
+  // on the event and `defaultPrevented` came back true. In a real browser
+  // htmx binds to the FORM — a descendant — so its handler ran first and
+  // the DELETE was already away; declining the dialogue removed the route
+  // anyway. The tests passed for the whole of that bug's life.
+  //
+  // The confirm is now `hx-confirm` on the form, which htmx owns, and the
+  // assertion that it is rendered lives where it can be made against real
+  // markup: tests/routes/test_views.py's TestRouteRowMenu. Reproducing
+  // htmx's own event ordering in jsdom would be testing htmx, not us.
 
   /** Put one owned row into the open panel, its controls inside a menu.
    *
@@ -1039,60 +1046,6 @@ describe("removing a row from inside the row's menu (SNOW-830)", () => {
     </li></ul>`;
     return rows.querySelector('li');
   }
-
-  it('asks before removing, naming the row rather than saying "this route"', () => {
-    // The menu that was open is closed by the time the dialogue is on
-    // screen, so a message that did not name the route would leave the
-    // user guessing which one they are about to lose.
-    window.confirm = vi.fn(() => true);
-    btn.click();
-    const row = renderMenuRow('abc-123');
-
-    row.querySelector('[data-row-remove]').dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true }),
-    );
-
-    expect(window.confirm).toHaveBeenCalled();
-    expect(window.confirm.mock.calls[0][0]).toContain('Haute Route');
-  });
-
-  it('cancels the submit when the user declines, so htmx sends nothing', () => {
-    window.confirm = vi.fn(() => false);
-    btn.click();
-    const row = renderMenuRow('abc-123');
-    const submit = new Event('submit', { bubbles: true, cancelable: true });
-
-    row.querySelector('[data-row-remove]').dispatchEvent(submit);
-
-    expect(submit.defaultPrevented).toBe(true);
-  });
-
-  it('lets the submit through when the user accepts', () => {
-    window.confirm = vi.fn(() => true);
-    btn.click();
-    const row = renderMenuRow('abc-123');
-    const submit = new Event('submit', { bubbles: true, cancelable: true });
-
-    row.querySelector('[data-row-remove]').dispatchEvent(submit);
-
-    expect(submit.defaultPrevented).toBe(false);
-  });
-
-  it('never asks for a pending row’s Save, which is constructive', () => {
-    // The claim form carries `data-row-claimed`, not `data-row-remove`.
-    window.confirm = vi.fn(() => false);
-    btn.click();
-    const rows = sheet.querySelector('[data-routes-rows]');
-    rows.innerHTML = `<ul><li id="route-share-tok">
-      <form data-row-claimed hx-post="/routes/partials/share/tok/claim/"></form>
-    </li></ul>`;
-    const submit = new Event('submit', { bubbles: true, cancelable: true });
-
-    rows.querySelector('[data-row-claimed]').dispatchEvent(submit);
-
-    expect(window.confirm).not.toHaveBeenCalled();
-    expect(submit.defaultPrevented).toBe(false);
-  });
 
   it('still resolves Share from inside the menu, by closest() and not by depth', () => {
     // The whole premise of SNOW-830's markup change: every delegated

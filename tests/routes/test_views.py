@@ -746,6 +746,51 @@ class TestRouteRowOverflowMenu:
         assert "data-overflow-trigger" in body
         assert body.count('role="menuitem"') == 3
 
+    def test_remove_asks_first_through_hx_confirm_naming_the_route(
+        self, client: Client
+    ) -> None:
+        """Remove carries an ``hx-confirm`` that names the route.
+
+        Behind a menu a mis-tap is likelier than it was on a 44x44 trash
+        a user aimed at, and route_delete is immediate — the route is gone
+        and the .gpx is theirs to find again.
+
+        THIS ASSERTION IS THE ONE THAT MATTERS, because the mechanism it
+        pins down replaced one that did not work. The confirm shipped for
+        a day as a delegated ``submit`` listener on the sheet calling
+        ``preventDefault()``; htmx binds its submit handling to the FORM,
+        a descendant of the sheet, so htmx's handler ran first in bubble
+        phase and the DELETE was already away by the time the listener was
+        reached. Declining the dialogue deleted the route anyway, and the
+        jsdom tests covering it passed throughout, because a synthetic
+        submit into a document with no htmx in it has only our listener on
+        it. The attribute has no ordering to get wrong.
+
+        It names the route because the menu that was open is closed by the
+        time the dialogue is on screen, so "this route" would leave the
+        user guessing which one they are about to lose.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, name="Haute Route")
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "hx-confirm=" in body
+        assert "Remove Haute Route?" in body
+
+    def test_the_pending_rows_claim_never_asks_for_confirmation(
+        self, client: Client
+    ) -> None:
+        """Saving a route somebody sent you is constructive, so it just saves."""
+        client.force_login(UserFactory.create())
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "hx-confirm=" not in body
+
     def test_a_pending_row_gets_no_menu_at_all(self, client: Client) -> None:
         """Its one control is the claim, and a menu of one is a puzzle.
 

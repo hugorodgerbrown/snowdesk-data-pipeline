@@ -186,12 +186,8 @@ Context expected:
     {# "link copied" would contradict them. See static/js/share.js.         #}
     <span data-string="share-copied">{% trans "Link copied." %}</span>
     <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
-    {# SNOW-830: Remove now lives one tap inside the row's "…" menu, where  #}
-    {# a mis-tap is likelier than it was on a 44×44 trash a user aimed at,  #}
-    {# and a removal is not undoable — the route is gone and the file is    #}
-    {# theirs to find again. The confirm names the route rather than saying #}
-    {# "this route", because the menu that was open is closed by the time   #}
-    {# the dialogue is on screen.                                          #}
-    <span data-string="confirm-remove">{% blocktrans %}Remove %(name)s? You'll need the .gpx file again to put it
-            back.{% endblocktrans %}</span>
+    {# SNOW-830's Remove confirm is NOT here. It is `hx-confirm` on the     #}
+    {# form itself (routes/partials/_route_row_menu_items.html) — the       #}
+    {# string is rendered into the attribute by Django, so it needs no      #}
+    {# runtime lookup and no entry in this template.                        #}
 </template>
