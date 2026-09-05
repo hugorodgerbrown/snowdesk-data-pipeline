@@ -10,12 +10,17 @@ Covers:
     resorts, holding a different role in each.
   - PROTECT on ResortLocation.location and CASCADE on .resort.
   - unique_together (resort, location).
+  - three_word_address: the 30-day licence cap on the what3words cache.
 """
+
+import datetime
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError
 from django.db.models import ProtectedError
+from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.locations.models import Location, ResortLocation
 from tests.factories import (
@@ -143,6 +148,70 @@ class TestLocationModel:
         first = LocationFactory.create()
         second = LocationFactory.create()
         assert list(Location.objects.all())[:2] == [second, first]
+
+
+@pytest.mark.django_db
+class TestLocationThreeWordAddress:
+    """The licence boundary: a cached address expires at 30 days (SNOW-840).
+
+    ``three_word_address`` is the only reader of the ``what3words``
+    column, so these are the tests that stop a stale address reaching a
+    page — the cap is contractual, not a performance choice.
+    """
+
+    def test_returns_none_when_never_fetched(self) -> None:
+        """No address and no stamp is the state every row starts in."""
+        location = LocationFactory.create()
+        assert location.three_word_address is None
+
+    def test_returns_none_when_the_stamp_is_missing(self) -> None:
+        """Words with no stamp cannot be dated, so they cannot be shown.
+
+        Unreachable through ``fill_what3words``, which writes both columns
+        together — but a fixture, a data repair or a future writer could
+        produce it, and an undatable cache entry is indistinguishable from
+        an expired one.
+        """
+        location = LocationFactory.create(what3words="filled.count.soap")
+        assert location.three_word_address is None
+
+    @freeze_time("2026-03-01T12:00:00+00:00")
+    def test_returns_the_address_inside_the_window(self) -> None:
+        """29 days old is still inside the licence's 30."""
+        location = LocationFactory.create(
+            what3words="filled.count.soap",
+            what3words_fetched_at=datetime.datetime(
+                2026, 1, 31, 12, 0, tzinfo=datetime.UTC
+            ),
+        )
+        assert location.three_word_address == "filled.count.soap"
+
+    @freeze_time("2026-03-01T12:00:00+00:00")
+    def test_returns_none_past_the_window(self) -> None:
+        """31 days old is outside it, and the row stops being showable.
+
+        The column keeps its value — expiry is a read-time test, not a
+        delete — so the assertion is on the property, and on the column
+        NOT having been touched.
+        """
+        location = LocationFactory.create(
+            what3words="filled.count.soap",
+            what3words_fetched_at=datetime.datetime(
+                2026, 1, 29, 12, 0, tzinfo=datetime.UTC
+            ),
+        )
+        assert location.three_word_address is None
+        assert location.what3words == "filled.count.soap"
+
+    def test_the_stored_value_carries_no_prefix(self) -> None:
+        """The ``///`` is presentation and belongs to the template."""
+        location = LocationFactory.create(
+            what3words="filled.count.soap",
+            what3words_fetched_at=timezone.now(),
+        )
+        address = location.three_word_address
+        assert address is not None
+        assert not address.startswith("/")
 
 
 @pytest.mark.django_db

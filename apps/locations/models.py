@@ -24,18 +24,28 @@ Open-Meteo elevation call, which cannot ride on a model save.
 ``link_region_centroid_locations`` fills it for region centroids, and
 ``apps.favourites.services`` for a location minted from a favourite.
 
+``what3words`` (SNOW-840) is nullable for a different reason: it is a
+CACHE, not a property of the place. The what3words licence forbids holding
+a converted address for more than 30 calendar days, so the pair
+``what3words`` / ``what3words_fetched_at`` is read back through the
+``three_word_address`` property, which returns None once the stamp is
+older than ``WHAT3WORDS_MAX_CACHE_AGE``. Nothing outside this module reads
+the column directly.
+
 Which coordinate on which model is exact, approximate or derived is written
 down in ``docs/locations.md``.
 """
 
 from __future__ import annotations
 
+import datetime
 import logging
 import secrets
 from typing import TYPE_CHECKING
 
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 
 if TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
@@ -70,6 +80,16 @@ def generate_short_id() -> str:
         token = secrets.token_urlsafe(8)
         if not token.isdigit():
             return token
+
+
+# The what3words API licence permits caching a converted address "solely
+# for improving the performance of your Product" and "in no event ... more
+# than 30 calendar days". This is a CEILING IMPOSED BY THE LICENCE, not a
+# tuning knob — it is deliberately NOT a setting, because an env var is an
+# invitation to raise it, and raising it is a licence breach rather than a
+# performance decision. See
+# docs/decisions/what3words-cache-expires-at-thirty-days.md.
+WHAT3WORDS_MAX_CACHE_AGE = datetime.timedelta(days=30)
 
 
 # ---------------------------------------------------------------------------
@@ -327,12 +347,66 @@ class Location(BaseModel):
             "until an out-of-band resolution pass has run."
         ),
     )
+    what3words = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text=(
+            "Cached three word address, stored WITHOUT the /// prefix — "
+            "'filled.count.soap'. Filled lazily by fill_what3words on a "
+            "read path, and EXPIRES: read it through three_word_address, "
+            "never directly, because the licence caps the cache at 30 days."
+        ),
+    )
+    what3words_fetched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When what3words above was converted. The expiry clock, not an "
+            "audit stamp — a row older than 30 days is re-converted."
+        ),
+    )
     objects = LocationQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Model metadata."""
 
         ordering = ["-created_at"]
+
+    @property
+    def three_word_address(self) -> str | None:
+        """Return the cached three word address, or None if it has expired.
+
+        THE LICENCE BOUNDARY, expressed as code. ``what3words`` is a cache
+        rather than a fact about the place: the what3words terms permit
+        holding a converted address "in no event ... more than 30 calendar
+        days", so a stored value stops being ours to show the moment
+        ``WHAT3WORDS_MAX_CACHE_AGE`` elapses. Every caller reads the
+        address through here and nothing outside this model reads
+        ``self.what3words`` directly, so there is exactly one place the cap
+        can be enforced and exactly one place it could be broken.
+
+        Expiry is a READ-TIME test rather than a sweep. A cron that deleted
+        stale rows would leave a window between the row going stale and the
+        sweep running, in which a page could still render it; testing on
+        read closes that window by construction, and costs nothing, since
+        the row is already loaded. ``fill_what3words`` re-converts what
+        this returns None for.
+
+        Returned WITHOUT the ``///`` prefix, which is presentation and
+        belongs to the template.
+
+        Returns:
+            The address, e.g. ``"filled.count.soap"``, or None when it has
+            never been fetched, was fetched with no stamp, or was fetched
+            more than 30 days ago.
+
+        """
+        if not self.what3words or self.what3words_fetched_at is None:
+            return None
+        if timezone.now() - self.what3words_fetched_at > WHAT3WORDS_MAX_CACHE_AGE:
+            return None
+        return self.what3words
 
     def get_absolute_url(self) -> str:
         """Return the location's weather page — ``/weather/<short_id>/``.
