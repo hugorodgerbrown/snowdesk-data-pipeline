@@ -351,6 +351,41 @@ function activeBasemapRenderDependencyURLs(map) {
   return urls;
 }
 
+/**
+ * SNOW-844: which render-dependency list to check ONE recorded area
+ * against — the three-row resolution rule, in one place because three
+ * surfaces apply it (both download controls and the Manage downloads
+ * sheet) and a fourth would otherwise invent a fourth answer.
+ *
+ *   record's `deps` present   → the record's own list, whatever basemap
+ *                               the row belongs to. It names what that
+ *                               run actually fetched.
+ *   absent, basemap IS active → derive it live from the loaded style.
+ *   absent, basemap NOT active → NONE. Skip the check.
+ *
+ * The third row is the one that matters. A record written before this
+ * ticket names no dependencies, and a style that is not loaded cannot be
+ * asked what its sprite is — so for such an area we genuinely cannot
+ * answer, and reporting `incomplete` would be the same class of lie as
+ * today's false `done`, just pointing the other way. It resolves itself
+ * the moment the user switches to that basemap (the roundel then probes
+ * live and heals the record) or repairs.
+ *
+ * @param {string[] | null | undefined} recordedDeps The area's stored
+ *   `deps`, as written by its own download run.
+ * @param {boolean} basemapIsActive Whether the area's basemap is the one
+ *   currently on screen — the only condition under which the live style
+ *   can stand in for a record that names nothing.
+ * @returns {string[]} Possibly empty, and an empty list means UNKNOWN:
+ *   `pwaBasemapDownloadCore.missingRenderDependencies` answers `[]` for
+ *   it, which every caller reads as "no claim", never as "complete".
+ */
+function areaRenderDependencyURLs(recordedDeps, basemapIsActive) {
+  if (Array.isArray(recordedDeps) && recordedDeps.length > 0) return recordedDeps;
+  if (basemapIsActive) return activeBasemapRenderDependencyURLs(MAP);
+  return [];
+}
+
 // SNOW-521: same-origin data-feed + active-basemap-style URL list —
 // everything a basemap download warms besides its own tile ranges.
 // Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
@@ -1228,6 +1263,18 @@ window.pwaBasemapDownloads = Object.freeze({
   renderDependencyUrls: () => activeBasemapRenderDependencyURLs(MAP),
 
   /**
+   * SNOW-844: the three-row resolution rule — see
+   * `areaRenderDependencyURLs`. The sheet applies it per row, so it reads
+   * it from here rather than restating it.
+   *
+   * @param {string[] | null | undefined} recordedDeps
+   * @param {boolean} basemapIsActive
+   * @returns {string[]}
+   */
+  areaRenderDependencyUrls: (recordedDeps, basemapIsActive) =>
+    areaRenderDependencyURLs(recordedDeps, basemapIsActive),
+
+  /**
    * SNOW-844: every URL held across every pinned bucket — see
    * `pinnedBasemapCacheURLs`. The sheet asks the same question the
    * roundels do ("is this area's whole render set on disk?"), and the
@@ -1978,6 +2025,32 @@ async function runPinnedDownload(options) {
     return;
   }
   return runner.run(PINNED_DOWNLOAD_DEPS, options);
+}
+
+/**
+ * SNOW-844: refetch one area's MISSING render dependencies — see
+ * `basemap_download_runner.js`'s `repair` for why this is a separate,
+ * much shorter path than `runPinnedDownload` above (no quota pre-flight,
+ * no budget plan, and above all no eviction confirm).
+ *
+ * The same thin-delegator shape, and the same treatment of a missing
+ * runner module: fail the repair rather than silently do nothing.
+ *
+ * @param {Object} options `areaId`, `urls`, `paint`, `finish` — the
+ *   runner's own argument contract.
+ * @returns {Promise<void>}
+ */
+async function repairPinnedDownload(options) {
+  // The bucket's size changes, so a cached orphan measurement of it is
+  // stale from here on — same reason `runPinnedDownload` forgets it.
+  forgetPinnedBucketMeasurement(options.areaId);
+  const runner = self.pwaBasemapDownloadRunner;
+  if (!runner || typeof runner.repair !== 'function') {
+    options.paint('error');
+    revealBasemapDownloadError(null);
+    return;
+  }
+  return runner.repair(PINNED_DOWNLOAD_DEPS, options);
 }
 
 /**

@@ -2385,6 +2385,20 @@
     cursor: pointer;
 }
 
+/* SNOW-844: 'incomplete' — every tile is on this device and something the
+   map needs to DRAW them is not (the style document, a vector source's
+   TileJSON, or the sprite). Amber, not the error red: nothing failed, the
+   area is partly usable, and the tap repairs it rather than retrying a
+   download. Same family as the two above — the sync-status tokens the
+   layers menu paints its dots from — so the roundel and the cache
+   dashboard keep speaking one colour language. A pointer, like 'error':
+   this one is actionable, and its one-tap remedy is the point of showing
+   it at all. */
+.map-download-control[data-download-state="incomplete"] {
+    color: var(--color-sync-partial);
+    cursor: pointer;
+}
+
 /* Only the active state's icon renders; it sits above the busy fill. The
    busy state keeps the download glyph (static) and shows progress as a
    bottom-up fill of the roundel (below), not a numeric percentage.
@@ -2417,6 +2431,11 @@
 .map-download-control[data-download-state="done"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="other-basemap"] .map-download-control-icon--idle,
 .map-download-control[data-download-state="signin"] .map-download-control-icon--idle,
+/* SNOW-844: 'incomplete' reuses the error glyph — the same exclamation,
+   because it carries the same "something here needs your attention", and
+   the amber above is what tells the two apart. A fourth glyph for a state
+   the user meets rarely would be a mark nobody has learnt. */
+.map-download-control[data-download-state="incomplete"] .map-download-control-icon--error,
 .map-download-control[data-download-state="error"] .map-download-control-icon--error {
     display: block;
 }
