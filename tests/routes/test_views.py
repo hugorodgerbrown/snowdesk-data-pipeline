@@ -37,14 +37,17 @@ there is nothing browser-shaped in this ticket, and a 404 needs no browser.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
+from django.template.loader import render_to_string
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
@@ -591,6 +594,173 @@ class TestRouteListScoping:
 
         assert 'data-testid="route-list-empty"' not in body
         assert "Upload routes as GPX files." not in body
+
+
+@pytest.mark.django_db
+class TestRouteRowOverflowMenu:
+    """One "…" trigger, four items behind it (SNOW-830).
+
+    SNOW-764 put a Share icon on this row and SNOW-819 a full-width "Plan
+    a trip" link, which left four controls competing for the right-hand
+    end of a 380px panel row and the route's own name rendering as "Mont
+    Fort – Ba…". Collapsing them behind one trigger gives the name back
+    the row it is scanned by.
+
+    What is asserted here is the SERVER's whole share of that: the
+    trigger's ARIA wiring, that every control moved INTO the menu rather
+    than disappearing, and that each keeps the exact hook its delegated
+    reader resolves by. The menu's behaviour — where it is placed, what
+    closes it — is static/js/overflow_menu.js's and is covered in
+    tests/js/test_overflow_menu.js.
+    """
+
+    def test_the_row_renders_one_trigger_naming_the_route(self, client: Client) -> None:
+        """The trigger names the row: "More actions" alone names nothing."""
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(user=user, name="Haute Route")
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert body.count("data-overflow-trigger") == 1
+        assert 'aria-label="Actions for Haute Route"' in body
+        assert 'aria-haspopup="menu"' in body
+        assert f'aria-controls="route-actions-menu-{route.uuid}"' in body
+        assert f'id="route-actions-menu-{route.uuid}"' in body
+
+    def test_the_trigger_and_menu_ids_are_per_row(self, client: Client) -> None:
+        """``aria-controls`` has to name ONE element, and a panel lists many.
+
+        The ids are keyed on the route's uuid. overflow_menu.js itself
+        never reads them — it is scoped by ``closest()`` — so this is an
+        assertion about ARIA correctness, not about the script.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        first = RouteFactory.create(user=user)
+        second = RouteFactory.create(user=user)
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert f'id="route-actions-{first.uuid}"' in body
+        assert f'id="route-actions-{second.uuid}"' in body
+
+    def test_every_control_keeps_the_hook_its_reader_resolves_by(
+        self, client: Client
+    ) -> None:
+        """The move is invisible to all five delegated modules.
+
+        routes.js, inline_rename.js, row_rename_commit.js and
+        row_removed.js each resolve by upward ``closest()`` or a
+        row-scoped ``querySelector``, never by depth or sibling position.
+        A hook renamed or dropped here breaks a click that still LOOKS
+        wired, which is why each is asserted by name.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        route = RouteFactory.create(user=user)
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert f'data-route-plan-trip="{route.uuid}"' in body
+        assert f'data-route-share="{route.uuid}"' in body
+        assert "data-row-rename" in body
+        assert f'data-route-rename="{route.uuid}"' in body
+        assert "data-row-remove" in body
+        assert f"/routes/partials/{route.uuid}/delete/" in body
+
+    def test_the_items_are_menuitems_inside_the_role_menu(self, client: Client) -> None:
+        """Four items, each carrying the role — a ``<li>`` cannot.
+
+        The separator between the two halves is ``aria-hidden`` and takes
+        no role of its own: it groups the items visually and would
+        otherwise be a stop between Share and Rename.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user)
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert body.count('role="menu"') == 1
+        assert body.count('role="menuitem"') == 4
+        assert '<li aria-hidden="true"' in body
+
+    def test_the_items_still_name_the_row_they_act_on(self, client: Client) -> None:
+        """A bare "Rename" names nothing with a list of rows on screen.
+
+        Unchanged from the inline cluster — the same four msgids, so the
+        catalogue gains nothing and a translated panel reads as it did.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, name="Haute Route")
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'aria-label="Plan a trip using Haute Route"' in body
+        assert 'aria-label="Share Haute Route"' in body
+        assert 'aria-label="Rename Haute Route"' in body
+        assert 'aria-label="Remove Haute Route"' in body
+
+    def test_the_removes_visible_label_matches_its_accessible_name(
+        self, client: Client
+    ) -> None:
+        """WCAG 2.5.3 — the design's "Delete" would break voice control.
+
+        The control's accessible name is the translated "Remove <name>"
+        every other panel's trash carries, so the visible label has to be
+        "Remove" and not the handover's "Delete": a speech user saying
+        "click Delete" would find nothing to press.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(user=user, name="Haute Route")
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+        items = re.findall(r"role=\"menuitem\"(.*?)</(?:button|a)>", body, re.S)
+        labels = [re.sub(r"<[^>]+>", "", item).split()[-1] for item in items]
+
+        assert labels[-1] == "Remove"
+        assert "Delete" not in body
+
+    def test_sharing_disabled_drops_only_the_share_item(self) -> None:
+        """A surface with no handler wired for Share draws no Share item.
+
+        Rendered directly rather than through a URL: SNOW-803 collapsed
+        the two list variants into one and every request now sets
+        ``sharing_enabled`` True, so the False branch has no route to
+        reach it — and it is still the contract the flag carries (see
+        routes/partials/_route_row_actions.html). The other three items
+        survive: it is a surface check, not an ownership one.
+        """
+        route = RouteFactory.build(user=UserFactory.build())
+        route.uuid = uuid4()
+
+        body = render_to_string(
+            "routes/partials/_route_row_actions.html",
+            {"route": route, "label": "Haute Route", "sharing_enabled": False},
+        )
+
+        assert "data-route-share" not in body
+        assert "data-overflow-trigger" in body
+        assert body.count('role="menuitem"') == 3
+
+    def test_a_pending_row_gets_no_menu_at_all(self, client: Client) -> None:
+        """Its one control is the claim, and a menu of one is a puzzle.
+
+        The owner's four are all owner-scoped server-side, so a rendered
+        menu would offer a recipient three controls that 404 and a Share
+        for a route they do not hold.
+        """
+        client.force_login(UserFactory.create())
+        share = RouteShareFactory.create()
+        _follow(client, share.token)
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "data-overflow-menu" not in body
+        assert f"/routes/partials/share/{share.token}/claim/" in body
 
 
 @pytest.mark.django_db

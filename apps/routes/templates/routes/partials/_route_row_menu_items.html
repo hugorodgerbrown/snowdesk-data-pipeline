@@ -1,0 +1,152 @@
+{% load i18n %}
+{% comment %}
+routes/partials/_route_row_menu_items.html — the four actions a route row
+offers, as menu items (SNOW-830).
+
+includes/_overflow_menu.html's `items_template` slot, reached from
+_route_row_actions.html's owned branch — which passes its own full context
+on, so ``route``, ``label``, ``row_target`` and ``sharing_enabled`` are all
+in scope here.
+
+WHY THESE ARE IN A MENU AT ALL. Four inline controls (Share, "Plan a
+trip", Rename, Remove) on a 380px map panel row left the route's name
+rendering as "Mont Fort – Ba…", and the name is the one thing a user scans
+a list of routes by. Collapsing them behind one trigger gives the name the
+row. The other three UGC panels keep their visible trash — see
+includes/_overflow_menu.html's header for why the ruling is narrowed to
+routes rather than reversed.
+
+EVERY HOOK IS THE ONE IT ALREADY WAS. `data-route-share`,
+`data-row-rename`, `data-route-rename`, `data-row-remove` and
+`data-route-plan-trip` are unchanged, and so are the five modules that
+read them: static/js/routes.js, inline_rename.js, row_rename_commit.js and
+row_removed.js each resolve by upward `closest()` traversal or a
+row-scoped `querySelector`, never by depth or sibling position, and every
+listener is delegated on the sheet or on document. Moving a control inside
+a menu inside the same `<li>` is therefore invisible to all of them.
+
+ORDER. Plan a trip, Share, then — after a rule — Rename and Delete. The
+first two are the actions that involve somebody else, which is the pairing
+_route_row_actions.html already argued for when Share sat first in the
+inline cluster; the rule separates "do something with this route" from
+"change or destroy this row". Delete stays last, on the design's rule that
+the destructive control is in the same place on every panel.
+
+Remove is the only coloured item. A menu of four neutral lines gives a
+user nothing to aim at or avoid, and the one irreversible action is the
+one worth marking; it takes the `status-error` pair the inline trash took
+on hover. The inline trash was neutral at rest on the argument that a row
+of red bins reads as an error state — that argument does not carry here,
+because a menu shows one Remove at a time and only while it is open.
+
+It says "Remove", not "Delete", although the design's handover names the
+item Delete: the control's accessible name is already the translated
+"Remove <name>" that every other panel's trash carries, and WCAG 2.5.3
+(Label in Name) requires the visible label to appear in it. Changing one
+of the pair alone breaks voice control; changing both would fork this row
+away from the wording the other three panels use for the same action.
+
+WHAT KEEPS ITS ELEMENT. "Plan a trip" is an `<a href>` and not a button,
+so middle-click and open-in-new-tab still work — it is a navigation to
+apps/trips/views.py's authoring page, not an action on this row. Delete
+stays a plain HTMX form, because route_delete answers an empty 200 and
+`hx-target`/`hx-swap` on the row's own id remove exactly this row with no
+JS involved. Both were true before this ticket and neither is worth
+trading for markup uniformity inside the menu.
+
+`role="none"` on each `<li>`, `role="menuitem"` on the control inside it:
+the ARIA menu pattern wants the items themselves to carry the role, and a
+`<li>` wrapping a `<form>` is not one.
+
+Context (all from _route_row_actions.html's own):
+    route           : Route — the row's route; addresses every endpoint.
+    label           : str — the row's display name, for the aria-labels.
+    row_target      : str — CSS selector for the row Delete empties.
+    sharing_enabled : bool — draw the Share item. See _route_row_actions.html.
+{% endcomment %}
+{% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar plan_trip_aria_label %}Plan a trip using {{ name }}{% endblocktrans %}
+<li role="none">
+    <a
+        href="{% url 'trips:new' %}?route={{ route.uuid }}"
+        role="menuitem"
+        aria-label="{{ plan_trip_aria_label }}"
+        data-route-plan-trip="{{ route.uuid }}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_trip.html" only %}
+        {% trans "Plan a trip" %}
+    </a>
+</li>
+{% if sharing_enabled %}
+    {# Share is a button and not a form because there is nothing to swap — #}
+    {# routes:share_create answers JSON, and static/js/share.js hands the  #}
+    {# URL it carries to the native share sheet. The uuid rides on the     #}
+    {# button so the delegated handler needs no closure over the row.      #}
+    <li role="none">
+        <button
+            type="button"
+            role="menuitem"
+            data-route-share="{{ route.uuid }}"
+            aria-label="{{ share_aria_label }}"
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% include "includes/_icon_share.html" only %}
+            {% trans "Share" %}
+        </button>
+    </li>
+{% endif %}
+{# The rule between the two halves. `aria-hidden` and no separator role:   #}
+{# it groups the items visually and says nothing a screen reader needs,    #}
+{# which would otherwise be an extra stop between Share and Rename.        #}
+<li aria-hidden="true" class="my-1 border-t border-border"></li>
+{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
+{# renameable panel's control carries, so static/js/inline_rename.js can   #}
+{# recognise a rename click without knowing which panel it is on;          #}
+{# `data-route-rename` carries this row's uuid for the commit.             #}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-row-rename
+        data-route-rename="{{ route.uuid }}"
+        aria-label="{{ rename_aria_label }}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_pencil.html" only %}
+        {% trans "Rename" %}
+    </button>
+</li>
+{# `data-row-remove` (SNOW-752) is how the surface owning the list knows   #}
+{# the removal happened, so it can re-read the list — the swap empties one #}
+{# <li>, and routes:list's empty state is a server-side clause only a      #}
+{# fresh response carries — and take the line off the map. The hook is on  #}
+{# the FORM, not the row: see static/js/row_removed.js for the request it  #}
+{# has to be told apart from.                                              #}
+<li role="none">
+    <form
+        data-row-remove
+        hx-post="{% url 'routes:delete' route.uuid %}"
+        hx-target="{{ row_target }}"
+        hx-swap="outerHTML"
+    >
+        {% csrf_token %}
+        {# The one item that does NOT take `hover-affordance`. That class    #}
+        {# paints a `background-image` gradient, which draws OVER a          #}
+        {# `background-color`, so the two treatments cannot both show — and  #}
+        {# this item's own fill is the point of colouring it. The cursor is  #}
+        {# stated directly, since a native <button> does not take it from    #}
+        {# the browser (see apps/public/templatetags/components.py).         #}
+        <button
+            type="submit"
+            role="menuitem"
+            aria-label="{{ remove_aria_label }}"
+            class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+        >
+            {% include "includes/_icon_trash.html" only %}
+            {% trans "Remove" %}
+        </button>
+    </form>
+</li>
