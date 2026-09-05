@@ -243,19 +243,23 @@ _PANELS: dict[str, dict[str, Any]] = {
             "Your areas follow your account. The map data and the budget "
             "stay on this device."
         ),
-        "section_label": _("Regions"),
+        # SNOW-832: the real panel's headings name BASE MAPS now, not
+        # kinds, and the kind moved down into the row's meta line beside
+        # the size — which is also why neither row carries a `value` any
+        # more. The illustration renders the real partials, so tracking
+        # this is not tidiness: a reader would otherwise be shown a panel
+        # laid out a way the product no longer is.
+        "section_label": _("OpenFreeMap"),
         "cta_label": _("Download a custom area"),
         "toggle_id": "help-illustration-toggle-downloads",
         "rows": (
             {
                 "label": _("Martigny · Verbier"),
-                "meta": _("Snowdesk Terrain"),
-                "value": "18.2 MB",
+                "meta": _("Region · 18.2 MB"),
             },
             {
                 "label": _("Val d'Hérens"),
-                "meta": _("Snowdesk Terrain"),
-                "value": "9.4 MB",
+                "meta": _("Custom area · 9.4 MB"),
             },
         ),
     },

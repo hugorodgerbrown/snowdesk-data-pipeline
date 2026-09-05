@@ -227,6 +227,10 @@
   var SHEET_ID = 'map-downloads-sheet';
   var BODY_TEMPLATE_ID = 'map-downloads-body-template';
   var ROW_TEMPLATE_ID = 'map-downloads-row-template';
+  // SNOW-832: one basemap group, cloned per group that has rows. A
+  // sibling of the row template rather than nested inside the body one —
+  // see the sheet template's own comment for why.
+  var GROUP_TEMPLATE_ID = 'map-downloads-group-template';
 
   // The one storage row this module touches directly. The downloads
   // themselves live in two records read through window.pwaBasemapDownloads
@@ -236,7 +240,8 @@
   var sheet = document.getElementById(SHEET_ID);
   var bodyTemplate = document.getElementById(BODY_TEMPLATE_ID);
   var rowTemplate = document.getElementById(ROW_TEMPLATE_ID);
-  if (!sheet || !bodyTemplate || !rowTemplate) return;
+  var groupTemplate = document.getElementById(GROUP_TEMPLATE_ID);
+  if (!sheet || !bodyTemplate || !rowTemplate || !groupTemplate) return;
 
   /**
    * SNOW-748: true when the app is actually using the network — the interface
@@ -750,15 +755,6 @@
     // empty group — so there is no hidden-wrapper state to manage here,
     // unlike the two wrappers this replaces.
     const groupHost = sheet.querySelector('[data-downloads-groups]');
-    // Resolved from the CLONED body, not from the document: the group
-    // template is nested inside the body template (it belongs to this
-    // panel's rows partial), and a `<template>`'s contents are not in the
-    // document, so `document.getElementById` would never find it. Deep-
-    // cloning a `<template>` clones its own content fragment with it,
-    // which is what makes the nesting work at all.
-    const groupTemplate = /** @type {HTMLTemplateElement|null} */ (
-      sheet.querySelector('#map-downloads-group-template')
-    );
     if (groupHost && groupTemplate) {
       for (const group of core.groupRowsByBasemap(rows, basemapOrder())) {
         groupHost.appendChild(buildGroup(groupTemplate, group, core));
@@ -869,9 +865,7 @@
    * Build one basemap group: its heading, its identity colour and its rows
    * (SNOW-832).
    *
-   * @param {HTMLTemplateElement} template The group `<template>`, resolved
-   *   from the cloned body — see render()'s own comment for why it cannot
-   *   be resolved from the document.
+   * @param {HTMLTemplateElement} template The group `<template>`.
    * @param {{basemapKey: string, rows: Array<Object>, totalBytes: number}}
    *   group As ``groupRowsByBasemap`` returns it.
    * @param {Object} core ``pwaBasemapManageCore``, for the byte formatting.

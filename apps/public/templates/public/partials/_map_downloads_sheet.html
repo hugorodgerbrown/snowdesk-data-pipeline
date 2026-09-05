@@ -120,6 +120,27 @@ the row's own label, so home.html loads that module once for both.
     {# rather than taking one fixed heading from the shell.                 #}
     {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" context_line=downloads_context_line header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
 </template>
+{# One basemap group (SNOW-832): the swatch, the heading label, this        #}
+{# device's total for that basemap, the identity rule, and the empty `<ul>` #}
+{# render() appends the group's rows into. Cloned once per group that has   #}
+{# rows — no group is ever rendered empty, which is why (unlike SNOW-645's  #}
+{# two fixed REGIONS / CUSTOM AREAS wrappers) it needs no `hidden` state.   #}
+{#                                                                          #}
+{# It sits HERE, beside the row template, rather than inside the rows       #}
+{# partial where it belongs by subject. Nesting a `<template>` inside the   #}
+{# body `<template>` is legal and clones correctly, but it makes the body   #}
+{# template unreadable to anything that finds its end by looking for the    #}
+{# next `</template>` — which both tests/public/test_ugc_panels.py and      #}
+{# `document.getElementById` effectively do. Same place, same lookup, same  #}
+{# lifetime as the row template is the simpler answer.                      #}
+{#                                                                          #}
+{# `only` on the include is load-bearing: an include inherits the parent    #}
+{# context, and `rows_template` is in scope here from the panel above, so   #}
+{# without it the group partial's own `{% include rows_template %}` would   #}
+{# render the rows partial inside every group.                              #}
+<template id="map-downloads-group-template">
+    {% include "includes/_ugc_panel_group.html" with label_hook="group-label" only %}
+</template>
 {# One list row (includes/_ugc_panel_row.html — the one anatomy Hugo's      #}
 {# design gives all three UGC panels). `js_filled` renders every            #}
 {# [data-row-*] hook empty for buildRow to fill, including the inline-      #}

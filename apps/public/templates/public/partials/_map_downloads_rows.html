@@ -27,16 +27,11 @@ inside it is still includes/_eyebrow.html, so all the section labels
 across the four panels come from one place.
 {% endcomment %}
 {# render() appends every cloned group here, so it can empty exactly one #}
-{# element between renders rather than tracking the groups it made.      #}
+{# element between renders rather than tracking the groups it made. The  #}
+{# group `<template>` itself is a SIBLING of the row template, over in    #}
+{# _map_downloads_sheet.html — see the comment there for why it is not    #}
+{# nested inside this partial, which would be the obvious place for it.   #}
 <div data-downloads-groups class="flex flex-col gap-4.5"></div>
-{# One group: swatch, label, this device's total for it, the identity   #}
-{# rule, and the `<ul>` render() appends that group's rows into. Its    #}
-{# hooks (`data-group-swatch` / `data-hook="group-label"` /             #}
-{# `data-group-total` / `data-group-rule` / `data-group-rows`) are      #}
-{# filled after the clone, exactly as the row template's are.           #}
-<template id="map-downloads-group-template">
-    {% include "includes/_ugc_panel_group.html" with label_hook="group-label" %}
-</template>
 <p data-downloads-empty hidden class="py-2 text-sm text-text-2">
     {# SNOW-832 dropped the trailing "or use the button below for a custom #}
     {# area": the direction pointed at a control whose position this        #}

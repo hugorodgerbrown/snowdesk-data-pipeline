@@ -1344,6 +1344,52 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# UGC panel group (SNOW-832) ---------------------------------------------------
+# One titled group of rows, headed by the value of whatever axis the panel
+# groups along. The downloads panel is the one caller: its groups are
+# BASEMAPS, so each heading carries that basemap's identity colour as a
+# swatch and a rule, and its own total for this device.
+#
+# The variants below cover the three states the heading has: a named
+# group, the group whose basemap cannot be named (bg-sync-off, never
+# .basemap-identity-fill's keyless green), and a named group with rows in
+# it — which is what shows the heading against the list it heads, and the
+# reason the first row draws no hairline of its own.
+
+UGC_PANEL_GROUP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Named group — swatch, label, this device's total",
+        "context": {
+            "label": "OpenFreeMap",
+            "label_hook": "group-label",
+            "total": "58.2 MB",
+            "basemap_key": "openfreemap_liberty",
+        },
+    },
+    {
+        "caption": "Named group, with its rows",
+        "context": {
+            "label": "Swisstopo (CH)",
+            "total": "18.2 MB",
+            "basemap_key": "swisstopo_winter",
+            "rows_template": "public/partials/_ugc_panel_group_demo_rows.html",
+        },
+    },
+    {
+        # A record written before the basemap was stored with a download,
+        # an orphaned bucket, or a key the picker no longer offers. Named
+        # rather than left blank — an unlabelled heading over real rows
+        # reads as a rendering fault — and neutral rather than green.
+        "caption": "Unnamed group — the basemap this device cannot resolve",
+        "context": {
+            "label": "Unknown basemap",
+            "total": "5.1 MB",
+            "unknown": True,
+        },
+    },
+)
+
+
 UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         # Every variant here takes the downloads panel's actions template,
@@ -1387,12 +1433,14 @@ UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "Downloads row — colour rule and trailing measured value",
+        # SNOW-832: the downloads row lost its coloured left-edge rule
+        # (basemap identity is a GROUP heading now) and its trailing mono
+        # size column (folded into the meta line, beside the kind). What
+        # is left is the same anatomy every other panel's row has.
+        "caption": "Downloads row — kind and size on one meta line",
         "context": {
             "label": "Verbier",
-            "meta": "Snowdesk Terrain",
-            "value": "18.2 MB",
-            "rule": True,
+            "meta": "Region · 18.2 MB",
             "actions_template": "includes/_map_downloads_row_actions.html",
         },
     },

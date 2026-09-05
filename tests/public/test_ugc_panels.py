@@ -106,14 +106,23 @@ PANEL_CONTEXT_LINES = {
     "route-list-template": "Routes are private unless you share one.",
 }
 
-# The mono uppercase section label heading each panel's list. Downloads has
-# two, because it groups its rows by kind.
-PANEL_SECTION_LABELS = {
-    "map-downloads-body-template": ("Regions", "Custom areas"),
+# The mono uppercase section label heading each panel's list. Downloads
+# has none: SNOW-832 groups its rows by BASEMAP, and which basemaps a
+# device holds is data, so its headings are written by JS into a cloned
+# group template rather than server-rendered here. That template's own
+# heading is still the same primitive — see
+# ``test_the_downloads_group_heading_is_the_same_label_primitive``.
+PANEL_SECTION_LABELS: dict[str, tuple[str, ...]] = {
+    "map-downloads-body-template": (),
     "favourite-list-template": ("Places",),
     "report-list-template": ("Reports",),
     "route-list-template": ("Tracks",),
 }
+
+# The group `<template>` the downloads panel clones per basemap. A sibling
+# of its row template, not nested in its body one — see that template's
+# own comment.
+DOWNLOADS_GROUP_TEMPLATE_ID = "map-downloads-group-template"
 
 # The overlay switch's label — ONE sentence for all three panels, fixed
 # inside the shared partial. These three are what it replaced.
@@ -185,7 +194,10 @@ def skeleton_classes() -> set[str]:
             "title": "Title",
             "icon_template": "includes/_icon_favourite.html",
             "context_line": "Where this panel's data lives.",
-            "section_label": "Things",
+            # No ``section_label``: the downloads panel passes none
+            # (SNOW-832 — its headings are per-basemap and JS-written), so
+            # that branch's wrapper and label classes are not part of what
+            # all four panels share.
             "rows_template": DEMO_ROWS_TEMPLATE,
             "cta_label": "Add one",
             "toggle_id": "skeleton-toggle",
@@ -307,18 +319,43 @@ class TestUgcPanelSkeleton:
         section_label_classes: str,
         template_id: str,
     ) -> None:
-        """Every list sits under the shared mono uppercase label.
+        """Every fixed list label is the shared mono uppercase one.
 
-        Downloads has two (it groups its rows by kind) and renders them
-        from inside its own rows template; the other two take the shared
-        partial's ``section_label``. Either way the label comes from
-        includes/_eyebrow.html, so all four are one shape.
+        Three panels name their list in the shared partial's
+        ``section_label``. Downloads names nothing here (SNOW-832): its
+        headings are one per basemap, which is data, so it renders none
+        and its group template carries the same primitive instead — the
+        next test.
         """
         body = _panel_body(home_html, template_id)
         labels = PANEL_SECTION_LABELS[template_id]
         assert body.count(section_label_classes) == len(labels)
         for label in labels:
             assert f">{label}<" in body
+
+    def test_the_downloads_group_heading_is_the_same_label_primitive(
+        self, home_html: str
+    ) -> None:
+        """The per-basemap heading comes from includes/_eyebrow.html too.
+
+        SNOW-832 gave the downloads panel a heading per basemap instead of
+        two fixed ones. The heading is JS-filled, so it cannot be asserted
+        by its text — but it must still be the one label shape every other
+        panel uses, or the four diverge again by the back door.
+        """
+        group = _panel_body(home_html, DOWNLOADS_GROUP_TEMPLATE_ID)
+        eyebrow = render_to_string(
+            "includes/_eyebrow.html",
+            {
+                "tag": "p",
+                "text": "",
+                "class_extra": "min-w-0 truncate font-medium",
+                "data_hook": "group-label",
+            },
+        )
+        assert next(iter(_class_strings(eyebrow))) in _class_strings(group)
+        # And the hook render() fills it through.
+        assert 'data-hook="group-label"' in group
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_labels_its_switch_the_same_way_as_the_others(

@@ -61,12 +61,12 @@ const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
  * became one `<template>` render() clones per group, the row lost its
  * left-edge rule and its size column, and "Free up space" is gone).
  *
- * The group template is NESTED inside the body template here exactly as
- * it is in the real markup — it belongs to the panel's rows partial — so
- * this fixture also exercises the thing that makes that legal: deep-
- * cloning a `<template>` clones its own content fragment with it, which
- * is why render() resolves the group template off the CLONED body rather
- * than off the document.
+ * The group template is a SIBLING of the row template here, as it is in
+ * the real markup: it belongs to the rows partial by subject, but nesting
+ * a `<template>` inside the body `<template>` makes the body unreadable
+ * to anything that finds its end at the next `</template>` — which
+ * `document.getElementById` and tests/public/test_ugc_panels.py both
+ * effectively do.
  *
  * The node ORDER here is kept in step with the real template even though
  * nothing in this file depends on it — the module addresses every element
@@ -108,17 +108,6 @@ function buildFixture() {
         <p data-downloads-over hidden>You're over your budget.</p>
         <div>
           <div data-downloads-groups></div>
-          <template id="map-downloads-group-template">
-            <div data-panel-group>
-              <div>
-                <span data-group-swatch class="basemap-identity-fill" aria-hidden="true"></span>
-                <p data-hook="group-label" class="uppercase"></p>
-                <span data-group-total></span>
-              </div>
-              <span data-group-rule class="basemap-identity-fill" aria-hidden="true"></span>
-              <ul data-group-rows></ul>
-            </div>
-          </template>
           <p data-downloads-empty hidden>No areas downloaded yet.</p>
         </div>
         <div>
@@ -130,6 +119,17 @@ function buildFixture() {
             <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
           </label>
         </div>
+      </div>
+    </template>
+    <template id="map-downloads-group-template">
+      <div data-panel-group>
+        <div>
+          <span data-group-swatch class="basemap-identity-fill" aria-hidden="true"></span>
+          <p data-hook="group-label" class="uppercase"></p>
+          <span data-group-total></span>
+        </div>
+        <span data-group-rule class="basemap-identity-fill" aria-hidden="true"></span>
+        <ul data-group-rows></ul>
       </div>
     </template>
     <template id="map-downloads-row-template">

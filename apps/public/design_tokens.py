@@ -72,6 +72,7 @@ from apps.public._component_fixtures import (
     THEME_PREFERENCE_VARIANTS,
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
+    UGC_PANEL_GROUP_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
     WEATHER_DAY_LINE_VARIANTS,
@@ -1216,6 +1217,33 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_ugc_panel_row.html",
         variants=UGC_PANEL_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="ugc-panel-group",
+        label="UGC panel group",
+        description=(
+            "One titled group of rows inside a UGC panel's list "
+            "(SNOW-832). The downloads panel is the one caller and the "
+            "reason it exists: its list is grouped by BASEMAP, because "
+            "that is the axis along which a stored area is or is not "
+            "usable — switching base map is switching to a map you have "
+            "not stored — while the kind (region / custom area) moved "
+            "down into each row's own meta line. The heading carries the "
+            "group's identity colour twice, as a round swatch before the "
+            "label and a 2px rule under the whole line, both through the "
+            "same .basemap-identity-fill / data-basemap-key mechanism the "
+            "budget bar and the download roundels use. A group that "
+            "cannot be named takes the neutral bg-sync-off instead, never "
+            "that class's keyless green, which claims 'downloaded, "
+            "basemap unknown'. Replaces the two fixed REGIONS / CUSTOM "
+            "AREAS wrappers SNOW-645 wrote inline: how many groups there "
+            "are is data, so the panel renders one copy into a <template> "
+            "and clones it per group."
+        ),
+        kind="components",
+        partial="includes/_ugc_panel_group.html",
+        variants=UGC_PANEL_GROUP_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

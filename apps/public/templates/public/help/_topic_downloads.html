@@ -15,6 +15,11 @@ data are cached separately, by visiting them — that half is the "Install
 & offline" panel's subject, and each panel points at the other rather
 than restating it.
 
+SNOW-832: the copy tracks the sheet's own regrouping — the list is
+headed by BASE MAP now, not by kind, so "lists the two kinds separately"
+became false, and "two ways to remove one" went with the "free up space"
+control that ticket removed.
+
 SNOW-749 adds a second distinction: the AREA (which region, or which
 framed box) follows the account, while the MAP DATA stays on the device
 that fetched it. The three paragraphs below exist to keep those apart,
@@ -42,8 +47,8 @@ paragraph is true, and it is gone rather than kept in an else branch.
         {% blocktrans trimmed %}
             There are two ways to store an area. Select a region on the map and use the download button beside its name
             in the header to take the whole region; or use "Download a custom area" inside the sheet, which lets you
-            frame any part of the map yourself &mdash; the right choice for a tour that straddles a boundary. The sheet
-            lists the two kinds separately, and custom areas can be renamed.
+            frame any part of the map yourself &mdash; the right choice for a tour that straddles a boundary. Each row
+            in the sheet says which of the two it is, and custom areas can be renamed.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-budget">
@@ -72,8 +77,8 @@ paragraph is true, and it is gone rather than kept in an else branch.
     <p class="mb-3 last:mb-0" data-testid="help-downloads-device-local">
         {% blocktrans trimmed %}
             The map data itself lives in this browser on this device. Clearing the site's data or resetting local data
-            removes it, and the sheet gives you two ways to remove one yourself: "free up space" takes an area off this
-            device and leaves it on your account, so it is one tap to bring back, while the bin removes it everywhere.
+            removes it, and the bin on a row removes that area yourself &mdash; from this device and from your account,
+            so it goes from your other devices too.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-overlay">
@@ -85,7 +90,9 @@ paragraph is true, and it is gone rather than kept in an else branch.
     <p class="mb-3 last:mb-0" data-testid="help-downloads-basemap-scope">
         {% blocktrans trimmed %}
             An area is downloaded for the base map that was showing at the time. Switching to a different base map is
-            switching to a map you have not stored, and the sheet offers to download the same area again for it.
+            switching to a map you have not stored, and the sheet offers to download the same area again for it. That is
+            why the sheet groups what you hold under a heading per base map, each in that map's own colour, with what it
+            is costing you beside it.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-online-only">
