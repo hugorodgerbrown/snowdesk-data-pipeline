@@ -15,7 +15,8 @@ trip_share_page (GET/HEAD /trips/s/<token>/):
   Cache-Control: no-store;
   429 past the (token, IP) rate limit;
   the meeting point renders as a three word address behind the SNOW-840
-    ``what3words`` flag, and as the coordinate pair with the flag off or
+    ``what3words`` flag — linked to the square on what3words' own map —
+    and as the coordinate pair, unlinked, with the flag off or
     the conversion failing — the same three states
     ``tests/trips/test_views.py`` asserts on the organiser's page, because
     one context builder feeds both and the two must not diverge.
@@ -36,7 +37,7 @@ from unittest.mock import patch
 
 import pytest
 import requests
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
@@ -437,6 +438,33 @@ class TestSharePageMeetingPoint:
 
         assert "///filled.count.soap" in rendered
         assert 'title="46.080012, 7.318197"' in rendered
+
+    @override_flag("what3words", active=True)
+    @override_settings(WHAT3WORDS_MAP_BASE_URL="https://w3w.example")
+    def test_the_address_links_to_the_square_for_a_link_holder(
+        self, client: Client
+    ) -> None:
+        """The recipient can see the square, not just read three words.
+
+        This is the surface the link is FOR: somebody who was sent the
+        trip and is working out whether they can find the meeting point.
+        Off-site, so it opens away and hands what3words no handle on this
+        page.
+        """
+        trip = self._shared_trip(cached=True)
+
+        rendered = self._meeting_point_dd(client, trip)
+
+        assert 'href="https://w3w.example/filled.count.soap"' in rendered
+        assert 'target="_blank"' in rendered
+        assert 'rel="noopener noreferrer"' in rendered
+
+    def test_the_coordinate_fallback_carries_no_link(self, client: Client) -> None:
+        """No address on the public page means no anchor either."""
+        rendered = self._meeting_point_dd(client, self._shared_trip())
+
+        assert "<a" not in rendered
+        assert "46.080012, 7.318197" in rendered
 
     @override_flag("what3words", active=True)
     def test_a_failing_conversion_falls_back_to_the_coordinates(

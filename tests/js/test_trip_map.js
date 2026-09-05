@@ -175,6 +175,50 @@ describe('profileFor', () => {
   });
 });
 
+describe('drawProfileRange — the caption that gives the curve a quantity', () => {
+  /** A document carrying the card's empty range paragraph. */
+  function docWithRange() {
+    const doc = document.implementation.createHTMLDocument('trip');
+    const p = doc.createElement('p');
+    p.setAttribute('data-trip-profile-range', '');
+    doc.body.appendChild(p);
+    return doc;
+  }
+
+  it('states the low and high the y-axis was fitted to', () => {
+    // The chart is scaled to THIS track's own range, so the same curve is
+    // drawn for a 200 m rolling traverse and a 2000 m climb. Without the
+    // pair the picture carries no quantity at all.
+    const doc = docWithRange();
+
+    core.drawProfileRange(core.profileFor(payload()), doc);
+
+    expect(doc.querySelector('[data-trip-profile-range]').textContent).toBe(
+      '1500–1600 m'
+    );
+  });
+
+  it('rounds to whole metres, as the map popup caption does', () => {
+    const doc = docWithRange();
+
+    core.drawProfileRange({ minEle: 1741.4, maxEle: 3663.8 }, doc);
+
+    expect(doc.querySelector('[data-trip-profile-range]').textContent).toBe(
+      '1741–3664 m'
+    );
+  });
+
+  it('writes nothing for a track that carries no elevation', () => {
+    // `hasElevation: false` leaves minEle/maxEle null, and "null–null m"
+    // would be a scale for a picture that was never drawn.
+    const doc = docWithRange();
+
+    core.drawProfileRange({ minEle: null, maxEle: null }, doc);
+
+    expect(doc.querySelector('[data-trip-profile-range]').textContent).toBe('');
+  });
+});
+
 describe('readPayload', () => {
   it('parses the inline json_script element', () => {
     const el = document.createElement('script');

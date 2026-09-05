@@ -25,8 +25,10 @@ The three fragments (trips:create / trips:edit / trips:delete):
 
 The meeting point (SNOW-840):
   the coordinate pair with the ``what3words`` flag off; the three word
-  address with it on and a cached address on the location; and the
-  coordinate pair again with the flag on but the conversion failing.
+  address with it on and a cached address on the location; the coordinate
+  pair again with the flag on but the conversion failing; and the address
+  as a LINK to the configured what3words map host, which the coordinate
+  fallback never grows.
   ``tests/trips/test_share_views.py`` asserts the same three on the public
   page, because both surfaces are built by one context builder and the
   point is that they cannot diverge.
@@ -339,6 +341,55 @@ class TestTripMeetingPointAddress:
         assert 'title="46.080012, 7.318197"' in _meeting_point_dd(html)
 
     @override_flag("what3words", active=True)
+    @override_settings(WHAT3WORDS_MAP_BASE_URL="https://w3w.example")
+    def test_the_address_links_to_the_configured_map_host(self, client: Client) -> None:
+        """The words link to the square on what3words' own map.
+
+        The host comes from the setting rather than a literal in the
+        template, so this asserts the CONFIGURED one — a hardcoded
+        what3words.com would pass against the default and hide the fact
+        that nothing reads the setting.
+        """
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'href="https://w3w.example/filled.count.soap"' in _meeting_point_dd(html)
+
+    @override_flag("what3words", active=True)
+    def test_the_address_link_opens_away_and_hands_over_no_handle(
+        self, client: Client
+    ) -> None:
+        """An off-site link gets a new tab and rel="noopener noreferrer"."""
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        dd = _meeting_point_dd(
+            client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+        )
+
+        assert 'target="_blank"' in dd
+        assert 'rel="noopener noreferrer"' in dd
+
+    def test_the_coordinate_fallback_carries_no_link(self, client: Client) -> None:
+        """No address means no anchor — never a link to nowhere.
+
+        ``meeting_point_w3w_url`` is None exactly when the address is, so
+        the coordinate pair renders as the bare text it always has. A
+        template that built the href itself would emit ``.../None`` here.
+        """
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        dd = _meeting_point_dd(
+            client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+        )
+
+        assert "<a" not in dd
+        assert "46.080012, 7.318197" in dd
+
+    @override_flag("what3words", active=True)
     def test_a_failing_conversion_falls_back_to_the_coordinates(
         self, client: Client, settings: Settings
     ) -> None:
@@ -509,7 +560,12 @@ class TestTripDelete:
 
 @pytest.mark.django_db
 class TestTripSummaryFigures:
-    """The figures line on a trip page (trips/partials/_trip_summary.html).
+    """The figures line on a trip page (trips/partials/_trip_map.html).
+
+    It lived in ``_trip_summary.html`` until SNOW-840 moved it into the
+    route-profile card, which is why the class is still named for the
+    summary. The assertions below are about the WORDING and are indifferent
+    to which partial renders it; the one that is not says so.
 
     A trip's figures ARE its route's figures — the geometry is a snapshot
     of one — so they are spelled the way the routes panel and the map
@@ -558,3 +614,22 @@ class TestTripSummaryFigures:
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
         assert "5.0km · 0m ↑ · 0m ↓" in html
+
+    def test_the_figures_sit_with_the_profile_they_scale(self, client: Client) -> None:
+        """SNOW-840 moved the line into the route-profile card.
+
+        The drawing is a picture of these numbers, so the two are one
+        object — the map page's route popup has always framed them
+        together. Asserted by ORDER against the profile's own container:
+        the figures used to sit in the summary, above the map, which is
+        several hundred pixels and a card away from the curve they scale.
+        """
+        trip = TripFactory.create(distance_m=12400.0, ascent_m=850.0, descent_m=1100.0)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        summary = html.index('data-testid="trip-summary"')
+        figures = html.index('data-testid="trip-figures"')
+        profile = html.index("data-trip-profile")
+        assert summary < figures < profile

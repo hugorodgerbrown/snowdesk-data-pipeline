@@ -65,6 +65,7 @@
  *   routeSourceData(payload)      → the LineString FeatureCollection
  *   meetingSourceData(payload)    → the Point FeatureCollection
  *   profileFor(payload)           → the profile data, or null
+ *   drawProfileRange(profile, doc) → writes the profile's scale caption
  *   readBasemaps(doc)             → the {key: url} catalogue, or null
  *   resolveBasemapFor(el, doc)    → {key, url} for this reader, or null
  *
@@ -95,6 +96,11 @@
   var STRINGS = self.pwaStrings.read('trip-strings-template', {
     'meeting-point': 'Meeting point',
     'elevation-profile': 'Elevation profile of the route',
+    // The profile's y-axis is fitted to this track's own lowest and
+    // highest point, so the curve says nothing without the pair that
+    // bounds it. Same wording as the map page's route popup — see
+    // map_state.js's 'route-elevation-range'.
+    'elevation-range': '%(low)s–%(high)s m',
     'map-failed':
       "The map couldn't be loaded. The route details above are unaffected.",
   });
@@ -225,6 +231,42 @@
     });
     if (!svg) return;
     host.appendChild(svg);
+    drawProfileRange(profile, doc);
+  }
+
+  /**
+   * Caption the drawn profile with the elevation range it is scaled to.
+   *
+   * SNOW-840. The chart's y-axis is fitted to THIS track's highest and
+   * lowest point, so an unlabelled curve's height carries no quantity: two
+   * routes 200 m and 2000 m apart top to bottom draw the same picture. The
+   * map page's route popup has always captioned it for that reason, and
+   * this is that caption on the trip page's own card.
+   *
+   * Only called once a chart has actually been drawn — a track with no
+   * elevation anywhere draws nothing, and a range under nothing would be
+   * a scale for a picture that is not there.
+   *
+   * NO DURATION SEGMENT, unlike the popup's caption. The popup reads
+   * ``duration_s`` off the route feature; a Trip's snapshot does not copy
+   * it (see Trip's docstring for what the snapshot carries), so there is
+   * no elapsed time on this page to state and inventing one from distance
+   * and ascent would be a guess dressed as a measurement.
+   *
+   * @param {Object} profile The drawn profile, from `readProfile`.
+   * @param {Document} doc The document to write into.
+   * @returns {void}
+   */
+  function drawProfileRange(profile, doc) {
+    var host = doc.querySelector('[data-trip-profile-range]');
+    if (!host) return;
+    if (typeof profile.minEle !== 'number' || typeof profile.maxEle !== 'number') {
+      return;
+    }
+    host.textContent = self.pwaStrings.interpolate(STRINGS['elevation-range'], {
+      low: String(Math.round(profile.minEle)),
+      high: String(Math.round(profile.maxEle)),
+    });
   }
 
   /**
@@ -531,6 +573,11 @@
     routeSourceData: routeSourceData,
     meetingSourceData: meetingSourceData,
     profileFor: profileFor,
+    // SNOW-840. Writes into the DOM rather than returning a value, so it
+    // is exported to be exercised in jsdom: the caption is the only thing
+    // that gives the drawn curve a quantity, and a silently-empty one
+    // looks exactly like a track that carries no elevation.
+    drawProfileRange: drawProfileRange,
     // Exported for its test rather than for a second caller. It is the one
     // function here that hands MapLibre a structure MapLibre validates at
     // runtime, and getting that structure wrong threw inside installLayers

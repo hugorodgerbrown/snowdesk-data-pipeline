@@ -2,11 +2,18 @@
 {% comment %}
 trips/partials/_trip_summary.html — the facts a trip page opens with.
 
-The four things a person reads off a message before deciding whether they
-are going: the day, the time, where the group meets, and how far and how
-much climbing the route carries. Rendered above the map on every trip
-surface — the organiser's object page and the public share page — so a
-recipient who never scrolls has still been told the whole plan.
+The three things a person reads off a message before deciding whether they
+are going: the day, the time, and where the group meets. Rendered above the
+map on every trip surface — the organiser's object page and the public
+share page — so a recipient who never scrolls has still been told the plan.
+
+IT WAS FOUR UNTIL SNOW-840, and the fourth was the figures line — how far
+and how much climbing the route carries. Those figures moved into the
+route-profile card in _trip_map.html, because they describe the same
+geometry the profile draws and the map page's route popup has always put
+the two together. A number that captions a picture belongs beside the
+picture; stating it here left the drawing below with no scale and this
+list with a member that is not a fact about the MEETING.
 
 The meeting point is a COORDINATE PAIR, not a place name. The Location it
 comes from is minted for this trip alone and carries no name, deliberately
@@ -30,39 +37,22 @@ a blank where the meeting point was. When the address is shown, the
 coordinate moves to the dd's title, so the paste-into-a-map-app affordance
 the paragraph above describes survives at no visual cost.
 
+THE ADDRESS IS A LINK to what3words' own map, which is the only place the
+3m square can be SEEN. Three words are not self-evidently a place: a
+recipient working out whether they can find the meeting point needs the
+square on a map, and sending them to search for the words themselves would
+be asking them to do the lookup by hand. Off-site, so it opens in a new tab
+and carries rel="noopener noreferrer" — the destination is a third party's
+page and must get no handle on this one. The coordinate stays in the dd's
+title either way, so the paste-into-a-map-app affordance is untouched by
+the link.
+
 Context (SNOW-840):
-    meeting_point_w3w : str|None — the address WITHOUT its /// prefix,
+    meeting_point_w3w     : str|None — the address WITHOUT its /// prefix,
         which is presentation and is added here.
-
-ASCENT AND DESCENT ARE NULLABLE AND THE NULL IS MEANINGFUL. A route with no
-elevation data anywhere carries null, and Trip's own docstring is explicit
-that "we don't know" and "flat" are different facts — rendering the second
-for the first would be a safety-relevant lie about terrain someone is
-planning to ski. So a trip with no vertical data shows its distance alone
-rather than "0m ↑". Each branch is a whole phrase rather than
-assembled fragments, so a locale can order it freely — the same rule
-routes/partials/_route.html's meta line follows, and for the same reason.
-
-THE FIGURES READ "12.4km · 850m ↑ · 1100m ↓", which is the routes panel's
-own spelling (SNOW-830) rather than this page's former "12.4 km · 850 m
-ascent · 1100 m descent". A trip's figures ARE its route's figures — the
-geometry is a snapshot of one — so a user who meets the same numbers in
-the routes panel, in the map popup and here should not meet three
-spellings of one measurement.
-
-Width is not the argument on this surface. The panel abbreviates because
-its meta line went mono at 12px against a ~340px row and the full words
-overflowed; this is a page paragraph with room to spare. It follows for
-consistency alone, which is why the arrows are here and the panel's other
-compression — a duration segment — is not: a Trip carries no elapsed time
-to show.
-
-LITERAL ↑ AND ↓, not `&uarr;` / `&darr;`. A named entity would in fact
-survive here, since this line is template source written straight into a
-<p> rather than reaching the page through an escaped variable as the
-panel's does. The character is used anyway, so all three surfaces spell
-this the same way in their source and no reader has to work out which of
-them escapes.
+    meeting_point_w3w_url : str|None — where that address links to, built
+        by apps.trips.views._what3words_map_url. None exactly when the
+        address is, so the coordinate fallback can never grow a link.
 
 The organiser's ``description`` is rendered through ordinary Django
 auto-escaping. Nothing here calls ``mark_safe``, and nothing should: it is
@@ -73,60 +63,46 @@ does not admit any tag the escape pass has already neutralised.
 Context:
     trip : Trip — the trip to describe.
 {% endcomment %}
-{% with km=trip.distance_km|floatformat:1 ascent=trip.ascent_m|floatformat:0 descent=trip.descent_m|floatformat:0 %}
-    <dl class="grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="trip-summary">
-        <div>
-            {% trans "Day" as day_label %}
-            {% include "includes/_eyebrow.html" with tag="dt" text=day_label %}
-            <dd class="mt-1 text-text-1" data-testid="trip-date">{{ trip.date|date:"l j F Y" }}</dd>
-        </div>
-        <div>
-            {% trans "Meeting at" as meeting_at_label %}
-            {% include "includes/_eyebrow.html" with tag="dt" text=meeting_at_label %}
-            <dd class="mt-1 text-text-1" data-testid="trip-start-time">{{ trip.start_time|time:"H:i" }}</dd>
-        </div>
-        <div>
-            {% trans "Meeting point" as meeting_point_label %}
-            {% include "includes/_eyebrow.html" with tag="dt" text=meeting_point_label %}
-            {% with lat=trip.meeting_point.latitude|floatformat:6 lon=trip.meeting_point.longitude|floatformat:6 %}
-                {% if meeting_point_w3w %}
-                    <dd
-                        class="mt-1 font-mono text-sm text-text-2"
-                        data-testid="trip-meeting-point"
-                        title="{{ lat }}, {{ lon }}"
-                    >
-                        ///{{ meeting_point_w3w }}
-                    </dd>
-                {% else %}
-                    <dd class="mt-1 font-mono text-sm text-text-2" data-testid="trip-meeting-point">
-                        {{ lat }}, {{ lon }}
-                    </dd>
-                {% endif %}
-            {% endwith %}
-        </div>
-    </dl>
-    <p class="mt-4 text-text-2" data-testid="trip-figures">
-        {% if trip.ascent_m is not None and trip.descent_m is not None %}
-            {% blocktrans trimmed with km=km ascent=ascent descent=descent %}
-                {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
-            {% endblocktrans %}
-        {% elif trip.ascent_m is not None %}
-            {% blocktrans trimmed with km=km ascent=ascent %}
-                {{ km }}km · {{ ascent }}m ↑
-            {% endblocktrans %}
-        {% elif trip.descent_m is not None %}
-            {% blocktrans trimmed with km=km descent=descent %}
-                {{ km }}km · {{ descent }}m ↓
-            {% endblocktrans %}
-        {% else %}
-            {% blocktrans trimmed with km=km %}{{ km }}km{% endblocktrans %}
-        {% endif %}
-    </p>
-    {% if trip.description %}
-        <div class="mt-6" data-testid="trip-description">
-            {% trans "From the organiser" as organiser_note_label %}
-            {% include "includes/_eyebrow.html" with text=organiser_note_label %}
-            <p class="mt-2 leading-prose text-text-1">{{ trip.description|linebreaksbr }}</p>
-        </div>
-    {% endif %}
-{% endwith %}
+<dl class="grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="trip-summary">
+    <div>
+        {% trans "Day" as day_label %}
+        {% include "includes/_eyebrow.html" with tag="dt" text=day_label %}
+        <dd class="mt-1 text-text-1" data-testid="trip-date">{{ trip.date|date:"l j F Y" }}</dd>
+    </div>
+    <div>
+        {% trans "Meeting at" as meeting_at_label %}
+        {% include "includes/_eyebrow.html" with tag="dt" text=meeting_at_label %}
+        <dd class="mt-1 text-text-1" data-testid="trip-start-time">{{ trip.start_time|time:"H:i" }}</dd>
+    </div>
+    <div>
+        {% trans "Meeting point" as meeting_point_label %}
+        {% include "includes/_eyebrow.html" with tag="dt" text=meeting_point_label %}
+        {% with lat=trip.meeting_point.latitude|floatformat:6 lon=trip.meeting_point.longitude|floatformat:6 %}
+            {% if meeting_point_w3w %}
+                <dd
+                    class="mt-1 font-mono text-sm text-text-2"
+                    data-testid="trip-meeting-point"
+                    title="{{ lat }}, {{ lon }}"
+                >
+                    <a
+                        href="{{ meeting_point_w3w_url }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="underline underline-offset-2 hover:text-text-1"
+                    >///{{ meeting_point_w3w }}</a>
+                </dd>
+            {% else %}
+                <dd class="mt-1 font-mono text-sm text-text-2" data-testid="trip-meeting-point">
+                    {{ lat }}, {{ lon }}
+                </dd>
+            {% endif %}
+        {% endwith %}
+    </div>
+</dl>
+{% if trip.description %}
+    <div class="mt-6" data-testid="trip-description">
+        {% trans "From the organiser" as organiser_note_label %}
+        {% include "includes/_eyebrow.html" with text=organiser_note_label %}
+        <p class="mt-2 leading-prose text-text-1">{{ trip.description|linebreaksbr }}</p>
+    </div>
+{% endif %}

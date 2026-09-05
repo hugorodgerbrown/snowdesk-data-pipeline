@@ -1,9 +1,10 @@
-{% load i18n static %}
+{% load i18n static components %}
 {% comment %}
 trips/partials/_trip_map.html — the trip's map canvas and its payload.
 
 One MapLibre canvas showing the route as a line with a marker where the
-group meets, plus the elevation profile underneath it. Drawn by
+group meets, and below it a CARD holding the route's figures, its
+elevation profile and the profile's own scale. Drawn by
 static/js/trip_map.js from an INLINE payload rather than a fetched one:
 the page already holds every byte of it, it is small, and a public share
 page that had to make a second request to draw its own map would show a
@@ -20,6 +21,21 @@ the same geometry.
 The <div> has an explicit height rather than an aspect ratio: MapLibre
 measures its container on construction, and a container whose height is
 still resolving gives a canvas of zero pixels that never repaints.
+
+SNOW-840 CHANGED WHERE THE PROFILE SITS AND WHAT SURROUNDS IT. This
+comment used to say the profile sat "underneath" the map, and that was
+literally true: a bare unframed SVG bleeding to the full page width under
+the "View on the map" button, while the figures that give its y-axis a
+meaning were a line in _trip_summary.html, above the map and a card away.
+The map page's route popup has always drawn the two as one object — the
+name, the figures, the profile, then the profile's range — and that is the
+right grouping for the same reason it is there: the drawing is a PICTURE
+OF THOSE NUMBERS. Both now live in one card component, which is also what
+stops the SVG sprawling to the full page width.
+
+There is no title line in this card, unlike the popup's. The popup is a
+free-floating object on a map and has to say which route it is about; this
+card is inside a page whose heading is already the trip's name.
 
 Context:
     trip        : Trip — the trip being drawn.
@@ -87,7 +103,39 @@ Context:
     {% trans "View on the map" as view_on_map_label %}
     {% include "includes/_button.html" with variant="secondary" size="compact" href=map_url label=view_on_map_label %}
 </div>
-<div id="trip-profile" data-trip-profile class="mt-3 text-route-line"></div>
+{# SNOW-840: the route's figures and its profile, in ONE card. #}
+{# The profile used to be a bare full-bleed SVG under the button and the #}
+{# figures a line in the summary above the map, which put a drawing with #}
+{# no scale in one place and the numbers that scale it in another. The   #}
+{# map page's route popup has always framed the two together — a title,  #}
+{# the figures, the drawing — and this is that shape on a page.          #}
+{% card padding="p-4" extra="mt-3" %}
+{% with km=trip.distance_km|floatformat:1 ascent=trip.ascent_m|floatformat:0 descent=trip.descent_m|floatformat:0 %}
+    <p class="text-text-2" data-testid="trip-figures">
+        {% if trip.ascent_m is not None and trip.descent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent descent=descent %}
+                {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
+            {% endblocktrans %}
+        {% elif trip.ascent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent %}
+                {{ km }}km · {{ ascent }}m ↑
+            {% endblocktrans %}
+        {% elif trip.descent_m is not None %}
+            {% blocktrans trimmed with km=km descent=descent %}
+                {{ km }}km · {{ descent }}m ↓
+            {% endblocktrans %}
+        {% else %}
+            {% blocktrans trimmed with km=km %}{{ km }}km{% endblocktrans %}
+        {% endif %}
+    </p>
+    <div id="trip-profile" data-trip-profile class="mt-2 text-route-line"></div>
+    {# The profile's own scale, written by trip_map.js when it draws — the   #}
+    {# y-axis is fitted to THIS track's highest and lowest point, so the     #}
+    {# curve's shape means nothing without the pair that bounds it. Empty    #}
+    {# until then, and left empty for a track with no elevation at all.      #}
+    <p class="mt-1 text-xs text-text-3" data-trip-profile-range></p>
+{% endwith %}
+{% endcard %}
 {# Every user-facing string trip_map.js writes into the DOM. makemessages  #}
 {# never scans static/js, so a literal there ships as English to every     #}
 {# locale — `tox -e i18n-lint` fails the build on one. Read back via       #}
@@ -96,6 +144,10 @@ Context:
 <template id="trip-strings-template">
     <span data-string="meeting-point">{% trans "Meeting point" %}</span>
     <span data-string="elevation-profile">{% trans "Elevation profile of the route" %}</span>
+    {# The profile's scale, in the map popup's own spelling — see          #}
+    {# _map_embed.html's "route-elevation-range". One measurement, one     #}
+    {# wording, whichever surface a reader meets it on.                    #}
+    <span data-string="elevation-range">{% blocktrans %}%(low)s–%(high)s m{% endblocktrans %}</span>
     {# The map is a progressive enhancement over the figures above it, so   #}
     {# a failure says what is still true rather than apologising: the plan  #}
     {# is in the summary, and only the picture of it is missing.            #}
