@@ -282,9 +282,9 @@ describe('tapping a saved route', () => {
   it('shows the route the tap found, with both vertical figures', () => {
     const node = tapAt(LINE_Y - 6);
 
-    expect(node.textContent).toContain('12.4 km');
-    expect(node.textContent).toContain('850 m asc');
-    expect(node.textContent).toContain('1100 m desc');
+    expect(node.textContent).toContain('12.4km');
+    expect(node.textContent).toContain('850m ↑');
+    expect(node.textContent).toContain('1100m ↓');
   });
 
   // SNOW-750: the caption line under the profile. Two independent facts,
@@ -313,11 +313,18 @@ describe('tapping a saved route', () => {
     // Null means "the file carried no timing", never "took no time" — the
     // same contract the null ascent figure carries. A planned <rte> reaches
     // this branch, and "0m" would be a claim the file does not make.
+    //
+    // Asserted on the caption ENDING at the range, rather than on the
+    // absence of a duration-shaped substring. The guard was
+    // not.toMatch(/\dh\d|\dm/), which closing the space between a value
+    // and its unit turned into a false failure: the figures line above now
+    // reads "850m ↑", and "850m" matches \dm.
     ROUTE_FEATURE.properties.duration_s = null;
 
     const node = tapAt(LINE_Y - 6);
 
-    expect(node.textContent).not.toMatch(/\dh\d|\dm/);
+    expect(node.textContent).toContain('1500–2100 m');
+    expect(node.textContent).not.toContain('1500–2100 m · ');
   });
 
   it('drops the hours segment under an hour', () => {

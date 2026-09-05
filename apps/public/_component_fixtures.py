@@ -1426,7 +1426,7 @@ UGC_PANEL_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "Row whose name frames its place on the map",
         "context": {
             "label": "Lac de Vaux hike",
-            "meta": "8.4 km · 645 m asc · 525 m desc · 3h10m",
+            "meta": "8.4km · 645m ↑ · 525m ↓ · 3h10m",
             "focus_target": "7.231800,46.089100,7.290300,46.120400",
             "focus_label": "Zoom to Lac de Vaux hike",
             "actions_template": "includes/_map_downloads_row_actions.html",

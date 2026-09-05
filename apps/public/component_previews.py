@@ -230,11 +230,11 @@ _PANELS: dict[str, dict[str, Any]] = {
             # showing a reader a row that no longer exists.
             {
                 "label": _("Rosablanche"),
-                "meta": _("14.2 km · 1,320 m asc · 1,290 m desc · 5h20m"),
+                "meta": _("14.2km · 1,320m ↑ · 1,290m ↓ · 5h20m"),
             },
             {
                 "label": _("Pigne d'Arolla"),
-                "meta": _("11.8 km · 1,540 m asc · 1,510 m desc · 6h05m"),
+                "meta": _("11.8km · 1,540m ↑ · 1,510m ↓ · 6h05m"),
             },
         ),
     },

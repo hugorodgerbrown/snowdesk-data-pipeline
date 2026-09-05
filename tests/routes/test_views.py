@@ -865,8 +865,8 @@ class TestRouteListFigures:
         response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
         body = response.content.decode()
 
-        assert "12.4 km" in body
-        assert "850 m asc" in body
+        assert "12.4km" in body
+        assert "850m ↑" in body
 
     def test_descent_is_rendered_beside_ascent(self, client: Client) -> None:
         """Both vertical figures, not one netted against the other.
@@ -883,8 +883,8 @@ class TestRouteListFigures:
 
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
-        assert "850 m asc" in body
-        assert "1100 m desc" in body
+        assert "850m ↑" in body
+        assert "1100m ↓" in body
 
     def test_a_null_descent_is_omitted(self, client: Client) -> None:
         """Descent obeys the same unknown-is-not-flat rule as ascent."""
@@ -896,8 +896,8 @@ class TestRouteListFigures:
 
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
-        assert "850 m asc" in body
-        assert " m desc" not in body
+        assert "850m ↑" in body
+        assert "m ↓" not in body
 
     def test_a_zero_descent_is_still_rendered(self, client: Client) -> None:
         """A measured zero — a track that only climbs — states itself."""
@@ -907,16 +907,23 @@ class TestRouteListFigures:
             user=user, distance_m=12400.0, ascent_m=850.0, descent_m=0.0
         )
 
-        assert "0 m desc" in client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+        assert "0m ↓" in client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
     def test_a_null_ascent_is_omitted(self, client: Client) -> None:
         """A route with no elevation data shows its distance alone.
 
         ``ascent_m`` is null — not zero — when the source GPX carried no
         ``<ele>`` at all, and Route's own docstring is explicit that "we
-        don't know" and "flat" are different facts. Rendering "0 m asc"
+        don't know" and "flat" are different facts. Rendering "0m ↑"
         for the first would be a false statement about a route somebody may
         be planning to ski, so the meta line drops the figure entirely.
+
+        Asserted on the ARROWS, which are the whole of what a vertical
+        figure looks like now. This guard was " m asc" not in body plus
+        "0 m" not in body, and closing the space between a value and its
+        unit made both vacuous in the same edit — nothing renders "0 m"
+        any more whatever the data says. Only this route is in the list,
+        so an arrow in the body can only be its own.
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -927,9 +934,9 @@ class TestRouteListFigures:
         response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
         body = response.content.decode()
 
-        assert "12.4 km" in body
-        assert " m asc" not in body
-        assert "0 m" not in body
+        assert "12.4km" in body
+        assert "↑" not in body
+        assert "↓" not in body
 
     def test_a_zero_ascent_is_still_rendered(self, client: Client) -> None:
         """Zero is a real measurement and must not be mistaken for absent.
@@ -944,7 +951,7 @@ class TestRouteListFigures:
 
         response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
 
-        assert "0 m asc" in response.content.decode()
+        assert "0m ↑" in response.content.decode()
 
     def test_the_elapsed_time_closes_the_line(self, client: Client) -> None:
         """The fourth figure, appended to whichever figure branch ran.
@@ -995,6 +1002,12 @@ class TestRouteListFigures:
         carries no timing at all — and "we don't know" is not "it took no
         time". The pair is always set or unset together, never one of the
         two.
+
+        Asserted on the WHOLE meta line rather than on the absence of a
+        substring. The guard here was "0m" not in body, which closing the
+        space between a value and its unit turned into a false failure:
+        "1100m" ends in "0m". Pinning the entire line is what actually
+        says "and nothing follows the descent".
         """
         user = UserFactory.create()
         client.force_login(user)
@@ -1008,9 +1021,10 @@ class TestRouteListFigures:
         )
 
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+        meta = re.search(r"data-row-meta[^>]*>(.*?)</span>", body, re.S)
 
-        assert "12.4 km · 850 m asc · 1100 m desc" in body
-        assert "0m" not in body
+        assert meta is not None
+        assert meta.group(1).strip() == "12.4km · 850m ↑ · 1100m ↓"
 
     def test_an_unnamed_route_falls_back_to_its_filename(self, client: Client) -> None:
         """A blank name reads as the uploaded filename, never as an empty row."""

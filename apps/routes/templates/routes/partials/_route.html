@@ -62,28 +62,47 @@ same whether the viewer owns it yet or not.
 
 META LINE — the four figures a route is read by: its length, how much
 climbing it carries, how much dropping, and how long the recording ran.
-"12.4 km · 850 m asc · 1100 m desc · 4h15m".
+"12.4km · 850m ↑ · 1100m ↓ · 4h15m".
 
 Ascent and descent are both here because they are not each other's
 mirror: an out-and-back climbs and drops the same height, a one-way
 traverse does not, and the pair is what separates them at a glance. They
 are never netted — see Route.descent_m.
 
-ABBREVIATED "asc" / "desc" since SNOW-830, and that is load-bearing
-rather than cosmetic: the line went MONO across all four panels, DM Mono
-sets wider than DM Sans, and the full-word four-segment form
-("12.9 km · 497 m ascent · 512 m descent · 4h15m", 45 characters) only
-just fits the panel's ~340px inner width — it overflows as soon as an
-ascent reaches four digits. The abbreviated form is 39. The map popup
-carries the same two words, and was abbreviated with it so one route
-reads the same in both places.
+COMPRESSED IN TWO STEPS, both load-bearing rather than cosmetic, because
+the line went MONO across all four panels at SNOW-830 and DM Mono sets
+wider than DM Sans. The full-word, spaced form
+("12.9 km · 497 m ascent · 512 m descent · 4h15m") is 45 characters
+against the panel's ~340px inner width, and overflows as soon as an
+ascent reaches four digits.
+
+  * the space between a value and its unit is gone — "850m", not
+    "850 m", which is also how the duration has always read ("4h15m");
+  * "ascent" / "descent" are the ARROWS ↑ and ↓ rather than words or the
+    abbreviations "asc" / "desc" they passed through.
+
+That takes the four-segment line to 33 characters, so a four-digit
+ascent and descent now fit. The map popup carries the same two figures
+and was changed with this, so one route reads the same in both places.
+
+LITERAL ↑ AND ↓, not `&uarr;` / `&darr;`. Both readers of these strings
+escape: the panel's line reaches the page through the shared row's
+`{{ meta }}`, and the popup's through a `textContent` write in
+static/js/map.js — so a named entity would render as the text
+"&uarr;" in both. The character is what survives.
+
+THE ARROWS ARE NOT LABELLED FOR A SCREEN READER. "850m ↑" announces as
+"850m up arrow" at best and "850m" at worst, where "850 m ascent" said
+what it meant. The meta line is one opaque string in a slot four panels
+share, so labelling a segment of it means giving that slot markup it does
+not have. Worth revisiting if this line ever stops being a plain string.
 
 ``ascent_m`` and ``descent_m`` are nullable and the null is MEANINGFUL: a
 GPX with no <ele> data anywhere yields null, and Route's own docstring is
 explicit that "we don't know" and "flat" are different facts — rendering
 the second for the first would be a safety-relevant lie about a route
 someone may be planning to ski. So a route with no vertical data shows
-its distance alone rather than "0 m asc". Tested by
+its distance alone rather than "0m ↑". Tested by
 tests/routes/test_views.py::TestRouteList::test_a_null_ascent_is_omitted.
 
 The two are normally known or unknown together (one elevation series
@@ -114,18 +133,18 @@ Context:
 {% with uuid=route.uuid|stringformat:"s" km=route.distance_km|floatformat:1 ascent=route.ascent_m|floatformat:0 descent=route.descent_m|floatformat:0 %}
     {% trans "Untitled route" as untitled_route %}
     {% firstof route.name route.source_filename untitled_route as row_label %}
-    {% blocktrans trimmed with km=km asvar row_meta %}{{ km }} km{% endblocktrans %}
+    {% blocktrans trimmed with km=km asvar row_meta %}{{ km }}km{% endblocktrans %}
     {% if route.ascent_m is not None and route.descent_m is not None %}
         {% blocktrans trimmed with km=km ascent=ascent descent=descent asvar row_meta %}
-            {{ km }} km · {{ ascent }} m asc · {{ descent }} m desc
+            {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
         {% endblocktrans %}
     {% elif route.ascent_m is not None %}
         {% blocktrans trimmed with km=km ascent=ascent asvar row_meta %}
-            {{ km }} km · {{ ascent }} m asc
+            {{ km }}km · {{ ascent }}m ↑
         {% endblocktrans %}
     {% elif route.descent_m is not None %}
         {% blocktrans trimmed with km=km descent=descent asvar row_meta %}
-            {{ km }} km · {{ descent }} m desc
+            {{ km }}km · {{ descent }}m ↓
         {% endblocktrans %}
     {% endif %}
     {# THE ELAPSED TIME, appended to whichever branch above ran (SNOW-830).  #}
