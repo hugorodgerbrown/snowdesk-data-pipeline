@@ -149,6 +149,12 @@ Optional context:
     data-route-claim-url-template="{{ route_claim_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
     data-routes-signin-url="{{ routes_signin_url }}"
+    {# SNOW-828: where map.js fetches a trip's route from when it arrives   #}
+    {# on ?trip=<uuid> or ?trip_share=<token>. Unconditional, unlike the    #}
+    {# routes URL above: both endpoints scope themselves, and the map has   #}
+    {# no trips overlay whose visibility these would gate.                  #}
+    data-trip-route-url-template="{{ trip_route_url_template }}"
+    data-trip-share-route-url-template="{{ trip_share_route_url_template }}"
 >
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">

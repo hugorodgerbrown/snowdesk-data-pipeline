@@ -39,6 +39,16 @@ plus the sharing pair (SNOW-821), neither of which is a fragment:
   it is rate-limited on the (token, IP) key ``apps.routes.views`` established
   for the routes twin: this is the token-guessing surface.
 
+plus the pair that hands the route to the MAP (SNOW-828), neither a
+fragment and neither a page:
+
+- ``trip_route_geojson`` (GET) — ``/trips/<uuid>/route.geojson``, for
+  somebody on the trip.
+- ``trip_share_route_geojson`` (GET) — ``/trips/s/<token>/route.geojson``,
+  for somebody holding the link, joined or not. Rate-limited on the same
+  (token, IP) key as the share page: same token-guessing surface, different
+  verb.
+
 **Why the form is a page and the writes are fragments.** The "Plan a trip"
 control lives on a route row inside the map's routes panel, whose body is
 re-cloned from a ``<template>`` on every open — a form swapped into it would
@@ -47,12 +57,13 @@ a five-field authoring task, which is a page. The WRITES stay fragments
 because the form posts over HTMX from that page and needs to re-render
 itself with errors without a round trip through a full re-render.
 
-Ownership: ``trip_detail`` is ORGANISER-ONLY in this commit — SNOW-821 adds
-the tokenised public page and SNOW-822 opens the object page to
-participants. Everything else here is organiser-scoped through the service
-layer's own lookups, which raise ``DoesNotExist`` for a uuid that is not
-this user's; the view answers 404 and never 403, so a probing request
-cannot distinguish "not yours" from "doesn't exist".
+Ownership: the uuid-addressed surfaces are PARTICIPANT-scoped (SNOW-822
+opened them past the organiser), the tokenised ones are open to whoever
+holds a live link, and the authoring endpoints stay organiser-scoped
+through the service layer's own lookups. All of them raise
+``DoesNotExist`` for an identifier the caller may not have, and the view
+answers 404 and never 403, so a probing request cannot distinguish "not
+yours" from "doesn't exist".
 """
 
 from __future__ import annotations
@@ -67,6 +78,7 @@ from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import urlencode
 from django.views.decorators.http import (
     require_GET,
     require_http_methods,
@@ -207,6 +219,124 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     }
 
 
+def _map_deep_link(parameter: str, value: str) -> str:
+    """Return the map URL that draws one trip, as ``/?<parameter>=<value>``.
+
+    Two parameters, never one: ``trip`` carries a uuid and is answered by
+    the participant-scoped endpoint, ``trip_share`` carries a token and is
+    answered by the tokenised one. Discriminating a single parameter by
+    the SHAPE of its value would work — a uuid and an 11-character token
+    are not confusable — but it would put the rule that a link-holder is
+    never handed a uuid inside a regex instead of in the URL space, where
+    the rest of this app keeps it.
+
+    Args:
+        parameter: ``"trip"`` or ``"trip_share"``.
+        value: The trip's uuid or its share token.
+
+    Returns:
+        A root-relative URL.
+
+    """
+    return f"{reverse('public:home')}?{urlencode({parameter: value})}"
+
+
+def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
+    """Build the FeatureCollection the MAP draws for a trip (SNOW-828).
+
+    The same two geometries ``_trip_map_payload`` describes, in the shape
+    ``map.js`` consumes: one FeatureCollection rather than a dict of named
+    Features, because the map installs it as a single GeoJSON source and
+    separates the two with a ``kind`` filter per layer.
+
+    **From the SNAPSHOT, never the ``route`` FK.** ``trip.points`` and
+    ``trip.bounds`` were copied at creation and are never re-read from the
+    source route, which is exactly why a trip survives the organiser
+    renaming or deleting the route it was planned from — see
+    ``docs/decisions/a-trip-is-one-object-with-a-roster.md``. Reading
+    ``trip.route`` here would reintroduce the dependency that snapshot
+    exists to remove.
+
+    ``name`` and ``page_url`` ride on the route Feature because the map's
+    arrival banner names the trip and links back to it, and the map must
+    not have to make a second request to find out what it is drawing.
+    ``page_url`` is passed in rather than reversed here: the two callers
+    address the trip differently (uuid for a participant, token for a
+    link-holder) and a link-holder must never be handed the uuid.
+
+    Args:
+        trip: The trip to describe.
+        page_url: Where the map's banner links back to — the surface the
+            viewer arrived from, addressed as that viewer may address it.
+
+    Returns:
+        A JSON-serialisable GeoJSON FeatureCollection.
+
+    """
+    meeting = trip.meeting_point
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    # Stored in GeoJSON axis order already — see
+                    # ``_trip_map_payload`` and ``Trip.points``' help_text.
+                    "type": "LineString",
+                    "coordinates": trip.points,
+                },
+                "properties": {
+                    "kind": "route",
+                    "name": trip.name,
+                    "page_url": page_url,
+                    "bounds": trip.bounds,
+                    "distance_m": trip.distance_m,
+                    # None passes straight through: "unknown", not zero.
+                    "ascent_m": trip.ascent_m,
+                    "descent_m": trip.descent_m,
+                },
+            },
+            {
+                "type": "Feature",
+                "geometry": {
+                    # Longitude first (RFC 7946), as everywhere GeoJSON is
+                    # emitted — even though every Python signature in this
+                    # project is latitude-first.
+                    "type": "Point",
+                    "coordinates": [meeting.longitude, meeting.latitude],
+                },
+                "properties": {"kind": "meeting"},
+            },
+        ],
+    }
+
+
+def _trip_route_response(trip: Trip, page_url: str) -> JsonResponse:
+    """Answer one trip's route as GeoJSON, uncacheable.
+
+    Shared by the uuid- and token-addressed endpoints so the two cannot
+    drift about what a trip's geometry is — the difference between them is
+    who may ask, never what comes back.
+
+    ``no-store`` for the reason ``trip_share_page`` carries it: the payload
+    is per-recipient in the sense that matters, and an intermediate cache
+    holding one visitor's answer and handing it to another would hand out
+    a route its holder was never sent.
+
+    Args:
+        trip: The trip to serve.
+        page_url: The banner's link back, as ``_trip_route_collection``
+            takes it.
+
+    Returns:
+        A JsonResponse carrying the FeatureCollection.
+
+    """
+    response = JsonResponse(_trip_route_collection(trip, page_url))
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 def _picker_payload(
     points: list[list[float]],
     bounds: list[float],
@@ -321,6 +451,19 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # this with the token-addressed twin, because a link-holder who has
         # not joined must never be handed the uuid.
         "save_route_url": reverse("trips:save_route", args=[trip.uuid]),
+        # SNOW-828. "View on the map" — the way OUT of this page's 320px
+        # canvas into the real one, with the layers, the danger overlay and
+        # the scrubber a document page cannot carry. Uuid-addressed here
+        # and token-addressed on the share page, the same split
+        # ``save_route_url`` above makes and for the same reason.
+        #
+        # A deep link the map CONSUMES rather than a standing instruction:
+        # ``static/js/map.js`` fetches the geometry, frames it and strips
+        # the parameter, and nothing is written to the session. A trip has
+        # a durable page of its own to come back to, so the drawn route is
+        # for this visit — unlike a route share, which persists because it
+        # is an offer awaiting a decision with nowhere else to live.
+        "map_url": _map_deep_link("trip", str(trip.uuid)),
         "map_payload": _trip_map_payload(trip),
         # The site default and nothing else. A trip page has no basemap
         # picker: it is a document about one plan rather than a map to
@@ -440,14 +583,15 @@ def trip_new(request: HttpRequest) -> HttpResponse:
 def trip_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
     """Render one trip's own page.
 
-    ORGANISER-ONLY in this commit: the object page answers for the account
-    that created the trip and 404s for everyone else. SNOW-821 adds the
-    tokenised public page and SNOW-822 opens this one to the roster.
+    PARTICIPANT-scoped since SNOW-822: ``Trip.objects.for_user`` filters by
+    membership, so everyone on the roster reaches it and everyone else
+    gets a 404. The organiser holds a participant row from creation, so
+    they need no branch of their own.
 
     An anonymous visitor is redirected to sign-in on the same reasoning
-    ``trip_new`` states, not 404'd: until SNOW-821 there is no public trip
-    surface at all, so "sign in" is the honest answer rather than "no such
-    thing".
+    ``trip_new`` states, not 404'd: a person who is on this trip and
+    merely signed out should be asked to sign in, and the tokenised page
+    is where somebody without an account is sent instead.
 
     Errors:
         404 — the uuid is not a trip this user organised.
@@ -858,6 +1002,9 @@ def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
     # Save is token-addressed on this surface for the same reason Join is:
     # a link-holder must never be handed the uuid.
     context["save_route_url"] = reverse("trips:save_route_shared", args=[token])
+    # SNOW-828. Token-addressed for the same reason, and answered by the
+    # tokenised geojson endpoint rather than the participant-scoped one.
+    context["map_url"] = _map_deep_link("trip_share", token)
     # And Leave is NOT offered here. It is uuid-addressed and lives on the
     # trip's own page, which every participant can reach — one exit, on the
     # surface that also carries the plan being left.
@@ -869,6 +1016,123 @@ def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
     # else. Matches ``routes:share_redirect``'s own header.
     response["Cache-Control"] = "no-store"
     return response
+
+
+# ---------------------------------------------------------------------------
+# The route, for the map (SNOW-828)
+# ---------------------------------------------------------------------------
+#
+# Two endpoints answering one question — "draw this trip's route" — split
+# by who is allowed to ask. They are the map's half of the "View on the
+# map" control: the page links to ``/?trip=…`` or ``/?trip_share=…``, and
+# ``static/js/map.js`` fetches whichever of these the parameter names.
+#
+# THEY LIVE HERE AND NOT IN ``routes.geojson``. The alternative considered
+# was folding a trip into the routes feed the way SNOW-764 folds a pending
+# share, via a session entry. It would have reused the route line, its
+# popup and its fit-to-bounds for free — but it puts trips inside the
+# routes app's feed, and it makes an owner-scoped endpoint conditionally
+# not owner-scoped for a second, unrelated reason. Trips serve trip
+# geometry; the routes feed stays what it says it is.
+#
+# NOTHING IS WRITTEN TO THE SESSION, which is the other half of that
+# choice. A route share persists in the session because it is an offer
+# awaiting a decision with nowhere else to live: strip the token from the
+# URL and the recipient could not find it again. A trip has a durable page
+# of its own — the one the viewer just came from, which the map's banner
+# links back to — so the drawn route is for this visit and the map's
+# parameter is consumed rather than kept.
+
+
+@require_GET
+def trip_route_geojson(request: HttpRequest, uuid: UUID) -> JsonResponse:
+    """Serve one trip's route to the map, for somebody ON the trip.
+
+    Participant-scoped through ``Trip.objects.for_user``, which is
+    membership and not authorship — a person who joined draws the route
+    exactly as the organiser does.
+
+    Not ``@require_htmx``: consumed by a ``fetch()`` in ``map.js``, not
+    swapped into a page.
+
+    Errors:
+        403 — anonymous request. A 403 rather than the sign-in redirect
+            ``trip_detail`` answers with, because this is an endpoint a
+            script reads and not a page a person navigates to.
+        404 — the uuid is not a trip this user is on.
+
+    Args:
+        request: The incoming GET request.
+        uuid: The Trip's uuid, from the URL.
+
+    Returns:
+        A JsonResponse carrying the FeatureCollection, or an error.
+
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    try:
+        trip = (
+            Trip.objects.for_user(request.user)
+            .select_related("meeting_point")
+            .get(uuid=uuid)
+        )
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    return _trip_route_response(trip, reverse("trips:detail", args=[trip.uuid]))
+
+
+@require_GET
+@ratelimit(key=_share_page_rate_limit_key, rate=_SHARE_PAGE_RATE, block=False)
+def trip_share_route_geojson(request: HttpRequest, token: str) -> JsonResponse:
+    """Serve one trip's route to the map, for somebody holding the LINK.
+
+    The endpoint that makes "View on the map" work for the person the trip
+    was sent to — the one who could not get there at all before, because
+    ``routes:geojson`` is owner-scoped and a non-participant has no route
+    on the map to focus. Available whether or not they have joined, and
+    whether or not they are signed in: someone still deciding whether to
+    come is exactly the person who wants a proper look at the terrain.
+
+    ONE ANSWER FOR EVERY DEAD LINK, matching ``trip_share_page``: unknown,
+    revoked and expired are all 404, decided by ``TripQuerySet.shared()``.
+    Distinguishing them would tell a guesser which tokens have ever
+    existed.
+
+    Rate-limited on the same (token, IP) key and at the same budget as the
+    share page, because it is the same token-guessing surface reached by a
+    different verb — a limiter on the page alone would leave the token
+    space walkable through here.
+
+    Errors:
+        404 — the token matches no live link.
+        429 — rate limit exceeded (30/hour per token+IP).
+
+    Args:
+        request: The incoming GET request.
+        token: The share token, from the URL.
+
+    Returns:
+        A JsonResponse carrying the FeatureCollection, or an error.
+
+    """
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
+    try:
+        trip = (
+            Trip.objects.shared().select_related("meeting_point").get(share_token=token)
+        )
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    # Token-addressed, never the uuid: the banner's link back must send a
+    # link-holder to the surface they are entitled to, and handing them the
+    # uuid would hand them the identifier the participant-scoped endpoints
+    # key on.
+    return _trip_route_response(trip, reverse("trips:share_page", args=[token]))
 
 
 # ---------------------------------------------------------------------------

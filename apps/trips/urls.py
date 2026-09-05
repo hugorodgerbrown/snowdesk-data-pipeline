@@ -18,9 +18,11 @@ URL structure:
   trips/partials/s/<token>/save-route/
                                      POST — the same, for a link-holder
   trips/<uuid>/                      GET  — the trip's own page
+  trips/<uuid>/route.geojson         GET  — the route, for the map (SNOW-828)
   trips/<uuid>/share/                POST — mint/rotate the link (SNOW-821)
   trips/<uuid>/share/revoke/         POST — null the token
   trips/s/<token>/                   GET  — the public page behind the link
+  trips/s/<token>/route.geojson      GET  — the same route, for a link-holder
 
 The ``partials/`` prefix marks the HTMX fragment endpoints
 (``@require_htmx``); the pages sit outside it because they are navigations
@@ -106,6 +108,16 @@ urlpatterns = [
         "s/<str:token>/",
         views.trip_share_page,
         name="share_page",
+    ),
+    path(
+        "s/<str:token>/route.geojson",
+        views.trip_share_route_geojson,
+        name="share_route_geojson",
+    ),
+    path(
+        "<uuid:uuid>/route.geojson",
+        views.trip_route_geojson,
+        name="route_geojson",
     ),
     path(
         "<uuid:uuid>/",

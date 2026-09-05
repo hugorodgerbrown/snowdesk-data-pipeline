@@ -56,7 +56,7 @@ its own metadata.
         {% include "trips/partials/_trip_summary.html" with trip=trip %}
         {% endcard %}
 
-        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload basemap_url=basemap_url %}
+        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload basemap_url=basemap_url map_url=map_url %}
 
         {# SNOW-824: Save route. Beside the map, because what it saves is  #}
         {# the line drawn there — and above the roster, because it is the   #}
