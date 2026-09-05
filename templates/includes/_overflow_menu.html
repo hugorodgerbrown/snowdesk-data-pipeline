@@ -1,6 +1,18 @@
+{% load components %}
 {% comment %}
 templates/includes/_overflow_menu.html — Reusable "…" kebab overflow menu
-(SNOW-645).
+(SNOW-645, re-adopted by SNOW-830).
+
+WHICH PANELS HAVE ONE, AND WHICH DO NOT. This partial was built for the
+"Manage downloads" sheet's row actions, dropped a day later when SNOW-658
+ruled "no ellipsis menu" across every UGC panel, and brought back by
+SNOW-830 for the ROUTE row alone. That ruling is narrowed rather than
+reversed: favourites, field observations and downloads keep their visible
+trash, because a visible destructive control in the same place on every
+row is one tap rather than two. The route row outgrew it — four inline
+controls (Share, "Plan a trip", Rename, Remove) on a 380px row left the
+route's own name rendering as "Mont Fort – Ba…", and the name is the one
+thing a user scans the list by. One trigger buys the name the row back.
 
 Built for the "Manage downloads" sheet's row actions (Rename / Remove),
 replacing the two inline buttons every row used to carry. There was no
@@ -75,9 +87,25 @@ SNOW-645 review: the trigger's hover fill is `hover:bg-chip-strong`
 (`src/css/main.css` §1) — the same translucent-black token
 `_sheet_header.html`'s × button uses, reconciling this against the Claude
 Design source rather than leaving it colour-only (`hover:text-text-1`
-alone, as it shipped originally).
+alone, as it shipped originally). SNOW-830 takes that from
+`{% templatetag openblock %} icon_button_classes {% templatetag closeblock %}`
+instead of restating it: the trigger now sits in a row beside controls
+rendered through that tag, it is the same 44×44 icon-only control, and
+the tag's `hover-affordance` paints the same `--color-chip-strong` fill
+while also giving the pointer a native `<button>` does not take by
+itself. 44×44 and not the design's 28×28: the touch target every other
+control in this panel uses is the one metric where the panel's own
+standard wins.
+
+POSITIONING BELONGS TO THE SCRIPT (SNOW-830). The `<ul>` used to carry
+`absolute right-0 mt-1`, which cannot work on a map panel: the rows sit
+in a scroll container inside an `overflow-hidden` sheet, so an absolutely
+positioned menu on the last row is clipped away. static/js/overflow_menu.js
+writes `position: fixed` plus `top`/`left` measured from the trigger on
+every open, and clears them on close. What is left here is everything
+that is not geometry — the box, the elevation and the stacking order.
 {% endcomment %}
-<div class="relative inline-block" data-overflow-menu>
+<div class="inline-block" data-overflow-menu>
     <button
         type="button"
         id="{{ trigger_id }}"
@@ -86,19 +114,15 @@ alone, as it shipped originally).
         aria-expanded="{% if open %}true{% else %}false{% endif %}"
         aria-controls="{{ menu_id }}"
         aria-label="{{ trigger_label }}"
-        class="flex h-11 w-11 items-center justify-center rounded-tag text-text-2 hover:bg-chip-strong hover:text-text-1"
+        class="{% icon_button_classes %}"
     >
-        {# A literal "…" character, not its decimal numeric-entity form —  #}
-        {# every digit of that decimal code point also happens to be a     #}
-        {# valid hex digit, which ds-lint's hex-colour rule reads as a     #}
-        {# raw colour literal.                                             #}
-        <span aria-hidden="true">…</span>
+        {% include "includes/_icon_ellipsis.html" only %}
     </button>
     <ul
         id="{{ menu_id }}"
         role="menu"
         {% if not open %}hidden{% endif %}
-        class="absolute right-0 z-10 mt-1 w-40 rounded-tag border border-border bg-card py-1 shadow-glass"
+        class="z-10 w-44 rounded-tag border border-border bg-card py-1 shadow-glass"
     >
         {% if items_template %}
             {% include items_template %}
@@ -108,7 +132,7 @@ alone, as it shipped originally).
                     <button
                         type="button"
                         role="menuitem"
-                        class="block w-full px-3 py-2 text-left text-sm text-text-2 hover:bg-tag hover:text-text-1"
+                        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
                     >
                         {{ item.label }}
                     </button>

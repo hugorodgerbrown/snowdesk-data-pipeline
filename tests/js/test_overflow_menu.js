@@ -11,12 +11,25 @@
  * anything bound to the previous copy.
  *
  * `overflow_menu.js` is a browser IIFE with no exports — importing it for
- * side effects (it self-wires delegated `click`/`keydown` listeners at
- * import time) is enough, mirroring test_overlays.js's own pattern for
- * the same shape of module.
+ * side effects (it self-wires delegated `click`/`keydown`/`scroll`
+ * listeners at import time) is enough, mirroring test_overlays.js's own
+ * pattern for the same shape of module.
+ *
+ * SNOW-830 added three behaviours, each because the primitive could not
+ * be used on a map panel without it, and each covered below:
+ *
+ *   - the menu is placed `fixed` from the trigger's own rect, so it
+ *     escapes the panel's scroll container and the sheet's
+ *     `overflow-hidden`;
+ *   - it closes on scroll, because a `fixed` box does not travel with the
+ *     row it was opened from;
+ *   - its Escape handler runs in CAPTURE phase and stops propagation only
+ *     when a menu is open, so one Escape closes the menu without also
+ *     closing the sheet — but an Escape with no menu open still reaches
+ *     the sheet's own bubble-phase handler (static/js/map_sheet.js).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/overflow_menu.js';
 
@@ -45,6 +58,39 @@ function trigger(id) {
 
 function menu(id) {
   return document.getElementById('menu-' + id);
+}
+
+/** Give one instance a measurable box, which jsdom does not.
+ *
+ * jsdom lays nothing out: every `getBoundingClientRect()` is all-zero and
+ * every `offsetWidth`/`offsetHeight` is 0. The placement maths is
+ * arithmetic on those four numbers, so supplying them is enough to assert
+ * it — and it is the arithmetic, not the layout, that SNOW-830 wrote.
+ *
+ * @param {string} id The fixture id ('a' or 'b').
+ * @param {object} rect Trigger rect: `top`, `bottom`, `left`, `right`.
+ * @param {object} box Menu box: `width`, `height`.
+ * @returns {void}
+ */
+function measure(id, rect, box) {
+  trigger(id).getBoundingClientRect = () => ({
+    top: rect.top,
+    bottom: rect.bottom,
+    left: rect.left,
+    right: rect.right,
+    width: rect.right - rect.left,
+    height: rect.bottom - rect.top,
+    x: rect.left,
+    y: rect.top,
+  });
+  Object.defineProperty(menu(id), 'offsetWidth', {
+    configurable: true,
+    get: () => box.width,
+  });
+  Object.defineProperty(menu(id), 'offsetHeight', {
+    configurable: true,
+    get: () => box.height,
+  });
 }
 
 beforeEach(() => {
@@ -107,7 +153,114 @@ describe('outside click', () => {
   });
 });
 
+describe('placement (SNOW-830)', () => {
+  it('is positioned fixed, measured from the trigger, right edge to right edge', () => {
+    // `fixed` rather than `absolute` is the whole point: the row sits in
+    // includes/_ugc_panel.html's scroll container, inside
+    // includes/_overlay_sheet.html's `overflow-hidden` sheet, and an
+    // absolutely positioned menu on the last row is clipped out of sight.
+    measure('a', { top: 100, bottom: 144, left: 300, right: 344 }, { width: 176, height: 120 });
+
+    trigger('a').click();
+
+    expect(menu('a').style.position).toBe('fixed');
+    // 4px under the trigger's bottom edge.
+    expect(menu('a').style.top).toBe('148px');
+    // Hangs leftwards: right edge (344) minus the menu's own width (176).
+    expect(menu('a').style.left).toBe('168px');
+  });
+
+  it('flips above the trigger when the menu will not fit below', () => {
+    // The case the whole placement exists for — the last row of a full
+    // panel, where "below" is off the bottom of the viewport. jsdom's
+    // window is 768 tall.
+    measure('a', { top: 690, bottom: 734, left: 300, right: 344 }, { width: 176, height: 120 });
+
+    trigger('a').click();
+
+    // 690 - 4 - 120: above the trigger, with the same 4px gap.
+    expect(menu('a').style.top).toBe('566px');
+  });
+
+  it('never places the menu off the left edge of a narrow viewport', () => {
+    // A trigger near the left edge would otherwise put a 176px menu at a
+    // negative x, which no amount of scrolling can reach.
+    measure('a', { top: 100, bottom: 144, left: 8, right: 52 }, { width: 176, height: 120 });
+
+    trigger('a').click();
+
+    expect(menu('a').style.left).toBe('4px');
+  });
+
+  it('clears the placement again on close', () => {
+    // A closed menu carrying last open's coordinates is a trap for
+    // anyone reading the DOM, and the next open re-measures anyway.
+    measure('a', { top: 100, bottom: 144, left: 300, right: 344 }, { width: 176, height: 120 });
+
+    trigger('a').click();
+    trigger('a').click();
+
+    expect(menu('a').style.position).toBe('');
+    expect(menu('a').style.top).toBe('');
+    expect(menu('a').style.left).toBe('');
+  });
+});
+
+describe('closing on scroll and resize (SNOW-830)', () => {
+  it('closes on a scroll anywhere in the document, including a non-bubbling one', () => {
+    // `scroll` does not bubble, so the panel's own rows container scrolls
+    // without the document ever hearing it in bubble phase — the module
+    // listens in CAPTURE. A `fixed` menu does not travel with the row it
+    // was opened from, so it closes rather than chasing it.
+    trigger('a').click();
+    expect(menu('a').hidden).toBe(false);
+
+    document.body.dispatchEvent(new Event('scroll', { bubbles: false }));
+
+    expect(menu('a').hidden).toBe(true);
+    expect(trigger('a').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes on a window resize', () => {
+    trigger('a').click();
+
+    window.dispatchEvent(new Event('resize'));
+
+    expect(menu('a').hidden).toBe(true);
+  });
+});
+
 describe('Escape', () => {
+  it('closes the menu without reaching the sheet behind it (SNOW-830)', () => {
+    // static/js/map_sheet.js binds Escape-closes-the-sheet on `document`
+    // in BUBBLE phase. Both listeners on one node in one phase cannot
+    // stop each other, so this module's is in CAPTURE — which runs
+    // first, on the way down — and stops propagation there.
+    const sheetHandler = vi.fn();
+    document.addEventListener('keydown', sheetHandler);
+    trigger('a').click();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(menu('a').hidden).toBe(true);
+    expect(sheetHandler).not.toHaveBeenCalled();
+
+    document.removeEventListener('keydown', sheetHandler);
+  });
+
+  it('lets Escape through untouched when no menu is open (SNOW-830)', () => {
+    // The other half of the same fix: swallowing every Escape would make
+    // the sheet undismissable by keyboard.
+    const sheetHandler = vi.fn();
+    document.addEventListener('keydown', sheetHandler);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(sheetHandler).toHaveBeenCalled();
+
+    document.removeEventListener('keydown', sheetHandler);
+  });
+
   it('closes the open menu and returns focus to its trigger', () => {
     trigger('a').click();
 

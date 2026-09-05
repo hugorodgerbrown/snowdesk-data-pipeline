@@ -1271,15 +1271,19 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "Reusable ellipsis kebab overflow menu (SNOW-645) — a trigger "
             "button opening a role=menu popover, dismissed on outside "
-            "click or Escape by the delegated, instance-agnostic "
-            "static/js/overflow_menu.js. The Open variants below are "
-            "rendered pre-expanded (this page loads no interaction JS) so "
-            "the menu contents are visible without a click. NO CURRENT "
-            "CALLERS: its one use was the UGC panel rows' Rename/Remove, "
-            "and SNOW-658 replaced that with visible icon controls on "
-            'Hugo\'s design ("no ellipsis menu"). Kept as a primitive '
-            "rather than deleted — the decision to retire it is not this "
-            "ticket's to take."
+            "click, Escape, scroll or resize by the delegated, "
+            "instance-agnostic static/js/overflow_menu.js, which also "
+            "places it: position:fixed measured from the trigger on every "
+            "open, because the map panels clip on both axes. The Open "
+            "variants below are rendered pre-expanded (this page loads no "
+            "interaction JS) so the menu contents are visible without a "
+            "click, and therefore render in normal flow rather than at "
+            "the coordinates the script would give them. ONE CALLER: the "
+            "route row (routes/partials/_route_row_actions.html, "
+            "SNOW-830). The other three UGC panels keep their visible "
+            "trash — SNOW-658's 'no ellipsis menu' ruling is narrowed to "
+            "exclude routes, not withdrawn, because only that row grew to "
+            "four inline controls and squeezed its own name out."
         ),
         kind="components",
         partial="includes/_overflow_menu.html",
