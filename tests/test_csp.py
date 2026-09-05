@@ -140,6 +140,52 @@ def test_csp_connect_src_derived_from_openfreemap_style_url(
 
 
 @pytest.mark.django_db
+def test_csp_allows_the_origin_of_every_basemap_in_the_catalogue() -> None:
+    """SNOW-833: every BASEMAP_STYLES entry's own origin reaches connect-src.
+
+    A basemap the user can pick from the ``#basemap-menu`` popover but whose
+    origin the policy omits renders blank under enforcement. Adding a
+    candidate is a two-line change — one in the catalogue, one in the policy
+    — and nothing but this test connects them.
+
+    Origins only. The tiles a style *points at* can live on other hosts
+    entirely (swisstopo's five shards are exactly that case) and are not
+    discoverable without fetching the style, which a unit test must not do;
+    ``test_csp_allows_every_swisstopo_tile_shard`` pins those separately.
+    """
+    policy = _csp(Client().get("/"))
+
+    for key, style_url in settings.BASEMAP_STYLES.items():
+        origin = basemap_origin(style_url)
+        assert origin in policy, (
+            f"BASEMAP_STYLES[{key!r}] is served from {origin}, which is not in "
+            f"the CSP connect-src list — the basemap will render blank once "
+            f"CSP_REPORT_ONLY is False."
+        )
+
+
+@pytest.mark.django_db
+def test_csp_allows_every_swisstopo_tile_shard() -> None:
+    """SNOW-833: connect-src names all five sharded swisstopo tile hosts.
+
+    The swisstopo style JSON names only ``vectortiles.geo.admin.ch``, but
+    the ``tiles`` array in each source's TileJSON fans the tiles themselves
+    out across ``vectortiles0…4.geo.admin.ch``. Allowlisting the host in the
+    style URL is therefore not enough, and CSP has no wildcard that matches
+    a subdomain prefix — every shard has to be named.
+
+    The failure this pins is silent while the policy is report-only, which
+    is how it survived: the shards were missing for the whole life of the
+    swisstopo basemaps and nothing broke, because nothing was enforcing.
+    """
+    policy = _csp(Client().get("/"))
+
+    assert "https://vectortiles.geo.admin.ch" in policy
+    for shard in range(5):
+        assert f"https://vectortiles{shard}.geo.admin.ch" in policy
+
+
+@pytest.mark.django_db
 def test_csp_allows_slope_tile_origin_in_connect_and_img_src() -> None:
     """SNOW-691: the slope raster's origin reaches connect-src AND img-src.
 
