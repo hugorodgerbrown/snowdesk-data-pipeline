@@ -41,6 +41,34 @@ def _csp(response: Any) -> str:
     return str(response.headers.get(REPORT_ONLY_HEADER, ""))
 
 
+def _sources(policy: str, directive: str) -> set[str]:
+    """Return one directive's source expressions as a set of whole tokens.
+
+    Asserting ``"https://host" in policy`` instead is a substring test over
+    the entire header, and it passes on an origin that merely *contains*
+    the expected one — ``https://host.example.invalid`` satisfies it, as
+    does a match inside some other directive entirely. CodeQL flags that
+    shape as ``py/incomplete-url-substring-sanitization``; here it is a
+    weak assertion rather than a vulnerability, since the policy is one we
+    generate, but the exact-token form is both stronger and quieter.
+
+    Args:
+        policy: A CSP header value, directives separated by ``;``.
+        directive: The directive name to read, e.g. ``"connect-src"``.
+
+    Returns:
+        The directive's source expressions, or an empty set when the
+        directive is absent — which fails the caller's membership
+        assertion, as it should.
+
+    """
+    for chunk in policy.split(";"):
+        name, _, sources = chunk.strip().partition(" ")
+        if name == directive:
+            return set(sources.split())
+    return set()
+
+
 @contextmanager
 def _basemap_style_url(style_url: str) -> Generator[str, None, None]:
     """Point the basemap settings — and the derived CSP — at ``style_url``.
@@ -153,11 +181,11 @@ def test_csp_allows_the_origin_of_every_basemap_in_the_catalogue() -> None:
     discoverable without fetching the style, which a unit test must not do;
     ``test_csp_allows_every_swisstopo_tile_shard`` pins those separately.
     """
-    policy = _csp(Client().get("/"))
+    connect_src = _sources(_csp(Client().get("/")), "connect-src")
 
     for key, style_url in settings.BASEMAP_STYLES.items():
         origin = basemap_origin(style_url)
-        assert origin in policy, (
+        assert origin in connect_src, (
             f"BASEMAP_STYLES[{key!r}] is served from {origin}, which is not in "
             f"the CSP connect-src list — the basemap will render blank once "
             f"CSP_REPORT_ONLY is False."
@@ -178,11 +206,11 @@ def test_csp_allows_every_swisstopo_tile_shard() -> None:
     is how it survived: the shards were missing for the whole life of the
     swisstopo basemaps and nothing broke, because nothing was enforcing.
     """
-    policy = _csp(Client().get("/"))
+    connect_src = _sources(_csp(Client().get("/")), "connect-src")
 
-    assert "https://vectortiles.geo.admin.ch" in policy
+    assert "https://vectortiles.geo.admin.ch" in connect_src
     for shard in range(5):
-        assert f"https://vectortiles{shard}.geo.admin.ch" in policy
+        assert f"https://vectortiles{shard}.geo.admin.ch" in connect_src
 
 
 @pytest.mark.django_db
