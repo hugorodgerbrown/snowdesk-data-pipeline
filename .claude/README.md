@@ -251,6 +251,11 @@ no file in this repo can override. Go to claude.ai → Settings → Connectors �
 Linear and look at the tool the prompt names; if it reads `Ask`, that is the
 whole cause, and setting it to `Allow` is the whole fix.
 
+**Confirmed 2026-09-05.** That is what it was: the prompts stopped after a
+change at the connector, with no repo change involved. Four days of
+`settings.json` edits could not have worked, and the next session should not
+try a fifth.
+
 Read the tool name off the prompt itself ("Allow Claude to use **Get issue**
 (Linear)?") — it is the one piece of evidence that distinguishes the gates, and
 it is not recoverable afterwards from anything in the repo.
