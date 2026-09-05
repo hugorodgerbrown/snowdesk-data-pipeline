@@ -208,9 +208,22 @@ def test_csp_allows_every_swisstopo_tile_shard() -> None:
     """
     connect_src = _sources(_csp(Client().get("/")), "connect-src")
 
-    assert "https://vectortiles.geo.admin.ch" in connect_src
-    for shard in range(5):
-        assert f"https://vectortiles{shard}.geo.admin.ch" in connect_src
+    # Spelled out here rather than imported from settings: asserting
+    # SWISSTOPO_TILE_SHARDS against a policy built from SWISSTOPO_TILE_SHARDS
+    # would only prove the constant equals itself. These are the hosts the
+    # live TileJSONs actually name.
+    expected = {"https://vectortiles.geo.admin.ch"} | {
+        f"https://vectortiles{shard}.geo.admin.ch" for shard in range(5)
+    }
+
+    # Subset comparison, not a per-host ``in`` test: a URL literal on the
+    # left of ``in`` is the shape CodeQL reports as
+    # py/incomplete-url-substring-sanitization, and the set difference names
+    # every missing host at once when this fails.
+    assert expected <= connect_src, (
+        f"connect-src is missing {sorted(expected - connect_src)} — the "
+        f"swisstopo basemaps will render blank once CSP_REPORT_ONLY is False."
+    )
 
 
 @pytest.mark.django_db
