@@ -40,6 +40,24 @@
  * at all, which is the same idiom and the same reason `map.js` states beside
  * its own copy of these two values.
  *
+ * ## The reader's own basemap (SNOW-829)
+ *
+ * This canvas renders on whatever the reader picked on the map page, not
+ * on the site default. `localStorage` is scoped per ORIGIN, so the key the
+ * map's picker writes (`snowdesk.map.basemap`) is readable here; the
+ * catalogue to resolve it against is emitted by the page
+ * (`trips/partials/_trip_basemaps.html`). Read ONCE at boot — there is no
+ * picker on this page, so no `snowdesk:basemap-changed` will ever fire.
+ *
+ * The national basemaps cover one country each and render BLANK outside
+ * it, and unlike the map page this one has no picker in front of the
+ * reader to fix that with. So after the map goes idle it asks the canvas
+ * what it actually painted (`pwaBasemapStyleCore.drewNothing`) and, if
+ * only this page's own two sources drew, reveals a notice offering the
+ * standard map. Coverage is detected and never declared: the providers'
+ * own extents are unusable for it — swisstopo's declared box CONTAINS
+ * Chamonix, and IGN's is the whole world (see that module's header).
+ *
  * ## Exports (frozen `self.pwaTripMapCore`)
  *
  *   readPayload(doc)              → the parsed payload, or null
@@ -47,6 +65,8 @@
  *   routeSourceData(payload)      → the LineString FeatureCollection
  *   meetingSourceData(payload)    → the Point FeatureCollection
  *   profileFor(payload)           → the profile data, or null
+ *   readBasemaps(doc)             → the {key: url} catalogue, or null
+ *   resolveBasemapFor(el, doc)    → {key, url} for this reader, or null
  *
  * Everything above is a pure function of the payload, so it is unit-tested
  * directly (tests/js/test_trip_map.js) with no browser and no WebGL.
@@ -301,11 +321,153 @@
   }
 
   /**
+   * The source ids this page adds itself.
+   *
+   * Subtracted from `queryRenderedFeatures()` so what remains is the
+   * basemap's own drawing — see `basemapDrewNothing` below.
+   */
+  var OUR_SOURCE_IDS = ['trip-route', 'trip-meeting'];
+
+  /**
+   * Read the {key: url} basemap catalogue the page emitted.
+   *
+   * Defensive for the reason `readPayload` is: a missing or unparseable
+   * element means this is not the page this module was written for, and
+   * `resolveBasemap` answers with the site default for a null catalogue,
+   * which is the pre-SNOW-829 behaviour rather than a failure.
+   *
+   * @param {Document} [doc] Injectable for tests.
+   * @returns {?Object} The catalogue, or null.
+   */
+  function readBasemaps(doc) {
+    var d = doc || (typeof document !== 'undefined' ? document : null);
+    if (!d) return null;
+    var el = d.getElementById('trip-basemaps');
+    if (!el) return null;
+    try {
+      var parsed = JSON.parse(el.textContent || 'null');
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve which basemap this reader gets on this page.
+   *
+   * SNOW-829. `localStorage` is scoped per ORIGIN, so the key the map
+   * page's picker writes is readable here — a reader who chose swisstopo
+   * keeps it on the page where the route is actually being read. Read ONCE
+   * at boot: `snowdesk:basemap-changed` is dispatched by `map.js` after a
+   * swap on the map page, and there is no picker here to fire it.
+   *
+   * The storage read is wrapped because a browser set to block site data
+   * throws on access rather than answering null.
+   *
+   * @param {Element} container The map container, carrying the default key.
+   * @param {Document} [doc] Injectable for tests.
+   * @returns {?Object} `{key, url}`, or null when nothing resolves.
+   */
+  function resolveBasemapFor(container, doc) {
+    var core = self.pwaBasemapStyleCore;
+    if (!core) return null;
+    var stored = null;
+    try {
+      stored = localStorage.getItem(core.STORAGE_KEY);
+    } catch (err) {
+      stored = null;
+    }
+    return core.resolveBasemap(
+      stored,
+      readBasemaps(doc),
+      container.getAttribute('data-default-basemap-key') || '',
+    );
+  }
+
+  /**
+   * Reveal the blank-canvas notice, and wire its one way out.
+   *
+   * The national basemaps cover one country each and render blank outside
+   * it. On the map page a reader can see the picker and fix it; here they
+   * cannot, so the page says what happened and offers the swap. NOT a
+   * picker — one escape from a broken state, the same family as the
+   * `map-failed` message.
+   *
+   * The notice stays hidden when the page did not render one, so a caller
+   * needs no guard of its own.
+   *
+   * @param {Object} map The MapLibre map.
+   * @param {Element} container The map container, carrying the default key.
+   * @param {Document} doc The document.
+   * @returns {void}
+   */
+  function revealBlankNotice(map, container, doc) {
+    var notice = doc.getElementById('trip-basemap-blank');
+    if (!notice) return;
+    var core = self.pwaBasemapStyleCore;
+    var catalogue = readBasemaps(doc);
+    var defaultKey = container.getAttribute('data-default-basemap-key') || '';
+    var fallback = core && core.resolveBasemap(null, catalogue, defaultKey);
+    var button = notice.querySelector('[data-blank-switch]');
+    if (button && fallback) {
+      button.addEventListener('click', function () {
+        notice.hidden = true;
+        // The layers go with the style; `style.load` reinstalls them, which
+        // is why that handler is idempotent.
+        map.setStyle(fallback.url);
+      });
+    } else if (button) {
+      // Nothing to switch TO. Saying what happened still beats a silent
+      // blank canvas, so the notice is shown without its control.
+      button.hidden = true;
+    }
+    notice.hidden = false;
+  }
+
+  /**
+   * Ask the canvas whether the basemap painted anything, once it is idle.
+   *
+   * `idle` and not `load`: before every tile has rendered, "nothing drawn"
+   * is indistinguishable from "not drawn YET", which is the one wrong
+   * answer available. It binds once and unbinds on the first firing —
+   * panning to a genuinely empty corner of a basemap that does cover this
+   * area is not the condition this reports.
+   *
+   * Skipped entirely when the reader is on the site default: that style is
+   * global, so a blank canvas under it is a network failure, which
+   * `map-failed` and MapLibre's own error path already speak for.
+   *
+   * @param {Object} map The MapLibre map.
+   * @param {Element} container The map container.
+   * @param {?Object} basemap The resolved `{key, url}`.
+   * @param {Document} doc The document.
+   * @returns {void}
+   */
+  function watchForBlankBasemap(map, container, basemap, doc) {
+    var core = self.pwaBasemapStyleCore;
+    var defaultKey = container.getAttribute('data-default-basemap-key') || '';
+    if (!core || !basemap || basemap.key === defaultKey) return;
+    var onIdle = function () {
+      map.off('idle', onIdle);
+      var drawn;
+      try {
+        drawn = map.queryRenderedFeatures();
+      } catch (err) {
+        return;
+      }
+      if (core.drewNothing(drawn, OUR_SOURCE_IDS)) {
+        revealBlankNotice(map, container, doc);
+      }
+    };
+    map.on('idle', onIdle);
+  }
+
+  /**
    * Boot the trip map, once, if this page has one.
    *
    * @returns {void}
    */
-  function init() {
+  async function init() {
     var doc = document;
     var container = doc.querySelector('[data-trip-map]');
     if (!container) return;
@@ -318,10 +480,28 @@
       return;
     }
 
+    // SNOW-829: the READER's basemap, not the site default. `resolveStyle`
+    // answers with the URL for a native style and a Promise of a rewritten
+    // style object for an ESRI one (basemap.at), so it is awaited before
+    // the constructor rather than swapped in afterwards — a style set after
+    // construction paints the default first and then flashes.
+    var basemap = resolveBasemapFor(container, doc);
+    var style = basemap ? basemap.url : '';
+    if (basemap && self.pwaBasemapStyleCore) {
+      try {
+        style = await self.pwaBasemapStyleCore.resolveStyle(
+          basemap.key,
+          basemap.url,
+        );
+      } catch (err) {
+        style = basemap.url;
+      }
+    }
+
     var camera = fitBoundsFor(payload && payload.bounds);
     var map = new maplibregl.Map({
       container: container,
-      style: container.getAttribute('data-basemap-url') || '',
+      style: style,
       // `bounds` + `fitBoundsOptions` rather than center/zoom: the
       // snapshot knows exactly what has to be on screen, and a centre plus
       // a guessed zoom would frame a 2 km valley tour and a 40 km traverse
@@ -340,6 +520,9 @@
     map.on('style.load', function () {
       installLayers(map, payload);
     });
+
+    // SNOW-829: and notice if that basemap drew nothing here.
+    watchForBlankBasemap(map, container, basemap, doc);
   }
 
   self.pwaTripMapCore = Object.freeze({
@@ -354,6 +537,13 @@
     // and took the meeting marker out with it — a failure no assertion
     // about the payload arithmetic could ever have seen.
     ensureMeetingIcon: ensureMeetingIcon,
+    // SNOW-829. The catalogue read and the resolution built on it. The
+    // arithmetic itself lives in `basemap_style_core.js` and is tested
+    // there; these two are exported because they are what decides which
+    // style the constructor is handed, and getting that wrong is a blank
+    // map rather than a thrown error.
+    readBasemaps: readBasemaps,
+    resolveBasemapFor: resolveBasemapFor,
   });
 
   if (typeof document !== 'undefined') {

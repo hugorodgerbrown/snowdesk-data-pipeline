@@ -25,11 +25,21 @@ Context:
     trip        : Trip — the trip being drawn.
     map_payload : dict — the inline GeoJSON, built by
                   apps.trips.views._trip_map_payload.
-    basemap_url : str — settings.BASEMAP_STYLE_URL. The site default and
-                  nothing else: this canvas has no basemap picker, because
-                  a trip page is a document about one plan rather than a
-                  map to explore, and the picker's persisted choice lives
-                  in the map page's own localStorage.
+    (The basemap catalogue itself is emitted once per PAGE — see
+    _trip_basemaps.html — because this partial and the meeting picker both
+    read it and both render on trip.html. trip_map.js resolves the
+    READER's own choice from localStorage['snowdesk.map.basemap'], which
+    is scoped per ORIGIN and so readable here. Still no picker HERE: a
+    trip is a document about one plan, and SNOW-828's "View on the map"
+    is where exploring belongs.)
+    default_basemap_key : str — settings.BASEMAP, the fallback when
+                  nothing is stored or the stored key has since left the
+                  catalogue.
+    map_url     : str — SNOW-828. The deep link that draws this route on
+                  the REAL map, ``?trip=<uuid>`` on the object page and
+                  ``?trip_share=<token>`` on the share page. Built by
+                  apps.trips.views._map_deep_link; both surfaces include
+                  this partial, so the control ships to both from here.
 {% endcomment %}
 {# The payload. A <script type="application/json"> rather than an inline JS #}
 {# literal: the content is parsed, never executed, so the CSP needs no      #}
@@ -39,11 +49,43 @@ Context:
 <div
     id="trip-map"
     data-trip-map
-    data-basemap-url="{{ basemap_url }}"
+    data-default-basemap-key="{{ default_basemap_key }}"
     class="h-80 w-full overflow-hidden rounded-card border border-border bg-card"
     role="img"
     aria-label='{% trans "Map of the trip route and meeting point" %}'
 >
+</div>
+{# SNOW-829: shown only when the reader's chosen basemap painted nothing #}
+{# here — a national basemap outside its own country. Hidden markup       #}
+{# rather than JS-built, so the strings are translated and the tokens are #}
+{# this template's business. Not a picker: one way out of a broken state, #}
+{# which is the same family as the map-failed message above.              #}
+<div
+    id="trip-basemap-blank"
+    hidden
+    role="status"
+    class="mt-3 flex flex-wrap items-center gap-2 rounded-card border border-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text"
+>
+    <span class="min-w-0 flex-1" data-blank-message>
+        {% trans "Your chosen map has no detail for this area." %}
+    </span>
+    <button
+        type="button"
+        data-blank-switch
+        class="shrink-0 cursor-pointer font-medium underline underline-offset-2"
+    >
+        {% trans "Switch to the standard map" %}
+    </button>
+</div>
+{# SNOW-828: the way out of this canvas. Under the map rather than over  #}
+{# it — the map is 320px of a document, and a control floating on top of #}
+{# it would cover the terrain it is offering to show properly. A plain   #}
+{# link, not a fetch: the map page consumes the parameter, frames the    #}
+{# route and strips it, so this is a navigation and nothing more.        #}
+{# Secondary, because the trip's own primary action is joining it.       #}
+<div class="mt-3">
+    {% trans "View on the map" as view_on_map_label %}
+    {% include "includes/_button.html" with variant="secondary" size="compact" href=map_url label=view_on_map_label %}
 </div>
 <div id="trip-profile" data-trip-profile class="mt-3 text-route-line"></div>
 {# Every user-facing string trip_map.js writes into the DOM. makemessages  #}
@@ -72,4 +114,8 @@ Context:
 <script defer src="{% static 'js/i18n_strings.js' %}"></script>
 <script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
 <script defer src="{% static 'js/route_markers_core.js' %}"></script>
+{# SNOW-829: which basemap this reader gets, and whether it drew anything #}
+{# (window.pwaBasemapStyleCore). Read by trip_map.js at its top level, so #}
+{# document order is load-bearing here as it is for the three above.      #}
+<script defer src="{% static 'js/basemap_style_core.js' %}"></script>
 <script defer src="{% static 'js/trip_map.js' %}"></script>

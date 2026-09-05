@@ -215,6 +215,25 @@
    * @param {?Object} payload The picker payload.
    * @returns {void}
    */
+  /**
+   * Resolve this reader's basemap, through `trip_map.js`'s own helper.
+   *
+   * SNOW-829. Delegated rather than reimplemented: `pwaTripMapCore` is
+   * already a dependency of this module (it loads first and this file
+   * reuses `routeSourceData` and `fitBoundsFor` from it), and two copies
+   * of this resolution are exactly how the picker and the trip page would
+   * come to disagree about which basemap the organiser is looking at.
+   *
+   * @param {Element} container The picker container, carrying the default.
+   * @param {Document} doc The document.
+   * @returns {?Object} `{key, url}`, or null when nothing resolves.
+   */
+  function resolveBasemapFor(container, doc) {
+    var core = self.pwaTripMapCore;
+    if (!core || !core.resolveBasemapFor) return null;
+    return core.resolveBasemapFor(container, doc);
+  }
+
   function installRoute(map, payload) {
     if (!payload || map.getSource('picker-route')) return;
     var core = self.pwaTripMapCore;
@@ -251,7 +270,7 @@
    *
    * @returns {void}
    */
-  function init() {
+  async function init() {
     var doc = document;
     var container = doc.querySelector('[data-trip-meeting-picker]');
 
@@ -299,9 +318,31 @@
     // matrix" from the first render, with a canvas present and nothing on
     // it. `bounds` and `center`/`zoom` are alternatives, and this is the
     // shape that says so.
+    // SNOW-829: the same resolution the trip page makes, through the same
+    // core, from the same catalogue. The organiser drops the pin on THIS
+    // canvas and reads it back on that one, and the same track over two
+    // different basemaps reads as two different places.
+    //
+    // No blank-canvas notice here, unlike the trip page. This map is a
+    // CONTROL: the organiser is dragging a pin onto terrain they chose the
+    // basemap for, and the notice's escape hatch — swapping the style —
+    // would move the ground under a pin mid-placement.
+    var basemap = resolveBasemapFor(container, doc);
+    var style = basemap ? basemap.url : '';
+    if (basemap && self.pwaBasemapStyleCore) {
+      try {
+        style = await self.pwaBasemapStyleCore.resolveStyle(
+          basemap.key,
+          basemap.url,
+        );
+      } catch (err) {
+        style = basemap.url;
+      }
+    }
+
     var options = {
       container: container,
-      style: container.getAttribute('data-basemap-url') || '',
+      style: style,
       attributionControl: { compact: true },
     };
     if (camera) {

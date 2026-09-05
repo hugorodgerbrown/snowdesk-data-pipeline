@@ -57,7 +57,8 @@ access rule and the token is the only identifier a non-participant has.
         {% include "trips/partials/_trip_summary.html" with trip=trip %}
         {% endcard %}
 
-        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload basemap_url=basemap_url %}
+        {% include "trips/partials/_trip_basemaps.html" %}
+        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload map_url=map_url %}
 
         {# SNOW-824: Save route. Available to anyone who can see the trip,  #}
         {# participant or not — saving does not join and joining does not   #}

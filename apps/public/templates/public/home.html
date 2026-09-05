@@ -95,6 +95,19 @@ in addition to the shared map assets.
     {% trans "Your device didn't give us a position. Move somewhere with a clearer view of the sky, then try again." as locate_failed_body %}
     {% trans "Try again" as locate_failed_cta %}
     {% include "includes/_overlay_banner.html" with variant="floating" id="locate-failed-banner" position="top" icon="location-off" title=locate_failed_title title_id="locate-failed-banner-title" body=locate_failed_body cta_id="locate-retry" cta_label=locate_failed_cta aria_live="polite" dismissible=True %}
+    {# SNOW-828: the trip-arrival banner. Revealed by map.js when the page   #}
+    {# is opened on ?trip= or ?trip_share= and the route has been drawn —    #}
+    {# it names WHICH trip the line belongs to (the title is written at      #}
+    {# runtime from the geojson's own properties, which is what body_id and  #}
+    {# title_id are the hooks for) and offers the way back to the page the   #}
+    {# reader came from. Without it the arrival is an unexplained magenta    #}
+    {# line, since the trip is drawn transiently and appears in no panel.    #}
+    {# Bottom-centre rather than top: the two banners above are answers to a #}
+    {# locate tap and this is not, so they are not mutually exclusive and    #}
+    {# must not share a slot.                                               #}
+    {% trans "Showing this trip's route." as trip_arrival_body %}
+    {% trans "Back to the trip" as trip_arrival_cta %}
+    {% include "includes/_overlay_banner.html" with variant="floating" id="trip-arrival-banner" title=" " title_id="trip-arrival-banner-title" body=trip_arrival_body body_id="trip-arrival-banner-body" cta_id="trip-arrival-back" cta_label=trip_arrival_cta aria_live="polite" dismissible=True %}
     {# SNOW-314: shared map surface with intro overlay enabled.          #}
     {# The _map_embed partial renders #home-intro when show_intro=True.  #}
     {# SNOW-535: map_help_autostart=False — the coachmark tour only opens #}
@@ -311,6 +324,12 @@ in addition to the shared map assets.
     {# parse time — so like the other call-site cores it sits here and not   #}
     {# inside the map bundle's contiguous run.                               #}
     <script defer src="{% static 'js/route_markers_core.js' %}"></script>
+    {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
+    {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}
+    {# geometry is fetched from, and what the address bar should say once   #}
+    {# it has been read. map.js reads it inside its load handler, not at    #}
+    {# parse time, so it sits with the other call-site cores.               #}
+    <script defer src="{% static 'js/trip_deeplink_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}

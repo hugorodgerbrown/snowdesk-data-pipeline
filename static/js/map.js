@@ -101,6 +101,15 @@
   // the share token and deliberately no uuid (apps/routes/views.py).
   const ROUTE_CLAIM_URL_TEMPLATE = mapEl.dataset.routeClaimUrlTemplate || null;
   const ROUTES_UPLOAD_ELIGIBLE = mapEl.dataset.routesUploadEligible === 'true';
+  // SNOW-828: where a ``?trip=`` / ``?trip_share=`` arrival fetches its
+  // geometry from. Keyed by the identifier space each parameter carries, so
+  // ``pwaTripDeepLinkCore.endpointFor`` can pick one without knowing which
+  // parameter it read. Unconditional — both endpoints scope themselves, and
+  // the map has no trips overlay whose eligibility these would gate.
+  const TRIP_ROUTE_URL_TEMPLATES = Object.freeze({
+    uuid: mapEl.dataset.tripRouteUrlTemplate || null,
+    token: mapEl.dataset.tripShareRouteUrlTemplate || null,
+  });
   const ROUTES_SIGNIN_URL = mapEl.dataset.routesSigninUrl || null;
   // SNOW-691: the slope-angle raster's tile template and its gate. Public
   // third-party tiles, so "eligible" is settings.SLOPE_TILE_URL being
@@ -2024,6 +2033,203 @@
     // carries: every path that gets these lines onto the map (or explicitly
     // hides them) ends here, so the roundel ring is settled from one place.
     announceOverlayVisibility();
+  };
+
+  // ==== SNOW-828: the trip a ?trip= / ?trip_share= arrival is drawing ====
+  //
+  // A trip's route is NOT part of the routes overlay. It has no switch in
+  // the layers menu, no row in the routes panel and no entry in
+  // ``overlayState``, because it is not a thing the visitor keeps — it is
+  // one route, drawn because they arrived on a link that named it, and gone
+  // on the next navigation. Folding it into the routes source would have
+  // reused the line, the popup and the fit for free, and it is the option
+  // this ticket rejected: it would put trips inside the routes app's feed
+  // and make an owner-scoped endpoint conditionally not (see
+  // apps/trips/views.py's own note beside the two endpoints).
+  //
+  // So: its own source, its own layers, its own cache for the styledata
+  // re-install. The line is painted in the SAME colours as an owned route,
+  // deliberately — it is a route, and inventing a third route colour would
+  // make the map's palette say something it does not mean. What identifies
+  // it is the arrival banner, which names the trip and links back to it.
+  const TRIP_ROUTE_SOURCE = 'trip-route';
+  const TRIP_MEETING_ICON = 'trip-meeting-point';
+
+  // The last-fetched trip collection, for the basemap-swap re-install. Null
+  // for every visit that did not arrive on a trip link, which is almost all
+  // of them — and the guard the styledata handler reads.
+  let tripRouteGeojsonCache = null;
+
+  /**
+   * Register the meeting-point icon, once.
+   *
+   * The same recoloured start dot the trip page uses
+   * (`static/js/trip_map.js`), from the same core and at the same size, so
+   * the marker a reader saw on the trip page is the marker they find on the
+   * map. Registered under an id of its own rather than reusing
+   * ROUTE_START_ICON: that one is the START of a track, and a meeting point
+   * is not — they coincide often and mean different things.
+   */
+  const ensureTripMeetingImage = () => {
+    const core = self.pwaRouteMarkersCore;
+    if (!core || map.hasImage(TRIP_MEETING_ICON)) return;
+    map.addImage(
+      TRIP_MEETING_ICON,
+      core.startDotPixels(...cssColourChannels(ROUTE_LINE_COLOUR)),
+      { pixelRatio: core.PIXEL_RATIO },
+    );
+  };
+
+  /**
+   * Install the trip's line, its casing and its meeting marker.
+   *
+   * Idempotent on the source, like every other install function here, so
+   * the fetch path and the basemap-swap re-install can both call it.
+   *
+   * Always visible: there is no switch that could have turned it off, and
+   * an arrival that drew a hidden line would be a link to nothing.
+   *
+   * @param {?Object} geojson The FeatureCollection from the trips endpoint.
+   */
+  const installTripRouteLayers = (geojson) => {
+    if (!geojson || map.getSource(TRIP_ROUTE_SOURCE)) return;
+    tripRouteGeojsonCache = geojson;
+    ensureTripMeetingImage();
+    map.addSource(TRIP_ROUTE_SOURCE, { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: 'trip-route-line-casing',
+      type: 'line',
+      source: TRIP_ROUTE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'route'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ROUTE_CASING_COLOUR,
+        'line-opacity': 0.55,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
+      },
+    });
+    map.addLayer({
+      id: 'trip-route-line',
+      type: 'line',
+      source: TRIP_ROUTE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'route'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ROUTE_LINE_COLOUR,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
+      },
+    });
+    map.addLayer({
+      id: 'trip-route-meeting',
+      type: 'symbol',
+      source: TRIP_ROUTE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'meeting'],
+      layout: {
+        'icon-image': TRIP_MEETING_ICON,
+        // No minzoom, unlike the route endpoints: there is exactly one of
+        // these on the map and it is the thing the reader most needs to
+        // find, so it stays visible at every zoom the arrival can land on.
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    });
+    // The lines went on top of everything — lift the pins back over them,
+    // for the reason installRoutesLayer states.
+    raiseMarkerLayers();
+  };
+
+  /**
+   * Honour a ``/?trip=<uuid>`` or ``/?trip_share=<token>`` arrival
+   * (SNOW-828): fetch the trip's route, draw it, frame it, and say which
+   * trip it is.
+   *
+   * The way OUT of a trip page's 320px canvas. For a recipient that
+   * canvas is the ONLY place the route is ever rendered, so every
+   * limitation of it — no layers, no danger overlay, no scrubber — is the
+   * whole experience of looking at the terrain rather than a summary of
+   * it. This is what makes it a summary.
+   *
+   * TRANSIENT, and that is the design rather than a shortcut. The
+   * parameter is stripped before the fetch even resolves, nothing is
+   * written to the session, and a reload of the bare ``/`` shows no trip.
+   * A route share persists because it is an offer awaiting a decision
+   * with nowhere else to live; a trip has a durable page of its own, and
+   * the banner this reveals is a link straight back to it.
+   *
+   * Silent in every case it cannot satisfy, exactly as the favourite and
+   * route-share deep links are. A revoked or expired token answers 404
+   * and a trip the viewer is not on answers 403 or 404 — none of which
+   * this can explain better than the trip page itself can, and all of
+   * which would be a puzzle rather than an explanation if announced over
+   * a map the visitor may have meant to open anyway.
+   *
+   * Declared here beside ``installTripRouteLayers`` rather than up with
+   * the other deep links, because unlike them it reaches no popup
+   * machinery — but INVOKED from the same place they are, inside
+   * ``map.on('load')``, where the style is ready to take the source it
+   * adds.
+   *
+   * @returns {Promise<void>}
+   */
+  const openTripDeepLink = async () => {
+    const core = self.pwaTripDeepLinkCore;
+    if (!core) return;
+    const link = core.read(location.search);
+    if (!link) return;
+
+    // Stripped FIRST, before anything can fail: a parameter left in the
+    // address bar is a standing instruction, and a fetch that 404s must
+    // not leave one behind to be re-honoured on the next refetch.
+    const query = core.strip(location.search);
+    history.replaceState(null, '', location.pathname + query + location.hash);
+
+    const url = core.endpointFor(link, TRIP_ROUTE_URL_TEMPLATES);
+    if (!url) return;
+
+    let collection = null;
+    try {
+      const response = await fetch(url, { credentials: 'same-origin' });
+      if (!response.ok) return;
+      collection = await response.json();
+    } catch (err) {
+      return;
+    }
+
+    const features = (collection && collection.features) || [];
+    const route = features.find(
+      (f) => f && f.properties && f.properties.kind === 'route',
+    );
+    if (!route) return;
+
+    installTripRouteLayers(collection);
+
+    // Frame it. The snapshot's own bbox, flat as it is stored and nested
+    // as fitBounds wants it — the same reshape trip_map.js makes.
+    const bounds = route.properties.bounds;
+    if (Array.isArray(bounds) && bounds.length === 4) {
+      map.fitBounds(
+        [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+        { padding: 40 },
+      );
+    }
+
+    // Say which trip this is. Without this the arrival is an unexplained
+    // line: the trip is in no panel and has no popup, by choice.
+    const banner = document.getElementById('trip-arrival-banner');
+    const title = document.getElementById('trip-arrival-banner-title');
+    const back = document.getElementById('trip-arrival-back');
+    if (!banner || !title) return;
+    // textContent, never innerHTML: the name is organiser-authored.
+    title.textContent = route.properties.name || '';
+    const pageUrl = route.properties.page_url;
+    if (back && pageUrl) {
+      back.addEventListener('click', () => {
+        location.href = pageUrl;
+      });
+    } else if (back) {
+      back.hidden = true;
+    }
+    banner.classList.remove('hidden');
   };
 
   // SNOW-472: shared flag-icon id for every unclustered community-report
@@ -6690,6 +6896,14 @@
     // between the two points. See its own note for why.
     openRouteShareDeepLink();
 
+    // SNOW-828: and a ``/?trip=`` / ``/?trip_share=`` one. Declared at IIFE
+    // level beside installTripRouteLayers rather than up here, because
+    // unlike its route-share sibling it reaches no popup machinery — but
+    // invoked from the same place and for the same reason: inside ``load``
+    // the style is ready to take the source it adds. NOT awaited, since it
+    // fetches and nothing below may wait on a network round trip.
+    openTripDeepLink();
+
     // Double-click always zooms to the region regardless of AUTOZOOM setting,
     // and prevents the default map double-click zoom so we control the target.
     map.on('dblclick', 'regions-fill', (e) => {
@@ -7390,6 +7604,16 @@
       // cannot reach at all).
       if (overlayLoaded.routes) {
         installRoutesLayer(routesGeojsonCache);
+      }
+      // SNOW-828: the trip's line went with the style too. Gated on the
+      // cache alone and not on an ``overlayLoaded`` key, because a trip is
+      // not an overlay — the cache is null for every visit that did not
+      // arrive on a trip link, which is what makes this a no-op for almost
+      // everyone. Re-installed from the cache rather than re-fetched: the
+      // parameter naming the trip was stripped on arrival, so there is no
+      // longer anything in the URL to fetch it from.
+      if (tripRouteGeojsonCache) {
+        installTripRouteLayers(tripRouteGeojsonCache);
       }
 
       // SNOW-172 / SNOW-493 finding 3: re-apply country filters for the

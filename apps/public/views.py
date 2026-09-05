@@ -908,6 +908,7 @@ def home(request: HttpRequest) -> HttpResponse:
     community_reports_ctx = _community_reports_context(request)
     weather_ctx = _weather_overlay_context()
     slope_ctx = _slope_context(request)
+    trips_ctx = _trips_context()
 
     return render(
         request,
@@ -922,6 +923,7 @@ def home(request: HttpRequest) -> HttpResponse:
             **community_reports_ctx,
             **weather_ctx,
             **slope_ctx,
+            **trips_ctx,
             "ribbon": ribbon,
             "default_region_id": _DEFAULT_RIBBON_REGION_ID,
             "default_region_name": default_region_name,
@@ -1667,6 +1669,46 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # is nothing to draw.
         "routes_geojson_url": reverse("routes:geojson"),
         "routes_signin_url": reverse("accounts:sign_in"),
+    }
+
+
+def _trips_context() -> dict[str, Any]:
+    """Build the map's context for the trip deep links (SNOW-828).
+
+    Two URL templates and nothing else — the map has no trips panel, no
+    trips overlay and no eligibility question to answer. It draws a trip
+    only when it arrives carrying ``?trip=`` or ``?trip_share=``, and all
+    it needs is where to fetch the geometry from once it does.
+
+    NO ELIGIBILITY GATE, deliberately, unlike ``routes_eligible`` beside
+    it. Both endpoints scope themselves — the uuid one to participants,
+    the token one to a live link — so emitting the templates to every
+    visitor gives an ineligible one a URL that answers 403 or 404, which is
+    what it should answer. Gating them here would additionally require the
+    server to know, before any parameter has been read, which trip the
+    visitor is about to ask for.
+
+    Templated on ``__UUID__`` / ``__TOKEN__`` for the reason
+    ``_routes_context`` states: ``static/js`` must not know how this
+    project spells its URLs. The two placeholders differ because the two
+    endpoints are addressed by different things, and a link-holder must
+    never be handed a uuid.
+
+    Returns:
+        Dict with ``trip_route_url_template`` and
+        ``trip_share_route_url_template``.
+
+    """
+    dummy_uuid = uuid.UUID(int=0)
+    return {
+        "trip_route_url_template": reverse(
+            "trips:route_geojson", args=[dummy_uuid]
+        ).replace(str(dummy_uuid), "__UUID__"),
+        # ``__TOKEN__`` survives ``<str:token>``'s converter, which accepts
+        # any non-empty run without a slash.
+        "trip_share_route_url_template": reverse(
+            "trips:share_route_geojson", args=["__TOKEN__"]
+        ),
     }
 
 
