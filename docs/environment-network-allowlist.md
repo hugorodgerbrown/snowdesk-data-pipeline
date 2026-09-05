@@ -1,11 +1,25 @@
 ---
 name: environment-network-allowlist
-description: Domains requesting network-egress allowlisting for Claude Code on the web environments — accumulated from routines hitting EGRESS_BLOCKED
+description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-08-30
+last-reviewed: 2026-09-05
 ---
 
 # Environment network allow-list
+
+Two different blocks are recorded here, and they are **not the same
+mechanism** — read the section that matches your symptom rather than
+assuming one fix serves both:
+
+- **Claude Code on the web** — `WebFetch` returns `EGRESS_BLOCKED`. Fixed
+  by the environment's network policy on claude.ai/code. This is the
+  original subject of this doc, below.
+- **The desktop app's Browser pane** — a page loaded in the pane gets HTTP
+  403 on requests to third-party hosts. A different path with a different
+  (and, as of 2026-09-05, unidentified) control. See the section at the
+  foot.
+
+## Claude Code on the web
 
 Outbound network access from a Claude Code on the web session is governed
 by the **environment's network policy** — configured when the environment
@@ -76,6 +90,46 @@ until then, every finding involving them is search-corroborated only.
    doesn't re-request an already-granted domain, and delete or move the
    row once confirmed working.
 
+## Requested — 2026-09-05 (desktop Browser pane: the basemaps)
+
+A **different block from the one above**, recorded here because the
+request is the same shape: domains a human has to allow somewhere.
+
+Every basemap style, sprite, glyph and vector tile requested by a page
+open in the desktop app's Browser pane returns **HTTP 403**. The map
+canvas is therefore blank in every screenshot taken through the pane,
+while the app's own chrome — panels, sheets, controls, anything served
+from `localhost` — renders normally. This is easy to misread as a broken
+map, and has been: it was mistaken for a downloads-overlay bug during
+SNOW-832/835 before being isolated.
+
+| Domain | Why it matters |
+|---|---|
+| `tiles.openfreemap.org` | OpenFreeMap — the default basemap's style, sprites, glyphs and tiles |
+| `vectortiles.geo.admin.ch` | swisstopo winter/light — style JSON, sprites, glyphs, both source TileJSONs |
+| `vectortiles0.geo.admin.ch` … `vectortiles4.geo.admin.ch` | the five sharded hosts the swisstopo TileJSON points its tiles at (SNOW-833 — same set already named in `csp_defaults`) |
+| `data.geopf.fr` | IGN Plan (France) |
+| `mapsneu.wien.gv.at` | basemap.at (Austria) — the host the "basemap.at" style is actually served from |
+
+The last three are inferred from `config/settings/base.py`'s
+`csp_defaults` rather than observed blocked, because nothing in this
+session selected those basemaps — allow them alongside the first two or
+the same 403 will surface the first time somebody previews them.
+
+**What this is not.** Not the sites, and not the machine: `curl` against
+both observed hosts from the same Mac, at the same time, returned 200. Not
+the on-the-web egress policy above either — there was no agent proxy
+listening on `127.0.0.1:45137`, no proxy variables in the environment, and
+no network keys in any `settings.json`. So the control sits somewhere in
+the desktop app's own pane, and this doc cannot yet say where. Anyone who
+finds it: record it here, because the diagnostic above is the expensive
+part and it should only be paid once.
+
+**Consequence while it stands:** no visual verification through the
+Browser pane can show a rendered map. Screenshots of map surfaces prove
+the DOM and the app's own CSS, and nothing about the basemap beneath
+them. Say so explicitly when handing one over.
+
 ## Actioned
 
-*(none yet — first request, 2026-08-30)*
+*(none yet — 2026-08-30 and 2026-09-05 requests both outstanding)*
