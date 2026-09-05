@@ -2,7 +2,7 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-05
 ---
 
 # Competitor list
@@ -485,9 +485,16 @@ Ordered by how much a profile would probably change our thinking.
 ## Feature inspiration
 
 Candidates raised by scanning the four products above, ranked by fit
-rather than by how impressive they are. "Have today" is measured against
-the code in this repo as of 2026-08-19 — none of these are scoped tickets
-yet.
+rather than by how impressive they are.
+
+**"Have today" is measured against the code in this repo as of 2026-08-19,
+and it has gone stale twice.** Items 6 and 10 both said we lacked something
+we shipped, and SNOW-836 found them while writing the public /compare/
+page — which takes its input from this section, so the stale claim was one
+edit away from being published as "Snowdesk does not do this". Before
+relying on any "we have neither" in this section, check the code. Mark an
+item SHIPPED here the moment it lands rather than leaving the correction to
+whoever next reads the section for another purpose.
 
 ### Strong fit — the infrastructure is already here
 
@@ -586,11 +593,19 @@ navigation.
 
 ### Worth scoping — real gaps, real cost
 
-**6. Slope-angle overlay** *(WhiteRisk, Whympr)*
+**6. Slope-angle overlay** *(WhiteRisk, Whympr)* — **SHIPPED. This item is
+closed; the text below is kept for the editorial reasoning only.**
+*(2026-09-05, SNOW-836)* We ship a slope-angle overlay: `settings.SLOPE_TILE_URL`
+serves swisstopo's "Slope classes over 30°" dataset on the SLF band
+classification (30–35 / 35–40 / 40–45 / 45–50 / 50+), documented at
+`apps/public/templates/public/help/_topic_slope.html`, and open to every
+visitor since SNOW-724 retired the `slope_layer` flag. The careful editorial
+line this item argued for was written — the caveats live in that help panel,
+and the legend links to it. Coverage is not Alps-complete, which is the one
+part of this item still open.
 The single most-cited terrain layer in ski touring; WhiteRisk ships both
 slope angle *and* an avalanche-terrain layer, Whympr ships slope gradient
-across Europe, and we have neither. It is the most conspicuous absence on
-our map. The cost is a tile source rather than app code — a slope raster
+across Europe. It was the most conspicuous absence on our map. The cost is a tile source rather than app code — a slope raster
 derived from a DEM, served from the existing self-hosted origin (see
 [`runbooks/self-hosted-tiles.md`](runbooks/self-hosted-tiles.md)) — plus
 a careful editorial line, because a 30°+ shading layer invites exactly
@@ -635,12 +650,16 @@ calendar ([`calendar.md`](calendar.md)) — but not the weather half, and
 the two are far more useful together: a danger rating means something
 different after 40 cm than after a dry fortnight. Cheap once (7) lands.
 
-**10. National topo basemaps** *(WhiteRisk, Whympr)*
+**10. National topo basemaps** *(WhiteRisk, Whympr)* — **SHIPPED. This item
+is closed; the text below is kept for the editorial reasoning only.**
+*(2026-09-05, SNOW-836)* `BASEMAP_STYLES` in `config/settings/base.py`
+carries swisstopo winter, swisstopo light, IGN "Plan IGN" (France) and
+basemap.at (Austria) alongside OpenFreeMap. All four are free and
+token-less, so the licensing blocker this item named did not arise. Italy
+publishes only raster WMTS and is still absent.
 IGN and SwissTopo alongside our current basemaps — WhiteRisk licenses CH,
-FR and AT topo maps, Whympr eleven of them. Straightforward against our
-existing basemap picker and download machinery; the blocker is licensing,
-not engineering, and the payoff is credibility with exactly the French
-and Swiss users our strongest providers serve.
+FR and AT topo maps, Whympr eleven of them. The payoff was credibility with
+exactly the French and Swiss users our strongest providers serve.
 
 **11. Structured explainer content** *(WhiteRisk EXPLORE/LEARN)*
 WhiteRisk's knowledge base and lesson-plus-quiz format is the deepest

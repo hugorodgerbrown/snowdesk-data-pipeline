@@ -8,6 +8,9 @@ URL structure:
                                                /terms-of-service/ (SNOW-770).
   /help/                                        Plain-language "how it works"
                                                help page (SNOW-456).
+  /compare/                                     Public comparison of the
+                                               avalanche apps in this
+                                               category (SNOW-836).
   /observations/                                Permanent 301 redirect to
                                                /?panel=reports — the map with
                                                the reports sheet open (SNOW-804).
@@ -80,6 +83,10 @@ urlpatterns = [
     ),
     # Technology credits and attribution page (SNOW-122).
     path("colophon/", views.colophon, name="colophon"),
+    # Public comparison of the avalanche apps in this category (SNOW-836).
+    # Registered here, ahead of the generic <region_id:region_id>/ patterns,
+    # so "compare" never resolves as a region id.
+    path("compare/", views.compare, name="compare"),
     # Legal pages — registered before generic <str:region_id>/ patterns
     # so these slugs never resolve as region IDs (SNOW-153).
     path("privacy/", views.privacy, name="privacy"),

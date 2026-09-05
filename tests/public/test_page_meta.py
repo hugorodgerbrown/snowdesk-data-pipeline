@@ -86,6 +86,9 @@ def sharing_pages(db: None) -> dict[str, str]:
         "home": reverse("public:home"),
         "help": reverse("public:help"),
         "colophon": reverse("public:colophon"),
+        # SNOW-836. Built to be shared — it is the page a link to Snowdesk
+        # gets sent alongside — so a full card is the whole point of it.
+        "compare": reverse("public:compare"),
         "privacy": reverse("public:privacy"),
         # ``public:terms`` is deliberately absent: SNOW-770 merged its page
         # into the Terms of Service and left the URL as a permanent

@@ -1,0 +1,729 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/public/templates/public/compare.html — public comparison of the avalanche
+apps in our category (SNOW-836).
+
+Driven off docs/competitors.md, which is the weekly competitor scan and is
+written from OUR side of the table: it carries the feature backlog, the scan
+process, and the reasoning about where we are exposed. This page answers the
+reader's question instead — "which of these should I install?" — so none of
+that survives the trip across.
+
+Three rules govern edits here, and each exists because the source doc would
+otherwise leak something inappropriate onto a public page:
+
+1. **No competitive framing.** Nothing about copying, catching up, or where a
+   rival threatens us. Where a competitor is the better choice for a reader,
+   the page says so plainly — WhiteRisk for Switzerland, SnowSafe for Austria,
+   Skitourenguru/Yéti for a scored tour.
+2. **Provenance travels with the claim.** docs/competitors.md marks OpenSnow's
+   pricing and AvalancheClarity's coverage as search-corroborated only, never
+   read from the product's own site, and explicitly says to re-check before
+   quoting them externally. This IS the external quote, so both carry the
+   "unconfirmed" chip and the method section names them.
+3. **Absence of a mention is not absence of a feature.** The doc records what
+   was CHECKED. For the planning/community section especially, a competitor
+   that isn't described as having something may simply not have been asked —
+   so the copy says "no ... was found in the sources checked", never "does not
+   have". The method section states this in the reader's own terms.
+
+Our own row is checked against this repository, not against the doc, because
+the doc went stale on us twice: it recorded slope angle and national topo
+basemaps as things we lack, and both shipped (SLOPE_TILE_URL and
+BASEMAP_STYLES). When editing our entry, verify against the code.
+{% endcomment %}
+{% load i18n components %}
+
+{% block page_meta %}
+    {% trans "Compare avalanche apps" as page_name %}
+    {% trans "An honest comparison of the avalanche bulletin apps used across the Alps — WhiteRisk, SnowSafe, Whympr, AvalancheClarity, Skitourenguru and Snowdesk — and which to pick for where you ski." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes 'legal-prose' %}">
+        {% trans "Compare avalanche apps" as page_heading %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="compare-heading" %}
+        <p class="text-sm leading-prose text-text-2 mb-6">
+            {% blocktrans trimmed %}
+                Nine products that put an avalanche bulletin on your phone, what each one actually does, and which to
+                reach for depending on where you ski. Written by the team behind one of them, and it says so.
+            {% endblocktrans %}
+        </p>
+
+        {% card extra="mb-8" %}
+        <p class="text-sm leading-prose text-text-2 mb-3">
+            {% blocktrans trimmed %}
+                <strong class="text-text-1">Before any of this.</strong> Every product here is a way of reading a
+                forecast written by somebody else — SLF in Switzerland, Météo-France in France, ALBINA for Austria
+                and northern Italy, and their equivalents elsewhere. The bulletin is the authority. An app that is
+                prettier, faster or better translated does not change what the snowpack is doing, and none of them
+                substitutes for avalanche training, a transceiver you can use, and partners who can use theirs.
+            {% endblocktrans %}
+        </p>
+        <p class="text-sm leading-prose text-text-2">
+            {% blocktrans trimmed %}
+                Choose on coverage first, and on how quickly you can read the forecast for where you are actually going.
+                Everything else is secondary.
+            {% endblocktrans %}
+        </p>
+        {% endcard %}
+
+        <section data-testid="compare-start-here">
+            <h2>{% trans "The short answer, by where you ski" %}</h2>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    Most people need one app, and which one is decided almost entirely by geography — because coverage
+                    is the thing these products differ on most and compromise on least.
+                {% endblocktrans %}
+            </p>
+            <dl class="border-t border-border">
+                <div class="grid gap-1 sm:grid-cols-[16rem_1fr] sm:gap-x-8 py-3 border-b border-border">
+                    <dt class="font-semibold text-text-1">{% trans "Switzerland, mostly" %}</dt>
+                    <dd class="m-0">
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">WhiteRisk.</strong> It is built by SLF, the institute that
+                            writes the Swiss bulletin. Nothing else in this list has that.
+                        {% endblocktrans %}
+                    </dd>
+                </div>
+                <div class="grid gap-1 sm:grid-cols-[16rem_1fr] sm:gap-x-8 py-3 border-b border-border">
+                    <dt class="font-semibold text-text-1">
+                        {% trans "Austria, South Tyrol, Trentino, or the Nordics and Eastern Europe" %}
+                    </dt>
+                    <dd class="m-0">
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">SnowSafe.</strong> Roughly seventeen regions across the Austrian
+                            LWDs, Bavaria, northern Italy, Slovenia, Slovakia, Czechia, Poland, Iceland and Norway. No
+                            Switzerland and no France.
+                        {% endblocktrans %}
+                    </dd>
+                </div>
+                <div class="grid gap-1 sm:grid-cols-[16rem_1fr] sm:gap-x-8 py-3 border-b border-border">
+                    <dt class="font-semibold text-text-1">{% trans "France" %}</dt>
+                    <dd class="m-0">
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">Yéti</strong> for a tour rated against today's bulletin, or
+                            <strong class="text-text-1">AvalancheClarity</strong> if you want the Météo-France
+                            bulletin explained in your own language.
+                        {% endblocktrans %}
+                    </dd>
+                </div>
+                <div class="grid gap-1 sm:grid-cols-[16rem_1fr] sm:gap-x-8 py-3 border-b border-border">
+                    <dt class="font-semibold text-text-1">{% trans "Crossing borders on the same trip" %}</dt>
+                    <dd class="m-0">
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">AvalancheClarity</strong> or
+                            <strong class="text-text-1">Snowdesk</strong> — both put several countries' bulletins in
+                            one place, with different trade-offs between breadth and depth.
+                        {% endblocktrans %}
+                    </dd>
+                </div>
+                <div class="grid gap-1 sm:grid-cols-[16rem_1fr] sm:gap-x-8 py-3 border-b border-border">
+                    <dt class="font-semibold text-text-1">{% trans "You want a specific tour scored for today" %}</dt>
+                    <dd class="m-0">
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">Skitourenguru</strong> for the Alps, or
+                            <strong class="text-text-1">Yéti</strong> for France. Both are free, and both rate
+                            individual routes daily by combining the bulletin with terrain analysis.
+                        {% endblocktrans %}
+                    </dd>
+                </div>
+                <div class="grid gap-1 sm:grid-cols-[16rem_1fr] sm:gap-x-8 py-3 border-b border-border">
+                    <dt class="font-semibold text-text-1">{% trans "You are planning the day with other people" %}</dt>
+                    <dd class="m-0">
+                        {% blocktrans trimmed %}
+                            See <a class="underline" href="#planning">planning together</a> below — this is the one
+                            dimension where the products differ most and advertise it least.
+                        {% endblocktrans %}
+                    </dd>
+                </div>
+                <div class="grid gap-1 sm:grid-cols-[16rem_1fr] sm:gap-x-8 py-3 border-b border-border">
+                    <dt class="font-semibold text-text-1">
+                        {% trans "You are chasing snowfall in the US or Canada" %}
+                    </dt>
+                    <dd class="m-0">
+                        {% blocktrans trimmed %}
+                            <strong class="text-text-1">OpenSnow.</strong> A forecast product rather than a bulletin
+                            product, and no European avalanche coverage.
+                        {% endblocktrans %}
+                    </dd>
+                </div>
+            </dl>
+        </section>
+
+        <section data-testid="compare-table">
+            <h2>{% trans "What each one costs and covers" %}</h2>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    Prices are as found on the dates given at the foot of this page. Anything marked
+                    <span class="font-mono text-caption uppercase tracking-wide bg-tag rounded-sm px-1 py-0.5"
+                    >unconfirmed</span>
+                    comes from secondary sources rather than the product's own site, because the site could not be
+                    reached when the check ran.
+                {% endblocktrans %}
+            </p>
+            <div class="overflow-x-auto border border-border rounded-card bg-card" tabindex="0">
+                <table class="w-full text-left text-sm min-w-[44rem]">
+                    <caption class="sr-only">
+                        {% trans "Avalanche apps compared by maker, bulletin coverage and price." %}
+                    </caption>
+                    <thead>
+                        <tr class="border-b border-border">
+                            <th class="py-2 px-4 font-semibold text-text-1">{% trans "Product" %}</th>
+                            <th class="py-2 px-4 font-semibold text-text-1">{% trans "Made by" %}</th>
+                            <th class="py-2 px-4 font-semibold text-text-1">{% trans "Bulletin coverage" %}</th>
+                            <th class="py-2 px-4 font-semibold text-text-1">{% trans "Price" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="border-b border-border">
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">WhiteRisk</th>
+                            <td class="py-3 px-4">{% trans "SLF (CH)" %}</td>
+                            <td class="py-3 px-4">{% trans "Switzerland; France added for 2025/26" %}</td>
+                            <td class="py-3 px-4">{% trans "Free tier · CHF 29/yr · CHF 58/yr pro" %}</td>
+                        </tr>
+                        <tr class="border-b border-border">
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">SnowSafe</th>
+                            <td class="py-3 px-4">{% trans "First Line Solutions (AT)" %}</td>
+                            <td class="py-3 px-4">
+                                {% trans "~17 regions: AT, DE, northern IT, SI, SK, CZ, PL, IS, NO" %}
+                            </td>
+                            <td class="py-3 px-4">{% trans "Free; $29.99/yr for pro weather" %}</td>
+                        </tr>
+                        <tr class="border-b border-border">
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">AvalancheClarity</th>
+                            <td class="py-3 px-4">{% trans "Simon Perry (FR)" %}</td>
+                            <td class="py-3 px-4">
+                                {% trans "14 countries; full translation for CH and FR, links elsewhere" %}
+                            </td>
+                            <td class="py-3 px-4">{% trans "Free throughout (unconfirmed)" %}</td>
+                        </tr>
+                        <tr class="border-b border-border">
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">Skitourenguru</th>
+                            <td class="py-3 px-4">{% trans "G. Schmudlach (CH)" %}</td>
+                            <td class="py-3 px-4">{% trans "Alps-wide, via each national bulletin" %}</td>
+                            <td class="py-3 px-4">{% trans "Free" %}</td>
+                        </tr>
+                        <tr class="border-b border-border">
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">Yéti</th>
+                            <td class="py-3 px-4">{% trans "Petzl Foundation (FR)" %}</td>
+                            <td class="py-3 px-4">{% trans "France only" %}</td>
+                            <td class="py-3 px-4">{% trans "Free" %}</td>
+                        </tr>
+                        <tr class="border-b border-border">
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">Whympr</th>
+                            <td class="py-3 px-4">{% trans "Whympr (FR)" %}</td>
+                            <td class="py-3 px-4">
+                                {% trans "FR, CH, IT, AT, ES, AD, US, CA, Scotland — pass-through" %}
+                            </td>
+                            <td class="py-3 px-4">{% trans "Free tier · $29.99/yr · paid content" %}</td>
+                        </tr>
+                        <tr class="border-b border-border">
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">OpenSnow</th>
+                            <td class="py-3 px-4">{% trans "Cloudnine Weather (US)" %}</td>
+                            <td class="py-3 px-4">{% trans "US and Canada only" %}</td>
+                            <td class="py-3 px-4">{% trans "Free tier · $49.99/yr · $99.99/yr (unconfirmed)" %}</td>
+                        </tr>
+                        <tr>
+                            <th class="py-3 px-4 font-semibold text-text-1 whitespace-nowrap">Snowdesk</th>
+                            <td class="py-3 px-4">{% trans "Snowdesk — the publisher of this page" %}</td>
+                            <td class="py-3 px-4">{% trans "CH, FR, AT and northern IT, in one normalised model" %}</td>
+                            <td class="py-3 px-4">{% trans "Free" %}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="font-mono text-caption text-text-3 mt-3">
+                {% blocktrans trimmed %}
+                    Coverage means bulletins the product ingests or links to, not map coverage, which is usually wider.
+                    Prices are annual unless stated.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section data-testid="compare-matrix">
+            <h2>{% trans "Feature matrix" %}</h2>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Thirteen things people actually choose on. Read the dots with the caveat in the legend: a product
+                    marked <em>not established</em> may well do the thing — it means our sources do not say, usually
+                    because that product was checked for coverage and price rather than interrogated feature by feature.
+                    Reading those as a “no” would invent an advantage out of a gap in our own notes.
+                {% endblocktrans %}
+            </p>
+            <ul class="flex flex-wrap gap-x-5 gap-y-1 list-none p-0 mb-4 font-mono text-caption text-text-3">
+                {% for glyph, label in matrix_legend %}
+                    <li class="flex items-center gap-1.5">
+                        <span aria-hidden="true" class="text-text-1">{{ glyph }}</span>{{ label }}
+                    </li>
+                {% endfor %}
+            </ul>
+            <div class="overflow-x-auto border border-border rounded-card bg-card" tabindex="0">
+                <table class="w-full text-left text-sm min-w-[56rem]">
+                    <caption class="sr-only">
+                        {% trans "Feature matrix: which of thirteen features each avalanche app offers." %}
+                    </caption>
+                    <thead>
+                        <tr class="border-b border-border">
+                            <th class="py-2 px-4 font-semibold text-text-1 align-bottom">{% trans "Feature" %}</th>
+                            {% for product in matrix_products %}
+                                <th class="py-2 px-3 font-semibold text-text-1 align-bottom text-center">
+                                    {{ product.name }}
+                                    {% if product.note %}
+                                        <span class="block font-normal font-mono text-caption text-text-3">
+                                            {{ product.note }}
+                                        </span>
+                                    {% endif %}
+                                </th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for feature, cells in matrix_rows %}
+                            <tr class="border-b border-border last:border-b-0" data-feature="{{ feature.key }}">
+                                <th class="py-3 px-4 font-semibold text-text-1 align-top">
+                                    {{ feature.label }}
+                                    <span class="block font-normal text-text-2 text-caption leading-snug mt-0.5">
+                                        {{ feature.question }}
+                                    </span>
+                                </th>
+                                {% for cell in cells %}
+                                    <td class="py-3 px-3 align-top text-center" data-support="{{ cell.support }}">
+                                        <span aria-hidden="true" class="text-base text-text-1">{{ cell.glyph }}</span>
+                                        <span class="sr-only">{{ cell.label }}</span>
+                                        {% if cell.note %}
+                                            <span class="block text-caption text-text-3 leading-snug mt-1">
+                                                {{ cell.note }}
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="font-mono text-caption text-text-3 mt-3">
+                {% blocktrans trimmed %}
+                    Competitor rows come from the sources listed under “how this was checked”. The Snowdesk column
+                    is checked against our own source code, which is the only column we can check that way.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section data-testid="compare-planning" id="planning">
+            <h2>{% trans "Planning together, and your own content" %}</h2>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    Reading the forecast is one job. Deciding a route, agreeing a meeting point and getting four people
+                    to the same trailhead at the same time is another, and it is the dimension these products differ on
+                    most while advertising it least. Two are worth separating: whether you can bring your
+                    <em>own</em> route into the app, and whether anyone else can see the plan.
+                {% endblocktrans %}
+            </p>
+            <h3>{% trans "Bringing your own route" %}</h3>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Whympr</strong> and <strong class="text-text-1">Snowdesk</strong> both
+                    take a route you supply. <strong class="text-text-1">WhiteRisk</strong> lets you draw one and keeps
+                    a personal tour library that syncs between the web and the app, which is the same idea reached a
+                    different way. <strong class="text-text-1">Skitourenguru</strong> and
+                    <strong class="text-text-1">Yéti</strong> work the opposite way round: their value is a curated
+                    database of about 13,000 tours that they score for you, so the route is theirs, not yours.
+                    <strong class="text-text-1">SnowSafe</strong> states plainly that it is not a planner.
+                {% endblocktrans %}
+            </p>
+            <h3>{% trans "Sharing the plan with other people" %}</h3>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    This is where the list thins out. <strong class="text-text-1">Whympr</strong> has by far the richest
+                    community layer — trip reports carrying current conditions, an activity wall of the last ten days
+                    of outings, GPS tracking and a logbook — but it is a feed of what people <em>did</em>, published
+                    after the fact, rather than a plan for a day that has not happened yet.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Snowdesk</strong> is the only product here where a trip is a shared
+                    object: a route on a named day, at a stated time and meeting point, with one link that adds whoever
+                    opens it to the roster, so everyone going is looking at the same plan rather than at their own copy
+                    of it. No equivalent was found in any other product checked — though see the note on what that
+                    does and does not prove, below.
+                {% endblocktrans %}
+            </p>
+            <h3>{% trans "Reporting what you saw" %}</h3>
+            <p>
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">WhiteRisk</strong> added a crowd-sourced form for marking an avalanche's
+                    starting point and logging its size and type. <strong class="text-text-1">Whympr</strong> takes
+                    field reports without a login at all, and expires them after 90 days unless another user
+                    corroborates them, which is a neat answer to stale conditions reports.
+                    <strong class="text-text-1">Snowdesk</strong> takes field observations and shows them on the map.
+                    The other products in this list are read-only.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section data-testid="compare-profiles">
+            <h2>{% trans "The products in detail" %}</h2>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    Grouped by what each product is fundamentally for. A bulletin app and a trip planner that happens to
+                    show a bulletin are different purchases, and comparing them feature-for-feature flatters the wrong
+                    one.
+                {% endblocktrans %}
+            </p>
+
+            {% trans "The official one" as t_group_official %}
+            {% include "includes/_eyebrow.html" with text=t_group_official tag="h3" class_extra="mt-6 mb-2" only %}
+
+            <h3>WhiteRisk</h3>
+            <p class="font-mono text-caption text-text-3 mb-2">
+                {% trans "WSL Institute for Snow and Avalanche Research SLF · web and mobile, four languages · checked 30 Aug 2026" %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Not a third party interpreting an official product — it <em>is</em> the official product, from the
+                    institute that writes the Swiss bulletin. Four modules: an avalanche knowledge base, structured
+                    e-learning with per-lesson quizzes, a tour planner, and professional tooling for instructors. The
+                    planner is the part that matters most: draw a route and WhiteRisk marks the critical cruxes against
+                    terrain and avalanche information, with an elevation profile and estimated duration for
+                    alternatives.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    The 2025/26 redesign added the French bulletin outright, a crowd-sourced form for logging an
+                    avalanche seen from the field, and clearer crux display. Maps cover Switzerland, France and Austria
+                    with slope-angle and avalanche-terrain layers; the free tier drops to OpenStreetMap. Readings from
+                    the automated measuring-station network are free.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Strongest at</strong> authority, terrain-aware route analysis, station
+                    data, and the deepest educational material in the category by a distance.
+                    <strong class="text-text-1">Weakest at</strong> reach beyond Switzerland — Austria and Italy get
+                    map coverage but not a first-class bulletin — and it is a platform with modules, licences and an
+                    account, which is more than some people want when they are checking one number in a lift queue.
+                {% endblocktrans %}
+            </p>
+
+            {% trans "Bulletin-first apps" as t_group_bulletin %}
+            {% include "includes/_eyebrow.html" with text=t_group_bulletin tag="h3" class_extra="mt-6 mb-2" only %}
+
+            <h3>SnowSafe</h3>
+            <p class="font-mono text-caption text-text-3 mb-2">
+                {% trans "First Line Solutions GmbH, Austria · iOS and Android, no web surface · checked 30 Aug 2026" %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Explicitly not a planner. The design principle its makers state — as simple and reliable to
+                    operate as a transceiver — shows in the product. Coverage is the Austrian avalanche warning
+                    services plus Bavaria, Alto Adige/Südtirol, Veneto, Trentino, Slovenia, Slovakia, Czechia, Poland,
+                    Iceland and Norway. No Switzerland and no France.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Its most recent release added push notifications for danger levels and a weather-station map layer
+                    with interactive charts. Alongside those sit a clinometer for measuring a slope, an aspect compass
+                    pairing slope aspect with the day's danger patterns, mountain weather forecasts, and offline reading
+                    of bulletins synced while you had signal.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Strongest at</strong> alerting on rising danger and on a mid-day
+                    re-issue, station data, and field instruments in the same app as the forecast.
+                    <strong class="text-text-1">Weakest at</strong> everything around the bulletin: no map-first entry
+                    point, no history or season view, no route handling, and nothing on the web. The bulletin itself is
+                    never paywalled, which is the right call.
+                {% endblocktrans %}
+            </p>
+
+            <h3>AvalancheClarity</h3>
+            <p class="font-mono text-caption text-text-3 mb-2">
+                {% trans "Simon Perry, a Tignes-based guidebook author · app plus an embeddable widget · checked 30 Aug 2026, secondary sources only" %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    The broadest cross-border coverage of anything in this list, built by one person rather than an
+                    institution. It translates the official bulletin, explains it in plain language, and pushes a
+                    notification the moment a new bulletin or a revision publishes for a region you follow — the only
+                    product here that alerts on a re-issue rather than only on a danger level.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Translation depth is uneven, and this is the thing to check before relying on it. Switzerland gets
+                    all 134 micro-regions in eight languages and France gets all 36 massifs, but Austria, Italy,
+                    Germany, Norway, Sweden, Spain, Andorra, Slovenia, Slovakia, Czechia, Finland and Scotland get a map
+                    link to the official bulletin rather than a translated one.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Strongest at</strong> reading a foreign-language bulletin in Switzerland
+                    or France, and knowing the instant one changes.
+                    <strong class="text-text-1">Weakest at</strong> everywhere else, where it is a link rather than a
+                    translation. No terrain or route tooling, and no stated business model — worth knowing for
+                    something you would come to depend on.
+                {% endblocktrans %}
+            </p>
+
+            <h3>Snowdesk</h3>
+            <p class="font-mono text-caption text-text-3 mb-2">
+                {% trans "The publisher of this page — read the disclosure at the foot · web, installable, works offline · English only" %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Three providers normalised into one shape, so a Swiss bulletin and an Austrian one are rendered by
+                    the same model rather than as two different documents, down to each problem's aspects and elevation
+                    band. It is a website rather than an app: nothing to install, and it keeps working without signal
+                    once a page has loaded. It shows the provider's bulletin in full rather than a summary, on the view
+                    that deciding what to leave out of an avalanche forecast is not ours to do.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Around the bulletin: a slope-angle overlay using the same band classification as the Swiss maps, the
+                    national topographic basemaps for Switzerland, France and Austria, mountain weather forecasts
+                    refreshed four times a day, uploaded routes, and shared trips.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Strongest at</strong> reading the same way across four countries, on a
+                    phone, offline, with nothing to install — and at planning a day with other people.
+                    <strong class="text-text-1">Weakest at</strong> alerting, which it does not do at all; observed
+                    weather-station readings, where it has forecasts but no live station network; per-tour risk scoring;
+                    languages other than English; and teaching material, where WhiteRisk is far ahead. If you ski only
+                    in Switzerland, WhiteRisk is the better product and it is not close.
+                {% endblocktrans %}
+            </p>
+
+            {% trans "Tools that rate a specific tour" as t_group_tours %}
+            {% include "includes/_eyebrow.html" with text=t_group_tours tag="h3" class_extra="mt-6 mb-2" only %}
+
+            <h3>Skitourenguru and Yéti</h3>
+            <p class="font-mono text-caption text-text-3 mb-2">
+                {% trans "Günter Schmudlach (CH) and the Petzl Foundation (FR) · free · checked 30 Aug 2026" %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Two sibling products answering a narrower and more useful question than "what does the bulletin
+                    say": given today's bulletin and the terrain a particular tour crosses, how risky is that tour
+                    today. Skitourenguru covers the Alps generally and is Swiss-rooted; Yéti is the newer France-only
+                    sibling pairing the Météo-France bulletin with terrain analysis from an elevation model. Both were
+                    previously gated and are now free, over a database of about 13,000 tours.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Strongest at</strong> the single most decision-relevant output in this
+                    whole list, free, over a large route database — and the methodology is credible enough that a
+                    major tour portal now licenses it as a map layer.
+                    <strong class="text-text-1">Weakest at</strong> coverage: no one product spans the whole Alps, and
+                    funding rests on a foundation rather than revenue, which is a different kind of risk from a
+                    subscription.
+                {% endblocktrans %}
+            </p>
+
+            {% trans "Planning platforms" as t_group_planning %}
+            {% include "includes/_eyebrow.html" with text=t_group_planning tag="h3" class_extra="mt-6 mb-2" only %}
+
+            <h3>Whympr</h3>
+            <p class="font-mono text-caption text-text-3 mb-2">
+                {% trans "Whympr, born in Chamonix · iOS, Android and web · checked 30 Aug 2026" %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    An all-in-one mountain trip planner covering hiking, ski touring, mountaineering, climbing, trail
+                    running and snowshoeing, in which the avalanche bulletin is one tab. The draw is everything around
+                    it: over 100,000 routes and points of interest, eleven national topographic maps, 3D and LiDAR
+                    terrain, slope-gradient shading across Europe, weather, 23,000 webcams, and offline area downloads
+                    with your chosen map and layers.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Its terrain layers carry an explicit warning that a rating can shift a full grade with season or
+                    weather, which is the correct framing for any such layer.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Strongest at</strong> being the only app you need to open before a tour,
+                    if planning matters more to you than forecast depth, and at community content by a wide margin.
+                    <strong class="text-text-1">Weakest at</strong> the bulletin itself, which is a thin pass-through of
+                    the official product — no normalisation across providers, no history, and nothing that reads the
+                    forecast for you.
+                {% endblocktrans %}
+            </p>
+
+            {% trans "Weather-first platforms" as t_group_weather %}
+            {% include "includes/_eyebrow.html" with text=t_group_weather tag="h3" class_extra="mt-6 mb-2" only %}
+
+            <h3>OpenSnow</h3>
+            <p class="font-mono text-caption text-text-3 mb-2">
+                {% trans "Cloudnine Weather, Inc., United States · iOS, Android and web · checked 30 Aug 2026" %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Included because it is the most commercially proven shape in the category, not because it competes
+                    in the Alps — it does not. The question it answers is where it will snow, not whether a slope will
+                    hold. Its spine is a human-written daily forecast narrative per region by named local
+                    meteorologists. People subscribe to a writer, which is a different business from selling access to a
+                    data feed.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    Around that sit threshold alerts you set yourself, side-by-side comparison across several mountains,
+                    ten days of past snowfall and snow line per mountain, and an in-house forecast model the company
+                    claims is materially more accurate in mountain terrain than what it replaced.
+                {% endblocktrans %}
+            </p>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    <strong class="text-text-1">Strongest at</strong> editorial voice and alerting — proof that in
+                    this category people pay for a person's read, not raw data.
+                    <strong class="text-text-1">Weakest at</strong> avalanche work, which is a bolt-on: no European
+                    coverage and no bulletin normalisation. Its pricing is the most aggressive here.
+                {% endblocktrans %}
+            </p>
+        </section>
+
+        <section data-testid="compare-others">
+            <h2>{% trans "Also worth knowing about" %}</h2>
+            <p class="mb-4">
+                {% blocktrans trimmed %}
+                    Products that come up often but have not been checked to the same depth as the profiles above. Treat
+                    these as pointers, not assessments.
+                {% endblocktrans %}
+            </p>
+            <ul class="list-disc pl-5 space-y-2">
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">Skida</strong> (Norway) — a ski-touring app gathering official
+                        bulletins from several national providers in one place without altering their content, drawing
+                        each avalanche problem as an aspect-and-elevation diagram.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">avalanche.report</strong> — the official web front end for Austria
+                        and northern Italy, and the region map those tourers already know.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">Varsom</strong> (Norway) — state-run observations and forecasts at
+                        national scale, with slope-angle and runout map layers for Norway and Svalbard.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">onX Backcountry</strong> (US and Canada) — no Alps coverage, but
+                        the most careful terrain layer of any of these: a terrain-exposure scale plus a distinct rating
+                        for ground with no avalanche exposure at all, which frames the layer as ruling terrain safe
+                        rather than rating everything else dangerous.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">Bergfex</strong> (Austria) — the default tour-and-weather portal
+                        across Austria and Germany, with avalanche information attached.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">Outdooractive and alpenvereinaktiv</strong> — tour portals with
+                        alpine-club backing, carrying institutional trust in Austria and Germany.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">Camptocamp and Skitour.fr</strong> — the French community route
+                        corpora other apps source from, and where many French tourers actually plan.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">Avalanche Canada and avalanche.org</strong> — the North American
+                        forecast agencies, both with their own apps.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong class="text-text-1">FATMAP</strong> — the 3D terrain mapping product, acquired by
+                        Strava and retired in October 2024. Listed so nobody spends an evening looking for it.
+                    {% endblocktrans %}
+                </li>
+            </ul>
+        </section>
+
+        <section data-testid="compare-method">
+            <h2>{% trans "How this was checked" %}</h2>
+            <ul class="list-disc pl-5 space-y-2">
+                <li>
+                    {% blocktrans trimmed %}
+                        Each profiled product was checked against its own website and store listing in August 2026, and
+                        re-checked twice since.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        Several of these sites block automated fetching, so some claims are corroborated across
+                        independent secondary sources rather than read from the product itself. The two that matter most
+                        are OpenSnow's prices and AvalancheClarity's coverage and cost. Check both yourself before
+                        paying for anything.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        A feature not described here may still exist. These notes record what was found, and a product
+                        that is not said to do something may simply never have been asked — which matters most in the
+                        planning and community section, where features are often buried rather than advertised.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        Coverage figures describe bulletins a product ingests or links to, not map coverage, which is
+                        usually wider and is not the same promise.
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        This is a snapshot of a category that moves fast. In the last year alone WhiteRisk added a
+                        second country's bulletin, SnowSafe added push alerts, and Skitourenguru and Yéti became free.
+                        Anything here can be out of date by the time you read it — tell us if it is.
+                    {% endblocktrans %}
+                </li>
+            </ul>
+        </section>
+
+        <section data-testid="compare-disclosure">
+            <h2>{% trans "Disclosure" %}</h2>
+            <p class="mb-3">
+                {% blocktrans trimmed %}
+                    This page is published by Snowdesk, which is one of the products listed on it. We have tried to be
+                    useful rather than flattering — the guide above sends you to WhiteRisk for Switzerland, to
+                    SnowSafe for Austria, and to Skitourenguru or Yéti for a scored tour, and Snowdesk's own entry
+                    lists what it does not do. Read it with the conflict in mind anyway.
+                {% endblocktrans %}
+            </p>
+            <p>
+                {% url 'public:how_to_read_bulletin' as bulletin_guide_url %}
+                {% blocktrans trimmed %}
+                    Nothing here is a recommendation about whether to go into avalanche terrain. The official bulletin
+                    from your national avalanche warning service is the authority, and the decision is always yours to
+                    make with training, equipment and partners. If you are new to reading one, start with
+                    <a class="underline" href="{{ bulletin_guide_url }}">how to read a bulletin</a>.
+                {% endblocktrans %}
+            </p>
+        </section>
+    </main>
+{% endblock content %}
