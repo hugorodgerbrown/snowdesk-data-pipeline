@@ -348,6 +348,14 @@ URL and fails a page that is in neither state
   `apps/public/urls.py` with a `partials/` prefix and guarded by `require_htmx`.
 - Use `hx-target`, `hx-swap="innerHTML"`, and `hx-indicator` for all dynamic
   requests.
+- **htmx is loaded per page, not by `public/base.html`.** A page that renders
+  any `hx-*` attribute must load `js/htmx.min.js` in its own `extra_js`
+  block. Forgetting it fails silently — the attributes render, nothing reads
+  them, and a `<form>` with no `action` falls through to a native GET that
+  clears the fields and writes nothing, which is exactly how the whole trips
+  app shipped inert (SNOW-834). `tests/public/test_htmx_is_loaded.py` asserts
+  the pairing on the rendered page; add a new fragment-posting page to its
+  hand-maintained list.
 
 ## Design system
 

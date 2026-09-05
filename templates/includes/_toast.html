@@ -19,6 +19,23 @@
                   (no ``hidden``, no positioning utilities; uses
                   ``inline-flex``). Used only by the component library so
                   variants don't pile up at the viewport bottom.
+    visible     — Bool; default False. When True the toast renders in its
+                  normal fixed position but already shown — ``flex`` in
+                  place of ``hidden``, which is the same pair
+                  ``sw_register.js`` toggles. For a toast whose reason
+                  the SERVER knows at render time (trips/trip_list.html
+                  confirming a trip it just wrote, SNOW-834), so the
+                  confirmation needs no JS to appear and survives a page
+                  with none. Pair it with ``timeout``: the shared
+                  controller in static/js/overlays.js arms on load for any
+                  ``[data-toast-timeout]`` that is not hidden.
+    group       — Str; optional name shared by toasts that occupy the same
+                  screen position and so must never be shown at once — a
+                  JS owner shows one and hides the rest of its group,
+                  matching on ``data-toast-group`` plus the ``data-kind``
+                  every toast already carries (trips/trip_list.html renders
+                  a success and an error toast this way, so a failure is
+                  never painted in the success palette).
     timeout     — Int; opt-in auto-dismiss delay in milliseconds. When
                   supplied, renders ``data-toast-timeout`` and the shared
                   toast controller (static/js/overlays.js) hides the toast
@@ -57,9 +74,10 @@
     {% endif %}
     data-testid="toast"
     data-kind="{{ kind }}"
+    {% if group %}data-toast-group="{{ group }}"{% endif %}
     {% if not static %}data-overlay data-overlay-hide="class"{% endif %}
     {% if timeout %}data-toast-timeout="{{ timeout }}"{% endif %}
-    class="{% if static %}inline-flex{% else %}hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% endif %} items-center gap-3 max-w-md rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
+    class="{% if static %}inline-flex{% else %}{% if visible %}flex{% else %}hidden{% endif %} fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% endif %} items-center gap-3 max-w-md rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
 >
     {# data-toast-body: the hook a JS owner writes through to replace the  #}
     {# message without rebuilding the toast (static/js/map_sheet.js). A    #}

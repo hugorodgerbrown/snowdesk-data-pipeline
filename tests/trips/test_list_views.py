@@ -10,7 +10,11 @@ trip_list (GET /trips/):
   organising is a LABEL on the row, not a separate section;
   the empty state;
   anonymous redirects to sign-in;
-  title and description are set (the page opts out of a share card).
+  title and description are set (the page opts out of a share card);
+  the create landing (SNOW-834) — ?created=<uuid> confirms the write and
+    marks its row, and is ignored for a trip the reader is not on;
+  the Share control on organised rows only, labelled for what the press
+    will do.
 
 Every date assertion runs under a frozen clock. "A trip dated today is
 upcoming" is a claim about a boundary, and a suite that crossed midnight
@@ -27,6 +31,7 @@ from django.urls import reverse
 from freezegun import freeze_time
 
 from apps.trips.services.participants import join_trip
+from apps.trips.services.shares import mint_trip_share
 from tests.factories import TripFactory, UserFactory
 
 # 14 March 2026 is a Saturday, which is the day a trip is normally on.
@@ -249,3 +254,122 @@ def test_deleting_a_trip_returns_the_organiser_to_the_list(
     )
 
     assert response["HX-Redirect"] == reverse("trips:list")
+
+
+@freeze_time(_TODAY)
+@pytest.mark.django_db
+class TestTripCreatedLanding:
+    """?created=<uuid>, which trip_create redirects here with (SNOW-834)."""
+
+    def test_confirms_the_write(self, client: Client) -> None:
+        """The page says the trip was created, without waiting for JS.
+
+        The whole reported defect was silence: the form appeared to reset
+        and nothing anywhere said a trip existed.
+        """
+        trip = TripFactory.create(name="Rosablanche")
+        client.force_login(trip.created_by)
+
+        html = client.get(
+            f"{reverse('trips:list')}?created={trip.uuid}"
+        ).content.decode()
+
+        assert "Trip created." in html
+        # Rendered SHOWN, not hidden behind a class only JS removes.
+        assert 'id="trip-toast-success"' in html
+        toast = html.split('id="trip-toast-success"')[1].split(">")[0]
+        assert "hidden" not in toast
+
+    def test_marks_the_row_it_made(self, client: Client) -> None:
+        """So the confirmation has something to point at on a full agenda."""
+        trip = TripFactory.create()
+        TripFactory.create(created_by=trip.created_by)
+        client.force_login(trip.created_by)
+
+        html = client.get(
+            f"{reverse('trips:list')}?created={trip.uuid}"
+        ).content.decode()
+
+        assert html.count('data-testid="trip-list-row-created"') == 1
+
+    def test_says_nothing_without_the_parameter(self, client: Client) -> None:
+        """A plain visit to the list is not a confirmation of anything."""
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:list")).content.decode()
+
+        assert "Trip created." not in html
+        assert 'data-testid="trip-list-row-created"' not in html
+        # The toast still RENDERS — trip_share.js writes a share outcome
+        # through it — but hidden until something has been said.
+        toast = html.split('id="trip-toast-success"')[1].split(">")[0]
+        assert "hidden" in toast
+
+    def test_ignores_a_trip_the_reader_is_not_on(self, client: Client) -> None:
+        """The parameter is a hint from a URL, and a URL is typed by anyone.
+
+        Confirming a stranger's trip would both lie to the reader and tell
+        them that uuid names something real.
+        """
+        stranger_trip = TripFactory.create()
+        reader = UserFactory.create()
+        client.force_login(reader)
+
+        html = client.get(
+            f"{reverse('trips:list')}?created={stranger_trip.uuid}"
+        ).content.decode()
+
+        assert "Trip created." not in html
+
+    def test_ignores_a_malformed_uuid(self, client: Client) -> None:
+        """A junk parameter is not a 500."""
+        client.force_login(UserFactory.create())
+
+        response = client.get(f"{reverse('trips:list')}?created=not-a-uuid")
+
+        assert response.status_code == 200
+        assert "Trip created." not in response.content.decode()
+
+
+@freeze_time(_TODAY)
+@pytest.mark.django_db
+class TestTripListShareControl:
+    """The Share button on a row — the reason creating lands here."""
+
+    def test_organised_rows_carry_it(self, client: Client) -> None:
+        """With the machinery static/js/trip_share.js reads."""
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:list")).content.decode()
+
+        assert f'data-trip-share="{trip.uuid}"' in html
+        assert "data-trip-share-url=" in html
+        assert "trip_share.js" in html
+        # The mint is a POST, so the page has to carry a token.
+        assert 'name="csrfmiddlewaretoken"' in html
+
+    def test_a_joined_trip_carries_none(self, client: Client) -> None:
+        """Minting is organiser-scoped, so the control would only 404."""
+        trip = TripFactory.create()
+        joiner = UserFactory.create()
+        join_trip(joiner, trip)
+        client.force_login(joiner)
+
+        html = client.get(reverse("trips:list")).content.decode()
+
+        assert f'data-trip-share="{trip.uuid}"' not in html
+
+    def test_the_label_says_which_press_this_is(self, client: Client) -> None:
+        """A second press ROTATES, which stops a link already sent working."""
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+
+        before = client.get(reverse("trips:list")).content.decode()
+        mint_trip_share(trip.created_by, trip.uuid)
+        after = client.get(reverse("trips:list")).content.decode()
+
+        assert "Share again" not in before
+        assert "Share again" in after
+        assert "stops working" in after

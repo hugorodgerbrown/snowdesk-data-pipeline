@@ -15,7 +15,8 @@ trip_detail (GET /trips/<uuid>/):
 The three fragments (trips:create / trips:edit / trips:delete):
   400 for a plain non-HTMX request (invariant 4);
   403 for an anonymous HTMX request;
-  create writes a trip and answers HX-Redirect to its page;
+  create writes a trip and answers HX-Redirect to the LIST, carrying the
+    new trip's uuid (SNOW-834);
   create re-renders the form at 400 for an invalid submission;
   create answers 409 at the cap;
   edit and delete are organiser-scoped and 404 otherwise.
@@ -226,8 +227,13 @@ class TestFragmentsRejectPlainRequests:
 class TestTripCreate:
     """POST /trips/partials/create/."""
 
-    def test_writes_a_trip_and_redirects_to_it(self, client: Client) -> None:
-        """HX-Redirect, because the next thing wanted is the trip itself."""
+    def test_writes_a_trip_and_redirects_to_the_list(self, client: Client) -> None:
+        """HX-Redirect to the LIST, carrying the new trip's uuid.
+
+        Not to the trip's own page (SNOW-834): the list is what says what
+        the organiser now has, and the uuid is how it confirms this write
+        and marks the row it made.
+        """
         route = RouteFactory.create()
         client.force_login(route.user)
         response = client.post(
@@ -235,7 +241,7 @@ class TestTripCreate:
         )
         assert response.status_code == 200
         trip = Trip.objects.get()
-        assert response["HX-Redirect"] == reverse("trips:detail", args=[trip.uuid])
+        assert response["HX-Redirect"] == f"{reverse('trips:list')}?created={trip.uuid}"
         assert trip.name == "Rosablanche"
         assert trip.date == datetime.date(2026, 3, 14)
 

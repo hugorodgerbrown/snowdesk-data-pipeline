@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 trips/partials/_trip_list_row.html — one row of the trips agenda (SNOW-823).
 
@@ -12,18 +12,40 @@ authorship would file two trips on the same morning under different
 headings, and the reader's question is "what am I doing", not "what did I
 write".
 
-The whole row is a link to the trip. It is not a UGC panel row
-(includes/_ugc_panel_row.html): that shape carries a rename pencil and a
-trash can for an object edited in place, and a trip is edited on its own
-page by one of the several people on it.
+The row is a link to the trip, and — for a trip the reader ORGANISED — a
+Share button beside it (SNOW-834). The button is a sibling of the anchor
+rather than inside it, because a button nested in a link is neither valid
+nor operable. Minting is organiser-scoped in mint_trip_share, so a row for
+somebody else's trip carries no button at all rather than a disabled one:
+the site's "show controls, don't hide them" rule is about a control the
+reader could earn the right to press, and this is not one.
+
+SHARING AGAIN ROTATES THE LINK, which stops one already sent to a group
+chat working. The label says which press this is — "Share" for a trip with
+no live link, "Share again" for one that has — and the consequence rides in
+the button's title, the same sentence _trip_share_controls.html prints
+under the buttons on the trip's own page.
+
+It is not a UGC panel row (includes/_ugc_panel_row.html): that shape carries
+a rename pencil and a trash can for an object edited in place, and a trip is
+edited on its own page by one of the several people on it.
 
 Context:
-    trip : Trip — the trip to render.
+    trip         : Trip — the trip to render.
+    created_trip : Trip or None, optional — from the outer context. When it
+                   is this trip, the row is marked as the one just written,
+                   so the confirmation toast has something to point at on an
+                   agenda with several trips on it. Compared as objects: two
+                   model instances with the same primary key are equal, and a
+                   None never matches, so no guard is needed around the test.
 {% endcomment %}
-<li>
+<li
+    class="flex items-center gap-3 border-b border-border pr-2{% if trip == created_trip %} bg-status-success-bg{% endif %}"
+    {% if trip == created_trip %}data-testid="trip-list-row-created"{% endif %}
+>
     <a
         href="{% url 'trips:detail' trip.uuid %}"
-        class="flex flex-col gap-1 border-b border-border py-3 hover:bg-tag"
+        class="flex flex-1 flex-col gap-1 py-3 pl-2 hover:bg-tag"
         data-testid="trip-list-row"
     >
         <span class="flex items-center gap-2">
@@ -52,4 +74,31 @@ Context:
             {% endblocktrans %}
         </span>
     </a>
+    {% if trip.created_by_id == request.user.pk %}
+        {% if trip.share_is_live %}
+            {% trans "Share again" as row_share_label %}
+            {% blocktrans trimmed asvar row_share_title %}
+                Sharing again replaces this trip's link, and the link you already sent stops working.
+            {% endblocktrans %}
+        {% else %}
+            {% trans "Share" as row_share_label %}
+            {% blocktrans trimmed asvar row_share_title %}
+                Anyone with the link can see this trip and join it.
+            {% endblocktrans %}
+        {% endif %}
+        {# button_classes directly rather than includes/_button.html: that #}
+        {# partial renders a label and nothing else, and this control      #}
+        {# carries the data attribute static/js/trip_share.js reads. The   #}
+        {# class STRING is still the design system's.                      #}
+        <button
+            type="button"
+            data-trip-share="{{ trip.uuid }}"
+            data-testid="trip-list-share"
+            title="{{ row_share_title }}"
+            aria-label="{% blocktrans trimmed with name=row_label %}Share “{{ name }}”{% endblocktrans %}"
+            class="{% button_classes variant='secondary' size='compact' %} shrink-0 whitespace-nowrap"
+        >
+            {{ row_share_label }}
+        </button>
+    {% endif %}
 </li>

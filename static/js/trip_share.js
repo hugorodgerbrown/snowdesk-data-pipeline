@@ -1,10 +1,12 @@
 /*
  * static/js/trip_share.js — the organiser's Share and Stop sharing controls
- * on a trip page (SNOW-821).
+ * (SNOW-821).
  *
  * Two clicks, both delegated off `document` so neither needs a closure over
  * the rendered page. The uuid rides on each button, exactly as the route
- * row's own Share does.
+ * row's own Share does — which is why SNOW-834 could put the same Share on
+ * every organised row of the trips list without this module learning that
+ * the list exists. It reads what a control carries, not where it sits.
  *
  * ## What is NOT written here
  *
@@ -22,10 +24,12 @@
  *
  * Pressing Share on a trip that already has a live link ROTATES it, which
  * stops a link already sent to a group chat working. That is stated on the
- * page itself (`_trip_share_controls.html`), in the sentence under the
- * buttons, rather than in a `confirm()` — a modal on the primary action of
- * the surface would be asked and dismissed every time, which is how a
- * warning stops being read.
+ * surface itself — in the sentence under the buttons on the trip's page
+ * (`_trip_share_controls.html`), and in the list row's own label and title
+ * (`_trip_list_row.html`, which reads "Share again" once a link is live) —
+ * rather than in a `confirm()`. A modal on the primary action of the
+ * surface would be asked and dismissed every time, which is how a warning
+ * stops being read.
  *
  * ## Exports (frozen `self.pwaTripShareCore`)
  *
@@ -90,18 +94,57 @@
     return field ? field.value : '';
   }
 
+  // The toast group this module speaks through, where a page renders one.
+  // A GROUP and not two ids: toasts in a group share one screen position
+  // (`fixed bottom-4 left-1/2`), so showing one means hiding the rest —
+  // see the `group` parameter of templates/includes/_toast.html.
+  var TOAST_GROUP = '[data-toast-group="trip"]';
+
   /**
-   * Put one line in the state paragraph under the buttons.
+   * Show one of the page's own toasts, hiding the rest of its group first.
    *
-   * The page has no toast host, and adding one for two messages would be a
-   * second notification system on a page that has none. The paragraph is
-   * already the thing that describes the link's state, so it is where a
-   * failure to change that state belongs.
+   * `hidden` is declared after `flex` in the compiled stylesheet and so
+   * beats it, which is why hiding is one class added and not a pair
+   * swapped — the same idiom `overlays.js` hides every other overlay with.
    *
+   * @param {HTMLElement} toast
    * @param {string} message
    * @returns {void}
    */
-  function announce(message) {
+  function showToast(toast, message) {
+    document.querySelectorAll(TOAST_GROUP).forEach(function (other) {
+      if (other !== toast) other.classList.add('hidden');
+    });
+    var body = toast.querySelector('[data-toast-body]');
+    if (body) body.textContent = message;
+    toast.classList.remove('hidden');
+    toast.classList.add('flex');
+  }
+
+  /**
+   * Say what happened, in whichever surface the page gives for saying it.
+   *
+   * Two surfaces because there are two pages. The trips list (SNOW-834)
+   * renders a toast per kind, since a row's Share has no prose beside it to
+   * write into. The trip's own page renders none: the paragraph under the
+   * buttons is already the thing that describes the link's state, so a
+   * failure to change that state belongs there, and adding a toast for two
+   * messages would be a second notification system on a page with none.
+   *
+   * The paragraph ignores `kind` — it is prose, and prose is not coloured.
+   *
+   * @param {string} message
+   * @param {string} kind `'success'` or `'error'`.
+   * @returns {void}
+   */
+  function announce(message, kind) {
+    var toast = document.querySelector(
+      TOAST_GROUP + '[data-kind="' + kind + '"]'
+    );
+    if (toast) {
+      showToast(/** @type {HTMLElement} */ (toast), message);
+      return;
+    }
     var host = document.querySelector('[data-testid="trip-share-state"]');
     if (host) host.textContent = message;
   }
@@ -130,11 +173,11 @@
         return window.pwaShare.shareOrCopy(shareUrl);
       })
       .then(function (outcome) {
-        if (outcome === 'copied') announce(STRINGS['share-copied']);
-        else if (outcome === 'failed') announce(STRINGS['share-failed']);
+        if (outcome === 'copied') announce(STRINGS['share-copied'], 'success');
+        else if (outcome === 'failed') announce(STRINGS['share-failed'], 'error');
       })
       .catch(function () {
-        announce(STRINGS['share-failed']);
+        announce(STRINGS['share-failed'], 'error');
       });
 
     return true;
@@ -172,7 +215,7 @@
         return null;
       })
       .catch(function () {
-        announce(STRINGS['revoke-failed']);
+        announce(STRINGS['revoke-failed'], 'error');
       });
 
     return true;
