@@ -712,8 +712,9 @@ in white — SNOW-569 dropped the tick: the glyph is the control's identity,
 and swapping it made a completed download read as a different control,
 where the colour inversion already carries "finished"), `disabled`
 (over-ceiling), `offline` (no downloading of layers while offline; see
-gating below), and (SNOW-645) `other-basemap` — see its own paragraph
-below. The three non-runnable states (`no-region`, `disabled`,
+gating below), (SNOW-645) `other-basemap` and (SNOW-844) `incomplete` —
+both have their own paragraph below. The three non-runnable states
+(`no-region`, `disabled`,
 `offline`) share one treatment: `not-allowed`, `aria-disabled="true"`, and
 a dimmed **glyph** — the glass shell stays at full strength, because the
 control now floats over open basemap where the old whole-roundel
@@ -776,6 +777,36 @@ template-mismatch eviction with no new logic. A pre-SNOW-645 record (no
 stored `basemapKey`) still reads `other-basemap` once its tiles are
 confirmed cached — just with the name-less label and no `data-basemap-key`
 attribute, since there is no key to show.
+
+**`incomplete`, and the repair (SNOW-844).** Tiles are half the answer. A
+pinned area renders offline only if its bucket ALSO holds the basemap's
+style document, the TileJSON each vector source is declared by, and the
+sprite JSON+PNG at 1x and 2x. The download fetches all four
+(`activeBasemapRenderDependencyURLs`, which
+`assembleBasemapDownloadFeedURLs` calls so the two lists cannot drift);
+nothing ever re-verified them, so an area downloaded before SNOW-843 —
+which never fetched a TileJSON at all — read `done` over a map that came
+up blank. `_probeDone` now composes `blobFullyCached` with
+`pwaBasemapDownloadCore.missingRenderDependencies`: `done` is both, and
+tiles-without-documents is `incomplete`, painted amber
+(`--color-sync-partial`) with the `error` glyph. It is **actionable** — a
+tap calls `basemap_download_runner.js`'s `repair`, which warms only the
+missing documents into the area's own bucket and deliberately does NOT go
+through `run` (no quota pre-flight, no budget plan, and above all no
+eviction confirm: a four-document repair must never be able to destroy
+another area to make room for a sprite). It is not behind the sign-in gate
+— the area is already on this device — but it IS suppressed while offline,
+like every other state that invites a fetch.
+
+Which dependency list an area is judged against follows one rule
+(`areaRenderDependencyURLs`), and its third case is what keeps the state
+honest: a record that names no dependencies AND belongs to a basemap that
+is not loaded is skipped rather than accused, because a style that is not
+loaded cannot be asked what its sprite is. Glyph ranges are deliberately
+excluded — see
+[`decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](decisions/a-downloaded-area-is-verified-by-what-it-renders.md)
+for the whole rule, the glyph carve-out and why the layers menu is
+untouched.
 
 **The probe itself (SNOW-583).** Full coverage has replaced a centre-tile
 check here since SNOW-570 — the code has never assumed "the centre tile is
@@ -1604,6 +1635,19 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 `static/js/basemap_manage_core.js`) lists every stored area with its name
 and size, a running total against the budget, an explicit delete, and the
 budget control itself.
+
+**A row can be listed and still not render (SNOW-844).** The sheet asks
+the same render-dependency question the roundel does (see `incomplete`
+above), per row, through `markIncompleteRows`. A row that fails it takes
+the orphan's "Incomplete" line and dims with it — in both cases what this
+device holds is not a usable download — but unlike an orphan it gains a
+**Repair** control: there is a record behind it naming exactly what to
+fetch, where an orphan has no record at all, so SNOW-612's remove-only
+treatment of orphans is unaffected. Repair goes through the runner's short
+path, never the download one. A row for a basemap that is not on screen
+whose record names no dependencies is skipped, not accused — the third
+case of the resolution rule in
+[`decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](decisions/a-downloaded-area-is-verified-by-what-it-renders.md).
 
 **It drives the map overlay through its switch, and only through its switch
 (SNOW-645, reworked twice more; SNOW-656).** Opening the sheet used to call
