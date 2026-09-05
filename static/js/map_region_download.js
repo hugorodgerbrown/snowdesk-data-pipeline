@@ -565,10 +565,11 @@
    *     pre-SNOW-645 record with no key, whatever `_basemapKeyForTemplate`
    *     can name from another record sharing the same template, and only
    *     `''` ("another basemap", unnamed) when nothing on record names it.
-   *     The resolved key is used for DISPLAY only and never written back —
-   *     same rule `orphanBasemapKey` (map_basemap_downloads.js) sets for
-   *     an inferred basemap. Only `_healRegionRecord` writes, and only
-   *     from a value the cache itself has just proven.
+   *     The resolved key is used for DISPLAY only and never written back:
+   *     it was inferred from a SIBLING record that happens to share this
+   *     template, not read from this region's own, so persisting it would
+   *     promote a guess to a stored fact. Only `_healRegionRecord` writes,
+   *     and only from a value the cache itself has just proven.
    *
    * @param {{regionId: string, summary: Object}} data
    * @returns {Promise<{done: boolean, otherBasemapKey: string | null} | null>}

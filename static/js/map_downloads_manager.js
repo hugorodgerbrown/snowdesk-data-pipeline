@@ -174,14 +174,15 @@
  *                                nothing, which is the truthful answer
  *                                when the module that owns the records
  *                                hasn't loaded.
- *                                SNOW-832 dropped the one call this
- *                                module made to that bridge's
- *                                ``orphanBasemapKey(areaId)``: it existed
- *                                to tint an orphaned row's left-edge
- *                                rule, and identity moved to the group
- *                                heading, which is a claim about
- *                                belonging that an inference may not
- *                                make.
+ *                                SNOW-832 dropped a fourth call this
+ *                                module used to make, for an orphaned
+ *                                bucket's inferred basemap: it existed to
+ *                                tint that row's left-edge rule, and
+ *                                identity moved to the group heading,
+ *                                which is a claim about belonging that an
+ *                                inference may not make. The inference
+ *                                went with the rule, so the bridge no
+ *                                longer offers it.
  *   window.pwaMapOverlays        ``register()`` + ``opening()`` (SNOW-658).
  *                                This sheet used to close ONE named
  *                                sibling on its way in
@@ -622,19 +623,19 @@
     });
 
     // SNOW-832 removed a pre-pass here. SNOW-645 resolved every orphaned
-    // row's basemap by INFERENCE (map_basemap_downloads.js's
-    // `orphanBasemapKey`, which matches an orphan bucket's own cached
-    // tile URLs against the templates on record) purely to give its
-    // left-edge rule a pale version of that colour instead of a flat
-    // neutral.
+    // row's basemap by INFERENCE — opening the orphan's own pinned bucket
+    // and matching its cached tile URLs against the templates on record —
+    // purely to give its left-edge rule a pale version of that colour
+    // instead of a flat neutral.
     //
     // That rule is gone: basemap identity belongs to the GROUP HEADING
     // now, and a group is a claim about which basemap a download BELONGS
-    // to — which is exactly the claim `orphanBasemapKey`'s own docstring
-    // forbids its answer from making ("decoration only, never a stored
-    // fact"). So an orphan keeps its empty `basemapKey` and lands in the
-    // unnamed group, which is the group for rows whose basemap is not
-    // recorded. Its own "Incomplete" meta line still says what it is.
+    // to, which is exactly the claim a decoration read off whatever
+    // happens to be on disk may not make. So an orphan keeps its empty
+    // `basemapKey` and lands in the unnamed group, which is the group for
+    // rows whose basemap is not recorded. Its own "Incomplete" meta line
+    // still says what it is. The inference itself was deleted with the
+    // rule — it had no other caller.
 
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';

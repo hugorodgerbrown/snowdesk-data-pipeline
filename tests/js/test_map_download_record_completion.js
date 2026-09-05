@@ -450,9 +450,8 @@ describe('a record with no stored basemapKey', () => {
     const record = dbRows
       .get('basemap.regions')
       .find((entry) => entry.region_id === REGION_NO_KEY);
-    // Display-only, the same rule orphanBasemapKey sets: only a value the
-    // cache has proven is ever persisted, and this one is an inference
-    // from a sibling record.
+    // Display-only: only a value the cache has proven is ever persisted,
+    // and this one is an inference from a sibling record.
     expect(record.basemapKey).toBeUndefined();
   });
 });

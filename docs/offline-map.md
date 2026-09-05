@@ -1665,13 +1665,17 @@ Three consequences follow, and each is a deletion:
   stays in the shared partial, documented as currently unused: it is the
   shape a measured quantity takes on that row, and re-deriving it at the
   next caller is how the three panels diverged in the first place.
-- **render()'s orphan pre-pass is gone.** SNOW-645 resolved an orphaned
-  bucket's basemap by INFERENCE (`orphanBasemapKey`) purely to tint that
-  rule. A group is a claim about which basemap a download BELONGS to,
-  which is exactly the claim that function's own docstring forbids its
-  answer from making — so an orphan keeps its empty `basemapKey` and lands
-  in the unnamed group. `orphanBasemapKey` itself is kept, with no caller,
-  and says so.
+- **render()'s orphan pre-pass is gone, and the inference behind it with
+  it.** SNOW-645 resolved an orphaned bucket's basemap by INFERENCE —
+  opening the bucket and matching its cached tile URLs against the
+  templates on record — purely to tint that rule. A group is a claim about
+  which basemap a download BELONGS to, which is exactly the claim a
+  decoration read off whatever happens to be on disk may not make, so an
+  orphan keeps its empty `basemapKey` and lands in the unnamed group. The
+  function (`orphanBasemapKey`) had no other caller, so it went too, with
+  its export entry and its tests; `basemapDownloadedTemplates()` and
+  `cachedTilesFromURLs`, which it borrowed, both stay — the
+  downloaded-tiles overlay is their real caller.
 
 **Ordering.** Rows sort **regions before custom areas, alphabetically
 within each**, tie-broken by id — replacing SNOW-586's largest-first. The
@@ -1727,25 +1731,29 @@ all — no bbox, no band — to rebuild from, and a link that silently does
 nothing for one of the two row kinds reads worse than no link for either.
 
 **An orphan's left rule was a PALE version of its basemap's colour, not a
-flat neutral (Hugo's correction) — RETIRED by SNOW-832 with the rule
-itself.** Kept here because the machinery survives it and a reader will
-meet it. An orphan has no record and so no stored `basemapKey` —
-`reconcileAreas` gives it `null` — but it is a real pinned bucket with
-real tiles on disk, and those tiles were fetched under SOME basemap's URL
-template. `map_basemap_downloads.js`'s `orphanBasemapKey(areaId)` recovers
-it by INFERENCE: it opens the orphan's own bucket, reads its cached tile
-URLs, and matches them against every DISTINCT template
-`basemapDownloadedTemplates()` already knows about — the exact same
-per-template regex match `cachedTilesFromURLs` performs for the
-downloaded-tiles overlay, just against one bucket's URLs instead of the
-union of all of them; no new URL-parsing or origin-sniffing.
+flat neutral (Hugo's correction) — GONE, with the rule, in SNOW-832.**
+Recorded because the shape of the argument outlives the code. An orphan
+has no record and so no stored `basemapKey` — `reconcileAreas` gives it
+`null` — but it is a real pinned bucket with real tiles on disk, and those
+tiles were fetched under SOME basemap's URL template. So
+`map_basemap_downloads.js` recovered it by INFERENCE, in a function
+(`orphanBasemapKey(areaId)`) that opened the orphan's own bucket, read its
+cached tile URLs, and matched them against every DISTINCT template
+`basemapDownloadedTemplates()` already knew about — the same per-template
+regex match `cachedTilesFromURLs` performs for the downloaded-tiles
+overlay, just against one bucket's URLs instead of the union of all of
+them. Its own docstring capped what that answer was allowed to be:
+decoration only, never a stored fact.
 
-SNOW-832 removed its one caller. Identity is a GROUP heading now, and a
-group is a claim about which basemap a download belongs to — precisely
-what that function's own "decoration only, never a stored fact" caveat
-forbids its answer from making. So an orphan lands in the unnamed group
-instead, and `orphanBasemapKey` remains exported, tested and unused, which
-its docstring says out loud. Retiring it is a separate decision.
+SNOW-832 removed the rule, which was its only caller, and did not adopt
+the inference for the group heading: a group is a claim about which
+basemap a download belongs to, precisely what that cap forbade. An orphan
+lands in the unnamed group instead. That left a function nothing called,
+so the same ticket deleted it — the standing rule is to fix what you find
+rather than leave it for later, and an exported, tested, uncalled
+inference is an invitation for a future reader to find a use for it that
+the cap does not allow. `basemapDownloadedTemplates()` and
+`cachedTilesFromURLs` are untouched; the overlay is their real caller.
 
 ### Account sync for download areas (SNOW-749)
 

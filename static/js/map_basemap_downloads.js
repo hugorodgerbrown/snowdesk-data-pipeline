@@ -874,53 +874,6 @@ async function basemapDownloadedTemplates() {
 }
 
 /**
- * SNOW-645 review: infer which basemap an ORPHANED bucket (SNOW-612 — a
- * pinned bucket with no record, so `reconcileAreas` gives it
- * `basemapKey: null`) most likely belongs to, for the "Manage downloads"
- * row's pale left-edge rule — DECORATION ONLY. This is inference from
- * what is actually on disk, never a record: nothing writes it back
- * anywhere, and no other reader may ever treat the result as anything
- * more than a colour hint for a row whose only action is Remove.
- *
- * Matches the orphan's own cached tile URLs against every DISTINCT
- * template `basemapDownloadedTemplates()` already knows about — the SAME
- * per-template regex match `cachedTilesFromURLs` performs for the
- * downloaded-tiles overlay, just against one bucket's URLs instead of the
- * union of all of them. No new URL-parsing or origin-sniffing: a bucket
- * whose tiles match a template on record was fetched from that
- * template's basemap.
- *
- * @param {string} areaId The orphan's own area id (its bucket name is
- *   `BASEMAP_PINNED_CACHE_PREFIX + areaId`).
- * @returns {Promise<string|null>} The first matching basemapKey, or
- *   `null` when the bucket's tiles match no template currently on record
- *   (a basemap since retired from the picker, an unreadable bucket, or
- *   Cache Storage itself unavailable) — the caller's cue to fall back to
- *   a pale NEUTRAL rule rather than guessing a basemap.
- */
-async function orphanBasemapKey(areaId) {
-  const core = self.pwaBasemapDownloadCore;
-  if (!core || !('caches' in window)) return null;
-
-  let urls;
-  try {
-    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
-    const requests = await cache.keys();
-    urls = requests.map((request) => request.url);
-  } catch (_e) {
-    return null;
-  }
-  if (!urls.length) return null;
-
-  const templates = await basemapDownloadedTemplates();
-  for (const { template, basemapKey } of templates) {
-    if (!basemapKey) continue;
-    if (core.cachedTilesFromURLs(template, urls).length > 0) return basemapKey;
-  }
-  return null;
-}
-
-/**
  * SNOW-586: pre-flight an incoming `areaId` download of `mb` megabytes
  * against the standing byte budget — the page-side half of the eviction
  * plan (basemap_download_core.js's `planEviction` does the arithmetic;
@@ -1132,25 +1085,6 @@ window.pwaBasemapDownloads = Object.freeze({
    * @returns {string[]}
    */
   basemapOrder: () => basemapOrder(),
-
-  /**
-   * SNOW-645 review: infer an orphaned bucket's basemap from its own
-   * cached tiles — see `orphanBasemapKey`'s own docstring for the
-   * matching and the "decoration only" caveat. Exposed here for the same
-   * load-order reason `basemapLabel` is.
-   *
-   * NO CURRENT CALLER (SNOW-832). Its one consumer was the Manage
-   * downloads sheet's per-row left-edge rule, and that rule is gone:
-   * basemap identity is a GROUP heading now, which is a claim about which
-   * basemap a download belongs to — precisely the claim the caveat above
-   * forbids this answer from making. Kept rather than deleted, with its
-   * own coverage in tests/js/test_basemap_custom_areas.js: retiring an
-   * inference nothing is currently misusing is not this ticket's call.
-   *
-   * @param {string} areaId
-   * @returns {Promise<string|null>}
-   */
-  orphanBasemapKey: (areaId) => orphanBasemapKey(areaId),
 
   // SNOW-649: the two render-scheduling primitives below are exposed for
   // ONE reason — they were untestable. Both are pure higher-order
