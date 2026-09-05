@@ -156,10 +156,11 @@ def active_set_needs_halo() -> bool:
 #
 # **Everything that needs the active set must go through
 # :func:`active_icon_set_name`**, never read the session itself. The
-# switcher strip did read it directly and showed the previous choice: a
-# context processor runs before the template body, so it saw the session as
-# it was before the lazy resolver had recorded the new one. One resolver,
-# called from both, cannot disagree with itself.
+# switcher strip SNOW-842 removed did read it directly, and showed the
+# previous choice: a context processor runs before the template body, so it
+# saw the session as it was before the lazy resolver had recorded the new
+# one. The rule outlived the strip — one resolver, called from everywhere,
+# cannot disagree with itself.
 _resolver: contextvars.ContextVar[Callable[[], str | None] | None] = (
     contextvars.ContextVar("weather_icon_set_resolver", default=None)
 )
@@ -171,7 +172,7 @@ def active_icon_set_name() -> str:
     Returns:
         The pinned set if one was requested, otherwise
         ``settings.WEATHER_ICON_SET``. Resolving reads the session, so call
-        this only where an icon (or the switcher) is actually being drawn.
+        this only where an icon is actually being drawn.
 
     """
     resolve = _resolver.get()

@@ -53,10 +53,18 @@ reproducible from it.
   the white card and the darkest fails on the dark card; a fixed mid grey
   (3.45 / 4.26) carries whichever end the fill cannot, and disappears into
   the fills that need no help. Remove it and both ends of the ramp break.
-- **The comparison machinery stays.** `/_icon-sets/`, the DEBUG switcher and
-  the other sets are kept because this is a decision that gets revisited, and
-  a comparison nobody can reproduce is not evidence. `SETS_NEEDING_HALO`
-  still exists for the sets that do need the filter.
+- **The comparison machinery stays — minus the strip (amended SNOW-842).**
+  `/_icon-sets/`, the `?icons=<name>` override and the other sets are kept
+  because this is a decision that gets revisited, and a comparison nobody
+  can reproduce is not evidence. `SETS_NEEDING_HALO` still exists for the
+  sets that do need the filter.
+
+  The floating DEBUG switcher strip this clause originally also protected
+  was removed. Keeping a comparison reproducible does not require it to be
+  on screen: the strip rendered over the content of every page on every
+  local load, and the two things that make the comparison reproducible —
+  the override and the side-by-side grid — are both reached deliberately.
+  The strip was the one part that could not be turned off.
 - **Sunrise and sunset are still Meteocons.** No set publishes an
   equivalent, and they are not condition icons.
 

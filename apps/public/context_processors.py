@@ -17,7 +17,6 @@ from django.utils.functional import SimpleLazyObject
 
 from apps.public.release import release_label
 from apps.public.site_environment import PWAEnvironmentIdentity
-from apps.weather.icon_sets import active_icon_set_name, available_icon_sets
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -246,43 +245,4 @@ def site_environment(request: HttpRequest) -> dict[str, Any]:
         "PWA_ICON_DIR": identity.icon_dir,
         "PWA_THEME_COLOR": identity.theme_color,
         "PWA_TITLE_SUFFIX": identity.title_suffix,
-    }
-
-
-def weather_icon_set(request: HttpRequest) -> dict[str, Any]:
-    """Inject the active weather icon set's static-relative directory.
-
-    Supplies the DEBUG-only switcher strip with the active set's name and the
-    sets it can offer.
-
-    The name comes from ``active_icon_set_name`` — the same resolver the
-    ``weather_icon_url`` tag uses — and **not** from the session directly.
-    Reading the session here showed the previous choice, because a context
-    processor runs before the template body and so before the lazy resolver
-    has recorded the new one.
-
-    Outside ``DEBUG`` this resolves nothing and offers nothing: the setting
-    is the only input, and a crafted query string cannot change what a
-    visitor is served.
-
-    Args:
-        request: The incoming request; read for the session override.
-
-    Returns:
-        ``WEATHER_ICON_SET`` (the active set's name) and
-        ``WEATHER_ICON_SETS_AVAILABLE`` (the names whose directory is on
-        disk). Both are for the DEBUG-only switcher in ``base.html``; the
-        icon paths themselves come from the ``weather_icon_url`` tag, because
-        the weather partials are included with ``only`` and never see a
-        context processor's output.
-
-    """
-    if not settings.DEBUG:
-        return {
-            "WEATHER_ICON_SET": settings.WEATHER_ICON_SET,
-            "WEATHER_ICON_SETS_AVAILABLE": [],
-        }
-    return {
-        "WEATHER_ICON_SET": active_icon_set_name(),
-        "WEATHER_ICON_SETS_AVAILABLE": available_icon_sets(),
     }

@@ -6,7 +6,8 @@ SNOW-791 — every icon bucket against every candidate set, side by side.
 
 Staff-only, and a working surface rather than a product page: it exists so
 the candidate sets can be judged against each other at the sizes the app
-renders, and it goes away with the switcher once a set is chosen.
+renders. SNOW-842 removed the floating switcher strip, so this page and
+the ?icons= override are what the comparison is now made with.
 
 **One table per size, not one cell per size.** The three sizes were drawn
 together at first, which put a set's 27px next to its own 40px and 72px —
@@ -28,8 +29,8 @@ table asks one question: at THIS size, which of these reads?
             the codes that resolve to that bucket.
         </p>
         <p class="mt-2 max-w-3xl text-sm text-text-3">
-            Read from the filesystem, so it cannot go stale. Use the switcher to change what the rest of the site
-            serves; this page always shows all of them.
+            Read from the filesystem, so it cannot go stale. Add <code>?icons=&lt;name&gt;</code> to any page to change
+            what the rest of the site serves; this page always shows all of them.
         </p>
 
         {# Rebuilding the two sets that cannot be committed. At the top of the #}

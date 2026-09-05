@@ -296,7 +296,6 @@ TEMPLATES = [
                 # Exposes SITE_BASE_URL for absolute-URL construction in OG tags.
                 # SNOW-791: injects WEATHER_ICON_DIR so the weather partials and
                 # the map layer resolve icon paths against the active set.
-                "apps.public.context_processors.weather_icon_set",
                 "apps.public.context_processors.site_base_url",
                 # Injects APP_VERSION into every template so base.html can
                 # bake it into a <meta> tag for the client-side version
