@@ -190,19 +190,20 @@ def convert_to_3wa(
         # ``exception`` rather than ``warning`` so the traceback survives:
         # this is the branch that fires when the upstream is down, and
         # knowing which failure it was is the whole diagnosis.
-        logger.exception(
-            "what3words: request failed for latitude=%s longitude=%s",
-            latitude,
-            longitude,
-        )
+        #
+        # NO COORDINATE IN ANY MESSAGE HERE (SNOW-718). A lat/lon pair is a
+        # precise location — somebody's meeting point — and a log is the
+        # wrong place for one; ``apps.public.api`` logs the row id for the
+        # same reason. This function is handed bare floats and has no id to
+        # name instead, so it names none: which square failed is not what
+        # the log is for, and ``fill_what3words`` records the row.
+        logger.exception("what3words: request failed (url=%s)", url)
         return None
 
     if not response.ok:
         logger.warning(
-            "what3words: %s for latitude=%s longitude=%s code=%s",
+            "what3words: %s from the API (code=%s)",
             response.status_code,
-            latitude,
-            longitude,
             _error_code(response),
         )
         return None
@@ -225,11 +226,7 @@ def convert_to_3wa(
         return None
 
     if not words or not isinstance(words, str):
-        logger.warning(
-            "what3words: no words in the response for latitude=%s longitude=%s",
-            latitude,
-            longitude,
-        )
+        logger.warning("what3words: the response carried no usable words")
         return None
 
     return words
@@ -328,6 +325,11 @@ def fill_what3words(location: Location) -> str | None:
 
     words = convert_to_3wa(location.latitude, location.longitude)
     if words is None:
+        # By ROW ID, never by coordinate (SNOW-718) — this is the level
+        # that has an id to name, which is why ``convert_to_3wa`` logs no
+        # identity at all. The id is also the more useful of the two: it
+        # is what you would look the row up by.
+        logger.warning("what3words: no address for location id=%s", location.pk)
         # Deliberately no negative caching. A failure is nearly always the
         # upstream or the key rather than the square, so stamping "we
         # tried" would suppress the retry that fixes itself.
