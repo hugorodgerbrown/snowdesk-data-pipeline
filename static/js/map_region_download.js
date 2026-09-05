@@ -273,9 +273,21 @@
    *   control's own roundel can show which basemap the region was
    *   downloaded under. Null on an unresolved picker; never used for the
    *   template-eviction decision above, which stays `template`-only.
+   * @param {string[]} renderDeps SNOW-844: the style/sprite/TileJSON URLs
+   *   the run fetched, resolved by the runner at run start and handed back
+   *   through `finish`'s `extras`. A record with none is UNKNOWN, never
+   *   incomplete — see `_probeDone` for the three-row resolution rule.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, tileSources, z, band, bytes, basemapKey) {
+  async function _recordRegionDownload(
+    regionId,
+    tileSources,
+    z,
+    band,
+    bytes,
+    basemapKey,
+    renderDeps,
+  ) {
     if (!z || !window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
@@ -290,6 +302,13 @@
         name: name,
         template: tileSources,
         basemapKey: basemapKey || null,
+        // SNOW-844: the RENDER dependencies this run fetched — the style
+        // document, the sprite and each vector source's TileJSON. Stored
+        // rather than re-derived, because the Manage downloads sheet lists
+        // areas downloaded under basemaps that are NOT the one on screen,
+        // and a style that is not loaded cannot be asked what its sprite
+        // is. Exactly the reason `template` and `basemapKey` are stored.
+        deps: Array.isArray(renderDeps) ? renderDeps : [],
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
@@ -383,9 +402,27 @@
   }
 
   /**
-   * Backfill absent `template` / `basemapKey` on `regionId`'s stored
-   * record, from values the caller has just PROVEN by probing real cache
-   * contents. Never overwrites a value that is already there.
+   * Whether `value` is a real stored value rather than an absence.
+   *
+   * SNOW-844: `_healRegionRecord` used a bare truthiness test, which is
+   * right for `template` and `basemapKey` (strings) and wrong for `deps`:
+   * an EMPTY array is truthy, so a record written by a run whose style had
+   * not settled — `deps: []` — would read as "already has a value" and
+   * never be healed, for the life of the install. An empty list is exactly
+   * the unknown this heal exists to resolve.
+   *
+   * @param {*} value
+   * @returns {boolean}
+   */
+  function _isUsable(value) {
+    if (Array.isArray(value)) return value.length > 0;
+    return !!value;
+  }
+
+  /**
+   * Backfill absent `template` / `basemapKey` / (SNOW-844) `deps` on
+   * `regionId`'s stored record, from values the caller has just PROVEN by
+   * probing real cache contents. Never overwrites a value that is already there.
    *
    * A record written before SNOW-632 (no `template`) or SNOW-645 (no
    * `basemapKey`) is missing exactly the two fields every other surface
@@ -406,7 +443,13 @@
    * leaves the record as it was and the next probe tries again.
    *
    * @param {string} regionId
-   * @param {{template: string[][], basemapKey: string | null}} fields
+   * @param {{template?: string[][], basemapKey?: string | null,
+   *   deps?: string[]}} fields SNOW-844 adds `deps` — the same backfill,
+   *   one field further out. A record written before that ticket names no
+   *   render dependencies at all, so the probe cannot tell an area that is
+   *   missing its sprite from one that never listed it; healing from the
+   *   ACTIVE style's list, at the moment the cache has just been found to
+   *   hold every one of those URLs, records something verified.
    * @returns {Promise<void>}
    */
   async function _healRegionRecord(regionId, fields) {
@@ -418,7 +461,7 @@
       for (const entry of value) {
         if (!entry || entry.region_id !== regionId) continue;
         for (const [name, next] of Object.entries(fields)) {
-          if (!next || entry[name]) continue;
+          if (!_isUsable(next) || _isUsable(entry[name])) continue;
           entry[name] = next;
           changed = true;
         }
@@ -986,7 +1029,11 @@
           await evictBasemapAreas([evictAreaId]);
         }
       },
-      finish: async (result, blob, { core: runCore, progressFill, tileSources, basemapKey }) => {
+      finish: async (
+        result,
+        blob,
+        { core: runCore, progressFill, tileSources, basemapKey, renderDeps },
+      ) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
         // claim the region is downloaded.
@@ -1030,6 +1077,7 @@
             blob.band || runCore.MICRO_BAND,
             result.bytes,
             basemapKey,
+            renderDeps,
           );
         }
         // SNOW-569: await the on-map pulse before flipping the roundel — the

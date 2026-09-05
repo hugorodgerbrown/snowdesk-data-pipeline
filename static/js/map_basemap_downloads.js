@@ -802,6 +802,12 @@ async function basemapDownloadedAreas() {
         // belongs to `areaIdForRegion` and is deliberately never
         // reverse-engineered elsewhere.
         regionId: entry.region_id,
+        // SNOW-844: the render dependencies the run recorded, so the
+        // Manage downloads sheet can check a row whose basemap is not the
+        // one on screen. Absent on every record written before that ticket
+        // — normalised to `[]` here, which the sheet reads as UNKNOWN
+        // rather than as "nothing needed".
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
       });
     }
   } catch (_e) {
@@ -840,6 +846,8 @@ async function basemapDownloadedAreas() {
         // lets another device (or this one after an eviction) fetch the
         // same ground again, so it travels with the area.
         bbox: entry.bbox,
+        // SNOW-844: see the region branch above.
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
       });
     }
   } catch (_e) {

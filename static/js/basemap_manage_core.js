@@ -360,6 +360,11 @@
           !onDevice && (isCustom ? Array.isArray(area.bbox) : !!area.regionId),
         bbox: Array.isArray(area.bbox) ? area.bbox : null,
         regionId: area.regionId || '',
+        // SNOW-844: the render dependencies this area recorded, carried
+        // onto the row so the sheet can ask whether they are on disk. The
+        // check itself is not here — it needs Cache Storage, which this
+        // module deliberately never touches.
+        deps: Array.isArray(area.deps) ? area.deps : [],
       });
     }
 
@@ -558,6 +563,11 @@
         // already answered.
         bbox: Array.isArray(area.bbox) ? area.bbox : null,
         regionId: area.regionId || '',
+        // SNOW-844: the render dependencies the download recorded — the
+        // style document, the sprite and each vector source's TileJSON.
+        // Empty on a record written before that ticket, which the sheet
+        // reads as UNKNOWN (skip the check) rather than as "none needed".
+        deps: Array.isArray(area.deps) ? area.deps : [],
       });
     }
 
@@ -586,6 +596,10 @@
         synced: id in accountById,
         bbox: null,
         regionId: '',
+        // SNOW-844: no record means no dependency list either. An orphan
+        // is already labelled "Incomplete" for a stronger reason — there
+        // is nothing behind it at all — and is remove-only.
+        deps: [],
       });
     }
     orphans.sort(function (a2, b2) {
@@ -622,6 +636,10 @@
         synced: true,
         bbox: Array.isArray(accountRow.bbox) ? accountRow.bbox : null,
         regionId: accountRow.region_id || '',
+        // SNOW-844: nothing of this area is on this device, so there is
+        // nothing here to be missing. The sheet skips the completeness
+        // check for an off-device row entirely.
+        deps: [],
       });
     }
     accountOnly.sort(function (a3, b3) {
