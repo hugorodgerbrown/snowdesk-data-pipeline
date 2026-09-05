@@ -723,6 +723,31 @@ WEATHER_BACKFILL_FLOOR = config(
 )
 
 # ---------------------------------------------------------------------------
+# what3words — a trip's meeting point as a three word address (SNOW-840)
+# ---------------------------------------------------------------------------
+# Live endpoint:
+#   GET {WHAT3WORDS_API_BASE_URL}/convert-to-3wa?coordinates=<lat>,<lon>
+#
+# The key travels in an ``X-Api-Key`` HEADER rather than a query parameter,
+# so it cannot end up in a logged or proxied URL. See
+# ``apps.locations.services.what3words``.
+#
+# NOT FREE. ``convert-to-3wa`` left the free plan in November 2024, which
+# now covers AutoSuggest alone, so this needs the Basic plan (£7.99/mo,
+# 1,000 conversions). An empty key is therefore the default and the
+# service makes no request at all when it sees one — an environment with
+# no subscription costs nothing and cannot 401 in a loop. The ``what3words``
+# waffle flag is the other half of that: the feature deploys dark.
+WHAT3WORDS_API_BASE_URL = config(
+    "WHAT3WORDS_API_BASE_URL",
+    default="https://api.what3words.com/v3",
+)
+
+# Empty means the feature is inert: no request, no address, and the trip
+# page falls back to the coordinate pair it renders today.
+WHAT3WORDS_API_KEY = config("WHAT3WORDS_API_KEY", default="")
+
+# ---------------------------------------------------------------------------
 # GeoIP
 # ---------------------------------------------------------------------------
 # Path to the MaxMind GeoLite2-City mmdb database file. Used by
