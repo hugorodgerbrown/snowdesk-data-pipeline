@@ -29,6 +29,12 @@
  *   - the add CTA is DELEGATED on the sheet, because the body is re-cloned on
  *     every open — a per-element listener would be bound to an element the
  *     next open throws away;
+ *   - SNOW-830: Remove is one item inside the row's "…" menu now, so it
+ *     asks first — a delegated `submit` confirm rather than `hx-confirm`,
+ *     because the message is translated and names the row. The same
+ *     block proves Share and Rename still resolve from inside a menu,
+ *     which is the premise the markup change rests on;
+ *
  *   - a failed list load says so. This panel opens offline and its list does
  *     not load offline, and falling through to the server partial's own "You
  *     have no saved routes yet." would be a wrong statement about the user's
@@ -987,5 +993,131 @@ describe('the sheet-level bridge (SNOW-803)', () => {
     expect(sheet.querySelector('[data-routes-rows]')).not.toBeNull();
     window.pwaRoutesSheet.close();
     expect(window.pwaRoutesSheet.isOpen()).toBe(false);
+  });
+});
+
+
+describe("removing a row from inside the row's menu (SNOW-830)", () => {
+  // The trash used to be a 44x44 control a user aimed at directly; it is
+  // now one item in the row's "…" menu, where a mis-tap costs a route
+  // with no way back. The confirm is a delegated `submit` on the sheet
+  // rather than `hx-confirm`, because the message is translated and names
+  // the row — neither of which a template attribute literal can be.
+  const realConfirm = window.confirm;
+
+  afterEach(() => {
+    window.confirm = realConfirm;
+  });
+
+  /** Put one owned row into the open panel, its controls inside a menu.
+   *
+   * The shape routes:list renders since SNOW-830 — the four controls
+   * moved inside `[data-overflow-menu]` in the same `<li>`, which is what
+   * these tests have to prove the delegated readers survived.
+   *
+   * @param {string} uuid The route's uuid, as the server writes it.
+   * @returns {HTMLElement} The row's `<li>`.
+   */
+  function renderMenuRow(uuid) {
+    const rows = sheet.querySelector('[data-routes-rows]');
+    rows.innerHTML = `<ul><li id="route-${uuid}" data-row-renameable>
+      <span data-row-label>Haute Route</span>
+      <input type="text" data-row-rename-input hidden aria-label="Route name">
+      <div data-overflow-menu>
+        <button type="button" data-overflow-trigger aria-expanded="false"></button>
+        <ul role="menu" hidden>
+          <li role="none"><button type="button" role="menuitem"
+            data-route-share="${uuid}" aria-label="Share Haute Route"></button></li>
+          <li role="none"><button type="button" role="menuitem" data-row-rename
+            data-route-rename="${uuid}" aria-label="Rename Haute Route"></button></li>
+          <li role="none"><form data-row-remove hx-post="/routes/partials/${uuid}/delete/"
+            hx-target="#route-${uuid}" hx-swap="outerHTML">
+            <button type="submit" role="menuitem" aria-label="Remove Haute Route"></button>
+          </form></li>
+        </ul>
+      </div>
+    </li></ul>`;
+    return rows.querySelector('li');
+  }
+
+  it('asks before removing, naming the row rather than saying "this route"', () => {
+    // The menu that was open is closed by the time the dialogue is on
+    // screen, so a message that did not name the route would leave the
+    // user guessing which one they are about to lose.
+    window.confirm = vi.fn(() => true);
+    btn.click();
+    const row = renderMenuRow('abc-123');
+
+    row.querySelector('[data-row-remove]').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(window.confirm.mock.calls[0][0]).toContain('Haute Route');
+  });
+
+  it('cancels the submit when the user declines, so htmx sends nothing', () => {
+    window.confirm = vi.fn(() => false);
+    btn.click();
+    const row = renderMenuRow('abc-123');
+    const submit = new Event('submit', { bubbles: true, cancelable: true });
+
+    row.querySelector('[data-row-remove]').dispatchEvent(submit);
+
+    expect(submit.defaultPrevented).toBe(true);
+  });
+
+  it('lets the submit through when the user accepts', () => {
+    window.confirm = vi.fn(() => true);
+    btn.click();
+    const row = renderMenuRow('abc-123');
+    const submit = new Event('submit', { bubbles: true, cancelable: true });
+
+    row.querySelector('[data-row-remove]').dispatchEvent(submit);
+
+    expect(submit.defaultPrevented).toBe(false);
+  });
+
+  it('never asks for a pending row’s Save, which is constructive', () => {
+    // The claim form carries `data-row-claimed`, not `data-row-remove`.
+    window.confirm = vi.fn(() => false);
+    btn.click();
+    const rows = sheet.querySelector('[data-routes-rows]');
+    rows.innerHTML = `<ul><li id="route-share-tok">
+      <form data-row-claimed hx-post="/routes/partials/share/tok/claim/"></form>
+    </li></ul>`;
+    const submit = new Event('submit', { bubbles: true, cancelable: true });
+
+    rows.querySelector('[data-row-claimed]').dispatchEvent(submit);
+
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(submit.defaultPrevented).toBe(false);
+  });
+
+  it('still resolves Share from inside the menu, by closest() and not by depth', () => {
+    // The whole premise of SNOW-830's markup change: every delegated
+    // reader walks UP from the clicked element, so a control nested two
+    // levels deeper is the same control.
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ url: 'https://snowdesk.app/routes/s/tok/' }),
+      }),
+    );
+    btn.click();
+    const row = renderMenuRow('abc-123');
+
+    row.querySelector('[data-route-share]').click();
+
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('/routes/abc-123/share/');
+  });
+
+  it('still opens the inline editor from a Rename inside the menu', () => {
+    btn.click();
+    const row = renderMenuRow('abc-123');
+
+    row.querySelector('[data-row-rename]').click();
+
+    expect(row.querySelector('[data-row-rename-input]').hidden).toBe(false);
   });
 });

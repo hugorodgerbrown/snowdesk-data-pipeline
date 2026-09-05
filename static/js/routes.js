@@ -158,6 +158,9 @@
     'upload-failed': "That route couldn't be uploaded. Try again.",
     'share-copied': 'Link copied.',
     'share-failed': "That link couldn't be created. Try again.",
+    // SNOW-830: Remove sits inside the row's "…" menu now, and a
+    // removal cannot be undone.
+    'confirm-remove': "Remove %(name)s? You'll need the .gpx file again to put it back.",
   });
 
   const CREATE_URL = btn.dataset.routeCreateUrl;
@@ -434,6 +437,49 @@
       return;
     }
     uploadInput.click();
+  });
+
+  // ---------------------------------------------------------------------------
+  // SNOW-830: the Remove confirm.
+  //
+  // The trash used to be a 44x44 control a user aimed at directly; it is
+  // now one item inside the row's "..." menu, where a mis-tap costs a
+  // route with no way back — route_delete is immediate and the .gpx is
+  // the user's to find again. `hx-confirm` cannot carry the message,
+  // because that attribute is a literal in the template and the string
+  // has to be TRANSLATED and to name the row, so the confirm is a
+  // delegated `submit` on the sheet that cancels the event when the user
+  // declines. htmx issues its request from the submit event, so
+  // preventDefault() here stops it before anything is sent.
+  //
+  // window.confirm, matching map_downloads_manager.js's own destructive
+  // idiom: feature-guarded (jsdom and a locked-down embedded webview both
+  // lack it, and a missing dialogue must not block a real removal), with
+  // the copy interpolated from the surface's own strings template.
+  //
+  // Only [data-row-remove] — the CLAIM form on a pending row carries
+  // `data-row-claimed` and is constructive, so it is not caught here.
+  // ---------------------------------------------------------------------------
+
+  sheet.addEventListener('submit', function (event) {
+    const submitted = /** @type {HTMLElement} */ (event.target);
+    if (!submitted || !submitted.closest) return;
+    const form = submitted.closest('[data-row-remove]');
+    if (!form) return;
+    if (typeof window.confirm !== 'function') return;
+
+    // The row's name, read through the form's OWN `hx-target` — which is
+    // the row's id selector (routes/partials/_route.html passes it as
+    // `row_target`). A `closest()` walk would find the menu's `<li>`,
+    // since the form now sits inside one.
+    const target = form.getAttribute('hx-target');
+    const row = target ? document.querySelector(target) : null;
+    const label = row ? row.querySelector('[data-row-label]') : null;
+    const name = label ? label.textContent.trim() : '';
+    const message = self.pwaStrings.interpolate(STRINGS['confirm-remove'], {
+      name: name,
+    });
+    if (!window.confirm(message)) event.preventDefault();
   });
 
   // SNOW-687: the overlay switch drives window.pwaRoutesOverlay directly —
