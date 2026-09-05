@@ -22,9 +22,16 @@
  *   4. A malformed attribute moves NOTHING and still returns true. Returning
  *      false would send the click on to the caller's next test — the add CTA
  *      — which is a different action on the same sheet.
+ *   5. (SNOW-835) A row that names a BASEMAP switches to it first, and the
+ *      camera waits for `snowdesk:basemap-changed` before it moves. This is
+ *      the half that cannot be seen by eye: a `fitBounds` issued while
+ *      `setStyle` is still tearing the layers down is discarded silently, so
+ *      "it works when I try it" and "it races" look identical. The other
+ *      half is the inertness — three of the four panels pass no basemap
+ *      attribute at all, and a regression there breaks framing everywhere.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/row_focus.js';
 
@@ -59,6 +66,64 @@ function buildRegionSheet(regionId) {
       <button data-panel-add>Download a custom area</button>
     </div>`;
   return document.getElementById('sheet');
+}
+
+/**
+ * A sheet whose row names a basemap as well as a place (SNOW-835) — the
+ * downloads panel's rows, stamped on the clone by
+ * map_downloads_manager.js's `applyRowFocus`.
+ *
+ * @param {?string} key The basemap key, or null for a row that carries
+ *   none (a pre-SNOW-645 record, or an account-only row).
+ */
+function buildDownloadSheet(key) {
+  document.body.innerHTML = `
+    <div id="sheet">
+      <ul>
+        <li>
+          <button data-row-label data-row-focus="7.1,46.0,7.3,46.2"
+                  ${key === null ? '' : `data-row-focus-basemap="${key}"`}>Lauterbrunnen</button>
+        </li>
+      </ul>
+    </div>`;
+  return document.getElementById('sheet');
+}
+
+/**
+ * The basemap picker, as _map_embed.html renders it: one
+ * `.basemap-menu-item` per basemap, `aria-checked` on the active one.
+ *
+ * A hand-copy of the real markup down to the class, because that class is
+ * what row_focus.js selects on — the picker binds its own click handler to
+ * `.basemap-menu-item`, so a `[data-basemap-key]` element without it would
+ * be a row with nothing behind the press.
+ *
+ * @param {string} activeKey The key the map is currently showing.
+ * @returns {Object<string, HTMLElement>} Each row by key, so a test can
+ *   spy on the one it expects to be pressed.
+ */
+function buildPicker(activeKey) {
+  const menu = document.createElement('ul');
+  menu.id = 'basemap-menu';
+  const rows = {};
+  for (const key of ['openfreemap_liberty', 'swisstopo_winter']) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'basemap-menu-item hover-affordance';
+    item.dataset.basemapKey = key;
+    item.dataset.basemapUrl = `/static/basemaps/${key}.json`;
+    item.setAttribute('role', 'menuitemradio');
+    item.setAttribute('aria-checked', key === activeKey ? 'true' : 'false');
+    menu.appendChild(item);
+    rows[key] = item;
+  }
+  document.body.appendChild(menu);
+  return rows;
+}
+
+/** The event map.js dispatches once the new style's layers are back. */
+function settleBasemap() {
+  document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
 }
 
 /** A stub overlay bridge in the shape map.js publishes. */
@@ -257,5 +322,232 @@ describe('window.pwaRowFocus.handleClick', () => {
 
     expect(answer).toBe(true);
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+describe('a row that names its basemap (SNOW-835)', () => {
+  // The downloaded-squares overlay filters to the ACTIVE basemap's tile
+  // template, so framing a Swisstopo area while the map is on OpenFreeMap
+  // arrives at ground with nothing drawn on it. The row takes its basemap
+  // with it — by pressing the picker's own row, never by reimplementing
+  // the swap, so the preference is persisted and the popover's checked
+  // row moves with it.
+  //
+  // Every fixture here builds the SHEET first and the picker second:
+  // buildDownloadSheet writes `document.body.innerHTML`, which would
+  // otherwise throw the picker away.
+  let focus;
+
+  beforeEach(() => {
+    focus = { point: vi.fn(), bounds: vi.fn(), region: vi.fn() };
+    window.pwaMapFocus = focus;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('presses the matching picker row and waits for the style to settle', () => {
+    const sheet = buildDownloadSheet('swisstopo_winter');
+    const picker = buildPicker('openfreemap_liberty');
+    const clicked = vi.fn();
+    picker.swisstopo_winter.addEventListener('click', clicked);
+
+    const answer = clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(answer).toBe(true);
+    expect(clicked).toHaveBeenCalledOnce();
+    // The whole point of the ticket: a fitBounds issued now, while
+    // setStyle is still tearing the layers off the map, is discarded
+    // without an error — the row would switch the basemap and go nowhere.
+    expect(focus.bounds).not.toHaveBeenCalled();
+
+    settleBasemap();
+
+    expect(focus.bounds).toHaveBeenCalledWith([7.1, 46.0, 7.3, 46.2]);
+  });
+
+  it('never presses a row other than the one the area names', () => {
+    const sheet = buildDownloadSheet('swisstopo_winter');
+    const picker = buildPicker('openfreemap_liberty');
+    const wrong = vi.fn();
+    picker.openfreemap_liberty.addEventListener('click', wrong);
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+    settleBasemap();
+
+    expect(wrong).not.toHaveBeenCalled();
+  });
+
+  it('frames one basemap-changed only, not every later swap', () => {
+    // The listener is torn down when it fires. Left on `document`, it
+    // would frame this row again the next time the user changed basemap
+    // by hand — minutes later, from the picker, having pressed nothing.
+    const sheet = buildDownloadSheet('swisstopo_winter');
+    buildPicker('openfreemap_liberty');
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+    settleBasemap();
+    settleBasemap();
+
+    expect(focus.bounds).toHaveBeenCalledOnce();
+  });
+
+  it('frames straight away when that basemap is already active', () => {
+    // The common case for every row in the group the map is showing: no
+    // setStyle, no flicker, and no frame of latency added to a press that
+    // needed none.
+    const sheet = buildDownloadSheet('openfreemap_liberty');
+    const picker = buildPicker('openfreemap_liberty');
+    const clicked = vi.fn();
+    picker.openfreemap_liberty.addEventListener('click', clicked);
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(focus.bounds).toHaveBeenCalledWith([7.1, 46.0, 7.3, 46.2]);
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it('frames a keyless row without touching the picker', () => {
+    // Two rows reach this shape: a download recorded before SNOW-645 (no
+    // basemap key at all), and an account-only one (SNOW-749), whose key
+    // is a fact about a device the reader is not holding — so
+    // map_downloads_manager.js withholds the attribute rather than
+    // switching this device's persisted preference for tiles that are not
+    // here either way. This is also the state EVERY routes, favourites and
+    // observations row is in.
+    const sheet = buildDownloadSheet(null);
+    const picker = buildPicker('openfreemap_liberty');
+    const clicked = vi.fn();
+    picker.swisstopo_winter.addEventListener('click', clicked);
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(focus.bounds).toHaveBeenCalledOnce();
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it('frames a row whose basemap the picker no longer offers', () => {
+    // A record naming a retired key (`swisstopo_light`) has no row to
+    // press. Framing anyway is the same answer as before this ticket, and
+    // the alternative — holding the camera for a swap that can never
+    // happen — is the one thing worse than not switching.
+    const sheet = buildDownloadSheet('swisstopo_light');
+    buildPicker('openfreemap_liberty');
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(focus.bounds).toHaveBeenCalledOnce();
+  });
+
+  it('frames without switching on a page that has no picker', () => {
+    // /account/ and the three server-rendered panels: no #basemap-menu in
+    // the document at all, and nothing here may assume there is one.
+    const sheet = buildDownloadSheet('swisstopo_winter');
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(focus.bounds).toHaveBeenCalledOnce();
+  });
+
+  it('frames straight away when the picker row is disabled offline', () => {
+    // map_layer_sync_status.js disables a basemap row whose style is not
+    // cached while the app is offline, and the picker's own handler
+    // returns on that attribute. Pressing it would do nothing and then
+    // hold the camera for the whole settle timeout.
+    const sheet = buildDownloadSheet('swisstopo_winter');
+    const picker = buildPicker('openfreemap_liberty');
+    picker.swisstopo_winter.setAttribute('aria-disabled', 'true');
+    const clicked = vi.fn();
+    picker.swisstopo_winter.addEventListener('click', clicked);
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(focus.bounds).toHaveBeenCalledOnce();
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it('frames anyway when the style never settles', () => {
+    // A style that fails to load still leaves a map worth moving, and a
+    // press that silently swallows the camera move is the failure the
+    // wait would otherwise introduce.
+    vi.useFakeTimers();
+    const sheet = buildDownloadSheet('swisstopo_winter');
+    buildPicker('openfreemap_liberty');
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+    expect(focus.bounds).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(4000);
+
+    expect(focus.bounds).toHaveBeenCalledWith([7.1, 46.0, 7.3, 46.2]);
+
+    // And the event arriving late — a slow style that did load after all —
+    // does not frame a second time.
+    settleBasemap();
+    expect(focus.bounds).toHaveBeenCalledOnce();
+  });
+
+  it('switches after the panel has closed, not before', () => {
+    // The sheet covers the map below `sm`, so it goes first and the new
+    // style loads behind an already-dismissed panel.
+    const sheet = buildDownloadSheet('swisstopo_winter');
+    const picker = buildPicker('openfreemap_liberty');
+    const order = [];
+    picker.swisstopo_winter.addEventListener('click', () => order.push('switch'));
+
+    clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(() => order.push('close')),
+    });
+    settleBasemap();
+    order.push('frame');
+
+    expect(order).toEqual(['close', 'switch', 'frame']);
+  });
+
+  it('switches nothing when there is no map bundle to frame with', () => {
+    // Persisting a new basemap preference with no camera move to justify
+    // it would be a side effect the press never asked for.
+    delete window.pwaMapFocus;
+    const sheet = buildDownloadSheet('swisstopo_winter');
+    const picker = buildPicker('openfreemap_liberty');
+    const clicked = vi.fn();
+    picker.swisstopo_winter.addEventListener('click', clicked);
+
+    const answer = clickAndHandle(sheet, '[data-row-focus]', {
+      overlay: stubOverlay(true),
+      close: vi.fn(),
+    });
+
+    expect(answer).toBe(true);
+    expect(clicked).not.toHaveBeenCalled();
   });
 });
