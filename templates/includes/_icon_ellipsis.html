@@ -1,0 +1,51 @@
+{% comment %}
+templates/includes/_icon_ellipsis.html — the overflow glyph: three dots on
+a horizontal axis (SNOW-830).
+
+One source for one mark, the same reason _icon_pencil.html and
+_icon_share.html beside it are partials. Its caller is
+includes/_overflow_menu.html's trigger, which drew the literal "…"
+CHARACTER until this ticket.
+
+WHY A DRAWN GLYPH AND NOT THE CHARACTER. Two reasons, and the second is
+the one that forced it. A row's other controls (Share, the pencil, the
+trash) are all 17px SVGs on the 24-grid, and a text ellipsis next to them
+renders at the inherited font's own baseline, weight and dot spacing —
+visibly a different family of mark. And the character carried a
+workaround: written as its decimal numeric entity, every digit of that
+code point is also a valid hex digit, which ds-lint's hex-colour rule
+reads as a raw colour literal, so the partial had to explain why it used
+the bare character instead. A drawn glyph removes the problem rather than
+documenting it.
+
+HORIZONTAL, not vertical. The trigger sits at the end of a row whose other
+controls are side by side, and a vertical kebab reads as "this column
+continues downwards" — which on a scrolling list of rows is exactly the
+wrong suggestion.
+
+STYLE — a 24-grid mark, matching _icon_share.html's own filled nodes.
+Filled circles rather than outlines for the reason that file already
+gives: at 17px an outlined 2px circle is a smudge. The design specifies
+1.6px-radius dots at the rendered size, which is r≈2.25 on this grid;
+taken to a round 2 so the three keep visible air between them (centres 6
+grid units apart, edges 2 apart).
+
+Drawn for this ticket, so there is no third-party attribution to carry.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17, the
+            design's row-action glyph size, matching _icon_share.html.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+>
+    <circle cx="6" cy="12" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="18" cy="12" r="2" />
+</svg>

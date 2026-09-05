@@ -144,6 +144,14 @@ Context expected:
 {# the shared-route popup's Save, and reaches it from a click handler that   #}
 {# runs long after every deferred script on the page has executed.           #}
 <script defer src="{% static 'js/share.js' %}"></script>
+{# SNOW-830: the row's "…" menu. Loaded here rather than from home.html    #}
+{# for the same reason share.js and routes.js are — the route row is its   #}
+{# only caller, so it is this surface's dependency and no other page needs #}
+{# it. Order does not matter for THIS one: it publishes no global and      #}
+{# routes.js never reads it. It self-wires delegated document listeners at #}
+{# parse time and finds every menu by attribute, including the ones HTMX   #}
+{# swaps in long afterwards.                                               #}
+<script defer src="{% static 'js/overflow_menu.js' %}"></script>
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}
@@ -178,4 +186,8 @@ Context expected:
     {# "link copied" would contradict them. See static/js/share.js.         #}
     <span data-string="share-copied">{% trans "Link copied." %}</span>
     <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
+    {# SNOW-830's Remove confirm is NOT here. It is `hx-confirm` on the     #}
+    {# form itself (routes/partials/_route_row_menu_items.html) — the       #}
+    {# string is rendered into the attribute by Django, so it needs no      #}
+    {# runtime lookup and no entry in this template.                        #}
 </template>

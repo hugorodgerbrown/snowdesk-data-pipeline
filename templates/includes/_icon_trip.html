@@ -1,0 +1,44 @@
+{% comment %}
+templates/includes/_icon_trip.html — the trip glyph: a map pin (SNOW-830).
+
+One source for one mark. Its caller is the route row's overflow menu
+(routes/partials/_route_row_menu_items.html), where it labels "Plan a
+trip" — the item that leaves the panel for apps/trips/views.py's authoring
+page.
+
+NAMED FOR THE DOMAIN, NOT THE SHAPE, exactly as _icon_route.html is: a
+trips surface of its own will want the same mark, and a partial called
+``_icon_pin`` would either be reused for map pins that mean something else
+or duplicated. What the glyph stands for here is a trip, not a pin.
+
+WHY A PIN. A trip is a route plus a meeting point at a stated time
+(apps/trips/models.py) — the meeting point is the thing a trip adds to a
+route, and the pin is the mark for "we meet here". A calendar day would
+name the other half, but the route row already sits in a list of routes,
+so the half worth drawing is the one the route does not have.
+
+STYLE — a 24-grid 2px stroke, matching _icon_route.html's track and
+_icon_share.html's graph. Menu items render it at 17px, the row-action
+glyph size.
+
+Drawn for this ticket, so there is no third-party attribution to carry.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 21.5c4.4-5 6.5-8.5 6.5-11.5a6.5 6.5 0 1 0-13 0c0 3 2.1 6.5 6.5 11.5Z" />
+    <circle cx="12" cy="10" r="2.5" />
+</svg>

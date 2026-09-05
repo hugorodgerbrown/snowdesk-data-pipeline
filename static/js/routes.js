@@ -436,6 +436,13 @@
     uploadInput.click();
   });
 
+  // SNOW-830: the Remove confirm is NOT here. It is `hx-confirm` on the
+  // form itself (routes/partials/_route_row_menu_items.html), which htmx
+  // owns. A delegated `submit` on the sheet cannot cancel it: htmx binds
+  // to the FORM, a descendant, so its handler runs first in bubble phase
+  // and the request is away before preventDefault() is reached. See that
+  // template's own note for the full account.
+
   // SNOW-687: the overlay switch drives window.pwaRoutesOverlay directly —
   // show()/hide() are the only writers of that overlay's visibility, and
   // showListPanel() reads isEnabled() back, so the two can never drift. No

@@ -8,8 +8,11 @@ one anatomy, four slots, always in this order:
   label   15px/500, truncates. Inert by default; on the map panels whose
           rows are PLACES it is a button that frames the place — see
           `focus_target` below.
-  meta    13px muted, optional — region · date · location, and (SNOW-832)
-          the downloads row's "Region · 5.1 MB".
+  meta    12px MONO muted, optional — region · date · location, and
+          (SNOW-832) the downloads row's "Region · 5.1 MB". Mono since
+          SNOW-830, on all four panels: the line is a string of measured
+          quantities and a proportional face makes a column of them
+          ragged. See the note above the markup for the size.
   value   mono, optional, right-aligned, ONLY for a measured quantity.
           CURRENTLY UNUSED, and kept anyway: downloads was its one caller
           and SNOW-832 folded its size into the meta line, because a row
@@ -42,7 +45,14 @@ detail page). Hugo's design removes both:
 
   * no ellipsis menu. Remove is a visible trash control in the same place
     on every row — one tap, not two, and the same shape on all three
-    panels;
+    panels. SNOW-830 narrows this to exclude ONE row, and only that one:
+    the routes row grew a Share (SNOW-764) and a "Plan a trip" link
+    (SNOW-819) beside the pencil and the trash, and four controls on a
+    380px row left the route's name — the thing the list is scanned by —
+    rendering as "Mont Fort – Ba…". It now draws a single "…" trigger
+    (includes/_overflow_menu.html). Favourites, field observations and
+    downloads keep their visible trash, because they still have room for
+    it and one tap beats two wherever a row can afford it;
   * no inline "Remove" text button and no "Details →" link. A favourite's
     detail page is reached by tapping its pin on the map, which is where
     the user already is;
@@ -297,8 +307,21 @@ buildRow still finds its hooks by attribute, not by depth.
                     class="-mx-1.5 min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-label font-medium text-text-1 focus:outline-none"
                 >
             {% endif %}
+            {# MONO, on all four panels (SNOW-830). Every meta line on this   #}
+            {# row is a string of MEASURED QUANTITIES separated by " · " — a  #}
+            {# route's distance, climb, drop and elapsed time; a download's   #}
+            {# size; an observation's age — and a proportional face makes a   #}
+            {# column of them ragged where the eye wants to compare down it.  #}
+            {# One line, four panels, because the alternative is the drift    #}
+            {# SNOW-658 spent a ticket undoing. map_downloads_manager.js      #}
+            {# fills this same node in a clone, so it needs no change.        #}
+            {#                                                                #}
+            {# 12px and not 13: DM Mono sets wider than DM Sans at the same   #}
+            {# size, and the route row's four-segment line overflowed the     #}
+            {# panel's ~340px inner width at 13px. See --text-row-meta in     #}
+            {# src/css/main.css.                                              #}
             {% if meta or meta_template or js_filled %}
-                <span data-row-meta class="truncate text-summary text-text-3">
+                <span data-row-meta class="truncate font-mono text-row-meta text-text-3">
                     {% if meta_template %}
                         {% include meta_template %}
                     {% else %}

@@ -50,8 +50,9 @@ changing where we point must not invalidate every translation.
     {% endwith %}
     <p class="mb-3 last:mb-0" data-testid="help-routes-panel">
         {% blocktrans trimmed %}
-            The panel lists everything you have uploaded, each row with its distance and, where the file recorded
-            heights, its ascent and descent. You can rename a route in place or remove it, and the "Display on the map"
+            The panel lists everything you have uploaded, each row with its distance and, where the file recorded them,
+            its ascent, its descent and how long the recording ran. The button at the end of a row opens the things you
+            can do with it &mdash; plan a trip, share it, rename it or remove it &mdash; and the "Display on the map"
             switch at the foot draws them all as lines.
         {% endblocktrans %}
     </p>
@@ -59,7 +60,8 @@ changing where we point must not invalidate every translation.
         {% blocktrans trimmed %}
             Tapping a line on the map opens the route's own popup: its name, the same figures, and an elevation profile
             of the whole track. The profile is drawn from the heights in your file, so a track recorded without them
-            shows none rather than a flat line.
+            shows none rather than a flat line. The time shown is elapsed &mdash; start to finish, including every stop
+            &mdash; not moving time, and a file with no timestamps in it shows none.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-routes-private">

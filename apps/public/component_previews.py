@@ -223,10 +223,19 @@ _PANELS: dict[str, dict[str, Any]] = {
         "cta_label": _("Add a route"),
         "toggle_id": "help-illustration-toggle-routes",
         "rows": (
-            # Mirrors the real row's "12.4 km · 850 m ascent · 900 m descent"
-            # shape from routes/partials/_route.html.
-            {"label": _("Rosablanche"), "meta": _("14.2 km · 1,320 m ascent")},
-            {"label": _("Pigne d'Arolla"), "meta": _("11.8 km · 1,540 m ascent")},
+            # Mirrors the real row's shape from routes/partials/_route.html
+            # — four figures, both vertical words abbreviated, elapsed time
+            # last (SNOW-830). A stale string here is not a stale mock: the
+            # illustration renders the real partial, so /help/ would be
+            # showing a reader a row that no longer exists.
+            {
+                "label": _("Rosablanche"),
+                "meta": _("14.2km · 1,320m ↑ · 1,290m ↓ · 5h20m"),
+            },
+            {
+                "label": _("Pigne d'Arolla"),
+                "meta": _("11.8km · 1,540m ↑ · 1,510m ↓ · 6h05m"),
+            },
         ),
     },
     "downloads": {

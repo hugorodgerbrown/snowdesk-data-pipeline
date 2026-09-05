@@ -1,6 +1,6 @@
-{% load i18n components %}
+{% load i18n %}
 {% comment %}
-routes/partials/_route_row_actions.html — the route row's icon controls
+routes/partials/_route_row_actions.html — the route row's controls
 (SNOW-686, shared with every route surface by SNOW-711).
 
 includes/_ugc_panel_row.html's `actions_template` slot, reached from
@@ -11,15 +11,22 @@ that row; there was never anything map-shaped about either control.
 
 TWO CLUSTERS, AND WHICH ONE RENDERS IS DECIDED BY OWNERSHIP (SNOW-764).
 
-  An OWNED row gets Share, Rename, Remove — Share only when
+  An OWNED row gets ONE "…" trigger (SNOW-830) opening a menu that holds
+  Plan a trip, Share, Rename and Remove — Share only when
   ``sharing_enabled`` says so, which is a surface check and nothing else:
   which listing asked, and therefore whether a handler is wired for the
-  click (see apps/routes/views.py's route_list). Trash
-  stays last, on the design's rule that the destructive control is in the
-  same place on every panel; Share goes FIRST rather than beside the
-  trash, because it is the only one of the three that involves anybody
-  else and putting it next to Remove would seat "give this away" beside
-  "destroy this".
+  click (see apps/routes/views.py's route_list). The items themselves,
+  their order and every hook on them live in
+  _route_row_menu_items.html.
+
+  WHY A MENU HERE AND NOWHERE ELSE. SNOW-764 put a Share icon on this row
+  and SNOW-819 added a full-width "Plan a trip" text link, which made four
+  controls competing for the right-hand end of a 380px panel row; the
+  route's name — the one thing a user scans the list by — rendered as
+  "Mont Fort – Ba…". SNOW-658's "no ellipsis menu on any panel" ruling is
+  narrowed to exclude this row rather than withdrawn: favourites, field
+  observations and downloads all still have room for a visible trash, and
+  keep it, because one tap beats two wherever the row can afford it.
 
   A PENDING row — one the visitor was sent and has not claimed — gets a
   single Save. It is not an icon: the other three name actions a user
@@ -46,53 +53,26 @@ business holding — see apps/routes/views.py's header. ``pending_share`` is
 what _route.html passes instead, and the claim endpoint is addressed by
 its token.
 
-Rename then Remove within the owned cluster, the design's order: trash is
-always last, on every panel, so the destructive control is in the same
-place wherever a user meets it.
+WHAT THE MENU'S IDS ARE, AND WHY THEY ARE PER-ROW. A panel lists many
+routes and each renders this partial, so `trigger_id`/`menu_id` are keyed
+on the route's own uuid — the trigger's `aria-controls` has to name one
+element. static/js/overflow_menu.js itself never reads them (it is scoped
+by `closest()`, not `getElementById`); they exist for ARIA correctness.
 
-Rename is a `data-route-rename` button, not a form: the row's own label
-becomes an inline edit (static/js/inline_rename.js, shared unchanged with
-the favourites and downloads panels) and the committed name is posted by
-static/js/row_rename_commit.js. The uuid rides on the button so the
-delegated handler needs no closure over the rendered row.
-
-``data-row-remove`` (SNOW-752) is how the surface owning the list knows
-the removal happened, so it can re-read the list — the swap empties one
-<li>, and routes:list's empty state is a server-side clause only a fresh
-response carries — and take the line off the map. The hook is on the FORM,
-not the row: see favourites/partials/_favourite_row_actions.html and
-static/js/row_removed.js for the request it has to be told apart from.
-
-Remove stays a plain HTMX form — route_delete returns an empty 200, so
-``hx-target``/``hx-swap`` on this row's own id removes exactly this row
-with no JS involved.
-
-Both aria-labels name the row, because "Rename" alone names nothing with a
-list of rows on screen. They interpolate ``label`` —
-includes/_ugc_panel_row.html's own parameter, in scope here — rather than
-``route.name``, so a route stored without a name reads as "Rename
-mont-blanc.gpx" rather than "Rename ".
+The trigger's own aria-label names the row for the same reason the items'
+do: "More actions" alone names nothing with a list of rows on screen.
 
 ``row_target`` rather than a hardcoded ``#route-<uuid>``: the shared row
 takes its own DOM id as a parameter, and a Remove that named the id
 directly would go on addressing the default one whatever the row was
-given. Same contract as the favourite row's actions.
+given. Same contract as the favourite row's actions. It is passed
+through to the menu items, which own the Remove form.
 
-SNOW-819 ADDS "PLAN A TRIP", in the owned branch only. A pending row's
-route is not the viewer's, so trips:new — which looks the route up
-owner-scoped — would 404 for them; a control whose only outcome is a
-404 reads as a broken page.
-
-It sits BETWEEN Share and Rename. Trash stays last, on the design's rule
-that the destructive control is in the same place on every panel, and
-Share stays first, on the rule already written above; that leaves exactly
-one slot, and it is the right one anyway — Share and Plan a trip are the
-two controls that involve somebody else, so they sit together.
-
-It is a LINK and not an icon button. Every other control in this row acts
-on the row in place; this one leaves the panel for a page (see
-apps/trips/views.py for why the form is a page), and a 17px glyph that
-navigates away would be indistinguishable from the three that do not.
+WHAT THE MENU DID NOT CHANGE. Every hook the four controls carry is the
+one it already was, and none of the five modules that read them noticed
+the move — each resolves by upward `closest()` traversal or a row-scoped
+`querySelector`, never by depth or sibling position, and every listener is
+delegated on the sheet or on document. See _route_row_menu_items.html.
 
 Context:
     route           : Route — the saved route this row describes.
@@ -168,60 +148,12 @@ Context:
         {% include "includes/_button.html" with label=claim_signin_label href=claim_signin_url variant="primary" size="compact" %}
     {% endif %}
 {% else %}
-    {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
-    {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
-    {% blocktrans trimmed with name=label asvar remove_aria_label %}Remove {{ name }}{% endblocktrans %}
-    {# SNOW-764: Share is a button and not a form because there is nothing #}
-    {# to swap — routes:share_create answers JSON, and static/js/share.js  #}
-    {# hands the URL it carries to the native share sheet. The uuid rides  #}
-    {# on the button so the delegated handler needs no closure over the    #}
-    {# rendered row, exactly as the rename pencil's does.                  #}
-    {% if sharing_enabled %}
-        <button
-            type="button"
-            data-route-share="{{ route.uuid }}"
-            aria-label="{{ share_aria_label }}"
-            class="{% icon_button_classes %}"
-        >
-            {% include "includes/_icon_share.html" only %}
-        </button>
-    {% endif %}
-    {# SNOW-819: Plan a trip. A plain link — it is a navigation to the      #}
-    {# authoring page, not an action on this row (see the note above).      #}
-    {% blocktrans trimmed with name=label asvar plan_trip_aria_label %}Plan a trip using {{ name }}{% endblocktrans %}
-    {% trans "Plan a trip" as plan_trip_label %}
-    <a
-        href="{% url 'trips:new' %}?route={{ route.uuid }}"
-        aria-label="{{ plan_trip_aria_label }}"
-        data-route-plan-trip="{{ route.uuid }}"
-        class="{% icon_button_classes %} w-auto px-3 text-sm"
-    >{{ plan_trip_label }}</a>
-    {# Two hooks, two readers: `data-row-rename` is the shared one every       #}
-    {# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
-    {# recognise a rename click without knowing which panel it is on;          #}
-    {# `data-route-rename` carries this row's uuid for the commit.             #}
-    <button
-        type="button"
-        data-row-rename
-        data-route-rename="{{ route.uuid }}"
-        aria-label="{{ rename_aria_label }}"
-        class="{% icon_button_classes %}"
-    >
-        {% include "includes/_icon_pencil.html" only %}
-    </button>
-    <form
-        data-row-remove
-        hx-post="{% url 'routes:delete' route.uuid %}"
-        hx-target="{{ row_target }}"
-        hx-swap="outerHTML"
-    >
-        {% csrf_token %}
-        <button
-            type="submit"
-            aria-label="{{ remove_aria_label }}"
-            class="{% icon_button_classes variant='destructive' %}"
-        >
-            {% include "includes/_icon_trash.html" only %}
-        </button>
-    </form>
+    {% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for {{ name }}{% endblocktrans %}
+    {# ``uuid`` through stringformat before `add`: the filter falls back to  #}
+    {# `value + arg`, and str + UUID is a TypeError that Django swallows     #}
+    {# into an empty string. Same two-step routes/partials/_route.html uses  #}
+    {# to build the row's own id.                                            #}
+    {% with uuid=route.uuid|stringformat:"s" %}
+        {% include "includes/_overflow_menu.html" with trigger_id="route-actions-"|add:uuid menu_id="route-actions-menu-"|add:uuid trigger_label=row_actions_aria_label items_template="routes/partials/_route_row_menu_items.html" %}
+    {% endwith %}
 {% endif %}

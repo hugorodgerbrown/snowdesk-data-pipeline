@@ -164,6 +164,69 @@ class TestRouteDuration:
         )
         assert route.duration == timedelta(days=1, hours=7)
 
+    def test_duration_hm_rounds_to_whole_minutes_and_pads_them(self) -> None:
+        """Whole minutes, padded: "4h05m" must not be misread as "4h5m".
+
+        Rounding rather than truncating, so 59.6 minutes does not read as
+        59 — the same rule static/js/map.js's formatDuration follows, and
+        the reason the two must match is that the popup and the panel row
+        show the same figure for the same route.
+        """
+        route = RouteFactory.create(
+            started_at=datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime.datetime(2026, 3, 13, 13, 5, 40, tzinfo=UTC),
+        )
+        assert route.duration_hm == {"hours": "4", "minutes": "06"}
+
+    def test_duration_hm_breaks_a_half_minute_tie_upwards(self) -> None:
+        """An exact half-minute rounds UP, as JavaScript's Math.round does.
+
+        This is the one input class where the builtin ``round`` would not
+        agree with static/js/map.js's formatDuration: it is banker's
+        rounding, so it breaks a .5 tie to the EVEN number and
+        ``round(270.5)`` is 270 where ``Math.round(270.5)`` is 271. The
+        popup and the panel row would then disagree by a minute about the
+        same route.
+
+        4h30m30s is 270.5 minutes and is not a contrived span — a GPX
+        carries whole-second stamps, so an exact half-minute remainder
+        turns up on ordinary recordings.
+        """
+        route = RouteFactory.create(
+            started_at=datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime.datetime(2026, 3, 13, 13, 30, 30, tzinfo=UTC),
+        )
+        assert route.duration_hm == {"hours": "4", "minutes": "31"}
+
+    def test_duration_hm_states_no_hours_figure_under_an_hour(self) -> None:
+        """Under an hour there is no hours figure: "0h41m" states one.
+
+        And the minutes go unpadded there: an hour count is not a leading
+        zero on a minute count, so there is nothing to align them to.
+        """
+        route = RouteFactory.create(
+            started_at=datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime.datetime(2026, 3, 13, 9, 41, tzinfo=UTC),
+        )
+        assert route.duration_hm == {"hours": "", "minutes": "41"}
+
+    def test_duration_hm_is_none_when_the_route_is_untimed(self) -> None:
+        """The caller omits the figure; it never renders a zero."""
+        route = RouteFactory.create(started_at=None, finished_at=None)
+        assert route.duration_hm is None
+
+    def test_duration_hm_is_none_for_a_non_positive_span(self) -> None:
+        """Two identical stamps are a recording artefact, not a tour.
+
+        Matches formatDuration's own ``seconds <= 0`` guard, so a row the
+        popup shows nothing for does not grow a "0m" in the panel.
+        """
+        route = RouteFactory.create(
+            started_at=datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+        )
+        assert route.duration_hm is None
+
     def test_both_ends_survive_a_round_trip(self) -> None:
         """Stored tz-aware, read back tz-aware."""
         route = RouteFactory.create(

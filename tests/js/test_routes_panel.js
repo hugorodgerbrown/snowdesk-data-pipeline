@@ -29,6 +29,12 @@
  *   - the add CTA is DELEGATED on the sheet, because the body is re-cloned on
  *     every open — a per-element listener would be bound to an element the
  *     next open throws away;
+ *   - SNOW-830: Remove is one item inside the row's "…" menu now, so it
+ *     asks first — a delegated `submit` confirm rather than `hx-confirm`,
+ *     because the message is translated and names the row. The same
+ *     block proves Share and Rename still resolve from inside a menu,
+ *     which is the premise the markup change rests on;
+ *
  *   - a failed list load says so. This panel opens offline and its list does
  *     not load offline, and falling through to the server partial's own "You
  *     have no saved routes yet." would be a wrong statement about the user's
@@ -987,5 +993,84 @@ describe('the sheet-level bridge (SNOW-803)', () => {
     expect(sheet.querySelector('[data-routes-rows]')).not.toBeNull();
     window.pwaRoutesSheet.close();
     expect(window.pwaRoutesSheet.isOpen()).toBe(false);
+  });
+});
+
+
+describe("removing a row from inside the row's menu (SNOW-830)", () => {
+  // The trash used to be a 44x44 control a user aimed at directly; it is
+  // now one item in the row's "…" menu, where a mis-tap costs a route
+  // with no way back. The confirm is a delegated `submit` on the sheet
+  // rather than `hx-confirm`, because the message is translated and names
+  // the row — neither of which a template attribute literal can be.
+  // THE CONFIRM IS NOT TESTED HERE, and the four tests that were are
+  // gone. They dispatched a synthetic `submit` into a jsdom document with
+  // no htmx in it, so the sheet's delegated listener was the only handler
+  // on the event and `defaultPrevented` came back true. In a real browser
+  // htmx binds to the FORM — a descendant — so its handler ran first and
+  // the DELETE was already away; declining the dialogue removed the route
+  // anyway. The tests passed for the whole of that bug's life.
+  //
+  // The confirm is now `hx-confirm` on the form, which htmx owns, and the
+  // assertion that it is rendered lives where it can be made against real
+  // markup: tests/routes/test_views.py's TestRouteRowMenu. Reproducing
+  // htmx's own event ordering in jsdom would be testing htmx, not us.
+
+  /** Put one owned row into the open panel, its controls inside a menu.
+   *
+   * The shape routes:list renders since SNOW-830 — the four controls
+   * moved inside `[data-overflow-menu]` in the same `<li>`, which is what
+   * these tests have to prove the delegated readers survived.
+   *
+   * @param {string} uuid The route's uuid, as the server writes it.
+   * @returns {HTMLElement} The row's `<li>`.
+   */
+  function renderMenuRow(uuid) {
+    const rows = sheet.querySelector('[data-routes-rows]');
+    rows.innerHTML = `<ul><li id="route-${uuid}" data-row-renameable>
+      <span data-row-label>Haute Route</span>
+      <input type="text" data-row-rename-input hidden aria-label="Route name">
+      <div data-overflow-menu>
+        <button type="button" data-overflow-trigger aria-expanded="false"></button>
+        <ul role="menu" hidden>
+          <li role="none"><button type="button" role="menuitem"
+            data-route-share="${uuid}" aria-label="Share Haute Route"></button></li>
+          <li role="none"><button type="button" role="menuitem" data-row-rename
+            data-route-rename="${uuid}" aria-label="Rename Haute Route"></button></li>
+          <li role="none"><form data-row-remove hx-post="/routes/partials/${uuid}/delete/"
+            hx-target="#route-${uuid}" hx-swap="outerHTML">
+            <button type="submit" role="menuitem" aria-label="Remove Haute Route"></button>
+          </form></li>
+        </ul>
+      </div>
+    </li></ul>`;
+    return rows.querySelector('li');
+  }
+
+  it('still resolves Share from inside the menu, by closest() and not by depth', () => {
+    // The whole premise of SNOW-830's markup change: every delegated
+    // reader walks UP from the clicked element, so a control nested two
+    // levels deeper is the same control.
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ url: 'https://snowdesk.app/routes/s/tok/' }),
+      }),
+    );
+    btn.click();
+    const row = renderMenuRow('abc-123');
+
+    row.querySelector('[data-route-share]').click();
+
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('/routes/abc-123/share/');
+  });
+
+  it('still opens the inline editor from a Rename inside the menu', () => {
+    btn.click();
+    const row = renderMenuRow('abc-123');
+
+    row.querySelector('[data-row-rename]').click();
+
+    expect(row.querySelector('[data-row-rename-input]').hidden).toBe(false);
   });
 });
