@@ -1,8 +1,8 @@
 ---
 name: testing-scenarios
-description: Manual test scenarios — homepage, bulletin, map, search, accounts, region pins, PWA install/update/offline/kill-switch — on seed_test_data
+description: Manual test scenarios — homepage, bulletin, map, search, accounts, pins, PWA install/update/kill-switch, offline downloads, basemap coverage
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-05
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -829,3 +829,182 @@ shell is cached), so there is state to clear.
 | 2 | Click "Reset local data on this device" | The same native confirm dialog as P12 opens |
 | 3 | Accept the dialog | IndexedDB, Cache storage and Service workers are cleared; the page reloads |
 | 4 | Go offline (DevTools → Network → Offline), navigate to a URL never visited (e.g. http://localhost:8000/some-page-never-visited/) | The fallback page renders **with** the reset control visible and working — `/static/js/pwa_reset.js` is in `PRECACHE_URLS` (`static/js/sw.js`) alongside the page itself, so it loads with no network. The panel reveals itself only once that script has defined `window.pwaResetLocalData`, so a control bound to nothing is never shown |
+
+---
+
+## Offline Downloads (map coverage)
+
+One pass over the downloads feature, weighted towards the question it
+exists to answer: **where does the stored map stop?** Architecture
+reference: [`offline-map.md`](offline-map.md) ("Download basemap",
+"Custom-area download", "Download budget and whole-area eviction",
+"Downloaded-tiles overlay", "Manage downloads" sheet, "Account sync for
+download areas"). The user-facing copy is the "Offline downloads" panel
+on `/help/`.
+
+> **What a download is, before you judge any result**
+>
+> - It stores **basemap tiles only**. Bulletin pages and danger colours
+>   cache separately, by visiting them (see PWA Shell above).
+> - The band is **z10–14** (`MICRO_BAND`). Past z14 the stored tiles
+>   overzoom (bigger, no new detail); below z10 nothing was stored.
+> - A **region** download is clipped to the region's real boundary plus
+>   about one z14 tile (~1.7 km) of margin — not its bounding rectangle.
+>   A **custom area** genuinely is the rectangle you framed.
+> - One Cache Storage bucket per area:
+>   `snowdesk-basemap-pinned-region-<REGION_ID>` or
+>   `snowdesk-basemap-pinned-custom-<uuid>`.
+> - Coverage is **per basemap**. An area stored under OpenFreeMap is not
+>   coverage for swisstopo.
+> - Per-run ceiling 200 MB; standing budget 500 MB, device-local and
+>   settable in the sheet.
+
+> **Preconditions**
+>
+> 1. The prerequisites at the top of this file (server, Tailwind, seeded
+>    data — the `eaws_*` fixtures already carry each region's precomputed
+>    `basemap_download`, so no extra command is needed).
+> 2. **Signed in** (Scenario 10 or 21) — *starting* a download needs an
+>    account. D9 covers the signed-out and offline gates.
+> 3. Browser state reset per the PWA Shell universal preconditions above.
+> 4. DevTools: **Application → Cache storage**, **Network → Offline**,
+>    **Console**.
+
+**Coverage probe.** Paste into the Console at any point to see exactly
+what is on disk, per area and per zoom:
+
+```js
+for (const n of (await caches.keys()).filter(n => n.startsWith('snowdesk-basemap-pinned-'))) {
+  const urls = (await (await caches.open(n)).keys()).map(r => r.url);
+  const byZoom = {};
+  for (const u of urls) {
+    const m = u.match(/\/(\d{1,2})\/\d+\/\d+/);
+    if (m) byZoom[m[1]] = (byZoom[m[1]] || 0) + 1;
+  }
+  console.log(n, urls.length, 'entries', byZoom,
+    'glyphs:', urls.filter(u => /font/i.test(u)).length,
+    'docs:', urls.filter(u => /\.json/i.test(u)).length);
+}
+```
+
+Healthy region bucket: tiles at **10, 11, 12, 13, 14 and no other zoom**,
+a non-zero `glyphs` count (labels survive offline) and a non-zero `docs`
+count (style + TileJSON — without those the pinned tiles are unreachable).
+
+### Scenario D1: Download a region
+
+**Goal**: The per-region roundel runs a download and reports the cache
+truthfully across a reload.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Select CH-4115 (Martigny/Verbier) — search or tap the map | The readout chip fills, and a download roundel appears beside the region name |
+| 2 | Hover / inspect the roundel | `data-download-state="idle"`; the tooltip carries the size ("up to N MB") |
+| 3 | Tap it | State goes `busy`: the roundel fills bottom-up in the active basemap's colour, and the on-map grid fills square by square |
+| 4 | Wait for it to finish | State goes `done` — a solid disc, same glyph in white. **No toast**: the roundel is the only feedback |
+| 5 | Run the coverage probe | One bucket, `snowdesk-basemap-pinned-region-CH-4115`, with tiles at z10–14 only, plus glyphs and docs |
+| 6 | Reload the page, reselect the region | Still `done` — the state is a live cache read, never a stored flag |
+
+### Scenario D2: See the coverage you hold
+
+**Goal**: The sheet and the on-map squares agree with what is on disk.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Tap the framed-square roundel, bottom-right | The "Your downloads" sheet opens |
+| 2 | Read the header | Budget row: segmented bar, "Using N MB of", and a 500 MB pill. Caption: areas follow the account, map data and budget stay on this device |
+| 3 | Read the list | One group headed by the active basemap (swatch + name + this device's total); D1's row reads `Region · N MB` |
+| 4 | Turn on "Display on the map" | Translucent squares appear over the downloaded area, one per z14 tile, in the basemap's identity colour |
+| 5 | Close the sheet | The squares **stay** — the switch is the only thing that turns them off |
+| 6 | Compare the shaded edge with the region outline | Coverage follows the boundary plus roughly one tile of margin — a ragged edge, not a rectangle |
+
+### Scenario D3: Where coverage stops, offline
+
+**Goal**: The headline test. Inside the shading the map draws with no
+network; outside it, it does not — and neither state is a broken page.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | With D1 downloaded and the squares on, note a landmark just inside and one just outside the shaded edge | — |
+| 2 | DevTools → Network → **Offline** (or account menu → Offline mode) | The header network symbol switches to the struck-through glyph |
+| 3 | Hard-reload the map page | The map page loads from the shell cache; region overlays and the danger choropleth paint |
+| 4 | Pan to the landmark **inside** coverage | Basemap tiles draw, **with place labels** — glyphs are promoted into the pinned bucket at the end of a run |
+| 5 | Pan just past the shaded edge | The basemap goes blank (background colour); overlays keep painting. No error page, no spinner that never ends |
+| 6 | Inside coverage, zoom past z14, then out below z10 | Past z14 the tiles overzoom — larger, no new detail, never blank. Below z10 the basemap is blank: nothing below the band was stored |
+
+### Scenario D4: Download a custom area
+
+**Goal**: Framing behaves under the ceiling and stores the box you framed.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open the sheet → "Download a custom area" | Map furniture (ribbon, legend, control stack) disappears; a dim mask with a fixed frame and a CTA sheet reading "up to N MB" |
+| 2 | Pan and zoom the map under the frame | Zoom pivots on the **frame**, not the pointer; the ground under the frame does not shift through a zoom gesture; the readout tracks with no flicker |
+| 3 | Zoom out until the readout reaches 200 MB | The frame locks to a fixed ground size and stops growing; the readout holds at the ceiling |
+| 4 | Zoom back in | The frame releases and refills the gutter — the transition is continuous, no jump |
+| 5 | Tap Download | Progress runs; on completion the CTA reads "N MB downloaded", Download is hidden, Cancel is relabelled Close |
+| 6 | Close, then reopen the sheet | A new row under the same basemap heading (`Custom area · N MB`, renameable via the pencil); the squares extend over the framed box; the probe shows a new `custom-<uuid>` bucket |
+
+### Scenario D5: Coverage is per basemap
+
+**Goal**: A basemap switch is a switch to a map you have not stored, and
+the UI says so rather than looking like a deletion.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | With D1/D4 stored, open the layers menu and switch basemap (e.g. OpenFreeMap → Swisstopo winter) | The map repaints in the new basemap |
+| 2 | Look at the squares | They repaint for the **new** basemap — i.e. empty. Nothing was deleted |
+| 3 | Reselect the downloaded region | The roundel is a **hollow ring** (`other-basemap`) painted in the *other* basemap's colour — not `idle`, not `done`, and still tappable |
+| 4 | Open the sheet | The rows sit under the previous basemap's heading; the new basemap has no group of its own |
+| 5 | Back online, tap the ring | The same region downloads under the active basemap; afterwards both basemaps read `done` and the bucket's byte total has grown |
+| 6 | Go offline and switch basemap back and forth | Each basemap draws only where it was stored |
+
+### Scenario D6: Budget and eviction
+
+**Goal**: Making room removes whole areas, with consent — it never
+perforates the areas that remain.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | In the sheet header, set the budget to the smallest value that still holds one area | The bar re-segments; nothing is deleted |
+| 2 | Download further areas until the next run needs room | A confirm banner appears **before** any fetch, naming the exact areas that would go (oldest first) |
+| 3 | Dismiss it with × | Nothing is downloaded and nothing is removed; the existing rows and squares are unchanged |
+| 4 | Repeat and accept | The named areas disappear from the list *and* their squares disappear whole; the surviving areas keep unbroken coverage (re-run the probe: their z14 counts are unchanged) |
+| 5 | Frame an area larger than the whole budget | Refused outright with the budget toast — distinct from the device-quota toast — and no run starts |
+| 6 | Lower the budget below what you already hold | The sheet reports being over budget; nothing is deleted behind your back |
+
+### Scenario D7: Remove, and an interrupted run
+
+**Goal**: A deletion is complete, and a half-finished download never
+claims to be coverage.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Tap the bin on a row | The row goes, its squares go, and its bucket is gone from the probe |
+| 2 | Start a region download and interrupt it mid-run (Network → Offline while `busy`) | The run reports cancelled, not failed; the roundel rests at `idle` — a partial run records nothing |
+| 3 | Reopen the sheet | The leftover bucket lists under "Unknown basemap" with its bucket id as the title and "Incomplete" as its whole meta line — no size, no kind, Remove the only action |
+| 4 | Remove it, re-run the probe | The bucket is gone |
+
+### Scenario D8: Areas follow the account, tiles do not
+
+**Goal**: A listed area is not the same thing as an available one.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | With areas downloaded in browser A, sign in as the same account in a clean profile B | — |
+| 2 | Open the sheet in B | Each area is listed, dimmed, with **no size**, and carries a "Download here" button |
+| 3 | Turn on "Display on the map" in B | No squares — B holds no tiles. The budget total in B reads 0 for those rows |
+| 4 | Tap "Download here" | A region downloads directly; a custom area reopens framing fitted to the stored box |
+| 5 | Rename the custom area in A, then reload B | The new name shows in B — the definition syncs, the bytes never do |
+
+### Scenario D9: The two gates
+
+**Goal**: Signing out and going offline restrict *starting* a download
+and nothing else.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Sign out, then select a region and open the sheet | The region roundel and "Download a custom area" are still visible and tappable, and take you to sign-in |
+| 2 | While signed out, check what you already hold | The sheet still lists, sizes, renames and deletes; the squares still draw; an offline reload still shows the stored map |
+| 3 | Sign back in, then go offline (Network → Offline, or account menu → Offline mode) | The sheet's add-CTA is disabled and reads "Downloading needs a connection"; the region roundel is dimmed and non-actionable (`aria-disabled="true"`) — both explained, neither hidden |
+| 4 | Return online | Both controls re-enable without a reload |
