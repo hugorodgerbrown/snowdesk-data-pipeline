@@ -31,6 +31,14 @@ normal user — folded in from the former ``seed_dev_users`` command) plus a sma
 standalone set of Locations and one Favourite per Location (all owned by the
 seeded normal dev user).
 
+The same dev user gets one Route and the Trip planned off it (SNOW-834), both
+written through the production services rather than the factories — so the
+route's derived fields come from the real GPX parser and the trip carries the
+snapshot, meeting point and organiser roster row ``create_trip`` writes. The
+trip is dated a WEEK AHEAD of the run rather than pinned like everything else
+here: a trip is filed by whether its day has passed, so a fixed April 2026 date
+would seed one filed under "Past" with a share link already dead.
+
 Region/resort reference data (MajorRegion/SubRegion/MicroRegion/Resort) is a
 *prerequisite*: it must already be loaded (``loaddata eaws_CH`` plus
 ``import_resorts --commit`` — resorts come from the sheet, not a fixture). It
@@ -56,7 +64,7 @@ import enum
 import json
 import logging
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +85,7 @@ if TYPE_CHECKING:
     from apps.bulletins.models import Bulletin
     from apps.locations.models import Location
     from apps.regions.models import MicroRegion
+    from apps.routes.models import Route
 
 logger = logging.getLogger(__name__)
 
@@ -464,6 +473,8 @@ class SeedModel(enum.StrEnum):
     LOCATION = "location"
     FAVOURITE = "favourite"
     USER = "user"
+    ROUTE = "route"
+    TRIP = "trip"
 
 
 # FK prerequisites — selecting a model pulls in these even when unnamed, because
@@ -483,6 +494,10 @@ _DEPENDENCIES: dict[SeedModel, tuple[SeedModel, ...]] = {
     # Favourites are owned by the seeded normal dev user, so USER is a prerequisite.
     SeedModel.FAVOURITE: (SeedModel.LOCATION, SeedModel.USER),
     SeedModel.USER: (),
+    # A route belongs to somebody, and a trip is planned FROM a route by its
+    # owner — so both reach back to the seeded normal dev user.
+    SeedModel.ROUTE: (SeedModel.USER,),
+    SeedModel.TRIP: (SeedModel.ROUTE, SeedModel.USER),
 }
 
 # Dependency-safe seeding order, split into the two independent families the run
@@ -498,8 +513,13 @@ _POINT_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.LOCATION,
     SeedModel.FAVOURITE,
 )
+_TRIP_FAMILY: tuple[SeedModel, ...] = (
+    SeedModel.ROUTE,
+    SeedModel.TRIP,
+)
 # The account layer has no cross-dependencies on the other families and is seeded
-# first, because Favourites (point family) are owned by the seeded normal user.
+# first, because Favourites (point family) and the route/trip pair are all owned
+# by the seeded normal user.
 _ACCOUNT_FAMILY: tuple[SeedModel, ...] = (SeedModel.USER,)
 
 _CHOICES: list[str] = [m.value for m in SeedModel]
@@ -513,6 +533,91 @@ _SEED_LOCATION_COORDS: tuple[tuple[float, float, float], ...] = (
     (46.40, 7.70, 2400.0),
     (46.50, 7.80, 2700.0),
 )
+
+
+# The dev user's one route: a short skin track climbing out of the Verbier
+# valley, in the same corner of Valais as the seeded Locations and the CH-4115
+# detail bulletins, so everything the dev account owns is on one screen of the
+# map. ``(latitude, longitude, elevation_m)`` — human order here; the GPX the
+# seeder writes carries them as ``lat``/``lon`` attributes, and it is the
+# PARSER that produces the stored ``[lon, lat, ele]``.
+#
+# The elevations are chosen so the figures the trip page PRINTS are plausible,
+# not merely self-consistent: 700 m of climb over 3.4 km is a steep but real
+# skin track, where the 1240 m this started with was a 36% average gradient —
+# a number that reads as broken data on the one surface a person seeds a
+# database in order to look at.
+_SEED_ROUTE_NAME = "Verbier skin track"
+_SEED_ROUTE_POINTS: tuple[tuple[float, float, float], ...] = (
+    (46.0950, 7.2280, 1500.0),
+    (46.0930, 7.2350, 1600.0),
+    (46.0900, 7.2420, 1700.0),
+    (46.0875, 7.2490, 1800.0),
+    (46.0850, 7.2545, 1910.0),
+    (46.0825, 7.2590, 2010.0),
+    (46.0805, 7.2625, 2110.0),
+    (46.0790, 7.2660, 2200.0),
+)
+# The first point's clock, and the spacing between points. A recorded upload
+# carries times, and a route with them exercises the ``started_at`` /
+# ``finished_at`` pair that a planned ``<rte>`` leaves null.
+_SEED_ROUTE_START = datetime(2026, 3, 13, 8, 0, tzinfo=UTC)
+_SEED_ROUTE_POINT_INTERVAL_MINUTES = 15
+
+# The dev user's one trip, planned off that route.
+_SEED_TRIP_NAME = "Dawn patrol"
+_SEED_TRIP_DESCRIPTION = "Meeting at the village car park. Bring skins."
+_SEED_TRIP_START_TIME = time(7, 30)
+# Dated RELATIVE TO TODAY, alone in a seed whose every other date is pinned.
+# A trip is filed by whether its day has passed, and a share link's life is
+# measured from that day (``share_expiry_for``) — so a fixed April 2026 date
+# would seed a trip that files under "Past" with a link already dead, which is
+# the one state manual testing cannot use. Seven days out puts it under
+# "Coming up" whenever the seed is run.
+_SEED_TRIP_DAYS_AHEAD = 7
+
+
+def _seed_route_gpx() -> str:
+    """Return ``_SEED_ROUTE_POINTS`` as a GPX 1.1 track document.
+
+    Written out rather than kept as a fixture file so the coordinates have
+    one home — the constant above — and so a reader of this module can see
+    exactly what the seeded route is without opening anything else. It is a
+    minimal document on purpose: a ``<trk>`` with one ``<trkseg>``, which is
+    the shape ``parse_gpx`` selects, and nothing else it would ignore.
+
+    Every point carries a ``<time>``, spaced by
+    ``_SEED_ROUTE_POINT_INTERVAL_MINUTES``, so the parsed route has the
+    ``started_at`` / ``finished_at`` pair a recorded upload has.
+
+    Returns:
+        A GPX document as a string, ready to encode and parse.
+
+    """
+    segments = []
+    for index, (latitude, longitude, elevation) in enumerate(_SEED_ROUTE_POINTS):
+        stamp = _SEED_ROUTE_START + timedelta(
+            minutes=index * _SEED_ROUTE_POINT_INTERVAL_MINUTES
+        )
+        segments.append(
+            f'      <trkpt lat="{latitude}" lon="{longitude}">'
+            f"<ele>{elevation}</ele>"
+            f"<time>{stamp.strftime('%Y-%m-%dT%H:%M:%SZ')}</time>"
+            "</trkpt>"
+        )
+    points = "\n".join(segments)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<gpx version="1.1" creator="seed_test_data" '
+        'xmlns="http://www.topografix.com/GPX/1/1">\n'
+        "  <trk>\n"
+        f"    <name>{_SEED_ROUTE_NAME}</name>\n"
+        "    <trkseg>\n"
+        f"{points}\n"
+        "    </trkseg>\n"
+        "  </trk>\n"
+        "</gpx>\n"
+    )
 
 
 class _Rollback(Exception):
@@ -811,6 +916,7 @@ class Command(BaseCommand):
         counts.update(account_counts)
         counts.update(self._seed_bulletin_family(resolved, specs, micro_map, verbosity))
         counts.update(self._seed_point_family(resolved, dev_user, verbosity))
+        counts.update(self._seed_trip_family(resolved, dev_user, verbosity))
         return counts
 
     def _seed_account_family(
@@ -1211,6 +1317,109 @@ class Command(BaseCommand):
         if verbosity >= 2:
             self.stdout.write(f"  Created {created} Favourite rows")
         return created
+
+    def _seed_trip_family(
+        self, resolved: "set[SeedModel]", dev_user: "User | None", verbosity: int
+    ) -> dict[str, int]:
+        """Seed the dev user's own route and the trip planned off it.
+
+        Args:
+            resolved: Models to seed (already expanded with prerequisites).
+            dev_user: The seeded normal user that owns both. Guaranteed
+                non-``None`` whenever either model is seeded, because both
+                depend on USER (see ``_DEPENDENCIES``).
+            verbosity: Verbosity level.
+
+        Returns:
+            A dict of model value -> row count for the models in this family.
+
+        """
+        counts: dict[str, int] = {}
+        routes: list[Route] = []
+        for model in _TRIP_FAMILY:
+            if model not in resolved:
+                continue
+            if dev_user is None:  # pragma: no cover — both models pull in USER
+                raise CommandError(
+                    f"{model.value} seeding requires the USER model, which "
+                    "should have been pulled in as a prerequisite."
+                )
+            if model is SeedModel.ROUTE:
+                routes = self._seed_routes(dev_user, verbosity)
+                counts[model.value] = len(routes)
+            elif model is SeedModel.TRIP:
+                counts[model.value] = self._seed_trips(routes, dev_user, verbosity)
+        return counts
+
+    def _seed_routes(self, owner: "User", verbosity: int) -> "list[Route]":
+        """Create the dev user's one route, through the real upload path.
+
+        Writes a GPX document from ``_SEED_ROUTE_POINTS`` and hands it to
+        ``create_route``, rather than calling ``RouteFactory`` with the
+        derived fields spelled out. Two reasons: every derived value
+        (``distance_m``, ``ascent_m``, ``bounds``, ``point_count``, the
+        ``started_at`` / ``finished_at`` pair) is then computed by the same
+        parser a real upload goes through, so the row cannot disagree with
+        its own geometry — and the seed exercises that parser against a live
+        database, which is the side benefit this command is built on.
+
+        Args:
+            owner: The seeded normal dev user.
+            verbosity: Verbosity level.
+
+        Returns:
+            The created Route instances.
+
+        """
+        from apps.routes.services.routes import create_route
+
+        route = create_route(
+            owner, _seed_route_gpx().encode("utf-8"), source_filename="seed-route.gpx"
+        )
+
+        if verbosity >= 2:
+            self.stdout.write(
+                f"  Created Route {route.name!r} "
+                f"({route.point_count} points, {route.distance_m / 1000:.1f} km)"
+            )
+        return [route]
+
+    def _seed_trips(self, routes: "list[Route]", owner: "User", verbosity: int) -> int:
+        """Plan one trip off the seeded route, through the real service.
+
+        ``create_trip`` and not ``TripFactory``: the service copies the
+        route's geometry into the trip's SNAPSHOT, mints the meeting point's
+        anonymous ``Location`` and writes the organiser's own participant
+        row, all in one transaction. A factory-built trip can be made to
+        look like that, but a seeded one that WENT through the service is
+        the only kind that proves the path still works.
+
+        Args:
+            routes: The seeded routes. Empty only if ROUTE seeded nothing.
+            owner: The seeded normal dev user, who organises the trip.
+            verbosity: Verbosity level.
+
+        Returns:
+            The number of Trip rows created.
+
+        """
+        from apps.trips.services.trips import create_trip
+
+        if not routes:  # pragma: no cover — ROUTE is a TRIP prerequisite
+            return 0
+
+        trip = create_trip(
+            owner,
+            route_uuid=routes[0].uuid,
+            date=django_timezone.localdate() + timedelta(days=_SEED_TRIP_DAYS_AHEAD),
+            start_time=_SEED_TRIP_START_TIME,
+            name=_SEED_TRIP_NAME,
+            description=_SEED_TRIP_DESCRIPTION,
+        )
+
+        if verbosity >= 2:
+            self.stdout.write(f"  Created Trip {trip.name!r} on {trip.date}")
+        return 1
 
     def _print_counts(self, counts: dict[str, int], verbosity: int) -> None:
         """Print a summary of rows created (or that would be created in dry-run).

@@ -185,6 +185,11 @@ This brings a freshly migrated DB to a fully navigable state:
   normal user that owns the favourites — folded in from the former
   `seed_dev_users` command). Credentials: [`docs/worktrees.md`](worktrees.md).
   `seed_test_data --include user` seeds just the accounts.
+- One `Route` (an 8-point skin track above Verbier, parsed from a generated
+  GPX by `create_route`) and one `Trip` planned off it by `create_trip`, both
+  owned by the normal dev user. The trip is dated a week ahead of the run so it
+  files under "Coming up" and its share link is live — `/trips/` and the map's
+  routes panel are otherwise empty until you upload a GPX by hand.
 
 The canonical preview URL after seeding is `/ch-4115/martigny-verbier/2026-04-08/`.
 
