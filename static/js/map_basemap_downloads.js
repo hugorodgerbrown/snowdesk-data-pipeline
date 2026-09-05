@@ -23,40 +23,59 @@
  * user triggers a download, long after every file has run.
  */
 
-// SNOW-521: resolve the active basemap's vector-tile URL template — the
-// same lookup `computeBasemapTileURLs` used to do before per-region
-// download replaced viewport tile enumeration. Reads the *resolved*
-// tile URL template off the first vector source's runtime instance
-// (`map.getSource(id).tiles`) rather than the static style JSON — a
-// TileJSON-backed source only populates `tiles` once its tilejson fetch
-// resolves. Returns null for a style with no vector sources (the offline
-// fallback style, SNOW-483) or before the style has finished loading.
-// `mapDownloadControlInit` substitutes this template into a region's stored
-// tile-index ranges (`pwaBasemapDownloadCore.rangesToTileURLs`) rather
-// than enumerating anything itself.
-function activeBasemapTileTemplate(map) {
+// SNOW-521: resolve the active basemap's vector-tile URLs — the same
+// lookup `computeBasemapTileURLs` used to do before per-region download
+// replaced viewport tile enumeration. Reads the *resolved* tile URLs off
+// each vector source's runtime instance (`map.getSource(id).tiles`) rather
+// than the static style JSON — a TileJSON-backed source only populates
+// `tiles` once its tilejson fetch resolves. Returns null for a style with
+// no vector sources (the offline fallback style, SNOW-483) or before the
+// style has finished loading. `mapDownloadControlInit` substitutes these
+// into a region's stored tile-index ranges
+// (`pwaBasemapDownloadCore.rangesToTileURLs`) rather than enumerating
+// anything itself.
+//
+// SNOW-843: EVERY vector source, and every URL of each — not the first
+// source's first URL, which is what this returned for its whole life. Both
+// halves of that were wrong against a real multi-source style, and the
+// swisstopo winter style is one:
+//
+//   - it declares TWO vector sources (`ch.swisstopo.relief.vt` and
+//     `ch.swisstopo.base.vt`), and stopping at the first meant a download
+//     pinned the relief and never fetched a single base tile — an offline
+//     map of hillshade with no roads, labels or features;
+//   - each source lists FIVE hosts (`vectortiles0-4.geo.admin.ch`) that
+//     MapLibre round-robins between per tile, so four in five of the tiles
+//     that WERE pinned sat under a URL the map would never ask for.
+//
+// The shape is `pwaBasemapDownloadCore.tileSources`' — one array of URL
+// templates per source, in style order — and every consumer of it goes
+// through that module rather than indexing in here.
+function activeBasemapTileSources(map) {
   if (!map || !map.isStyleLoaded()) return null;
   const style = map.getStyle();
   if (!style || !style.sources) return null;
+  const sources = [];
   for (const sourceId of Object.keys(style.sources)) {
     if (style.sources[sourceId].type !== 'vector') continue;
     const runtime = map.getSource(sourceId);
-    const template = runtime && Array.isArray(runtime.tiles) && runtime.tiles[0];
-    if (template) return template;
+    if (!runtime || !Array.isArray(runtime.tiles)) continue;
+    const urls = runtime.tiles.filter((url) => typeof url === 'string' && url);
+    if (urls.length) sources.push(urls);
   }
-  return null;
+  return sources.length ? sources : null;
 }
 
 // SNOW-645: the settings.BASEMAP_STYLES key of the basemap currently
 // selected in the picker, read off the checked radio row that map.js:150-159
 // sets on boot and map_basemap_picker.js:285-291 maintains on every change.
-// Display-only — unlike activeBasemapTileTemplate above, which reads the
+// Display-only — unlike activeBasemapTileSources above, which reads the
 // *rendered* style and is what beforeWarm uses to decide eviction, this
 // reads the *picker DOM*, which map_basemap_picker.js updates SYNCHRONOUSLY
 // on click, before MapLibre's asynchronous setStyle() has actually loaded
 // the new style. So for the moment between those two, this LEADS the
 // render rather than lagging it: it already reports the newly-picked key
-// while activeBasemapTileTemplate still resolves the outgoing style's
+// while activeBasemapTileSources still resolves the outgoing style's
 // template. A download triggered in that narrow window would therefore
 // record the new key against tiles that were actually fetched from the
 // OLD basemap — display-only is what keeps that mismatch harmless: nothing
@@ -244,6 +263,49 @@ function activeBasemapGlyphPrefix(map) {
   return glyphs.slice(0, brace);
 }
 
+/**
+ * SNOW-843: every TileJSON document the live style's vector sources are
+ * declared by — `style.sources[id].url`, absolute.
+ *
+ * A vector source can name its tiles in two ways: inline (`tiles: [...]`)
+ * or by pointing at a TileJSON document (`url: "…/tiles.json"`) that
+ * carries the array. swisstopo uses the second form for both its sources,
+ * and that document is a HARD dependency of rendering: with it uncached,
+ * MapLibre offline cannot learn a single tile URL, so the pinned tiles are
+ * unreachable and the basemap is blank however complete the download was.
+ *
+ * Browsing does cache it — it is served from the style's own (allowlisted)
+ * origin, so `_basemapStaleWhileRevalidate` writes it into `BASEMAP_CACHE`
+ * — but that cache is FIFO-trimmed to `BASEMAP_CACHE_MAX_ENTRIES` while
+ * pinned buckets never are. This is the glyph decay SNOW-742 fixed, one
+ * document further up: a couple of browsing sessions evict it and the
+ * downloaded area quietly stops rendering. So a download pins it outright
+ * rather than relying on the passive copy surviving.
+ *
+ * @param {object|null} map
+ * @returns {string[]} Empty for a style still settling, or one whose
+ *   sources all declare their tiles inline (nothing to fetch).
+ */
+function activeBasemapSourceDocumentURLs(map) {
+  if (!map || !map.isStyleLoaded()) return [];
+  const style = map.getStyle && map.getStyle();
+  if (!style || !style.sources) return [];
+  const urls = [];
+  for (const sourceId of Object.keys(style.sources)) {
+    const source = style.sources[sourceId];
+    if (!source || source.type !== 'vector') continue;
+    if (typeof source.url !== 'string' || !source.url) continue;
+    try {
+      urls.push(new URL(source.url, window.location.href).toString());
+    } catch (_err) {
+      // A mapbox:// or otherwise unresolvable reference is not something
+      // this can fetch; MapLibre resolving it is a case this project has
+      // never had, and inventing a URL for it would pin a 404.
+    }
+  }
+  return urls;
+}
+
 // SNOW-521: same-origin data-feed + active-basemap-style URL list —
 // everything a basemap download warms besides its own tile ranges.
 // Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
@@ -281,6 +343,10 @@ function assembleBasemapDownloadFeedURLs() {
   );
   if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
   urls.push(...computeBasemapSpriteURLs(MAP));
+  // SNOW-843: and the TileJSON each vector source is declared by — see
+  // `activeBasemapSourceDocumentURLs` for why a download that skips it can
+  // be complete and still render nothing offline.
+  urls.push(...activeBasemapSourceDocumentURLs(MAP));
   return urls;
 }
 
@@ -786,10 +852,18 @@ async function basemapDownloadedAreas() {
 }
 
 /**
- * SNOW-645: every DISTINCT tile template currently downloaded, paired with
- * the basemap it was fetched under — the input `refreshDownloadedOverlay`
+ * SNOW-645: every DISTINCT set of tile sources currently downloaded, paired
+ * with the basemap it was fetched under — the input `refreshDownloadedOverlay`
  * (static/js/map.js) needs to paint every basemap's downloads at once,
  * each in its own identity colour, rather than only the active basemap's.
+ *
+ * SNOW-843: a record's stored `template` field is no longer a template
+ * string — it is the whole tile-source spec
+ * (`pwaBasemapDownloadCore.tileSources`), because a basemap is one or more
+ * vector sources each served from one or more hosts. The FIELD keeps its
+ * name, since it is persisted in `meta:app` and a record written before
+ * this ticket still holds a bare string there (which `tileSources`
+ * normalises). What this function RETURNS is named for what it is.
  *
  * Deliberately NOT `basemapDownloadedAreas()` widened to carry `template` —
  * that reader is the canonical, lossy-by-design normaliser eviction
@@ -799,17 +873,17 @@ async function basemapDownloadedAreas() {
  * the same pair of records `basemapDownloadedAreas()` reads — this
  * function is a sibling of it, not a wrapper around it.
  *
- * A template can appear on more than one recorded area (several regions,
- * or a region and a custom area, downloaded under the same basemap) — this
- * dedupes by template, since `cachedTilesFromURLs` is run once per
- * template regardless of how many areas share it. If two records
- * disagree about the template's `basemapKey` (only possible with a
- * pre-SNOW-645 keyless record alongside a keyed one for the same
- * template), the non-empty key wins — an unresolved basemap should never
- * shadow a known one.
+ * One source spec can appear on more than one recorded area (several
+ * regions, or a region and a custom area, downloaded under the same
+ * basemap) — this dedupes on `tileSourcesKey`, since `cachedTilesFromURLs`
+ * is run once per spec regardless of how many areas share it. If two
+ * records disagree about that spec's `basemapKey` (only possible with a
+ * pre-SNOW-645 keyless record alongside a keyed one for the same spec), the
+ * non-empty key wins — an unresolved basemap should never shadow a known
+ * one.
  *
  * A record with NO `template` (written before SNOW-632) falls back to the
- * ACTIVE basemap's template rather than being skipped. Skipping it was the
+ * ACTIVE basemap's sources rather than being skipped. Skipping it was the
  * bug behind "the roundel says Downloaded but the map draws no squares":
  * `_probeDone` (map_region_download.js) reads a missing template as "the
  * active basemap's", so the roundel resolves `done` off real cached tiles,
@@ -823,29 +897,36 @@ async function basemapDownloadedAreas() {
  * and contributes no squares — the same empty answer as before, just
  * reached by looking rather than by skipping.
  *
- * @returns {Promise<Array<{template: string, basemapKey: string}>>}
- *   `basemapKey` is always a string, `''` for unknown — never `null` —
- *   so a caller can use it as a MapLibre `match` arm directly. Empty when
- *   nothing is recorded, or the reads fail — best-effort, matching
- *   `basemapDownloadedAreas()`'s own degrade-to-nothing behaviour.
+ * @returns {Promise<Array<{tileSources: string[][], basemapKey: string}>>}
+ *   `tileSources` is the normalised (SNOW-843) source spec, ready to hand
+ *   straight to `cachedTilesFromURLs`. `basemapKey` is always a string,
+ *   `''` for unknown — never `null` — so a caller can use it as a MapLibre
+ *   `match` arm directly. Empty when nothing is recorded, or the reads fail
+ *   — best-effort, matching `basemapDownloadedAreas()`'s own
+ *   degrade-to-nothing behaviour.
  */
 async function basemapDownloadedTemplates() {
-  const byTemplate = new Map();
+  const core = self.pwaBasemapDownloadCore;
+  if (!core) return [];
+  // key -> {tileSources, basemapKey}
+  const bySources = new Map();
   // Resolved once, not per record: it reads the live style, and every
   // templateless record falls back to the same answer. Null (no style
   // settled yet) leaves those records skipped exactly as before.
-  const activeTemplate = activeBasemapTileTemplate(MAP);
+  const activeSources = activeBasemapTileSources(MAP);
   const activeKey = activeBasemapKey();
-  const record = (template, basemapKey) => {
-    const resolved = template || activeTemplate;
-    if (!resolved) return;
-    // A templateless record borrows the active basemap's KEY too — its own
-    // is equally absent, and the pair has to stay consistent or the
-    // overlay would colour the active basemap's tiles as "unknown" green.
-    const key = (template ? basemapKey : basemapKey || activeKey) || '';
-    const existing = byTemplate.get(resolved);
-    if (existing === undefined || (!existing && key)) {
-      byTemplate.set(resolved, key);
+  const record = (stored, basemapKey) => {
+    const resolved = core.tileSources(stored || activeSources);
+    if (!resolved.length) return;
+    // A record with no sources of its own borrows the active basemap's KEY
+    // too — its own is equally absent, and the pair has to stay consistent
+    // or the overlay would colour the active basemap's tiles as "unknown"
+    // green.
+    const key = (stored ? basemapKey : basemapKey || activeKey) || '';
+    const mapKey = core.tileSourcesKey(resolved);
+    const existing = bySources.get(mapKey);
+    if (existing === undefined || (!existing.basemapKey && key)) {
+      bySources.set(mapKey, { tileSources: resolved, basemapKey: key });
     }
   };
 
@@ -870,7 +951,7 @@ async function basemapDownloadedTemplates() {
     // Best-effort — see docstring.
   }
 
-  return Array.from(byTemplate, ([template, basemapKey]) => ({ template, basemapKey }));
+  return Array.from(bySources.values());
 }
 
 /**
@@ -1776,7 +1857,7 @@ const PINNED_DOWNLOAD_DEPS = {
   revealError: (reason) => revealBasemapDownloadError(reason),
   fitsQuota: (mb) => basemapDownloadFitsQuota(mb),
   core: () => self.pwaBasemapDownloadCore,
-  tileTemplate: () => activeBasemapTileTemplate(MAP),
+  tileSources: () => activeBasemapTileSources(MAP),
   basemapKey: () => activeBasemapKey(),
   planBudget: (areaId, mb) => planBasemapDownloadBudget(areaId, mb),
   confirmEviction: (areas) => confirmBasemapEviction(areas),
@@ -1866,7 +1947,7 @@ function coalesceRenders(render) {
  * (SNOW-611). Both download controls had a byte-identical copy of this,
  * each with its own coalescing flag.
  *
- * Needed because `activeBasemapTileTemplate` is gated on
+ * Needed because `activeBasemapTileSources` is gated on
  * `map.isStyleLoaded()`, which is false for the whole of the boot sequence
  * that first paints these icons: the region/overlay sources are added
  * inside `map.on('load')` itself, leaving the style dirty when

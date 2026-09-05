@@ -12,7 +12,7 @@
  * ---------------------------
  * `evictBasemapAreas` destroys ANOTHER area's pinned bucket and its
  * `meta:app` record for good, so it has to be the LAST step before the run
- * — every check that can abort (quota, tile template, budget ceiling, blob
+ * — every check that can abort (quota, tile sources, budget ceiling, blob
  * fetch) must have passed by the time the user is asked. A user who
  * answers "yes, evict X" and then watches the run fail is left with
  * neither X nor the download they asked for. SNOW-607 (D1) fixed exactly
@@ -47,7 +47,7 @@
    * `loadBlob` is a callback rather than an already-fetched blob because
    * WHEN the blob is fetched is part of the ordering: the region control
    * fetches it from the network, and that fetch must not happen until the
-   * quota, template and budget checks have all passed. The custom-area
+   * quota, tile-source and budget checks have all passed. The custom-area
    * control has already built its blob and simply hands it back.
    *
    * @param {{
@@ -55,7 +55,7 @@
    *   revealError: function(string|null): void,
    *   fitsQuota: function(number): Promise<boolean>,
    *   core: function(): (Object|null|undefined),
-   *   tileTemplate: function(): (string|null|undefined),
+   *   tileSources: function(): (string[][]|null|undefined),
    *   basemapKey: function(): (string|null|undefined),
    *   planBudget: function(string, number): Promise<Object|null>,
    *   confirmEviction: function(Array<Object>): Promise<boolean>,
@@ -70,11 +70,16 @@
    *   mb: number,
    *   loadBlob: function(): (Object|Promise<Object>),
    *   paint: function(string, number=, number=): void,
-   *   beforeWarm?: function(Object, string, string): Promise<void>,
+   *   beforeWarm?: function(Object, string, string[][]): Promise<void>,
    *   finish: function(Object|null, Object, Object): Promise<void>,
    * }} options
    *   `areaId` — the pinned bucket this run writes into.
-   *   `mb` — worst-case size estimate, for the quota and budget pre-flights.
+   *   `mb` — worst-case size estimate PER TILE, for the quota and budget
+   *     pre-flights. SNOW-843: scaled here by the number of vector sources
+   *     the active style fetches, because the blob that produced it — a
+   *     server-computed region summary or a locally built custom-area one —
+   *     counts ground, not requests, and a two-source style downloads two
+   *     tiles for every cell of it.
    *   `loadBlob` — resolves the tile blob; a rejection is a failed download.
    *   `paint` — paints one roundel state, optionally with a busy
    *     percentage and, SNOW-632, the run's on-disk bytes so far
@@ -84,16 +89,16 @@
    *     (the custom-area control clears its own bucket when the frame
    *     moved; SNOW-632 widened this to the region control too, clearing a
    *     bucket whose tiles belong to a DIFFERENT basemap than the one this
-   *     run is about to fetch). Called as `(blob, areaId, template)` — the
-   *     same `template` this run itself resolved and is about to build
+   *     run is about to fetch). Called as `(blob, areaId, tileSources)` —
+   *     the same sources this run itself resolved and is about to build
    *     tile URLs from, so a caller's eviction decision and the URLs that
    *     follow it can never disagree about which basemap is active.
    *   `finish` — the run's tail, called as `(result, blob, extras)` where
-   *     `extras` carries `core`, `progressFill`, SNOW-632's `template`
+   *     `extras` carries `core`, `progressFill`, SNOW-632's `tileSources`
    *     (the same value handed to `beforeWarm`, so a caller recording what
    *     was downloaded records the basemap that was actually fetched, not
    *     whatever happens to be active when `finish` runs) and, SNOW-645,
-   *     `basemapKey` — the picker key captured alongside `template` at run
+   *     `basemapKey` — the picker key captured alongside `tileSources` at run
    *     start, display-only and possibly null. `result` is the
    *     worker's report, or `null` when there was no worker at all. SNOW-632:
    *     `result` can now carry `cancelled: true` — the run stopped early on
@@ -120,31 +125,39 @@
     // after the quota round trip.
     paint('busy', 0);
 
+    const core = deps.core();
+    const tileSources = deps.tileSources();
+    // SNOW-843: what this run will actually spend, which is `mb` once per
+    // vector source in the active style. Read before the quota check so no
+    // pre-flight ever runs against the single-source figure — the checks
+    // themselves keep their order, and an unresolved style leaves the
+    // estimate at `mb` (see `sourceScaledMb`) and is refused outright a few
+    // lines below.
+    const estimateMb = core && core.sourceScaledMb ? core.sourceScaledMb(mb, tileSources) : mb;
+
     // Refuse a download that cannot fit in the origin's storage quota
     // before spending a single fetch on it (SNOW-568). Without this the run
     // gets most of the way through, starts collecting QuotaExceededErrors
     // from cache.put, and the user waits out a long download to be told it
     // failed.
-    if (!(await deps.fitsQuota(mb))) {
+    if (!(await deps.fitsQuota(estimateMb))) {
       paint('error');
       deps.revealError('quota');
       return;
     }
 
-    const core = deps.core();
-    const template = deps.tileTemplate();
     // SNOW-645: the picker's basemap key, captured at run start so a
     // mid-download basemap switch still records the basemap that was
     // actually fetched. Display-only — see activeBasemapKey's header
     // comment — so an unresolved key (null) never aborts the run the way a
-    // missing template does; it just means the record below stays keyless.
+    // missing source list does; it just means the record below stays keyless.
     const basemapKey = deps.basemapKey();
-    // No tile template (style still settling) means no tiles to warm, and a
+    // No tile sources (style still settling) means no tiles to warm, and a
     // feeds-only run must never paint 'done' — the area would not in fact
     // be available offline. SNOW-568: reads as a failed download so the
     // user knows to retry (by which point the style will have settled),
     // rather than silently reverting.
-    if (!core || !template) {
+    if (!core || !tileSources) {
       paint('error');
       deps.revealError(null);
       return;
@@ -154,7 +167,7 @@
     // spending a fetch on the blob — same "cost a click, not a whole run"
     // reasoning as the quota pre-flight above. The plan's eviction half is
     // acted on below, once nothing is left that can abort the run.
-    const budgetPlan = await deps.planBudget(areaId, mb);
+    const budgetPlan = await deps.planBudget(areaId, estimateMb);
     if (budgetPlan && budgetPlan.impossible) {
       paint('error');
       deps.revealError('budget');
@@ -188,7 +201,7 @@
       await deps.evict(budgetPlan.evict);
     }
 
-    if (beforeWarm) await beforeWarm(blob, areaId, template);
+    if (beforeWarm) await beforeWarm(blob, areaId, tileSources);
 
     // Tile-grid rework: the tile list comes from the grid plan, not
     // `rangesToTileURLs` — same URLs, but ordered cell by cell so the
@@ -196,7 +209,7 @@
     // whole area once per zoom level. A plan is only ever null for a blob
     // with no ranges, which `rangesToTileURLs` would answer with an empty
     // list anyway.
-    const gridPlan = core.tileGridPlan(template, blob);
+    const gridPlan = core.tileGridPlan(tileSources, blob);
     const feedUrls = deps.feedUrls();
     const urls = [...feedUrls, ...(gridPlan ? gridPlan.urls : [])];
 
@@ -216,7 +229,8 @@
       progressFill.update(done, total, settled);
     };
 
-    const settle = (result) => finish(result, blob, { core, progressFill, template, basemapKey });
+    const settle = (result) =>
+      finish(result, blob, { core, progressFill, tileSources, basemapKey });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a
     // dedicated pinned bucket, exempt from the passive browsing LRU trim —

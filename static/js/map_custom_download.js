@@ -709,7 +709,13 @@
     const naturalBbox = _bboxForBox(natural.cx, natural.cy, natural.width, natural.height);
     if (!naturalBbox) return null;
     const [minZ, maxZ] = core.MICRO_BAND;
-    const scale = core.budgetScaleForBBox(naturalBbox, minZ, maxZ);
+    // SNOW-843: the frame is sized against what the download will actually
+    // fetch. A two-source basemap (swisstopo declares relief AND base)
+    // costs two tiles per cell of ground, so the largest box that fits the
+    // ceiling under it is smaller — the frame shrinks with the basemap
+    // rather than promising a run the budget pre-flight would then refuse.
+    const sourceCount = core.tileSourceCount(activeBasemapTileSources(MAP));
+    const scale = core.budgetScaleForBBox(naturalBbox, minZ, maxZ, sourceCount);
 
     if (scale >= 1) {
       lockedSize = null;
@@ -762,12 +768,16 @@
     if (!core || !fitted) return;
     pendingBbox = fitted.bbox;
     pendingBlob = fitted.blob;
-    const overCeiling = pendingBlob.over_ceiling;
+    // SNOW-843: both the readout and the backstop speak in what the run
+    // will spend — `blob.mb` prices one tile per cell, and a multi-source
+    // style fetches one per cell PER SOURCE.
+    const scaledMb = core.sourceScaledMb(pendingBlob.mb, activeBasemapTileSources(MAP));
+    const overCeiling = pendingBlob.over_ceiling || scaledMb > core.DOWNLOAD_CEILING_MB;
     const text = overCeiling
       ? self.pwaStrings.interpolate(MAP_STRINGS['frame-over-ceiling'], {
           mb: core.DOWNLOAD_CEILING_MB,
         })
-      : self.pwaStrings.interpolate(MAP_STRINGS['frame-up-to'], { mb: pendingBlob.mb });
+      : self.pwaStrings.interpolate(MAP_STRINGS['frame-up-to'], { mb: scaledMb });
     // Same no-op guard as the frame's own size write above: the estimate
     // holds still across most 'move's, and rewriting identical text still
     // costs a layout of the CTA bar.
@@ -1203,7 +1213,7 @@
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
       paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
-      finish: async (result, runBlob, { core, progressFill, template, basemapKey }) => {
+      finish: async (result, runBlob, { core, progressFill, tileSources, basemapKey }) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
         // BEFORE `ok`. A cancelled run always has `failed === 0` (nothing
@@ -1249,7 +1259,10 @@
             bbox: bbox,
             band: runBlob.band,
             centre_tile: runBlob.centre_tile,
-            template: template,
+            // SNOW-843: the whole tile-source spec, under the field's
+            // existing name — see `_recordRegionDownload`'s note on why the
+            // persisted key did not move.
+            template: tileSources,
             basemapKey: basemapKey || null,
             bytes: Number(result.bytes) || 0,
             savedAt: new Date().toISOString(),

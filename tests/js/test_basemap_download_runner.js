@@ -4,7 +4,7 @@
  *
  * The point of extracting the run was to make its ORDER testable. Both map
  * download controls used to spell the sequence out themselves, and one of
- * the two drifted — SNOW-607 (D1) had to move the tile-template check back
+ * the two drifted — SNOW-607 (D1) had to move the tile-source check back
  * ahead of the eviction, because a run that aborted after evicting left
  * the user with neither the area they had sacrificed nor the download they
  * asked for.
@@ -41,11 +41,14 @@ function deps(overrides) {
     }),
     core: vi.fn(() => ({
       tileGridPlan: () => ({ urls: ['/tile/1', '/tile/2'], cells: [] }),
+      // SNOW-843: the runner scales the caller's per-tile `mb` estimate by
+      // the number of vector sources before spending it on a pre-flight.
+      sourceScaledMb: (mb, spec) => mb * Math.max(1, (spec || []).length),
       CUSTOM_AREA_ID: 'custom',
     })),
-    tileTemplate: vi.fn(() => {
-      calls.push('tileTemplate');
-      return 'https://tiles/{z}/{x}/{y}.png';
+    tileSources: vi.fn(() => {
+      calls.push('tileSources');
+      return [['https://tiles/{z}/{x}/{y}.png']];
     }),
     basemapKey: vi.fn(() => {
       calls.push('basemapKey');
@@ -131,10 +134,10 @@ beforeEach(() => {
 });
 
 describe('pre-flight ordering — the SNOW-607 regression', () => {
-  it('never evicts when the tile template is missing', async () => {
+  it('never evicts when the tile sources are missing', async () => {
     const d = deps({
-      tileTemplate: () => {
-        calls.push('tileTemplate');
+      tileSources: () => {
+        calls.push('tileSources');
         return null;
       },
       planBudget: vi.fn(async () => {
@@ -201,11 +204,15 @@ describe('pre-flight ordering — the SNOW-607 regression', () => {
 
     await runAndSettle(d, options());
 
+    // SNOW-843: `tileSources` is READ before the quota check — the estimate
+    // that check spends is scaled by how many vector sources the style
+    // fetches — while the refusal it drives still comes after, in its
+    // original place. Nothing destructive has happened by either point.
     expect(calls).toEqual([
       'clearError',
       'paint:busy',
+      'tileSources',
       'fitsQuota',
-      'tileTemplate',
       'basemapKey',
       'planBudget',
       'loadBlob',
@@ -319,7 +326,7 @@ describe('the warm run', () => {
     expect(calls.indexOf('beforeWarm')).toBeLessThan(calls.indexOf('warmCache'));
   });
 
-  it('hands beforeWarm the blob, the area id and the resolved template (SNOW-632)', async () => {
+  it('hands beforeWarm the blob, the area id and the resolved sources (SNOW-632)', async () => {
     const d = deps();
     const o = options({
       beforeWarm: vi.fn(async () => {}),
@@ -330,7 +337,7 @@ describe('the warm run', () => {
     expect(o.beforeWarm).toHaveBeenCalledWith(
       { z: 12, band: 'micro', mb: 12 },
       'region:ch-4115',
-      'https://tiles/{z}/{x}/{y}.png',
+      [['https://tiles/{z}/{x}/{y}.png']],
     );
   });
 
@@ -346,9 +353,9 @@ describe('the warm run', () => {
     expect(blob).toEqual({ z: 12, band: 'micro', mb: 12 });
     expect(extras.core).toBeTruthy();
     expect(extras.progressFill).toBeTruthy();
-    // SNOW-632: the same template beforeWarm saw, so a caller recording
+    // SNOW-632: the same sources beforeWarm saw, so a caller recording
     // what was downloaded can never disagree with what was fetched.
-    expect(extras.template).toBe('https://tiles/{z}/{x}/{y}.png');
+    expect(extras.tileSources).toEqual([['https://tiles/{z}/{x}/{y}.png']]);
   });
 
   it('finishes with null when there is no active worker', async () => {

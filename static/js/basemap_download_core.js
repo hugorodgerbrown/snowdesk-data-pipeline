@@ -63,13 +63,22 @@
  *     ``{"<y>": [xmin, xmax]}``. See the SNOW-583 note above; every
  *     function below that walks a blob's tiles goes through this rather
  *     than assuming a rectangle.
- *   rangesToTileURLs(template, blob)
+ *   tileSources(spec) / tileSourceCount(spec) / tileSourcesKey(spec) /
+ *   tileURLs(sources, z, x, y) / sourceScaledMb(mb, spec)
+ *     SNOW-843: the tile-source group. A basemap is one or more vector
+ *     SOURCES, each with one or more hostnames MapLibre round-robins
+ *     between per tile (``urls[(x + y) % urls.length]``) — so "the tile
+ *     URL" is a list, not a string, and a download that stored a single
+ *     template pinned a fraction of one layer. Every function below that
+ *     builds or reads a tile URL routes through these. See ``tileSources``
+ *     for the accepted shapes (a legacy template string included).
+ *   rangesToTileURLs(spec, blob)
  *     Expands a full basemap_download blob's ``z`` tile-index ranges
  *     (as fetched from ``/api/region-basemap-tiles/?id=...`` OR produced
- *     locally by ``buildBlob`` below) into the full list of
- *     ``{z}/{x}/{y}`` tile URLs, substituted into ``template``. Returns
- *     ``[]`` for a falsy ``template`` or ``blob``, or a blob with no
- *     ``z`` ranges.
+ *     locally by ``buildBlob`` below) into the full list of tile URLs —
+ *     one per tile PER SOURCE, each at the host MapLibre will ask it
+ *     from. Returns ``[]`` for an unresolvable ``spec`` or ``blob``, or a
+ *     blob with no ``z`` ranges.
  *   lonLatToTile(lon, lat, z)
  *     Web Mercator ``[x, y]`` tile indices for ``(lon, lat)`` at zoom
  *     ``z`` — mirror of ``basemap_tiles.lon_lat_to_tile``. Not clamped
@@ -188,16 +197,17 @@
  *     The ground one tile covers, as ``[west, south, east, north]`` —
  *     the inverse of ``lonLatToTile``, and the only place the grid's
  *     squares get their geometry.
- *   cachedTilesFromURLs(template, cachedURLs, zoom)
+ *   cachedTilesFromURLs(spec, cachedURLs, zoom)
  *     The tiles a cache actually holds, read back out of its URLs — the
- *     pure half of the "cached tiles" overlay.
+ *     pure half of the "cached tiles" overlay. A tile counts only when
+ *     every source holds it (SNOW-843).
  *   gridZoomFor(blob)
  *     Which single zoom level of a download's band to draw the grid at
  *     — the deepest, so a square is a real tile.
- *   tileGridPlan(template, blob)
+ *   tileGridPlan(spec, blob)
  *     The grid's cells AND the run's tile URLs ordered to fill them one
  *     at a time — see its docstring for why the ordering is the feature.
- *   blobFullyCached(template, blob, cached)
+ *   blobFullyCached(spec, blob, cached)
  *     SNOW-570, widened by SNOW-583: whether EVERY tile in ``blob``'s own
  *     ``z`` (either shape, via ``zoomRows``) is present in ``cached`` —
  *     "is this download actually available offline?". Replaces the old
@@ -449,9 +459,158 @@
   }
 
   /**
+   * Normalise a tile-source spec to ``string[][]`` — one entry per vector
+   * source in the style, each holding that source's own URL templates
+   * (SNOW-843).
+   *
+   * A basemap is not one tile URL. A style declares one or more vector
+   * SOURCES (the swisstopo winter style has two: ``ch.swisstopo.relief.vt``
+   * and ``ch.swisstopo.base.vt``), and each source can list SEVERAL URLs
+   * that differ only by hostname, which MapLibre round-robins between per
+   * tile. Everything downstream of here — the download's URL list, the
+   * cached-tiles overlay, the done-probe — has to agree with MapLibre about
+   * both, or the tiles land in the cache under keys nothing will ever ask
+   * for. That is exactly the bug this shape exists to close: a download that
+   * pinned ``tiles[0]`` of the FIRST source alone kept a fifth of one of the
+   * two layers, and the map came up blank offline over a full bucket.
+   *
+   * Accepted inputs, so a record written before SNOW-843 still resolves:
+   *
+   *   - a plain string — one source, one URL: ``[[url]]``;
+   *   - ``string[][]`` — the current shape, taken as given (empty inner
+   *     lists dropped);
+   *   - ``string[]`` — read as one single-URL source each, which is what a
+   *     flat list of distinct templates means.
+   *
+   * @param {string | string[] | string[][] | null | undefined} spec
+   * @returns {string[][]} Empty for anything unusable — every caller
+   *   already treats "no sources" as "nothing to do".
+   */
+  function tileSources(spec) {
+    if (!spec) return [];
+    if (typeof spec === 'string') return [[spec]];
+    if (!Array.isArray(spec)) return [];
+    const out = [];
+    for (const entry of spec) {
+      if (typeof entry === 'string' && entry) {
+        out.push([entry]);
+      } else if (Array.isArray(entry)) {
+        const urls = entry.filter((url) => typeof url === 'string' && url);
+        if (urls.length) out.push(urls);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * How many vector sources ``spec`` names — the factor by which one
+   * tile's worth of ground costs more than a single-source style's
+   * (SNOW-843).
+   *
+   * @param {string | string[] | string[][] | null | undefined} spec
+   * @returns {number} ``0`` when nothing resolves.
+   */
+  function tileSourceCount(spec) {
+    return tileSources(spec).length;
+  }
+
+  /**
+   * A stable string identifying ``spec``, for the equality tests that used
+   * to compare two template STRINGS (SNOW-843).
+   *
+   * Several callers ask "was this area downloaded under the basemap that is
+   * on screen now?" — the download record's sources against the live
+   * style's. With a string on both sides that was ``===``; with a nested
+   * array it needs a canonical form, and this is it. A legacy string record
+   * and a live single-source single-URL style still produce the same key, so
+   * an OpenFreeMap area downloaded before this ticket keeps matching.
+   *
+   * @param {string | string[] | string[][] | null | undefined} spec
+   * @returns {string} ``''`` when nothing resolves — never equal to a real
+   *   key, which is what makes an unresolved style fail the comparison
+   *   rather than accidentally matching everything.
+   */
+  function tileSourcesKey(spec) {
+    const sources = tileSources(spec);
+    if (!sources.length) return '';
+    return JSON.stringify(sources);
+  }
+
+  /**
+   * The URL one source serves tile ``(z, x, y)`` from — MapLibre's own
+   * choice, not ours (SNOW-843).
+   *
+   * MapLibre picks ``urls[(x + y) % urls.length]`` (``CanonicalTileID.url``
+   * in ``static/js/maplibre-gl.min.js``). A download that stored every tile
+   * under ``urls[0]`` therefore matched only the tiles whose indices happen
+   * to sum to a multiple of ``urls.length`` — one in five for swisstopo's
+   * five ``vectortilesN.geo.admin.ch`` hosts. Mirroring the selection here
+   * is what makes a pinned tile findable: Cache Storage matches on the whole
+   * URL, so the hostname is part of the key.
+   *
+   * Kept honest by ``tests/js/test_basemap_download_core.js``, which asserts
+   * the rotation against the same worked example the SNOW-843 trace showed.
+   *
+   * @param {string[]} urls One source's URL templates, in style order.
+   * @param {number} z
+   * @param {number} x
+   * @param {number} y
+   * @returns {string}
+   */
+  function tileURLForSource(urls, z, x, y) {
+    const template = urls.length === 1 ? urls[0] : urls[(x + y) % urls.length];
+    return template
+      .replace('{z}', String(z))
+      .replace('{x}', String(x))
+      .replace('{y}', String(y));
+  }
+
+  /**
+   * Every URL one tile needs — one per source (SNOW-843).
+   *
+   * @param {string[][]} sources Normalised by ``tileSources``.
+   * @param {number} z
+   * @param {number} x
+   * @param {number} y
+   * @returns {string[]}
+   */
+  function tileURLs(sources, z, x, y) {
+    const urls = [];
+    for (const source of sources) urls.push(tileURLForSource(source, z, x, y));
+    return urls;
+  }
+
+  /**
+   * ``mb`` scaled for a style that fetches more than one tile per cell
+   * (SNOW-843).
+   *
+   * A blob's ``mb`` is computed per TILE — server-side for a region,
+   * ``buildBlob`` for a custom area — and neither knows which basemap will
+   * be fetched. A two-source style downloads two tiles per cell, so it costs
+   * twice the estimate, and every pre-flight that spends the number (the
+   * storage-quota check, the standing budget, the readout the user is shown)
+   * has to say so.
+   *
+   * @param {number} mb The blob's own per-tile estimate.
+   * @param {string | string[] | string[][] | null | undefined} spec
+   * @returns {number} ``mb`` unchanged when the style is unresolved — an
+   *   unknown basemap must not inflate an estimate on a guess.
+   */
+  function sourceScaledMb(mb, spec) {
+    const count = tileSourceCount(spec);
+    if (!Number.isFinite(mb) || count <= 1) return mb;
+    return mb * count;
+  }
+
+  /**
    * Expand a full basemap_download blob's ``z`` ranges into tile URLs.
    *
-   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
+   * SNOW-843: one URL per tile PER SOURCE, each from the host MapLibre will
+   * ask that source for — see ``tileSources`` and ``tileURLForSource``.
+   *
+   * @param {string | string[][]} spec The style's tile sources — a
+   *   ``{z}``/``{x}``/``{y}`` template string (one source, one host) or the
+   *   ``string[][]`` shape ``tileSources`` normalises to.
    * @param {{z?: Object<string, number[] | Object<string, number[]>>}} blob
    *   The full blob — either fetched from
    *   ``/api/region-basemap-tiles/?id=...`` or built locally by
@@ -460,15 +619,18 @@
    *   Each zoom's ``z[zoom]`` is either shape ``zoomRows`` accepts.
    * @returns {string[]}
    */
-  function rangesToTileURLs(template, blob) {
+  function rangesToTileURLs(spec, blob) {
     const urls = [];
-    if (!template || !blob || !blob.z) return urls;
-    for (const z of Object.keys(blob.z)) {
-      const rows = zoomRows(blob.z[z]);
-      for (const y of Object.keys(rows)) {
-        const [xmin, xmax] = rows[y];
+    const sources = tileSources(spec);
+    if (!sources.length || !blob || !blob.z) return urls;
+    for (const zKey of Object.keys(blob.z)) {
+      const z = Number(zKey);
+      const rows = zoomRows(blob.z[zKey]);
+      for (const yKey of Object.keys(rows)) {
+        const y = Number(yKey);
+        const [xmin, xmax] = rows[yKey];
         for (let x = xmin; x <= xmax; x++) {
-          urls.push(template.replace('{z}', z).replace('{x}', String(x)).replace('{y}', y));
+          for (const url of tileURLs(sources, z, x, y)) urls.push(url);
         }
       }
     }
@@ -666,14 +828,20 @@
    *   north]`` in degrees, at scale 1.
    * @param {number} minZ Shallowest zoom level (inclusive).
    * @param {number} maxZ Deepest zoom level (inclusive).
+   * @param {number} [sourceCount] SNOW-843: how many vector sources the
+   *   active style fetches per tile. A two-source style costs twice the
+   *   ground, so the frame it may draw is the one whose HALVED tile budget
+   *   still fits the ceiling. Defaults to 1 — the single-source case, and
+   *   the shape the golden vector asserts.
    * @returns {number} A factor in ``(0, 1]``.
    */
-  function budgetScaleForBBox(bbox, minZ, maxZ) {
+  function budgetScaleForBBox(bbox, minZ, maxZ, sourceCount) {
     const [west, south, east, north] = bbox;
     // Whole tiles, not MB: buildBlob rounds bytes UP to the next MB, so a
     // count at exactly this budget is the largest that still reports
     // ``mb <= DOWNLOAD_CEILING_MB``.
-    const budget = (DOWNLOAD_CEILING_MB * 1024 * 1024) / WORST_CASE_BYTES_PER_TILE;
+    const sources = Number.isFinite(sourceCount) && sourceCount > 1 ? sourceCount : 1;
+    const budget = (DOWNLOAD_CEILING_MB * 1024 * 1024) / (WORST_CASE_BYTES_PER_TILE * sources);
     // World-fraction spans. Longitude is linear in the projection and
     // latitude is not, hence the Mercator y difference rather than a
     // degree one.
@@ -778,27 +946,85 @@
    * tiles cached for one basemap's origin are genuinely not cached for
    * another's.
    *
-   * The placeholder ORDER is read from the template rather than assumed.
-   * Most templates are ``{z}/{x}/{y}``, but an ESRI VectorTileServer
-   * source is ``{z}/{y}/{x}`` (see ``map.js``'s style normalisation), and
-   * reading those transposed would draw every square in the wrong place.
+   * The placeholder order is read from each template rather than assumed —
+   * see ``_tileMatcher`` below.
    *
-   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
+   * SNOW-843: a tile counts as cached only when EVERY source holds it. A
+   * two-source style whose relief tiles are down but whose base tiles are
+   * not has nothing usable on that ground, and a square drawn for it would
+   * be the overlay telling the same lie the download record used to.
+   *
+   * @param {string | string[][]} spec The style's tile sources — a template
+   *   string or the ``string[][]`` shape ``tileSources`` normalises to.
    * @param {Iterable<string>} cachedURLs URLs present in the cache.
    * @param {number} [zoom] Keep only tiles at this zoom. Omit for all of
    *   them — but note a download spans a whole band, so an unfiltered
    *   result overlaps itself five deep.
    * @returns {Array<{z: number, x: number, y: number}>}
    */
-  function cachedTilesFromURLs(template, cachedURLs, zoom) {
+  function cachedTilesFromURLs(spec, cachedURLs, zoom) {
     const out = [];
-    if (!template || !cachedURLs) return out;
+    const sources = tileSources(spec);
+    if (!sources.length || !cachedURLs) return out;
+    // One matcher per URL of every source; a source whose templates are all
+    // unusable can never be satisfied, so the whole answer is empty — the
+    // same answer as "no tiles cached for this basemap".
+    const matchers = [];
+    for (const source of sources) {
+      const forSource = [];
+      for (const template of source) {
+        const matcher = _tileMatcher(template);
+        if (matcher) forSource.push(matcher);
+      }
+      if (!forSource.length) return out;
+      matchers.push(forSource);
+    }
+    // key -> {tile, sources: Set<number>}: a tile is kept once every source
+    // index has matched it.
+    const seen = new Map();
+    for (const url of cachedURLs) {
+      for (let i = 0; i < matchers.length; i++) {
+        for (const matcher of matchers[i]) {
+          const tile = matcher(url);
+          if (!tile) continue;
+          if (typeof zoom === 'number' && tile.z !== zoom) continue;
+          const key = tile.z + '/' + tile.x + '/' + tile.y;
+          let entry = seen.get(key);
+          if (!entry) {
+            entry = { tile: tile, sources: new Set() };
+            seen.set(key, entry);
+          }
+          entry.sources.add(i);
+        }
+      }
+    }
+    for (const entry of seen.values()) {
+      if (entry.sources.size === matchers.length) out.push(entry.tile);
+    }
+    return out;
+  }
+
+  /**
+   * A function reading ``{z, x, y}`` back out of a URL that ``template``
+   * could have produced, or ``null`` for a template that cannot be turned
+   * into a pattern at all.
+   *
+   * The placeholder ORDER is read from the template rather than assumed.
+   * Most templates are ``{z}/{x}/{y}``, but an ESRI VectorTileServer source
+   * is ``{z}/{y}/{x}`` (see ``map.js``'s style normalisation), and reading
+   * those transposed would draw every square in the wrong place.
+   *
+   * @param {string} template
+   * @returns {(function(string): ({z: number, x: number, y: number}|null))|null}
+   */
+  function _tileMatcher(template) {
+    if (typeof template !== 'string' || !template) return null;
     const order = [];
     template.replace(/\{(z|x|y)\}/g, (match, key) => {
       order.push(key);
       return match;
     });
-    if (order.length !== 3) return out;
+    if (order.length !== 3) return null;
     const pattern = template
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       .replace(/\\\{(z|x|y)\\\}/g, '(\\d+)');
@@ -806,19 +1032,15 @@
     try {
       re = new RegExp('^' + pattern + '$');
     } catch (_e) {
-      // A template that can't be made into a pattern matches nothing,
-      // which is the same answer as "no tiles cached for this basemap".
-      return out;
+      return null;
     }
-    for (const url of cachedURLs) {
+    return (url) => {
       const match = re.exec(url);
-      if (!match) continue;
+      if (!match) return null;
       const tile = {};
       for (let i = 0; i < order.length; i++) tile[order[i]] = Number(match[i + 1]);
-      if (typeof zoom === 'number' && tile.z !== zoom) continue;
-      out.push(tile);
-    }
-    return out;
+      return tile;
+    };
   }
 
   /**
@@ -1015,7 +1237,12 @@
    * to come first. Deterministic, so a re-run of the same area fills in
    * the same order.
    *
-   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template.
+   * SNOW-843: a cell's ``total`` counts one tile PER SOURCE, and the URL
+   * list carries them all, so the grid fills as the ground is actually
+   * covered rather than reporting a two-source area complete at half.
+   *
+   * @param {string | string[][]} spec The style's tile sources — a template
+   *   string or the ``string[][]`` shape ``tileSources`` normalises to.
    * @param {{z?: Object<string, number[] | Object<string, number[]>>}} blob
    *   A full download blob — fetched from
    *   ``/api/region-basemap-tiles/?id=...`` (rectangle or clipped row
@@ -1025,9 +1252,10 @@
    *   [number, number, number, number], total: number}>, urls: string[],
    *   cellOfURL: number[]} | null} ``null`` when there is nothing to draw.
    */
-  function tileGridPlan(template, blob) {
+  function tileGridPlan(spec, blob) {
     const gridZ = gridZoomFor(blob);
-    if (!template || gridZ === null) return null;
+    const sources = tileSources(spec);
+    if (!sources.length || gridZ === null) return null;
 
     // Bucket every tile in the blob by the cell it lands in, keyed on the
     // cell's own indices so the two loops below agree on identity.
@@ -1074,19 +1302,19 @@
     const cellOfURL = [];
     ordered.forEach((bucket, index) => {
       for (const [z, x, y] of bucket.tiles) {
-        urls.push(
-          template
-            .replace('{z}', String(z))
-            .replace('{x}', String(x))
-            .replace('{y}', String(y)),
-        );
-        cellOfURL.push(index);
+        // SNOW-843: one URL per SOURCE, all attributed to the same cell —
+        // a square is a patch of ground, and the ground is not covered
+        // until every layer over it is down.
+        for (const url of tileURLs(sources, z, x, y)) {
+          urls.push(url);
+          cellOfURL.push(index);
+        }
       }
       cells.push({
         x: bucket.x,
         y: bucket.y,
         bbox: tileBounds(gridZ, bucket.x, bucket.y),
-        total: bucket.tiles.length,
+        total: bucket.tiles.length * sources.length,
       });
     });
     return { gridZ: gridZ, cells: cells, urls: urls, cellOfURL: cellOfURL };
@@ -1120,8 +1348,9 @@
    * tiles: an area wholly inside a larger download genuinely is available
    * offline, and should say so.
    *
-   * @param {string} template A ``{z}``/``{x}``/``{y}`` tile URL template —
-   *   the ACTIVE basemap's, which is what makes the answer per-basemap.
+   * @param {string | string[][]} spec The ACTIVE basemap's tile sources —
+   *   which is what makes the answer per-basemap. A template string or the
+   *   ``string[][]`` shape ``tileSources`` normalises to.
    * @param {{z?: Object<string, number[] | Object<string, number[]>>}} blob
    *   A full download blob — fetched from
    *   ``/api/region-basemap-tiles/?id=...`` or built locally by
@@ -1131,18 +1360,25 @@
    *   no ``z``), and for an empty tile set — "nothing is cached" must
    *   never read as "all of nothing is cached, so yes".
    */
-  function blobFullyCached(template, blob, cached) {
-    if (!template || !blob || !blob.z) return false;
+  function blobFullyCached(spec, blob, cached) {
+    const sources = tileSources(spec);
+    if (!sources.length || !blob || !blob.z) return false;
     const cachedSet = cached instanceof Set ? cached : new Set(cached || []);
     let seen = 0;
-    for (const z of Object.keys(blob.z)) {
-      const rows = zoomRows(blob.z[z]);
-      for (const y of Object.keys(rows)) {
-        const [xmin, xmax] = rows[y];
+    for (const zKey of Object.keys(blob.z)) {
+      const z = Number(zKey);
+      const rows = zoomRows(blob.z[zKey]);
+      for (const yKey of Object.keys(rows)) {
+        const y = Number(yKey);
+        const [xmin, xmax] = rows[yKey];
         for (let x = xmin; x <= xmax; x++) {
-          const url = template.replace('{z}', z).replace('{x}', String(x)).replace('{y}', y);
-          if (!cachedSet.has(url)) return false;
-          seen++;
+          // SNOW-843: every source, at the host MapLibre will ask for it.
+          // One layer of a multi-source style being present is not the area
+          // being available offline.
+          for (const url of tileURLs(sources, z, x, y)) {
+            if (!cachedSet.has(url)) return false;
+            seen++;
+          }
         }
       }
     }
@@ -1183,6 +1419,11 @@
   self.pwaBasemapDownloadCore = Object.freeze({
     downloadSucceeded: downloadSucceeded,
     zoomRows: zoomRows,
+    tileSources: tileSources,
+    tileSourceCount: tileSourceCount,
+    tileSourcesKey: tileSourcesKey,
+    tileURLs: tileURLs,
+    sourceScaledMb: sourceScaledMb,
     rangesToTileURLs: rangesToTileURLs,
     lonLatToTile: lonLatToTile,
     tileRangesForBBox: tileRangesForBBox,

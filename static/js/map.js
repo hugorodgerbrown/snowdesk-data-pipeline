@@ -236,6 +236,12 @@
   // e2e SW-stripping helpers define the property with ``value: undefined``
   // (so the key is present but the value is nullish), and dereferencing
   // ``navigator.serviceWorker.ready`` would throw and abort map init.
+  // SNOW-843: assigned inside the service-worker block below, and called
+  // from the `style.load` hook once the map exists — declared out here
+  // because those two are in the same scope but not the same block, and a
+  // page with no service worker must still be able to call it harmlessly.
+  let learnBasemapTileOrigins = () => {};
+
   if (navigator.serviceWorker) {
     // SNOW-691: the slope raster's origin joins the list. It is not a
     // basemap — it never reaches BASEMAP_OPTIONS and has no picker row — but
@@ -245,18 +251,28 @@
     // the layer goes blank the moment the signal does, which is precisely
     // the situation it is most wanted in. (Pinning slope tiles as part of a
     // deliberate area download is SNOW-692; this is the passive half.)
-    const basemapOrigins = [
-      ...new Set(
-        Object.values(BASEMAP_OPTIONS)
-          .filter((url) => typeof url === 'string' && url)
-          .map((url) => new URL(url).origin)
-          .concat(SLOPE_TILE_URL ? [new URL(SLOPE_TILE_URL).origin] : []),
-      ),
-    ];
+    //
+    // SNOW-843: these are the origins of the style DOCUMENTS, and a style's
+    // TILES are very often served from somewhere else entirely — swisstopo
+    // publishes its styles on `vectortiles.geo.admin.ch` and its tiles on
+    // `vectortiles0-4.geo.admin.ch`, five origins none of which appear
+    // anywhere in the catalogue. Every swisstopo tile was therefore
+    // classified 'unclassified' by the worker and never opportunistically
+    // cached at all: the passive half of offline basemap rendering simply
+    // did not exist for that basemap. The set below is the SEED; the live
+    // style's own resolved tile URLs join it via `learnBasemapTileOrigins`
+    // once MapLibre has settled (see the `style.load` hook further down).
+    const basemapOrigins = new Set(
+      Object.values(BASEMAP_OPTIONS)
+        .filter((url) => typeof url === 'string' && url)
+        .map((url) => new URL(url).origin)
+        .concat(SLOPE_TILE_URL ? [new URL(SLOPE_TILE_URL).origin] : []),
+    );
     const registerBasemapOrigins = (registration) => {
+      const origins = [...basemapOrigins];
       const target = registration && registration.active;
       if (target) {
-        target.postMessage({ type: 'register-basemap-origins', origins: basemapOrigins });
+        target.postMessage({ type: 'register-basemap-origins', origins: origins });
       }
       // SNOW-487: also mirror the allowlist into the durable meta:app
       // store, so a service worker that gets idle-terminated and later
@@ -270,13 +286,98 @@
       if (window.pwaDb && typeof window.pwaDb.put === 'function') {
         try {
           window.pwaDb
-            .put('meta:app', { key: 'basemap.origins', value: basemapOrigins })
+            .put('meta:app', { key: 'basemap.origins', value: origins })
             .catch(() => {});
         } catch (_err) {
           // Ignore — persistence is best-effort.
         }
       }
     };
+
+    /**
+     * Re-send the allowlist, from wherever this is called.
+     *
+     * @returns {void}
+     */
+    const reRegisterBasemapOrigins = () => {
+      navigator.serviceWorker
+        .getRegistration()
+        .then(registerBasemapOrigins)
+        .catch(() => {});
+    };
+
+    // SNOW-843: fold in the origins the LIVE style actually fetches from —
+    // every vector source's resolved tile URLs (`map.getSource(id).tiles`,
+    // which is what `activeBasemapTileSources` reads), plus the sprite and
+    // glyph URLs, which are equally cross-origin and equally needed for a
+    // basemap to render offline.
+    //
+    // Accumulated rather than replaced: switching basemap must not revoke
+    // the previous one's origins, or panning back over ground cached under
+    // it would stop being served. The set is bounded by the catalogue —
+    // a handful of hosts per basemap — and the worker replaces its whole
+    // allowlist from each message, so the union has to be sent every time.
+    //
+    // Only re-registers when the set actually GREW: this runs once per
+    // style load, and a message that changes nothing is one the worker
+    // still has to process.
+    learnBasemapTileOrigins = (liveMap) => {
+      if (!liveMap || typeof liveMap.getStyle !== 'function') return;
+      let style;
+      try {
+        style = liveMap.getStyle();
+      } catch (_err) {
+        // A style mid-swap can throw rather than answer — the next load
+        // calls this again.
+        return;
+      }
+      if (!style) return;
+      const before = basemapOrigins.size;
+      const remember = (url) => {
+        if (typeof url !== 'string' || !url) return;
+        try {
+          basemapOrigins.add(new URL(url, window.location.href).origin);
+        } catch (_err) {
+          // A template with a placeholder where the host goes is not a
+          // URL we can read an origin from; nothing to record.
+        }
+      };
+      for (const sourceId of Object.keys(style.sources || {})) {
+        const runtime = liveMap.getSource(sourceId);
+        const tiles = (runtime && runtime.tiles) || style.sources[sourceId].tiles;
+        if (Array.isArray(tiles)) tiles.forEach(remember);
+      }
+      remember(typeof style.sprite === 'string' ? style.sprite : null);
+      remember(style.glyphs);
+      if (basemapOrigins.size !== before) reRegisterBasemapOrigins();
+    };
+
+    // SNOW-843: and seed from what the last session learned, before this
+    // one's style has had a chance to settle. Without it, boot overwrites
+    // the durable row with the catalogue-only seed, and a device that comes
+    // up OFFLINE — where the style document cannot load, so no tile origin
+    // is ever learned — spends the whole session with its tile origins
+    // unclassified. A stale origin surviving a catalogue change is the
+    // accepted cost: the allowlist only permits caching, and nothing on the
+    // page requests a basemap that is no longer offered.
+    if (window.pwaDb && typeof window.pwaDb.get === 'function') {
+      try {
+        window.pwaDb
+          .get('meta:app', 'basemap.origins')
+          .then((row) => {
+            const stored = Array.isArray(row && row.value) ? row.value : [];
+            const before = basemapOrigins.size;
+            for (const origin of stored) {
+              if (typeof origin === 'string' && origin) basemapOrigins.add(origin);
+            }
+            if (basemapOrigins.size !== before) reRegisterBasemapOrigins();
+          })
+          .catch(() => {});
+      } catch (_err) {
+        // Ignore — the seed above stands on its own.
+      }
+    }
+
     navigator.serviceWorker.ready.then(registerBasemapOrigins).catch(() => {});
     // .ready resolves once the registration has an *active* worker, but on
     // the very first visit that worker is not yet *controlling* this page
@@ -284,7 +385,7 @@
     // so a freshly activated worker — the first-install case, and after any
     // update — learns the allowlist promptly, without a full page reload.
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      navigator.serviceWorker.getRegistration().then(registerBasemapOrigins).catch(() => {});
+      reRegisterBasemapOrigins();
     });
   }
 
@@ -635,6 +736,19 @@
     if (!map.isStyleLoaded()) return;
     if (map.getStyle()?.name === 'snowdesk-offline-fallback') return;
     basemapFallbackActive = false;
+  });
+
+  // SNOW-843: teach the service worker which origins THIS style fetches
+  // from, so its tiles can be opportunistically cached (see
+  // `learnBasemapTileOrigins` above for why the style catalogue alone is
+  // not enough). Twice per style, deliberately: `style.load` catches a
+  // source whose `tiles` are declared inline, and the following `idle`
+  // catches one that had to resolve a TileJSON document first. The second
+  // call is a no-op unless it finds an origin the first did not — nothing
+  // is re-sent for a set that has not grown.
+  map.on('style.load', () => {
+    learnBasemapTileOrigins(map);
+    map.once('idle', () => learnBasemapTileOrigins(map));
   });
 
   // SNOW-483: retry the real basemap once connectivity returns. Reuses the
@@ -4293,9 +4407,9 @@
   // right now is still one tap from being accounted for.
   //
   // So this reads basemapDownloadedTemplates()
-  // (static/js/map_basemap_downloads.js) for the DISTINCT templates
-  // actually recorded, keeps the one matching the live style's own tile
-  // template, and runs cachedTilesFromURLs against that alone (still a real
+  // (static/js/map_basemap_downloads.js) for the DISTINCT tile-source sets
+  // actually recorded, keeps the one matching the live style's own sources,
+  // and runs cachedTilesFromURLs against that alone (still a real
   // Cache Storage read per tile — "probed, never stored" above still holds,
   // this is not a switch to painting stored record geometry). Every square
   // it paints therefore belongs to the basemap under it, which is what lets
@@ -4352,10 +4466,10 @@
         _refreshDownloadedWhenStyleSettles();
         return;
       }
-      const activeTemplate = activeBasemapTileTemplate(map);
-      if (!activeTemplate) {
+      const activeSources = activeBasemapTileSources(map);
+      if (!activeSources) {
         // The style is settled (guarded above) but declares no vector tile
-        // source — SNOW-483's inline fallback style, swapped in when the
+        // sources — SNOW-483's inline fallback style, swapped in when the
         // basemap's own style document can't be fetched. There is no basemap
         // on screen, so there is no "current basemap" to filter to, and
         // squares drawn here would be attributed to a basemap that is not
@@ -4383,13 +4497,16 @@
       // stored record geometry (see the block comment above).
       //
       // `basemapDownloadedTemplates()` returns every downloaded basemap's
-      // template; the ones that are not on screen are dropped here rather
-      // than in that reader, which several other callers share.
+      // tile sources; the ones that are not on screen are dropped here
+      // rather than in that reader, which several other callers share.
       const activeKey = activeBasemapKey();
+      // SNOW-843: source SETS are compared, not template strings — see
+      // `pwaBasemapDownloadCore.tileSourcesKey`.
+      const activeSourcesKey = core.tileSourcesKey(activeSources);
       const features = [];
-      for (const { template } of templates) {
-        if (template !== activeTemplate) continue;
-        for (const tile of core.cachedTilesFromURLs(template, cached, CACHED_TILES_ZOOM)) {
+      for (const { tileSources } of templates) {
+        if (core.tileSourcesKey(tileSources) !== activeSourcesKey) continue;
+        for (const tile of core.cachedTilesFromURLs(tileSources, cached, CACHED_TILES_ZOOM)) {
           features.push({
             type: 'Feature',
             properties: {},

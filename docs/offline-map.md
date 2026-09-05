@@ -372,7 +372,17 @@ The SW classifies every fetch into one of four buckets:
   basemap picker's `data-basemap-url` attributes — a service worker has
   no DOM, so it cannot read those itself. Every basemap in the picker is
   included, not just the active one, so switching basemap mid-session is
-  covered. SNOW-487: `map.js` also mirrors the same origin list into the
+  covered. SNOW-843: those are the origins of the style DOCUMENTS, which
+  is not where the tiles come from — swisstopo publishes its styles on
+  `vectortiles.geo.admin.ch` and its tiles on `vectortiles0-4.geo.admin.ch`
+  — so the catalogue is only the seed. `learnBasemapTileOrigins`
+  (`static/js/map.js`) folds in the live style's own resolved tile, sprite
+  and glyph origins on every `style.load` (and the `idle` after it, for a
+  source that had to resolve a TileJSON first), re-registering only when
+  the set grows. The set accumulates across switches and sessions, so a
+  device that boots offline still classifies the tiles it holds; see
+  [`docs/decisions/a-basemap-is-a-list-of-tile-sources.md`](decisions/a-basemap-is-a-list-of-tile-sources.md).
+  SNOW-487: `map.js` also mirrors the same origin list into the
   durable `meta:app` IndexedDB store under the key `basemap.origins`,
   because the in-memory `_basemapOrigins` Set does not survive the
   browser terminating an idle worker — a later `fetch` event runs in a
@@ -719,8 +729,10 @@ longer a flat green — it takes one of five `--color-basemap-*` tokens
 (`src/css/main.css`), one per `settings.BASEMAP_STYLES` key, matching the
 key currently selected in the basemap picker (`activeBasemapKey()`,
 `static/js/map_basemap_downloads.js`, reading the picker's checked radio —
-display-only, unlike the `template` the eviction logic above actually
-keys on). The custom-area control's own roundel (below) uses the exact
+display-only, unlike the tile sources the eviction logic above actually
+keys on — SNOW-843: a record's `template` field carries the whole
+`string[][]` source spec now, compared through
+`pwaBasemapDownloadCore.tileSourcesKey`). The custom-area control's own roundel (below) uses the exact
 same rule, unconditionally — an EARLIER version of this ticket instead
 aggregated over the STORED areas' own `basemapKey`s (an identity colour
 only when every non-orphaned area agreed on one), which Hugo caught: on
@@ -822,8 +834,12 @@ trip.
    `/api/region-basemap-tiles/?id=<region_id>`.
 2. `static/js/basemap_download_core.js`'s `tileGridPlan` expands the
    blob's `z` tile-index ranges into `{z}/{x}/{y}` URLs against the
-   active basemap's resolved tile template
-   (`activeBasemapTileTemplate(MAP)`), **grouped by progress-grid cell**
+   active basemap's resolved tile SOURCES
+   (`activeBasemapTileSources(MAP)` — SNOW-843: every vector source in the
+   style, each at the host MapLibre's own `urls[(x + y) % urls.length]`
+   rule picks for that tile, so a two-source five-host style like
+   swisstopo fetches two URLs per tile rather than one from a single
+   fixed host), **grouped by progress-grid cell**
    (tile-grid rework) — the same URL set `rangesToTileURLs` would produce, in the
    order that makes the on-map grid fill one square at a time. It returns
    the grid's cells alongside the URLs. `rangesToTileURLs` remains a
@@ -835,7 +851,16 @@ trip.
 3. `map.js` assembles the rest of the URL list: same-origin data feeds
    in sw.js's `STATIC_PATHS` (regions/major-regions/sub-regions/
    resorts/ratings, one per currently-enabled country), the active
-   basemap's style JSON + sprite JSON/PNG (1×/2×). Glyph PBFs are still
+   basemap's style JSON + sprite JSON/PNG (1×/2×), and (SNOW-843) the
+   **TileJSON document each vector source is declared by**
+   (`activeBasemapSourceDocumentURLs`, for a source using `url:` rather
+   than an inline `tiles:` array — both swisstopo sources do). That
+   document is a hard dependency of rendering: without it MapLibre offline
+   cannot learn a single tile URL, so the pinned tiles are unreachable and
+   the basemap is blank however complete the download was. Browsing caches
+   it into `BASEMAP_CACHE`, but that cache is FIFO-trimmed while pinned
+   buckets are not — the same decay SNOW-742 fixed for glyphs, one
+   document further up — so a download pins it outright. Glyph PBFs are still
    not *enumerated* — MapLibre only requests the specific ranges the
    current labels use, and deriving that set ourselves would mean
    re-implementing its range logic. But they are **promoted**: at the end
