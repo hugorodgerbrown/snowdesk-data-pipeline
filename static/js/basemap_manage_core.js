@@ -72,10 +72,11 @@
  *     ``name`` upstream, by ``map.js``'s ``basemapDownloadedAreas()``
  *     (which has the translation catalogue this module does not), not
  *     built here.
- *   groupRowsByKind(rows)
- *     SNOW-645 review: manageRows' own rows partitioned into
- *     {region, custom} — the sheet's REGIONS / CUSTOM AREAS grouping —
- *     without re-sorting either group.
+ *   groupRowsByBasemap(rows, order)
+ *     SNOW-832: manageRows' own rows grouped by the BASEMAP each was
+ *     downloaded under, in the picker's own order — the sheet's group
+ *     headings — without re-sorting any group. Replaces SNOW-645's
+ *     groupRowsByKind; a row's kind moved down into its own meta line.
  *   reconcileAreas(recorded, storedAreaIds, bytesById, accountAreas)
  *     The recorded areas unioned with the pinned buckets actually on
  *     disk, so a download that failed partway is visible rather than
@@ -228,12 +229,19 @@
   /**
    * The ordered, labelled rows the sheet renders.
    *
-   * Ordered **largest first**. The surface exists so a user can decide
-   * what to remove, and the download worth removing is the big one;
-   * newest-first would instead order by an axis the user is not choosing
-   * along. ``savedAt`` (newest first) then ``id`` break ties, so a set of
-   * equal-sized areas renders in a stable order across re-opens rather
-   * than reshuffling on every render.
+   * Ordered **regions first, then custom areas, alphabetically within
+   * each** (SNOW-832), tie-broken by ``id`` so a set of identically-named
+   * areas renders in a stable order across re-opens.
+   *
+   * It was largest-first through SNOW-831, on the reasoning that the
+   * surface exists so a user can decide what to remove and the download
+   * worth removing is the big one. Hugo's handoff settles it the other
+   * way, and the reason is that the sheet stopped being a list: it is
+   * grouped by basemap now, so a row is FOUND before it is judged, and a
+   * list a reader has to scan for a name cannot be ordered by a number.
+   * The sizes are still on every row, and ``budgetSegments()`` re-sorts by
+   * bytes itself for the bar, so nothing that reads by size lost its
+   * ordering — only the list did.
    *
    * @param {Array<{id: string, name?: string, bytes?: number,
    *   savedAt?: string, basemapKey?: string|null}>} areas Areas as
@@ -355,11 +363,12 @@
       });
     }
 
+    // SNOW-832: kind, then name. See this function's own docstring for why
+    // the size axis stopped being the ordering one.
     rows.sort(function (a, b) {
-      if (a.bytes !== b.bytes) return b.bytes - a.bytes;
-      var ta = Date.parse(a.savedAt) || 0;
-      var tb = Date.parse(b.savedAt) || 0;
-      if (ta !== tb) return tb - ta;
+      if (a.kind !== b.kind) return a.kind === 'custom' ? 1 : -1;
+      var byLabel = a.label.localeCompare(b.label);
+      if (byLabel !== 0) return byLabel;
       return a.id.localeCompare(b.id);
     });
 
@@ -367,29 +376,84 @@
   }
 
   /**
-   * Partition ``manageRows``' own rows into REGIONS and CUSTOM AREAS
-   * (SNOW-645 review — Hugo's "grouped by kind" sheet redesign).
+   * ``manageRows``' own rows grouped by the BASEMAP each was downloaded
+   * under (SNOW-832 — Hugo's "group by basemap, not by kind" handoff).
    *
-   * A ``filter``, not a re-sort: each group keeps ``manageRows``' own
-   * largest-first (then recency, then id) order, so a group's own biggest
-   * area still leads it and the sheet's own render() never has to re-apply
-   * that ordering itself.
+   * This replaces ``groupRowsByKind``. SNOW-645 split the sheet under two
+   * fixed REGIONS / CUSTOM AREAS headings and carried the basemap as each
+   * row's subtitle; the handoff turns that inside out, because the basemap
+   * is the axis along which a download is or is not usable — switching
+   * basemap is switching to a map you have not stored — while the kind is
+   * merely how it was framed, which is why the kind moves down into the
+   * row's own meta line beside the size.
    *
-   * @param {Array<{kind: string}>} rows As ``manageRows`` returns them.
-   * @returns {{region: Array<Object>, custom: Array<Object>}}
+   * A grouping, not a re-sort: each group keeps ``manageRows``' own
+   * regions-then-custom, alphabetical order, so the sheet's ``render()``
+   * never has to re-apply that ordering itself.
+   *
+   * @param {Array<{kind: string, basemapKey?: string, bytes?: number}>} rows
+   *   As ``manageRows`` returns them.
+   * @param {string[]} [order] The canonical basemap order — the picker's
+   *   own, via ``map_basemap_downloads.js``'s ``basemapOrder()``, so the
+   *   sheet lists basemaps in the order the user is offered them rather
+   *   than in whatever order they happen to have been downloaded. A key
+   *   the order does not mention still gets its group (a deployment
+   *   ``BASEMAP=`` override, or a style since retired from the picker):
+   *   dropping the rows would hide real downloads, so those groups follow
+   *   the known ones, in first-appearance order.
+   * @returns {Array<{basemapKey: string, rows: Array<Object>,
+   *   totalBytes: number}>} One entry per basemap that actually has rows —
+   *   an empty group is never returned, because a heading with nothing
+   *   under it says a basemap has downloads when it has none. The KEYLESS
+   *   group (``basemapKey: ''`` — a record written before SNOW-645, an
+   *   orphaned bucket, an account row with no basemap) is always LAST,
+   *   whatever the order says: it is the group that cannot be named, so it
+   *   is the one to read after the ones that can. ``totalBytes`` is what
+   *   THIS DEVICE holds for the group — an account-only row contributes 0,
+   *   so a group's total can legitimately read smaller than its row count
+   *   suggests.
    */
-  function groupRowsByKind(rows) {
+  function groupRowsByBasemap(rows, order) {
     var list = Array.isArray(rows) ? rows : [];
-    return {
-      region: list.filter(function (row) {
-        return row && row.kind !== 'custom';
-      }),
-      custom: list.filter(function (row) {
-        return row && row.kind === 'custom';
-      }),
-    };
-  }
+    var canonical = Array.isArray(order) ? order : [];
 
+    var byKey = Object.create(null);
+    var seen = [];
+    for (var i = 0; i < list.length; i += 1) {
+      var row = list[i];
+      if (!row) continue;
+      var key = row.basemapKey || '';
+      if (!(key in byKey)) {
+        byKey[key] = { basemapKey: key, rows: [], totalBytes: 0 };
+        seen.push(key);
+      }
+      byKey[key].rows.push(row);
+      var bytes = Number(row.bytes);
+      if (Number.isFinite(bytes) && bytes > 0) byKey[key].totalBytes += bytes;
+    }
+
+    // Canonical order first, then anything the order does not mention in
+    // the order it was met, then the keyless group. Built as a list of
+    // keys rather than by sorting the groups, so "not in the order at all"
+    // needs no sentinel index to stand in for a position it does not have.
+    var ordered = [];
+    var taken = Object.create(null);
+    for (var c = 0; c < canonical.length; c += 1) {
+      var known = canonical[c];
+      if (!known || known === '' || taken[known] || !(known in byKey)) continue;
+      taken[known] = true;
+      ordered.push(byKey[known]);
+    }
+    for (var s = 0; s < seen.length; s += 1) {
+      var key2 = seen[s];
+      if (key2 === '' || taken[key2]) continue;
+      taken[key2] = true;
+      ordered.push(byKey[key2]);
+    }
+    if ('' in byKey) ordered.push(byKey['']);
+
+    return ordered;
+  }
 
   /**
    * The union of what is RECORDED as downloaded, what is actually stored
@@ -629,7 +693,7 @@
     clampBudgetMb: clampBudgetMb,
     budgetSummary: budgetSummary,
     manageRows: manageRows,
-    groupRowsByKind: groupRowsByKind,
+    groupRowsByBasemap: groupRowsByBasemap,
     reconcileAreas: reconcileAreas,
     budgetSegments: budgetSegments,
     BUDGET_CHOICES_MB: BUDGET_CHOICES_MB,

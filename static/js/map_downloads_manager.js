@@ -163,15 +163,25 @@
  *                                keeping a flag of its own that could
  *                                drift from it.
  *   window.pwaBasemapDownloads   ``areas()``, ``evict(ids)``, (SNOW-635)
- *                                ``rename(areaId, name)`` and (SNOW-645
- *                                review) ``orphanBasemapKey(areaId)`` —
- *                                the read, the delete, the rename, and
- *                                an orphaned row's inferred (never
- *                                stored) basemap for its pale rule.
- *                                Without it the sheet opens and honestly
- *                                reports that it can see nothing, which
- *                                is the truthful answer when the module
- *                                that owns the records hasn't loaded.
+ *                                ``rename(areaId, name)``, (SNOW-645)
+ *                                ``basemapLabel(key)`` and (SNOW-832)
+ *                                ``basemapOrder()`` — the read, the
+ *                                delete, the rename, and the two halves
+ *                                of a group heading: what a basemap is
+ *                                called and where it sits in the picker's
+ *                                own order. Without it the sheet opens
+ *                                and honestly reports that it can see
+ *                                nothing, which is the truthful answer
+ *                                when the module that owns the records
+ *                                hasn't loaded.
+ *                                SNOW-832 dropped the one call this
+ *                                module made to that bridge's
+ *                                ``orphanBasemapKey(areaId)``: it existed
+ *                                to tint an orphaned row's left-edge
+ *                                rule, and identity moved to the group
+ *                                heading, which is a claim about
+ *                                belonging that an inference may not
+ *                                make.
  *   window.pwaMapOverlays        ``register()`` + ``opening()`` (SNOW-658).
  *                                This sheet used to close ONE named
  *                                sibling on its way in
@@ -271,6 +281,28 @@
     // "Incomplete download" shortened to "Incomplete" in a later review
     // pass, matching Hugo's second mock.
     'kind-incomplete': 'Incomplete',
+    // SNOW-832: what KIND of download a row is. It used to be said by the
+    // heading the row sat under (SNOW-645's REGIONS / CUSTOM AREAS); the
+    // headings now name basemaps, so the kind moved into the row's own
+    // meta line beside the size — "Region · 5.1 MB". The separator lives
+    // inside `row-meta` rather than being concatenated here, matching how
+    // every server-rendered meta line on the other panels is written
+    // (favourites' "{{ region }} · saved {{ when }}").
+    'kind-region': 'Region',
+    'kind-custom': 'Custom area',
+    'row-meta': '%(kind)s · %(size)s',
+    // SNOW-832: the group of rows whose basemap cannot be named — a
+    // record written before SNOW-645, an orphaned bucket, an account row
+    // with no basemap. Named rather than left blank: an unlabelled
+    // heading over real rows reads as a rendering fault.
+    'group-unknown': 'Unknown basemap',
+    // SNOW-646/832: the budget bar's accessible equivalent. Segmented by
+    // basemap, the bar states a composition the panel says nowhere else,
+    // so it is a `role="img"` with a description rather than decoration.
+    // Built per render from budgetSegments() — see render().
+    'budget-bar-label': 'Space used, by base map: %(segments)s',
+    'budget-bar-empty': 'Nothing downloaded on this device',
+    'budget-segment': '%(basemap)s %(size)s',
     'confirm-remove':
       "Remove the offline map for %(name)s? This frees %(size)s. You can " +
       "download it again when you're back online.",
@@ -312,14 +344,12 @@
     // looks different.
     'not-on-device': 'On your account — not downloaded here',
     'download-here-row-label': 'Download %(name)s to this device',
-    'free-space-row-label': 'Free up the space %(name)s uses on this device',
-    // The two destructive verbs' confirmations. They differ in exactly the
-    // clause that differs in effect, so the choice can be judged before it
-    // is made rather than after.
-    'confirm-free-space':
-      'Remove the offline map for %(name)s from this device? This frees ' +
-      '%(size)s and keeps %(name)s on your account, so you can download it ' +
-      'again in one tap.',
+    // SNOW-832 removed `free-space-row-label` and `confirm-free-space`
+    // with the control they belonged to — see
+    // includes/_map_downloads_row_actions.html for why the second
+    // destructive verb went. The two confirmations below are the whole
+    // set again: one for a row with an account row behind it, one for a
+    // row without.
     'confirm-forget':
       'Remove %(name)s from your account and from this device? This frees ' +
       '%(size)s here and removes it from your other devices too.',
@@ -462,10 +492,13 @@
    * re-reading the area list — verifying the state rather than trusting
    * the attempt.
    *
-   * SNOW-749: this is the "free up space" half. It leaves the account row
-   * alone, which is what lets the area come back in one tap — and it is
-   * the same call SNOW-586's automatic budget eviction makes, so an
-   * evicted area survives there too.
+   * The LOCAL half of the trash, and only that: it leaves the account row
+   * alone, so ``forgetArea`` below is what pairs it with the account
+   * removal. It was also SNOW-749's "free up space" control, on its own —
+   * that control is gone (SNOW-832), and this is deliberately unchanged,
+   * because it is the same call SNOW-586's automatic budget eviction
+   * makes and an area evicted THERE must still survive as an account row
+   * to re-download.
    *
    * @param {string} areaId
    * @returns {Promise<boolean>} Whether the area's local copy is now
@@ -583,21 +616,20 @@
       isCustomAreaId: downloadCore()?.isCustomAreaId,
     });
 
-    // SNOW-645 review: an orphaned row's left-edge rule should still read
-    // as a pale version of ITS basemap's colour where that can be
-    // inferred, not a flat neutral — see buildRow's own comment and
-    // map_basemap_downloads.js's orphanBasemapKey (whose own docstring
-    // has the "decoration only, not a record" caveat). Resolved here, in
-    // parallel, before any row is built — a row that hasn't resolved yet
-    // has no rule to paint.
-    await Promise.all(
-      rows
-        .filter((row) => row.orphaned)
-        .map(async (row) => {
-          row.recoveredBasemapKey =
-            (await window.pwaBasemapDownloads?.orphanBasemapKey?.(row.id)) || null;
-        }),
-    );
+    // SNOW-832 removed a pre-pass here. SNOW-645 resolved every orphaned
+    // row's basemap by INFERENCE (map_basemap_downloads.js's
+    // `orphanBasemapKey`, which matches an orphan bucket's own cached
+    // tile URLs against the templates on record) purely to give its
+    // left-edge rule a pale version of that colour instead of a flat
+    // neutral.
+    //
+    // That rule is gone: basemap identity belongs to the GROUP HEADING
+    // now, and a group is a claim about which basemap a download BELONGS
+    // to — which is exactly the claim `orphanBasemapKey`'s own docstring
+    // forbids its answer from making ("decoration only, never a stored
+    // fact"). So an orphan keeps its empty `basemapKey` and lands in the
+    // unnamed group, which is the group for rows whose basemap is not
+    // recorded. Its own "Incomplete" meta line still says what it is.
 
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';
@@ -641,6 +673,8 @@
     const summaryValue = sheet.querySelector('[data-downloads-summary-value]');
     if (summaryValue) summaryValue.textContent = core.formatMegabytes(summary.usedBytes);
 
+    const segments = core.budgetSegments(list);
+
     const bar = sheet.querySelector('[data-downloads-bar]');
     if (bar) {
       bar.style.width = summary.pct + '%';
@@ -653,7 +687,7 @@
       // row swatches use, so the two readings of "what basemap is this"
       // agree. JS sets the key and the grow weight; nothing here touches
       // a colour or builds a class string.
-      for (const segment of core.budgetSegments(list)) {
+      for (const segment of segments) {
         const el = document.createElement('div');
         el.className = 'basemap-identity-fill h-full';
         el.dataset.basemapKey = segment.basemapKey;
@@ -673,6 +707,17 @@
       // budget) has to clear it on the next render.
       track.classList.toggle('ring-2', summary.overBudget);
       track.classList.toggle('ring-status-error-text', summary.overBudget);
+      // SNOW-646/832: the bar's accessible equivalent. The template marks
+      // it `role="img"`; the description is built here because it is the
+      // composition of THIS device's downloads, which no static string
+      // can state. Each segment is named with its share — the same list
+      // that paints the bar, in the same order, so what a screen reader
+      // hears and what a sighted reader sees cannot disagree.
+      //
+      // Not a `progressbar`: the reading is "what is in it", not "how far
+      // along". The "Using X of Y" sentence beside it already carries the
+      // proportion, which is why this one carries only the parts.
+      track.setAttribute('aria-label', budgetBarLabel(segments));
     }
 
     const over = sheet.querySelector('[data-downloads-over]');
@@ -681,42 +726,43 @@
     const empty = sheet.querySelector('[data-downloads-empty]');
     if (empty) empty.hidden = rows.length > 0;
 
-    // SNOW-645 review: rows are grouped by kind — REGIONS, then CUSTOM
-    // AREAS — each under its own heading, rather than one flat list.
-    // groupRowsByKind partitions manageRows' own largest-first order
-    // (never re-sorts it), so a group's own biggest area still leads it.
-    // A group with no rows has its WHOLE wrapper (heading and list
-    // together) hidden — see the sheet's own template comment for why an
-    // empty heading is never shown.
-    const grouped = core.groupRowsByKind(rows);
-    const groupOrder = ['region', 'custom'];
-    const groupLists = {
-      region: sheet.querySelector('[data-downloads-list-region]'),
-      custom: sheet.querySelector('[data-downloads-list-custom]'),
-    };
-    // SNOW-645 review: each ROW now carries its own `border-t` (the row
-    // template's own `<li>` — see buildRow), replacing the `divide-y` the
-    // `<ul>` used to carry — reconciled against the design, which draws
-    // no line under the group heading (so the FIRST row's own top border
-    // is what separates heading from list now) but DOES close the LAST
-    // visible group off with a line underneath its last row. Which group
-    // is "last" is data-driven (either can be empty and hidden), so it
-    // cannot be expressed as a fixed CSS selector — this finds it and
-    // toggles a border-b/border-border pair onto that ONE list's own
-    // <ul>, clearing it from the other.
-    const lastVisibleKind = groupOrder
-      .filter((kind) => grouped[kind].length > 0)
-      .pop();
-    for (const kind of groupOrder) {
-      const listEl = groupLists[kind];
-      const wrapper = sheet.querySelector('[data-downloads-group="' + kind + '"]');
-      const kindRows = grouped[kind];
-      if (wrapper) wrapper.hidden = kindRows.length === 0;
-      if (!listEl) continue;
-      for (const row of kindRows) listEl.appendChild(buildRow(row));
-      const isLastVisible = kind === lastVisibleKind;
-      listEl.classList.toggle('border-b', isLastVisible);
-      listEl.classList.toggle('border-border', isLastVisible);
+    // SNOW-832: "Display on the map" governs the squares this panel's
+    // downloads draw. With nothing downloaded there are no squares, so the
+    // switch is a control that cannot do what it says — and a user who
+    // turns it on and sees no change learns the wrong thing about it.
+    // Hidden, not disabled: unlike the add-trigger's offline state there
+    // is nothing here to explain, and the switch comes back the moment
+    // there is a download for it to show. The hook is on the whole strip
+    // (includes/_map_overlay_toggle.html) so its label and its box go with
+    // it rather than an empty box being left behind.
+    const overlayStrip = sheet.querySelector('[data-panel-overlay-toggle]');
+    if (overlayStrip) overlayStrip.hidden = rows.length === 0;
+
+    // SNOW-832: rows are grouped by BASEMAP, each group under a heading
+    // carrying that basemap's own identity colour, in the order the
+    // picker offers them (basemapOrder() — see its own docstring for why
+    // the order is read off the picker's DOM rather than declared here).
+    // This replaces SNOW-645's two fixed REGIONS / CUSTOM AREAS wrappers;
+    // a row's kind is now its own meta line (see buildRow).
+    //
+    // groupRowsByBasemap groups manageRows' own regions-then-custom,
+    // alphabetical order without re-sorting it, and never returns an
+    // empty group — so there is no hidden-wrapper state to manage here,
+    // unlike the two wrappers this replaces.
+    const groupHost = sheet.querySelector('[data-downloads-groups]');
+    // Resolved from the CLONED body, not from the document: the group
+    // template is nested inside the body template (it belongs to this
+    // panel's rows partial), and a `<template>`'s contents are not in the
+    // document, so `document.getElementById` would never find it. Deep-
+    // cloning a `<template>` clones its own content fragment with it,
+    // which is what makes the nesting work at all.
+    const groupTemplate = /** @type {HTMLTemplateElement|null} */ (
+      sheet.querySelector('#map-downloads-group-template')
+    );
+    if (groupHost && groupTemplate) {
+      for (const group of core.groupRowsByBasemap(rows, basemapOrder())) {
+        groupHost.appendChild(buildGroup(groupTemplate, group, core));
+      }
     }
 
     const select = /** @type {HTMLSelectElement|null} */ (
@@ -755,6 +801,124 @@
       addButton.setAttribute('aria-disabled', 'true');
       addButton.textContent = STRINGS['add-disabled'] || '';
     }
+  }
+
+  /**
+   * The picker's basemap order, through map.js's own bridge (SNOW-832).
+   *
+   * Reached through ``window.pwaBasemapDownloads`` rather than as a bare
+   * identifier for the same load-order reason ``basemapLabel`` is — see
+   * the note above ``readMeta``. Optional throughout: with no bridge (or
+   * an older cached shell whose bridge predates this ticket) the groups
+   * fall back to first-appearance order, which is an order, just not the
+   * curated one.
+   *
+   * @returns {string[]}
+   */
+  function basemapOrder() {
+    return window.pwaBasemapDownloads?.basemapOrder?.() || [];
+  }
+
+  /**
+   * A basemap key's own name, or the "cannot be named" string (SNOW-832).
+   *
+   * One place, because the group heading and the budget bar's description
+   * both have to answer it and must answer it the same way — a bar
+   * segment called "Unknown basemap" over a group heading left blank
+   * would read as two different facts.
+   *
+   * @param {string} key '' for the keyless group.
+   * @returns {string}
+   */
+  function basemapName(key) {
+    const label = key
+      ? window.pwaBasemapDownloads?.basemapLabel?.(key) || ''
+      : '';
+    // Also covers a key the PICKER no longer offers (a deployment
+    // BASEMAP= override, a style since retired): the rows are real and
+    // still deletable, so they get the honest heading rather than a raw
+    // key nobody outside this codebase has seen.
+    return label || STRINGS['group-unknown'] || '';
+  }
+
+  /**
+   * The budget bar's accessible description (SNOW-646/832).
+   *
+   * @param {Array<{basemapKey: string, bytes: number}>} segments As
+   *   ``budgetSegments`` returns them — largest first, keyless last, which
+   *   is the order the bar paints, so this describes the bar rather than
+   *   the record behind it.
+   * @returns {string} A whole sentence, never a bare list: a `role="img"`
+   *   with a fragment for a name is worse than one with none.
+   */
+  function budgetBarLabel(segments) {
+    const core = manageCore();
+    if (!core || !segments.length) return STRINGS['budget-bar-empty'] || '';
+    const parts = segments.map((segment) =>
+      interpolate(STRINGS['budget-segment'], {
+        basemap: basemapName(segment.basemapKey),
+        size: core.formatMegabytes(segment.bytes),
+      }),
+    );
+    // ', ' is punctuation, not prose — the two translatable halves are the
+    // segment format above and the sentence below.
+    return interpolate(STRINGS['budget-bar-label'], { segments: parts.join(', ') });
+  }
+
+  /**
+   * Build one basemap group: its heading, its identity colour and its rows
+   * (SNOW-832).
+   *
+   * @param {HTMLTemplateElement} template The group `<template>`, resolved
+   *   from the cloned body — see render()'s own comment for why it cannot
+   *   be resolved from the document.
+   * @param {{basemapKey: string, rows: Array<Object>, totalBytes: number}}
+   *   group As ``groupRowsByBasemap`` returns it.
+   * @param {Object} core ``pwaBasemapManageCore``, for the byte formatting.
+   * @returns {DocumentFragment}
+   */
+  function buildGroup(template, group, core) {
+    const fragment = /** @type {DocumentFragment} */ (
+      template.content.cloneNode(true)
+    );
+
+    const label = fragment.querySelector('[data-hook="group-label"]');
+    if (label) label.textContent = basemapName(group.basemapKey);
+
+    // What THIS DEVICE holds for the group. An account-only row counts 0
+    // (it costs this device nothing — the same reason it is out of the
+    // budget), so a group's total can read smaller than its rows suggest.
+    // That is the truth this panel exists to tell: listed is not the same
+    // as available offline.
+    const total = fragment.querySelector('[data-group-total]');
+    if (total) total.textContent = core.formatMegabytes(group.totalBytes);
+
+    // The identity colour, on both marks at once — the round swatch
+    // before the label and the rule under the whole heading line. Both
+    // branches are written, rather than one being left to the template's
+    // own default: a keyless group must NOT fall through to
+    // `.basemap-identity-fill`'s keyless green, which means "downloaded,
+    // basemap unknown" and would give these rows a colour identity they
+    // do not have. `bg-sync-off` — the "absent, not an error" grey — is
+    // the same call SNOW-749 made for an account-only row's rule.
+    for (const mark of fragment.querySelectorAll(
+      '[data-group-swatch], [data-group-rule]',
+    )) {
+      if (group.basemapKey) {
+        mark.classList.remove('bg-sync-off');
+        mark.classList.add('basemap-identity-fill');
+        mark.dataset.basemapKey = group.basemapKey;
+      } else {
+        mark.classList.remove('basemap-identity-fill');
+        mark.classList.add('bg-sync-off');
+      }
+    }
+
+    const rows = fragment.querySelector('[data-group-rows]');
+    if (rows) {
+      for (const row of group.rows) rows.appendChild(buildRow(row));
+    }
+    return fragment;
   }
 
   /**
@@ -826,19 +990,20 @@
   /**
    * Build one list row.
    *
-   * SNOW-645 review: the row's title is the plain name again — no longer
-   * "Verbier (Region)" (that fold-in was this same ticket's own earlier
-   * pass, reversed here now the group heading above the row says kind
-   * instead). The round basemap swatch is gone too, replaced by
-   * ``[data-row-rule]``, the coloured rule down the row's left edge — same
-   * ``.basemap-identity-fill``/``data-basemap-key`` mechanism, just a
-   * different shape.
+   * The title is the row's plain name (SNOW-645 review reversed an
+   * earlier "Verbier (Region)" fold-in), and everything a row says about
+   * itself beyond that is one meta line: "Region · 5.1 MB" (SNOW-832),
+   * "Incomplete" for an orphan, "On your account — not downloaded here"
+   * for a row this device does not hold.
+   *
+   * SNOW-832 took two things OFF the row. The coloured left-edge rule
+   * carrying the basemap identity moved up to the group heading, which
+   * says it once for a group instead of once per row; and the trailing
+   * size column folded into the meta line above, which is why the row
+   * template no longer renders ``[data-row-value]`` for a JS-filled row.
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
-   *   renameable?: boolean, size: string, basemapKey?: string,
-   *   recoveredBasemapKey?: string|null}} row `recoveredBasemapKey` is
-   *   set only for an orphaned row, by render()'s own pre-pass — see its
-   *   comment and map_basemap_downloads.js's `orphanBasemapKey`.
+   *   renameable?: boolean, size: string, basemapKey?: string}} row
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -872,110 +1037,48 @@
       applyRowFocus(label, row);
     }
 
-    // The subtitle is either which basemap this was downloaded under, or
-    // — for an orphan — the fixed "Incomplete" string with no
-    // link (SNOW-645 review considered a "resume" affordance and dropped
-    // it: a region orphan's bucket id could in principle drive one, but a
-    // custom-area orphan has no record — no bbox, no band — to rebuild
-    // from, and a link that silently does nothing for one of the two row
-    // kinds is worse than no link for either; Remove is the only action
-    // an orphan gets). A resolvable-basemap row with no basemapKey (a
-    // legacy record, or a key the picker no longer has) removes the whole
-    // subtitle line rather than showing an unknown basemap — colour is
-    // never the only signal, so the rule below and this line always agree
-    // on whether anything is claimed.
+    // SNOW-832: the meta line is "<kind> · <size>" — "Region · 5.1 MB".
+    // It used to name the row's BASEMAP, which the group heading above it
+    // now says once for the whole group instead of once per row; the kind
+    // came the other way, down from SNOW-645's REGIONS / CUSTOM AREAS
+    // headings.
+    //
+    // Two rows say something else entirely, and keep the whole line for
+    // it, because in both cases the kind and the size are not the fact
+    // worth stating:
+    //
+    //   an ORPHAN (SNOW-612)  "Incomplete", with no link. SNOW-645 review
+    //     considered a "resume" affordance and dropped it: a region
+    //     orphan's bucket id could in principle drive one, but a
+    //     custom-area orphan has no record — no bbox, no band — to
+    //     rebuild from, and a link that silently does nothing for one of
+    //     the two row kinds is worse than no link for either. Remove is
+    //     the only action an orphan gets.
+    //   an ACCOUNT-ONLY row (SNOW-749)  "On your account — not downloaded
+    //     here". It costs this device nothing, so a size would be "0.0 MB"
+    //     — a download that somehow takes no space rather than one that is
+    //     not here.
     const subtitle = fragment.querySelector('[data-row-meta]');
     if (subtitle) {
       if (row.orphaned) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
       } else if (row.onDevice === false) {
-        // SNOW-749: an account-only row says what it IS, in the same slot
-        // an on-device row uses for its basemap. Which basemap it was
-        // fetched under elsewhere is a fact about a device the reader is
-        // not looking at; "not here" is the reason this row looks
-        // different and the reason it has a Download control.
         subtitle.textContent = STRINGS['not-on-device'] || '';
       } else {
-        const basemapName = row.basemapKey
-          ? window.pwaBasemapDownloads?.basemapLabel?.(row.basemapKey) || ''
-          : '';
-        if (basemapName) {
-          subtitle.textContent = basemapName;
-        } else {
-          subtitle.remove();
-        }
+        subtitle.textContent = interpolate(STRINGS['row-meta'], {
+          kind:
+            (row.kind === 'custom'
+              ? STRINGS['kind-custom']
+              : STRINGS['kind-region']) || '',
+          size: row.size,
+        });
       }
-    }
-
-    // SNOW-645 review: the coloured rule down the row's left edge. A
-    // COMPLETED row (not orphaned) gets its basemap's identity colour at
-    // full strength, or — keyless — the shared .basemap-identity-fill
-    // fallback (--color-sync-ok green, "downloaded, basemap unknown"),
-    // same as the roundels.
-    //
-    // An ORPHANED row (SNOW-612 — no record, so no stored basemapKey) is
-    // never full-strength and never that green default, which means
-    // "downloaded, basemap unknown" — not true of something that never
-    // finished. Hugo's call: pale, not flat neutral — `opacity-35`
-    // (reconciled against the design; was `opacity-40`) is the shared
-    // "this row is incomplete" modifier applied to EITHER of:
-    //   - render()'s recoveredBasemapKey, when the orphan's own bucket's
-    //     tiles matched a template on record (an INFERENCE — see
-    //     orphanBasemapKey's own docstring; never treated as a stored
-    //     fact past this paint call), painted through the same
-    //     .basemap-identity-fill mechanism a normal row uses, or
-    //   - `bg-sync-off` (the grey this app already uses everywhere else
-    //     for "absent, not an error" — the sync dots' own uncached
-    //     colour) when nothing could be inferred — explicitly NOT
-    //     .basemap-identity-fill's keyless green fallback, for the same
-    //     "not actually downloaded" reason above.
-    const rule = fragment.querySelector('[data-row-rule]');
-    if (rule) {
-      if (row.onDevice === false) {
-        // SNOW-749: pale, and never the shared keyless GREEN fallback.
-        // That green means "downloaded, basemap unknown", and this row is
-        // not downloaded here — the sheet is a live cache-state surface,
-        // so nothing about an account-only row may read as available
-        // offline. `bg-sync-off` is the same neutral an orphan falls back
-        // to, for the same reason: absent, not an error.
-        rule.classList.add('opacity-35');
-        rule.classList.remove('basemap-identity-fill');
-        rule.classList.add('bg-sync-off');
-      } else if (row.orphaned) {
-        rule.classList.add('opacity-35');
-        if (row.recoveredBasemapKey) {
-          rule.dataset.basemapKey = row.recoveredBasemapKey;
-        } else {
-          rule.classList.remove('basemap-identity-fill');
-          rule.classList.add('bg-sync-off');
-        }
-      } else if (row.basemapKey) {
-        rule.dataset.basemapKey = row.basemapKey;
-      }
-      // Neither branch: a non-orphaned, keyless row keeps the shared
-      // .basemap-identity-fill class already on the template with no
-      // data-basemap-key — its own CSS fallback (--color-sync-ok) paints
-      // it, same "downloaded, basemap unknown" green the roundels use.
-    }
-
-    // SNOW-645 review: dims to `text-text-3` for an orphan (the template's
-    // own default is `text-text-2`) — see the title's own comment above
-    // for why the whole row dims together, not just the rule.
-    const size = fragment.querySelector('[data-row-value]');
-    if (size) {
-      if (row.onDevice === false) {
-        // SNOW-749: no figure at all. The value column is for a MEASURED
-        // quantity (includes/_ugc_panel_row.html's own rule), and this row
-        // costs this device nothing — "0.0 MB" would read as a download
-        // that somehow takes no space rather than as one that is not here.
-        size.remove();
-      } else {
-        size.textContent = row.size;
-        if (row.orphaned) {
-          size.classList.remove('text-text-2');
-          size.classList.add('text-text-3');
-        }
-      }
+      // No per-branch dimming here any more (SNOW-832). SNOW-645 dimmed
+      // the SIZE COLUMN to `text-text-3` for an orphan, alongside the
+      // title and the rule; the size lives on this line now, and the
+      // line's own default already IS `text-text-3`. The title's drop to
+      // `text-text-2` above is what still carries "this row is not
+      // available offline".
     }
 
     const button = fragment.querySelector('[data-downloads-delete]');
@@ -1002,26 +1105,6 @@
         'aria-label',
         interpolate(STRINGS['remove-row-label'], { name: row.label }),
       );
-    }
-
-    // SNOW-749: "Free up space" — the device-only removal. Offered ONLY
-    // when the area is on this device AND on the account: with no account
-    // row behind it the two verbs would do exactly the same thing, and a
-    // second control that is indistinguishable in effect from the trash is
-    // worse than one control.
-    const evictBtn = fragment.querySelector('[data-downloads-evict]');
-    if (evictBtn) {
-      if (row.onDevice !== false && row.synced) {
-        evictBtn.setAttribute('data-downloads-evict', row.id);
-        evictBtn.setAttribute('data-downloads-label', row.label);
-        evictBtn.setAttribute('data-downloads-size', row.size);
-        evictBtn.setAttribute(
-          'aria-label',
-          interpolate(STRINGS['free-space-row-label'], { name: row.label }),
-        );
-      } else {
-        evictBtn.remove();
-      }
     }
 
     // SNOW-749: "Download here" — the only constructive action a row has,
@@ -1353,31 +1436,28 @@
   function _handleDeleteClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
-    // SNOW-749: two destructive verbs, one handler. They differ in what
-    // they remove and in what they say, and in nothing else — the confirm,
-    // the failure treatment and the re-render are shared, which is what
-    // keeps them from drifting into two different-feeling controls.
-    const evictButton = target.closest('[data-downloads-evict]');
-    const button = evictButton || target.closest('[data-downloads-delete]');
+    // SNOW-832: one destructive verb again. SNOW-749 ran a second one
+    // through this same handler ("Free up space" — local eviction, keep
+    // the account row); see includes/_map_downloads_row_actions.html for
+    // why it went. What is left is the shape this function had before
+    // that ticket, plus the account half of the removal.
+    const button = target.closest('[data-downloads-delete]');
     if (!button) return;
 
-    const areaId = button.getAttribute(
-      evictButton ? 'data-downloads-evict' : 'data-downloads-delete',
-    );
+    const areaId = button.getAttribute('data-downloads-delete');
     if (!areaId) return;
 
     const name = button.getAttribute('data-downloads-label') || areaId;
     const size = button.getAttribute('data-downloads-size') || '';
     const onDevice = button.getAttribute('data-downloads-on-device') !== 'false';
     const synced = button.getAttribute('data-downloads-synced') === 'true';
-    // Three confirmations, because there are three outcomes and the user
-    // is choosing between them:
-    //   free up space — gone from here, one tap to bring back;
+    // Two confirmations, because there are two outcomes and the user is
+    // choosing between them:
     //   remove (synced) — gone from here AND from the other devices;
     //   remove (not synced) — the pre-SNOW-749 wording, correct for an
     //     area with no account row behind it.
     //
-    // That last branch is keyed off THIS ROW's `synced`, not off
+    // That second branch is keyed off THIS ROW's `synced`, not off
     // `pwaDownloadsSync.isEnabled()`. The global answers "is the feature
     // switched on for this visitor", which is a different question and
     // gives the wrong answer for the rows that matter most: an area
@@ -1388,14 +1468,9 @@
     // The queued `forget()` is still harmless for such a row (404, which
     // the client treats as success — the row is gone either way), so the
     // defect was purely in what we said, which is the half a user acts on.
-    let message;
-    if (evictButton) {
-      message = interpolate(STRINGS['confirm-free-space'], { name: name, size: size });
-    } else if (synced) {
-      message = interpolate(STRINGS['confirm-forget'], { name: name, size: size });
-    } else {
-      message = interpolate(STRINGS['confirm-remove'], { name: name, size: size });
-    }
+    const message = synced
+      ? interpolate(STRINGS['confirm-forget'], { name: name, size: size })
+      : interpolate(STRINGS['confirm-remove'], { name: name, size: size });
     // window.confirm, matching pwa_reset.js's destructive-action idiom —
     // the copy names what goes and what it frees, so the choice can be
     // judged before it is made.
@@ -1403,10 +1478,7 @@
       return;
     }
 
-    const removal = evictButton
-      ? evictArea(areaId)
-      : forgetArea(areaId, onDevice);
-    removal.then(function (ok) {
+    forgetArea(areaId, onDevice).then(function (ok) {
       if (ok) {
         render();
         return;

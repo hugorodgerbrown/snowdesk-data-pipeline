@@ -229,13 +229,18 @@ describe('manageRows', () => {
   const isCustomAreaId = (id) => id === 'custom' || String(id).startsWith('custom-');
   const options = { isCustomAreaId };
 
-  it('orders largest first — the axis the user is deciding along', () => {
+  it('orders regions before custom areas, alphabetically within each (SNOW-832)', () => {
+    // Replaces largest-first. The sheet groups by basemap now, so a row is
+    // FOUND by its name before it is judged by its size — and a list read
+    // for a name cannot be ordered by a number. Aletsch before Gotthard,
+    // then Custom area 2 before Home run, and every region before every
+    // custom area whatever the bytes say (custom-a1 is the biggest here).
     const rows = core.manageRows(areas, options);
     expect(rows.map((r) => r.id)).toEqual([
-      'custom-a1',
-      'custom-b2',
-      'region-CH-2102',
       'region-CH-2101',
+      'region-CH-2102',
+      'custom-b2',
+      'custom-a1',
     ]);
   });
 
@@ -316,17 +321,19 @@ describe('manageRows', () => {
     expect(rows.map((r) => r.id)).toEqual(['custom-a1']);
   });
 
-  it('orders equal-sized areas stably across renders', () => {
-    const equal = [
-      { id: 'region-b', bytes: MB, savedAt: '2026-08-01T00:00:00.000Z' },
-      { id: 'region-a', bytes: MB, savedAt: '2026-08-01T00:00:00.000Z' },
-      { id: 'region-c', bytes: MB, savedAt: '2026-08-02T00:00:00.000Z' },
+  it('orders identically-named areas stably across renders', () => {
+    // SNOW-832: the label is the sort key, so the tie that needs breaking
+    // is two areas with the SAME name — three regions all called "Verbier"
+    // must not reshuffle between opens. The id breaks it.
+    const same = [
+      { id: 'region-b', name: 'Verbier', bytes: 3 * MB },
+      { id: 'region-a', name: 'Verbier', bytes: MB },
+      { id: 'region-c', name: 'Verbier', bytes: 2 * MB },
     ];
-    const first = core.manageRows(equal, options).map((r) => r.id);
-    const second = core.manageRows([...equal].reverse(), options).map((r) => r.id);
+    const first = core.manageRows(same, options).map((r) => r.id);
+    const second = core.manageRows([...same].reverse(), options).map((r) => r.id);
     expect(first).toEqual(second);
-    // Newest first, then id.
-    expect(first).toEqual(['region-c', 'region-a', 'region-b']);
+    expect(first).toEqual(['region-a', 'region-b', 'region-c']);
   });
 
   it('tolerates a non-array record', () => {
@@ -353,32 +360,155 @@ describe('manageRows', () => {
   });
 });
 
-describe('groupRowsByKind (SNOW-645 review — grouped-by-kind sheet)', () => {
-  it('partitions into region and custom, keeping manageRows own order within each', () => {
-    const rows = [
-      { id: 'custom-a1', kind: 'custom' },
-      { id: 'region-CH-2101', kind: 'region' },
-      { id: 'custom-b2', kind: 'custom' },
-      { id: 'region-CH-2102', kind: 'region' },
-    ];
-    const grouped = core.groupRowsByKind(rows);
-    expect(grouped.region.map((r) => r.id)).toEqual(['region-CH-2101', 'region-CH-2102']);
-    expect(grouped.custom.map((r) => r.id)).toEqual(['custom-a1', 'custom-b2']);
+describe('groupRowsByBasemap (SNOW-832 — grouped-by-basemap sheet)', () => {
+  // Replaces groupRowsByKind. The sheet's headings name BASEMAPS now,
+  // because that is the axis along which a stored area is or is not
+  // usable; the kind moved down into each row's own meta line.
+  const ORDER = ['openfreemap_liberty', 'swisstopo_winter', 'ign_plan'];
+
+  const rowFor = (id, basemapKey, bytes) => ({
+    id: id,
+    kind: id.indexOf('custom-') === 0 ? 'custom' : 'region',
+    label: id,
+    basemapKey: basemapKey,
+    bytes: bytes,
   });
 
-  it('treats anything not kind "custom" as a region, matching manageRows own default', () => {
-    const grouped = core.groupRowsByKind([{ id: 'x', kind: 'region' }, { id: 'y' }]);
-    expect(grouped.region.map((r) => r.id)).toEqual(['x', 'y']);
-    expect(grouped.custom).toEqual([]);
+  it('honours the canonical order, not the order the rows arrived in', () => {
+    // Swisstopo's rows come first and are bigger; the picker offers
+    // OpenFreeMap first, so the sheet lists it first.
+    const groups = core.groupRowsByBasemap(
+      [
+        rowFor('region-a', 'swisstopo_winter', 90 * MB),
+        rowFor('region-b', 'openfreemap_liberty', 10 * MB),
+      ],
+      ORDER,
+    );
+    expect(groups.map((g) => g.basemapKey)).toEqual([
+      'openfreemap_liberty',
+      'swisstopo_winter',
+    ]);
   });
 
-  it('gives back two empty arrays for nothing stored, never undefined', () => {
-    expect(core.groupRowsByKind([])).toEqual({ region: [], custom: [] });
+  it('keeps manageRows own row order inside a group, never re-sorting it', () => {
+    const groups = core.groupRowsByBasemap(
+      [
+        rowFor('region-CH-2101', 'openfreemap_liberty', MB),
+        rowFor('region-CH-2102', 'openfreemap_liberty', 90 * MB),
+        rowFor('custom-a1', 'openfreemap_liberty', 40 * MB),
+      ],
+      ORDER,
+    );
+    expect(groups[0].rows.map((r) => r.id)).toEqual([
+      'region-CH-2101',
+      'region-CH-2102',
+      'custom-a1',
+    ]);
+  });
+
+  it('sums each group total from its own rows', () => {
+    const groups = core.groupRowsByBasemap(
+      [
+        rowFor('region-a', 'openfreemap_liberty', 10 * MB),
+        rowFor('custom-a1', 'openfreemap_liberty', 5 * MB),
+        rowFor('region-b', 'swisstopo_winter', 8 * MB),
+      ],
+      ORDER,
+    );
+    expect(groups.map((g) => g.totalBytes)).toEqual([15 * MB, 8 * MB]);
+  });
+
+  it('counts an account-only row as 0 bytes, which is what this device holds', () => {
+    // SNOW-749 rows carry bytes: 0. A group can therefore show a total
+    // smaller than its row count suggests — correct, and the whole point
+    // of the panel: listed is not the same as available offline.
+    const groups = core.groupRowsByBasemap(
+      [
+        rowFor('region-a', 'openfreemap_liberty', 10 * MB),
+        rowFor('region-b', 'openfreemap_liberty', 0),
+      ],
+      ORDER,
+    );
+    expect(groups[0].rows).toHaveLength(2);
+    expect(groups[0].totalBytes).toBe(10 * MB);
+  });
+
+  it('puts a key the order does not mention after every key it does', () => {
+    // A deployment BASEMAP= override, or a style since retired from the
+    // picker. The rows are real downloads, so dropping them would hide
+    // storage the user is paying for.
+    const groups = core.groupRowsByBasemap(
+      [
+        rowFor('region-a', 'no_such_basemap', MB),
+        rowFor('region-b', 'swisstopo_winter', MB),
+      ],
+      ORDER,
+    );
+    expect(groups.map((g) => g.basemapKey)).toEqual([
+      'swisstopo_winter',
+      'no_such_basemap',
+    ]);
+  });
+
+  it('puts the keyless group last, whatever the order and whatever its size', () => {
+    // Legacy records, orphaned buckets. It is the group that cannot be
+    // named, so it is the one to read after the ones that can.
+    const groups = core.groupRowsByBasemap(
+      [
+        rowFor('orphan-1', '', 500 * MB),
+        rowFor('region-b', 'swisstopo_winter', MB),
+        rowFor('region-c', 'openfreemap_liberty', MB),
+      ],
+      ORDER,
+    );
+    expect(groups.map((g) => g.basemapKey)).toEqual([
+      'openfreemap_liberty',
+      'swisstopo_winter',
+      '',
+    ]);
+  });
+
+  it('treats a null basemapKey as the keyless group, never its own', () => {
+    const groups = core.groupRowsByBasemap(
+      [rowFor('orphan-1', null, MB), rowFor('orphan-2', undefined, MB)],
+      ORDER,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].basemapKey).toBe('');
+    expect(groups[0].rows).toHaveLength(2);
+  });
+
+  it('never returns an empty group', () => {
+    // A heading with nothing under it says a basemap has downloads when
+    // it has none — which is exactly what the two fixed SNOW-645 wrappers
+    // needed a `hidden` state to avoid.
+    const groups = core.groupRowsByBasemap(
+      [rowFor('region-b', 'swisstopo_winter', MB)],
+      ORDER,
+    );
+    expect(groups.map((g) => g.basemapKey)).toEqual(['swisstopo_winter']);
+  });
+
+  it('falls back to first-appearance order with no canonical order at all', () => {
+    // No picker in the document (basemapOrder() answers []). An order,
+    // just not the curated one.
+    const groups = core.groupRowsByBasemap([
+      rowFor('region-a', 'swisstopo_winter', MB),
+      rowFor('region-b', 'openfreemap_liberty', MB),
+    ]);
+    expect(groups.map((g) => g.basemapKey)).toEqual([
+      'swisstopo_winter',
+      'openfreemap_liberty',
+    ]);
+  });
+
+  it('gives back an empty list for nothing stored, never undefined', () => {
+    expect(core.groupRowsByBasemap([], ORDER)).toEqual([]);
   });
 
   it('tolerates a non-array input the same way manageRows does', () => {
-    expect(core.groupRowsByKind(undefined)).toEqual({ region: [], custom: [] });
-    expect(core.groupRowsByKind(null)).toEqual({ region: [], custom: [] });
+    expect(core.groupRowsByBasemap(undefined, ORDER)).toEqual([]);
+    expect(core.groupRowsByBasemap(null, ORDER)).toEqual([]);
   });
 });
 
@@ -775,20 +905,23 @@ describe('manageRows with the account (SNOW-749)', () => {
     expect(row.renameable).toBe(true);
   });
 
-  it('sorts account-only rows below everything on the device', () => {
-    // They carry no bytes, and the sheet is ordered largest-first, so this
-    // falls out of the existing sort rather than needing a rule — asserted
-    // because the sheet's usefulness depends on it: what is costing space
-    // leads the list.
+  it('sorts an account-only row by its NAME, like every other row (SNOW-832)', () => {
+    // It used to sort last, and that fell out of largest-first rather than
+    // from a rule: an account-only row carries 0 bytes. SNOW-832 orders by
+    // name, so it now sits wherever its name puts it — inside its own
+    // basemap's group, alongside the areas this device does hold. That is
+    // the intended reading: the group is "areas under this base map", and
+    // whether each one is HERE is what the row itself says (dimmed, no
+    // size, "not downloaded here"), not what its position says.
     const rows = core.manageRows(
       [
-        { id: 'region-a', name: 'A', bytes: 0, onDevice: false, synced: true, regionId: 'A' },
         { id: 'region-b', name: 'B', bytes: 5 * MB, onDevice: true, synced: true },
+        { id: 'region-a', name: 'A', bytes: 0, onDevice: false, synced: true, regionId: 'A' },
       ],
       { isCustomAreaId: isCustomAreaId },
     );
 
-    expect(rows.map((r) => r.id)).toEqual(['region-b', 'region-a']);
+    expect(rows.map((r) => r.id)).toEqual(['region-a', 'region-b']);
   });
 });
 

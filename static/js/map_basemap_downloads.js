@@ -108,6 +108,43 @@ function basemapLabel(key) {
   return _basemapLabelsByKey[key] || '';
 }
 
+/**
+ * Every basemap key the picker offers, in the order it offers them
+ * (SNOW-832).
+ *
+ * The same source as `basemapLabel` above, and for the same reason:
+ * `apps/public/views.py`'s `_BASEMAP_LABELS` is the single definition of
+ * both the label AND the order (see `basemap_options`' own docstring —
+ * the picker's display order is curated there, not in
+ * `settings.BASEMAP_STYLES`), and duplicating the order into JS would be
+ * a second list to keep in step with no test able to notice it drifting.
+ *
+ * The Manage downloads sheet is the caller: it groups its rows by basemap
+ * (`basemap_manage_core.js`'s `groupRowsByBasemap`) and lists the groups
+ * in the order the picker lists the basemaps, so the panel and the picker
+ * read the same way round.
+ *
+ * NOT cached, unlike `basemapLabel`'s lookup: this is one DOM walk per
+ * sheet open rather than one per row, and the cache is what would have to
+ * be invalidated if the picker ever became dynamic.
+ *
+ * @returns {string[]} Empty with no picker in the document — the caller
+ *   then falls back to first-appearance order, which is an order, just not
+ *   the curated one.
+ */
+function basemapOrder() {
+  const menu = document.getElementById('basemap-menu');
+  if (!menu) return [];
+  const keys = [];
+  // Same iterate-and-compare shape as `basemapLabel`: never interpolates a
+  // stored key into a selector.
+  menu.querySelectorAll('[data-basemap-key]').forEach((btn) => {
+    const key = btn.dataset.basemapKey;
+    if (key && keys.indexOf(key) === -1) keys.push(key);
+  });
+  return keys;
+}
+
 // Hex floor for basemapIdentityColour below — the SAME green
 // --color-sync-ok resolves to in light mode (src/css/main.css @theme).
 // MapLibre paint values can't reference a CSS custom property at all, so
@@ -1087,10 +1124,28 @@ window.pwaBasemapDownloads = Object.freeze({
   basemapLabel: (key) => basemapLabel(key),
 
   /**
+   * SNOW-832: every picker basemap key in the picker's own order — see
+   * `basemapOrder`'s own docstring. Exposed for the same load-order
+   * reason `basemapLabel` is: the Manage downloads sheet is outside the
+   * map bundle's parse-time contract.
+   *
+   * @returns {string[]}
+   */
+  basemapOrder: () => basemapOrder(),
+
+  /**
    * SNOW-645 review: infer an orphaned bucket's basemap from its own
    * cached tiles — see `orphanBasemapKey`'s own docstring for the
    * matching and the "decoration only" caveat. Exposed here for the same
    * load-order reason `basemapLabel` is.
+   *
+   * NO CURRENT CALLER (SNOW-832). Its one consumer was the Manage
+   * downloads sheet's per-row left-edge rule, and that rule is gone:
+   * basemap identity is a GROUP heading now, which is a claim about which
+   * basemap a download belongs to — precisely the claim the caveat above
+   * forbids this answer from making. Kept rather than deleted, with its
+   * own coverage in tests/js/test_basemap_custom_areas.js: retiring an
+   * inference nothing is currently misusing is not this ticket's call.
    *
    * @param {string} areaId
    * @returns {Promise<string|null>}

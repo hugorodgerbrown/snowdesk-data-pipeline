@@ -21,8 +21,8 @@ one onto), together with the row's own inline-edit affordance.
 Trash last, as on every panel: the destructive control is in the same
 place wherever a user meets it.
 
-SNOW-749 adds two more, and buildRow removes each from the rows it does
-not belong on — the same value-less-here, stamped-on-clone pattern the two
+SNOW-749 adds one more, and buildRow removes it from the rows it does not
+belong on — the same value-less-here, stamped-on-clone pattern the two
 above use:
 
   data-downloads-here   "Download here" — for a row that exists on the
@@ -30,17 +30,17 @@ above use:
                         cluster: it is the only constructive action a row
                         has, and it is the whole point of an account-only
                         row being listed at all.
-  data-downloads-evict  "Free up space" — remove the tiles from THIS
-                        device and keep the area on the account, so it is
-                        one tap to bring back. Only on a row that is both
-                        on the device and on the account; without an
-                        account row behind it there is nothing to keep, and
-                        it would be a second, identical trash.
 
-Trash still means gone everywhere — the account row and this device's
-tiles both. That split is why the two glyphs are opposites (an arrow onto
-the line, an arrow off it) rather than two bins: the difference has to be
-legible before the press, not after.
+SNOW-749 added a SECOND destructive control beside the trash —
+`data-downloads-evict`, "Free up space", which removed this device's tiles
+and kept the account row so the area was one tap to bring back. SNOW-832
+removes it, on Hugo's call. Two destructive verbs on one row cost the
+reader a decision on every row in order to offer, on some of them, a
+slightly gentler outcome that nothing on the row explained: the difference
+between them lived in a confirm dialogue neither glyph could show. Trash
+means gone everywhere again, everywhere, and `confirm-forget` already says
+so for a row that is on both. The automatic budget eviction
+(`evictBasemapAreas`) is untouched — that path was never this button's.
 {% endcomment %}
 {# The constructive action, first. Removed by buildRow for every row that #}
 {# is already on this device — there is nothing to fetch.                 #}
@@ -64,16 +64,6 @@ legible before the press, not after.
     class="{% icon_button_classes %}"
 >
     {% include "includes/_icon_pencil.html" only %}
-</button>
-{# The gentler of the two destructive verbs — this device only. Removed  #}
-{# by buildRow unless the row is BOTH on this device and on the account.  #}
-<button
-    type="button"
-    data-downloads-evict
-    aria-label="{% trans 'Free up space' %}"
-    class="{% icon_button_classes %}"
->
-    {% include "includes/_icon_free_space.html" only %}
 </button>
 <button
     type="button"
