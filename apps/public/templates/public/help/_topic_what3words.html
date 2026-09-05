@@ -1,0 +1,47 @@
+{% comment %}
+apps/public/templates/public/help/_topic_what3words.html — "The meeting
+point" panel body.
+
+Content partial for the help page (SNOW-840); included via the
+body_template parameter of includes/_collapsible_panel.html. Gated on the
+what3words waffle flag, mirroring the flag that decides whether a trip
+page shows an address at all — a reader must not be told about a form of
+words their own trips do not carry.
+
+It explains what a three word address IS before saying where it appears.
+"///filled.count.soap" is unfamiliar enough that a reader who meets it on
+a trip page first has no way to tell it from a username or a file name,
+and the one thing they need to know is that it names a specific 3m square
+they can type into what3words or a map app.
+
+It also states the fallback, because the fallback is what most readers
+will actually see: an address is only shown when we have one, and a trip
+whose meeting point could not be converted shows the coordinates it
+always did. A help page that promised the address unconditionally would
+turn a working page into an apparent fault.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm leading-prose text-text-2">
+    <p class="mb-3 last:mb-0" data-testid="help-what3words-what">
+        {% blocktrans trimmed %}
+            Every trip has a meeting point: the spot the organiser dropped on the map when they planned it. Where we
+            can, it is shown as a three word address &mdash; three words after a triple slash, like
+            ///filled.count.soap. The words are not a name anyone chose. They identify one 3-metre square of ground
+            anywhere in the world, so they say exactly what a pair of coordinates says, in something you can read down a
+            phone.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-what3words-using">
+        {% blocktrans trimmed %}
+            To find the square, type the three words into what3words or into a map app that understands them. The
+            organiser's page and the link they send you both show the same address, so everyone on a trip is looking at
+            the same words.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-what3words-fallback">
+        {% blocktrans trimmed %}
+            When we have no address for a meeting point, the page shows its latitude and longitude instead &mdash; the
+            same numbers it has always shown, ready to paste into a map app. The meeting point is never blank.
+        {% endblocktrans %}
+    </p>
+</div>

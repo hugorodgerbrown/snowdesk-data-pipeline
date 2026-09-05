@@ -142,6 +142,17 @@ Routes and Offline downloads came to have neither.
         {% translate "Routes" as t_routes %}
         {% include "includes/_collapsible_panel.html" with title=t_routes data_testid="help-topic-routes" illustration="public/help/illustrations/_panel.html" panel=panels.routes body_template="public/help/_topic_routes.html" %}
 
+        {# SNOW-840. Sits after Routes because that is where a trip comes    #}
+        {# from — "Plan a trip" is on a route's own row — and it documents   #}
+        {# the one thing on a trip page that needs explaining: three words   #}
+        {# after a triple slash. Gated on the same waffle flag as the        #}
+        {# address itself, so a reader is never told about a form of words   #}
+        {# their own trips do not carry.                                     #}
+        {% if what3words_visible %}
+            {% translate "The meeting point" as t_what3words %}
+            {% include "includes/_collapsible_panel.html" with title=t_what3words data_testid="help-topic-what3words" body_template="public/help/_topic_what3words.html" %}
+        {% endif %}
+
         {% translate "Offline downloads" as t_downloads %}
         {% include "includes/_collapsible_panel.html" with title=t_downloads data_testid="help-topic-downloads" illustration="public/help/illustrations/_panel.html" panel=panels.downloads body_template="public/help/_topic_downloads.html" %}
 
