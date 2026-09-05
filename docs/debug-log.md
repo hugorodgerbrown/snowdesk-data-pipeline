@@ -1,6 +1,6 @@
 ---
 name: debug-log
-description: On-device debug trace — window.pwaDebugLog, debug_log.js, log:debug store, debug_log waffle flag (GRP_DEBUG), sw.js classify/pinned.search
+description: On-device debug trace — window.pwaDebugLog, log:debug store, debug_log flag (GRP_DEBUG), sw classify/pinned.search, req serve request ledger
 status: current
 last-reviewed: 2026-09-03
 ---
@@ -37,12 +37,60 @@ observable.
 | 4 | Its country's feeds actually arrived | `net country.load` |
 | 5 | The SW still has its basemap-origin allowlist | `sw origins.hydrate`, `sw classify` |
 | 6 | A tile lookup hits one of the pinned buckets | `sw pinned.buckets`, `sw pinned.search` |
+| 7 | Every request that was served, and by which partition | `req serve` (SNOW-846) |
 
 Read top to bottom, those answer the question. The most common real
 answer is #5: the browser terminates an idle worker, `_basemapOrigins`
 goes with it, `_hydrateBasemapOrigins()` fails to get it back, and every
 tile request is classified `unclassified` over a cache that is full —
 the SNOW-722 failure mode.
+
+## Two channels: decisions (`sw`) and the request ledger (`req`)
+
+SNOW-846 splits the worker's output in two, because they answer different
+questions at different volumes.
+
+**`sw` — decisions.** The original trace: which origins are allowlisted,
+which pinned buckets exist, whether a tile hit one, what a download run
+did. A handful of lines per interesting moment.
+
+**`req` — one line per request the worker serves**, answering *content
+did not appear; where was it trying to get it from?* Each line carries the
+URL, the strategy that ran, **the partition that answered**, the HTTP
+status and elapsed ms:
+
+```
+req  serve  url=…/14/8522/5829.pbf  strategy=basemap  source=pinned   status=200  ms=3
+req  serve  url=…/14/8520/5827.pbf  strategy=basemap  source=network  status=200  ms=412
+req  serve  url=/map/               strategy=navigate source=offline-html status=200 ms=8
+req  serve  url=/api/ratings.json   strategy=network  source=passthrough status=null ms=null
+```
+
+| `source` | Means |
+|---|---|
+| `shell` | the versioned shell cache (`CACHE_VERSION`) |
+| `passive` | `BASEMAP_CACHE`, filled by ordinary browsing |
+| `pinned` | a deliberate download's bucket — the adjacent `sw pinned.search` line names **which** |
+| `network` | a real round trip; `status` is its own |
+| `offline-html` | the pre-cached fallback page stood in for the page you asked for |
+| `timeout-504` | synthesized: every partition missed and there was no route, or a budget expired |
+| `network-error` | the fetch rejected with nothing cached to fall back to |
+| `passthrough` | the worker issued no `respondWith` — the browser fetched it natively |
+| `cache` | the SNOW-722 read-only probe answered; the adjacent line says from where |
+| `dev-bypass` | `DEV_SHELL_BYPASS` with the opt-in off |
+
+Two properties worth knowing before you read one:
+
+- **`passthrough` has no outcome.** Same-origin requests that are neither
+  a shell asset nor a navigation (`/api/*`, chiefly) are deliberately not
+  intercepted — the worker issues no `respondWith`, and it must stay that
+  way, because putting it on the path of every API call is a real cost to
+  pay for a diagnostic. The line records the decision, and "the worker
+  never saw this; it went straight to the network" is itself the answer
+  when a feed comes up empty offline.
+- **Volume.** A map pan is hundreds of lines and the ring holds 500, so
+  `req` will evict `sw` lines if you leave both on. That is why it is its
+  own source: use the panel's filter to read one channel at a time.
 
 ## Using it
 

@@ -630,19 +630,25 @@ async function _pinnedCacheNamesAfterMiss(tried) {
  *   ``undefined`` when no bucket holds it.
  */
 async function _searchPinnedBuckets(request) {
+  // SNOW-846: the bucket NAME travels with the response, so the trace can
+  // say which downloaded area answered rather than only that one did —
+  // "which of my downloads is covering this ground" is a question the old
+  // hit line could not answer. Unwrapped before returning: this function's
+  // contract is still a Response or undefined.
   const searchPinned = async (names) => {
     const hits = await Promise.all(
       names.map(async (name) => {
         try {
           const pinnedCache = await caches.open(name);
-          return await pinnedCache.match(request);
+          const response = await pinnedCache.match(request);
+          return response ? { name: name, response: response } : null;
         } catch (_e) {
           // One bucket failing must not lose the others.
-          return undefined;
+          return null;
         }
       }),
     );
-    return hits.find(Boolean);
+    return hits.find(Boolean) || null;
   };
 
   try {
@@ -652,9 +658,10 @@ async function _searchPinnedBuckets(request) {
       _debugLog('pinned.search', {
         url: _debugUrlOf(request),
         result: 'hit',
+        bucket: pinnedHit.name,
         searched: pinnedNames.length,
       });
-      return pinnedHit;
+      return pinnedHit.response;
     }
 
     // Missed. The list may be the stale half of the story — re-enumerate
@@ -666,9 +673,10 @@ async function _searchPinnedBuckets(request) {
         _debugLog('pinned.search', {
           url: _debugUrlOf(request),
           result: 'hit-after-reenumerate',
+          bucket: freshHit.name,
           searched: freshNames.length,
         });
-        return freshHit;
+        return freshHit.response;
       }
     }
     // The line that answers "the region is downloaded, why is the map
@@ -1111,9 +1119,28 @@ self.addEventListener('activate', (event) => {
  *   cache names, hit/miss. Never a response body.
  */
 function _debugLog(evt, detail) {
+  _debugLogAs('sw', evt, detail);
+}
+
+/**
+ * SNOW-846: the same line, under a caller-chosen source.
+ *
+ * The panel's only filter axis is the ``src`` column, so a channel that
+ * needs to be read on its own — or kept out of the way while reading
+ * another — has to BE a source. The request ledger is exactly that: same
+ * producer as every other ``sw`` line, but one line per request rather
+ * than one per interesting decision, which is a different order of volume
+ * against a 500-row ring.
+ *
+ * @param {string} src Producer channel: 'sw' for the decision trace,
+ *   'req' for the per-request ledger (``_debugServe``).
+ * @param {string} evt Dotted event name.
+ * @param {object} [detail]
+ */
+function _debugLogAs(src, evt, detail) {
   if (!_debugLogEnabled) return;
   try {
-    _debugLogPending.push({ at: Date.now(), src: 'sw', evt, detail: detail || null });
+    _debugLogPending.push({ at: Date.now(), src: src, evt, detail: detail || null });
     // Drop the OLDEST on overflow. A worker running without a client is
     // usually mid-burst, and the newest lines are the ones describing
     // whatever it is doing now.
@@ -1126,6 +1153,72 @@ function _debugLog(evt, detail) {
   } catch (_err) {
     // Recording must never affect the behaviour being recorded.
   }
+}
+
+/**
+ * SNOW-846: record one SERVED request — what was asked for, which strategy
+ * ran, and **which partition answered**.
+ *
+ * The SNOW-812 trace records decisions: which origins are allowlisted,
+ * which buckets exist, whether a tile hit one. It was built for one
+ * question ("the region says downloaded, why is the map blank") and it
+ * answers that well. It could not answer the more general one — *content
+ * did not appear; where was it trying to get it from?* — because:
+ *
+ *   - ``classify`` fires for cross-origin GETs only, so a page, an
+ *     ``/api/`` feed or a shell asset left no line at all;
+ *   - a passive ``BASEMAP_CACHE`` hit on the classified path was silent,
+ *     so a cache-served tile and a network-served one looked the same;
+ *   - no network attempt, status or budget expiry was recorded anywhere;
+ *   - both synthesized 504s returned a response nothing mentioned.
+ *
+ * So every branch that returns a Response says what it did. Deliberately
+ * NOT a wrapper around ``_guardedRespond``: that is the one choke point
+ * every ``respondWith`` funnels through, but it sees only the final
+ * Response and not which branch produced it — and provenance is the entire
+ * point of this line.
+ *
+ * @param {Request} request
+ * @param {string} strategy Which router branch ran: 'static' | 'navigate' |
+ *   'basemap' | 'probe' (the SNOW-722 read-only cache probe for an
+ *   unclassified cross-origin GET) | 'network' (not intercepted at all) |
+ *   'guard' (``_guardedRespond``'s re-fetch, after a strategy resolved to
+ *   something that was not a Response).
+ * @param {string} source Which partition answered:
+ *   - 'shell'       — the versioned shell cache (``CACHE_VERSION``)
+ *   - 'passive'     — ``BASEMAP_CACHE``, filled by ordinary browsing
+ *   - 'pinned'      — a deliberate download's bucket; the adjacent
+ *                     ``pinned.search`` line names which one
+ *   - 'network'     — a real round trip; ``status`` is its own
+ *   - 'offline-html' — the pre-cached offline fallback page
+ *   - 'timeout-504' — a synthesized gateway timeout: every partition
+ *                     missed and there was no route, or the budget expired
+ *   - 'passthrough' — the worker issued no ``respondWith``; the browser
+ *                     fetched it natively and the outcome is not ours to
+ *                     report (see the ``network`` branch of the fetch
+ *                     listener for why that must stay true)
+ *   - 'cache'       — the read-only probe answered from one of the basemap
+ *                     caches; the adjacent ``probe.passive`` /
+ *                     ``pinned.search`` line says which
+ *   - 'network-error' — the fetch rejected and nothing was cached to fall
+ *                     back to; the rejection still reaches the page
+ *   - 'dev-bypass'  — ``DEV_SHELL_BYPASS`` with the opt-in off
+ * @param {Response|null} [response] The response being returned, for its
+ *   status. Null where there is none to read.
+ * @param {number} [startedAt] ``Date.now()`` at the top of the strategy.
+ * @returns {void}
+ */
+function _debugServe(request, strategy, source, response, startedAt) {
+  // Guarded here as well as inside _debugLogAs: this runs on every served
+  // request, and _debugUrlOf parses a URL to build its detail.
+  if (!_debugLogEnabled) return;
+  _debugLogAs('req', 'serve', {
+    url: _debugUrlOf(request),
+    strategy: strategy,
+    source: source,
+    status: response && typeof response.status === 'number' ? response.status : null,
+    ms: typeof startedAt === 'number' ? Date.now() - startedAt : null,
+  });
 }
 
 /**
@@ -1505,9 +1598,15 @@ function _stampCacheHit(response) {
  * interaction, which is why it sits first, ahead of ``caches.open()``.
  */
 async function _staleWhileRevalidate(request) {
+  // SNOW-846: one `req serve` line per return point below — see _debugServe.
+  const startedAt = Date.now();
   if (DEV_SHELL_BYPASS) {
     await _hydrateDevShellCacheOptIn();
-    if (!_devShellCacheOptIn) return fetch(request);
+    if (!_devShellCacheOptIn) {
+      const bypassed = await fetch(request);
+      _debugServe(request, 'static', 'dev-bypass', bypassed, startedAt);
+      return bypassed;
+    }
   }
   const cache = await caches.open(CACHE_VERSION);
   const cached = await cache.match(request);
@@ -1517,7 +1616,9 @@ async function _staleWhileRevalidate(request) {
   // module and font — a request each, all of them doomed, all of them holding
   // a connection slot for the OS TCP timeout.
   if (!(await _shouldUseNetwork())) {
-    return cached ? _stampCacheHit(cached) : _synthesizedGatewayTimeout();
+    const offline = cached ? _stampCacheHit(cached) : _synthesizedGatewayTimeout();
+    _debugServe(request, 'static', cached ? 'shell' : 'timeout-504', offline, startedAt);
+    return offline;
   }
   const fetchPromise = _boundedFetch(request, SHELL_FETCH_BUDGET_MS)
     .then((response) => {
@@ -1547,10 +1648,19 @@ async function _staleWhileRevalidate(request) {
       return response;
     })
     .catch(() => null);
-  if (cached) return _stampCacheHit(cached);
+  if (cached) {
+    const hit = _stampCacheHit(cached);
+    _debugServe(request, 'static', 'shell', hit, startedAt);
+    return hit;
+  }
   const network = await fetchPromise;
-  if (network) return network;
-  return _synthesizedGatewayTimeout();
+  if (network) {
+    _debugServe(request, 'static', 'network', network, startedAt);
+    return network;
+  }
+  const timedOut = _synthesizedGatewayTimeout();
+  _debugServe(request, 'static', 'timeout-504', timedOut, startedAt);
+  return timedOut;
 }
 
 /**
@@ -2637,6 +2747,8 @@ _hydrateNetworkMode();
  * unchanged.
  */
 async function _basemapStaleWhileRevalidate(request) {
+  // SNOW-846: one `req serve` line per return point below — see _debugServe.
+  const startedAt = Date.now();
   const cache = await caches.open(BASEMAP_CACHE);
   const cached = await cache.match(request);
   if (cached) {
@@ -2649,6 +2761,7 @@ async function _basemapStaleWhileRevalidate(request) {
     // sockets timed out one by one. Unawaited, so a hit still returns at cache
     // speed, and skipped entirely when there is nothing to revalidate against.
     if (await _shouldUseNetwork()) _revalidateBasemap(request, cache);
+    _debugServe(request, 'basemap', 'passive', cached, startedAt);
     return cached;
   }
   // SNOW-586: BASEMAP_CACHE miss — check every live pinned bucket before
@@ -2656,11 +2769,17 @@ async function _basemapStaleWhileRevalidate(request) {
   const pinnedHit = await _searchPinnedBuckets(request);
   if (pinnedHit) {
     if (await _shouldUseNetwork()) _revalidateBasemap(request, cache);
+    // The adjacent `pinned.search` line names WHICH bucket answered.
+    _debugServe(request, 'basemap', 'pinned', pinnedHit, startedAt);
     return pinnedHit;
   }
   // SNOW-742: latched offline — every cache partition has missed and there is
   // no route to try, so answer now rather than burning a budget proving it.
-  if (!(await _shouldUseNetwork())) return _synthesizedGatewayTimeout();
+  if (!(await _shouldUseNetwork())) {
+    const latched = _synthesizedGatewayTimeout();
+    _debugServe(request, 'basemap', 'timeout-504', latched, startedAt);
+    return latched;
+  }
   const fetchPromise = _boundedFetch(request, BASEMAP_FETCH_BUDGET_MS)
     .then(async (response) => {
       if (response && response.ok && response.type === 'cors') {
@@ -2678,8 +2797,13 @@ async function _basemapStaleWhileRevalidate(request) {
   // informative than an unhandled rejection reaching the page as a raw
   // network error.
   const network = await fetchPromise;
-  if (network) return network;
-  return _synthesizedGatewayTimeout();
+  if (network) {
+    _debugServe(request, 'basemap', 'network', network, startedAt);
+    return network;
+  }
+  const timedOut = _synthesizedGatewayTimeout();
+  _debugServe(request, 'basemap', 'timeout-504', timedOut, startedAt);
+  return timedOut;
 }
 
 // ---------------------------------------------------------------------------
@@ -2943,37 +3067,60 @@ function _cacheNavigation(cache, request, forCache, forSniff) {
  * @param {Cache} cache The open shell cache.
  * @returns {Promise<Response|null>}
  */
-async function _networkFirstFallback(request, cache) {
+async function _networkFirstFallback(request, cache, startedAt) {
   const current = await _currentPrincipal();
   const cached = await cache.match(request);
-  if (cached && _principalMatches(cached, current)) return _stampCacheHit(cached);
+  // SNOW-846: this function, not its caller, is where the shell page and
+  // the offline fallback are told apart — "you got the page you asked for
+  // from cache" and "you got offline.html instead" are different answers
+  // to "where did this come from", and _networkFirst cannot see which
+  // happened. It logs only the branches it owns; between them, exactly one
+  // `serve` line is emitted per navigation.
+  if (cached && _principalMatches(cached, current)) {
+    const hit = _stampCacheHit(cached);
+    _debugServe(request, 'navigate', 'shell', hit, startedAt);
+    return hit;
+  }
   if (request.mode === 'navigate' || request.destination === 'document') {
     const searchless = await cache.match(request, { ignoreSearch: true });
     if (searchless && _principalMatches(searchless, current)) {
-      return _stampCacheHit(searchless);
+      const hit = _stampCacheHit(searchless);
+      _debugServe(request, 'navigate', 'shell', hit, startedAt);
+      return hit;
     }
     const fallback = await cache.match(OFFLINE_FALLBACK);
-    if (fallback) return _stampCacheHit(fallback);
+    if (fallback) {
+      const hit = _stampCacheHit(fallback);
+      _debugServe(request, 'navigate', 'offline-html', hit, startedAt);
+      return hit;
+    }
   }
   return null;
 }
 
 async function _networkFirst(request) {
+  // SNOW-846: see _debugServe. The two cache branches log inside
+  // _networkFirstFallback, which is the only place that knows whether the
+  // page itself or offline.html answered.
+  const startedAt = Date.now();
   const cache = await caches.open(CACHE_VERSION);
   // SNOW-742: latched offline — go straight to the cache branch rather than
   // spending a 5s budget re-proving there is no route. This is the difference
   // between a day in the backcountry costing five seconds per navigation and
   // costing nothing.
   if (!(await _shouldUseNetwork())) {
-    const offline = await _networkFirstFallback(request, cache);
+    const offline = await _networkFirstFallback(request, cache, startedAt);
     if (offline) return offline;
-    return _synthesizedGatewayTimeout();
+    const latched = _synthesizedGatewayTimeout();
+    _debugServe(request, 'navigate', 'timeout-504', latched, startedAt);
+    return latched;
   }
   try {
     const response = await _boundedFetch(request, NAVIGATION_FETCH_BUDGET_MS);
     if (response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
       _cacheNavigation(cache, request, response.clone(), response.clone());
     }
+    _debugServe(request, 'navigate', 'network', response, startedAt);
     return response;
   } catch (err) {
     // SNOW-742: a budget expiry rejects exactly as a refusal does, so a hang
@@ -2981,8 +3128,11 @@ async function _networkFirst(request) {
     // the network held the request open for the OS TCP timeout and this code
     // simply never ran, which is why the app showed a blank page for minutes
     // with the cached shell sitting on disk the entire time.
-    const fallback = await _networkFirstFallback(request, cache);
+    const fallback = await _networkFirstFallback(request, cache, startedAt);
     if (fallback) return fallback;
+    // Nothing cached and no route: the rejection reaches the page as it
+    // always has, but the trace now says the request got that far.
+    _debugServe(request, 'navigate', 'network-error', null, startedAt);
     throw err;
   }
 }
@@ -3013,7 +3163,14 @@ async function _guardedRespond(responsePromise, request, clientId) {
       { url: request.url, mode: request.mode },
       clientId,
     );
-    return fetch(request);
+    // SNOW-846: the one branch this wrapper owns. Every other `serve` line
+    // comes from the strategy that produced the response, because only it
+    // knows which partition answered — but a strategy that resolved to
+    // something that is not a Response produced no line at all, and this
+    // re-fetch is what the page actually gets.
+    const refetched = await fetch(request);
+    _debugServe(request, 'guard', 'network', refetched, null);
+    return refetched;
   }
   return response;
 }
@@ -3050,6 +3207,15 @@ self.addEventListener('fetch', (event) => {
     // that is neither a static-shell asset nor a navigation. No
     // event.respondWith() call means the request is never seen by the
     // SW's caching layer — the browser handles it natively.
+    //
+    // SNOW-846: recorded anyway, because "the worker never saw this; it
+    // went straight to the network" IS the answer when an `/api/` feed
+    // comes up empty offline — and it was the single biggest hole in the
+    // trace, which said nothing at all about same-origin requests. The
+    // outcome is deliberately not reported: intercepting these to observe
+    // them would put the worker on the path of every API call, which is a
+    // real cost paid for a diagnostic, so the line stops at the decision.
+    _debugServe(request, 'network', 'passthrough', null, null);
     return;
   }
 
@@ -3058,6 +3224,7 @@ self.addEventListener('fetch', (event) => {
   // deciding. Pass the already-parsed url so we don't re-run _classifySync.
   event.respondWith(
     (async () => {
+      const startedAt = Date.now();
       const strategy = await _classifyCrossOriginGet(url);
       if (strategy === 'basemap') {
         return _guardedRespond(_basemapStaleWhileRevalidate(request), request, event.clientId);
@@ -3070,8 +3237,20 @@ self.addEventListener('fetch', (event) => {
       // on this path: the allowlist still governs caching, and a genuinely
       // unrelated origin misses and falls through unchanged.
       const cached = await _readOnlyBasemapCacheProbe(request);
-      if (cached) return cached;
-      return fetch(request);
+      if (cached) {
+        // Which partition answered is in the adjacent `probe.passive` /
+        // `pinned.search` line — this one records that the probe is what
+        // served the request at all, which is the SNOW-722 recovery path
+        // doing its job.
+        _debugServe(request, 'probe', 'cache', cached, startedAt);
+        return cached;
+      }
+      const network = await fetch(request).catch((err) => {
+        _debugServe(request, 'probe', 'network-error', null, startedAt);
+        throw err;
+      });
+      _debugServe(request, 'probe', 'network', network, startedAt);
+      return network;
     })(),
   );
 });
