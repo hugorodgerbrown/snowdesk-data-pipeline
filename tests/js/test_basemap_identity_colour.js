@@ -28,6 +28,10 @@
  * declaration of its own, which a behavioural test alone couldn't rule
  * out (two implementations that happen to agree would still pass one).
  *
+ * SNOW-832 adds `basemapOrder` beside it — the same picker DOM, read for
+ * its ORDER rather than for one label, because the Manage downloads sheet
+ * groups by basemap and lists the groups the way the picker lists them.
+ *
  * basemapIdentityColour, activeBasemapKey and basemapLabel are plain
  * function declarations, not exported onto window the way
  * window.pwaBasemapDownloads is — so this evaluates map_basemap_downloads.js
@@ -58,7 +62,8 @@ function loadHelper() {
   new Function(
     `${SOURCE}\n` +
       'window.basemapIdentityColour = basemapIdentityColour;\n' +
-      'window.basemapLabel = basemapLabel;',
+      'window.basemapLabel = basemapLabel;\n' +
+      'window.basemapOrder = basemapOrder;',
   )();
 }
 
@@ -71,6 +76,7 @@ afterEach(() => {
   document.documentElement.removeAttribute('style');
   delete window.basemapIdentityColour;
   delete window.basemapLabel;
+  delete window.basemapOrder;
   // The file's own top-level `window.pwaBasemapDownloads = Object.freeze(…)`
   // runs as a side effect of loadHelper(); tidy it up so it can't leak into
   // an unrelated test file sharing this jsdom instance.
@@ -142,6 +148,57 @@ describe('basemapLabel (SNOW-645 follow-up — one shared implementation)', () =
   it('returns an empty string with no #basemap-menu in the document at all', () => {
     document.body.innerHTML = '';
     expect(window.basemapLabel('openfreemap_liberty')).toBe('');
+  });
+});
+
+describe('basemapOrder (SNOW-832 — the group headings\' own order)', () => {
+  // The Manage downloads sheet groups its rows by basemap and lists the
+  // groups in the order the PICKER offers them, so the panel and the
+  // picker read the same way round. Read off the same DOM basemapLabel
+  // reads, for the same reason: apps/public/views.py's _BASEMAP_LABELS is
+  // the single definition of both the label and the order (see
+  // basemap_options' own docstring), and a copy in JS is a second list to
+  // keep in step with nothing able to notice it drifting.
+  function buildMenu() {
+    document.body.innerHTML = `
+      <ul id="basemap-menu">
+        <li role="none">
+          <button type="button" data-basemap-key="openfreemap_liberty">OpenFreeMap</button>
+        </li>
+        <li role="none">
+          <button type="button" data-basemap-key="swisstopo_winter">Swisstopo (CH)</button>
+        </li>
+        <li role="none">
+          <button type="button" data-basemap-key="ign_plan">IGN (FR)</button>
+        </li>
+      </ul>`;
+  }
+
+  it("gives every offered key in the picker's own document order", () => {
+    buildMenu();
+    expect(window.basemapOrder()).toEqual([
+      'openfreemap_liberty',
+      'swisstopo_winter',
+      'ign_plan',
+    ]);
+  });
+
+  it('names each key once, however many rows carry it', () => {
+    // Nothing renders a key twice today; a duplicate would put a basemap
+    // in the list twice and give it two group positions.
+    document.body.innerHTML = `
+      <ul id="basemap-menu">
+        <li><button type="button" data-basemap-key="openfreemap_liberty">OpenFreeMap</button></li>
+        <li><button type="button" data-basemap-key="openfreemap_liberty">OpenFreeMap</button></li>
+      </ul>`;
+    expect(window.basemapOrder()).toEqual(['openfreemap_liberty']);
+  });
+
+  it('returns an empty list with no #basemap-menu in the document at all', () => {
+    // The sheet then falls back to first-appearance order — an order,
+    // just not the curated one.
+    document.body.innerHTML = '';
+    expect(window.basemapOrder()).toEqual([]);
   });
 });
 
