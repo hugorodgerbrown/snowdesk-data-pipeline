@@ -1,0 +1,92 @@
+{% comment %}
+templates/includes/_ugc_panel_group.html — one titled group of rows
+inside a includes/_ugc_panel.html list (SNOW-832).
+
+A panel whose rows divide along an axis the user already knows renders
+them under a heading per value of that axis instead of as one flat list.
+The downloads panel is the one caller and the reason this exists: Hugo's
+handoff groups "Your downloads" by BASEMAP, because that is the axis along
+which a stored area is or is not usable — switching basemap is switching
+to a map you have not stored — while the kind (region / custom area) is
+only how the area was framed, and moved down into the row's own meta line.
+
+It replaces the two fixed REGIONS / CUSTOM AREAS wrappers SNOW-645 wrote
+inline in public/partials/_map_downloads_rows.html. There is no fixed set
+of groups any more: which basemaps a device holds is data, so the panel
+renders ONE copy of this partial into a `<template>` and
+static/js/map_downloads_manager.js's render() clones it per group. A group
+with no rows is never cloned at all, so — unlike the two wrappers this
+replaces — nothing here needs a `hidden` state.
+
+The heading carries that group's identity colour twice, in the two shapes
+this codebase already paints it in:
+
+  * a 10px round SWATCH before the label, and
+  * a 2px RULE under the whole heading line.
+
+Both are `.basemap-identity-fill` + `data-basemap-key` (src/css/main.css
+§2) — the same mechanism the budget bar's segments and the download
+roundels use, so every reading of "which basemap is this" agrees. The rule
+is a `<span>` with a height, NOT a `border-bottom`: that class paints
+`background`, and a border-colour variant of the palette would be a second
+copy of it to keep in step.
+
+A group that CANNOT be named — a record written before SNOW-645, an
+orphaned bucket, an account row with no basemap — passes `unknown=True`
+and gets `bg-sync-off` (this app's "absent, not an error" grey) in place of
+the identity fill. Never `.basemap-identity-fill`'s own keyless green
+fallback, which means "downloaded, basemap unknown" and would give these
+rows a colour identity they do not have; the same precedent SNOW-749 set
+for an account-only row's rule.
+
+Parameters (passed via {% include … with … %}):
+  label       (string, optional) — the group's heading text (a basemap's
+              own translated picker label). Empty for a JS-filled copy.
+  label_hook  (string, optional) — `data-hook` value on the heading, so a
+              JS-filled copy can find the label to write into it. The
+              eyebrow primitive already takes `data_testid`; this is the
+              production-hook equivalent, and is a VALUE on a fixed
+              attribute rather than an attribute name, so no caller can
+              inject one.
+  total       (string, optional) — the group's own total, already
+              formatted ("18.4 MB"). What THIS DEVICE holds: an
+              account-only row counts 0, so a group's total can read
+              smaller than its rows suggest, which is the truth.
+  basemap_key (string, optional) — `data-basemap-key` on the swatch and
+              the rule, which is what colours them.
+  unknown     (bool, optional) — the group that cannot be named; see
+              above.
+  rows_template (string, optional) — template path rendering the group's
+              rows inside its `<ul>`. A JS-filled copy passes none and
+              gets the empty `<ul>` its render() appends into.
+{% endcomment %}
+<div data-panel-group class="flex flex-col gap-1">
+    <div class="flex items-center gap-2">
+        <span
+            data-group-swatch
+            aria-hidden="true"
+            class="size-2.5 shrink-0 rounded-pill {% if unknown %}bg-sync-off{% else %}basemap-identity-fill{% endif %}"
+            {% if basemap_key %}data-basemap-key="{{ basemap_key }}"{% endif %}
+        ></span>
+        {% include "includes/_eyebrow.html" with tag="p" text=label class_extra="min-w-0 truncate font-medium" data_hook=label_hook %}
+        {# The group's own total, right-aligned. Mono, so a column of them #}
+        {# lines up on the decimal point the way the row sizes used to     #}
+        {# before SNOW-832 moved the size into the row's meta line.        #}
+        <span data-group-total class="ml-auto shrink-0 font-mono text-xs text-text-3">{{ total }}</span>
+    </div>
+    <span
+        data-group-rule
+        aria-hidden="true"
+        class="h-0.5 rounded-pill {% if unknown %}bg-sync-off{% else %}basemap-identity-fill{% endif %}"
+        {% if basemap_key %}data-basemap-key="{{ basemap_key }}"{% endif %}
+    ></span>
+    {# Every row draws its own top hairline (includes/_ugc_panel_row.html) #}
+    {# — which is what separated a SNOW-645 group's heading from its first #}
+    {# row, since that heading had no line of its own. This one does: the  #}
+    {# identity rule above IS the line, so the first row's own border      #}
+    {# would be a second one 4px under it. Suppressed on the first child   #}
+    {# rather than on the row, because "first" is a fact about the list.   #}
+    <ul data-group-rows class="flex flex-col [&>li:first-child]:border-t-0">
+        {% if rows_template %}{% include rows_template %}{% endif %}
+    </ul>
+</div>

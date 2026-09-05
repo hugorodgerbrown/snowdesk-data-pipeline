@@ -3,20 +3,29 @@ templates/includes/_ugc_panel_row.html — one row inside a
 includes/_ugc_panel.html list (SNOW-658).
 
 Hugo's "Map panels — common format" design gives every UGC panel's rows
-one anatomy, five slots, always in this order:
+one anatomy, four slots, always in this order:
 
-  rule    an optional 3px bar, SEMANTIC only. Downloads keeps it (it
-          carries the basemap the download derives from); favourites and
-          observations have no equivalent, so they omit the slot
-          entirely rather than render it empty.
   label   15px/500, truncates. Inert by default; on the map panels whose
           rows are PLACES it is a button that frames the place — see
           `focus_target` below.
-  meta    13px muted, optional — region · date · location.
-  value   mono, optional, right-aligned, ONLY for a measured quantity
-          (downloads' size). The other two panels have none: a date is
-          not a measurement, and putting one here would make the column
-          mean two different things on two panels.
+  meta    13px muted, optional — region · date · location, and (SNOW-832)
+          the downloads row's "Region · 5.1 MB".
+  value   mono, optional, right-aligned, ONLY for a measured quantity.
+          CURRENTLY UNUSED, and kept anyway: downloads was its one caller
+          and SNOW-832 folded its size into the meta line, because a row
+          grouped under a basemap heading that carries the group's total
+          reads better with one secondary line than with a line and a
+          column. The slot is the shape a measured quantity takes on this
+          row, and re-deriving it at the next caller is how the three
+          panels diverged in the first place.
+
+There was a fifth, `rule` — a 3px bar down the row's left edge carrying
+the basemap a download derives from. SNOW-832 moved that identity up to
+the group heading (includes/_ugc_panel_group.html), where it names the
+whole group instead of repeating itself once per row, and the slot is gone
+rather than left with no caller: unlike `value` it was never generic, and
+`.basemap-identity-fill`'s keyless green fallback is a claim only the
+downloads panel could ever make.
   action  right-aligned icon controls, TRASH ALWAYS LAST. Remove is the
           only action every panel has; favourites and a renameable
           download add a pencil before it.
@@ -47,12 +56,12 @@ detail page). Hugo's design removes both:
 
 Serving both render paths. Downloads builds its rows in JS
 (map_downloads_manager.js's `buildRow` clones this markup out of a
-server-rendered `<template>` and fills `[data-row-label]`,
-`[data-row-meta]`, `[data-row-rule]` and `[data-row-value]`); favourites
-and observations render theirs from a server-side loop, filling the same
-hooks directly. `js_filled` is what reconciles the two: a server row omits
-an element it has no text for, while a JS-filled row needs every hook
-present and empty for `buildRow` to find.
+server-rendered `<template>` and fills `[data-row-label]` and
+`[data-row-meta]`); favourites and observations render theirs from a
+server-side loop, filling the same hooks directly. `js_filled` is what
+reconciles the two: a server row omits an element it has no text for,
+while a JS-filled row needs every hook present and empty for `buildRow` to
+find.
 
 Parameters (passed via {% include … with … %}):
   label         (string) — the primary line's text. Empty for a
@@ -98,16 +107,12 @@ Parameters (passed via {% include … with … %}):
                 its age sits in (static/js/relative_time.js keeps that age
                 true on a page left open, which a plain string cannot be).
                 `meta` and `meta_template` are alternatives — pass one.
-  value         (string, optional) — trailing mono figure (downloads'
-                size). Measured quantities only.
-  rule          (bool, optional) — render the coloured vertical rule
-                down the left edge. Downloads only: it carries the
-                basemap identity colour (`.basemap-identity-fill` +
-                `data-basemap-key`, painted by buildRow). The other two
-                panels have no such per-row identity, and the shared
-                class's own keyless fallback is the "downloaded,
-                basemap unknown" green — a claim neither of them can
-                make.
+  value         (string, optional) — trailing mono figure. Measured
+                quantities only, and no current caller — see the note at
+                the top of this file. NOT rendered for a `js_filled` row
+                any more (SNOW-832): the one JS caller stopped filling it,
+                and an empty column on every cloned row is a column the
+                next reader has to work out is dead.
   renameable    (bool, optional) — render the inline-rename affordance: a
                 hidden `[data-row-rename-input]` beside the label, for
                 inline_rename.js to reveal, and `data-row-renameable` on
@@ -187,13 +192,6 @@ buildRow still finds its hooks by attribute, not by depth.
     {% if renameable %}data-row-renameable{% endif %}
 >
     <div class="flex items-center gap-2 py-2.25">
-        {% if rule %}
-            <span
-                data-row-rule
-                aria-hidden="true"
-                class="basemap-identity-fill w-0.75 shrink-0 self-stretch rounded-pill"
-            ></span>
-        {% endif %}
         <span class="flex min-w-0 flex-1 flex-col gap-0.5">
             {# The label's own box is the inline editor's box: identical        #}
             {# padding, radius and negative margins in both states, so          #}
@@ -295,7 +293,11 @@ buildRow still finds its hooks by attribute, not by depth.
                 </span>
             {% endif %}
         </span>
-        {% if value or js_filled %}
+        {# SNOW-832: `value` alone, no longer `value or js_filled` — see    #}
+        {# the parameter's own note. The one JS-filled caller folded its    #}
+        {# size into the meta line, so a cloned row that still rendered     #}
+        {# this would carry an empty column forever.                        #}
+        {% if value %}
             <span data-row-value class="shrink-0 font-mono text-summary text-text-2">{{ value }}</span>
         {% endif %}
         {% if actions_template %}

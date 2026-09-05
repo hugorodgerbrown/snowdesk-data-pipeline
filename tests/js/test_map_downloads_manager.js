@@ -53,11 +53,20 @@ const DEFAULT_CUSTOM_NAME = 'Custom area %(n)s';
 
 /**
  * Markup mirroring _map_downloads_sheet.html (SNOW-634: no menu row;
- * SNOW-635: Rename; SNOW-645 review: grouped by kind, budget folded into
- * the header, the toggle moved to the foot; SNOW-658: Hugo's map-panel
- * design — the "…" menu is gone from every panel, so a row's actions are
- * two visible icon controls and its rename is an inline edit on its own
- * label).
+ * SNOW-635: Rename; SNOW-645 review: budget folded into the header, the
+ * toggle moved to the foot; SNOW-658: Hugo's map-panel design — the "…"
+ * menu is gone from every panel, so a row's actions are visible icon
+ * controls and its rename is an inline edit on its own label; SNOW-832:
+ * grouped by BASEMAP rather than by kind, so the two fixed group wrappers
+ * became one `<template>` render() clones per group, the row lost its
+ * left-edge rule and its size column, and "Free up space" is gone).
+ *
+ * The group template is a SIBLING of the row template here, as it is in
+ * the real markup: it belongs to the rows partial by subject, but nesting
+ * a `<template>` inside the body `<template>` makes the body unreadable
+ * to anything that finds its end at the next `</template>` — which
+ * `document.getElementById` and tests/public/test_ugc_panels.py both
+ * effectively do.
  *
  * The node ORDER here is kept in step with the real template even though
  * nothing in this file depends on it — the module addresses every element
@@ -83,7 +92,8 @@ function buildFixture() {
             <button type="button" data-action="dismiss">×</button></div>
           <div>
             <div>
-              <div data-downloads-track class="h-2 flex-1 overflow-hidden rounded-pill bg-chip">
+              <div data-downloads-track role="img"
+                   class="h-2 flex-1 overflow-hidden rounded-pill bg-chip">
                 <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
               </div>
               <p data-downloads-summary>
@@ -97,20 +107,13 @@ function buildFixture() {
         </div>
         <p data-downloads-over hidden>You're over your budget.</p>
         <div>
-          <div data-downloads-group="region" hidden>
-            <p>Regions</p>
-            <ul data-downloads-list-region></ul>
-          </div>
-          <div data-downloads-group="custom" hidden>
-            <p>Custom areas</p>
-            <ul data-downloads-list-custom></ul>
-          </div>
-          <p data-downloads-empty hidden>You haven't downloaded any areas yet.</p>
+          <div data-downloads-groups></div>
+          <p data-downloads-empty hidden>No areas downloaded yet.</p>
         </div>
         <div>
           <button type="button" data-panel-add>Download a custom area</button>
         </div>
-        <div>
+        <div data-panel-overlay-toggle>
           <label for="map-downloads-overlay-toggle">Display on the map</label>
           <label for="map-downloads-overlay-toggle">
             <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
@@ -118,20 +121,28 @@ function buildFixture() {
         </div>
       </div>
     </template>
+    <template id="map-downloads-group-template">
+      <div data-panel-group>
+        <div>
+          <span data-group-swatch class="basemap-identity-fill" aria-hidden="true"></span>
+          <p data-hook="group-label" class="uppercase"></p>
+          <span data-group-total></span>
+        </div>
+        <span data-group-rule class="basemap-identity-fill" aria-hidden="true"></span>
+        <ul data-group-rows></ul>
+      </div>
+    </template>
     <template id="map-downloads-row-template">
       <li>
-        <span data-row-rule class="basemap-identity-fill" aria-hidden="true"></span>
         <span>
           <button type="button" data-row-label data-row-focus=""
                   class="hover-affordance text-text-1"></button>
           <input type="text" data-row-rename-input hidden aria-label="Area name">
-          <span data-row-meta class="text-text-2"></span>
+          <span data-row-meta class="text-text-3"></span>
         </span>
         <span>
-          <span data-row-value class="text-text-2"></span>
           <button type="button" data-downloads-here aria-label="Download here">⤓</button>
           <button type="button" data-row-rename data-downloads-rename aria-label="Rename">✎</button>
-          <button type="button" data-downloads-evict aria-label="Free up space">⤒</button>
           <button type="button" data-downloads-delete aria-label="Remove">🗑</button>
         </span>
       </li>
@@ -146,6 +157,13 @@ function buildFixture() {
     </ul>
     <template id="map-downloads-strings-template">
       <span data-string="kind-incomplete">Incomplete</span>
+      <span data-string="kind-region">Region</span>
+      <span data-string="kind-custom">Custom area</span>
+      <span data-string="row-meta">%(kind)s · %(size)s</span>
+      <span data-string="group-unknown">Unknown basemap</span>
+      <span data-string="budget-bar-label">Space used, by base map: %(segments)s</span>
+      <span data-string="budget-bar-empty">Nothing downloaded on this device</span>
+      <span data-string="budget-segment">%(basemap)s %(size)s</span>
       <span data-string="confirm-remove">Remove the offline map for %(name)s? This
             frees %(size)s. You can download it again when you're back online.</span>
       <span data-string="remove-failed">That download couldn't be removed. Try again.</span>
@@ -156,10 +174,6 @@ function buildFixture() {
       <span data-string="not-on-device">On your account — not downloaded here</span>
       <span data-string="focus-row-label">Zoom to %(name)s</span>
       <span data-string="download-here-row-label">Download %(name)s to this device</span>
-      <span data-string="free-space-row-label">Free up the space %(name)s uses on this device</span>
-      <span data-string="confirm-free-space">Remove the offline map for %(name)s from this
-            device? This frees %(size)s and keeps %(name)s on your account, so you can download it
-            again in one tap.</span>
       <span data-string="confirm-forget">Remove %(name)s from your account and from this device?
             This frees %(size)s here and removes it from your other devices too.</span>
       <span data-string="download-here-failed">That download couldn't be started here. Try again.</span>
@@ -305,6 +319,18 @@ function installDownloadsBridge(rows, cachesStub) {
       });
       return label;
     }),
+    // SNOW-832: the same picker markup again, read for its ORDER — which
+    // is what puts the sheet's group headings in the order the picker
+    // offers the basemaps rather than the order they were downloaded in.
+    basemapOrder: vi.fn(() => {
+      const menu = document.getElementById('basemap-menu');
+      if (!menu) return [];
+      const keys = [];
+      menu.querySelectorAll('[data-basemap-key]').forEach((btn) => {
+        if (btn.dataset.basemapKey) keys.push(btn.dataset.basemapKey);
+      });
+      return keys;
+    }),
   };
 }
 
@@ -417,6 +443,25 @@ function rowLabels() {
   ).map((el) => el.textContent);
 }
 
+/** Every row's meta line, in render order (SNOW-832: "Region · 5.1 MB"). */
+function rowMetas() {
+  return Array.from(
+    document.querySelectorAll('#map-downloads-sheet [data-row-meta]'),
+  ).map((el) => el.textContent);
+}
+
+/** Every group heading's label, in render order (SNOW-832). */
+function groupLabels() {
+  return Array.from(
+    document.querySelectorAll('#map-downloads-sheet [data-hook="group-label"]'),
+  ).map((el) => el.textContent);
+}
+
+/** The first (or only) rendered row's own `<li>`. */
+function firstRowElement() {
+  return document.querySelector('#map-downloads-sheet [data-group-rows] li');
+}
+
 beforeEach(() => {
   buildFixture();
   installCachesStub([
@@ -464,7 +509,7 @@ afterEach(() => {
 });
 
 describe('opening the sheet', () => {
-  it('renders one row per stored area, largest first, with names and sizes', async () => {
+  it('renders one row per stored area, grouped, with names and sizes', async () => {
     seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS, 'basemap.budgetMb': 500 });
     await loadModule();
     openSheet();
@@ -472,13 +517,14 @@ describe('opening the sheet', () => {
 
     const sheet = document.getElementById('map-downloads-sheet');
     expect(sheet.hidden).toBe(false);
-    // SNOW-645 review: grouped by kind — REGIONS before CUSTOM AREAS,
-    // regardless of size — not one flat largest-first list any more.
+    // SNOW-832: regions before custom areas, alphabetical within each —
+    // not largest-first (custom-a1 is 120 MB against Aletsch's 40 MB).
     // SNOW-635: an unrenamed custom area's default label is numbered.
     expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
-    expect(
-      Array.from(sheet.querySelectorAll('[data-row-value]')).map((el) => el.textContent),
-    ).toEqual(['40.0 MB', '120 MB']);
+    // The size is on the meta line now, beside the kind, rather than in a
+    // trailing mono column — which this panel no longer renders at all.
+    expect(rowMetas()).toEqual(['Region · 40.0 MB', 'Custom area · 120 MB']);
+    expect(sheet.querySelector('[data-row-value]')).toBeNull();
   });
 
   it('states the running total against the budget', async () => {
@@ -704,8 +750,10 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
   });
 });
 
-describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a swatch)', () => {
-  it("colours the left rule with the row's own basemapKey and names it in the subtitle", async () => {
+describe('basemap groups (SNOW-832 — a heading per basemap, not per kind)', () => {
+  it('renders one heading per basemap, in the picker\'s own order', async () => {
+    // The custom area is Swisstopo and is the bigger download; the picker
+    // offers OpenFreeMap first, so its group leads.
     seed({
       'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
       'basemap.customAreas': [{ ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' }],
@@ -714,30 +762,115 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
     openSheet();
     await settle();
 
-    // Regions render before custom areas (grouped by kind) — see
-    // "opening the sheet" above.
-    const rules = Array.from(document.querySelectorAll('#map-downloads-sheet [data-row-rule]'));
+    expect(groupLabels()).toEqual(['OpenFreeMap', 'Swisstopo (CH)']);
+    expect(rowLabels()).toEqual(['Aletsch', 'Custom area 1']);
+  });
+
+  it("colours each heading's swatch and rule with its own basemap key", async () => {
+    seed({
+      'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
+      'basemap.customAreas': [{ ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' }],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const sheet = document.getElementById('map-downloads-sheet');
+    const swatches = Array.from(sheet.querySelectorAll('[data-group-swatch]'));
+    const rules = Array.from(sheet.querySelectorAll('[data-group-rule]'));
+    // Both marks, both groups — colour is one fact said twice, so the two
+    // must never disagree.
+    expect(swatches.map((el) => el.dataset.basemapKey)).toEqual([
+      'openfreemap_liberty',
+      'swisstopo_winter',
+    ]);
     expect(rules.map((el) => el.dataset.basemapKey)).toEqual([
       'openfreemap_liberty',
       'swisstopo_winter',
     ]);
-    const subtitles = Array.from(
-      document.querySelectorAll('#map-downloads-sheet [data-row-meta]'),
-    );
-    expect(subtitles.map((el) => el.textContent)).toEqual(['OpenFreeMap', 'Swisstopo (CH)']);
+    expect(swatches.every((el) => el.classList.contains('basemap-identity-fill'))).toBe(true);
   });
 
-  it('removes the subtitle for a record written before this ticket shipped', async () => {
-    // No `basemapKey` at all — a legacy record, not a wrong basemap.
+  it('states each group\'s own total for THIS device', async () => {
+    seed({
+      'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
+      'basemap.customAreas': [{ ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' }],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(
+      Array.from(
+        document.querySelectorAll('#map-downloads-sheet [data-group-total]'),
+      ).map((el) => el.textContent),
+    ).toEqual(['40.0 MB', '120 MB']);
+  });
+
+  it('groups a record with no basemapKey under a named "unknown" heading', async () => {
+    // A record written before SNOW-645. It used to lose its subtitle line
+    // entirely; it now has a heading that says what it is, because an
+    // unlabelled heading over real rows reads as a rendering fault.
     seed({ 'basemap.regions': [REGIONS[0]] });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(document.querySelector('#map-downloads-sheet [data-row-meta]')).toBeNull();
+    expect(groupLabels()).toEqual(['Unknown basemap']);
   });
 
-  it('shows "Incomplete" for an orphaned bucket, never a guessed basemap subtitle', async () => {
+  it('never paints the keyless group with the "downloaded" green', async () => {
+    // `.basemap-identity-fill`'s own keyless fallback is --color-sync-ok,
+    // which means "downloaded, basemap unknown". These rows have no colour
+    // identity at all, so they get the neutral `bg-sync-off` instead —
+    // the same call SNOW-749 made for an account-only row's rule.
+    seed({ 'basemap.regions': [REGIONS[0]] });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const sheet = document.getElementById('map-downloads-sheet');
+    for (const mark of sheet.querySelectorAll('[data-group-swatch], [data-group-rule]')) {
+      expect(mark.classList.contains('basemap-identity-fill')).toBe(false);
+      expect(mark.classList.contains('bg-sync-off')).toBe(true);
+      expect(mark.dataset.basemapKey).toBeUndefined();
+    }
+  });
+
+  it('names a key the picker has no row for rather than showing the raw key', async () => {
+    // A deployment BASEMAP= override, or a style since retired. The rows
+    // are real downloads and still deletable, so they are listed — under
+    // the honest heading rather than under "no_such_basemap".
+    seed({ 'basemap.regions': [{ ...REGIONS[0], basemapKey: 'no_such_basemap' }] });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(groupLabels()).toEqual(['Unknown basemap']);
+  });
+
+  it('gives the row no left-edge rule any more', async () => {
+    // SNOW-645 painted the basemap identity once per row. It is a group
+    // heading now, which says it once for the whole group.
+    seed({ 'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }] });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('#map-downloads-sheet [data-row-rule]')).toBeNull();
+  });
+
+  it('renders no group at all on a device with no downloads', async () => {
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(groupLabels()).toEqual([]);
+    expect(document.querySelector('#map-downloads-sheet [data-panel-group]')).toBeNull();
+  });
+
+  it('shows "Incomplete" for an orphaned bucket, never a guessed basemap', async () => {
     seed({});
     await loadModule();
     // An orphan has no record at all, so no basemapKey — mirrors what
@@ -752,21 +885,11 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
     openSheet();
     await settle();
 
-    expect(
-      document.querySelector('#map-downloads-sheet [data-row-meta]').textContent,
-    ).toBe('Incomplete');
-  });
-
-  it('removes the subtitle for a key the picker has no row for', async () => {
-    // The picker markup is the source of truth for the label; a key it
-    // does not recognise (a deployment BASEMAP override, or a stale key
-    // from a since-removed style) must not show an unlabelled subtitle.
-    seed({ 'basemap.regions': [{ ...REGIONS[0], basemapKey: 'no_such_basemap' }] });
-    await loadModule();
-    openSheet();
-    await settle();
-
-    expect(document.querySelector('#map-downloads-sheet [data-row-meta]')).toBeNull();
+    // SNOW-832: it lands in the unnamed group and keeps "Incomplete" as
+    // its whole meta line — never a kind and a size, which would claim a
+    // completed download.
+    expect(groupLabels()).toEqual(['Unknown basemap']);
+    expect(rowMetas()).toEqual(['Incomplete']);
   });
 });
 
@@ -777,7 +900,7 @@ describe("a row's name frames its area (SNOW-811)", () => {
   // buildRow stamps is asserted here; that the stamp then MOVES the map is
   // tests/js/test_row_focus.js's, which owns the shared click.
   function firstRow() {
-    return document.querySelector('#map-downloads-sheet [data-row-rule]').closest('li');
+    return firstRowElement();
   }
 
   it('stamps a custom area with its own bbox', async () => {
@@ -857,17 +980,8 @@ describe("a row's name frames its area (SNOW-811)", () => {
   });
 });
 
-describe('orphan dimming and the pale rule (SNOW-645 review)', () => {
-  // Starts from [data-row-rule], not [data-downloads-delete] — the delete
-  // button's nearest `<li>` ancestor is the OVERFLOW MENU's own item
-  // wrapper (<li role="none"> inside the "…" menu), not the row itself;
-  // [data-row-rule] sits directly in the row's own <li> with nothing
-  // else between.
-  function orphanRow() {
-    return document.querySelector('#map-downloads-sheet [data-row-rule]').closest('li');
-  }
-
-  it('dims the title and size, and pales the rule, for an orphaned row', async () => {
+describe('orphan and account-only dimming (SNOW-645 review; SNOW-832)', () => {
+  it('dims the title of an orphaned row', async () => {
     seed({});
     await loadModule();
     window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
@@ -876,63 +990,39 @@ describe('orphan dimming and the pale rule (SNOW-645 review)', () => {
     openSheet();
     await settle();
 
-    const row = orphanRow();
-    const label = row.querySelector('[data-row-label]');
-    const size = row.querySelector('[data-row-value]');
-    const rule = row.querySelector('[data-row-rule]');
+    const label = firstRowElement().querySelector('[data-row-label]');
     expect(label.classList.contains('text-text-2')).toBe(true);
     expect(label.classList.contains('text-text-1')).toBe(false);
-    expect(size.classList.contains('text-text-3')).toBe(true);
-    expect(size.classList.contains('text-text-2')).toBe(false);
-    expect(rule.classList.contains('opacity-35')).toBe(true);
   });
 
-  it('leaves a normal (non-orphaned) row at full strength — no dimming, no opacity-35', async () => {
+  it('leaves a normal (non-orphaned) row at full strength', async () => {
     seed({ 'basemap.regions': REGIONS });
     await loadModule();
     openSheet();
     await settle();
 
-    const row = document.querySelector('#map-downloads-sheet li');
-    const label = row.querySelector('[data-row-label]');
-    const rule = row.querySelector('[data-row-rule]');
+    const label = firstRowElement().querySelector('[data-row-label]');
     expect(label.classList.contains('text-text-1')).toBe(true);
-    expect(rule.classList.contains('opacity-35')).toBe(false);
+    expect(label.classList.contains('text-text-2')).toBe(false);
   });
 
-  it("paints the rule with the RECOVERED basemap when orphanBasemapKey resolves one", async () => {
+  it('has no size column left to dim (SNOW-832)', async () => {
+    // SNOW-645 dimmed the trailing mono size alongside the title and the
+    // rule. Both are gone: the size is on the meta line, whose own default
+    // is already `text-text-3`, so the title's drop is what carries "this
+    // row is not available offline".
     seed({});
     await loadModule();
     window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
       { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
     ]);
-    window.pwaBasemapDownloads.orphanBasemapKey = vi.fn(async () => 'swisstopo_winter');
     openSheet();
     await settle();
 
-    const rule = orphanRow().querySelector('[data-row-rule]');
-    expect(rule.dataset.basemapKey).toBe('swisstopo_winter');
-    expect(rule.classList.contains('basemap-identity-fill')).toBe(true);
-    expect(rule.classList.contains('bg-sync-off')).toBe(false);
-  });
-
-  it('falls back to the neutral bg-sync-off rule when nothing could be inferred', async () => {
-    seed({});
-    await loadModule();
-    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
-      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
-    ]);
-    window.pwaBasemapDownloads.orphanBasemapKey = vi.fn(async () => null);
-    openSheet();
-    await settle();
-
-    const rule = orphanRow().querySelector('[data-row-rule]');
-    expect(rule.dataset.basemapKey).toBeUndefined();
-    expect(rule.classList.contains('bg-sync-off')).toBe(true);
-    // Never the keyless GREEN default a genuinely-downloaded, basemap-
-    // unknown row gets — see buildRow's own comment: "downloaded, basemap
-    // unknown" is not true of something that never finished.
-    expect(rule.classList.contains('basemap-identity-fill')).toBe(false);
+    expect(firstRowElement().querySelector('[data-row-value]')).toBeNull();
+    expect(
+      firstRowElement().querySelector('[data-row-meta]').classList.contains('text-text-3'),
+    ).toBe(true);
   });
 });
 
@@ -1013,6 +1103,78 @@ describe('the budget readout', () => {
     expect(track.classList.contains('ring-2')).toBe(false);
     expect(track.classList.contains('ring-status-error-text')).toBe(false);
   });
+
+  it('names every basemap and its share on the bar (SNOW-646)', async () => {
+    // The bar was aria-hidden while it was one flat fill saying nothing
+    // the sentence beside it did not. Segmented, it encodes a composition
+    // stated nowhere else on the panel — so it is a real image with a real
+    // description, built from the same segments it paints.
+    seed({
+      'basemap.regions': [{ ...REGIONS[0], basemapKey: 'openfreemap_liberty' }],
+      'basemap.customAreas': [{ ...CUSTOM_AREAS[0], basemapKey: 'swisstopo_winter' }],
+      'basemap.budgetMb': 500,
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const track = document.querySelector('[data-downloads-track]');
+    expect(track.getAttribute('role')).toBe('img');
+    expect(track.hasAttribute('aria-hidden')).toBe(false);
+    // Largest first, matching the paint order — Swisstopo's 120 MB before
+    // OpenFreeMap's 40 MB, which is budgetSegments' own ordering and NOT
+    // the group headings' picker order.
+    expect(track.getAttribute('aria-label')).toBe(
+      'Space used, by base map: Swisstopo (CH) 120 MB, OpenFreeMap 40.0 MB',
+    );
+  });
+
+  it('names the keyless segment rather than leaving a gap in the description', async () => {
+    seed({ 'basemap.regions': [REGIONS[0]], 'basemap.budgetMb': 500 });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('[data-downloads-track]').getAttribute('aria-label')).toBe(
+      'Space used, by base map: Unknown basemap 40.0 MB',
+    );
+  });
+
+  it('says so, rather than nothing, when there is nothing to describe', async () => {
+    // A `role="img"` with an empty name is worse than no image.
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('[data-downloads-track]').getAttribute('aria-label')).toBe(
+      'Nothing downloaded on this device',
+    );
+  });
+});
+
+describe('the "Display on the map" strip (SNOW-832)', () => {
+  it('is hidden while there is nothing downloaded to display', async () => {
+    // The switch drives the squares this panel's downloads draw. With no
+    // downloads there are no squares, so it is a control that cannot do
+    // what it says — and a user who turns it on and sees no change learns
+    // the wrong thing about it.
+    seed({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('[data-panel-overlay-toggle]').hidden).toBe(true);
+  });
+
+  it('comes back as soon as there is a download for it to show', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('[data-panel-overlay-toggle]').hidden).toBe(false);
+  });
 });
 
 describe('account-only rows (SNOW-749)', () => {
@@ -1036,6 +1198,7 @@ describe('account-only rows (SNOW-749)', () => {
       evict: vi.fn(async () => {}),
       rename: vi.fn(async () => true),
       basemapLabel: vi.fn(() => 'OpenFreeMap'),
+      basemapOrder: vi.fn(() => ['openfreemap_liberty']),
     };
   }
 
@@ -1072,7 +1235,7 @@ describe('account-only rows (SNOW-749)', () => {
   });
 
   function row() {
-    return document.querySelector('#map-downloads-sheet li');
+    return firstRowElement();
   }
 
   it('says it is not downloaded here, in place of a basemap name', async () => {
@@ -1098,30 +1261,37 @@ describe('account-only rows (SNOW-749)', () => {
   });
 
   it('never paints anything that reads as cached', async () => {
-    // The load-bearing assertion of the whole ticket's client half. The
-    // shared .basemap-identity-fill class carries a green "downloaded,
-    // basemap unknown" fallback; an account-only row must not have it.
+    // The load-bearing assertion of SNOW-749's client half, restated for
+    // SNOW-832: the row's own rule is gone, so what could now read as
+    // cached is its GROUP heading. It is a real basemap group — the
+    // account row records which basemap the area was fetched under
+    // elsewhere — and the group's TOTAL is what has to tell the truth:
+    // nothing of this row is here, so it costs this device nothing.
     installAreas([ACCOUNT_ONLY_REGION]);
     await loadModule();
     openSheet();
     await settle();
 
-    const rule = row().querySelector('[data-row-rule]');
-    expect(rule.classList.contains('basemap-identity-fill')).toBe(false);
-    expect(rule.classList.contains('bg-sync-off')).toBe(true);
-    expect(rule.classList.contains('opacity-35')).toBe(true);
+    expect(row().querySelector('[data-row-rule]')).toBeNull();
+    expect(
+      document.querySelector('#map-downloads-sheet [data-group-total]').textContent,
+    ).toBe('0 MB');
+    // And the row itself still says, in words, that it is not here.
+    expect(row().querySelector('[data-row-meta]').textContent).toBe(
+      'On your account — not downloaded here',
+    );
   });
 
-  it('offers Download here, and no rename or free-up-space', async () => {
+  it('offers Download here, and no rename', async () => {
     installAreas([ACCOUNT_ONLY_REGION]);
     await loadModule();
     openSheet();
     await settle();
 
     expect(row().querySelector('[data-downloads-here]')).not.toBeNull();
-    // Nothing local to rename, and nothing local to free.
+    // Nothing local to rename — the rename writes to a local record this
+    // device does not have.
     expect(row().querySelector('[data-downloads-rename]')).toBeNull();
-    expect(row().querySelector('[data-downloads-evict]')).toBeNull();
     // The trash stays: it removes the account row.
     expect(row().querySelector('[data-downloads-delete]')).not.toBeNull();
   });
@@ -1215,13 +1385,14 @@ describe('account-only rows (SNOW-749)', () => {
   });
 });
 
-describe('the two destructive verbs (SNOW-749)', () => {
+describe('the trash, the one destructive verb (SNOW-749; SNOW-832)', () => {
   function installAreas(areas) {
     window.pwaBasemapDownloads = {
       areas: vi.fn(async () => areas),
       evict: vi.fn(async () => {}),
       rename: vi.fn(async () => true),
       basemapLabel: vi.fn(() => 'OpenFreeMap'),
+      basemapOrder: vi.fn(() => ['openfreemap_liberty']),
     };
   }
 
@@ -1247,20 +1418,13 @@ describe('the two destructive verbs (SNOW-749)', () => {
     delete window.pwaDownloadsSync;
   });
 
-  it('offers both verbs on a row that is here AND on the account', async () => {
+  it('offers the trash alone, on a row that is here AND on the account', async () => {
+    // SNOW-749 put a second destructive control beside it here — "Free up
+    // space", which removed this device's tiles and kept the account row.
+    // SNOW-832 removes it: the difference between the two lived in a
+    // confirm dialogue neither glyph could show, so it cost a decision on
+    // every row to offer a gentler outcome on some of them.
     installAreas([SYNCED_HERE]);
-    await loadModule();
-    openSheet();
-    await settle();
-
-    expect(document.querySelector('[data-downloads-evict]')).not.toBeNull();
-    expect(document.querySelector('[data-downloads-delete]')).not.toBeNull();
-  });
-
-  it('offers only the trash on a row with no account row behind it', async () => {
-    // With nothing to keep, the two verbs would do the same thing — and a
-    // second control indistinguishable in effect is worse than one.
-    installAreas([{ ...SYNCED_HERE, synced: false }]);
     await loadModule();
     openSheet();
     await settle();
@@ -1269,20 +1433,7 @@ describe('the two destructive verbs (SNOW-749)', () => {
     expect(document.querySelector('[data-downloads-delete]')).not.toBeNull();
   });
 
-  it('free-up-space evicts locally and keeps the account row', async () => {
-    installAreas([SYNCED_HERE]);
-    await loadModule();
-    openSheet();
-    await settle();
-
-    document.querySelector('[data-downloads-evict]').click();
-    await settle();
-
-    expect(window.pwaBasemapDownloads.evict).toHaveBeenCalledWith(['region-CH-2101']);
-    expect(window.pwaDownloadsSync.forget).not.toHaveBeenCalled();
-  });
-
-  it('the trash does both', async () => {
+  it('removes the area from the account and from this device', async () => {
     installAreas([SYNCED_HERE]);
     await loadModule();
     openSheet();
@@ -1295,21 +1446,16 @@ describe('the two destructive verbs (SNOW-749)', () => {
     expect(window.pwaBasemapDownloads.evict).toHaveBeenCalledWith(['region-CH-2101']);
   });
 
-  it('says what each verb will actually do before it does it', async () => {
-    // The two confirmations differ in exactly the clause that differs in
-    // effect, so the choice can be judged rather than discovered.
+  it('says it will remove the area from the other devices too', async () => {
     installAreas([SYNCED_HERE]);
     await loadModule();
     openSheet();
     await settle();
 
-    document.querySelector('[data-downloads-evict]').click();
-    await settle();
-    expect(window.confirm.mock.calls[0][0]).toContain('keeps Verbier on your account');
-
     document.querySelector('[data-downloads-delete]').click();
     await settle();
-    expect(window.confirm.mock.calls[1][0]).toContain('your other devices');
+
+    expect(window.confirm.mock.calls[0][0]).toContain('your other devices');
   });
 
   it('keeps the pre-SNOW-749 wording for a row with no account row', async () => {
@@ -1338,6 +1484,7 @@ describe('the two destructive verbs (SNOW-749)', () => {
     openSheet();
     await settle();
 
+    // SNOW-832 sorts by name, so Anzère (unsynced) leads Verbier.
     const trashes = document.querySelectorAll('[data-downloads-delete]');
     trashes[0].click();
     await settle();
@@ -1345,8 +1492,8 @@ describe('the two destructive verbs (SNOW-749)', () => {
     await settle();
 
     const messages = window.confirm.mock.calls.map((call) => call[0]);
-    expect(messages[0]).toContain('other devices');
-    expect(messages[1]).not.toContain('other devices');
+    expect(messages[0]).not.toContain('other devices');
+    expect(messages[1]).toContain('other devices');
   });
 });
 
@@ -1740,12 +1887,14 @@ describe('the add-trigger', () => {
 });
 
 describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
-  /** The row for the first (largest) custom area.
+  /** The row for a custom area — the LAST row, since SNOW-832 sorts
+   * regions before custom areas.
    *
    * @returns {HTMLElement}
    */
   function customRow() {
-    return document.querySelector('[data-downloads-list-custom] li');
+    const rows = document.querySelectorAll('#map-downloads-sheet [data-group-rows] li');
+    return rows[rows.length - 1];
   }
 
   /** Type into an open editor and finish the edit.
@@ -1790,7 +1939,7 @@ describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
     openSheet();
     await settle();
 
-    const region = document.querySelector('[data-downloads-list-region] li');
+    const region = firstRowElement();
     expect(region.hasAttribute('data-row-renameable')).toBe(false);
     expect(region.querySelector('[data-row-rename-input]')).toBeNull();
   });
@@ -1901,15 +2050,17 @@ describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
     openSheet();
     await settle();
 
-    // Rows render largest-first; the first area (120 MB) sorts first.
+    // SNOW-832 sorts by name, so "Custom area 1" leads "Custom area 2"
+    // and customRow() — the last row — is the SECOND one. Renaming it to
+    // "Home run" then re-sorts it below "Custom area 1".
     customRow().querySelector('[data-downloads-rename]').click();
     finishEdit(customRow(), 'Home run', 'Enter');
     await settle();
 
     const stored = rows.get('basemap.customAreas');
-    expect(stored.find((a) => a.id === 'custom-a1').name).toBe('Home run');
-    expect(stored.find((a) => a.id === 'custom-b2').name).toBeUndefined();
-    expect(rowLabels()).toEqual(['Home run', 'Custom area 2']);
+    expect(stored.find((a) => a.id === 'custom-b2').name).toBe('Home run');
+    expect(stored.find((a) => a.id === 'custom-a1').name).toBeUndefined();
+    expect(rowLabels()).toEqual(['Custom area 1', 'Home run']);
   });
 
   it('toasts, and keeps the old label, when the write does not land', async () => {
@@ -1930,18 +2081,18 @@ describe('renaming an area (SNOW-635; inline since SNOW-658)', () => {
 });
 
 describe('deleting an area', () => {
-  // SNOW-645 review: rows are grouped by kind now (REGIONS before CUSTOM
-  // AREAS), so a bare "first [data-downloads-delete] in the document"
-  // would land on Aletsch (the region), not custom-a1 — a silent change
-  // of which area every test below actually deletes. Scoped to the
-  // custom-areas group to keep deleting THAT area (120 MB, the one every
-  // assertion below was written against).
+  // Rows sort regions before custom areas (SNOW-832), so a bare "first
+  // [data-downloads-delete] in the document" would land on Aletsch (the
+  // region), not custom-a1 — a silent change of which area every test
+  // below actually deletes. Scoped to the LAST row, which is the custom
+  // area these assertions were written against (120 MB).
   async function openAndDeleteFirst() {
     openSheet();
     await settle();
-    document
-      .querySelector('[data-downloads-list-custom] [data-downloads-delete]')
-      .click();
+    const trashes = document.querySelectorAll(
+      '#map-downloads-sheet [data-group-rows] [data-downloads-delete]',
+    );
+    trashes[trashes.length - 1].click();
     await settle();
   }
 
@@ -1998,11 +2149,13 @@ describe('deleting an area', () => {
     ]);
     const rows = seed({ 'basemap.customAreas': [...CUSTOM_AREAS, second] });
     await loadModule();
+    // SNOW-832 sorts by name, so the LAST row — the one this helper
+    // deletes — is "Custom area 2".
     await openAndDeleteFirst();
 
-    expect(rows.get('basemap.customAreas').map((a) => a.id)).toEqual(['custom-b2']);
-    expect(window.caches.names.has('snowdesk-basemap-pinned-custom-b2')).toBe(true);
-    expect(rowLabels()).toEqual(['Custom area 2']);
+    expect(rows.get('basemap.customAreas').map((a) => a.id)).toEqual(['custom-a1']);
+    expect(window.caches.names.has('snowdesk-basemap-pinned-custom-a1')).toBe(true);
+    expect(rowLabels()).toEqual(['Custom area 1']);
   });
 
   it("refreshes the map's own views of the cache it just changed", async () => {
@@ -2063,9 +2216,10 @@ describe('deleting an area', () => {
     // The failure mutates the SAME button that was clicked (the custom
     // area's — see openAndDeleteFirst), not a fresh re-render, so the
     // assertion has to stay scoped to it too.
-    const button = document.querySelector(
-      '[data-downloads-list-custom] [data-downloads-delete]',
+    const trashes = document.querySelectorAll(
+      '#map-downloads-sheet [data-group-rows] [data-downloads-delete]',
     );
+    const button = trashes[trashes.length - 1];
     expect(button.textContent).toBe("That download couldn't be removed. Try again.");
     expect(button.hasAttribute('disabled')).toBe(true);
   });

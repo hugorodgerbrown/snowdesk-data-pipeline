@@ -4,8 +4,9 @@ public/partials/_map_downloads_sheet.html — "Manage downloads" sheet
 (SNOW-588; the way in rewritten by SNOW-634; SNOW-635 lets more than one
 custom area be listed, and adds Rename; SNOW-645 review re-lays the whole
 sheet out to Hugo's "1c — Grouped by kind · budget in the header · CTA in
-its group" design — see the running section-by-section notes below for
-what moved and why).
+its group" design; SNOW-832 regroups that list by BASEMAP rather than by
+kind — see the running section-by-section notes below for what moved and
+why).
 
 The surface that answers "what have I stored offline, and what is it
 costing me". Opened from ``#map-custom-download-control`` (the bottom-right
@@ -96,7 +97,7 @@ the row's own label, so home.html loads that module once for both.
 {# Hugo's design gives all three UGC panels. Two slots stay this sheet's     #}
 {# own: `header_template` (the budget meter — the one legitimate per-panel   #}
 {# extra, since neither of the other two costs the device anything to hold)  #}
-{# and `rows_template` (the REGIONS / CUSTOM AREAS groups). Nothing here is  #}
+{# and `rows_template` (the per-basemap groups — SNOW-832). Nothing here is #}
 {# positional as far as the JS is concerned: every element is addressed by   #}
 {# data-attribute, never by index or sibling relationship.                   #}
 <template id="map-downloads-body-template">
@@ -113,15 +114,39 @@ the row's own label, so home.html loads that module once for both.
     {# it is what explains how a row can be listed here and still not be    #}
     {# available offline.                                                   #}
     {% trans "Your areas follow your account. The map data and the budget stay on this device." as downloads_context_line %}
-    {# No `section_label`: this panel has TWO groups (Regions, Custom       #}
-    {# areas) and renders both headings itself, through the same partial.   #}
+    {# No `section_label`: this panel's list is grouped, and how many      #}
+    {# groups there are is DATA (one per basemap this device holds —        #}
+    {# SNOW-832), so it renders its own headings from its rows template     #}
+    {# rather than taking one fixed heading from the shell.                 #}
     {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" context_line=downloads_context_line header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
+</template>
+{# One basemap group (SNOW-832): the swatch, the heading label, this        #}
+{# device's total for that basemap, the identity rule, and the empty `<ul>` #}
+{# render() appends the group's rows into. Cloned once per group that has   #}
+{# rows — no group is ever rendered empty, which is why (unlike SNOW-645's  #}
+{# two fixed REGIONS / CUSTOM AREAS wrappers) it needs no `hidden` state.   #}
+{#                                                                          #}
+{# It sits HERE, beside the row template, rather than inside the rows       #}
+{# partial where it belongs by subject. Nesting a `<template>` inside the   #}
+{# body `<template>` is legal and clones correctly, but it makes the body   #}
+{# template unreadable to anything that finds its end by looking for the    #}
+{# next `</template>` — which both tests/public/test_ugc_panels.py and      #}
+{# `document.getElementById` effectively do. Same place, same lookup, same  #}
+{# lifetime as the row template is the simpler answer.                      #}
+{#                                                                          #}
+{# `only` on the include is load-bearing: an include inherits the parent    #}
+{# context, and `rows_template` is in scope here from the panel above, so   #}
+{# without it the group partial's own `{% include rows_template %}` would   #}
+{# render the rows partial inside every group.                              #}
+<template id="map-downloads-group-template">
+    {% include "includes/_ugc_panel_group.html" with label_hook="group-label" only %}
 </template>
 {# One list row (includes/_ugc_panel_row.html — the one anatomy Hugo's      #}
 {# design gives all three UGC panels). `js_filled` renders every            #}
 {# [data-row-*] hook empty for buildRow to fill, including the inline-      #}
-{# rename input; `rule` adds the coloured left-edge rule, which only this   #}
-{# panel has (it carries the basemap identity colour).                      #}
+{# rename input. No `rule` any more (SNOW-832): the coloured left-edge rule #}
+{# carried the basemap identity, and the group heading above the row does   #}
+{# that now — once per group rather than once per row.                      #}
 {#                                                                          #}
 {# ``data-downloads-delete`` carries the area id so the delegated click      #}
 {# handler needs no closure over the rendered row; ``data-downloads-rename`` #}
@@ -130,7 +155,7 @@ the row's own label, so home.html loads that module once for both.
 {# with that row's own inline-edit affordance.                               #}
 <template id="map-downloads-row-template">
     {% trans "Area name" as downloads_rename_label %}
-    {% include "includes/_ugc_panel_row.html" with rule=True js_filled=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" %}
+    {% include "includes/_ugc_panel_row.html" with js_filled=True rename_label=downloads_rename_label actions_template="includes/_map_downloads_row_actions.html" %}
 </template>
 {# Strings the JS needs but cannot hold itself — makemessages only scans    #}
 {# templates and Python, so anything JS renders has to be handed to it      #}
@@ -151,6 +176,31 @@ the row's own label, so home.html loads that module once for both.
     {# second mock shows the shorter form. A genuine msgid change, not a   #}
     {# JS-side truncation, so it stays through makemessages/translation.   #}
     <span data-string="kind-incomplete">{% trans "Incomplete" %}</span>
+    {# SNOW-832: what KIND of download a row is. The two fixed REGIONS /   #}
+    {# CUSTOM AREAS headings are gone — the headings name BASEMAPS now —   #}
+    {# so the kind comes down into the row's own meta line, beside the     #}
+    {# size that used to sit in its own trailing column. The separator     #}
+    {# lives inside `row-meta` rather than being joined in JS, matching    #}
+    {# every server-rendered meta line on the other panels                 #}
+    {# (favourites' "{{ region }} · saved {{ when }}") — a translator who  #}
+    {# needs a different mark, or a different order, can have both.        #}
+    <span data-string="kind-region">{% trans "Region" %}</span>
+    <span data-string="kind-custom">{% trans "Custom area" %}</span>
+    <span data-string="row-meta">{% blocktrans %}%(kind)s · %(size)s{% endblocktrans %}</span>
+    {# SNOW-832: the heading for the group whose basemap cannot be named — #}
+    {# a record written before SNOW-645, an orphaned bucket, an account    #}
+    {# row with no basemap, or a key the picker no longer offers. Named    #}
+    {# rather than left blank: an unlabelled heading over real rows reads  #}
+    {# as a rendering fault, and these rows are real and still deletable.  #}
+    <span data-string="group-unknown">{% trans "Unknown basemap" %}</span>
+    {# SNOW-646/832: the budget bar's accessible equivalent. The bar was   #}
+    {# aria-hidden while it was one flat fill saying nothing the sentence  #}
+    {# beside it did not; segmented by basemap it encodes a COMPOSITION    #}
+    {# stated nowhere else on the panel, so it is a role="img" whose       #}
+    {# description render() builds from the same segments it paints.       #}
+    <span data-string="budget-bar-label">{% blocktrans %}Space used, by base map: %(segments)s{% endblocktrans %}</span>
+    <span data-string="budget-bar-empty">{% trans "Nothing downloaded on this device" %}</span>
+    <span data-string="budget-segment">{% blocktrans %}%(basemap)s %(size)s{% endblocktrans %}</span>
     <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s. You can
             download it again when you're back online.{% endblocktrans %}</span>
     <span data-string="remove-failed">{% trans "That download couldn't be removed. Try again." %}</span>
@@ -204,18 +254,15 @@ the row's own label, so home.html loads that module once for both.
     <span data-string="not-on-device">{% trans "On your account — not downloaded here" %}</span>
     <span data-string="download-here-row-label">{% blocktrans %}Download %(name)s to this
             device{% endblocktrans %}</span>
-    <span data-string="free-space-row-label">{% blocktrans %}Free up the space %(name)s uses on this
-            device{% endblocktrans %}</span>
-    {# The two destructive verbs' confirmations. They differ in exactly   #}
-    {# the clause that differs in effect — "keeps it on your account" vs  #}
-    {# "removes it from your other devices too" — so the choice can be    #}
-    {# judged before it is made rather than discovered afterwards. The    #}
-    {# pre-SNOW-749 "confirm-remove" above is still used verbatim on a    #}
-    {# device with no account behind it (flag off, or signed out), where  #}
-    {# there is only one outcome and the older wording is exactly right.  #}
-    <span data-string="confirm-free-space">{% blocktrans %}Remove the offline map for %(name)s from this device? This
-            frees %(size)s and keeps %(name)s on your account, so you can download it again in one
-            tap.{% endblocktrans %}</span>
+    {# SNOW-832 removed `free-space-row-label` and `confirm-free-space`   #}
+    {# with the second destructive verb they belonged to — see            #}
+    {# includes/_map_downloads_row_actions.html for why it went. The trash #}
+    {# means gone everywhere again, and its two confirmations are the      #}
+    {# whole set: this one for a row with an account row behind it, the    #}
+    {# pre-SNOW-749 "confirm-remove" above verbatim for a row without      #}
+    {# (signed out, or a download made before the areas followed the       #}
+    {# account), where there is one outcome and the older wording is       #}
+    {# exactly right.                                                      #}
     <span data-string="confirm-forget">{% blocktrans %}Remove %(name)s from your account and from this device? This
             frees %(size)s here and removes it from your other devices too.{% endblocktrans %}</span>
     <span data-string="download-here-failed">{% trans "That download couldn't be started here. Try again." %}</span>

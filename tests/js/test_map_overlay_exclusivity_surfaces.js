@@ -197,14 +197,22 @@ function buildFixture() {
     </form>
     <div id="map-downloads-sheet" hidden tabindex="-1" data-overlay></div>
     <template id="map-downloads-body-template">
-      <div><div data-downloads-group="region" hidden><ul data-downloads-list-region></ul></div>
-        <div data-downloads-group="custom" hidden><ul data-downloads-list-custom></ul></div>
+      <div><div data-downloads-groups></div>
         <p data-downloads-empty hidden></p>
         <button type="button" data-panel-add></button>
-        <input id="map-downloads-overlay-toggle" type="checkbox" role="switch"></div>
+        <div data-panel-overlay-toggle>
+          <input id="map-downloads-overlay-toggle" type="checkbox" role="switch">
+        </div></div>
+    </template>
+    <!-- SNOW-832: map_downloads_manager.js returns early without this
+         template, so every downloads case below would silently stop
+         exercising the registry rather than fail. -->
+    <template id="map-downloads-group-template">
+      <div data-panel-group><p data-hook="group-label"></p>
+        <span data-group-total></span><ul data-group-rows></ul></div>
     </template>
     <template id="map-downloads-row-template">
-      <li><span data-row-label></span><span data-row-meta></span><span data-row-value></span></li>
+      <li><span data-row-label></span><span data-row-meta></span></li>
     </template>
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
       <div id="map-controls-collapsible">

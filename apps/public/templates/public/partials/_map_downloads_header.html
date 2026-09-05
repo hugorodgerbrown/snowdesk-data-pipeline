@@ -20,7 +20,8 @@ place for it to go stale.)
 
 The bar/track/select hooks (data-downloads-bar/-track/-budget/-summary)
 are unchanged; map_downloads_manager.js's render() populates them exactly
-as it always has.
+as it always has. SNOW-646/832: the track gained `role="img"` and an
+aria-label render() builds from the segments — see the comment on it.
 
 The budget <select>'s options are NOT rendered here — they are built by
 map_downloads_manager.js from pwaBasemapManageCore.BUDGET_CHOICES_MB, so
@@ -37,18 +38,30 @@ now, not the header, at that strip's own 16px.
 {% endcomment %}
 <div class="mt-4 flex flex-col gap-2.5">
     <div class="flex items-center gap-2">
-        <div data-downloads-track class="h-2 flex-1 overflow-hidden rounded-pill bg-chip" aria-hidden="true">
+        {# SNOW-646/832: the track is no longer aria-hidden. It was, while  #}
+        {# it was one flat fill saying nothing the sentence beside it did   #}
+        {# not already say. SNOW-645 segmented it by basemap, and SNOW-832  #}
+        {# made those segments a legend for the groups below — so it now    #}
+        {# encodes a COMPOSITION that no sentence on the panel states, and  #}
+        {# a decorative bar would be the only place that composition is     #}
+        {# available. `role="img"` with an aria-label render() builds from  #}
+        {# budgetSegments(): one image with one description, rather than a  #}
+        {# progressbar, because the reading is "what is in it", not "how    #}
+        {# far along".                                                      #}
+        <div data-downloads-track class="h-2 flex-1 overflow-hidden rounded-pill bg-chip" role="img">
             <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
         </div>
-        {# The bar is decorative (aria-hidden, above) — the same figure is  #}
-        {# stated in words here, so a screen reader gets the number rather  #}
-        {# than a percentage role. The used figure is two spans: the        #}
-        {# number+unit in mono/medium/text-1 (data-downloads-summary-value, #}
-        {# set by render() directly — core.formatMegabytes() is a           #}
-        {# locale-invariant numeral, not translatable text), then a plain   #}
-        {# " of" in text-2, a STATIC translated node since "of" alone never #}
-        {# changes and needs no JS to populate it.                          #}
+        {# The used figure is three spans: a static "Using" in text-2       #}
+        {# (SNOW-646 — the readout said "18.4 MB of 500 MB" and never said  #}
+        {# what the number WAS; one word makes it a sentence, and the       #}
+        {# context strip one line above already says whose device it is     #}
+        {# about), the number+unit in mono/medium/text-1                    #}
+        {# (data-downloads-summary-value, set by render() directly —        #}
+        {# core.formatMegabytes() is a locale-invariant numeral, not        #}
+        {# translatable text), then a plain "of" in text-2. Both words are  #}
+        {# STATIC translated nodes: neither changes, so neither needs JS.   #}
         <p data-downloads-summary class="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-xs">
+            <span class="text-text-2">{% trans "Using" %}</span>
             <span data-downloads-summary-value class="font-mono font-medium text-text-1"></span>
             <span class="text-text-2">{% trans "of" %}</span>
         </p>

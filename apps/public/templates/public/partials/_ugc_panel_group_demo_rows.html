@@ -1,0 +1,22 @@
+{% comment %}
+public/partials/_ugc_panel_group_demo_rows.html — the component library's
+stand-in for a group's rows (SNOW-832).
+
+includes/_ugc_panel_group.html takes its rows as a template PATH, for the
+same reason includes/_ugc_panel.html takes its list as one (Django has no
+slot mechanism — see that partial's own header). The real caller's group
+is filled by JS, which paints nothing on a page that runs none, so the
+library needs two static rows to show the heading against a list rather
+than against an empty box.
+
+Two rows, not one, and one of each kind: the whole point of the group is
+that regions and custom areas sit together under the basemap they were
+downloaded for, with the kind on each row's own meta line rather than in a
+heading above it.
+
+Rows only — no `<ul>`, unlike public/partials/_ugc_panel_demo_rows.html,
+because the group partial renders the list element itself (it is the thing
+render() appends into).
+{% endcomment %}
+{% include "includes/_ugc_panel_row.html" with label="Verbier" meta="Region · 12.8 MB" actions_template="includes/_map_downloads_row_actions.html" %}
+{% include "includes/_ugc_panel_row.html" with label="Rosablanche traverse" meta="Custom area · 5.4 MB" actions_template="includes/_map_downloads_row_actions.html" %}

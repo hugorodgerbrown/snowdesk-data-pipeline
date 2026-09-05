@@ -15,8 +15,15 @@ hard-coded. It is left alone: it demonstrates the row's own slots (value,
 disclosure, action cluster) for a designer, which is a different job from
 showing a help reader what one panel holds.
 {% endcomment %}
+{# SNOW-832 dropped `rule` and `value` from this loop with the slots       #}
+{# themselves: the coloured left-edge rule moved up to a group heading     #}
+{# (includes/_ugc_panel_group.html), and the trailing mono size folded     #}
+{# into the downloads row's own meta line. It matters that this            #}
+{# illustration stops rendering them — /help/ showing a reader a panel     #}
+{# that does not exist is a worse fault than an out-of-date mock, which is #}
+{# the same reason apps.public.component_previews tracks the real copy.    #}
 <ul class="flex flex-col">
     {% for row in panel.rows %}
-        {% include "includes/_ugc_panel_row.html" with label=row.label meta=row.meta value=row.value rule=forloop.last|yesno:",True" only %}
+        {% include "includes/_ugc_panel_row.html" with label=row.label meta=row.meta only %}
     {% endfor %}
 </ul>

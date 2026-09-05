@@ -28,10 +28,21 @@ switch, so it survives the clone.
 Parameters (passed via {% include … with … %}):
   id    (string) — DOM id for the switch input, so the label's `for`
         addresses it and the owning module can select this exact instance.
-        Required.
+        Required. `data-panel-overlay-toggle` on the strip is the OTHER
+        hook (SNOW-832) — see the comment above the markup.
   label (string) — the visible, translated label text. Required.
 {% endcomment %}
-<div class="flex items-center justify-between gap-3 rounded-tag bg-tag px-3 py-2">
+{# `data-panel-overlay-toggle` (SNOW-832) marks the strip itself, so an   #}
+{# owning module can hide the whole control rather than reaching for it   #}
+{# through the switch's parentage. The downloads panel hides it when the  #}
+{# list is empty — a "Display on the map" switch over nothing to display  #}
+{# is a control that cannot do what it says. The hook is on the STRIP     #}
+{# because that is what has to go: hiding the switch alone would leave    #}
+{# its label and its box behind.                                          #}
+<div
+    data-panel-overlay-toggle
+    class="flex items-center justify-between gap-3 rounded-tag bg-tag px-3 py-2"
+>
     {# SNOW-645 review: 14px/500/text-1 (not text-sm/text-2, i.e. 400   #}
     {# weight) — reconciled against the design, which reads this label  #}
     {# with more weight than a purely descriptive one.                  #}

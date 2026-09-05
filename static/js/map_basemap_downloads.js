@@ -108,6 +108,43 @@ function basemapLabel(key) {
   return _basemapLabelsByKey[key] || '';
 }
 
+/**
+ * Every basemap key the picker offers, in the order it offers them
+ * (SNOW-832).
+ *
+ * The same source as `basemapLabel` above, and for the same reason:
+ * `apps/public/views.py`'s `_BASEMAP_LABELS` is the single definition of
+ * both the label AND the order (see `basemap_options`' own docstring —
+ * the picker's display order is curated there, not in
+ * `settings.BASEMAP_STYLES`), and duplicating the order into JS would be
+ * a second list to keep in step with no test able to notice it drifting.
+ *
+ * The Manage downloads sheet is the caller: it groups its rows by basemap
+ * (`basemap_manage_core.js`'s `groupRowsByBasemap`) and lists the groups
+ * in the order the picker lists the basemaps, so the panel and the picker
+ * read the same way round.
+ *
+ * NOT cached, unlike `basemapLabel`'s lookup: this is one DOM walk per
+ * sheet open rather than one per row, and the cache is what would have to
+ * be invalidated if the picker ever became dynamic.
+ *
+ * @returns {string[]} Empty with no picker in the document — the caller
+ *   then falls back to first-appearance order, which is an order, just not
+ *   the curated one.
+ */
+function basemapOrder() {
+  const menu = document.getElementById('basemap-menu');
+  if (!menu) return [];
+  const keys = [];
+  // Same iterate-and-compare shape as `basemapLabel`: never interpolates a
+  // stored key into a selector.
+  menu.querySelectorAll('[data-basemap-key]').forEach((btn) => {
+    const key = btn.dataset.basemapKey;
+    if (key && keys.indexOf(key) === -1) keys.push(key);
+  });
+  return keys;
+}
+
 // Hex floor for basemapIdentityColour below — the SAME green
 // --color-sync-ok resolves to in light mode (src/css/main.css @theme).
 // MapLibre paint values can't reference a CSS custom property at all, so
@@ -837,53 +874,6 @@ async function basemapDownloadedTemplates() {
 }
 
 /**
- * SNOW-645 review: infer which basemap an ORPHANED bucket (SNOW-612 — a
- * pinned bucket with no record, so `reconcileAreas` gives it
- * `basemapKey: null`) most likely belongs to, for the "Manage downloads"
- * row's pale left-edge rule — DECORATION ONLY. This is inference from
- * what is actually on disk, never a record: nothing writes it back
- * anywhere, and no other reader may ever treat the result as anything
- * more than a colour hint for a row whose only action is Remove.
- *
- * Matches the orphan's own cached tile URLs against every DISTINCT
- * template `basemapDownloadedTemplates()` already knows about — the SAME
- * per-template regex match `cachedTilesFromURLs` performs for the
- * downloaded-tiles overlay, just against one bucket's URLs instead of the
- * union of all of them. No new URL-parsing or origin-sniffing: a bucket
- * whose tiles match a template on record was fetched from that
- * template's basemap.
- *
- * @param {string} areaId The orphan's own area id (its bucket name is
- *   `BASEMAP_PINNED_CACHE_PREFIX + areaId`).
- * @returns {Promise<string|null>} The first matching basemapKey, or
- *   `null` when the bucket's tiles match no template currently on record
- *   (a basemap since retired from the picker, an unreadable bucket, or
- *   Cache Storage itself unavailable) — the caller's cue to fall back to
- *   a pale NEUTRAL rule rather than guessing a basemap.
- */
-async function orphanBasemapKey(areaId) {
-  const core = self.pwaBasemapDownloadCore;
-  if (!core || !('caches' in window)) return null;
-
-  let urls;
-  try {
-    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
-    const requests = await cache.keys();
-    urls = requests.map((request) => request.url);
-  } catch (_e) {
-    return null;
-  }
-  if (!urls.length) return null;
-
-  const templates = await basemapDownloadedTemplates();
-  for (const { template, basemapKey } of templates) {
-    if (!basemapKey) continue;
-    if (core.cachedTilesFromURLs(template, urls).length > 0) return basemapKey;
-  }
-  return null;
-}
-
-/**
  * SNOW-586: pre-flight an incoming `areaId` download of `mb` megabytes
  * against the standing byte budget — the page-side half of the eviction
  * plan (basemap_download_core.js's `planEviction` does the arithmetic;
@@ -1087,15 +1077,14 @@ window.pwaBasemapDownloads = Object.freeze({
   basemapLabel: (key) => basemapLabel(key),
 
   /**
-   * SNOW-645 review: infer an orphaned bucket's basemap from its own
-   * cached tiles — see `orphanBasemapKey`'s own docstring for the
-   * matching and the "decoration only" caveat. Exposed here for the same
-   * load-order reason `basemapLabel` is.
+   * SNOW-832: every picker basemap key in the picker's own order — see
+   * `basemapOrder`'s own docstring. Exposed for the same load-order
+   * reason `basemapLabel` is: the Manage downloads sheet is outside the
+   * map bundle's parse-time contract.
    *
-   * @param {string} areaId
-   * @returns {Promise<string|null>}
+   * @returns {string[]}
    */
-  orphanBasemapKey: (areaId) => orphanBasemapKey(areaId),
+  basemapOrder: () => basemapOrder(),
 
   // SNOW-649: the two render-scheduling primitives below are exposed for
   // ONE reason — they were untestable. Both are pure higher-order

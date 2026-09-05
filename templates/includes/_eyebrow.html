@@ -10,10 +10,20 @@
                    (a ``{% for id in … %}`` loop, say) would silently land
                    on the heading.
     data_testid — optional data-testid attribute value.
+    data_hook   — optional ``data-hook`` attribute VALUE (SNOW-832: the
+                   production-hook equivalent of ``data_testid``, for a
+                   heading a JS module has to find and fill —
+                   includes/_ugc_panel_group.html renders one copy into a
+                   ``<template>`` and map_downloads_manager.js clones it
+                   per group). A value on a fixed attribute, never an
+                   attribute NAME: an include inherits the parent context,
+                   and a caller-named attribute is the injection surface
+                   includes/_switch.html's ``extra_attrs`` was removed for.
     class_extra — optional extra Tailwind classes (e.g. "mb-3", "mb-6").
 {% endcomment %}
 <{{ tag|default:"h2" }}
     class="text-xs font-mono uppercase tracking-widest text-text-3{% if class_extra %} {{ class_extra }}{% endif %}"
     {% if heading_id %}id="{{ heading_id }}"{% endif %}
     {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
+    {% if data_hook %}data-hook="{{ data_hook }}"{% endif %}
 >{{ text }}</{{ tag|default:"h2" }}>
