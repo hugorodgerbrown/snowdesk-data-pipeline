@@ -532,36 +532,13 @@ class TestIconHalo:
 
 
 @pytest.mark.django_db
-class TestIconSetSwitcher:
-    """The DEBUG-only strip for comparing candidate icon sets (SNOW-791)."""
+class TestIconSetOverride:
+    """``?icons=<name>`` pins a candidate set for the session (DEBUG only).
 
-    @freeze_time(MIDDAY)
-    def test_switching_sets_keeps_every_other_query_parameter(self) -> None:
-        """A switch link must not drop the page's own parameters.
-
-        The strip first shipped with a bare ``?icons=<name>`` href, which
-        replaces the whole query string. On this page that dropped
-        ``?date=``, so switching fell back to today, today has no row, and
-        every icon vanished — which reads as the switch being broken rather
-        than the date being lost.
-        """
-        location = LocationFactory.create(elevation_m=2200.0)
-        ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
-        WeatherFactory.create(
-            location=location,
-            observed_on=PAGE_DATE,
-            sunrise=SUNRISE,
-            sunset=SUNSET,
-            forecast=[_forecast_day("2026-08-31")],
-        )
-        url = reverse("public:location_weather", args=[location.short_id])
-
-        content = Client().get(f"{url}?date={PAGE_DATE.isoformat()}").content.decode()
-
-        hrefs = re.findall(r'href="(\?[^"]*icons=[^"]*)"', content)
-        assert hrefs, "the switcher rendered no links"
-        for href in hrefs:
-            assert f"date={PAGE_DATE.isoformat()}" in href, href
+    SNOW-842 removed the floating strip that used to offer these as links;
+    the override itself stays, because it is how a set is compared against
+    real data and how ``/_icon-sets/`` is reached with one pinned.
+    """
 
     @freeze_time(MIDDAY)
     def test_the_chosen_set_reaches_the_rendered_icon(self) -> None:

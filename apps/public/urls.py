@@ -154,7 +154,8 @@ urlpatterns = [
         name="components_panel",
     ),
     # SNOW-791: every icon bucket against every candidate set, side by side.
-    # A working surface for choosing a set; goes with the switcher.
+    # A working surface for choosing a set. The only place the sets are
+    # drawn together now that SNOW-842 removed the floating strip.
     path(
         "_icon-sets/",
         debug_views.icon_set_comparison,
