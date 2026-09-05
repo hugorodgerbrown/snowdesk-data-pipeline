@@ -107,3 +107,22 @@ probe into it would make a dot answer about an area the menu never names.
 - A new sync-status token, `--color-sync-partial`, joins `--color-sync-ok`
   and `--color-sync-blocked`. It is the offline-availability family, not the
   flash-message severity scale.
+- **An area's completeness is contingent on its neighbours.** The probe
+  reads `pinnedBasemapCacheURLs()`, which unions every pinned bucket
+  (SNOW-586), and unlike tiles a basemap's style/sprite/TileJSON URLs are
+  *identical* across every area sharing that basemap. So an area that never
+  fetched its own TileJSON reads complete on a sibling area's copy — which
+  is the RIGHT answer while that sibling exists, because `sw.js`'s
+  `_searchPinnedBuckets` really will serve the request from it. The cost is
+  that removing area B can flip area A to `incomplete` with no visible
+  cause. That is inherited from the union-serving design, not introduced
+  here, and one tap of Repair resolves it — but a "why did this area
+  suddenly go incomplete" report is expected behaviour, not a regression.
+- **A repair from the sheet does not heal `deps`; a repair from the roundel
+  does.** The roundel's repair re-enters `_probeDone`, which heals the
+  record from what the cache has just proven. The sheet's has no probe to
+  re-enter, so a legacy record repaired there keeps its empty `deps` and
+  falls back to row three ("skip") once the user switches basemap. Safe in
+  both directions — skip never accuses and never falsely completes — but the
+  two paths are not equally informative, and closing the gap means giving
+  the sheet's repair a heal of its own.
