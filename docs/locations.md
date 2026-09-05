@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-05
 ---
 
 # Locations — what every coordinate in this codebase means
@@ -29,6 +29,7 @@ it, and what may I safely conclude from it?**
 |---|---|---|---|
 | `Location.latitude/longitude` | **The primitive** | Exact; immovable but correctable | Whoever curated or minted the row |
 | `Location.elevation_m` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
+| `Location.what3words` (+ `_fetched_at`) | Derived, **expiring** | Exact — it encodes the same 3m square | `convert_to_3wa` (what3words), lazily on a trip-page render |
 | `Favourite.latitude/longitude` | Precise, user-supplied | Exact | The user, dropping a pin |
 | `Favourite.elevation` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
 | `Resort.latitude/longitude` | Precise, curated | Exact as a *village* | Geocoder, on the resort's **name** |
@@ -68,6 +69,22 @@ no `name` and no `kind`, and is an anonymous point like any other.
 
 `elevation_m` is nullable and resolved out-of-band, because resolving it
 needs an Open-Meteo call that cannot ride on a model save.
+
+`what3words` is nullable for a different reason (SNOW-840). It is not a
+derived property of the place at all but a **cache with an expiry**: the
+what3words licence forbids holding a converted address for more than 30
+calendar days, so the column is read back through
+`Location.three_word_address`, which returns `None` past that and leaves the
+trip page to render the coordinate pair instead. It is filled lazily by
+`fill_what3words` the first time a trip page renders that meeting point,
+behind the `what3words` waffle flag, and there is deliberately no backfill
+command — see
+[`docs/decisions/what3words-cache-expires-at-thirty-days.md`](decisions/what3words-cache-expires-at-thirty-days.md).
+Nothing outside `apps/locations/models.py` reads the column directly.
+
+Note the row above says the address is **exact**: a three word address is a
+deterministic encoding of a 3m square, not an approximation and not a name
+anybody chose. What expires is our permission to hold it, not its accuracy.
 
 **A row exists for a place we keep.** A live GPS fix and a GPX trackpoint
 resolve *against* locations without minting one. "Everything is a location"

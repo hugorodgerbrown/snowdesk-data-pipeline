@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-09-04
+last-reviewed: 2026-09-05
 ---
 
 # Glossary — domain terms to code symbols
@@ -111,6 +111,7 @@ Which coordinate on which model is exact, approximate or derived:
 | Weather | What was known about one `Location` on one day. One row per `(location, observed_on)`, immutable once that day is past; `forecast` holds the days after it *as known on it* | `Weather` in `apps/weather/models.py`; `docs/decisions/weather-is-one-immutable-location-row.md` |
 | observed_on | The day a `Weather` row **is of** — not the day it was fetched (that is `fetched_at`). Today's row is refined in place by each of the four daily runs; a past one raises `ImmutableWeatherRowError` | `Weather.observed_on`; `upsert_weather` in `apps/weather/services/upsert.py` |
 | Region centroid | The `Location` at a micro-region's centre — what anchors a region in the location estate so it can have weather. Anonymous by design: a centroid is not a place anyone goes | `MicroRegion.centroid_location`, filled by `link_region_centroid_locations`; read via `MicroRegion.centre_point()` |
+| Three word address | what3words' name for one 3m square — `filled.count.soap`, rendered with a `///` prefix. Shown in place of a trip's meeting-point coordinates behind the `what3words` flag (SNOW-840). Cached on the `Location` for at most 30 days, which the licence caps and `three_word_address` enforces | `Location.what3words` / `Location.three_word_address`; `apps/locations/services/what3words.py`; `docs/decisions/what3words-cache-expires-at-thirty-days.md` |
 | short_id | A `Location`'s external identifier: eleven URL-safe characters from `secrets.token_urlsafe(8)`, the key of `/weather/<short_id>/` and of `weather.geojson`'s features (SNOW-797). Opaque rather than a slug because ~461 of ~540 public locations are unnamed centroids; never all digits, so it cannot collide with the legacy integer route | `Location.short_id`; `ShortIdConverter` in `apps/locations/converters.py`; `backfill_location_short_ids` |
 | Resort slug | A `Resort`'s stored, unique URL identifier — `/resorts/<slug>/` and `resorts.geojson`'s `id` (SNOW-796). Minted from the name on first save and **never regenerated on rename**: the page is indexed, and a changed slug is a broken URL | `Resort.slug`; `unique_resort_slug()` in `apps/regions/models.py`; `backfill_resort_slugs` |
 | Role vs kind | `Location.kind` describes the place (Mont Fort is a peak whoever is looking); `ResortLocation.role` describes what it is *to one resort*. Attelas can be one resort's top and another's mid-station — which is why the join is a many-to-many | `Location.KIND` / `ResortLocation.ROLE` in `apps/locations/models.py` |
