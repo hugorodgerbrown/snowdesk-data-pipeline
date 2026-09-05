@@ -34,18 +34,28 @@ from tests.factories import LocationFactory
 
 @pytest.fixture(autouse=True)
 def api_key(settings: Settings) -> None:
-    """Configure a key for every test in this module.
+    """Pin the service's configuration for every test in this module.
 
     A key has to be present for the service to make any request at all,
     and the branch that fires without one is a single test below, which
     clears it again. Autouse rather than a decorator on each class
     because ``override_settings`` cannot decorate a plain pytest class.
 
+    ``WHAT3WORDS_FAKE`` is pinned OFF here, and that pin is load-bearing
+    rather than tidiness. The suite runs under
+    ``config.settings.development``, which reads the developer's own
+    ``.env`` — so a machine with the local fake switched on for UX work
+    took the invented-address branch instead of the mocked HTTP one, and
+    every test in the two classes below failed comparing
+    ``hazel.kettle.willow`` against ``filled.count.soap``. A test of the
+    real request path must not depend on a file that is not in the repo.
+
     Args:
         settings: pytest-django's settings wrapper.
 
     """
     settings.WHAT3WORDS_API_KEY = "test-key"
+    settings.WHAT3WORDS_FAKE = False
 
 
 _GOOD_BODY: dict[str, Any] = {
