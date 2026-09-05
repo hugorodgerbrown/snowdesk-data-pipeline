@@ -254,6 +254,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-busy': "Downloading this region's basemap — %(pct)s",
   'download-done': "This region's basemap is downloaded — available offline",
   'download-error': "This region's basemap download failed — tap to try again",
+  // SNOW-844: the tiles are here and the documents needed to draw them are
+  // not. The label says what the tap does, because the state is unfamiliar
+  // and the remedy is four small documents rather than a re-download.
+  'download-incomplete':
+    "This region's basemap is missing part of itself — tap to finish it",
   'download-disabled': "This region's basemap is too large to download",
   'download-offline': 'Basemap download unavailable while offline',
   'download-other-basemap':
