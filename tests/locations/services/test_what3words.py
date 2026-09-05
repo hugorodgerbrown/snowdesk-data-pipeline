@@ -185,6 +185,19 @@ class TestConvertTo3waFailures:
         ):
             assert convert_to_3wa(46.0, 7.0) is None
 
+    @pytest.mark.parametrize("body", [[], "a string", 42, None])
+    def test_json_that_is_not_an_object_returns_none(self, body: Any) -> None:
+        """Valid JSON is not necessarily an OBJECT.
+
+        A proxy, a WAF or a future API version can answer a list, a bare
+        string or null with a 200. ``response.json()`` succeeds on all of
+        them and ``[].get`` is an AttributeError — which would leave this
+        function by the one route its docstring says does not exist, and
+        500 a trip page instead of falling back to the coordinates.
+        """
+        with patch("apps.locations.services.what3words.requests.get", _mock_get(body)):
+            assert convert_to_3wa(46.080012, 7.318197) is None
+
     def test_a_non_json_body_returns_none(self) -> None:
         """An HTML error page from an intermediary is not a conversion."""
         mock_get = _mock_get({})

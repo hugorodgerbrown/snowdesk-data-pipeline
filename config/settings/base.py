@@ -747,6 +747,17 @@ WHAT3WORDS_API_BASE_URL = config(
 # page falls back to the coordinate pair it renders today.
 WHAT3WORDS_API_KEY = config("WHAT3WORDS_API_KEY", default="")
 
+# Where a rendered address LINKS to — what3words' own map, which is the
+# only place the square can actually be seen. A setting rather than a
+# literal in the template for the usual reason: the host is theirs to
+# change, and a hardcoded one would make that a code change and a deploy.
+# Not the API host above — that one answers JSON to us, this one is a page
+# we send a person to, and they move independently.
+WHAT3WORDS_MAP_BASE_URL = config(
+    "WHAT3WORDS_MAP_BASE_URL",
+    default="https://what3words.com",
+)
+
 # Return a made-up address instead of calling the API. FOR LOCAL UX WORK
 # AND DEMOS ONLY — the words are invented and name nowhere.
 #

@@ -207,13 +207,23 @@ def convert_to_3wa(
         )
         return None
 
+    # The ``.get`` is INSIDE the try, and that is the point of the shape.
+    # ``response.json()`` succeeding does not mean the body is an object:
+    # a proxy, a WAF or a future API version can answer valid JSON that is
+    # a list, a string or null, and ``[].get`` is an AttributeError that
+    # would leave this function by the one route its docstring promises
+    # does not exist — straight through fill_what3words and into a trip
+    # page render, 500ing both surfaces instead of falling back to the
+    # coordinates. ``_error_code`` below already guards the same shape.
     try:
-        data: dict[str, Any] = response.json()
-    except ValueError:
-        logger.warning("what3words: response body was not JSON (url=%s)", url)
+        data: Any = response.json()
+        words = data.get("words")
+    except ValueError, AttributeError:
+        logger.warning(
+            "what3words: body was not JSON, or not a JSON object (url=%s)", url
+        )
         return None
 
-    words = data.get("words")
     if not words or not isinstance(words, str):
         logger.warning(
             "what3words: no words in the response for latitude=%s longitude=%s",
