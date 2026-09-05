@@ -178,6 +178,26 @@ class TestRouteDuration:
         )
         assert route.duration_hm == {"hours": "4", "minutes": "06"}
 
+    def test_duration_hm_breaks_a_half_minute_tie_upwards(self) -> None:
+        """An exact half-minute rounds UP, as JavaScript's Math.round does.
+
+        This is the one input class where the builtin ``round`` would not
+        agree with static/js/map.js's formatDuration: it is banker's
+        rounding, so it breaks a .5 tie to the EVEN number and
+        ``round(270.5)`` is 270 where ``Math.round(270.5)`` is 271. The
+        popup and the panel row would then disagree by a minute about the
+        same route.
+
+        4h30m30s is 270.5 minutes and is not a contrived span — a GPX
+        carries whole-second stamps, so an exact half-minute remainder
+        turns up on ordinary recordings.
+        """
+        route = RouteFactory.create(
+            started_at=datetime.datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime.datetime(2026, 3, 13, 13, 30, 30, tzinfo=UTC),
+        )
+        assert route.duration_hm == {"hours": "4", "minutes": "31"}
+
     def test_duration_hm_states_no_hours_figure_under_an_hour(self) -> None:
         """Under an hour there is no hours figure: "0h41m" states one.
 

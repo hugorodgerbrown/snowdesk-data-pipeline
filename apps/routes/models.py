@@ -24,6 +24,7 @@ sharing half in ``apps/routes/services/shares.py``.
 
 from __future__ import annotations
 
+import math
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -233,9 +234,18 @@ class Route(BaseModel):
         template cannot divide, and the split has two rules a template
         could not express either way.
 
-        WHOLE MINUTES, ROUNDED. A tour is not read to the second, and
-        rounding rather than truncating keeps 59.6 minutes from reading as
-        59.
+        WHOLE MINUTES, ROUNDED HALF UP. A tour is not read to the second,
+        and rounding rather than truncating keeps 59.6 minutes from
+        reading as 59.
+
+        ``math.floor(x + 0.5)`` and not the builtin ``round``, which is
+        banker's rounding: it breaks a .5 tie to the EVEN number, so
+        ``round(270.5)`` is 270 while JavaScript's ``Math.round`` — what
+        ``formatDuration`` below uses — gives 271. A GPX carries
+        whole-second stamps, so a span landing on an exact half-minute is
+        ordinary rather than contrived (4h30m30s is one), and on those the
+        popup and the panel row would have disagreed by a minute about the
+        same route.
 
         ``hours`` is the empty string under an hour, and the minutes are
         NOT zero-padded in that case: "0h41m" states an hours figure the
@@ -259,7 +269,7 @@ class Route(BaseModel):
         elapsed = self.duration
         if elapsed is None or elapsed.total_seconds() <= 0:
             return None
-        total_minutes = round(elapsed.total_seconds() / 60)
+        total_minutes = math.floor(elapsed.total_seconds() / 60 + 0.5)
         hours, minutes = divmod(total_minutes, 60)
         if hours == 0:
             return {"hours": "", "minutes": str(minutes)}
