@@ -306,6 +306,51 @@ function activeBasemapSourceDocumentURLs(map) {
   return urls;
 }
 
+/**
+ * SNOW-844: every RENDER dependency of the live style — the documents a
+ * pinned area needs in its bucket to draw at all, beyond its tiles.
+ *
+ * Three things, and they are the three a download already fetches: the
+ * active basemap's style document, its sprite JSON+PNG at 1x and 2x
+ * (`computeBasemapSpriteURLs`), and the TileJSON each vector source is
+ * declared by (`activeBasemapSourceDocumentURLs` — SNOW-843).
+ *
+ * It exists because those three pushes used to live inside
+ * `assembleBasemapDownloadFeedURLs` alone, where only the DOWNLOAD could
+ * see them. SNOW-844's probe has to check the same list, and a second copy
+ * of it is precisely the drift SNOW-843 was: what the download fetched and
+ * what the done-probe checked disagreed, and every surface reported the
+ * download's answer. So this is the one definition, and
+ * `assembleBasemapDownloadFeedURLs` below now calls it rather than
+ * repeating it.
+ *
+ * Glyph ranges are deliberately absent — see `missingRenderDependencies`
+ * (basemap_download_core.js) and this ticket's decision doc for why
+ * promotion, not enumeration, is how an area keeps its labels, and why
+ * checking a promoted set would report a permanent unrepairable failure.
+ *
+ * @param {object|null} map The live MapLibre map. Reading it is exactly
+ *   why this composer stays here rather than moving into
+ *   `basemap_download_core.js`, which is a dependency-free pure IIFE by
+ *   contract (its own header).
+ * @returns {string[]} Possibly empty — a style still settling yields no
+ *   source documents, and a basemap picker that has not resolved yields no
+ *   style URL. An empty list is the UNKNOWN case, never "nothing is
+ *   missing"; every caller reads it that way.
+ */
+function activeBasemapRenderDependencyURLs(map) {
+  const urls = [];
+  const activeBasemap = document.querySelector(
+    '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
+  );
+  if (activeBasemap && activeBasemap.dataset.basemapUrl) {
+    urls.push(activeBasemap.dataset.basemapUrl);
+  }
+  urls.push(...computeBasemapSpriteURLs(map));
+  urls.push(...activeBasemapSourceDocumentURLs(map));
+  return urls;
+}
+
 // SNOW-521: same-origin data-feed + active-basemap-style URL list —
 // everything a basemap download warms besides its own tile ranges.
 // Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
@@ -338,15 +383,11 @@ function assembleBasemapDownloadFeedURLs() {
       urls.push(RATINGS_URL + '?country=' + code);
     }
   }
-  const activeBasemap = document.querySelector(
-    '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
-  );
-  if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
-  urls.push(...computeBasemapSpriteURLs(MAP));
-  // SNOW-843: and the TileJSON each vector source is declared by — see
-  // `activeBasemapSourceDocumentURLs` for why a download that skips it can
-  // be complete and still render nothing offline.
-  urls.push(...activeBasemapSourceDocumentURLs(MAP));
+  // SNOW-844: the style document, the sprite and each vector source's
+  // TileJSON, from the ONE definition the probe also reads — see
+  // `activeBasemapRenderDependencyURLs` for why a second copy of these
+  // three pushes here is the exact drift this ticket removes.
+  urls.push(...activeBasemapRenderDependencyURLs(MAP));
   return urls;
 }
 
@@ -1167,6 +1208,29 @@ window.pwaBasemapDownloads = Object.freeze({
    */
   basemapOrder: () => basemapOrder(),
 
+  /**
+   * SNOW-844: the live style's render dependencies — see
+   * `activeBasemapRenderDependencyURLs`. Exposed for the same load-order
+   * reason `basemapLabel` and `basemapOrder` are: the Manage downloads
+   * sheet is outside the map bundle's parse-time contract, and it needs
+   * this list to resolve a row whose record predates the field.
+   *
+   * @returns {string[]}
+   */
+  renderDependencyUrls: () => activeBasemapRenderDependencyURLs(MAP),
+
+  /**
+   * SNOW-844: every URL held across every pinned bucket — see
+   * `pinnedBasemapCacheURLs`. The sheet asks the same question the
+   * roundels do ("is this area's whole render set on disk?"), and the
+   * service worker answers a basemap request from ANY pinned bucket
+   * (sw.js's `_pinnedBasemapMatch`), so the union is the honest set to
+   * check against rather than one area's own bucket.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  pinnedCacheUrls: () => pinnedBasemapCacheURLs(),
+
   // SNOW-649: the two render-scheduling primitives below are exposed for
   // ONE reason — they were untestable. Both are pure higher-order
   // functions with no DOM or MapLibre dependency of their own, yet the
@@ -1863,6 +1927,11 @@ const PINNED_DOWNLOAD_DEPS = {
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),
   feedUrls: () => assembleBasemapDownloadFeedURLs(),
+  // SNOW-844: the subset of `feedUrls` that is a RENDER dependency of the
+  // active style, captured at run start alongside `tileSources` so the
+  // record stores the list this run actually fetched rather than whatever
+  // the picker happens to say by the time `finish` runs.
+  renderDeps: () => activeBasemapRenderDependencyURLs(MAP),
   glyphPrefix: () => activeBasemapGlyphPrefix(MAP),
   progressGrid: (plan, offset) => createDownloadProgressGrid(plan, offset),
   warmCache: (urls, opts) =>

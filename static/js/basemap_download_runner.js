@@ -61,6 +61,7 @@
    *   confirmEviction: function(Array<Object>): Promise<boolean>,
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
+ *   renderDeps?: function(): string[],
    *   progressGrid: function(Object|null, number): Object,
    *   warmCache: function(string[], Object): (Promise<Object>|null),
    *   isOnline: function(): boolean,
@@ -99,7 +100,11 @@
    *     was downloaded records the basemap that was actually fetched, not
    *     whatever happens to be active when `finish` runs) and, SNOW-645,
    *     `basemapKey` — the picker key captured alongside `tileSources` at run
-   *     start, display-only and possibly null. `result` is the
+   *     start, display-only and possibly null. SNOW-844 adds `renderDeps` —
+ *     the style/sprite/TileJSON URLs this run fetched, resolved at run
+ *     start for the same reason `tileSources` is, and recorded so a later
+ *     probe can check an area whose basemap is not the one on screen.
+ *     `result` is the
    *     worker's report, or `null` when there was no worker at all. SNOW-632:
    *     `result` can now carry `cancelled: true` — the run stopped early on
    *     a `pwaWarmCacheCancel()` request rather than exhausting the URL
@@ -229,8 +234,18 @@
       progressFill.update(done, total, settled);
     };
 
+    // SNOW-844: the render dependencies this run is fetching — the style
+    // document, the sprite and each vector source's TileJSON, all of them
+    // already inside `feedUrls` above. Resolved HERE, once, and handed to
+    // `finish` for the record, for the same reason `tileSources` is: a
+    // basemap switched mid-download would otherwise have the record name
+    // documents this run never fetched. A `deps` bundle without the member
+    // (an older shell mid-rollout) yields `[]`, which every reader treats
+    // as "unknown" rather than "complete".
+    const renderDeps = typeof deps.renderDeps === 'function' ? deps.renderDeps() : [];
+
     const settle = (result) =>
-      finish(result, blob, { core, progressFill, tileSources, basemapKey });
+      finish(result, blob, { core, progressFill, tileSources, basemapKey, renderDeps });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a
     // dedicated pinned bucket, exempt from the passive browsing LRU trim —
