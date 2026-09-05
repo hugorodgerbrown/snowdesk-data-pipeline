@@ -24,7 +24,12 @@ repaints.
 Context:
     picker_payload : dict — the route line, its bounds and the initial pin,
                      built by apps.trips.views._picker_payload.
-    basemap_url    : str — settings.BASEMAP_STYLE_URL.
+    (SNOW-829: the basemap catalogue is emitted once per page by
+    _trip_basemaps.html and read from there. The organiser places the pin
+    on THIS canvas and reads it back on the trip page's, so the two must
+    resolve identically — the same track on two basemaps reads as two
+    different places.)
+    default_basemap_key : str — settings.BASEMAP, the fallback.
     form           : TripForm — passed through to the manual fields.
 {% endcomment %}
 {{ picker_payload|json_script:"trip-meeting-payload" }}
@@ -35,7 +40,7 @@ Context:
 <div
     id="trip-meeting-picker"
     data-trip-meeting-picker
-    data-basemap-url="{{ basemap_url }}"
+    data-default-basemap-key="{{ default_basemap_key }}"
     {# h-80, the same height _trip_map.html gives the trip page's own map.  #}
     {# The organiser places the pin on this canvas and then reads it back   #}
     {# on that one, and the same track at two sizes reads as two routes.    #}

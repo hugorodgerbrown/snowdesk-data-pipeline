@@ -219,6 +219,32 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     }
 
 
+def _basemap_context() -> dict[str, Any]:
+    """Return the basemap catalogue every trip surface resolves from.
+
+    SNOW-829. The CATALOGUE and the default's key, never one resolved URL:
+    the page picks between them client-side from
+    ``localStorage['snowdesk.map.basemap']``, which is scoped per ORIGIN
+    and so is readable here exactly as it is on the map page.
+
+    Shared by ``_trip_context`` and the three picker render paths, because
+    an organiser placing the meeting pin and a reader looking at the result
+    must be shown the same terrain — the same track on two basemaps reads
+    as two different places.
+
+    ``settings.BASEMAP_STYLES`` itself, without the picker's labels: a trip
+    page renders no basemap menu, so a label would be markup nothing shows.
+
+    Returns:
+        A dict with ``basemaps`` and ``default_basemap_key``.
+
+    """
+    return {
+        "basemaps": dict(settings.BASEMAP_STYLES),
+        "default_basemap_key": settings.BASEMAP,
+    }
+
+
 def _map_deep_link(parameter: str, value: str) -> str:
     """Return the map URL that draws one trip, as ``/?<parameter>=<value>``.
 
@@ -465,11 +491,28 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # is an offer awaiting a decision with nowhere else to live.
         "map_url": _map_deep_link("trip", str(trip.uuid)),
         "map_payload": _trip_map_payload(trip),
-        # The site default and nothing else. A trip page has no basemap
-        # picker: it is a document about one plan rather than a map to
-        # explore, and the picker's persisted choice lives in the map
-        # page's own localStorage where this page cannot read it.
-        "basemap_url": settings.BASEMAP_STYLE_URL,
+        # SNOW-829. The CATALOGUE, not one resolved URL, because the page
+        # resolves the reader's own choice client-side: ``localStorage`` is
+        # scoped per ORIGIN, so a trip page reads
+        # ``snowdesk.map.basemap`` — the key the map's picker writes —
+        # exactly as the map page does. Somebody who picked swisstopo
+        # because it is dramatically clearer for Swiss terrain keeps it on
+        # the one page where the route is actually being read.
+        #
+        # (The comment this replaced said the choice "lives in the map
+        # page's own localStorage where this page cannot read it". That
+        # was a factual error about how localStorage is scoped. The
+        # BEHAVIOUR it justified — the site default everywhere — was a
+        # reasonable default; the reason given for it was simply wrong.)
+        #
+        # Still no basemap PICKER here: a trip is a document about one plan
+        # rather than a map to explore, and SNOW-828's "View on the map" is
+        # where exploring belongs. What the page does carry is a way out of
+        # a blank canvas — see ``basemap_style_core.js::drewNothing`` for
+        # why the national basemaps need one and why no coverage table
+        # could provide it.
+        "basemaps": dict(settings.BASEMAP_STYLES),
+        "default_basemap_key": settings.BASEMAP,
         # The meeting picker's own payload, for the edit form. ORGANISER
         # ONLY, and None for everybody else on purpose: it repeats the
         # whole track, which ``map_payload`` above already carries, so
@@ -574,7 +617,7 @@ def trip_new(request: HttpRequest) -> HttpResponse:
             "picker_payload": _picker_payload(
                 route.points, route.bounds, first[1], first[0]
             ),
-            "basemap_url": settings.BASEMAP_STYLE_URL,
+            **_basemap_context(),
         },
     )
 
@@ -687,7 +730,7 @@ def trip_create(request: HttpRequest) -> HttpResponse:
                     route.points if route else [],
                     route.bounds if route else [],
                 ),
-                "basemap_url": settings.BASEMAP_STYLE_URL,
+                **_basemap_context(),
             },
             status=400,
         )
@@ -767,7 +810,7 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
                 "picker_payload": _submitted_picker_payload(
                     request, trip.points if trip else [], trip.bounds if trip else []
                 ),
-                "basemap_url": settings.BASEMAP_STYLE_URL,
+                **_basemap_context(),
             },
             status=400,
         )

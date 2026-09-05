@@ -1,0 +1,26 @@
+{% comment %}
+trips/partials/_trip_basemaps.html — the basemap catalogue, once per page.
+
+SNOW-829. Both map-bearing partials on a trip page resolve the reader's
+own basemap, and on ``trip.html`` BOTH of them render — the trip's own map
+and, inside the organiser's edit panel, the meeting picker. So the
+catalogue is emitted by the PAGE and read by whichever modules are on it,
+rather than by each partial: two ``json_script`` calls would put the same
+id on the document twice, and ``getElementById`` would quietly answer with
+the first.
+
+Included once by each of ``trip.html``, ``trip_share.html`` and
+``trip_new.html``. A page that renders a trip map or a meeting picker and
+forgets this include gets the site default everywhere, which is the
+pre-SNOW-829 behaviour and not a crash — ``resolveBasemap`` returns the
+default for a missing catalogue.
+
+``json_script`` for the reason ``_trip_map.html`` gives for the map
+payload: the content is parsed and never executed, so the CSP needs no
+script-src exception and the ``</script>`` sequence is escaped.
+
+Context:
+    basemaps : dict — the {key: url} catalogue, from
+               apps.trips.views._basemap_context.
+{% endcomment %}
+{{ basemaps|json_script:"trip-basemaps" }}

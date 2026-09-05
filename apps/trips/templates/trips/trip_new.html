@@ -30,6 +30,7 @@ one. It is also behind auth, so no unfurler will ever reach it.
 {% endblock page_meta %}
 
 {% block content %}
+    {% include "trips/partials/_trip_basemaps.html" %}
     <main class="{% page_shell_classes %}">
         {% trans "Plan a trip" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="trip-new-heading" %}
@@ -56,6 +57,10 @@ one. It is also behind auth, so no unfurler will ever reach it.
     {# on this page and returns.                                           #}
     <script defer src="{% static 'js/maplibre-gl.min.js' %}"></script>
     <script defer src="{% static 'js/i18n_strings.js' %}"></script>
+    {# SNOW-829: the basemap resolver the picker reads. Loaded here      #}
+    {# because this page renders no _trip_map.html, which is where the    #}
+    {# other two trip pages pick it up.                                   #}
+    <script defer src="{% static 'js/basemap_style_core.js' %}"></script>
     <script defer src="{% static 'js/trip_map.js' %}"></script>
     <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
 {% endblock extra_js %}
