@@ -8,13 +8,19 @@ knows that. A group agrees to meet at a place they can see, so the route is
 drawn and the pin is dragged — or tapped — to where they mean.
 
 The pin still WRITES to the form's own latitude/longitude fields rather
-than holding the value itself, which is what keeps the no-JavaScript path
-working: those fields arrive prefilled with the route's first coordinate,
-and a visitor who never runs this module submits exactly what the form
-submitted before it existed. The manual fields stay reachable under the
-map for a keyboard visitor and for anyone pasting a coordinate they
-already have — see _trip_meeting_manual.html for why all three cases are
-served rather than only the first.
+than holding the value itself. Those fields arrive prefilled with the
+route's first coordinate, so a visitor who never runs this module still
+submits a meeting point — the route's start — rather than an empty
+required field.
+
+THOSE FIELDS ARE NO LONGER VISIBLE (SNOW-840). This paragraph used to
+continue "the manual fields stay reachable under the map for a keyboard
+visitor and for anyone pasting a coordinate they already have", and the
+collapsed panel that held them is gone: nobody was going to open it, and
+its title was read and dismissed by every organiser who did not. The
+inputs are hidden and still posted; what a keyboard-only or no-JavaScript
+visitor lost is the ability to move the pin at all, which
+_trip_meeting_manual.html records in full.
 
 The <div> has an explicit height for the reason _trip_map.html states:
 MapLibre measures its container on construction, and a container whose
@@ -30,7 +36,13 @@ Context:
     resolve identically — the same track on two basemaps reads as two
     different places.)
     default_basemap_key : str — settings.BASEMAP, the fallback.
-    form           : TripForm — passed through to the manual fields.
+    form           : TripForm — passed through to the hidden coordinate
+                     fields, which are what the marker writes into.
+    what3words_active : bool — SNOW-840. Whether the pin will actually be
+                     converted to a three word address on save, and so
+                     whether the sentence saying it will is true. Supplied
+                     by apps.trips.views._what3words_context at every one
+                     of the four render paths that reach this partial.
 {% endcomment %}
 {{ picker_payload|json_script:"trip-meeting-payload" }}
 <p class="mb-1.5 text-sm font-medium text-text-1">{% trans "Meeting point" %}</p>
@@ -62,16 +74,33 @@ Context:
         {% trans "Reset to the route's start" %}
     </button>
 </div>
-{% trans "Enter coordinates manually" as manual_title %}
-{% include "includes/_collapsible_panel.html" with title=manual_title data_testid="trip-meeting-manual" bare=True body_template="trips/partials/_trip_meeting_manual.html" %}
+{# The two coordinate fields, HIDDEN since SNOW-840 — the form's transport #}
+{# and the picker's write target, not a control. The collapsed "Enter      #}
+{# coordinates manually" panel that used to wrap them is gone; see         #}
+{# _trip_meeting_manual.html for what that removed and what it costs.      #}
+{% include "trips/partials/_trip_meeting_manual.html" %}
+{# What happens to the pin on save, and ONLY when it will happen. With the #}
+{# what3words flag off nothing is converted and this sentence would be a   #}
+{# lie, so it is not rendered at all — the "Drag the pin" line above       #}
+{# already explains the control on its own. The flag reaches every render  #}
+{# path through apps.trips.views._what3words_context.                      #}
+{% if what3words_active %}
+    <p class="mb-3 text-xs text-text-3" data-testid="trip-meeting-conversion">
+        {% trans "When you save, this pin becomes a three word address, so the group can find the exact spot." %}
+    </p>
+{% endif %}
 {# Every user-facing string trip_meeting_picker.js writes into the DOM.    #}
 {# makemessages never scans static/js, so a literal there ships as English #}
 {# to every locale — `tox -e i18n-lint` fails the build on one.           #}
 <template id="trip-picker-strings-template">
     <span data-string="meeting-point">{% trans "Meeting point" %}</span>
-    {# The map is an enhancement over the fields below it, so a failure    #}
-    {# points at what still works rather than apologising.                 #}
+    {# A failure says what is still TRUE. This read "You can still type the #}
+    {# coordinates below" until SNOW-840 removed the fields it pointed at,  #}
+    {# which made it a message offering a control that is no longer there.  #}
+    {# What survives a dead map is the prefill: the hidden fields already   #}
+    {# hold the route's first coordinate, so the trip saves with its        #}
+    {# meeting point at the route's start rather than with none at all.     #}
     <span
         data-string="map-failed"
-    >{% trans "The map couldn't be loaded. You can still type the coordinates below." %}</span>
+    >{% trans "The map couldn't be loaded. The group will meet at the route's start." %}</span>
 </template>

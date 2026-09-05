@@ -21,13 +21,27 @@ A group agrees to meet at the top car park, and asking them to express
 that as 46.080012, 7.318197 asks them for a fact they would have to go and
 look up.
 
-The fields stay for three reasons the map cannot cover — a keyboard-only
-visitor cannot drag a marker, someone holding a coordinate from elsewhere
-would rather paste it than hunt for the same spot by eye, and a visitor
-with no JavaScript has nothing else. They are still what the form posts and
-validates, so none of that path changed; only what sits in front of them
-did. See ``apps/trips/templates/trips/partials/_trip_meeting_picker.html``
-and ``static/js/trip_meeting_picker.js``.
+**Both are ``HiddenInput`` since SNOW-840.** They were visible number
+inputs under the map, kept for three cases the map cannot serve: a
+keyboard-only visitor who cannot drag a MapLibre marker, someone holding a
+coordinate from elsewhere who would rather paste it, and a visitor with no
+JavaScript for whom the prefilled fields were the whole control. Hugo's
+judgement was that nobody would use them, and a control almost nobody uses
+still has to be read, understood and dismissed by everybody who meets it.
+
+That is a REGRESSION and it is deliberate rather than overlooked: those
+first and third visitors can no longer choose a meeting point at all — they
+get the route's own start, which is what the fields arrive prefilled with,
+and no way to move it. Restoring their ability to place a pin is a keyboard
+affordance ON THE MAP, not a pair of number boxes underneath it, and that
+is a separate piece of work.
+
+The fields themselves are untouched as TRANSPORT. They are still what the
+form posts, and ``min_value``/``max_value`` still bound them — those are
+field-level and guard a hand-crafted POST, which is now the only way a
+value that is not the marker's can arrive here at all. See
+``apps/trips/templates/trips/partials/_trip_meeting_picker.html`` and
+``static/js/trip_meeting_picker.js``.
 
 The two ``data-meeting-*`` attributes are how the picker finds these
 fields. They are attributes rather than ids because the form is re-rendered
@@ -112,27 +126,26 @@ class TripForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"class": _INPUT_CLASSES, "rows": 4}),
     )
+    # HIDDEN, not number inputs — see the module docstring for what that
+    # removed and what it costs. The ``data-meeting-*`` attribute is the
+    # only part of the widget that matters now: it is how
+    # ``static/js/trip_meeting_picker.js`` finds the field to write the
+    # marker's position into. No ``class`` and no ``step``, which described
+    # a box nobody sees.
+    #
+    # The bounds below stay. They are FIELD-level rather than widget-level,
+    # so they never depended on the browser's own number validation, and
+    # they are what turns a hand-crafted POST at 91° north into a form error
+    # instead of a Location row off the planet.
     latitude = forms.FloatField(
         min_value=_LATITUDE_MIN,
         max_value=_LATITUDE_MAX,
-        widget=forms.NumberInput(
-            attrs={
-                "class": _INPUT_CLASSES,
-                "step": "any",
-                "data-meeting-latitude": "",
-            }
-        ),
+        widget=forms.HiddenInput(attrs={"data-meeting-latitude": ""}),
     )
     longitude = forms.FloatField(
         min_value=_LONGITUDE_MIN,
         max_value=_LONGITUDE_MAX,
-        widget=forms.NumberInput(
-            attrs={
-                "class": _INPUT_CLASSES,
-                "step": "any",
-                "data-meeting-longitude": "",
-            }
-        ),
+        widget=forms.HiddenInput(attrs={"data-meeting-longitude": ""}),
     )
 
     def clean_name(self) -> str:

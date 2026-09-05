@@ -146,7 +146,12 @@ class TestTripNewPage:
     def test_prefills_the_meeting_point_from_the_first_coordinate(
         self, client: Client
     ) -> None:
-        """The default that makes the coordinate fields workable."""
+        """The default the hidden fields carry when nobody moves the pin.
+
+        Since SNOW-840 it is also the only meeting point a visitor with no
+        JavaScript can submit, which is why it has to be the route's own
+        start rather than nothing.
+        """
         route = RouteFactory.create()
         client.force_login(route.user)
         response = client.get(f"{reverse('trips:new')}?route={route.uuid}")
@@ -175,15 +180,14 @@ class TestTripNewPage:
         # The track itself, not just an empty payload envelope.
         assert "LineString" in html
 
-    def test_the_coordinate_fields_survive_as_the_manual_escape_hatch(
-        self, client: Client
-    ) -> None:
-        """A keyboard visitor, and anyone with no JavaScript, still has them.
+    def test_the_coordinate_fields_are_posted_but_hidden(self, client: Client) -> None:
+        """The pin's transport survives SNOW-840; the boxes do not.
 
-        The pin WRITES to these; it does not replace them. If they ever
-        stop rendering, the no-JavaScript path submits nothing for the
-        meeting point and the form 400s for a field the visitor was never
-        shown.
+        The marker WRITES to these fields and they are what the form
+        posts, so if they stop rendering a trip submits nothing for its
+        meeting point and 400s on a field nobody was shown. What changed is
+        their widget: they are hidden inputs, found by the picker through
+        the same ``data-meeting-*`` attributes.
         """
         route = RouteFactory.create()
         client.force_login(route.user)
@@ -192,6 +196,46 @@ class TestTripNewPage:
 
         assert "data-meeting-latitude" in html
         assert "data-meeting-longitude" in html
+        assert html.count('type="hidden" name="latitude"') == 1
+        assert html.count('type="hidden" name="longitude"') == 1
+
+    def test_the_manual_coordinate_panel_is_gone(self, client: Client) -> None:
+        """SNOW-840 removed the "Enter coordinates manually" disclosure.
+
+        Hugo: "no one is going to use that." Asserted on the rendered page
+        because that is where the cost was — every organiser read the
+        panel's title and dismissed it to serve the few who would have
+        opened it.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert "Enter coordinates manually" not in html
+        assert "trip-meeting-manual" not in html
+
+    def test_the_conversion_copy_is_absent_with_the_flag_off(
+        self, client: Client
+    ) -> None:
+        """With no conversion happening, the sentence would be a lie."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert "three word address" not in html
+
+    @override_flag("what3words", active=True)
+    def test_the_conversion_copy_appears_with_the_flag_on(self, client: Client) -> None:
+        """The organiser is told what becomes of the pin they just dropped."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert 'data-testid="trip-meeting-conversion"' in html
+        assert "three word address" in html
 
     def test_404_for_another_users_route(self, client: Client) -> None:
         """Never 403 — no existence oracle."""
@@ -341,6 +385,22 @@ class TestTripMeetingPointAddress:
         assert 'title="46.080012, 7.318197"' in _meeting_point_dd(html)
 
     @override_flag("what3words", active=True)
+    def test_the_edit_form_promises_the_conversion_too(self, client: Client) -> None:
+        """The organiser's edit picker is the fourth render path.
+
+        ``_trip_context`` builds it, so the flag has to reach it from
+        there rather than from ``_what3words_context`` — a trip page whose
+        edit form said nothing while the new-trip form did would be two
+        answers to one question.
+        """
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'data-testid="trip-meeting-conversion"' in html
+
+    @override_flag("what3words", active=True)
     @override_settings(WHAT3WORDS_MAP_BASE_URL="https://w3w.example")
     def test_the_address_links_to_the_configured_map_host(self, client: Client) -> None:
         """The words link to the square on what3words' own map.
@@ -469,6 +529,47 @@ class TestTripCreate:
         assert 'id="trip-form"' in response.content.decode()
         assert Trip.objects.count() == 0
 
+    def test_a_hand_crafted_coordinate_off_the_planet_is_still_rejected(
+        self, client: Client
+    ) -> None:
+        """SNOW-840 hid the fields; the bounds that guard them are unmoved.
+
+        ``min_value``/``max_value`` are FIELD-level, so they never relied
+        on a browser validating a number box — and a hand-crafted POST is
+        now the only way a value the marker did not write can arrive at
+        all.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        payload = _valid_post(str(route.uuid))
+        payload["latitude"] = "91.0"
+
+        response = client.post(reverse("trips:create"), payload, **_HTMX)
+
+        assert response.status_code == 400
+        assert Trip.objects.count() == 0
+
+    @override_flag("what3words", active=True)
+    def test_the_re_rendered_form_still_carries_the_conversion_copy(
+        self, client: Client
+    ) -> None:
+        """The flag reaches the error re-render, not just the first paint.
+
+        This is the render path a missing ``_what3words_context`` would
+        silently lose: the form comes back whole after a validation error,
+        so an organiser who mistyped the date would watch the sentence
+        about their pin disappear.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        payload = _valid_post(str(route.uuid))
+        payload["date"] = ""
+
+        response = client.post(reverse("trips:create"), payload, **_HTMX)
+
+        assert response.status_code == 400
+        assert 'data-testid="trip-meeting-conversion"' in response.content.decode()
+
     def test_a_missing_route_is_a_400(self, client: Client) -> None:
         """No route means nothing to plan from."""
         client.force_login(UserFactory.create())
@@ -499,6 +600,23 @@ class TestTripCreate:
 @pytest.mark.django_db
 class TestTripEdit:
     """POST /trips/partials/<uuid>/edit/."""
+
+    @override_flag("what3words", active=True)
+    def test_the_re_rendered_form_still_carries_the_conversion_copy(
+        self, client: Client
+    ) -> None:
+        """The edit path's error re-render is the fourth picker render."""
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+        payload = _valid_post()
+        payload["start_time"] = ""
+
+        response = client.post(
+            reverse("trips:edit", args=[trip.uuid]), payload, **_HTMX
+        )
+
+        assert response.status_code == 400
+        assert 'data-testid="trip-meeting-conversion"' in response.content.decode()
 
     def test_updates_and_redirects_back_to_the_trip(self, client: Client) -> None:
         """A whole-page repaint, because the page draws one context."""
