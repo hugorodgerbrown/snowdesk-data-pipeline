@@ -161,6 +161,15 @@ _SHARE_PAGE_RATE = "30/h"
 # endpoint is auth-only, matching the authoring limiter below.
 _SHARE_WRITE_RATE = "20/m"
 
+# The query parameter ``trip_create`` hands the list so it can confirm the
+# write it just made. A parameter and not a session flash: the project has
+# never used ``django.contrib.messages`` (it is installed for the admin
+# alone), and a one-message flash framework is a second notification system
+# on a site whose own is the toast partial. Reloading the page shows the
+# confirmation again, which is the honest reading — the trip really is
+# there.
+_CREATED_PARAMETER = "created"
+
 # The authoring endpoints' rate-limit budget, keyed on ``user`` because both
 # are auth-only. Each create writes three rows (a Location, a Trip and the
 # organiser's participant row), so the cap is what stops a scripted client
@@ -753,7 +762,16 @@ def trip_create(request: HttpRequest) -> HttpResponse:
         return render(request, "trips/partials/_trip_limit.html", {}, status=409)
 
     response = HttpResponse("")
-    response["HX-Redirect"] = reverse("trips:detail", args=[trip.uuid])
+    # To the LIST, carrying the new trip's uuid — not to the trip's own
+    # page. Creating one trip is rarely creating only one, and the list is
+    # the surface that says what the organiser now has; the uuid is what
+    # lets it confirm the write and put the Share control for that trip
+    # under the reader's eye (SNOW-834). ``trip_list`` ignores a uuid that
+    # is not on the reader's own agenda, so the parameter cannot be used
+    # to make the page assert anything about a trip its reader is not on.
+    response["HX-Redirect"] = (
+        f"{reverse('trips:list')}?{urlencode({_CREATED_PARAMETER: str(trip.uuid)})}"
+    )
     return response
 
 
@@ -1494,6 +1512,39 @@ def trip_route_save(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
 
 @require_GET
+def _created_trip(request: HttpRequest, trips: list[Trip]) -> Trip | None:
+    """Return the trip named by ``?created=``, if it is one of these.
+
+    ``trip_create`` redirects here with the new trip's uuid so the page can
+    say the write happened and mark the row it happened to (SNOW-834). The
+    parameter is a hint from a URL, though, and a URL is something anyone
+    can type — so it is resolved against the agenda the view has ALREADY
+    built rather than looked up. That costs no query, and it makes it
+    impossible for the page to confirm the existence of a trip its reader
+    is not on.
+
+    Returning the trip rather than the uuid is what lets the row partial
+    ask ``{% if trip == created_trip %}``: two model instances with the
+    same primary key compare equal, so neither side has to stringify a
+    uuid in a template.
+
+    Args:
+        request: The incoming GET request.
+        trips: Every trip on this reader's agenda, upcoming and past.
+
+    Returns:
+        The trip, or ``None`` when the parameter is absent, unparseable, or
+        names a trip this reader is not on.
+
+    """
+    raw = request.GET.get(_CREATED_PARAMETER, "")
+    try:
+        created = UUID(raw)
+    except ValueError:
+        return None
+    return next((trip for trip in trips if trip.uuid == created), None)
+
+
 def trip_list(request: HttpRequest) -> HttpResponse:
     """Render the reader's own trips, split upcoming and past.
 
@@ -1541,12 +1592,16 @@ def trip_list(request: HttpRequest) -> HttpResponse:
     trips = Trip.objects.for_user(request.user).annotate(
         participant_count=Count("participants")
     )
+    upcoming = list(trips.upcoming(today))
+    past = list(trips.past(today))
 
     return render(
         request,
         "trips/trip_list.html",
         {
-            "upcoming_trips": list(trips.upcoming(today)),
-            "past_trips": list(trips.past(today)),
+            "upcoming_trips": upcoming,
+            "past_trips": past,
+            "created_trip": _created_trip(request, upcoming + past),
+            **_share_url_templates(),
         },
     )

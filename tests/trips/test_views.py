@@ -10,12 +10,15 @@ trip_detail (GET /trips/<uuid>/):
   200 for the organiser; 404 for anyone else and for an anonymous
     visitor's uuid guess;
   the organiser's description is ESCAPED, never marked safe (invariant 1);
-  the map payload is emitted inline.
+  the map payload is emitted inline;
+  the edit form prefills the day and time in the ISO shapes an HTML date /
+    time input accepts, not the active locale's (SNOW-834).
 
 The three fragments (trips:create / trips:edit / trips:delete):
   400 for a plain non-HTMX request (invariant 4);
   403 for an anonymous HTMX request;
-  create writes a trip and answers HX-Redirect to its page;
+  create writes a trip and answers HX-Redirect to the LIST, carrying the
+    new trip's uuid (SNOW-834);
   create re-renders the form at 400 for an invalid submission;
   create answers 409 at the cap;
   edit and delete are organiser-scoped and 404 otherwise.
@@ -193,6 +196,41 @@ class TestTripDetailPage:
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
         assert 'data-testid="trip-organiser-controls"' in html
 
+    @override_settings(LANGUAGE_CODE="en-gb")
+    def test_the_edit_form_prefills_the_day_a_browser_can_read(
+        self, client: Client
+    ) -> None:
+        """The date input's value is ISO, not the active locale's spelling.
+
+        This project runs ``en-gb``, whose localised date is "12/09/2026" —
+        not a value ``<input type="date">`` accepts, so the browser rendered
+        an EMPTY field and every edit silently blanked the trip's day. The
+        locale is pinned on this test because that is the condition under
+        which it fails.
+        """
+        trip = TripFactory.create(date=datetime.date(2026, 9, 12))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'name="date" value="2026-09-12"' in html
+        assert 'value="12/09/2026"' not in html
+
+    @override_settings(LANGUAGE_CODE="en-gb")
+    def test_the_edit_form_prefills_the_meeting_time(self, client: Client) -> None:
+        """``HH:MM``, the one shape every browser normalises to.
+
+        The seconds en-gb renders are legal in the HTML value and survive,
+        but a field that comes back spelled differently from how it went in
+        is a field the next round-trip can lose.
+        """
+        trip = TripFactory.create(start_time=datetime.time(7, 30))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'name="start_time" value="07:30"' in html
+
 
 @pytest.mark.django_db
 class TestFragmentsRejectPlainRequests:
@@ -226,8 +264,13 @@ class TestFragmentsRejectPlainRequests:
 class TestTripCreate:
     """POST /trips/partials/create/."""
 
-    def test_writes_a_trip_and_redirects_to_it(self, client: Client) -> None:
-        """HX-Redirect, because the next thing wanted is the trip itself."""
+    def test_writes_a_trip_and_redirects_to_the_list(self, client: Client) -> None:
+        """HX-Redirect to the LIST, carrying the new trip's uuid.
+
+        Not to the trip's own page (SNOW-834): the list is what says what
+        the organiser now has, and the uuid is how it confirms this write
+        and marks the row it made.
+        """
         route = RouteFactory.create()
         client.force_login(route.user)
         response = client.post(
@@ -235,7 +278,7 @@ class TestTripCreate:
         )
         assert response.status_code == 200
         trip = Trip.objects.get()
-        assert response["HX-Redirect"] == reverse("trips:detail", args=[trip.uuid])
+        assert response["HX-Redirect"] == f"{reverse('trips:list')}?created={trip.uuid}"
         assert trip.name == "Rosablanche"
         assert trip.date == datetime.date(2026, 3, 14)
 

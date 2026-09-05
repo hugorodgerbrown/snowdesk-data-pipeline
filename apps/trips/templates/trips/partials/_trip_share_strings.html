@@ -1,0 +1,19 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_share_strings.html — every user-facing string
+static/js/trip_share.js writes into the DOM.
+
+Its own file because two surfaces now carry the Share control: the trip
+page's organiser panel (_trip_share_controls.html) and every organised row
+of the trips list (_trip_list_row.html, SNOW-834). One module reads these
+strings, so there is one place they are written — a second copy would be a
+second thing to translate and a second thing to forget.
+
+See static/js/i18n_strings.js and docs/i18n.md: makemessages never scans
+static/js, so a literal there ships as English to every locale.
+{% endcomment %}
+<template id="trip-share-strings-template">
+    <span data-string="share-copied">{% trans "Link copied." %}</span>
+    <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
+    <span data-string="revoke-failed">{% trans "The link couldn't be revoked. Try again." %}</span>
+</template>

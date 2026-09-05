@@ -75,3 +75,11 @@ access rule and the token is the only identifier a non-participant has.
         {% endcard %}
     </main>
 {% endblock content %}
+
+{% block extra_js %}
+    {# htmx, which Join posts over. This page carried no extra_js block at #}
+    {# all until SNOW-834, so the one control the link exists for did      #}
+    {# nothing at all when pressed — the recipient's Join rendered its     #}
+    {# hx-post and nothing read it. Save route posts the same way.         #}
+    <script defer src="{% static 'js/htmx.min.js' %}"></script>
+{% endblock extra_js %}

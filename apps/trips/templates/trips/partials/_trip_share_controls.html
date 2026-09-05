@@ -66,11 +66,7 @@ Context:
         {% endif %}
     </p>
 </div>
-{# Every user-facing string trip_share.js writes into the DOM. See         #}
-{# static/js/i18n_strings.js and docs/i18n.md — makemessages never scans   #}
-{# static/js, so a literal there ships as English to every locale.         #}
-<template id="trip-share-strings-template">
-    <span data-string="share-copied">{% trans "Link copied." %}</span>
-    <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
-    <span data-string="revoke-failed">{% trans "The link couldn't be revoked. Try again." %}</span>
-</template>
+{# Every user-facing string trip_share.js writes into the DOM. In its own #}
+{# partial since SNOW-834, because the trips list carries the same Share  #}
+{# control and reads the same strings.                                     #}
+{% include "trips/partials/_trip_share_strings.html" %}

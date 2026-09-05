@@ -36,8 +36,8 @@ The dataset is built from the FactoryBoy factories in `tests/factories.py` by
 `seed_test_data` (the factory-based path that replaced the old
 `loaddata test_data` JSON fixture). It covers the CH region/resort reference
 data, the map-coverage and CH-4115 detail bulletin layer, a small
-`Location`/`Favourite` set, and the two named dev
-accounts (see [Dev credentials](#dev-credentials) — folded in from the former
+`Location`/`Favourite` set, one `Route` and the `Trip` planned off it, and
+the two named dev accounts (see [Dev credentials](#dev-credentials) — folded in from the former
 `seed_dev_users` command via `SeedModel.USER`, so `--all` creates them and
 `seed_test_data --include user` seeds just the accounts). `seed_test_data`
 refuses to run when `DEBUG=False`; worktrees use development settings, so it is
@@ -152,10 +152,12 @@ contains so it can be relied on and extended safely.
 | `bulletins.regionbulletin` | 178 | `seed_test_data` |
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
 | `bulletins.bulletingrouping` | 39 | `seed_test_data` (one per bulletin) |
-| `locations.location` | 5 | `seed_test_data` |
+| `locations.location` | 6 | `seed_test_data` (5 pins + the trip's meeting point, minted by `create_trip`) |
 | `favourites.favourite` | 6 | `seed_test_data` (5 point pins + 1 CH-4115 region pin, owned by the normal dev user) |
 | `auth.user` | 2 | `seed_test_data` (superuser + normal dev user) |
 | `accounts.account` | 1 | `seed_test_data` (the normal dev user's verified profile) |
+| `routes.route` | 1 | `seed_test_data` (parsed from a generated GPX by `create_route`, owned by the normal dev user) |
+| `trips.trip` | 1 | `seed_test_data` (planned off that route by `create_trip`, dated a week ahead of the run) |
 
 ### Data coverage
 
@@ -190,6 +192,18 @@ contains so it can be relied on and extended safely.
   per location, plus one CH-4115 region pin (the row a `Subscription`
   became — SNOW-802). All six are owned by the seeded normal dev user
   (`dev@snowdesk.dev`).
+- **Route / trip:** one `Route` — an 8-point, 3.4 km / 700 m skin track above
+  Verbier — and one `Trip` planned off it, both owned by the normal dev user.
+  Both go through the production services (`create_route` parses a generated
+  GPX, `create_trip` copies the snapshot, mints the meeting point and writes
+  the organiser's roster row), so the derived fields and the roster are the
+  real ones rather than a factory's guess at them.
+
+  **The trip is dated a week ahead of the run**, alone in a seed whose every
+  other date is pinned to April 2026. A trip is filed by whether its day has
+  passed and a share link's life is measured from that day, so a fixed past
+  date would seed a trip filed under "Past" with a link already dead — the one
+  state manual testing cannot use.
 - **Accounts:** the superuser and the normal dev user (see
   [Dev credentials](#dev-credentials)).
 

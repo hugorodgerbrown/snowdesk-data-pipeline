@@ -23,8 +23,14 @@ no unfurler will ever reach it.
 Unpaginated by design. A person organises a handful of trips a season and
 the cap is 25 organised each; a page that long needs no pagination and no
 new index.
+
+WHERE CREATING A TRIP LANDS (SNOW-834). trip_create redirects here with
+?created=<uuid>, so this page both confirms the write and carries the Share
+control for the trip it just made. Creating one trip is rarely creating only
+one, and the list is the surface that says what the organiser now has — the
+trip's own page says what one trip is.
 {% endcomment %}
-{% load i18n components %}
+{% load i18n components static %}
 
 {% block page_meta %}
     {% trans "Your trips" as page_name %}
@@ -33,7 +39,17 @@ new index.
 {% endblock page_meta %}
 
 {% block content %}
-    <main class="{% page_shell_classes %}">
+    <main
+        class="{% page_shell_classes %}"
+        {# The URL templates, handed to the page rather than spelled out in #}
+        {# JS: static/js/trip_share.js must not know how this project spells #}
+        {# its URLs. The same __UUID__ trick the trip page uses.             #}
+        data-trip-share-url="{{ share_url_template }}"
+    >
+        {# The token every row's Share posts with. A bare hidden input and #}
+        {# not a form: nothing on this page submits, and trip_share.js      #}
+        {# reads the field by name exactly as it does on the trip page.     #}
+        {% csrf_token %}
         {% trans "Your trips" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="trips-heading" %}
 
@@ -71,5 +87,30 @@ new index.
                 </ul>
             </section>
         {% endif %}
+
+        {% comment %}
+            Two toasts, one per outcome, because a failure must not be
+            painted in the success palette. Both are hidden until something
+            says otherwise — except the success one on the render that
+            follows a create, which the server already knows about and so
+            shows without waiting for JS.
+
+            The share strings are the trip page's own, in one partial since
+            SNOW-834 (see _trip_share_strings.html and docs/i18n.md).
+        {% endcomment %}
+        {% if created_trip %}{% trans "Trip created." as created_toast_body %}{% endif %}
+        {% include "includes/_toast.html" with id="trip-toast-success" kind="success" group="trip" body=created_toast_body visible=created_trip timeout=6000 %}
+        {% include "includes/_toast.html" with id="trip-toast-error" kind="error" group="trip" body="" timeout=6000 %}
+        {% include "trips/partials/_trip_share_strings.html" %}
     </main>
 {% endblock content %}
+
+{% block extra_js %}
+    {# The Share control on every organised row. Loaded in DOCUMENT ORDER —  #}
+    {# deferred scripts run in the order they appear — so window.pwaShare    #}
+    {# exists by the time trip_share.js's own top level runs. No htmx here:  #}
+    {# this page renders no hx-* attributes.                                 #}
+    <script defer src="{% static 'js/i18n_strings.js' %}"></script>
+    <script defer src="{% static 'js/share.js' %}"></script>
+    <script defer src="{% static 'js/trip_share.js' %}"></script>
+{% endblock extra_js %}

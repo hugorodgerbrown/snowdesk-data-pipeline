@@ -21,7 +21,10 @@ Covers:
     omits the named model.
   - --include user seeds the two named dev accounts (superuser + subscribed
     normal user, folded in from the former seed_dev_users command); --all
-    includes them and the seeded Favourites are owned by the normal dev user.
+    includes them and the seeded Favourites are owned by the normal dev user;
+  - --include route / trip seeds the dev user's one route and the trip planned
+    off it (SNOW-834), both through the production services rather than the
+    factories, so the derived fields and the roster are the real ones.
 
 seed_test_data needs the ``eaws_CH`` and ``resorts`` fixtures pre-loaded (it
 wires real MicroRegion FKs), so the commit tests load them first.
@@ -38,6 +41,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
+from django.utils import timezone
 from pytest_django import DjangoDbBlocker
 
 from apps.accounts.models import Account
@@ -60,6 +64,8 @@ from apps.bulletins.models import (
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
+from apps.routes.models import Route
+from apps.trips.models import Trip
 
 User = get_user_model()
 
@@ -150,6 +156,8 @@ class TestSelectionValidation:
             "location",
             "favourite",
             "user",
+            "route",
+            "trip",
         ):
             assert name in out
 
@@ -275,9 +283,16 @@ class TestCommit:
         assert "bulletin" in capsys.readouterr().out
 
     def test_all_seeds_the_new_models(self) -> None:
-        """--all seeds the stage-2 Location/Favourite layer."""
+        """--all seeds the stage-2 Location/Favourite layer.
+
+        One Location MORE than the seeded pins: ``create_trip`` mints an
+        anonymous row for the trip's meeting point (SNOW-834), which is a
+        Location like any other. Counted here rather than filtered out, so
+        the number stays an honest total.
+        """
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        assert Location.objects.count() == _EXPECTED_LOCATIONS
+        assert Location.objects.count() == _EXPECTED_LOCATIONS + 1
+        assert Trip.objects.get().meeting_point is not None
         # SNOW-802: placed pins only — the dev user's region pin is not one.
         assert Favourite.objects.placed().count() == _EXPECTED_FAVOURITES
 
@@ -513,3 +528,92 @@ class TestAdjacencyFromFixture:
         assert adjacency["CH-1"] == {"CH-2"}
         # CH-2 lists no neighbours, but the edge exists from CH-1's side.
         assert adjacency["CH-2"] == {"CH-1"}
+
+
+@pytest.mark.django_db
+@pytest.mark.xdist_group(name="seed_data_users")
+@pytest.mark.usefixtures("_regions")
+class TestTripSeeding:
+    """The dev user's route and the trip planned off it (SNOW-834).
+
+    Seeded so a developer can open /trips/ and the map's routes panel on a
+    fresh database and find something there — the trips surfaces were
+    otherwise empty until you uploaded a GPX by hand.
+    """
+
+    def test_all_seeds_one_route_and_one_trip(self) -> None:
+        """Both belong to the seeded normal dev user."""
+        call_command("seed_test_data", "--all", commit=True, verbosity=0)
+
+        route = Route.objects.get()
+        trip = Trip.objects.get()
+        assert route.user.email == NORMAL_USER_EMAIL
+        assert trip.created_by == route.user
+        assert trip.route == route
+
+    def test_include_trip_pulls_in_route_and_user(self) -> None:
+        """Neither prerequisite has to be named."""
+        call_command("seed_test_data", "--include", "trip", commit=True, verbosity=0)
+
+        assert Route.objects.count() == 1
+        assert Trip.objects.count() == 1
+        assert User.objects.filter(email=NORMAL_USER_EMAIL).exists()
+
+    def test_include_route_seeds_no_trip(self) -> None:
+        """The dependency runs one way only."""
+        call_command("seed_test_data", "--include", "route", commit=True, verbosity=0)
+
+        assert Route.objects.count() == 1
+        assert Trip.objects.count() == 0
+
+    def test_the_route_derived_fields_come_from_the_parser(self) -> None:
+        """Seeded through create_route, so the row agrees with its geometry.
+
+        The failure this rules out is a hand-written distance or bounds that
+        describes a different track from the one stored — which is what a
+        factory call with the derived fields spelled out invites.
+        """
+        call_command("seed_test_data", "--include", "route", commit=True, verbosity=0)
+
+        route = Route.objects.get()
+        assert route.point_count == len(route.points)
+        longitudes = [point[0] for point in route.points]
+        latitudes = [point[1] for point in route.points]
+        assert route.bounds == [
+            min(longitudes),
+            min(latitudes),
+            max(longitudes),
+            max(latitudes),
+        ]
+        assert route.distance_m > 0
+        # The track only climbs, so this is a true zero rather than a null.
+        assert route.ascent_m == pytest.approx(700.0)
+        assert route.descent_m == 0.0
+        # A recorded upload's shape: the GPX carries per-point times.
+        assert route.started_at is not None
+        assert route.finished_at is not None
+
+    def test_the_trip_is_upcoming(self) -> None:
+        """Dated ahead of today, alone in a seed of pinned April 2026 dates.
+
+        A trip dated in the past files under "Past" and its share link is
+        already dead, which is the one state manual testing cannot use.
+        """
+        call_command("seed_test_data", "--include", "trip", commit=True, verbosity=0)
+
+        assert Trip.objects.get().date > timezone.localdate()
+
+    def test_the_trip_went_through_the_service(self) -> None:
+        """It carries a snapshot, a meeting point and the organiser's row.
+
+        All three are create_trip's work. A trip built straight from the
+        factory can be made to look like this; one that actually went
+        through the service proves the path still works.
+        """
+        call_command("seed_test_data", "--include", "trip", commit=True, verbosity=0)
+
+        trip = Trip.objects.get()
+        route = Route.objects.get()
+        assert trip.points == route.points
+        assert trip.meeting_point is not None
+        assert trip.participants.filter(user=trip.created_by).exists()

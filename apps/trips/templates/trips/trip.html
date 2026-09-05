@@ -115,6 +115,13 @@ its own metadata.
 {% endblock content %}
 
 {% block extra_js %}
+    {# htmx, OUTSIDE the is_organiser branch: the roster's Join and Leave  #}
+    {# and the Save route control are every viewer's, and the edit and     #}
+    {# delete forms are the organiser's. base.html does not ship htmx —    #}
+    {# each page that posts a fragment loads it itself — and this page not #}
+    {# loading it was SNOW-834: every one of those controls rendered its   #}
+    {# hx-post and nothing read it.                                        #}
+    <script defer src="{% static 'js/htmx.min.js' %}"></script>
     {% if is_organiser %}
         {# The native-share/clipboard helper, loaded BEFORE trip_share.js —  #}
         {# deferred scripts run in document order, so window.pwaShare exists #}
