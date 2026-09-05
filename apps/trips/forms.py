@@ -10,7 +10,9 @@ and ``update_trip``).
 **The date and time are wall-clock**, so both widgets are plain HTML5
 ``date`` / ``time`` inputs and nothing here converts anything. A trip at
 07:30 is at 07:30 for everyone on it, whatever timezone their phone is set
-to.
+to. Both widgets pin the ``value`` format they render — see
+``_DATE_VALUE_FORMAT`` for why leaving it to the active locale emptied the
+day field every time an organiser opened the edit form.
 
 **The meeting point is a pin on a map**, and these two coordinate fields
 are what that pin writes into. They shipped briefly as the whole control
@@ -45,6 +47,25 @@ from apps.public.templatetags.components import input_classes
 # and SNOW-672 for why the string lives in one place.
 _INPUT_CLASSES = input_classes(size="standard")
 
+# How an HTML date/time input's ``value`` is spelled. Fixed by the HTML
+# specification, NOT a display choice — the browser reads the value in these
+# formats and then shows the reader their OWN locale's spelling of it, which
+# is why hardcoding them here costs no localisation.
+#
+# Explicit because Django renders an initial value through the ACTIVE LOCALE
+# otherwise, and this project runs ``en-gb``: a date came out as
+# "12/09/2026", which is not a value ``<input type="date">`` accepts, so the
+# browser silently rendered an empty field. Editing a trip therefore blanked
+# its day every time the form was opened, and an organiser correcting the
+# meeting time had to re-enter the date as well or lose it (SNOW-834).
+#
+# Parsing is unaffected and always was: ``DATE_INPUT_FORMATS`` for en-gb
+# already accepts ``%Y-%m-%d`` (third in the list) and ``TIME_INPUT_FORMATS``
+# accepts ``%H:%M``, which is what a browser posts. The bug was only ever in
+# what was rendered back.
+_DATE_VALUE_FORMAT = "%Y-%m-%d"
+_TIME_VALUE_FORMAT = "%H:%M"
+
 # Must match Trip.name's max_length.
 _NAME_MAX_LENGTH = 100
 
@@ -66,18 +87,20 @@ class TripForm(forms.Form):
 
     date = forms.DateField(
         widget=forms.DateInput(
+            format=_DATE_VALUE_FORMAT,
             attrs={
                 "type": "date",
                 "class": _INPUT_CLASSES,
-            }
+            },
         ),
     )
     start_time = forms.TimeField(
         widget=forms.TimeInput(
+            format=_TIME_VALUE_FORMAT,
             attrs={
                 "type": "time",
                 "class": _INPUT_CLASSES,
-            }
+            },
         ),
     )
     name = forms.CharField(
