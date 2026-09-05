@@ -1866,8 +1866,13 @@ Optional context:
     {# routes/partials/_route.html exactly, so one route reads the same in  #}
     {# the panel and in the popup.                                          #}
     <span data-string="route-distance">{% blocktrans %}%(km)s km{% endblocktrans %}</span>
-    <span data-string="route-ascent">{% blocktrans %}%(m)s m ascent{% endblocktrans %}</span>
-    <span data-string="route-descent">{% blocktrans %}%(m)s m descent{% endblocktrans %}</span>
+    {# SNOW-830 abbreviates both, in step with the panel row — the two      #}
+    {# surfaces show the same figures for the same route and have to read    #}
+    {# the same. The panel is where it is load-bearing (its meta line went   #}
+    {# mono at 12px and the full words overflow a 340px row); the popup      #}
+    {# follows so a user does not meet two spellings of one measurement.     #}
+    <span data-string="route-ascent">{% blocktrans %}%(m)s m asc{% endblocktrans %}</span>
+    <span data-string="route-descent">{% blocktrans %}%(m)s m desc{% endblocktrans %}</span>
     {# The elevation profile chart's accessible name, and the range caption #}
     {# printed under it. The caption carries the chart's meaning rather     #}
     {# than decorating it: the curve is scaled to the track's OWN highest   #}

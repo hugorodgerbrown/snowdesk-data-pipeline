@@ -283,8 +283,8 @@ describe('tapping a saved route', () => {
     const node = tapAt(LINE_Y - 6);
 
     expect(node.textContent).toContain('12.4 km');
-    expect(node.textContent).toContain('850 m ascent');
-    expect(node.textContent).toContain('1100 m descent');
+    expect(node.textContent).toContain('850 m asc');
+    expect(node.textContent).toContain('1100 m desc');
   });
 
   // SNOW-750: the caption line under the profile. Two independent facts,

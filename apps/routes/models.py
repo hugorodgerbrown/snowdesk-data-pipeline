@@ -225,6 +225,46 @@ class Route(BaseModel):
             return None
         return self.finished_at - self.started_at
 
+    @property
+    def duration_hm(self) -> dict[str, str] | None:
+        """Return the elapsed time split for display, or ``None`` if untimed.
+
+        A display helper in the same family as ``distance_km`` — a
+        template cannot divide, and the split has two rules a template
+        could not express either way.
+
+        WHOLE MINUTES, ROUNDED. A tour is not read to the second, and
+        rounding rather than truncating keeps 59.6 minutes from reading as
+        59.
+
+        ``hours`` is the empty string under an hour, and the minutes are
+        NOT zero-padded in that case: "0h41m" states an hours figure the
+        recording does not have, and an hour count is not a leading zero
+        on a minute count. Above an hour the minutes ARE padded, so
+        "4h05m" cannot be misread as "4h5m". Identical to
+        ``static/js/map.js``'s ``formatDuration``, deliberately: the map
+        popup and the panel row show the same figure for the same route
+        and must agree to the character.
+
+        Returns:
+            ``{"hours": "4", "minutes": "05"}``, ``{"hours": "",
+            "minutes": "41"}``, or ``None`` when the file carried no
+            usable timing — in which case the caller omits the figure
+            rather than rendering a zero, the same contract
+            ``ascent_m``'s null carries. A non-positive span is ``None``
+            too, matching ``formatDuration``: two identical stamps are a
+            recording artefact, not a tour that took no time.
+
+        """
+        elapsed = self.duration
+        if elapsed is None or elapsed.total_seconds() <= 0:
+            return None
+        total_minutes = round(elapsed.total_seconds() / 60)
+        hours, minutes = divmod(total_minutes, 60)
+        if hours == 0:
+            return {"hours": "", "minutes": str(minutes)}
+        return {"hours": str(hours), "minutes": f"{minutes:02d}"}
+
     def to_string(self) -> str:
         """Return a concise human-readable description of this route.
 

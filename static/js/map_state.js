@@ -278,12 +278,12 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // docstring). One combined string would have no way to leave part of
   // itself out.
   'route-distance': '%(km)s km',
-  'route-ascent': '%(m)s m ascent',
+  'route-ascent': '%(m)s m asc',
   // Ascent's opposite number, and shown beside it rather than instead of
   // it: an out-and-back and a one-way traverse can carry the same length
   // and the same climb, and only the descent separates them. A positive
   // magnitude, as stored — Route.descent_m is never signed.
-  'route-descent': '%(m)s m descent',
+  'route-descent': '%(m)s m desc',
   // The elevation profile's accessible name and the range caption under
   // it. The caption is not decoration: the chart's y-axis is scaled to
   // the track's OWN min-to-max (see elevation_profile_core.js's

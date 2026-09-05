@@ -6786,7 +6786,7 @@
     // somewhere the user did not touch, possibly off screen.
     //
     // The body is the panel row's own two lines, in the panel's own order
-    // and format ("12.4 km · 850 m ascent · 1100 m descent"), for the
+    // and format ("12.4 km · 850 m asc · 1100 m desc"), for the
     // reason activateCommunityReport gives above: one route should read the
     // same whichever surface it is reached from. Built with createElement,
     // never innerHTML — the name is user-supplied.

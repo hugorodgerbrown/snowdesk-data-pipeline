@@ -375,13 +375,13 @@ describe('what the route popup says', () => {
     const text = popupText();
     expect(text).toContain('Rosablanche');
     expect(text).toContain('12.4 km');
-    expect(text).toContain('850 m ascent');
+    expect(text).toContain('850 m asc');
   });
 
   it('OMITS ascent entirely when the GPX carried no elevation', () => {
     // The safety-relevant one. Route.ascent_m is null — not zero — when the
     // source file has no <ele> at all, and "we don't know" and "flat" are
-    // different facts about a mountain route. Rendering "0 m ascent" for an
+    // different facts about a mountain route. Rendering "0 m asc" for an
     // unknown would be a lie a user could plan on, so the line is absent
     // rather than zeroed. tests/routes/test_views.py asserts the null
     // survives the wire; this asserts what the map does with it.
@@ -394,7 +394,7 @@ describe('what the route popup says', () => {
     const text = popupText();
     expect(text).toContain('Rosablanche');
     expect(text).toContain('12.4 km');
-    expect(text).not.toContain('ascent');
+    expect(text).not.toContain(' m asc');
     expect(text).not.toContain('0 m');
   });
 
@@ -409,6 +409,6 @@ describe('what the route popup says', () => {
     }];
     tapTheMap(mapStub);
 
-    expect(popupText()).toContain('0 m ascent');
+    expect(popupText()).toContain('0 m asc');
   });
 });

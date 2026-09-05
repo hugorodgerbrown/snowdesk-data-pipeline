@@ -821,7 +821,7 @@ class TestRouteListFigures:
         body = response.content.decode()
 
         assert "12.4 km" in body
-        assert "850 m ascent" in body
+        assert "850 m asc" in body
 
     def test_descent_is_rendered_beside_ascent(self, client: Client) -> None:
         """Both vertical figures, not one netted against the other.
@@ -838,8 +838,8 @@ class TestRouteListFigures:
 
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
-        assert "850 m ascent" in body
-        assert "1100 m descent" in body
+        assert "850 m asc" in body
+        assert "1100 m desc" in body
 
     def test_a_null_descent_is_omitted(self, client: Client) -> None:
         """Descent obeys the same unknown-is-not-flat rule as ascent."""
@@ -851,8 +851,8 @@ class TestRouteListFigures:
 
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
-        assert "850 m ascent" in body
-        assert "descent" not in body
+        assert "850 m asc" in body
+        assert " m desc" not in body
 
     def test_a_zero_descent_is_still_rendered(self, client: Client) -> None:
         """A measured zero — a track that only climbs — states itself."""
@@ -862,16 +862,14 @@ class TestRouteListFigures:
             user=user, distance_m=12400.0, ascent_m=850.0, descent_m=0.0
         )
 
-        assert (
-            "0 m descent" in client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
-        )
+        assert "0 m desc" in client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
     def test_a_null_ascent_is_omitted(self, client: Client) -> None:
         """A route with no elevation data shows its distance alone.
 
         ``ascent_m`` is null — not zero — when the source GPX carried no
         ``<ele>`` at all, and Route's own docstring is explicit that "we
-        don't know" and "flat" are different facts. Rendering "0 m ascent"
+        don't know" and "flat" are different facts. Rendering "0 m asc"
         for the first would be a false statement about a route somebody may
         be planning to ski, so the meta line drops the figure entirely.
         """
@@ -885,7 +883,7 @@ class TestRouteListFigures:
         body = response.content.decode()
 
         assert "12.4 km" in body
-        assert "ascent" not in body
+        assert " m asc" not in body
         assert "0 m" not in body
 
     def test_a_zero_ascent_is_still_rendered(self, client: Client) -> None:
@@ -901,7 +899,73 @@ class TestRouteListFigures:
 
         response = client.get(MAP_LIST_URL, **HTMX_HEADERS)
 
-        assert "0 m ascent" in response.content.decode()
+        assert "0 m asc" in response.content.decode()
+
+    def test_the_elapsed_time_closes_the_line(self, client: Client) -> None:
+        """The fourth figure, appended to whichever figure branch ran.
+
+        Elapsed, not moving: the span includes every stop the recording
+        sat through. The format is the map popup's own, to the character
+        — one route reads the same in the panel and in the popup.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            distance_m=12400.0,
+            started_at=datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime(2026, 3, 13, 13, 15, tzinfo=UTC),
+        )
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "4h15m" in body
+
+    def test_an_under_the_hour_route_states_no_hours_figure(
+        self, client: Client
+    ) -> None:
+        """Under an hour there is no hours figure: "0h41m" states one.
+
+        And the minutes are not padded in that form: an hour count is not
+        a leading zero on a minute count. Both rules are
+        Route.duration_hm's; this asserts the row renders what it returns.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            started_at=datetime(2026, 3, 13, 9, 0, tzinfo=UTC),
+            finished_at=datetime(2026, 3, 13, 9, 41, tzinfo=UTC),
+        )
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "41m" in body
+        assert "0h41m" not in body
+
+    def test_an_untimed_route_omits_the_segment_entirely(self, client: Client) -> None:
+        """The twin of test_a_null_ascent_is_omitted, for the timing.
+
+        A planned ``<rte>``, or a track exported without timestamps,
+        carries no timing at all — and "we don't know" is not "it took no
+        time". The pair is always set or unset together, never one of the
+        two.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user,
+            distance_m=12400.0,
+            ascent_m=850.0,
+            descent_m=1100.0,
+            started_at=None,
+            finished_at=None,
+        )
+
+        body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "12.4 km · 850 m asc · 1100 m desc" in body
+        assert "0m" not in body
 
     def test_an_unnamed_route_falls_back_to_its_filename(self, client: Client) -> None:
         """A blank name reads as the uploaded filename, never as an empty row."""

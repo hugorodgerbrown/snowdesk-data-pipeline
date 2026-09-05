@@ -117,6 +117,16 @@
   --text-caption:  11px;    /* mono caption (callout diagnostics, nav
                                trigger, swatch / icon token labels)    */
   --text-summary:  13px;    /* collapsible-panel summary title         */
+  /* UGC panel row meta line (SNOW-830) — "12.9 km · 497 m asc · 4h15m".
+     One step below --text-summary because the line went MONO across all
+     four panels: DM Mono sets wider than DM Sans at the same size, and
+     13px mono overflowed the ~340px inner width as soon as a route's
+     ascent reached four digits. NOT --text-meta (11px): that is the
+     uppercase meta-cell label, a different role, and 11px mono is below
+     what this line is read at. Do not add a --color-row-meta token
+     without renaming this — see the --text-pill note above for the
+     silent failure that causes. */
+  --text-row-meta: 12px;
   /* Legend-sheet type (SNOW-723). The hourly chart's key specifies 22px
      for its title and 17px for its subhead; the default ramp's nearest
      steps are 20/24 and 18, none of which is the specified size. Named for
