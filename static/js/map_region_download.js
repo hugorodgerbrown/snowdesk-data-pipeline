@@ -1053,11 +1053,20 @@
         // The same predicate a full download settles on — a partial,
         // vacuous or absent result must not claim the area now renders.
         if (runCore && runCore.downloadSucceeded(result)) {
+          // Drop the busy latch FIRST. `_renderControl` refuses to repaint
+          // a control it believes is mid-run (that guard is what stops a
+          // basemap switch or a connectivity flip clobbering a download's
+          // progress fill), so a re-render dispatched while 'busy' is
+          // still painted would return immediately and leave the roundel
+          // spinning for good. 'idle' is a real state with a real label
+          // rather than a bare attribute write, and it survives for the
+          // one tick before the probe below settles the true one.
+          setState(gateState('idle'), data.summary.mb);
           // Re-probe rather than paint 'done' outright: the repair proves
           // the documents landed, and the probe is what confirms the whole
           // area — tiles included — and heals the record's `deps` from a
           // list it has just verified.
-          renderControl();
+          await renderControl();
         } else {
           setState('error', data.summary.mb);
           revealBasemapDownloadError(result ? result.reason : null);
