@@ -301,6 +301,10 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         secret=True,
         note="X-Api-Key header; empty means the feature is inert",
     ),
+    SettingSpec(
+        "WHAT3WORDS_FAKE",
+        note="local UX work only — invent an address instead of calling the API",
+    ),
     # --- Third-party services ---------------------------------------------
     SettingSpec("POSTHOG_HOST", validator=absolute_url, note="PostHog ingest host"),
     SettingSpec("POSTHOG_API_KEY", secret=True, note="PostHog project key"),

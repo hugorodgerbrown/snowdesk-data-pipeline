@@ -269,3 +269,67 @@ class TestFillWhat3words:
             second = fill_what3words(location)
 
         assert first == second == "filled.count.soap"
+
+
+class TestTheLocalFake:
+    """The ``WHAT3WORDS_FAKE`` escape hatch for UX work and demos.
+
+    Not a test double — the tests above mock ``requests.get`` and do not
+    touch this. It is scaffolding that lets a person LOOK at the feature
+    without a paid subscription, so what matters here is that it produces
+    something address-shaped, produces the SAME thing every time, and
+    cannot escape a development machine.
+    """
+
+    def test_returns_three_words_without_calling_the_api(
+        self, settings: Settings
+    ) -> None:
+        """The whole point: an address, and no request."""
+        settings.WHAT3WORDS_FAKE = True
+        settings.DEBUG = True
+
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            address = convert_to_3wa(46.080012, 7.318197)
+
+        mock_get.assert_not_called()
+        assert address is not None
+        assert len(address.split(".")) == 3
+
+    def test_is_stable_across_calls(self, settings: Settings) -> None:
+        """The same square always reads the same way.
+
+        A meeting point that shuffled its words on reload would be a worse
+        lie than the invented words themselves.
+        """
+        settings.WHAT3WORDS_FAKE = True
+        settings.DEBUG = True
+
+        assert convert_to_3wa(46.080012, 7.318197) == convert_to_3wa(
+            46.080012, 7.318197
+        )
+
+    def test_different_places_read_differently(self, settings: Settings) -> None:
+        """Two meeting points must not collide into one address."""
+        settings.WHAT3WORDS_FAKE = True
+        settings.DEBUG = True
+
+        assert convert_to_3wa(46.080012, 7.318197) != convert_to_3wa(45.9237, 6.8694)
+
+    def test_the_setting_alone_does_not_fake_in_production(
+        self, settings: Settings
+    ) -> None:
+        """DEBUG is required on top of the setting.
+
+        A fabricated meeting point reaching a real group would send them
+        to a square that does not exist, so the env var is not enough on
+        its own — the real request goes out instead.
+        """
+        settings.WHAT3WORDS_FAKE = True
+        settings.DEBUG = False
+
+        with patch(
+            "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)
+        ) as mock_get:
+            assert convert_to_3wa(46.080012, 7.318197) == "filled.count.soap"
+
+        mock_get.assert_called_once()

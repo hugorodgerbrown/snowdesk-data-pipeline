@@ -747,6 +747,21 @@ WHAT3WORDS_API_BASE_URL = config(
 # page falls back to the coordinate pair it renders today.
 WHAT3WORDS_API_KEY = config("WHAT3WORDS_API_KEY", default="")
 
+# Return a made-up address instead of calling the API. FOR LOCAL UX WORK
+# AND DEMOS ONLY — the words are invented and name nowhere.
+#
+# It exists because the paid plan above is the only way to see this feature
+# at all: without it, nobody can review the trip page, exercise the flag or
+# judge the layout without first spending £7.99. That is too high a price
+# for looking at a <dd>, and a reviewer who cannot see the change is the
+# more expensive problem. The fake is deterministic, so the same square
+# always reads the same way and a reload never shuffles the words.
+#
+# Off by default and never set in production, where a fabricated meeting
+# point would send a group to a square that does not exist. Guarded again
+# in the service, which refuses to fake anything while DEBUG is off.
+WHAT3WORDS_FAKE: bool = config("WHAT3WORDS_FAKE", default=False, cast=bool)
+
 # ---------------------------------------------------------------------------
 # GeoIP
 # ---------------------------------------------------------------------------

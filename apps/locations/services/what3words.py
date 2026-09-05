@@ -32,6 +32,14 @@ place — and then one of them would read theirs down a phone to the other.
 One trip, one address; the language of the plan is not the language of the
 reader's browser.
 
+**There is a local fake**, ``WHAT3WORDS_FAKE``, which invents a
+deterministic address instead of calling anything. It is scaffolding for
+UX work rather than a test double: the endpoint is behind a paid plan, so
+without it nobody can see this feature — or review a change to it —
+without buying a subscription first. It requires ``DEBUG`` on top of the
+setting, because a fabricated meeting point reaching a real group would
+send them to a square that does not exist. See ``_fake_address``.
+
 **Cost and licence.** ``convert-to-3wa`` left the free plan in November
 2024, so every call is billed against a paid plan (Basic: 1,000/month).
 That is why ``fill_what3words`` converts a square once per month rather
@@ -43,6 +51,7 @@ and docs/decisions/what3words-cache-expires-at-thirty-days.md.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -59,6 +68,68 @@ logger = logging.getLogger(__name__)
 # render is blocked on it, and a meeting point nobody can read is a far
 # better outcome than a trip page that hangs.
 REQUEST_TIMEOUT = 5  # seconds
+
+# The vocabulary the local fake draws on. Ordinary English words in the
+# register what3words itself uses, so a faked address is indistinguishable
+# from a real one AT A GLANCE — which is the point, since the thing being
+# judged is how the address sits in the layout. 48 words gives 110,592
+# combinations, far past anything a local database will exercise.
+_FAKE_WORDS = (
+    "amber",
+    "anchor",
+    "aspen",
+    "basin",
+    "beacon",
+    "bracket",
+    "cabin",
+    "cairn",
+    "cedar",
+    "cliff",
+    "cobble",
+    "cornice",
+    "crest",
+    "dawn",
+    "drift",
+    "ember",
+    "ferry",
+    "flint",
+    "gable",
+    "glacier",
+    "harbour",
+    "hazel",
+    "hollow",
+    "kettle",
+    "lantern",
+    "ledge",
+    "marble",
+    "meadow",
+    "moraine",
+    "nettle",
+    "orchard",
+    "pewter",
+    "pillar",
+    "quarry",
+    "ridge",
+    "saddle",
+    "shutter",
+    "silver",
+    "slate",
+    "spruce",
+    "summit",
+    "thicket",
+    "timber",
+    "traverse",
+    "vault",
+    "willow",
+    "windward",
+    "yarrow",
+)
+
+# How precisely a coordinate is pinned before it is hashed. Five decimal
+# places is about 1.1m, comfortably inside a 3m square, so the fake is
+# stable against the float jitter a pin drag produces while still giving
+# two genuinely different places two different addresses.
+_FAKE_PRECISION = 5
 
 
 def convert_to_3wa(
@@ -89,6 +160,9 @@ def convert_to_3wa(
         The three word address, or None if it could not be obtained.
 
     """
+    if settings.WHAT3WORDS_FAKE and settings.DEBUG:
+        return _fake_address(latitude, longitude)
+
     api_key: str = settings.WHAT3WORDS_API_KEY
     if not api_key:
         # Not an error, and not logged as one: an environment with no
@@ -149,6 +223,43 @@ def convert_to_3wa(
         return None
 
     return words
+
+
+def _fake_address(latitude: float, longitude: float) -> str:
+    """Invent a stable three word address for a coordinate.
+
+    LOCAL UX WORK AND DEMOS ONLY. The words are made up and name nowhere;
+    reaching this in production would send a group to a square that does
+    not exist, which is why ``convert_to_3wa`` requires ``DEBUG`` as well
+    as the setting before it calls this.
+
+    It exists because ``convert-to-3wa`` is behind a paid plan, so without
+    it nobody can look at this feature — review the layout, exercise the
+    flag, judge whether the address reads better than the coordinates —
+    without buying a subscription first.
+
+    DETERMINISTIC, via ``blake2b`` over the rounded coordinate rather than
+    the built-in ``hash``, whose string seed is randomised per process:
+    that would hand the same trip different words after every restart, and
+    a meeting point that changes when you restart the server is a worse
+    lie than the invented words themselves.
+
+    Args:
+        latitude: Latitude in degrees.
+        longitude: Longitude in degrees.
+
+    Returns:
+        Three lowercase words joined by full stops, e.g.
+        ``"cornice.saddle.willow"``.
+
+    """
+    pinned = f"{latitude:.{_FAKE_PRECISION}f},{longitude:.{_FAKE_PRECISION}f}"
+    digest = hashlib.blake2b(pinned.encode(), digest_size=6).digest()
+    count = len(_FAKE_WORDS)
+    return ".".join(
+        _FAKE_WORDS[int.from_bytes(digest[index * 2 : index * 2 + 2]) % count]
+        for index in range(3)
+    )
 
 
 def _error_code(response: requests.Response) -> str:
