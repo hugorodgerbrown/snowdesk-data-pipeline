@@ -200,9 +200,14 @@ FEATURES: tuple[Feature, ...] = (
         label=_("Free to read the forecast"),
         question=_("Is the bulletin itself behind a subscription?"),
         cells=_cells(
-            whiterisk=_UNKNOWN,
-            snowsafe=_YES,
-            clarity=Cell(Support.YES, _("No paywall found")),
+            # Store listings, 2026-09-05: free to install with in-app
+            # purchases. The bulletin sits in the free app — Play's own
+            # description lists it as included, and the paid tiers are the
+            # topo maps and the e-learning.
+            whiterisk=Cell(Support.YES, _("Paid tiers are maps and lessons")),
+            snowsafe=Cell(Support.YES, _("But the free app carries ads")),
+            # The only competitor here with NO in-app purchases at all.
+            clarity=Cell(Support.YES, _("No in-app purchases")),
             skitourenguru=_YES,
             whympr=_YES,
             opensnow=_YES,
@@ -243,7 +248,7 @@ FEATURES: tuple[Feature, ...] = (
         question=_("A notification on rising danger, or on a bulletin re-issue."),
         cells=_cells(
             whiterisk=_UNKNOWN,
-            snowsafe=Cell(Support.YES, _("Danger levels")),
+            snowsafe=Cell(Support.YES, _("Danger levels and daily updates")),
             clarity=Cell(Support.YES, _("New and revised bulletins")),
             skitourenguru=_UNKNOWN,
             whympr=_UNKNOWN,
