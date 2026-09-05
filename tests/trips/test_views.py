@@ -27,6 +27,7 @@ The three fragments (trips:create / trips:edit / trips:delete):
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any
 
 import pytest
@@ -380,3 +381,56 @@ class TestTripDelete:
         response = client.post(reverse("trips:delete", args=[trip.uuid]), **_HTMX)
         assert response.status_code == 404
         assert Trip.objects.filter(pk=trip.pk).exists()
+
+
+@pytest.mark.django_db
+class TestTripSummaryFigures:
+    """The figures line on a trip page (trips/partials/_trip_summary.html).
+
+    A trip's figures ARE its route's figures — the geometry is a snapshot
+    of one — so they are spelled the way the routes panel and the map
+    popup spell them (SNOW-830): the unit closed up to its value, and
+    ascent and descent as ↑ and ↓. A user meeting the same numbers on
+    three surfaces should not meet three spellings.
+
+    Untested until SNOW-830 changed the wording, which is how the page
+    came to be the last surface still saying "850 m ascent" — nothing
+    failed when the other two moved.
+    """
+
+    def test_all_three_figures_are_rendered(self, client: Client) -> None:
+        """Distance, ascent and descent, in the shared spelling."""
+        trip = TripFactory.create(distance_m=12400.0, ascent_m=850.0, descent_m=1100.0)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert "12.4km · 850m ↑ · 1100m ↓" in html
+
+    def test_a_null_ascent_and_descent_leave_the_distance_alone(
+        self, client: Client
+    ) -> None:
+        """No elevation data shows the distance and nothing else.
+
+        Null is "the source route carried no <ele>", which Trip's own
+        docstring separates from flat. Rendering "0m ↑" for it would be a
+        safety-relevant lie about terrain somebody is planning to ski, so
+        the figures are dropped rather than zeroed.
+        """
+        trip = TripFactory.create(distance_m=12400.0, ascent_m=None, descent_m=None)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+        figures = re.search(r'data-testid="trip-figures"[^>]*>(.*?)</p>', html, re.S)
+
+        assert figures is not None
+        assert figures.group(1).strip() == "12.4km"
+
+    def test_a_zero_ascent_is_still_stated(self, client: Client) -> None:
+        """A measured zero is a fact, and is not the same as unknown."""
+        trip = TripFactory.create(distance_m=5000.0, ascent_m=0.0, descent_m=0.0)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert "5.0km · 0m ↑ · 0m ↓" in html

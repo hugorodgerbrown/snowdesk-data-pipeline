@@ -20,9 +20,30 @@ elevation data anywhere carries null, and Trip's own docstring is explicit
 that "we don't know" and "flat" are different facts — rendering the second
 for the first would be a safety-relevant lie about terrain someone is
 planning to ski. So a trip with no vertical data shows its distance alone
-rather than "0 m ascent". Each branch is a whole phrase rather than
+rather than "0m ↑". Each branch is a whole phrase rather than
 assembled fragments, so a locale can order it freely — the same rule
 routes/partials/_route.html's meta line follows, and for the same reason.
+
+THE FIGURES READ "12.4km · 850m ↑ · 1100m ↓", which is the routes panel's
+own spelling (SNOW-830) rather than this page's former "12.4 km · 850 m
+ascent · 1100 m descent". A trip's figures ARE its route's figures — the
+geometry is a snapshot of one — so a user who meets the same numbers in
+the routes panel, in the map popup and here should not meet three
+spellings of one measurement.
+
+Width is not the argument on this surface. The panel abbreviates because
+its meta line went mono at 12px against a ~340px row and the full words
+overflowed; this is a page paragraph with room to spare. It follows for
+consistency alone, which is why the arrows are here and the panel's other
+compression — a duration segment — is not: a Trip carries no elapsed time
+to show.
+
+LITERAL ↑ AND ↓, not `&uarr;` / `&darr;`. A named entity would in fact
+survive here, since this line is template source written straight into a
+<p> rather than reaching the page through an escaped variable as the
+panel's does. The character is used anyway, so all three surfaces spell
+this the same way in their source and no reader has to work out which of
+them escapes.
 
 The organiser's ``description`` is rendered through ordinary Django
 auto-escaping. Nothing here calls ``mark_safe``, and nothing should: it is
@@ -56,18 +77,18 @@ Context:
     <p class="mt-4 text-text-2" data-testid="trip-figures">
         {% if trip.ascent_m is not None and trip.descent_m is not None %}
             {% blocktrans trimmed with km=km ascent=ascent descent=descent %}
-                {{ km }} km · {{ ascent }} m ascent · {{ descent }} m descent
+                {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
             {% endblocktrans %}
         {% elif trip.ascent_m is not None %}
             {% blocktrans trimmed with km=km ascent=ascent %}
-                {{ km }} km · {{ ascent }} m ascent
+                {{ km }}km · {{ ascent }}m ↑
             {% endblocktrans %}
         {% elif trip.descent_m is not None %}
             {% blocktrans trimmed with km=km descent=descent %}
-                {{ km }} km · {{ descent }} m descent
+                {{ km }}km · {{ descent }}m ↓
             {% endblocktrans %}
         {% else %}
-            {% blocktrans trimmed with km=km %}{{ km }} km{% endblocktrans %}
+            {% blocktrans trimmed with km=km %}{{ km }}km{% endblocktrans %}
         {% endif %}
     </p>
     {% if trip.description %}
