@@ -14,6 +14,8 @@ create_trip:
 
 update_trip:
   edits the plan and moves the trip's own Location in place;
+  clears the cached three word address when the pin MOVES, and keeps it
+    when the edit leaves the coordinate alone (a conversion is billed);
   is organiser-scoped.
 
 delete_trip / delete_trips_for_user:
@@ -27,6 +29,7 @@ import datetime
 
 import pytest
 from django.test import override_settings
+from django.utils import timezone
 
 from apps.locations.models import Location
 from apps.routes.models import Route
@@ -298,6 +301,72 @@ class TestUpdateTrip:
 @pytest.mark.django_db
 class TestDeleteTrip:
     """Deleting sweeps the minted Location."""
+
+    def test_moving_the_pin_clears_the_cached_address(self) -> None:
+        """A three word address does not survive its coordinate changing.
+
+        The cache lasts as long as the licence allows, so without this the
+        trip page would name the square the pin USED to stand on for up to
+        30 days — while the coordinates in the same element's ``title``
+        said somewhere else. An address nobody can trust is worse than the
+        coordinates it replaced, because the point of showing one is that
+        somebody navigates to it.
+        """
+        route = RouteFactory.create()
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+        location = trip.meeting_point
+        location.what3words = "filled.count.soap"
+        location.what3words_fetched_at = timezone.now()
+        location.save(
+            update_fields=["what3words", "what3words_fetched_at", "updated_at"]
+        )
+
+        update_trip(
+            route.user,
+            trip.uuid,
+            date=_DATE,
+            start_time=_TIME,
+            latitude=46.9,
+            longitude=8.1,
+        )
+
+        # Read back through ``values()`` rather than ``refresh_from_db``:
+        # assigning the literal above narrows the attribute to ``str`` for
+        # mypy, which then calls the ``is None`` check unreachable. This
+        # also asserts what the DATABASE holds rather than what the
+        # instance was left with, which is the stronger claim anyway.
+        stored = Location.objects.values("what3words", "what3words_fetched_at").get(
+            pk=location.pk
+        )
+        assert stored["what3words"] is None
+        assert stored["what3words_fetched_at"] is None
+
+    def test_an_edit_that_does_not_move_the_pin_keeps_the_address(self) -> None:
+        """A conversion is billed, so a time change must not spend one."""
+        route = RouteFactory.create()
+        trip = create_trip(
+            route.user, route_uuid=route.uuid, date=_DATE, start_time=_TIME
+        )
+        location = trip.meeting_point
+        location.what3words = "filled.count.soap"
+        location.what3words_fetched_at = timezone.now()
+        location.save(
+            update_fields=["what3words", "what3words_fetched_at", "updated_at"]
+        )
+
+        update_trip(
+            route.user,
+            trip.uuid,
+            date=_DATE,
+            start_time=datetime.time(9, 0),
+            latitude=location.latitude,
+            longitude=location.longitude,
+        )
+
+        location.refresh_from_db()
+        assert location.what3words == "filled.count.soap"
 
     def test_sweeps_the_meeting_point(self) -> None:
         """The anonymous row goes with the last thing referencing it."""

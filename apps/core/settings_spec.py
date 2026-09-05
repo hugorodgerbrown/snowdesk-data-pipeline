@@ -287,6 +287,29 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         required_in_production=True,
         note="Historical forecast host (SNOW-731 backfill)",
     ),
+    # --- what3words (SNOW-840) --------------------------------------------
+    # NOT required_in_production: the feature is gated on a waffle flag and
+    # an empty key makes no request at all, so an environment with no
+    # subscription is a supported state rather than a misconfiguration.
+    SettingSpec(
+        "WHAT3WORDS_API_BASE_URL",
+        validator=absolute_url,
+        note="convert-to-3wa host",
+    ),
+    SettingSpec(
+        "WHAT3WORDS_API_KEY",
+        secret=True,
+        note="X-Api-Key header; empty means the feature is inert",
+    ),
+    SettingSpec(
+        "WHAT3WORDS_MAP_BASE_URL",
+        validator=absolute_url,
+        note="where a rendered address links to — their map, not the API host",
+    ),
+    SettingSpec(
+        "WHAT3WORDS_FAKE",
+        note="local UX work only — invent an address instead of calling the API",
+    ),
     # --- Third-party services ---------------------------------------------
     SettingSpec("POSTHOG_HOST", validator=absolute_url, note="PostHog ingest host"),
     SettingSpec("POSTHOG_API_KEY", secret=True, note="PostHog project key"),

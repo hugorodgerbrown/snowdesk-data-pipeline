@@ -11,6 +11,11 @@
       "groups": [
         "GRP_DEBUG"
       ]
+    },
+    {
+      "name": "what3words",
+      "note": "Gates the SNOW-840 three word address on a trip's meeting point (both the trip page and the public share page) and its matching /help/ section. Off by default because convert-to-3wa is not on the what3words free plan — it needs the paid Basic plan and a WHAT3WORDS_API_KEY, so the feature deploys dark and is switched on per environment once one exists.",
+      "superusers": true
     }
   ]
 }

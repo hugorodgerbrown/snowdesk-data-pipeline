@@ -72,6 +72,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import waffle
 from django.conf import settings
 from django.db.models import Count
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
@@ -88,6 +89,7 @@ from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
+from apps.locations.services.what3words import fill_what3words
 from apps.routes.models import Route
 from apps.routes.services.routes import RouteLimitReached
 from apps.trips.forms import TripForm
@@ -252,6 +254,62 @@ def _basemap_context() -> dict[str, Any]:
         "basemaps": dict(settings.BASEMAP_STYLES),
         "default_basemap_key": settings.BASEMAP,
     }
+
+
+def _what3words_context(request: HttpRequest) -> dict[str, Any]:
+    """Return whether the ``what3words`` flag is active for this viewer.
+
+    SNOW-840. The meeting picker tells the organiser that the pin they are
+    dropping will be converted to a three word address when the trip is
+    saved. With the flag off no conversion happens, so that sentence would
+    be a lie — the copy is rendered only when this says so.
+
+    A helper spread as ``**_what3words_context(request)`` rather than a
+    key repeated at four render sites, exactly as ``_basemap_context``
+    already is: the picker is rendered by ``trip_new``, by both of the
+    form's validation-error re-renders and by ``_trip_context``, and a
+    flag read that is missing from one of them is a page that promises
+    something the others do not.
+
+    Takes the request because a waffle flag can be scoped to a user, a
+    percentage or a session — there is no flag state independent of who is
+    asking.
+
+    Args:
+        request: The current request, which the flag is evaluated against.
+
+    Returns:
+        A dict with ``what3words_active``.
+
+    """
+    return {"what3words_active": waffle.flag_is_active(request, "what3words")}
+
+
+def _what3words_map_url(words: str | None) -> str | None:
+    """Return the what3words map URL for one address, or None.
+
+    SNOW-840. ``{settings.WHAT3WORDS_MAP_BASE_URL}/{words}`` — their own
+    map is the only place the 3m square can actually be SEEN, and a reader
+    deciding whether they can find the meeting point needs to see it
+    rather than take three words on trust.
+
+    Built here rather than in the template on the codebase's usual rule: a
+    URL is not presentation, and a template that concatenated a setting
+    onto a variable would be the one place a trailing slash in the
+    environment turned into a broken link. The base is stripped of one for
+    that reason.
+
+    Args:
+        words: The address without its ``///`` prefix, or None when there
+            is no address — flag off, no key, upstream down, cache stale.
+
+    Returns:
+        The absolute URL, or None when there is nothing to link to.
+
+    """
+    if not words:
+        return None
+    return f"{settings.WHAT3WORDS_MAP_BASE_URL.rstrip('/')}/{words}"
 
 
 def _map_deep_link(parameter: str, value: str) -> str:
@@ -468,6 +526,14 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
     """
     viewer = request.user
     is_organiser = viewer.is_authenticated and trip.created_by_id == viewer.pk
+    # Read ONCE and reused for both the address and the picker's copy
+    # below. Two reads of one flag in one render is two chances for them to
+    # disagree — a percentage-scoped flag is not obliged to answer the same
+    # way twice — and the second read would buy nothing.
+    what3words_active = waffle.flag_is_active(request, "what3words")
+    meeting_point_w3w = (
+        fill_what3words(trip.meeting_point) if what3words_active else None
+    )
     return {
         "trip": trip,
         "is_organiser": is_organiser,
@@ -522,6 +588,30 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # could provide it.
         "basemaps": dict(settings.BASEMAP_STYLES),
         "default_basemap_key": settings.BASEMAP,
+        # SNOW-840. The meeting point as ///filled.count.soap, or None,
+        # which the summary partial reads as "print the coordinates" —
+        # there is never a blank where the meeting point was.
+        #
+        # Resolved HERE rather than in the template, following the
+        # codebase's one gating convention (``apps.public.views.help_page``
+        # does the same for ``sync_log``): no template in the tree loads
+        # ``waffle_tags``, and the flag decides whether an outbound HTTP
+        # call happens, which is not a decision to leave to a render.
+        # Flag off means no call, no query and no behaviour change.
+        #
+        # Both surfaces get it because both come through this builder, so
+        # the organiser's page and the public link cannot end up naming
+        # the meeting point two different ways.
+        "meeting_point_w3w": meeting_point_w3w,
+        # Where that address LINKS to — what3words' own map, which is the
+        # only place the square itself can be seen. None whenever the
+        # address is, so the summary partial's one ``if`` covers both and
+        # the coordinate fallback can never sprout a link to nowhere.
+        "meeting_point_w3w_url": _what3words_map_url(meeting_point_w3w),
+        # The picker's conversion copy is gated on the same read — see
+        # ``_what3words_context``, which is what the three render sites
+        # that have no ``_trip_context`` use.
+        "what3words_active": what3words_active,
         # The meeting picker's own payload, for the edit form. ORGANISER
         # ONLY, and None for everybody else on purpose: it repeats the
         # whole track, which ``map_payload`` above already carries, so
@@ -627,6 +717,7 @@ def trip_new(request: HttpRequest) -> HttpResponse:
                 route.points, route.bounds, first[1], first[0]
             ),
             **_basemap_context(),
+            **_what3words_context(request),
         },
     )
 
@@ -740,6 +831,7 @@ def trip_create(request: HttpRequest) -> HttpResponse:
                     route.bounds if route else [],
                 ),
                 **_basemap_context(),
+                **_what3words_context(request),
             },
             status=400,
         )
@@ -829,6 +921,7 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
                     request, trip.points if trip else [], trip.bounds if trip else []
                 ),
                 **_basemap_context(),
+                **_what3words_context(request),
             },
             status=400,
         )

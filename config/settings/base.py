@@ -722,6 +722,57 @@ WEATHER_BACKFILL_FLOOR = config(
 )
 
 # ---------------------------------------------------------------------------
+# what3words — a trip's meeting point as a three word address (SNOW-840)
+# ---------------------------------------------------------------------------
+# Live endpoint:
+#   GET {WHAT3WORDS_API_BASE_URL}/convert-to-3wa?coordinates=<lat>,<lon>
+#
+# The key travels in an ``X-Api-Key`` HEADER rather than a query parameter,
+# so it cannot end up in a logged or proxied URL. See
+# ``apps.locations.services.what3words``.
+#
+# NOT FREE. ``convert-to-3wa`` left the free plan in November 2024, which
+# now covers AutoSuggest alone, so this needs the Basic plan (£7.99/mo,
+# 1,000 conversions). An empty key is therefore the default and the
+# service makes no request at all when it sees one — an environment with
+# no subscription costs nothing and cannot 401 in a loop. The ``what3words``
+# waffle flag is the other half of that: the feature deploys dark.
+WHAT3WORDS_API_BASE_URL = config(
+    "WHAT3WORDS_API_BASE_URL",
+    default="https://api.what3words.com/v3",
+)
+
+# Empty means the feature is inert: no request, no address, and the trip
+# page falls back to the coordinate pair it renders today.
+WHAT3WORDS_API_KEY = config("WHAT3WORDS_API_KEY", default="")
+
+# Where a rendered address LINKS to — what3words' own map, which is the
+# only place the square can actually be seen. A setting rather than a
+# literal in the template for the usual reason: the host is theirs to
+# change, and a hardcoded one would make that a code change and a deploy.
+# Not the API host above — that one answers JSON to us, this one is a page
+# we send a person to, and they move independently.
+WHAT3WORDS_MAP_BASE_URL = config(
+    "WHAT3WORDS_MAP_BASE_URL",
+    default="https://what3words.com",
+)
+
+# Return a made-up address instead of calling the API. FOR LOCAL UX WORK
+# AND DEMOS ONLY — the words are invented and name nowhere.
+#
+# It exists because the paid plan above is the only way to see this feature
+# at all: without it, nobody can review the trip page, exercise the flag or
+# judge the layout without first spending £7.99. That is too high a price
+# for looking at a <dd>, and a reviewer who cannot see the change is the
+# more expensive problem. The fake is deterministic, so the same square
+# always reads the same way and a reload never shuffles the words.
+#
+# Off by default and never set in production, where a fabricated meeting
+# point would send a group to a square that does not exist. Guarded again
+# in the service, which refuses to fake anything while DEBUG is off.
+WHAT3WORDS_FAKE: bool = config("WHAT3WORDS_FAKE", default=False, cast=bool)
+
+# ---------------------------------------------------------------------------
 # GeoIP
 # ---------------------------------------------------------------------------
 # Path to the MaxMind GeoLite2-City mmdb database file. Used by

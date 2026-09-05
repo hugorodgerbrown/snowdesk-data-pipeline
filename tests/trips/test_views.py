@@ -22,6 +22,16 @@ The three fragments (trips:create / trips:edit / trips:delete):
   create re-renders the form at 400 for an invalid submission;
   create answers 409 at the cap;
   edit and delete are organiser-scoped and 404 otherwise.
+
+The meeting point (SNOW-840):
+  the coordinate pair with the ``what3words`` flag off; the three word
+  address with it on and a cached address on the location; the coordinate
+  pair again with the flag on but the conversion failing; and the address
+  as a LINK to the configured what3words map host, which the coordinate
+  fallback never grows.
+  ``tests/trips/test_share_views.py`` asserts the same three on the public
+  page, because both surfaces are built by one context builder and the
+  point is that they cannot diverge.
 """
 
 from __future__ import annotations
@@ -29,13 +39,67 @@ from __future__ import annotations
 import datetime
 import re
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+import requests
 from django.test import Client, override_settings
 from django.urls import reverse
+from django.utils import timezone
+from pytest_django.fixtures import Settings
+from waffle.testutils import override_flag
 
+from apps.locations.models import Location
 from apps.trips.models import Trip
-from tests.factories import RouteFactory, TripFactory, UserFactory
+from tests.factories import LocationFactory, RouteFactory, TripFactory, UserFactory
+
+# The dd the meeting point renders into, tag and contents. Matched rather
+# than searched for whole-page so "the address replaced the coordinates"
+# and "the coordinates are elsewhere on the page" cannot be confused: the
+# map payload carries the same numbers.
+_MEETING_POINT_DD = re.compile(
+    r'<dd[^>]*data-testid="trip-meeting-point".*?</dd>', re.DOTALL
+)
+
+
+def _meeting_point(cached: bool = False) -> Location:
+    """Return an anonymous Location at a fixed coordinate (SNOW-840).
+
+    Fixed rather than the factory's default so the rendered pair is
+    known, and so a test asserting the fallback is asserting a string
+    only this location could have produced.
+
+    Args:
+        cached: When True, the row carries a FRESH cached three word
+            address, which ``fill_what3words`` returns without a call.
+
+    Returns:
+        The location, saved.
+
+    """
+    return LocationFactory.create(
+        anonymous=True,
+        latitude=46.080012,
+        longitude=7.318197,
+        what3words="filled.count.soap" if cached else None,
+        what3words_fetched_at=timezone.now() if cached else None,
+    )
+
+
+def _meeting_point_dd(html: str) -> str:
+    """Return the meeting-point ``<dd>`` from a rendered trip page.
+
+    Args:
+        html: The rendered page.
+
+    Returns:
+        The element's source, tag and contents.
+
+    """
+    match = _MEETING_POINT_DD.search(html)
+    assert match is not None, "the page rendered no meeting point"
+    return match.group(0)
+
 
 # Annotated ``dict[str, Any]`` so ``**_HTMX`` unpacks into ``Client.post``
 # without mypy matching it against that method's typed keyword parameters.
@@ -82,7 +146,12 @@ class TestTripNewPage:
     def test_prefills_the_meeting_point_from_the_first_coordinate(
         self, client: Client
     ) -> None:
-        """The default that makes the coordinate fields workable."""
+        """The default the hidden fields carry when nobody moves the pin.
+
+        Since SNOW-840 it is also the only meeting point a visitor with no
+        JavaScript can submit, which is why it has to be the route's own
+        start rather than nothing.
+        """
         route = RouteFactory.create()
         client.force_login(route.user)
         response = client.get(f"{reverse('trips:new')}?route={route.uuid}")
@@ -111,15 +180,14 @@ class TestTripNewPage:
         # The track itself, not just an empty payload envelope.
         assert "LineString" in html
 
-    def test_the_coordinate_fields_survive_as_the_manual_escape_hatch(
-        self, client: Client
-    ) -> None:
-        """A keyboard visitor, and anyone with no JavaScript, still has them.
+    def test_the_coordinate_fields_are_posted_but_hidden(self, client: Client) -> None:
+        """The pin's transport survives SNOW-840; the boxes do not.
 
-        The pin WRITES to these; it does not replace them. If they ever
-        stop rendering, the no-JavaScript path submits nothing for the
-        meeting point and the form 400s for a field the visitor was never
-        shown.
+        The marker WRITES to these fields and they are what the form
+        posts, so if they stop rendering a trip submits nothing for its
+        meeting point and 400s on a field nobody was shown. What changed is
+        their widget: they are hidden inputs, found by the picker through
+        the same ``data-meeting-*`` attributes.
         """
         route = RouteFactory.create()
         client.force_login(route.user)
@@ -128,6 +196,46 @@ class TestTripNewPage:
 
         assert "data-meeting-latitude" in html
         assert "data-meeting-longitude" in html
+        assert html.count('type="hidden" name="latitude"') == 1
+        assert html.count('type="hidden" name="longitude"') == 1
+
+    def test_the_manual_coordinate_panel_is_gone(self, client: Client) -> None:
+        """SNOW-840 removed the "Enter coordinates manually" disclosure.
+
+        Hugo: "no one is going to use that." Asserted on the rendered page
+        because that is where the cost was — every organiser read the
+        panel's title and dismissed it to serve the few who would have
+        opened it.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert "Enter coordinates manually" not in html
+        assert "trip-meeting-manual" not in html
+
+    def test_the_conversion_copy_is_absent_with_the_flag_off(
+        self, client: Client
+    ) -> None:
+        """With no conversion happening, the sentence would be a lie."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert "three word address" not in html
+
+    @override_flag("what3words", active=True)
+    def test_the_conversion_copy_appears_with_the_flag_on(self, client: Client) -> None:
+        """The organiser is told what becomes of the pin they just dropped."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        assert 'data-testid="trip-meeting-conversion"' in html
+        assert "three word address" in html
 
     def test_404_for_another_users_route(self, client: Client) -> None:
         """Never 403 — no existence oracle."""
@@ -234,6 +342,133 @@ class TestTripDetailPage:
 
 
 @pytest.mark.django_db
+class TestTripMeetingPointAddress:
+    """The meeting point as ///filled.count.soap (SNOW-840).
+
+    Three states, and the one that matters is the third: the coordinate
+    pair is the fallback for every failure, so there is never a blank
+    where the meeting point was.
+    """
+
+    def test_the_coordinates_render_with_the_flag_off(self, client: Client) -> None:
+        """Flag off is today's page, unchanged — and makes no call."""
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+            html = client.get(
+                reverse("trips:detail", args=[trip.uuid])
+            ).content.decode()
+
+        assert "46.080012, 7.318197" in html
+        assert "///" not in _meeting_point_dd(html)
+        mock_get.assert_not_called()
+
+    @override_flag("what3words", active=True)
+    def test_the_address_renders_with_the_flag_on(self, client: Client) -> None:
+        """A cached address replaces the pair, prefixed with ///."""
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert "///filled.count.soap" in _meeting_point_dd(html)
+
+    @override_flag("what3words", active=True)
+    def test_the_coordinates_stay_available_as_the_titles(self, client: Client) -> None:
+        """The paste-into-a-map-app affordance survives the swap."""
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'title="46.080012, 7.318197"' in _meeting_point_dd(html)
+
+    @override_flag("what3words", active=True)
+    def test_the_edit_form_promises_the_conversion_too(self, client: Client) -> None:
+        """The organiser's edit picker is the fourth render path.
+
+        ``_trip_context`` builds it, so the flag has to reach it from
+        there rather than from ``_what3words_context`` — a trip page whose
+        edit form said nothing while the new-trip form did would be two
+        answers to one question.
+        """
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'data-testid="trip-meeting-conversion"' in html
+
+    @override_flag("what3words", active=True)
+    @override_settings(WHAT3WORDS_MAP_BASE_URL="https://w3w.example")
+    def test_the_address_links_to_the_configured_map_host(self, client: Client) -> None:
+        """The words link to the square on what3words' own map.
+
+        The host comes from the setting rather than a literal in the
+        template, so this asserts the CONFIGURED one — a hardcoded
+        what3words.com would pass against the default and hide the fact
+        that nothing reads the setting.
+        """
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'href="https://w3w.example/filled.count.soap"' in _meeting_point_dd(html)
+
+    @override_flag("what3words", active=True)
+    def test_the_address_link_opens_away_and_hands_over_no_handle(
+        self, client: Client
+    ) -> None:
+        """An off-site link gets a new tab and rel="noopener noreferrer"."""
+        trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
+        client.force_login(trip.created_by)
+
+        dd = _meeting_point_dd(
+            client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+        )
+
+        assert 'target="_blank"' in dd
+        assert 'rel="noopener noreferrer"' in dd
+
+    def test_the_coordinate_fallback_carries_no_link(self, client: Client) -> None:
+        """No address means no anchor — never a link to nowhere.
+
+        ``meeting_point_w3w_url`` is None exactly when the address is, so
+        the coordinate pair renders as the bare text it always has. A
+        template that built the href itself would emit ``.../None`` here.
+        """
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        dd = _meeting_point_dd(
+            client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+        )
+
+        assert "<a" not in dd
+        assert "46.080012, 7.318197" in dd
+
+    @override_flag("what3words", active=True)
+    def test_a_failing_conversion_falls_back_to_the_coordinates(
+        self, client: Client, settings: Settings
+    ) -> None:
+        """A what3words outage must not take the trip page with it."""
+        settings.WHAT3WORDS_API_KEY = "test-key"
+        trip = TripFactory.create(meeting_point=_meeting_point())
+        client.force_login(trip.created_by)
+
+        with patch(
+            "apps.locations.services.what3words.requests.get",
+            side_effect=requests.Timeout("too slow"),
+        ):
+            response = client.get(reverse("trips:detail", args=[trip.uuid]))
+
+        assert response.status_code == 200
+        assert "46.080012, 7.318197" in response.content.decode()
+
+
+@pytest.mark.django_db
 class TestFragmentsRejectPlainRequests:
     """Invariant 4 — every partials/ endpoint is @require_htmx."""
 
@@ -294,6 +529,47 @@ class TestTripCreate:
         assert 'id="trip-form"' in response.content.decode()
         assert Trip.objects.count() == 0
 
+    def test_a_hand_crafted_coordinate_off_the_planet_is_still_rejected(
+        self, client: Client
+    ) -> None:
+        """SNOW-840 hid the fields; the bounds that guard them are unmoved.
+
+        ``min_value``/``max_value`` are FIELD-level, so they never relied
+        on a browser validating a number box — and a hand-crafted POST is
+        now the only way a value the marker did not write can arrive at
+        all.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        payload = _valid_post(str(route.uuid))
+        payload["latitude"] = "91.0"
+
+        response = client.post(reverse("trips:create"), payload, **_HTMX)
+
+        assert response.status_code == 400
+        assert Trip.objects.count() == 0
+
+    @override_flag("what3words", active=True)
+    def test_the_re_rendered_form_still_carries_the_conversion_copy(
+        self, client: Client
+    ) -> None:
+        """The flag reaches the error re-render, not just the first paint.
+
+        This is the render path a missing ``_what3words_context`` would
+        silently lose: the form comes back whole after a validation error,
+        so an organiser who mistyped the date would watch the sentence
+        about their pin disappear.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        payload = _valid_post(str(route.uuid))
+        payload["date"] = ""
+
+        response = client.post(reverse("trips:create"), payload, **_HTMX)
+
+        assert response.status_code == 400
+        assert 'data-testid="trip-meeting-conversion"' in response.content.decode()
+
     def test_a_missing_route_is_a_400(self, client: Client) -> None:
         """No route means nothing to plan from."""
         client.force_login(UserFactory.create())
@@ -324,6 +600,23 @@ class TestTripCreate:
 @pytest.mark.django_db
 class TestTripEdit:
     """POST /trips/partials/<uuid>/edit/."""
+
+    @override_flag("what3words", active=True)
+    def test_the_re_rendered_form_still_carries_the_conversion_copy(
+        self, client: Client
+    ) -> None:
+        """The edit path's error re-render is the fourth picker render."""
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+        payload = _valid_post()
+        payload["start_time"] = ""
+
+        response = client.post(
+            reverse("trips:edit", args=[trip.uuid]), payload, **_HTMX
+        )
+
+        assert response.status_code == 400
+        assert 'data-testid="trip-meeting-conversion"' in response.content.decode()
 
     def test_updates_and_redirects_back_to_the_trip(self, client: Client) -> None:
         """A whole-page repaint, because the page draws one context."""
@@ -385,7 +678,12 @@ class TestTripDelete:
 
 @pytest.mark.django_db
 class TestTripSummaryFigures:
-    """The figures line on a trip page (trips/partials/_trip_summary.html).
+    """The figures line on a trip page (trips/partials/_trip_map.html).
+
+    It lived in ``_trip_summary.html`` until SNOW-840 moved it into the
+    route-profile card, which is why the class is still named for the
+    summary. The assertions below are about the WORDING and are indifferent
+    to which partial renders it; the one that is not says so.
 
     A trip's figures ARE its route's figures — the geometry is a snapshot
     of one — so they are spelled the way the routes panel and the map
@@ -434,3 +732,22 @@ class TestTripSummaryFigures:
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
         assert "5.0km · 0m ↑ · 0m ↓" in html
+
+    def test_the_figures_sit_with_the_profile_they_scale(self, client: Client) -> None:
+        """SNOW-840 moved the line into the route-profile card.
+
+        The drawing is a picture of these numbers, so the two are one
+        object — the map page's route popup has always framed them
+        together. Asserted by ORDER against the profile's own container:
+        the figures used to sit in the summary, above the map, which is
+        several hundred pixels and a card away from the curve they scale.
+        """
+        trip = TripFactory.create(distance_m=12400.0, ascent_m=850.0, descent_m=1100.0)
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        summary = html.index('data-testid="trip-summary"')
+        figures = html.index('data-testid="trip-figures"')
+        profile = html.index("data-trip-profile")
+        assert summary < figures < profile

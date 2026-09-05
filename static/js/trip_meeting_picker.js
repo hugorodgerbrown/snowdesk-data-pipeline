@@ -11,12 +11,19 @@
  * ## The inputs are still the source of truth
  *
  * The marker WRITES to the form's own `latitude` / `longitude` fields and
- * never holds the value itself. That keeps three things true at once: the
- * form posts and validates exactly as it did before this module existed, a
- * visitor with no JavaScript still submits the prefilled route start, and
- * the manual-entry fields stay live for anyone who has a coordinate from
- * somewhere else and would rather type it. The two directions are kept in
- * step — dragging updates the fields, editing a field moves the marker.
+ * never holds the value itself. The form posts and validates exactly as it
+ * did before this module existed, and a visitor with no JavaScript still
+ * submits the prefilled route start rather than an empty required field.
+ *
+ * SNOW-840 HID THOSE FIELDS. This paragraph used to claim a third thing —
+ * that "the manual-entry fields stay live for anyone who has a coordinate
+ * from somewhere else and would rather type it" — and they are now
+ * `HiddenInput`s, so nobody types into them and the marker is the only
+ * writer. The field→marker half of the sync below is therefore waiting on
+ * a `change` event a hidden input cannot raise; it is left in place
+ * because it costs nothing, and because it is what a returning keyboard
+ * affordance would bind to. See the templates for the regression this
+ * accepts.
  *
  * ## It rebuilds itself after an HTMX swap
  *
@@ -52,9 +59,9 @@
   var ROUTE_CASING_COLOUR = '#1a1916';
 
   // Six decimal places is ~11 cm at the equator — far finer than anyone
-  // can point at on a phone, and short enough that the number in the
-  // manual field stays readable. Storing the raw drag float would put
-  // fifteen digits in a text input for no gain.
+  // can point at on a phone, and short enough to read in the coordinate
+  // readout under the map. Storing the raw drag float would put fifteen
+  // digits in the posted value for no gain.
   var COORDINATE_DP = 6;
 
   var LATITUDE_MAX = 90;
@@ -285,12 +292,20 @@
     }
     if (!container) return;
 
+    // SNOW-840: the fallbacks say what is still true. They used to offer
+    // the coordinate fields under the map, which no longer exist as a
+    // control — the hidden inputs keep their route-start prefill, so a
+    // dead map means the meeting point stays where the route begins.
     STRINGS = self.pwaStrings
       ? self.pwaStrings.read('trip-picker-strings-template', {
           'meeting-point': 'Meeting point',
-          'map-failed': 'The map could not be loaded. You can still type the coordinates below.',
+          'map-failed':
+            "The map could not be loaded. The group will meet at the route's start.",
         })
-      : { 'meeting-point': 'Meeting point', 'map-failed': 'The map could not be loaded.' };
+      : {
+          'meeting-point': 'Meeting point',
+          'map-failed': 'The map could not be loaded.',
+        };
 
     var payload = readPayload(doc);
     if (typeof maplibregl === 'undefined') {
@@ -397,8 +412,11 @@
       });
     }
 
-    // Typing in the manual fields moves the pin, so the two controls can
-    // never disagree about where the group is meeting.
+    // Typing in the coordinate fields moves the pin, so the two can never
+    // disagree about where the group is meeting. SNOW-840 hid the fields,
+    // so nothing raises `change` on them any more and this branch does not
+    // run in the shipped UI — kept because it is free and because it is
+    // the hook a keyboard-driven placement would attach to.
     if (inputs) {
       var syncFromInputs = function () {
         var lat = clampLatitude(inputs.latitude.value);

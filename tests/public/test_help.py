@@ -190,6 +190,18 @@ class TestHelpPageFlagGating:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-sync-log"' in response.content
 
+    def test_what3words_panel_absent_by_default(self, client: Client) -> None:
+        """SNOW-840: no documentation for words a trip page does not show."""
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-what3words"' not in response.content
+
+    @override_flag("what3words", active=True)
+    def test_what3words_panel_present_when_flag_active(self, client: Client) -> None:
+        """With the flag on, the topic explains what /// means."""
+        response = client.get(reverse("public:help"))
+        assert b'data-testid="help-topic-what3words"' in response.content
+        assert b"help-what3words-fallback" in response.content
+
     def test_downloads_account_paragraphs_are_always_present(
         self, client: Client
     ) -> None:

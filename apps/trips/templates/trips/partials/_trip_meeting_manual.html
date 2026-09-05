@@ -1,30 +1,44 @@
-{% load i18n %}
 {% comment %}
-trips/partials/_trip_meeting_manual.html — the meeting point's two number
-fields, as the manual half of the picker.
+trips/partials/_trip_meeting_manual.html — the meeting point's two fields,
+now hidden, as the picker's transport.
 
-The map is the control; this is the escape hatch. It exists for three
-cases the map cannot serve, and it is worth naming them because "the map
-is enough" is the obvious argument against having this at all:
+THE VISIBLE FIELDS ARE GONE (SNOW-840). This partial used to render two
+labelled number inputs inside a collapsed "Enter coordinates manually"
+panel, and its comment argued for them on three grounds:
 
   - a keyboard-only visitor, who cannot drag a MapLibre marker;
   - someone who already HAS a coordinate — read off a guidebook, a
     screenshot or another app — and wants to paste it rather than hunt for
     the same spot by eye;
-  - a visitor with no JavaScript, for whom these two fields and their
-    prefilled route-start values are the whole control.
+  - a visitor with no JavaScript, for whom the two fields and their
+    prefilled route-start values were the whole control.
 
-Kept collapsed because the third case is rare and the first two are
-deliberate acts: someone who wants to type knows they want to type.
-static/js/trip_meeting_picker.js keeps these and the marker in step in
-both directions, so neither can be stale with respect to the other.
+Those arguments were sound and they lost anyway. Hugo's judgement, seeing
+the picker running: "no one is going to use that". A control that almost
+nobody uses is not free — every organiser authoring a trip has to read the
+panel's title, work out whether it concerns them and dismiss it, which is a
+cost paid by everyone to serve very few.
 
-Context (inherited from _trip_form.html, which includes the panel):
+WHAT IT COSTS, recorded so nobody rediscovers it as a bug: a keyboard-only
+visitor can no longer choose a meeting point, and neither can a visitor
+with no JavaScript. Both get the route's own first coordinate — the value
+these fields still arrive prefilled with — and no way to move it. That is
+a real regression in reach, accepted deliberately. The answer when it is
+addressed is a keyboard affordance ON THE MAP, not the return of two number
+boxes underneath it; the second case (pasting a coordinate) is served by
+the map itself, since a coordinate someone holds can be found on it.
+
+THE INPUTS THEMSELVES REMAIN, because they are the form's actual transport.
+``TripForm.latitude`` and ``.longitude`` are required, and
+``static/js/trip_meeting_picker.js`` finds them by their ``data-meeting-*``
+attributes and writes the marker's position into them on every move — the
+map is a control over these fields, never a replacement for them. Deleting
+them would post a trip with no meeting point. Rendered bare rather than
+through ``includes/_form_field.html``: a hidden input has no label, no help
+text and no error slot to hang anything on, and a field-level error on
+either is unreachable through the UI now that only the marker writes them.
+
+Context (inherited from _trip_form.html, which includes this):
     form : TripForm — read for its latitude and longitude fields.
 {% endcomment %}
-<div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-    {% trans "Latitude" as latitude_label %}
-    {% include "includes/_form_field.html" with field=form.latitude label=latitude_label %}
-    {% trans "Longitude" as longitude_label %}
-    {% include "includes/_form_field.html" with field=form.longitude label=longitude_label %}
-</div>
+{{ form.latitude }}{{ form.longitude }}

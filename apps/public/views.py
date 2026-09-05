@@ -1227,8 +1227,11 @@ def help_page(request: HttpRequest) -> HttpResponse:
     teaches the avalanche domain rather than the product. Named
     ``help_page`` rather than ``help`` to avoid shadowing the ``help``
     builtin. ``sync_log_visible`` (SNOW-482) mirrors the same flag gating
-    the manage-page sync-log panel — the one surviving waffle flag; every
-    other topic section renders for everyone (SNOW-724).
+    the manage-page sync-log panel, and ``what3words_visible`` (SNOW-840)
+    the flag gating the three word address on a trip's meeting point —
+    the two gated topics; every other section renders for everyone
+    (SNOW-724). A reader is never shown documentation for a feature their
+    own pages do not have.
 
     Args:
         request: The incoming HTTP request.
@@ -1244,6 +1247,7 @@ def help_page(request: HttpRequest) -> HttpResponse:
     """
     context: dict[str, Any] = {
         "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
+        "what3words_visible": waffle.flag_is_active(request, "what3words"),
     }
     context.update(help_illustrations())
     return render(request, "public/help.html", context)

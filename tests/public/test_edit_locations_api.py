@@ -31,6 +31,7 @@ from typing import Any
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import Resort
@@ -551,6 +552,73 @@ class TestSave:
 
         location.refresh_from_db()
         assert location.elevation_m is None
+
+    def test_moving_the_pin_clears_the_cached_three_word_address(self) -> None:
+        """SNOW-840: an address names a square, and the square changed.
+
+        The exact twin of the elevation rule above, and for the same
+        reason — both are derived from the coordinate and neither
+        survives it moving. This one is the more visible failure: a
+        location edited here can be a trip's meeting point, and the trip
+        page would name the OLD square to everybody going, while the
+        coordinates in the same element's title named the new one.
+        """
+        location = LocationFactory.create(
+            name="Mont Fort", latitude=46.0, longitude=7.0
+        )
+        location.what3words = "filled.count.soap"
+        location.what3words_fetched_at = timezone.now()
+        location.save(
+            update_fields=["what3words", "what3words_fetched_at", "updated_at"]
+        )
+
+        _post(
+            _superuser_client(),
+            _save_url(location),
+            {
+                "name": "Mont Fort",
+                "kind": "PEAK",
+                "latitude": MONT_FORT_LAT,
+                "longitude": MONT_FORT_LON,
+            },
+        )
+
+        stored = Location.objects.values("what3words", "what3words_fetched_at").get(
+            pk=location.pk
+        )
+        assert stored["what3words"] is None
+        assert stored["what3words_fetched_at"] is None
+
+    def test_a_rename_alone_keeps_the_cached_three_word_address(self) -> None:
+        """The address belongs to the coordinate, which did not change.
+
+        A conversion is billed against a 1,000/month plan, so a rename
+        must not spend one.
+        """
+        location = LocationFactory.create(
+            name="Mont Fort",
+            latitude=MONT_FORT_LAT,
+            longitude=MONT_FORT_LON,
+        )
+        location.what3words = "filled.count.soap"
+        location.what3words_fetched_at = timezone.now()
+        location.save(
+            update_fields=["what3words", "what3words_fetched_at", "updated_at"]
+        )
+
+        _post(
+            _superuser_client(),
+            _save_url(location),
+            {
+                "name": "Mont Fort Renamed",
+                "kind": "PEAK",
+                "latitude": MONT_FORT_LAT,
+                "longitude": MONT_FORT_LON,
+            },
+        )
+
+        location.refresh_from_db()
+        assert location.what3words == "filled.count.soap"
 
     def test_a_rename_alone_keeps_the_resolved_elevation(self) -> None:
         """The height belongs to the coordinate, which did not change."""

@@ -2927,7 +2927,21 @@ def edit_location_save(request: HttpRequest, short_id: str) -> JsonResponse:
         location.latitude = lat
         location.longitude = lon
         location.elevation_m = None
-        update_fields += ["latitude", "longitude", "elevation_m"]
+        # SNOW-840: the three word address is derived from the coordinate
+        # exactly as the elevation above it is, so it dies on the same
+        # condition. Cleared here even though only trips render one today —
+        # the invariant belongs to the location, not to whichever surface
+        # happens to read it, and a Location moved through this endpoint
+        # can be a trip's meeting point.
+        location.what3words = None
+        location.what3words_fetched_at = None
+        update_fields += [
+            "latitude",
+            "longitude",
+            "elevation_m",
+            "what3words",
+            "what3words_fetched_at",
+        ]
     location.save(update_fields=update_fields)
 
     # Logged by row id, never by raw coordinates (SNOW-718). A coordinate
