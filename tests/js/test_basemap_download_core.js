@@ -66,6 +66,13 @@
  * centre one included) without covering it. It is also per-template,
  * which is what makes the answer change when the basemap does.
  *
+ * SNOW-844 adds ``missingRenderDependencies`` — the OTHER half of that
+ * same question, and the half nothing asked: a bucket full of tiles still
+ * renders nothing without the style JSON, each vector source's TileJSON
+ * and the sprite. Kept a separate function from ``blobFullyCached``
+ * (whose tests below are untouched) because the two answers drive
+ * different states — see its own docstring.
+ *
  * SNOW-583 adds ``zoomRows`` — the accessor that lets every consumer of a
  * blob's ``z`` (``rangesToTileURLs``, ``tileCount``, ``tileGridPlan``,
  * ``blobFullyCached``) handle both shapes a zoom level's entry can now be:
@@ -567,6 +574,59 @@ describe('blobFullyCached', () => {
     const urls = core.rangesToTileURLs(TEMPLATE, blob);
     expect(core.blobFullyCached(TEMPLATE, blob, urls)).toBe(true);
     expect(core.blobFullyCached(TEMPLATE, blob, urls.slice(1))).toBe(false);
+  });
+});
+
+/*
+ * SNOW-844: the second half of "is this download actually available
+ * offline?". `blobFullyCached` above answers only for TILES, and every
+ * surface asked it alone — so an area whose style JSON, source TileJSON or
+ * sprite is not in its bucket read `done` and came up blank offline. This
+ * function names what is missing, because the repair fetches exactly that
+ * list and nothing else.
+ */
+describe('missingRenderDependencies', () => {
+  const STYLE = 'https://tiles.example.com/styles/winter/style.json';
+  const TILEJSON = 'https://tiles.example.com/tiles/base/tiles.json';
+  const SPRITE = 'https://tiles.example.com/sprites/winter.json';
+  const DEPS = [STYLE, TILEJSON, SPRITE];
+
+  it('returns the subset that is absent, in the order given', () => {
+    expect(core.missingRenderDependencies(DEPS, [SPRITE])).toEqual([STYLE, TILEJSON]);
+  });
+
+  it('returns nothing when every dependency is present', () => {
+    expect(core.missingRenderDependencies(DEPS, DEPS)).toEqual([]);
+  });
+
+  it('accepts an array as well as a Set, like blobFullyCached', () => {
+    expect(core.missingRenderDependencies(DEPS, new Set(DEPS))).toEqual([]);
+    expect(core.missingRenderDependencies(DEPS, new Set([STYLE]))).toEqual([
+      TILEJSON,
+      SPRITE,
+    ]);
+  });
+
+  it('reports nothing for an empty or unusable dependency list', () => {
+    // "Nothing was claimed", NOT "nothing is missing" — the UNKNOWN case a
+    // legacy record with no stored `deps` lands in. A caller must never
+    // paint that as a fault; see the three-row resolution rule in the
+    // decision doc.
+    expect(core.missingRenderDependencies([], [])).toEqual([]);
+    expect(core.missingRenderDependencies(null, [])).toEqual([]);
+    expect(core.missingRenderDependencies(undefined, DEPS)).toEqual([]);
+  });
+
+  it('reports every dependency when nothing at all is cached', () => {
+    expect(core.missingRenderDependencies(DEPS, new Set())).toEqual(DEPS);
+  });
+
+  it('deduplicates, and skips entries that are not URLs', () => {
+    // The live list is assembled by concatenation (style + sprite + one
+    // TileJSON per vector source), and two sources of one basemap can name
+    // the same document — a repair must not fetch it twice.
+    const repeated = [TILEJSON, TILEJSON, '', null, STYLE];
+    expect(core.missingRenderDependencies(repeated, new Set())).toEqual([TILEJSON, STYLE]);
   });
 });
 
