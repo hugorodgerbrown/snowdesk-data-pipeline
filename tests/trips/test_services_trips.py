@@ -14,6 +14,8 @@ create_trip:
 
 update_trip:
   edits the plan and moves the trip's own Location in place;
+  clears the cached three word address when the pin MOVES, and keeps it
+    when the edit leaves the coordinate alone (a conversion is billed);
   is organiser-scoped.
 
 delete_trip / delete_trips_for_user:
