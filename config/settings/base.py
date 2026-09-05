@@ -808,6 +808,13 @@ def basemap_origin(style_url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
+# swisstopo serves its vector tiles from five numbered shards. The style
+# JSON names only ``vectortiles.geo.admin.ch``; the ``tiles`` array inside
+# each source's TileJSON is what fans out across these hosts, so nothing in
+# the style URL or the catalogue above reveals them.
+SWISSTOPO_TILE_SHARDS = [f"https://vectortiles{n}.geo.admin.ch" for n in range(5)]
+
+
 def csp_defaults(
     tile_origin: str, *, slope_origin: str | None = None
 ) -> dict[str, list[str]]:
@@ -867,8 +874,17 @@ def csp_defaults(
         "connect-src": [
             "'self'",
             tile_origin,
-            # swisstopo winter/light styles + tiles.
+            # swisstopo winter/light: the style JSON, sprite, glyphs and both
+            # source TileJSONs come from the unsharded host, but the TileJSON
+            # points the tiles themselves at five numbered shards —
+            # vectortiles0…4.geo.admin.ch, for ch.swisstopo.base.vt and
+            # ch.swisstopo.relief.vt alike. CSP has no host wildcard that
+            # matches a subdomain prefix, so each shard is named. Confirmed
+            # against the live TileJSONs (SNOW-833); re-check them if swisstopo
+            # ever adds a shard, because a missing one is invisible while the
+            # policy is report-only and blanks the basemap the moment it isn't.
             "https://vectortiles.geo.admin.ch",
+            *SWISSTOPO_TILE_SHARDS,
             # Regional national basemaps: IGN Plan IGN (France) and
             # basemap.at (Austria) — style JSON, vector tiles, sprites, glyphs.
             "https://data.geopf.fr",
