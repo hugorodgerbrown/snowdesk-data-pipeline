@@ -121,7 +121,7 @@ describe('basemapLabel (SNOW-645 follow-up — one shared implementation)', () =
     document.body.innerHTML = `
       <ul id="basemap-menu">
         <li role="none">
-          <button type="button" data-basemap-key="openfreemap_liberty">Standard</button>
+          <button type="button" data-basemap-key="openfreemap_liberty">OpenFreeMap</button>
         </li>
         <li role="none">
           <button type="button" data-basemap-key="swisstopo_winter">Swisstopo (CH)</button>

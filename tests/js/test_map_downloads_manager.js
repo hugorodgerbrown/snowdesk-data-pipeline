@@ -138,7 +138,7 @@ function buildFixture() {
     </template>
     <ul id="basemap-menu" hidden>
       <li role="none">
-        <button type="button" data-basemap-key="openfreemap_liberty" aria-checked="true">Standard</button>
+        <button type="button" data-basemap-key="openfreemap_liberty" aria-checked="true">OpenFreeMap</button>
       </li>
       <li role="none">
         <button type="button" data-basemap-key="swisstopo_winter" aria-checked="false">Swisstopo (CH)</button>
@@ -724,7 +724,7 @@ describe('basemap identity (SNOW-645 review — coloured rule + subtitle, not a 
     const subtitles = Array.from(
       document.querySelectorAll('#map-downloads-sheet [data-row-meta]'),
     );
-    expect(subtitles.map((el) => el.textContent)).toEqual(['Standard', 'Swisstopo (CH)']);
+    expect(subtitles.map((el) => el.textContent)).toEqual(['OpenFreeMap', 'Swisstopo (CH)']);
   });
 
   it('removes the subtitle for a record written before this ticket shipped', async () => {
@@ -1035,7 +1035,7 @@ describe('account-only rows (SNOW-749)', () => {
       areas: vi.fn(async () => areas),
       evict: vi.fn(async () => {}),
       rename: vi.fn(async () => true),
-      basemapLabel: vi.fn(() => 'Standard'),
+      basemapLabel: vi.fn(() => 'OpenFreeMap'),
     };
   }
 
@@ -1221,7 +1221,7 @@ describe('the two destructive verbs (SNOW-749)', () => {
       areas: vi.fn(async () => areas),
       evict: vi.fn(async () => {}),
       rename: vi.fn(async () => true),
-      basemapLabel: vi.fn(() => 'Standard'),
+      basemapLabel: vi.fn(() => 'OpenFreeMap'),
     };
   }
 

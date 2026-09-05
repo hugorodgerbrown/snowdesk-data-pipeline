@@ -430,7 +430,7 @@ def test_map_view_passes_basemap_catalogue() -> None:
     keys = [bm["key"] for bm in ctx["basemaps"]]
     assert keys == ["openfreemap_liberty", "swisstopo_winter", "ign_plan", "basemap_at"]
     labels = [str(bm["label"]) for bm in ctx["basemaps"]]
-    assert labels == ["Standard", "Swisstopo (CH)", "IGN (FR)", "basemap.at (AT)"]
+    assert labels == ["OpenFreeMap", "Swisstopo (CH)", "IGN (FR)", "basemap.at (AT)"]
     assert all({"key", "label", "url"} <= set(bm) for bm in ctx["basemaps"])
     assert ctx["default_basemap_key"] == settings.BASEMAP
 

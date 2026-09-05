@@ -252,7 +252,7 @@ function buildFixture() {
           data-basemap-key="openfreemap_liberty"
           data-basemap-url="https://tiles.example.invalid/liberty.json"
           aria-checked="true"
-        >Standard</button>
+        >OpenFreeMap</button>
       </li>
       <li role="none">
         <button
@@ -328,7 +328,7 @@ beforeAll(async () => {
 
   installDbStub(
     [
-      // A region downloaded under Standard (openfreemap_liberty).
+      // A region downloaded under OpenFreeMap (openfreemap_liberty).
       {
         region_id: 'CH-2101',
         name: 'Aletsch',
@@ -406,7 +406,7 @@ describe('downloaded-areas overlay — the active basemap only', () => {
   it('draws the active basemap\'s squares and not the other basemap\'s', async () => {
     await waitFor(() => (mapStub.getCachedTilesData()?.features || []).length > 0);
 
-    // Two areas are downloaded — one under Standard (active), one under
+    // Two areas are downloaded — one under OpenFreeMap (active), one under
     // Swisstopo — and exactly one tile is on the map. Overlapping squares
     // from two basemaps is the picture this rule exists to prevent.
     expect(mapStub.getCachedTilesData().features).toHaveLength(1);

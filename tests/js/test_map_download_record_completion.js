@@ -22,7 +22,7 @@
  *
  * Both were reported from staging with screenshots: a solid blue Kandersteg
  * roundel over a map with no Kandersteg squares, and one region drawing a
- * rust disc on Swisstopo but a green ring on Standard.
+ * rust disc on Swisstopo but a green ring on OpenFreeMap.
  *
  * The fixture therefore seeds BOTH shapes at once and asserts the two
  * surfaces agree, rather than testing either function's return value in
@@ -267,7 +267,7 @@ function buildFixture() {
         <button type="button" class="basemap-menu-item"
                 data-basemap-key="openfreemap_liberty"
                 data-basemap-url="https://tiles.example.invalid/liberty.json"
-                aria-checked="true">Standard</button>
+                aria-checked="true">OpenFreeMap</button>
       </li>
       <li role="none">
         <button type="button" class="basemap-menu-item"
