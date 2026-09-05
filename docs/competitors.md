@@ -178,7 +178,12 @@ other app in this list is measured against, including ours.
   France** — the two providers where we are strongest.
 - **Where it is stronger:**
   - **Push alerts** — notifications on high danger and on a new bulletin
-    being issued mid-day. v6.3 added push specifically for danger levels.
+    being issued mid-day. *(2026-09-05, SNOW-836 — read from the v6.3.0810
+    release notes on the App Store listing, primary source)* the v6.3 push
+    work covers **"danger levels & daily updates"**, not danger levels
+    alone. That is a wider promise than this profile previously recorded,
+    and closer to AvalancheClarity's new-bulletin alert. Relevant to
+    SNOW-838, where the choice of trigger is the open design question.
   - **Weather-station map layer** (v6.3) — station data with interactive
     charts and filters, plus dynamic region borders.
   - **Field instruments** — a clinometer for slope measurement, and an
@@ -193,6 +198,14 @@ other app in this list is measured against, including ours.
   aggregate.
 - **Business model:** free app; "Professional Weather Forecast" at
   $3.99/month or $29.99/year. The bulletin itself is never paywalled.
+  *(2026-09-05, SNOW-836)* **It also carries advertising** — the Google
+  Play listing (`com.roomfour0four.android.avalanche`) is marked "Contains
+  ads", which no pass had recorded. So the free tier is ad-supported, not
+  purely a loss-leader for the weather upgrade.
+- **Reception:** *(2026-09-05)* no aggregate rating on either store
+  despite 100K+ Play downloads — the thinness this profile already
+  suspected, now confirmed on both. Play shows no rating at all; the
+  Austrian App Store shows 8 ratings at 4.1.
 - **Read:** the product to watch. Its design principle — *as simple and
   reliable to operate as a transceiver* — is the same instinct behind our own
   restraint, though we reach it differently: simplicity of *operation*, over a
@@ -388,8 +401,22 @@ competitor, not a watch item.
   backing or a sustainable business model, and — three scans running —
   still not primary-verified against its own site.
 - **Business model:** free in every source found; no paywall or pricing
-  page has turned up in three passes. Worth confirming directly once
-  avalancheclarity.com is reachable.
+  page has turned up in three passes. *(2026-09-05, SNOW-836 — CONFIRMED
+  from both store listings, the first primary source on this product)*
+  free with **no in-app purchases on either store**, which makes it the
+  only profiled competitor here without them. Every other app in this list
+  is free to install and monetises inside.
+- **Coverage — qualify this by platform.** *(2026-09-05)* the two store
+  listings do not agree, and the difference matters. **iOS** describes
+  bulletins "from across Europe... in 8 languages" and names Switzerland,
+  supporting the picture above. **Android** (updated 17 Jul 2026)
+  describes only "AI-translated avalanche bulletins for French Alpine
+  massifs", in English and French, with **100+ downloads**. The
+  pan-European product appears to be iOS-first; the Android app is a
+  France-only subset. The 14-country / 134-micro-region claim above still
+  rests on the April 2026 press coverage, not on anything either listing
+  says. Hold the download count next to this profile's "a real competitor,
+  not a watch item" read — that judgement came from press, not usage.
 - **Read:** the clearest evidence yet that cross-provider consolidation is
   a race, not a moat — a single guidebook author shipped a rough version
   of our core differentiator before we did. Our answer has to be depth (a

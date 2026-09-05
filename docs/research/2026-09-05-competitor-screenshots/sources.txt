@@ -1,0 +1,28 @@
+# Source asset URLs, captured 2026-09-05.
+# Append a size segment for full resolution, e.g. /1200x2600bb.png
+# App Store listings:
+#   WhiteRisk https://apps.apple.com/gb/app/white-risk/id339374432
+#   SnowSafe  https://apps.apple.com/gb/app/snowsafe-lawinen-app/id585169516
+#   Whympr    https://apps.apple.com/gb/app/whympr/id1131231365
+# Google Play listings:
+#   WhiteRisk ch.slf.whiteriskmobile
+#   SnowSafe  com.roomfour0four.android.avalanche
+#   Whympr    com.whympr.w
+
+whiterisk-01.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/ed/a1/0a/eda10ac1-8a6b-adb9-fc8d-804b17113536/ios-65-1en.jpg
+whiterisk-02.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/2b/5b/52/2b5b5297-1888-0995-3425-388e2380a0e3/ios-65-2en.jpg
+whiterisk-03.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/a5/40/d1/a540d176-572d-1d7f-bf0d-0f5297ac4985/ios-65-3en.jpg
+whiterisk-04.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/c4/19/42/c41942b9-82f7-da4c-c0df-700c425293ab/ios-65-4en.jpg
+whiterisk-05.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/28/46/da/2846da1e-7496-26d1-c54b-c17393dbd8f6/ios-65-5en.jpg
+whiterisk-06.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/43/b3/bc/43b3bcb5-6099-d546-bb64-e68f6930d8fd/ios-65-6en.jpg
+snowsafe-01.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/74/0d/73/740d7348-5fd0-4ce6-8c75-498f1e836ba8/Simulator_Screenshot_-_iPhone_16_Pro_Max_-_2025-01-15_at_22.10.41.png
+snowsafe-02.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/3b/74/3e/3b743ea6-1e50-49cd-c256-3df3079ca33c/Simulator_Screenshot_-_iPhone_16_Pro_Max_-_2025-01-15_at_22.11.00.png
+snowsafe-03.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/02/5f/50/025f502f-96ea-7195-a209-2e3706b8361b/Simulator_Screenshot_-_iPhone_16_Pro_Max_-_2025-01-15_at_22.11.13.png
+snowsafe-04.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/83/71/71/837171be-0d69-005c-e8eb-3d63beab61eb/Simulator_Screenshot_-_iPhone_16_Pro_Max_-_2025-01-15_at_22.11.18.png
+snowsafe-05.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/22/c9/a1/22c9a13b-23a0-0594-539b-15c421158a1d/Simulator_Screenshot_-_iPhone_16_Pro_Max_-_2025-01-15_at_22.11.24.png
+snowsafe-06.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/1d/bb/58/1dbb581b-258b-2225-f42e-ed1eb8222732/Simulator_Screenshot_-_iPhone_16_Pro_Max_-_2025-01-15_at_22.11.35.png
+whympr-01.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/80/4c/c2/804cc2d7-0cdb-ce6c-a1e0-8b683eeb973e/Plan_de_travail_2-6_5-en__U00281_U0029_4.png
+whympr-02.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/b6/cc/6a/b6cc6a36-d5fd-a2bc-b116-b39aca7df064/Plan_de_travail_3-6_5-en__U00281_U0029_3.png
+whympr-03.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/97/84/44/97844461-3b15-45ad-9266-4b4a17b5aa34/Plan_de_travail_6-6_5-en__U00281_U0029_2.png
+whympr-04.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/58/30/53/5830533e-6322-c5d8-7b86-862d6e04ee5d/Plan_de_travail_12-6_9-en_2.png
+whympr-05.png  https://is1-ssl.mzstatic.com/image/thumb/PurpleSource211/v4/cb/ef/02/cbef0293-37dc-77da-5e9e-2406e6502f5f/Plan_de_travail_13-6_9-en_2.png
