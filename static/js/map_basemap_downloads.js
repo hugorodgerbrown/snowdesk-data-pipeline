@@ -1252,6 +1252,16 @@ window.pwaBasemapDownloads = Object.freeze({
   basemapOrder: () => basemapOrder(),
 
   /**
+   * SNOW-844: the picker's currently-checked basemap key, or null — see
+   * `activeBasemapKey`. The Manage downloads sheet needs it to apply the
+   * three-row resolution rule below to a row: only a row on the ACTIVE
+   * basemap may have its dependency list derived from the live style.
+   *
+   * @returns {string | null}
+   */
+  activeBasemapKey: () => activeBasemapKey(),
+
+  /**
    * SNOW-844: the live style's render dependencies — see
    * `activeBasemapRenderDependencyURLs`. Exposed for the same load-order
    * reason `basemapLabel` and `basemapOrder` are: the Manage downloads
@@ -1273,6 +1283,34 @@ window.pwaBasemapDownloads = Object.freeze({
    */
   areaRenderDependencyUrls: (recordedDeps, basemapIsActive) =>
     areaRenderDependencyURLs(recordedDeps, basemapIsActive),
+
+  /**
+   * SNOW-844: refetch `urls` into `areaId`'s pinned bucket — the Manage
+   * downloads sheet's Repair control. See `basemap_download_runner.js`'s
+   * `repair` for why this is NOT the download path (no eviction, no budget
+   * plan): a repair is a handful of documents, and running it through the
+   * eviction confirm could destroy another area to make room for a sprite.
+   *
+   * The sheet paints nothing while it runs — it re-renders on the result,
+   * and a repair is four small documents rather than a several-minute
+   * download — so the runner's `paint` is a no-op here.
+   *
+   * @param {string} areaId
+   * @param {string[]} urls The MISSING documents only.
+   * @returns {Promise<boolean>} Whether every one of them landed.
+   */
+  repair: (areaId, urls) =>
+    new Promise((resolve) => {
+      repairPinnedDownload({
+        areaId: areaId,
+        urls: urls,
+        paint: () => {},
+        finish: async (result, extras) => {
+          const runCore = extras && extras.core;
+          resolve(!!(runCore && runCore.downloadSucceeded(result)));
+        },
+      });
+    }),
 
   /**
    * SNOW-844: every URL held across every pinned bucket — see
@@ -2048,6 +2086,10 @@ async function repairPinnedDownload(options) {
   if (!runner || typeof runner.repair !== 'function') {
     options.paint('error');
     revealBasemapDownloadError(null);
+    // Settled even here, so a caller awaiting the outcome (the Manage
+    // downloads sheet's Repair control) is never left hanging on a
+    // promise an older cached shell can never resolve.
+    await options.finish(null, { core: self.pwaBasemapDownloadCore });
     return;
   }
   return runner.repair(PINNED_DOWNLOAD_DEPS, options);

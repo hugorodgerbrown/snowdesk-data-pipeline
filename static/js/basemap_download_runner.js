@@ -67,7 +67,7 @@
    *   confirmEviction: function(Array<Object>): Promise<boolean>,
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
- *   renderDeps?: function(): string[],
+   *   renderDeps?: function(): string[],
    *   progressGrid: function(Object|null, number): Object,
    *   warmCache: function(string[], Object): (Promise<Object>|null),
    *   isOnline: function(): boolean,
@@ -107,10 +107,10 @@
    *     whatever happens to be active when `finish` runs) and, SNOW-645,
    *     `basemapKey` — the picker key captured alongside `tileSources` at run
    *     start, display-only and possibly null. SNOW-844 adds `renderDeps` —
- *     the style/sprite/TileJSON URLs this run fetched, resolved at run
- *     start for the same reason `tileSources` is, and recorded so a later
- *     probe can check an area whose basemap is not the one on screen.
- *     `result` is the
+   *     the style/sprite/TileJSON URLs this run fetched, resolved at run
+   *     start for the same reason `tileSources` is, and recorded so a later
+   *     probe can check an area whose basemap is not the one on screen.
+   *     `result` is the
    *     worker's report, or `null` when there was no worker at all. SNOW-632:
    *     `result` can now carry `cancelled: true` — the run stopped early on
    *     a `pwaWarmCacheCancel()` request rather than exhausting the URL
@@ -310,7 +310,8 @@
    *     (`pwaBasemapDownloadCore.missingRenderDependencies`). Warming the
    *     whole dependency list instead would refetch what is already there.
    *   `paint` — the caller's roundel/row painter, same contract as `run`'s.
-   *   `finish` — called as `(result, {core})` once the warm settles.
+   *   `finish` — called as `(result, {core})` once the warm settles, and
+   *     on every early return too, with a `null` result.
    * @returns {Promise<void>} Resolves once the repair has been DISPATCHED,
    *   matching `run`.
    */
@@ -333,6 +334,10 @@
     if (list.length === 0) {
       paint('error');
       deps.revealError(null);
+      // `finish` is called on EVERY path, including this one — a caller
+      // that awaits the outcome (the Manage downloads sheet) must never be
+      // left holding a promise nothing resolves.
+      await finish(null, { core: core });
       return;
     }
 

@@ -59,6 +59,23 @@ so for a row that is on both. The automatic budget eviction
 >
     {% include "includes/_icon_download_arrow.html" only %}
 </button>
+{# SNOW-844: "Repair" — refetch just the style/sprite/TileJSON documents  #}
+{# this area is missing, without re-downloading a tile. buildRow removes  #}
+{# it from every row that does not need one, which is nearly all of them: #}
+{# only a row whose render-dependency check failed keeps it, and an       #}
+{# ORPHAN never does — it has no record naming what to fetch, so remove   #}
+{# stays its only action (SNOW-612). Constructive, so it sits beside      #}
+{# "Download here" ahead of the pencil and the trash; the two are         #}
+{# mutually exclusive on a row (one is for an area that is here, the      #}
+{# other for one that is not), so the cluster is still three at most.     #}
+<button
+    type="button"
+    data-downloads-repair
+    aria-label="{% trans 'Repair' %}"
+    class="{% icon_button_classes %}"
+>
+    {% include "includes/_icon_repair.html" only %}
+</button>
 {# Two hooks, two readers: `data-row-rename` is the shared one every       #}
 {# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
 {# recognise a rename click without knowing which panel it is on;          #}
