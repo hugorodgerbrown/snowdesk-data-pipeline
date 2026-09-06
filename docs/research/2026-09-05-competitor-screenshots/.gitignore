@@ -1,0 +1,9 @@
+# Competitor store screenshots are NOT committed — they are the
+# competitors' own copyrighted assets, and there is no reason to carry
+# ~35 MB of them in this repository's history to make a research point.
+#
+# sources.txt has every asset URL. Run ./fetch.sh to pull them down
+# locally; the result is ignored, so it cannot be committed by accident.
+*.png
+*.jpg
+*.webp

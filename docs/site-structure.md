@@ -57,6 +57,7 @@ prefixes depend on this ordering — don't reorder
 | `/trips/<uuid>/` | `trips.views.trip_detail` | **One trip's own page** — the organiser's attribution, the organiser's note, the day and meeting time and point, the route drawn with a marker, the figures and the elevation profile (SNOW-820/822/845). Scoped by PARTICIPATION, so everyone who has saved the trip gets it and the controls are what differ; somebody holding the link who has not saved it gets 404 here and the share page instead, because the uuid keys the participant-scoped endpoints. **No roster since SNOW-848** — no count, no names, no going state: nobody sees who else holds a trip. A page, not a redirect into the map, because a trip is authored to be sent ([why](decisions/two-documents-and-a-map.md)). |
 | `/how-to-read-a-bulletin/` | `how_to_read_bulletin` | Domain primer for readers. |
 | `/help/` | `help_page` | Help, including the PWA/offline sections. |
+| `/compare/` | `compare` | Public comparison of the avalanche apps in this category, including ours (SNOW-836). Prose is authored in the template; the feature matrix is data in `apps/public/competitor_matrix.py`. |
 | `/examples/random/` | `examples_random` | A sample bulletin; `/random/` is a deprecated redirect to it. |
 | `/examples/category/<danger_level>/` | `examples_category` | A sample bulletin at a given danger level. |
 | `/s/<token>/` | `share_redirect` | Short share links. |
