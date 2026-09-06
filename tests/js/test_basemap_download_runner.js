@@ -450,4 +450,141 @@ describe('the warm run', () => {
     const [result] = o.finish.mock.calls[0];
     expect(result).toEqual({ ok: 2, failed: 0, bytes: 512, cancelled: true });
   });
+
+  it("hands finish the run's own render dependencies (SNOW-844)", async () => {
+    // Resolved at run start, alongside `tileSources`, so a basemap
+    // switched mid-download cannot leave the record naming documents this
+    // run never fetched.
+    const d = deps({ renderDeps: vi.fn(() => ['/style.json', '/tiles.json']) });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.renderDeps).toEqual(['/style.json', '/tiles.json']);
+  });
+
+  it('yields an empty dependency list for a deps bundle without one', async () => {
+    // An older cached shell mid-rollout. Empty means UNKNOWN to every
+    // reader, never "nothing needed".
+    const d = deps();
+    delete d.renderDeps;
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.renderDeps).toEqual([]);
+  });
+});
+
+/*
+ * SNOW-844: `repair` — the short path for an area that has its tiles and
+ * not the documents needed to draw them.
+ *
+ * Its defining property is a NEGATIVE one, which is why it is asserted
+ * first below: it must never reach the eviction sequence. Repairing four
+ * small documents through a path that can ask the user to delete a whole
+ * downloaded region to make room is a worse outcome than the fault.
+ */
+describe('repair', () => {
+  /**
+   * Options for a repair, mirroring `options()` above.
+   *
+   * @param {Object} [overrides]
+   * @returns {Object}
+   */
+  function repairOptions(overrides) {
+    const base = {
+      areaId: 'region:ch-4115',
+      urls: ['https://tiles/tiles.json'],
+      paint: vi.fn((state) => calls.push(`paint:${state}`)),
+      finish: vi.fn(async () => {
+        calls.push('finish');
+      }),
+    };
+    return Object.assign(base, overrides || {});
+  }
+
+  /** Dispatch a repair and let its warm-cache tail settle. */
+  async function repairAndSettle(d, o) {
+    await self.pwaBasemapDownloadRunner.repair(d, o);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it('never plans a budget, asks for an eviction, or evicts', async () => {
+    const d = deps({ planBudget: vi.fn(async () => evictingPlan()) });
+    const o = repairOptions();
+
+    await repairAndSettle(d, o);
+
+    expect(d.planBudget).not.toHaveBeenCalled();
+    expect(d.confirmEviction).not.toHaveBeenCalled();
+    expect(d.evict).not.toHaveBeenCalled();
+    // Nor the quota pre-flight or the blob fetch — there is no blob.
+    expect(d.fitsQuota).not.toHaveBeenCalled();
+  });
+
+  it("warms exactly the URLs given, into the area's own pinned bucket", async () => {
+    const d = deps();
+    const o = repairOptions({ urls: ['/a.json', '/b.png'] });
+
+    await repairAndSettle(d, o);
+
+    expect(d.warmCache).toHaveBeenCalledTimes(1);
+    const [urls, opts] = d.warmCache.mock.calls[0];
+    expect(urls).toEqual(['/a.json', '/b.png']);
+    expect(opts.pinned).toBe(true);
+    expect(opts.areaId).toBe('region:ch-4115');
+    // No glyph promotion — glyphs are outside the dependency set this
+    // ticket checks and repairs (SNOW-847).
+    expect(opts.glyphPrefix).toBeUndefined();
+  });
+
+  it('claims busy synchronously, before any await', () => {
+    const d = deps();
+    const o = repairOptions();
+
+    self.pwaBasemapDownloadRunner.repair(d, o);
+
+    // Not awaited: the re-entrancy guard both callers read is this paint,
+    // so an await ahead of it would leave a window for a second tap.
+    expect(o.paint).toHaveBeenCalledWith('busy', 0);
+  });
+
+  it('settles finish even with nothing to fetch', async () => {
+    // A caller that asked for a repair it could not describe. Painting
+    // 'done' would claim the area renders when nothing was done about it,
+    // and never settling would hang a caller awaiting the outcome.
+    const d = deps();
+    const o = repairOptions({ urls: [] });
+
+    await repairAndSettle(d, o);
+
+    expect(d.warmCache).not.toHaveBeenCalled();
+    expect(o.paint).toHaveBeenCalledWith('error');
+    expect(o.finish).toHaveBeenCalledTimes(1);
+    expect(o.finish.mock.calls[0][0]).toBeNull();
+  });
+
+  it('settles finish with null when there is no worker at all', async () => {
+    const d = deps({ warmCache: vi.fn(() => null) });
+    const o = repairOptions();
+
+    await repairAndSettle(d, o);
+
+    expect(o.finish).toHaveBeenCalledTimes(1);
+    expect(o.finish.mock.calls[0][0]).toBeNull();
+  });
+
+  it('hands finish the warm-cache result intact', async () => {
+    const d = deps({
+      warmCache: vi.fn(async () => ({ ok: 1, failed: 0, bytes: 900 })),
+    });
+    const o = repairOptions();
+
+    await repairAndSettle(d, o);
+
+    expect(o.finish.mock.calls[0][0]).toEqual({ ok: 1, failed: 0, bytes: 900 });
+  });
 });

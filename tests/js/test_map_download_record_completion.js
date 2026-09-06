@@ -15,6 +15,11 @@
  *     `basemapDownloadedTemplates()` (map_basemap_downloads.js), the
  *     overlay's ONLY source of templates, skipped the record outright and
  *     the overlay drew no squares at all for that region.
+ *   - (SNOW-844) no `deps` — the same record again, one field further out:
+ *     nothing named the style/sprite/TileJSON documents the area needs to
+ *     RENDER, so a probe could not tell an area missing its sprite from one
+ *     that never listed it. Healed on the same terms as the two below —
+ *     only from URLs the cache has just been found to hold.
  *   - no `basemapKey` — the same download read as its own basemap's
  *     identity colour when that basemap was active (`done` takes the active
  *     key) but as the "basemap unknown" green ring from any other basemap
@@ -41,6 +46,12 @@ import { loadMapBundle } from './_load_map_bundle.js';
 
 const TEMPLATE_LIBERTY = 'https://tiles-liberty.example.invalid/{z}/{x}/{y}.pbf';
 const TEMPLATE_SWISSTOPO = 'https://tiles-swisstopo.example.invalid/{z}/{x}/{y}.pbf';
+
+// SNOW-844: the active basemap's style document — a render dependency the
+// probe now checks alongside the tiles. Matches the `data-basemap-url` the
+// fixture's OpenFreeMap picker entry carries, because that attribute is
+// where `activeBasemapRenderDependencyURLs` reads it from.
+const STYLE_URL_LIBERTY = 'https://tiles.example.invalid/liberty.json';
 
 const LIBERTY_COLOUR = 'rgb(1, 2, 3)';
 const SWISSTOPO_COLOUR = 'rgb(9, 8, 7)';
@@ -355,7 +366,13 @@ beforeAll(async () => {
   installCachesStub([
     {
       name: 'snowdesk-basemap-pinned-region-' + REGION_NO_TEMPLATE,
-      urls: [tileURL(TEMPLATE_LIBERTY, TILE_A)],
+      // SNOW-844: the style document as well as the tile. "Downloaded"
+      // means renderable now, not "the tiles are here" — an area holding
+      // tiles and nothing else paints 'incomplete', which is that
+      // ticket's whole point and is asserted in
+      // test_map_multi_source_basemap.js. This fixture is about record
+      // COMPLETION, so it seeds an area that genuinely is complete.
+      urls: [tileURL(TEMPLATE_LIBERTY, TILE_A), STYLE_URL_LIBERTY],
     },
     {
       name: 'snowdesk-basemap-pinned-region-' + REGION_NO_KEY,
@@ -431,6 +448,11 @@ describe('a record with no stored template', () => {
     // found under the ACTIVE template, so that is what the record now says.
     expect(record.template).toEqual([[TEMPLATE_LIBERTY]]);
     expect(record.basemapKey).toBe('openfreemap_liberty');
+    // SNOW-844: and the render dependencies, on the same terms — the probe
+    // found every one of them in the cache before writing them, so the
+    // record now names what this area needs to draw rather than leaving a
+    // later probe unable to tell "missing its sprite" from "never said".
+    expect(record.deps).toEqual([STYLE_URL_LIBERTY]);
   });
 });
 

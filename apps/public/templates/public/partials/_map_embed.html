@@ -1834,6 +1834,16 @@ Optional context:
             %(pct)s{% endblocktrans %}</span>
     <span data-string="download-done">{% trans "This region's basemap is downloaded — available offline" %}</span>
     <span data-string="download-error">{% trans "This region's basemap download failed — tap to try again" %}</span>
+    {# SNOW-844: the tiles are all on this device and something the map    #}
+    {# needs in order to DRAW them is not — the style document, a vector   #}
+    {# source's TileJSON, or the sprite. Its own state and its own line,   #}
+    {# not the failure one: nothing failed, and the usual cause is an area #}
+    {# downloaded before SNOW-843 ever fetched a TileJSON. The label says  #}
+    {# what the tap does, because "incomplete" alone would read as         #}
+    {# "download it again" — it is four small documents, not a re-download.#}
+    <span
+        data-string="download-incomplete"
+    >{% trans "This region's basemap is missing part of itself — tap to finish it" %}</span>
     <span data-string="download-disabled">{% trans "This region's basemap is too large to download" %}</span>
     <span data-string="download-offline">{% trans "Basemap download unavailable while offline" %}</span>
     {# SNOW-645: the roundel's new "downloaded, but for a different basemap" #}

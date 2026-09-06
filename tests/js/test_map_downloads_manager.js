@@ -27,6 +27,14 @@
  * against the REAL template by tests/e2e/test_manage_downloads.py, which is
  * what catches the two drifting apart.
  *
+ * SNOW-844 adds a row state the sheet did not have: an area that is on
+ * this device, holds every tile, and still cannot render, because the
+ * style/sprite/TileJSON documents are not in its bucket. Its fixture is
+ * the bridge stub's four new members — the pinned-cache URL union, the
+ * active basemap key, the three-row resolution rule (reimplemented
+ * verbatim rather than stubbed away, for the same reason ``areas()`` is)
+ * and the repair itself.
+ *
  * ``caches`` does not exist in jsdom, so a minimal stub stands in. It is
  * the surface this module actually uses (``delete``), and asserting on it
  * is the point: the load-bearing behaviour of delete is that it removes
@@ -142,6 +150,7 @@ function buildFixture() {
         </span>
         <span>
           <button type="button" data-downloads-here aria-label="Download here">⤓</button>
+          <button type="button" data-downloads-repair aria-label="Repair">↻</button>
           <button type="button" data-row-rename data-downloads-rename aria-label="Rename">✎</button>
           <button type="button" data-downloads-delete aria-label="Remove">🗑</button>
         </span>
@@ -157,6 +166,8 @@ function buildFixture() {
     </ul>
     <template id="map-downloads-strings-template">
       <span data-string="kind-incomplete">Incomplete</span>
+      <span data-string="repair-row-label">Repair %(name)s</span>
+      <span data-string="repair-failed">That download couldn't be repaired. Try again.</span>
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
       <span data-string="row-meta">%(kind)s · %(size)s</span>
@@ -245,6 +256,11 @@ function installDownloadsBridge(rows, cachesStub) {
         // without reverse-engineering the bucket id. SNOW-811 reads it back
         // off the row to frame the region on the map.
         regionId: entry.region_id,
+        // SNOW-844: the render dependencies the download recorded — the
+        // style/sprite/TileJSON documents the area needs to draw at all.
+        // Absent on a record written before that ticket, and normalised to
+        // [] here exactly as map.js's own reader does.
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
       });
     }
     for (const entry of rows.get('basemap.customAreas') || []) {
@@ -264,6 +280,8 @@ function installDownloadsBridge(rows, cachesStub) {
         // another device fetch the same ground. SNOW-811 frames the map
         // with it.
         bbox: entry.bbox,
+        // SNOW-844: see the region branch above.
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
       });
     }
     return out;
@@ -331,6 +349,33 @@ function installDownloadsBridge(rows, cachesStub) {
       });
       return keys;
     }),
+    // SNOW-844: the four members the render-dependency check reads. Same
+    // picker markup again for the active key, mirroring map.js's
+    // `activeBasemapKey`.
+    activeBasemapKey: vi.fn(() => {
+      const menu = document.getElementById('basemap-menu');
+      if (!menu) return null;
+      const checked = menu.querySelector('[data-basemap-key][aria-checked="true"]');
+      return checked ? checked.getAttribute('data-basemap-key') : null;
+    }),
+    // The union across every pinned bucket, which is the honest set: the
+    // service worker answers a basemap request from ANY of them.
+    pinnedCacheUrls: vi.fn(async () => new Set(cachesStub.urls || [])),
+    // map_basemap_downloads.js's own three-row resolution rule, verbatim —
+    // reimplemented here rather than stubbed away for the same reason
+    // `areas()` above is: the sheet depends on the rule and does not own
+    // it, and a stub that answered differently would test nothing.
+    areaRenderDependencyUrls: vi.fn((recordedDeps, basemapIsActive) => {
+      if (Array.isArray(recordedDeps) && recordedDeps.length > 0) return recordedDeps;
+      if (basemapIsActive) return cachesStub.liveDeps || [];
+      return [];
+    }),
+    repair: vi.fn(async (areaId, urls) => {
+      const set = new Set(cachesStub.urls || []);
+      for (const url of urls) set.add(url);
+      cachesStub.urls = [...set];
+      return true;
+    }),
   };
 }
 
@@ -339,6 +384,15 @@ function installCachesStub(existing) {
   const names = new Set(existing || []);
   const stub = {
     names,
+    // SNOW-844: the URLs held across the pinned buckets, and the live
+    // style's own dependency list. Not a Cache Storage API surface — the
+    // module reaches both through `window.pwaBasemapDownloads` — but this
+    // object is what the bridge stub above closes over, so the two stay
+    // together and a test can move a URL in or out of "on disk" in one
+    // place. Both default to empty, which is the pre-SNOW-844 behaviour of
+    // every test in this file: no live deps means no row is judged.
+    urls: [],
+    liveDeps: [],
     delete: vi.fn(async (name) => names.delete(name)),
   };
   // jsdom has no `caches`; define it rather than stubGlobal so the
@@ -1103,6 +1157,170 @@ describe('orphan and account-only dimming (SNOW-645 review; SNOW-832)', () => {
     expect(
       firstRowElement().querySelector('[data-row-meta]').classList.contains('text-text-3'),
     ).toBe(true);
+  });
+});
+
+describe('an area that cannot render (SNOW-844)', () => {
+  const STYLE_URL = 'https://tiles.example.invalid/liberty.json';
+  const TILEJSON_URL = 'https://tiles.example.invalid/base/tiles.json';
+  const SPRITE_URL = 'https://tiles.example.invalid/sprites/liberty.json';
+
+  /** A region record naming its render dependencies, on the active basemap. */
+  function regionWithDeps(deps) {
+    return [
+      {
+        region_id: 'CH-2101',
+        name: 'Aletsch',
+        band: [10, 14],
+        bytes: 40 * MB,
+        savedAt: '2026-08-01T10:00:00.000Z',
+        basemapKey: 'openfreemap_liberty',
+        deps: deps,
+      },
+    ];
+  }
+
+  it('says "Incomplete" and offers Repair when a dependency is not on disk', async () => {
+    // The tiles are pinned and the TileJSON is not, which is the exact
+    // shape of an area downloaded before SNOW-843: MapLibre cannot learn a
+    // single tile URL from it, so the map comes up blank over a full
+    // bucket. Before this ticket the row read "Region · 40.0 MB".
+    window.caches.urls = [STYLE_URL, SPRITE_URL];
+    seed({ 'basemap.regions': regionWithDeps([STYLE_URL, TILEJSON_URL, SPRITE_URL]) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    const repair = row.querySelector('[data-downloads-repair]');
+    expect(repair).not.toBeNull();
+    expect(repair.getAttribute('aria-label')).toBe('Repair Aletsch');
+  });
+
+  it('leaves a complete area alone', async () => {
+    window.caches.urls = [STYLE_URL, TILEJSON_URL, SPRITE_URL];
+    seed({ 'basemap.regions': regionWithDeps([STYLE_URL, TILEJSON_URL, SPRITE_URL]) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · 40.0 MB');
+    expect(row.querySelector('[data-downloads-repair]')).toBeNull();
+  });
+
+  it('repairs only what is missing, and never re-downloads the area', async () => {
+    // The whole design of the repair path: it warms a handful of documents
+    // into the area's own bucket. It must not touch the download path,
+    // whose eviction confirm could destroy another area to make room for a
+    // sprite.
+    window.caches.urls = [STYLE_URL, SPRITE_URL];
+    seed({ 'basemap.regions': regionWithDeps([STYLE_URL, TILEJSON_URL, SPRITE_URL]) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-downloads-repair]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.repair).toHaveBeenCalledWith(
+      'region-CH-2101',
+      [TILEJSON_URL],
+    );
+    expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
+    // And the sheet re-reads real cache state rather than assuming: the
+    // row is a normal download again.
+    await settle();
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
+      'Region · 40.0 MB',
+    );
+  });
+
+  it('refuses a repair while offline', async () => {
+    window.caches.urls = [STYLE_URL, SPRITE_URL];
+    seed({ 'basemap.regions': regionWithDeps([STYLE_URL, TILEJSON_URL, SPRITE_URL]) });
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    firstRowElement().querySelector('[data-downloads-repair]').click();
+    await settle();
+
+    expect(window.pwaBasemapDownloads.repair).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalled();
+  });
+
+  it('never accuses a legacy record on a basemap that is not loaded', async () => {
+    // The third row of the resolution rule. This record names no
+    // dependencies, and its basemap is not the active one — so its sprite
+    // and TileJSON URLs are unknowable, and reporting "Incomplete" would
+    // be the same class of lie as the false "done" this ticket removes.
+    window.caches.urls = [];
+    window.caches.liveDeps = [STYLE_URL, TILEJSON_URL];
+    seed({
+      'basemap.regions': [
+        {
+          region_id: 'CH-2101',
+          name: 'Aletsch',
+          band: [10, 14],
+          bytes: 40 * MB,
+          savedAt: '2026-08-01T10:00:00.000Z',
+          basemapKey: 'swisstopo_winter',
+        },
+      ],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-meta]').textContent).toBe('Region · 40.0 MB');
+    expect(row.querySelector('[data-downloads-repair]')).toBeNull();
+  });
+
+  it('checks a legacy record against the live style when its basemap IS loaded', async () => {
+    // The second row of the same rule, and the case that heals itself: the
+    // user switches to that basemap and the sheet can finally answer.
+    window.caches.urls = [STYLE_URL];
+    window.caches.liveDeps = [STYLE_URL, TILEJSON_URL];
+    seed({
+      'basemap.regions': [
+        {
+          region_id: 'CH-2101',
+          name: 'Aletsch',
+          band: [10, 14],
+          bytes: 40 * MB,
+          savedAt: '2026-08-01T10:00:00.000Z',
+          basemapKey: 'openfreemap_liberty',
+        },
+      ],
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+  });
+
+  it('leaves an orphan remove-only', async () => {
+    // SNOW-612's reasoning is untouched: an orphan has no record naming
+    // what to fetch, so there is nothing a repair could ask for.
+    window.caches.urls = [];
+    window.caches.liveDeps = [STYLE_URL];
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
+      { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
+    ]);
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    expect(row.querySelector('[data-downloads-repair]')).toBeNull();
+    expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
   });
 });
 

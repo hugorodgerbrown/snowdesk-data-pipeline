@@ -190,6 +190,16 @@
   --color-sync-ok:  #16a34a;   /* green-600 — resource is cached, available offline */
   --color-sync-off: #9ca3af;   /* gray-400  — resource is not cached (absent, not an error) */
   --color-sync-blocked: #dc2626; /* red-600 — offline AND not cached: genuinely unavailable */
+  /* SNOW-844: amber-600 — downloaded, but missing something it needs to
+     render (its style document, a vector source's TileJSON, or the
+     sprite). A third state in this same family rather than a reuse of
+     --color-sync-blocked, because the two mean different things to the
+     user: blocked is a failure with nothing to be done about it right
+     now, this is a partly-usable area with a one-tap repair. It is
+     deliberately not --color-status-warning-text either — that is the
+     flash-message severity scale, and this is the offline-availability
+     signal the sync dots and the download roundel share. */
+  --color-sync-partial: #d97706;
 
   /* Basemap identity colours (SNOW-645) — one hue per settings.BASEMAP_STYLES
      key, so a downloaded area's roundel and the Manage downloads sheet can
@@ -662,6 +672,8 @@
   --color-sync-ok:  #4ade80;   /* green-400 */
   --color-sync-off: #6b7280;   /* gray-500 — muted "not cached" on dark card */
   --color-sync-blocked: #f87171; /* red-400 — offline AND not cached, on dark card */
+  --color-sync-partial: #fbbf24; /* SNOW-844: amber-400 — downloaded but not
+                                    renderable, on dark card */
 
   /* Basemap identity colours — lighter variants, mirroring the sync-status
      light/dark pair above so the white roundel glyph keeps its contrast. */

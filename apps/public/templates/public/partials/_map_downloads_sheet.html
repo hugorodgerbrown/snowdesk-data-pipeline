@@ -184,6 +184,16 @@ the row's own label, so home.html loads that module once for both.
     {# every server-rendered meta line on the other panels                 #}
     {# (favourites' "{{ region }} · saved {{ when }}") — a translator who  #}
     {# needs a different mark, or a different order, can have both.        #}
+    {# SNOW-844: the Repair control's accessible name, and the toast for a #}
+    {# refetch that does not land. A row that fails the render-dependency  #}
+    {# check reuses "Incomplete" above rather than gaining a second word   #}
+    {# for the same reading — what this device holds is not a usable       #}
+    {# download either way. The difference between the two is what the row #}
+    {# can DO about it: an orphan has no record naming what to fetch, so   #}
+    {# remove stays its only action, while this one is one tap from being  #}
+    {# whole.                                                              #}
+    <span data-string="repair-row-label">{% blocktrans %}Repair %(name)s{% endblocktrans %}</span>
+    <span data-string="repair-failed">{% trans "That download couldn't be repaired. Try again." %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
     <span data-string="row-meta">{% blocktrans %}%(kind)s · %(size)s{% endblocktrans %}</span>

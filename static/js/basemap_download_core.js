@@ -218,6 +218,16 @@
  *     "Downloaded areas" overlay's per-region ring (see
  *     ``docs/decisions/region-downloads-clip-custom-areas-dont.md``), the
  *     last caller that needed the list form.
+ *   missingRenderDependencies(depURLs, cached)
+ *     SNOW-844: which of an area's RENDER dependencies — its style JSON,
+ *     each vector source's TileJSON, its sprite JSON+PNG at 1x and 2x —
+ *     are absent from ``cached``. The second half of "is this download
+ *     actually available offline?"; ``blobFullyCached`` above is the
+ *     first, and it is deliberately left alone rather than widened. Two
+ *     small pure predicates beat one big one here because the two answers
+ *     drive DIFFERENT states: complete tiles with a missing sprite is not
+ *     the same condition as missing tiles, and the surfaces say so
+ *     differently ('incomplete' + repair vs 'idle' + download).
  */
 
 (function () {
@@ -1386,6 +1396,60 @@
   }
 
   /**
+   * Which of ``depURLs`` are NOT in ``cached`` — an area's missing render
+   * dependencies (SNOW-844).
+   *
+   * ``blobFullyCached`` above answers "are the tiles here?", and until
+   * this ticket that was the ONLY question any surface asked about a
+   * downloaded area. It is not the question. A pinned area renders offline
+   * only if its bucket also holds the style JSON, the TileJSON document
+   * each vector source is declared by (SNOW-843 — without it MapLibre
+   * cannot learn a single tile URL, so a perfect tile set is unreachable),
+   * and the sprite JSON+PNG at 1x and 2x. A download fetches all four; it
+   * is the VERIFICATION that was tile-only, which is why an area
+   * downloaded before SNOW-843 — one that never fetched its TileJSON at
+   * all — still reads ``done`` today.
+   *
+   * Returns the missing URLs rather than a boolean because the caller
+   * repairs from them: ``basemap_download_runner.js``'s ``repair`` warms
+   * exactly this list into the area's own bucket, and warming the whole
+   * dependency list instead would re-fetch documents already on disk.
+   *
+   * Glyph ranges are deliberately NOT dependencies here. MapLibre requests
+   * only the unicode ranges its labels use, so the honest list is not
+   * derivable without re-deriving MapLibre's own glyph logic — SNOW-742
+   * PROMOTES whatever was already cached instead, which means the set in
+   * the bucket is legitimately partial and any check over it would report
+   * a permanent, unrepairable failure. Pinning the ranges an area actually
+   * needs is SNOW-847's job; see this ticket's decision doc.
+   *
+   * @param {string[]} depURLs The area's dependency URLs — from its own
+   *   stored record, or derived live from the active style
+   *   (``activeBasemapRenderDependencyURLs``, map_basemap_downloads.js).
+   * @param {Set<string> | string[]} cached The pinned cache's URLs, in
+   *   either shape — same contract as ``blobFullyCached``'s own argument.
+   * @returns {string[]} The subset of ``depURLs`` that is absent, in the
+   *   order given, deduplicated. ``[]`` for an empty or unusable
+   *   ``depURLs`` — "nothing was claimed", which callers read as UNKNOWN
+   *   and must never paint as a fault; see the three-row resolution rule
+   *   in docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md.
+   */
+  function missingRenderDependencies(depURLs, cached) {
+    if (!Array.isArray(depURLs) || depURLs.length === 0) return [];
+    var cachedSet = cached instanceof Set ? cached : new Set(cached || []);
+    var missing = [];
+    var seen = new Set();
+    for (var i = 0; i < depURLs.length; i += 1) {
+      var url = depURLs[i];
+      if (typeof url !== 'string' || !url) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      if (!cachedSet.has(url)) missing.push(url);
+    }
+    return missing;
+  }
+
+  /**
    * Decide whether a warm-cache result counts as a completed download.
    *
    * This is the "green offline circle" predicate. Both download controls
@@ -1438,6 +1502,7 @@
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,
     blobFullyCached: blobFullyCached,
+    missingRenderDependencies: missingRenderDependencies,
     areaIdForRegion: areaIdForRegion,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,

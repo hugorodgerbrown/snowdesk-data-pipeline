@@ -52,6 +52,25 @@
  *                       planner. This surface is the only thing that ever
  *                       writes it, and the one row it touches directly.
  *
+ * ## A row can be listed and still not render (SNOW-844)
+ *
+ * Until that ticket the only question any surface asked about a download
+ * was tile coverage, so an area whose bucket held every tile and none of
+ * the documents MapLibre needs to draw them — the style JSON, each vector
+ * source's TileJSON, the sprite — was listed as a normal download and came
+ * up blank offline. ``markIncompleteRows`` below asks the other half of
+ * the question, and such a row takes the same "Incomplete" line an orphan
+ * does plus a Repair control an orphan does not get: there IS a record
+ * behind it, and it names exactly what to fetch.
+ *
+ * The rule deciding WHICH dependency list a row is judged against is not
+ * this module's — both download roundels apply it too, so it lives once in
+ * map_basemap_downloads.js (``areaRenderDependencyUrls``) and is reached
+ * through the bridge. Its third case is the one that matters here: this
+ * sheet lists rows for basemaps that are not on screen, and for a record
+ * that names no dependencies those URLs are unknowable, so the row is
+ * skipped rather than accused.
+ *
  * ## Deleting is a bucket delete, not a tile sweep
  *
  * SNOW-586 gives every download its own cache
@@ -294,6 +313,11 @@
     // inside `row-meta` rather than being concatenated here, matching how
     // every server-rendered meta line on the other panels is written
     // (favourites' "{{ region }} · saved {{ when }}").
+    // SNOW-844: the Repair control's accessible name, and the toast when
+    // the refetch does not land. Same pattern as every other row action —
+    // a row cloned from a <template> has no name until buildRow fills it.
+    'repair-row-label': 'Repair %(name)s',
+    'repair-failed': "That download couldn't be repaired. Try again.",
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     'row-meta': '%(kind)s · %(size)s',
@@ -406,6 +430,62 @@
   /** @returns {Object|null} basemap_download_core.js's exports. */
   function downloadCore() {
     return window.pwaBasemapDownloadCore || null;
+  }
+
+  /**
+   * SNOW-844: mark every row whose area is on this device but cannot
+   * RENDER — the tiles are pinned and something the map needs to draw them
+   * (the style document, a vector source's TileJSON, the sprite) is not.
+   *
+   * Until this ticket the only question any surface asked about a download
+   * was tile coverage, so an area downloaded before SNOW-843 — which never
+   * fetched a TileJSON at all — was listed as a normal download and came
+   * up blank offline. It is not an orphan (there is a record, and the
+   * tiles are real) and it is not a failure (nothing failed); it is a
+   * download with a hole in it, and one tap fills the hole.
+   *
+   * Which dependency list a row is judged against is NOT decided here —
+   * `window.pwaBasemapDownloads.areaRenderDependencyUrls` owns that rule,
+   * because both roundels apply it too. Its third case is the one that
+   * matters on this surface: this sheet lists rows for basemaps that are
+   * not the one on screen, and for those an unrecorded dependency list is
+   * unknowable, so the row is skipped rather than accused.
+   *
+   * Rows already labelled by something stronger are skipped outright: an
+   * ORPHAN has no record at all, and an ACCOUNT-ONLY row holds nothing on
+   * this device for anything to be missing from.
+   *
+   * Best-effort — an unreadable Cache Storage leaves every row as it was,
+   * which is the pre-SNOW-844 listing rather than a sheet that fails to
+   * open.
+   *
+   * @param {Array<Object>} rows `manageRows`' own rows, mutated in place.
+   * @returns {Promise<void>}
+   */
+  async function markIncompleteRows(rows) {
+    const core = downloadCore();
+    const bridge = window.pwaBasemapDownloads;
+    if (!core || typeof core.missingRenderDependencies !== 'function') return;
+    if (!bridge || typeof bridge.pinnedCacheUrls !== 'function') return;
+    if (typeof bridge.areaRenderDependencyUrls !== 'function') return;
+
+    let cached;
+    try {
+      cached = await bridge.pinnedCacheUrls();
+    } catch (_err) {
+      return;
+    }
+    const activeKey = bridge.activeBasemapKey?.() || '';
+
+    for (const row of rows) {
+      if (row.orphaned || row.onDevice === false) continue;
+      const isActive = !!activeKey && row.basemapKey === activeKey;
+      const depURLs = bridge.areaRenderDependencyUrls(row.deps, isActive);
+      const missing = core.missingRenderDependencies(depURLs, cached);
+      if (missing.length === 0) continue;
+      row.incomplete = true;
+      row.missingDeps = missing;
+    }
   }
 
   // SNOW-645: `basemapLabel` (the picker-label lookup used by `buildRow`
@@ -621,6 +701,12 @@
       // row's label is `area.name`, already filled by the reader.
       isCustomAreaId: downloadCore()?.isCustomAreaId,
     });
+    // SNOW-844: and which of them are on this device but cannot render.
+    // Awaited before the rows are built, not after: the flag decides the
+    // row's subtitle and whether it carries a Repair control, and a
+    // second pass over already-rendered rows would be a second place that
+    // has to agree with this one.
+    await markIncompleteRows(rows);
 
     // SNOW-832 removed a pre-pass here. SNOW-645 resolved every orphaned
     // row's basemap by INFERENCE — opening the orphan's own pinned bucket
@@ -1030,7 +1116,11 @@
    * template no longer renders ``[data-row-value]`` for a JS-filled row.
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
-   *   renameable?: boolean, size: string, basemapKey?: string}} row
+   *   renameable?: boolean, size: string, basemapKey?: string,
+   *   incomplete?: boolean, missingDeps?: string[]}} row SNOW-844's two
+   *   fields are set by `markIncompleteRows`, never by the manage core —
+   *   answering them needs Cache Storage, which that module deliberately
+   *   never touches.
    * @returns {DocumentFragment}
    */
   function buildRow(row) {
@@ -1057,7 +1147,11 @@
       // are "listed, but not offline here", which is what the dimming has
       // always meant on this sheet — the difference between them is the
       // subtitle and the controls, not the weight.
-      if (row.orphaned || row.onDevice === false) {
+      // SNOW-844: an `incomplete` row dims with them. All three mean the
+      // same thing on this sheet — listed, but not usable offline here —
+      // and this one is the newest member of that set: its tiles are real
+      // and its map is blank.
+      if (row.orphaned || row.onDevice === false || row.incomplete) {
         label.classList.remove('text-text-1');
         label.classList.add('text-text-2');
       }
@@ -1087,7 +1181,14 @@
     //     not here.
     const subtitle = fragment.querySelector('[data-row-meta]');
     if (subtitle) {
-      if (row.orphaned) {
+      // SNOW-844: a row that cannot render takes the same "Incomplete"
+      // line an orphan does, and for a reason the reader does not need
+      // spelling out twice: in both cases what this device holds is not a
+      // usable download. The kind and the size are not the fact worth
+      // stating on either. Unlike an orphan it gets a Repair control
+      // below — there IS a record behind it, and it names exactly what to
+      // fetch.
+      if (row.orphaned || row.incomplete) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
       } else if (row.onDevice === false) {
         subtitle.textContent = STRINGS['not-on-device'] || '';
@@ -1158,6 +1259,27 @@
         );
       } else {
         hereBtn.remove();
+      }
+    }
+
+    // SNOW-844: "Repair" — refetch just the documents this area is missing.
+    // Only a row the render-dependency check actually failed carries it;
+    // every other row sheds it, including an ORPHAN, which keeps SNOW-612's
+    // remove-only treatment because it has no record naming what to fetch.
+    // The missing URLs travel as JSON on the element, like the "Download
+    // here" bbox above and for the same reason: the handler is delegated on
+    // the sheet and the row is a clone, so a closure would not survive.
+    const repairBtn = fragment.querySelector('[data-downloads-repair]');
+    if (repairBtn) {
+      if (row.incomplete && Array.isArray(row.missingDeps) && row.missingDeps.length) {
+        repairBtn.setAttribute('data-downloads-repair', row.id);
+        repairBtn.setAttribute('data-downloads-repair-urls', JSON.stringify(row.missingDeps));
+        repairBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['repair-row-label'], { name: row.label }),
+        );
+      } else {
+        repairBtn.remove();
       }
     }
 
@@ -1342,10 +1464,73 @@
     ) {
       return;
     }
+    if (_handleRepairClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
     _handleDeleteClick(event);
   });
+
+  /**
+   * SNOW-844: "Repair" — refetch the render dependencies this area is
+   * missing, into the bucket its tiles already live in.
+   *
+   * Deliberately NOT `window.pwaRegionDownload.start` or a re-framed
+   * custom-area run, which is what "Download here" above hands off to.
+   * Those start a whole download: hundreds of tiles, a quota pre-flight, a
+   * budget plan and an eviction confirm that can destroy another area.
+   * This is four small documents the record already names, so it goes
+   * through the short path — see `basemap_download_runner.js`'s `repair`.
+   *
+   * Offline refuses, like every other control on this sheet that starts a
+   * fetch: listing and deleting what is stored needs no connection, and
+   * this is not that.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a Repair.
+   */
+  function _handleRepairClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return false;
+    const button = target.closest('[data-downloads-repair]');
+    if (!button) return false;
+
+    const areaId = button.getAttribute('data-downloads-repair');
+    if (!areaId) return true;
+
+    // SNOW-748: the mode, not the radio — a forced offline mode leaves
+    // `navigator.onLine` true, and a repair is network use.
+    if (!networkInUse()) {
+      window.MapSheet?.toast(STRINGS['add-offline']);
+      return true;
+    }
+
+    let urls = [];
+    try {
+      urls = JSON.parse(button.getAttribute('data-downloads-repair-urls') || '[]');
+    } catch (_err) {
+      urls = [];
+    }
+    if (!Array.isArray(urls) || urls.length === 0) {
+      window.MapSheet?.toast(STRINGS['repair-failed']);
+      return true;
+    }
+
+    // Disabled for the duration rather than left live: the repair is short,
+    // and a second tap would dispatch a second warm run for URLs the first
+    // one is already fetching.
+    button.setAttribute('disabled', '');
+    window.pwaBasemapDownloads?.repair(areaId, urls).then(function (ok) {
+      if (!ok) window.MapSheet?.toast(STRINGS['repair-failed']);
+      // Re-render either way, from real cache state — a partial repair has
+      // still changed what is on disk, and the row must say what is true
+      // now rather than what it said before the tap.
+      render();
+      // The layers menu is a live cache-state dashboard, and this run wrote
+      // into a pinned bucket.
+      window.pwaLayerSyncStatus?.refresh();
+    });
+    return true;
+  }
 
   /**
    * SNOW-749: "Download here" — fetch an account-only area onto this
