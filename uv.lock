@@ -2608,6 +2608,19 @@ lint = [
     { name = "djangofmt" },
     { name = "ruff" },
 ]
+offline = [
+    { name = "coverage" },
+    { name = "factory-boy" },
+    { name = "freezegun" },
+    { name = "pillow" },
+    { name = "playwright" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-django" },
+    { name = "pytest-playwright" },
+    { name = "pytest-rerunfailures" },
+    { name = "pytest-xdist" },
+]
 sast = [
     { name = "semgrep" },
 ]
@@ -2708,6 +2721,19 @@ e2e = [
 lint = [
     { name = "djangofmt", specifier = ">=0.2.6,<0.3" },
     { name = "ruff", specifier = "==0.16.6" },
+]
+offline = [
+    { name = "coverage", specifier = ">=7,<8" },
+    { name = "factory-boy", specifier = ">=3.3.3,<4" },
+    { name = "freezegun", specifier = ">=1.5.5,<2" },
+    { name = "pillow", specifier = ">=12,<13" },
+    { name = "playwright", specifier = ">=1.62.0,<1.63" },
+    { name = "pytest", specifier = ">=9.0.3,<10" },
+    { name = "pytest-cov", specifier = ">=7.1.0,<8" },
+    { name = "pytest-django", specifier = ">=4.12.0,<5" },
+    { name = "pytest-playwright", specifier = ">=0.7,<0.10" },
+    { name = "pytest-rerunfailures", specifier = ">=16,<17" },
+    { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
 ]
 sast = [{ name = "semgrep", specifier = ">=1.171.0,<2" }]
 test = [
