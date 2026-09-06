@@ -819,6 +819,56 @@ COLLAPSIBLE_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# ── Glossary term in prose (SNOW-853) ──────────────────────────────────────
+# The one component in this file with no partial of its own: the markup is
+# spliced into provider prose by the ``snowdesk_html`` filter, not written in
+# a template, so there is nothing to include directly. These variants go
+# through ``_tendency_body.html`` — the smallest real surface that runs prose
+# through that filter — which means the library renders the shipping code
+# path rather than a hand-written imitation of it that could drift from it.
+#
+# The prose below is written for the library, not taken from a provider: it
+# is arranged so each variant demonstrates one matching rule.
+
+GLOSSARY_TERM_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "One term · tap to open the definition",
+        "context": {
+            "prose": {
+                "tendency": [
+                    {
+                        "comment": (
+                            "<p>Individual avalanche prone locations for dry "
+                            "avalanches are to be found in particular on very "
+                            "steep shady slopes at high altitudes.</p>"
+                        )
+                    }
+                ]
+            }
+        },
+    },
+    {
+        "caption": "Longest match wins · once per block · synonyms",
+        "context": {
+            "prose": {
+                "tendency": [
+                    {
+                        "comment": (
+                            "<p>A melt-freeze crust has formed on sunny slopes; "
+                            "the crust is thick enough to bear weight. The weak "
+                            "layer beneath it stays reactive, and that weak layer "
+                            "is what the danger zone below the ridge is about.</p>"
+                            "<p>Whumpfing was reported here too — the same weak "
+                            "layer, a second block, so it is marked again.</p>"
+                        )
+                    }
+                ]
+            }
+        },
+    },
+)
+
+
 # ── Form field (SNOW-672) ───────────────────────────────────────────────────
 # A real Django form rather than a SimpleNamespace, because the partial
 # renders the widget: ``{{ field }}`` has to produce an <input>, not a repr.

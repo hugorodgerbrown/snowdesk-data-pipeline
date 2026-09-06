@@ -44,6 +44,7 @@ from apps.public._component_fixtures import (
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
     FORM_FIELD_VARIANTS,
+    GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     META_CELL_VARIANTS,
@@ -983,6 +984,25 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_collapsible_panel.html",
         variants=COLLAPSIBLE_PANEL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="glossary-term",
+        label="Glossary term in prose",
+        description=(
+            "An EAWS term marked where the reader meets it, in the provider's own "
+            "prose (SNOW-853). The dotted-underlined word is a <button>; tapping it "
+            "opens a native [popover] carrying the standard's verbatim definition "
+            "and a link to its EAWS anchor — no JavaScript is involved. The markup "
+            "is spliced in by the snowdesk_html filter rather than authored in a "
+            "template, so these variants render through includes/_tendency_body.html "
+            "— the smallest real surface that runs prose through that filter. Two "
+            "variants: one term in a sentence, and a block exercising longest-match, "
+            "first-occurrence-per-block and synonym matching."
+        ),
+        kind="components",
+        partial="includes/_tendency_body.html",
+        variants=GLOSSARY_TERM_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
