@@ -67,6 +67,17 @@ relaying. Editing a `text:` value is therefore a defect, not a tidy-up; the
 - **Definitions are not re-scanned.** The definition string goes straight to
   the output, so a definition that mentions another term does not itself gain
   a button. One level of explanation, deliberately.
+- **Popover ids come from a process-global counter, not from the content.**
+  `id` uniqueness is scoped to the *page*, and a page is many independent
+  `snowdesk_html` calls that cannot see each other. A content digest was
+  tried first and is wrong for exactly that reason: a hash is a pure function
+  of its input, so two calls handed byte-identical prose emit identical ids —
+  reachable in production, because `guidance.py` keys its note text on
+  `problem_type` alone and two problem cards of one type render the same
+  string twice. `popovertarget` resolves to the first match, so the reader
+  taps one term and reads another's definition. The ids are therefore not
+  stable between renders; they are wiring between a button and its own
+  popover, never an addressable anchor, and nothing links to them.
 - **Every surface that pipes prose through `snowdesk_html` gets this**, which
   includes Snowdesk's own field guidance. That is intended: a term is a term
   wherever the reader meets it.

@@ -27,9 +27,8 @@ the explanation where the word is used and without any JavaScript.  The order
 ``docs/decisions/glossary-terms-injected-after-sanitisation.md``.
 """
 
-import collections
-import hashlib
 import html
+import itertools
 import logging
 import re
 from html.parser import HTMLParser
@@ -79,14 +78,41 @@ _BLOCK_TAGS: frozenset[str] = frozenset({"p", "li", "h1", "h2"})
 # entry's ``anchor`` field.
 _EAWS_GLOSSARY_URL = "https://www.avalanches.org/glossary/"
 
+# Uniqueness source for popover ids.  Process-global and monotonic, so no two
+# emissions anywhere in one render can collide — which is the property that
+# matters, because ``id`` uniqueness is scoped to the PAGE and one page is
+# many independent filter calls.
+#
+# This was a content digest of the block until review caught the hole: a hash
+# is a pure function of its input, so two calls handed byte-identical prose
+# produced byte-identical ids.  That is reachable, not contrived —
+# ``apps/public/guidance.py`` keys its note text on ``problem_type`` alone, so
+# two problem cards of the same type on one page render the same note through
+# two calls.  The reader would have tapped one term and read another's
+# definition.  A hash can never supply page-scoped uniqueness; a counter can.
+#
+# ``next()`` on ``itertools.count`` is a single C-level call and so is not
+# interrupted between the read and the increment.  Ids are per-process rather
+# than per-deploy, which is fine: they only have to be unique within one
+# rendered document, and one document is rendered by one process.
+_POPOVER_SEQUENCE = itertools.count(1)
+
 # The injected markup.  Deliberately one unbroken line: it is spliced into
 # running prose, and a newline between the button and its popover would put a
 # stray space into the provider's sentence.
+#
+# ``aria-haspopup="dialog"`` tells a screen-reader user the control reveals
+# something.  ``aria-describedby`` was considered and rejected: a closed
+# popover is UA-styled ``display: none``, so the description would be read as
+# empty.  The provenance link opens in a new tab, like the field-guidance
+# credit in ``public/_field_guidance_body.html`` — a reader who taps it should
+# not lose the bulletin.
 _TERM_MARKUP = (
     '<button type="button" popovertarget="{popover_id}" '
-    'class="glossary-term">{term}</button>'
+    'aria-haspopup="dialog" class="glossary-term">{term}</button>'
     '<span popover id="{popover_id}" class="glossary-def">{definition}'
-    '<a href="{url}#{anchor}" class="glossary-src">{source_label}</a></span>'
+    '<a href="{url}#{anchor}" target="_blank" rel="noopener" '
+    'class="glossary-src">{source_label}</a></span>'
 )
 
 
@@ -108,22 +134,13 @@ class _GlossaryInjector(HTMLParser):
 
     """
 
-    def __init__(self, token: str) -> None:
-        """
-        Prepare an injector for one prose block.
-
-        Args:
-            token: Short digest of the block, mixed into every popover id so
-                that two blocks on one page cannot collide.
-
-        """
+    def __init__(self) -> None:
+        """Prepare an injector for one prose block."""
         super().__init__(convert_charrefs=False)
         self.out: list[str] = []
-        self._token = token
         self._pattern, self._lookup = glossary_matcher()
         self._glossary = load_glossary()
         self._seen: set[str] = set()
-        self._emitted: collections.Counter[str] = collections.Counter()
 
     def result(self) -> str:
         """Return the rewritten HTML for the block."""
@@ -207,11 +224,11 @@ class _GlossaryInjector(HTMLParser):
         attribute value, and escaping apostrophes there would alter the
         provider's characters for no security gain.
 
-        The seen-set resets at every block, so one term can legitimately be
-        marked in two paragraphs of the *same* prose block — which share one
-        digest.  A per-block ordinal is appended from the second emission on,
-        because two elements with the same ``id`` is invalid HTML and
-        ``popovertarget`` resolves to whichever came first.
+        The id's ordinal comes from the process-global sequence rather than
+        from anything about this block, because two elements with the same
+        ``id`` is invalid HTML and ``popovertarget`` resolves to whichever
+        came first — so a colliding second button would open the first
+        button's definition.
 
         Args:
             key: The glossary term slug that was matched.
@@ -222,10 +239,7 @@ class _GlossaryInjector(HTMLParser):
 
         """
         entry = self._glossary[key]
-        ordinal = self._emitted[key]
-        self._emitted[key] += 1
-        suffix = "" if ordinal == 0 else f"-{ordinal + 1}"
-        popover_id = f"g-{key.replace('_', '-')}-{self._token}{suffix}"
+        popover_id = f"g-{key.replace('_', '-')}-{next(_POPOVER_SEQUENCE)}"
         return _TERM_MARKUP.format(
             popover_id=popover_id,
             term=html.escape(matched, quote=False),
@@ -245,10 +259,12 @@ def inject_glossary_terms(cleaned: str) -> str:
     stdlib ``HTMLParser`` walk sufficient and keeps the bleach allowlist free
     of the tags this emits.
 
-    Popover ids are ``g-<term-slug>-<token>`` where the token is a short
-    digest of the block itself — deterministic (so tests can assert exact
-    output), distinct per block (so two prose panels on one page cannot
-    collide) and stable across re-renders and HTMX swaps of the same block.
+    Popover ids are ``g-<term-slug>-<n>``, where ``n`` comes from a
+    process-global counter. Uniqueness has to be scoped to the PAGE, and one
+    page is many independent calls to this function — nothing derived from
+    this block's own content can see the others. Consequently the ids are not
+    stable between renders: they are internal wiring between a button and its
+    own popover, not an addressable anchor, and nothing links to them.
 
     The definition text is emitted straight into the output and never fed
     back through the matcher, so a definition that mentions another term does
@@ -261,8 +277,7 @@ def inject_glossary_terms(cleaned: str) -> str:
         The same HTML with glossary terms marked up.
 
     """
-    token = hashlib.blake2s(cleaned.encode()).hexdigest()[:6]
-    injector = _GlossaryInjector(token)
+    injector = _GlossaryInjector()
     injector.feed(cleaned)
     injector.close()
     return injector.result()

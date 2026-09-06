@@ -26,6 +26,7 @@ import pytest
 from django.template import Context, Template
 from django.utils.safestring import SafeString
 
+from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.snowdesk_html import (
     _ALLOWED_ATTRIBUTES,
     _ALLOWED_PROTOCOLS,
@@ -37,6 +38,20 @@ from apps.public.templatetags.snowdesk_html import (
     tendency_has_comment,
 )
 from tests.glossary_markup import strip_glossary_markup
+
+
+def _popover_ids(html: str) -> list[str]:
+    """
+    Return every injected popover ``id`` in *html*, in document order.
+
+    Args:
+        html: Filter output, or several outputs concatenated as one page.
+
+    Returns:
+        The ids, with duplicates preserved so a caller can assert on them.
+
+    """
+    return re.findall(r'<span popover id="([^"]+)"', html)
 
 
 def sanitise_only(value: str) -> str:
@@ -283,6 +298,21 @@ class TestGlossaryInjectionMatching:
         assert 'href="https://www.avalanches.org/glossary/#crust"' in result
         assert 'class="glossary-src">EAWS glossary</a>' in result
 
+    def test_the_source_link_opens_in_a_new_tab(self) -> None:
+        """A reader who taps the credit must not lose the bulletin page."""
+        result = snowdesk_html("<p>A thick crust formed overnight.</p>")
+        assert 'target="_blank" rel="noopener"' in result
+
+    def test_the_button_announces_that_it_reveals_something(self) -> None:
+        """
+        ``aria-haspopup="dialog"`` tells a screen-reader user what the control does.
+
+        ``aria-describedby`` was rejected: a closed popover is UA-styled
+        ``display: none``, so the description would be read as empty.
+        """
+        result = snowdesk_html("<p>A thick crust formed overnight.</p>")
+        assert 'aria-haspopup="dialog" class="glossary-term"' in result
+
     def test_longest_match_wins(self) -> None:
         """The whole "melt-freeze crust" is marked, not a bare "crust"."""
         result = snowdesk_html("<p>A melt-freeze crust has formed.</p>")
@@ -365,6 +395,67 @@ class TestGlossaryInjectionMatching:
         """
         result = snowdesk_html("<p>A weak layer at depth.</p>")
         assert "Generally &gt;1mm in size" in result
+
+
+class TestGlossaryPopoverIds:
+    """Popover ids are unique across the whole page, not just within a block."""
+
+    def test_id_has_the_expected_shape(self) -> None:
+        """``g-<term-slug>-<n>``: the slug is readable, the ordinal is not fixed."""
+        result = snowdesk_html("<p>A thick crust formed overnight.</p>")
+        for popover_id in _popover_ids(result):
+            assert re.fullmatch(r"g-[a-z-]+-\d+", popover_id), popover_id
+
+    def test_every_id_in_one_call_is_unique(self) -> None:
+        """Several terms in one block get several distinct ids."""
+        result = snowdesk_html(
+            "<p>A melt-freeze crust over the weak layer on lee slopes.</p>"
+        )
+        ids = _popover_ids(result)
+        assert len(ids) == 3
+        assert len(set(ids)) == 3
+
+    def test_two_calls_on_identical_input_produce_disjoint_ids(self) -> None:
+        """
+        The regression this class exists for.
+
+        Ids were a digest of the block's own content until review caught the
+        hole: a hash is a pure function of its input, so two calls handed
+        byte-identical prose produced byte-identical ids. ``id`` uniqueness
+        is scoped to the page, and a page is many independent filter calls,
+        so nothing derived from one block's content can supply it.
+        """
+        source = "<p>Watch for wind crust on lee slopes above the treeline.</p>"
+        first = set(_popover_ids(snowdesk_html(source)))
+        second = set(_popover_ids(snowdesk_html(source)))
+        assert first
+        assert first.isdisjoint(second)
+
+    def test_two_cards_sharing_a_field_guidance_note_do_not_collide(self) -> None:
+        """
+        The production shape of the same bug, on Snowdesk's own prose.
+
+        ``apps.public.guidance`` keys its note text on ``problem_type``
+        alone — no bulletin-specific interpolation — so two problem cards of
+        the same type on one page render byte-identical text through two
+        independent filter calls. A collision there means the reader taps
+        one term and reads another term's definition.
+        """
+        note = load_field_guidance()["persistent_weak_layers"]
+        page = snowdesk_html(note) + snowdesk_html(note)
+        ids = _popover_ids(page)
+        assert len(ids) > 1
+        assert len(set(ids)) == len(ids)
+
+    def test_button_targets_are_all_resolvable(self) -> None:
+        """Every ``popovertarget`` names an ``id`` that exists exactly once."""
+        result = snowdesk_html(
+            "<p>The weak layer is buried.</p><p>That weak layer is reactive.</p>"
+        )
+        targets = re.findall(r'popovertarget="([^"]+)"', result)
+        assert targets
+        for target in targets:
+            assert result.count(f'<span popover id="{target}"') == 1
 
 
 class TestGlossaryInjectionLeavesMarkupAlone:
