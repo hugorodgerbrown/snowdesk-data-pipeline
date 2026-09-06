@@ -33,6 +33,7 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
 )
+from tests.glossary_markup import strip_glossary_markup
 
 # Every EAWS problem type the YAML carries a note for.
 EXPECTED_TYPES = {
@@ -184,14 +185,23 @@ class TestFieldGuidanceBlock:
     """Tests for the guidance block in public/_rating_block.html."""
 
     def test_renders_the_note_for_a_type_that_has_one(self) -> None:
-        """The guidance text appears on the card."""
+        """The guidance text appears on the card.
+
+        Read through ``strip_glossary_markup`` because the note goes through
+        ``snowdesk_html``, which since SNOW-853 marks "weak layers" up as a
+        glossary term mid-sentence. The sentence is still there; it is no
+        longer one contiguous run of characters in the source.
+        """
         guidance = load_field_guidance()["persistent_weak_layers"]
         html = _render(
             problem_type="persistent_weak_layers",
             field_guidance=_notes(("Persistent weak layers", guidance)),
         )
         assert GUIDANCE_TESTID in html
-        assert "Persistent weak layers are very challenging to recognise" in html
+        assert (
+            "Persistent weak layers are very challenging to recognise"
+            in strip_glossary_markup(html)
+        )
 
     def test_renders_the_separating_rule(self) -> None:
         """The provenance boundary is drawn, not merely implied by position.
@@ -388,8 +398,13 @@ class TestFieldGuidanceOnTheBulletinPage:
 
         assert GUIDANCE_TESTID in content
         assert ATTRIBUTION in content
-        assert "Look for fresh snow deposits on lee slopes" in content
+        # Both sentences below name an EAWS term ("lee slopes", "aspects"),
+        # which SNOW-853 marks up mid-sentence — so they are read with the
+        # glossary wrappers subtracted. The words are unchanged; only the
+        # markup around them is new.
+        plain = strip_glossary_markup(content)
+        assert "Look for fresh snow deposits on lee slopes" in plain
         # The provider's own prose is still there, and still first — the note
         # is an addition, never a replacement.
-        assert "Wind slabs have formed on lee aspects" in content
-        assert content.index("Wind slabs have formed") < content.index(GUIDANCE_TESTID)
+        assert "Wind slabs have formed on lee aspects" in plain
+        assert plain.index("Wind slabs have formed") < plain.index(GUIDANCE_TESTID)

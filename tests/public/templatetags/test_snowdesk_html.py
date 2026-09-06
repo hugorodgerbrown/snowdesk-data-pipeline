@@ -6,24 +6,61 @@ tag removal), edge cases (None/empty input), return type guarantees, and a
 template-integration smoke test.  One test case uses a real SLF prose sample
 from ``tests/fixtures/sample_variable_day.json`` to guard against regressions
 with actual field data.
+
+Also covers the EAWS glossary injection added by SNOW-853 — the matching
+rules (longest first, once per block, synonyms, no recursion), the guarantee
+that only text nodes are rewritten, and the two properties the ordering buys:
+the injected markup survives because bleach ran *first*, and the provider's
+own words survive character-for-character.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
+import bleach
 import pytest
 from django.template import Context, Template
 from django.utils.safestring import SafeString
 
 from apps.public.templatetags.snowdesk_html import (
+    _ALLOWED_ATTRIBUTES,
+    _ALLOWED_PROTOCOLS,
+    _ALLOWED_TAGS,
+    inject_glossary_terms,
     prose_body,
     prose_title,
     snowdesk_html,
     tendency_has_comment,
 )
+from tests.glossary_markup import strip_glossary_markup
+
+
+def sanitise_only(value: str) -> str:
+    """
+    Run the filter's sanitisation step alone, without the glossary injection.
+
+    Gives the fidelity tests something to compare against for real provider
+    prose, where the input is not already equal to its own bleach output.
+
+    Args:
+        value: Raw provider prose HTML.
+
+    Returns:
+        The ``bleach.clean`` result the filter would inject into.
+
+    """
+    return bleach.clean(
+        value,
+        tags=_ALLOWED_TAGS,
+        attributes=_ALLOWED_ATTRIBUTES,
+        protocols=_ALLOWED_PROTOCOLS,
+        strip=True,
+    )
+
 
 # Absolute path to the test fixture used in the real-SLF test.
 _SAMPLE_PATH = (
@@ -219,6 +256,202 @@ class TestSnowdeskHtmlTemplateIntegration:
         # If auto-escaping hit the output the tag would be &lt;p&gt;...
         assert rendered == "<p>hello</p>"
         assert "&lt;" not in rendered
+
+
+class TestGlossaryInjectionMatching:
+    """Which terms get marked, and how many times (SNOW-853)."""
+
+    def test_term_is_marked_in_prose(self) -> None:
+        """A term in the ticket's motivating sentence gains a button and popover."""
+        result = snowdesk_html(
+            "<p>Individual avalanche prone locations are to be found in "
+            "particular on steep shady slopes.</p>"
+        )
+        assert 'class="glossary-term">avalanche prone locations</button>' in result
+        assert "Locations delineated by aspect or altitude" in result
+
+    def test_button_and_popover_ids_agree(self) -> None:
+        """The button's ``popovertarget`` names the span's ``id``."""
+        result = snowdesk_html("<p>A thick crust formed overnight.</p>")
+        target = re.search(r'popovertarget="([^"]+)"', result)
+        assert target is not None
+        assert f'<span popover id="{target.group(1)}"' in result
+
+    def test_popover_links_back_to_the_eaws_source(self) -> None:
+        """Each definition carries a link to the term's own EAWS anchor."""
+        result = snowdesk_html("<p>A thick crust formed overnight.</p>")
+        assert 'href="https://www.avalanches.org/glossary/#crust"' in result
+        assert 'class="glossary-src">EAWS glossary</a>' in result
+
+    def test_longest_match_wins(self) -> None:
+        """The whole "melt-freeze crust" is marked, not a bare "crust"."""
+        result = snowdesk_html("<p>A melt-freeze crust has formed.</p>")
+        assert 'class="glossary-term">melt-freeze crust</button>' in result
+        assert "increases firmness." in result
+        # The shorter term's own definition must not appear.
+        assert "melt-freeze process or wind" not in result
+
+    def test_word_boundary_prevents_substring_match(self) -> None:
+        """A term inside a longer word is left alone."""
+        result = snowdesk_html("<p>Encrusted rime coats the ridge.</p>")
+        assert "glossary-term" not in result
+        assert result == "<p>Encrusted rime coats the ridge.</p>"
+
+    def test_matching_is_case_insensitive(self) -> None:
+        """A capitalised term at the start of a sentence still matches."""
+        result = snowdesk_html("<p>Weak layers persist at depth.</p>")
+        assert 'class="glossary-term">Weak layers</button>' in result
+
+    def test_only_the_first_occurrence_in_a_block_is_marked(self) -> None:
+        """A term repeated inside one paragraph is marked once."""
+        result = snowdesk_html(
+            "<p>The weak layer is buried; that weak layer is reactive.</p>"
+        )
+        assert result.count('class="glossary-term"') == 1
+
+    def test_a_synonym_does_not_re_mark_its_own_term(self) -> None:
+        """A synonym of an already-marked term is skipped inside the same block."""
+        result = snowdesk_html("<p>Avalanche prone locations — a danger zone.</p>")
+        assert result.count('class="glossary-term"') == 1
+
+    def test_the_seen_set_resets_at_the_next_block(self) -> None:
+        """Two paragraphs each get their own marking of the same term."""
+        result = snowdesk_html(
+            "<p>The weak layer is buried.</p><p>That weak layer is reactive.</p>"
+        )
+        assert result.count('class="glossary-term"') == 2
+
+    def test_repeat_across_blocks_gets_a_distinct_popover_id(self) -> None:
+        """Two ids in one page would be invalid HTML and collide on open."""
+        result = snowdesk_html(
+            "<p>The weak layer is buried.</p><p>That weak layer is reactive.</p>"
+        )
+        ids = re.findall(r'<span popover id="([^"]+)"', result)
+        assert len(ids) == 2
+        assert len(set(ids)) == 2
+
+    def test_list_items_are_block_boundaries(self) -> None:
+        """Each ``<li>`` is its own block, so each marks the term once."""
+        result = snowdesk_html("<ul><li>Weak layer.</li><li>Weak layer.</li></ul>")
+        assert result.count('class="glossary-term"') == 2
+
+    def test_synonym_resolves_to_the_primary_definition(self) -> None:
+        """A "danger zone" shows the same text as an "avalanche prone location"."""
+        primary = snowdesk_html("<p>An avalanche prone location.</p>")
+        synonym = snowdesk_html("<p>A danger zone.</p>")
+        definition = "Locations delineated by aspect or altitude"
+        assert definition in primary
+        assert definition in synonym
+        assert 'id="g-avalanche-prone-location-' in synonym
+
+    def test_definitions_are_not_themselves_marked_up(self) -> None:
+        """
+        No recursion: a term inside an injected definition stays plain text.
+
+        The definition of *avalanche prone location* contains the word
+        *aspect*, which is itself a glossary term. It is emitted straight to
+        the output rather than fed back through the matcher, so the reader
+        gets one level of explanation, not a nest of them.
+        """
+        result = snowdesk_html("<p>An avalanche prone location.</p>")
+        assert result.count('class="glossary-term"') == 1
+        assert 'class="glossary-term">aspect' not in result
+
+    def test_a_definition_containing_markup_characters_is_escaped(self) -> None:
+        """
+        EAWS wording contains a bare ``>`` (see the *weak layer* entry).
+
+        It must arrive as an entity, not as the start of a tag.
+        """
+        result = snowdesk_html("<p>A weak layer at depth.</p>")
+        assert "Generally &gt;1mm in size" in result
+
+
+class TestGlossaryInjectionLeavesMarkupAlone:
+    """Only text nodes are rewritten; everything else passes through verbatim."""
+
+    def test_surrounding_markup_is_byte_identical(self) -> None:
+        """The tags around a marked term are untouched."""
+        result = snowdesk_html("<h2>Fresh snow</h2><ul><li><em>crust</em></li></ul>")
+        assert result.startswith("<h2>Fresh snow</h2><ul><li><em>")
+        assert result.endswith("</em></li></ul>")
+
+    def test_a_term_in_a_tag_name_is_untouched(self) -> None:
+        """
+        ``handle_data`` is the only hook that rewrites; tags re-emit verbatim.
+
+        Fed directly rather than through the filter because bleach strips a
+        ``<crust>`` element before injection ever sees it — this asserts the
+        parser's own contract, which is what keeps that true if the
+        allowlist ever changes.
+        """
+        raw = "<crust data-crust='crust'>ridge</crust>"
+        assert inject_glossary_terms(raw) == raw
+
+    def test_entities_survive_unchanged(self) -> None:
+        """``&amp;`` in and ``&amp;`` out — the parser re-emits entity refs."""
+        result = snowdesk_html("<p>Wind &amp; sun formed a crust.</p>")
+        assert "Wind &amp; sun formed a" in result
+        assert "&amp;amp;" not in result
+
+    def test_prose_without_any_term_is_returned_unchanged(self) -> None:
+        """No match means no rewrite at all."""
+        html = "<p>Conditions are broadly favourable today.</p>"
+        assert snowdesk_html(html) == html
+
+
+class TestGlossaryInjectionOrdering:
+    """Injection runs after ``bleach.clean``, and that is load-bearing."""
+
+    def test_injected_button_survives_because_bleach_ran_first(self) -> None:
+        """
+        The ``<button>`` and its attributes are not in the bleach allowlist.
+
+        If injection ran *before* sanitisation, bleach would strip the button
+        and every attribute on the span, leaving bare definition text spliced
+        into the sentence. Their presence in the output is the proof of
+        order.
+        """
+        result = snowdesk_html("<p>A thick crust formed overnight.</p>")
+        assert "<button" in result
+        assert "popovertarget=" in result
+        assert "<span popover " in result
+        assert "<a href=" in result
+
+    def test_provider_markup_still_cannot_ship_a_button(self) -> None:
+        """The narrow allowlist is unchanged — provider prose gets no button."""
+        result = snowdesk_html('<p><button popovertarget="x">tap</button> me</p>')
+        assert result == "<p>tap me</p>"
+
+    def test_provider_attributes_are_still_stripped(self) -> None:
+        """A provider ``id`` cannot collide with an injected popover id."""
+        result = snowdesk_html('<p id="g-crust-abc123">A crust.</p>')
+        assert result.startswith("<p>")
+
+
+class TestGlossaryInjectionFidelity:
+    """The provider's own words survive the injection character-for-character."""
+
+    def test_stripping_the_wrappers_returns_the_provider_text(self) -> None:
+        """Subtracting every injected wrapper restores the input exactly."""
+        source = (
+            "<h1>Snowpack structure</h1>"
+            "<p>Individual avalanche prone locations are to be found on "
+            "steep shady slopes. The weak layer beneath the melt-freeze "
+            "crust remains reactive on all aspects.</p>"
+            "<ul><li>Whumpfing was reported near the ridge.</li></ul>"
+        )
+        result = snowdesk_html(source)
+        assert "glossary-term" in result  # the test would be vacuous otherwise
+        assert strip_glossary_markup(result) == source
+
+    def test_real_slf_prose_survives_the_injection(
+        self, slf_snowpack_comment: str
+    ) -> None:
+        """Real provider prose round-trips once the wrappers are subtracted."""
+        result = snowdesk_html(slf_snowpack_comment)
+        assert "glossary-term" in result  # the test would be vacuous otherwise
+        assert strip_glossary_markup(result) == sanitise_only(slf_snowpack_comment)
 
 
 class TestProseTitle:
