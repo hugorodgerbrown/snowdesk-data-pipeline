@@ -53,12 +53,18 @@ from apps.locations.models import Location
 from apps.trips.models import Trip
 from tests.factories import LocationFactory, RouteFactory, TripFactory, UserFactory
 
-# The dd the meeting point renders into, tag and contents. Matched rather
-# than searched for whole-page so "the address replaced the coordinates"
-# and "the coordinates are elsewhere on the page" cannot be confused: the
-# map payload carries the same numbers.
-_MEETING_POINT_DD = re.compile(
-    r'<dd[^>]*data-testid="trip-meeting-point".*?</dd>', re.DOTALL
+# The element the meeting point renders into, tag and contents. Matched
+# rather than searched for whole-page so "the address replaced the
+# coordinates" and "the coordinates are elsewhere on the page" cannot be
+# confused: the map payload carries the same numbers.
+#
+# An ``<a>`` when there is an address and a ``<span>`` when there is only
+# a coordinate — SNOW-848 moved the testid off the wrapping ``<dd>`` and
+# onto the element itself, because the same partial now renders into the
+# list card's footer, where there is no ``<dd>`` to hang it on.
+_MEETING_POINT_ELEMENT = re.compile(
+    r'<(?P<tag>a|span)[^>]*data-testid="trip-meeting-point".*?</(?P=tag)>',
+    re.DOTALL,
 )
 
 
@@ -86,7 +92,7 @@ def _meeting_point(cached: bool = False) -> Location:
     )
 
 
-def _meeting_point_dd(html: str) -> str:
+def _meeting_point_element(html: str) -> str:
     """Return the meeting-point ``<dd>`` from a rendered trip page.
 
     Args:
@@ -96,7 +102,7 @@ def _meeting_point_dd(html: str) -> str:
         The element's source, tag and contents.
 
     """
-    match = _MEETING_POINT_DD.search(html)
+    match = _MEETING_POINT_ELEMENT.search(html)
     assert match is not None, "the page rendered no meeting point"
     return match.group(0)
 
@@ -361,7 +367,7 @@ class TestTripMeetingPointAddress:
             ).content.decode()
 
         assert "46.080012, 7.318197" in html
-        assert "///" not in _meeting_point_dd(html)
+        assert "///" not in _meeting_point_element(html)
         mock_get.assert_not_called()
 
     @override_flag("what3words", active=True)
@@ -372,7 +378,7 @@ class TestTripMeetingPointAddress:
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
-        assert "///filled.count.soap" in _meeting_point_dd(html)
+        assert "///filled.count.soap" in _meeting_point_element(html)
 
     @override_flag("what3words", active=True)
     def test_the_coordinates_stay_available_as_the_titles(self, client: Client) -> None:
@@ -382,7 +388,7 @@ class TestTripMeetingPointAddress:
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
-        assert 'title="46.080012, 7.318197"' in _meeting_point_dd(html)
+        assert 'title="46.080012, 7.318197"' in _meeting_point_element(html)
 
     @override_flag("what3words", active=True)
     def test_the_edit_form_promises_the_conversion_too(self, client: Client) -> None:
@@ -415,7 +421,9 @@ class TestTripMeetingPointAddress:
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
-        assert 'href="https://w3w.example/filled.count.soap"' in _meeting_point_dd(html)
+        assert 'href="https://w3w.example/filled.count.soap"' in _meeting_point_element(
+            html
+        )
 
     @override_flag("what3words", active=True)
     def test_the_address_link_opens_away_and_hands_over_no_handle(
@@ -425,7 +433,7 @@ class TestTripMeetingPointAddress:
         trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
         client.force_login(trip.created_by)
 
-        dd = _meeting_point_dd(
+        dd = _meeting_point_element(
             client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
         )
 
@@ -442,7 +450,7 @@ class TestTripMeetingPointAddress:
         trip = TripFactory.create(meeting_point=_meeting_point())
         client.force_login(trip.created_by)
 
-        dd = _meeting_point_dd(
+        dd = _meeting_point_element(
             client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
         )
 

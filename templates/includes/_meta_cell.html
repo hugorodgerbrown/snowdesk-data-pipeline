@@ -4,11 +4,15 @@
   wrapping <div> and the value <p>.
   Context:
     text        — label copy (required).
-    data_testid — optional data-testid attribute value (on the <p>).
+    tag         — HTML element, default "p" (SNOW-848: the trip details
+                  card lays its cells out as a <dl>, where a <p> in the
+                  <dt> position is invalid markup. Same parameter, same
+                  spelling and same reason as includes/_eyebrow.html's).
+    data_testid — optional data-testid attribute value (on the element).
 {% endcomment %}
-<p
+<{{ tag|default:"p" }}
     class="font-mono uppercase tracking-wider text-caption text-text-3 mb-0.5"
     {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
 >
     {{ text }}
-</p>
+</{{ tag|default:"p" }}>

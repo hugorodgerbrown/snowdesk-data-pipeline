@@ -1,0 +1,50 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_details_card.html — the facts a trip page opens with
+(SNOW-848, replacing _trip_summary.html).
+
+The three things a person reads off a message before deciding whether they
+are going — the day, the time, and where the group meets — with the
+route's figures on a strip beneath them.
+
+The meeting point spans BOTH COLUMNS. It is the only cell whose value can
+be long and must not wrap mid-address: ///skis.ridge.dawn broken over two
+lines is a phone number read out wrong.
+
+THE FIGURES ARE HERE AND AGAIN ON THE ROUTE CARD, and that is the design's
+own decision rather than an oversight. This strip is the plan's scale
+stated in words; the route card's line is a caption on the drawing it sits
+under, which is why it uses arrows and this uses labels.
+
+Why the coordinate fallback, the link and the "no place name" rule are the
+way they are: trips/partials/_trip_meeting_address.html says all three.
+
+Context:
+    trip                  : Trip — the trip to describe.
+    meeting_point_w3w     : str|None — the address WITHOUT its /// prefix.
+    meeting_point_w3w_url : str|None — where that address links to.
+{% endcomment %}
+{% card padding="p-0" extra="overflow-hidden" %}
+<dl class="grid grid-cols-2 gap-x-4.5 gap-y-4 p-4.5" data-testid="trip-summary">
+    <div>
+        {% trans "Day" as day_label %}
+        {% include "includes/_meta_cell.html" with text=day_label tag="dt" %}
+        <dd class="text-label font-medium" data-testid="trip-date">{{ trip.date|date:"D j M Y" }}</dd>
+    </div>
+    <div>
+        {% trans "Meeting at" as meeting_at_label %}
+        {% include "includes/_meta_cell.html" with text=meeting_at_label tag="dt" %}
+        <dd class="text-label font-medium" data-testid="trip-start-time">{{ trip.start_time|time:"H:i" }}</dd>
+    </div>
+    <div class="col-span-2">
+        {% trans "Meeting point" as meeting_point_label %}
+        {% include "includes/_meta_cell.html" with text=meeting_point_label tag="dt" %}
+        <dd>
+            {% include "trips/partials/_trip_meeting_address.html" with trip=trip words=meeting_point_w3w url=meeting_point_w3w_url size_class="text-label" data_testid="trip-meeting-point" %}
+        </dd>
+    </div>
+</dl>
+<div class="border-t border-border bg-card-subtle px-4.5 py-3">
+    {% include "trips/partials/_trip_stats.html" with trip=trip %}
+</div>
+{% endcard %}

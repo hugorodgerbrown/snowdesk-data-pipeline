@@ -1,0 +1,116 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_save.html — "Save this trip" (SNOW-848, replacing
+_trip_roster.html).
+
+THE ONE ACT A SHARED TRIP ASKS FOR. Someone plans a tour and sends the
+link; whoever opens it saves it to their own trips. There is no invitation,
+no RSVP, no going state and no attendee list — nobody sees who else has
+saved a trip, or how many have. Those existed until SNOW-848 and were
+deliberately removed: a trip is a shareable ITEM, not a social event.
+
+The write underneath is unchanged. Saving is ``trips:join`` and removing is
+``trips:leave``, and ``TripParticipant`` still records every account that
+holds the trip — that is how ``Trip.objects.for_user`` knows whose agenda
+it belongs on. What changed is what the page says about it. Do not
+reintroduce a count or a roster on the strength of the rows being there.
+
+THE CARD IS ONE OF FOUR STATES, and none of them is nothing:
+
+  signed out            → a sign-in link carrying ``?next=``. Never a Save
+                          button that posts to a 403.
+  signed in, not saved  → Save this trip.
+  saved, can remove     → the quiet saved line plus Remove. Removing is
+                          reachable only where ``remove_url`` is set, which
+                          is the trip's own page: a link-holder who has not
+                          opened it is addressed by token and must never be
+                          handed a uuid.
+  saved, on the share page → the saved line plus a link to the trip in
+                          their own trips, which is where Remove lives.
+
+THE ORGANISER NEVER SEES THIS CARD. Their trip is on their agenda by
+authorship, they cannot remove themselves from it (a trip whose organiser
+is not on it is incoherent), and their exit is Delete — which the trip
+page's own delete disclosure already offers and describes as removing it
+for everyone. The caller decides; see trips/trip.html.
+
+Its own swap target, so a save repaints exactly itself.
+
+Context:
+    trip_is_saved : bool — whether the viewer already holds this trip.
+    save_url      : str|None — the token-addressed join endpoint. Set on
+                    the share page only; a signed-in reader on the object
+                    page has already saved it by definition.
+    remove_url    : str|None — the uuid-addressed leave endpoint. Set on
+                    the object page only, and never for the organiser.
+    trip_url      : str|None — the trip's own page, for a saver reading the
+                    share link.
+{% endcomment %}
+<div id="trip-save" data-testid="trip-save">
+    {% card padding="p-4.5" extra="mt-3" %}
+    <div class="flex items-center justify-between gap-3.5">
+        {% if not request.user.is_authenticated %}
+            {% comment %}
+                `?next=` returns the visitor to this page after signing in
+                (SNOW-825) — sign-in honours it on all three paths,
+                validating it through apps.accounts.redirects.safe_next.
+                Without it they would land on the map and have to reopen
+                the link they were sent.
+            {% endcomment %}
+            {% trans "Save this trip" as trip_save_signin_label %}
+            {% url 'accounts:sign_in' as trip_save_signin_path %}
+            {% with trip_save_next=request.get_full_path|urlencode %}
+                {% include "includes/_button.html" with label=trip_save_signin_label href=trip_save_signin_path|add:"?next="|add:trip_save_next variant="accent" size="compact" extra_classes="shrink-0 whitespace-nowrap" %}
+            {% endwith %}
+            <span class="text-xs leading-normal text-text-3">
+                {% trans "Sign in and it's kept in your trips, with the route and meeting point." %}
+            </span>
+        {% elif not trip_is_saved and save_url %}
+            {% trans "Save this trip" as trip_save_label %}
+            <form
+                hx-post="{{ save_url }}"
+                hx-target="#trip-save"
+                hx-swap="outerHTML"
+                class="shrink-0"
+                data-testid="trip-save-form"
+            >
+                {% csrf_token %}
+                {% include "includes/_button.html" with label=trip_save_label variant="accent" size="compact" extra_classes="whitespace-nowrap" %}
+            </form>
+            <span class="text-xs leading-normal text-text-3">
+                {% trans "Keeps it in your trips with the route and meeting point." %}
+            </span>
+        {% else %}
+            <p class="text-sm text-text-2" data-testid="trip-saved">
+                {% trans "Saved to your trips." %}
+            </p>
+            {% if remove_url %}
+                {% comment %}
+                    Removing answers HX-Redirect to the agenda rather than
+                    a fragment: this page is participation-scoped, so once
+                    the row is gone the reader is standing on a page they
+                    can no longer reload. Sending them where the trip used
+                    to be is the honest end of the action.
+                {% endcomment %}
+                {% trans "Remove from my trips" as trip_remove_label %}
+                <form
+                    hx-post="{{ remove_url }}"
+                    hx-target="#trip-save"
+                    hx-swap="outerHTML"
+                    class="shrink-0"
+                    data-testid="trip-remove-form"
+                >
+                    {% csrf_token %}
+                    {% include "includes/_button.html" with label=trip_remove_label variant="ghost" size="compact" extra_classes="whitespace-nowrap" %}
+                </form>
+            {% elif trip_url %}
+                <a
+                    href="{{ trip_url }}"
+                    class="shrink-0 text-summary font-medium whitespace-nowrap text-accent hover:text-accent-hover"
+                    data-testid="trip-open-saved"
+                >{% trans "Open it in your trips" %}</a>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% endcard %}
+</div>

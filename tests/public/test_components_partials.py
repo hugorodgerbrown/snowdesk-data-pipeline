@@ -108,6 +108,27 @@ class TestButtonChromeClasses:
         ghost = _button_chrome_classes("ghost", "compact", False, False)
         assert destructive != ghost
 
+    def test_accent_is_filled_in_the_interactive_blue(self) -> None:
+        """SNOW-848: the control that saves somebody else's object.
+
+        Filled, unlike ``destructive``, and in accent rather than the ink
+        ``primary`` uses. The trip page's links and its w3w address are
+        already accent; its one filled control matches its own page rather
+        than importing the black CTA from the account forms.
+        """
+        cls = _button_chrome_classes("accent", "compact", False, False)
+        assert "bg-accent" in cls
+        assert "text-accent-text" in cls
+        assert "hover:bg-accent-hover" in cls
+
+    def test_accent_is_distinguishable_from_primary(self) -> None:
+        """Two filled variants that resolved to one chrome would make the
+        distinction the docstring above draws invisible.
+        """
+        accent = _button_chrome_classes("accent", "compact", False, False)
+        primary = _button_chrome_classes("primary", "compact", False, False)
+        assert accent != primary
+
     def test_full_width(self) -> None:
         """full_width=True appends w-full."""
         cls = _button_chrome_classes("primary", "standard", True, False)

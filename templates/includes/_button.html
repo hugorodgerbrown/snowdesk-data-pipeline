@@ -11,8 +11,11 @@ Context:
     button_type   : str  — ``type`` attribute for ``<button>`` (default ``"submit"``).
     button_id     : str  — optional ``id`` attribute. Auto-escaped.
     variant       : str  — ``"primary"`` (default), ``"secondary"``,
-                           ``"ghost"``, or ``"destructive"`` (outlined in
-                           ``status-error-text``; SNOW-746).
+                           ``"ghost"``, ``"destructive"`` (outlined in
+                           ``status-error-text``; SNOW-746), or ``"accent"``
+                           (filled in ``--color-accent``; SNOW-848 — the
+                           control that saves somebody else's object to
+                           your account, and only that).
     size          : str  — ``"standard"`` (default, px-5 py-2.5) or
                            ``"compact"`` (px-4 py-2).
     full_width    : bool — when truthy, adds ``w-full`` (default False).

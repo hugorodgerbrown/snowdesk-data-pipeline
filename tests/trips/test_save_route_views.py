@@ -10,13 +10,12 @@ trips:save_route (POST /trips/partials/<uuid>/save-route/):
   a second save writes no second route;
   409 at the routes cap.
 
-On the rendered pages:
-  the control is offered to a link-holder who has NOT joined — saving does
-    not join and joining does not save;
-  it renders in its saved state once the geometry is on the account;
-  an anonymous visitor gets a sign-in link, not a button that posts to 403;
-  the share page's control is TOKEN-addressed, so no uuid reaches a
-    link-holder's DOM.
+On the rendered pages, SNOW-848 inverted every assertion: the control is
+offered NOWHERE. A trip is saved whole now — "Save this trip … keeps it in
+your trips with the route and meeting point" — and a separate Save-route
+button beside that asked two questions where the design asks one. The
+endpoints stay and stay tested; only the surfaces changed. See
+``TestNoSaveRouteControlOnEitherSurface``.
 """
 
 from __future__ import annotations
@@ -183,11 +182,22 @@ class TestSaveRouteFromTheObjectPage:
 
 @freeze_time(_NOW)
 @pytest.mark.django_db
-class TestSaveControlOnThePage:
-    """The three states of the control, as rendered."""
+class TestNoSaveRouteControlOnEitherSurface:
+    """SNOW-848 took the control off the pages, and left the endpoints.
 
-    def test_offered_to_a_link_holder_who_has_not_joined(self, client: Client) -> None:
-        """Saving does not join and joining does not save."""
+    A trip is now saved WHOLE — "Save this trip … keeps it in your trips
+    with the route and meeting point" — and a second, separate Save-route
+    button beside it made the page ask two questions where the design asks
+    one. The endpoints above are untouched and still tested: what changed
+    is that no rendered surface posts to them.
+
+    These are the tests that used to assert the three rendered states.
+    They are kept, inverted, so a control reappearing on a trip page is a
+    failure rather than a silent regression of the simplification.
+    """
+
+    def test_not_offered_to_a_link_holder(self, client: Client) -> None:
+        """The share page's one control is Save this trip."""
         trip = _shared_trip()
         client.force_login(UserFactory.create())
 
@@ -195,9 +205,19 @@ class TestSaveControlOnThePage:
             reverse("trips:share_page", args=[trip.share_token])
         ).content.decode()
 
-        assert 'data-testid="trip-save-route-form"' in html
+        assert 'data-testid="trip-save-route-form"' not in html
+        assert 'data-testid="trip-save-form"' in html
 
-    def test_the_share_pages_control_is_token_addressed(self, client: Client) -> None:
+    def test_not_offered_on_the_trips_own_page(self, client: Client) -> None:
+        """Nor to somebody who has already saved the trip."""
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'data-testid="trip-save-route"' not in html
+
+    def test_the_share_page_is_token_addressed_throughout(self, client: Client) -> None:
         """A link-holder must never be handed the trip's uuid."""
         trip = _shared_trip()
         client.force_login(UserFactory.create())
@@ -209,34 +229,13 @@ class TestSaveControlOnThePage:
         assert trip.share_token in html
         assert str(trip.uuid) not in html
 
-    def test_renders_saved_once_the_route_is_on_the_account(
-        self, client: Client
-    ) -> None:
-        """The user asked for it and got it; a second press has nothing
-        left to do.
-        """
-        trip = _shared_trip()
-        viewer = UserFactory.create()
-        client.force_login(viewer)
-        client.post(
-            reverse("trips:save_route_shared", args=[trip.share_token]), **_HTMX
-        )
-
-        html = client.get(
-            reverse("trips:share_page", args=[trip.share_token])
-        ).content.decode()
-
-        assert 'data-testid="trip-route-saved"' in html
-        assert 'data-testid="trip-save-route-form"' not in html
-
-    def test_an_anonymous_visitor_gets_the_sign_in_link(self, client: Client) -> None:
-        """Never a button whose only outcome is a swallowed 403."""
+    def test_an_anonymous_visitor_gets_no_save_route_link(self, client: Client) -> None:
+        """The sign-in path they DO get belongs to Save this trip."""
         trip = _shared_trip()
 
         html = client.get(
             reverse("trips:share_page", args=[trip.share_token])
         ).content.decode()
 
-        assert 'data-testid="trip-save-route"' in html
-        assert 'data-testid="trip-save-route-form"' not in html
+        assert 'data-testid="trip-save-route"' not in html
         assert reverse("accounts:sign_in") in html

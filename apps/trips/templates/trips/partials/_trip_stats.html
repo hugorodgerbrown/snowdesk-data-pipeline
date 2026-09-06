@@ -1,0 +1,68 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_stats.html — Distance / Ascent / Descent, as a trio of
+labelled figures (SNOW-848).
+
+ONE PARTIAL, TWO SURFACES, and that is the reason it exists: the design
+draws the same three cells in the list card's body and again in the trip
+view's details footer, at the same label and value treatment. Two copies
+would drift on the first change to either.
+
+THE TRIO IS NOT ALWAYS THREE. ``ascent_m`` and ``descent_m`` are nullable —
+a GPX track with no elevation carries neither — and a cell with nothing in
+it is omitted rather than dashed. Asymmetry is honest: a missing figure is
+a fact about the track, not a hole in the layout.
+
+The label is includes/_meta_cell.html, the site's existing tiny-uppercase
+metadata label. The design specifies 10px for it; the site has no 10px
+token and deliberately has not since SNOW-253 bumped --text-meta from 9px
+to 11px so the WCAG AA 4.5:1 requirement applies at the text-3 colour.
+--text-caption (11px), which _meta_cell.html already carries, is the
+nearest honest value and the correct ROLE.
+
+THE UNIT IS CLOSED UP TO ITS VALUE AND THE THOUSANDS ARE NOT GROUPED —
+"1340m", not the "1,340 m" the design draws. That is this project's
+spelling of these three numbers wherever they appear (SNOW-830):
+``route-distance`` / ``route-ascent`` / ``route-descent`` in
+static/js/map_state.js spell them for the routes panel and the map popup,
+and the figures line in _trip_map.html spells them for the route card on
+this very page. A reader meeting the same measurement on four surfaces
+should not meet four spellings, and a card that said "2,192 m" here and
+"2192m ↓" two cards down would read as two measurements.
+
+Context:
+    trip : Trip — the trip whose route figures these are.
+{% endcomment %}
+<div class="flex gap-4.5" data-testid="trip-stats">
+    <div>
+        {% trans "Distance" as distance_label %}
+        {% include "includes/_meta_cell.html" with text=distance_label %}
+        <p class="text-sm font-medium" data-testid="trip-stat-distance">
+            {% blocktrans trimmed with km=trip.distance_km|floatformat:1 %}
+                {{ km }}km
+            {% endblocktrans %}
+        </p>
+    </div>
+    {% if trip.ascent_m is not None %}
+        <div>
+            {% trans "Ascent" as ascent_label %}
+            {% include "includes/_meta_cell.html" with text=ascent_label %}
+            <p class="text-sm font-medium" data-testid="trip-stat-ascent">
+                {% blocktrans trimmed with metres=trip.ascent_m|floatformat:0 %}
+                    {{ metres }}m
+                {% endblocktrans %}
+            </p>
+        </div>
+    {% endif %}
+    {% if trip.descent_m is not None %}
+        <div>
+            {% trans "Descent" as descent_label %}
+            {% include "includes/_meta_cell.html" with text=descent_label %}
+            <p class="text-sm font-medium" data-testid="trip-stat-descent">
+                {% blocktrans trimmed with metres=trip.descent_m|floatformat:0 %}
+                    {{ metres }}m
+                {% endblocktrans %}
+            </p>
+        </div>
+    {% endif %}
+</div>

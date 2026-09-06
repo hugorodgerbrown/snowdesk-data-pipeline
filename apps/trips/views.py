@@ -23,8 +23,11 @@ plus three HTMX fragments under the ``partials/`` prefix, every one
   success, and re-renders the form with its errors when the submission is
   invalid.
 - ``trip_delete`` (POST) — deletes the trip and answers ``HX-Redirect``.
-- ``trip_join`` / ``trip_leave`` (POST, SNOW-822) — the roster's two verbs;
-  both answer the roster fragment.
+- ``trip_join`` / ``trip_leave`` (POST, SNOW-822; relabelled Save / Remove
+  by SNOW-848) — the two verbs a shared trip has. Join answers the save
+  card in its saved state; Leave answers ``HX-Redirect`` to the agenda,
+  because the page it is pressed on is participation-scoped and stops
+  being readable the moment the row is gone.
 - ``trip_route_save`` (POST, SNOW-824) — copies the trip's SNAPSHOT into the
   viewer's own routes, and answers the saved-state control.
 
@@ -74,7 +77,6 @@ from uuid import UUID
 
 import waffle
 from django.conf import settings
-from django.db.models import Count
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -96,11 +98,10 @@ from apps.trips.forms import TripForm
 from apps.trips.models import Trip
 from apps.trips.services.participants import (
     OrganiserCannotLeave,
+    display_label_for,
     is_participant,
     join_trip,
     leave_trip_by_uuid,
-    roster_for,
-    roster_names_visible_to,
 )
 from apps.trips.services.routes import already_saved, save_trip_route
 from apps.trips.services.shares import (
@@ -537,21 +538,32 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
     return {
         "trip": trip,
         "is_organiser": is_organiser,
-        # SNOW-822. The roster, and the disclosure rule's answer for this
-        # viewer, resolved once here and read by both surfaces — a count
-        # and a names list computed separately would eventually disagree
-        # about which of them the rule applies to.
-        "roster": roster_for(trip),
-        "roster_names_visible": roster_names_visible_to(viewer, trip),
-        "is_participant": is_participant(viewer, trip),
-        "leave_url": reverse("trips:leave", args=[trip.uuid]),
-        # SNOW-824. Available to ANYONE who can see the trip, participant
-        # or not: saving does not join and joining does not save.
-        "route_already_saved": already_saved(viewer, trip),
-        # Uuid-addressed on the object page. ``trip_share_page`` overrides
-        # this with the token-addressed twin, because a link-holder who has
-        # not joined must never be handed the uuid.
-        "save_route_url": reverse("trips:save_route", args=[trip.uuid]),
+        # SNOW-848. How the organiser is NAMED, for the "Marta's trip"
+        # eyebrow and the "Notes from Marta" label. This is the ONE piece
+        # of social information a trip surface still carries: it answers
+        # "who sent me this", which the message carrying the link already
+        # answered, and withholding it would make the page more anonymous
+        # than the group chat it arrived in. Everything else the roster
+        # published — the count, the names, the going state — is gone.
+        #
+        # ``display_label_for`` never returns a full email address; see
+        # its docstring for why the local part is the right granularity
+        # for a link that travels.
+        "organiser_label": display_label_for(trip.created_by),
+        # SNOW-848. Whether the viewer already holds this trip, which is
+        # the save card's whole state machine. Underneath it is still
+        # participation — ``TripParticipant`` records every save, and that
+        # is how ``Trip.objects.for_user`` knows whose agenda a trip
+        # belongs on. The word changed; the row did not.
+        "trip_is_saved": is_participant(viewer, trip),
+        # The two verbs, left unset by the shared builder because they are
+        # exactly what the two surfaces DISAGREE about: the object page is
+        # uuid-addressed and the share page token-addressed, and a
+        # link-holder who has not saved the trip must never be handed a
+        # uuid. Each page view sets its own.
+        "save_url": None,
+        "remove_url": None,
+        "trip_url": None,
         # SNOW-828. "View on the map" — the way OUT of this page's 320px
         # canvas into the real one, with the layers, the danger overlay and
         # the scrubber a document page cannot carry. Uuid-addressed here
@@ -759,12 +771,65 @@ def trip_detail(request: HttpRequest, uuid: UUID) -> HttpResponse:
     except Trip.DoesNotExist as exc:
         raise Http404("No such trip.") from exc
 
-    return render(request, "trips/trip.html", _trip_context(trip, request))
+    context = _trip_context(trip, request)
+    # SNOW-848. Remove is uuid-addressed and lives HERE, on the surface
+    # that also carries the plan being removed — and never for the
+    # organiser, who cannot leave their own trip (``leave_trip`` raises)
+    # and whose exit is the Delete disclosure below the page.
+    #
+    # Save is not offered on this page at all: reaching it means the trip
+    # is already on the reader's agenda, which is what
+    # ``Trip.objects.for_user`` filtered on above.
+    if not context["is_organiser"]:
+        context["remove_url"] = reverse("trips:leave", args=[trip.uuid])
+    return render(request, "trips/trip.html", context)
 
 
 # ---------------------------------------------------------------------------
 # HTMX fragments
 # ---------------------------------------------------------------------------
+
+
+def _fill_meeting_address(request: HttpRequest, trip: Trip) -> None:
+    """Convert the trip's meeting point to a three word address, now.
+
+    **AT THE WRITE, NOT AT THE READ**, and the reason is the trips list.
+    That page prints a card per upcoming trip with ``Meet at ///…`` in its
+    footer, and it reads the CACHE only — see ``_attach_meeting_addresses``
+    for why a page that converted per card would take a 5-second timeout
+    once per uncached trip while the reader waited. Converting here is
+    what makes the cached case the normal one: a trip is created, the
+    address is spent once, and the list has it from the first render.
+
+    **The 30-day licence ceiling is not a problem for this shape.** Most
+    of a trip's life happens within thirty days of it being created — it
+    is planned, shared, saved and skied — so a cache filled at creation is
+    warm for as long as anybody is looking at it. A trip planned further
+    out than that falls back to the coordinate pair on the list until
+    somebody opens it, which is the pre-existing behaviour and not a
+    regression.
+
+    Called after ``update_trip`` too: moving the pin CLEARS the cache (the
+    address describes the square the pin used to stand on), so an edited
+    trip would drop back to coordinates on the list for no reason.
+
+    OUTSIDE the service's transaction, deliberately. ``create_trip`` and
+    ``update_trip`` write inside ``transaction.atomic()``, and an outbound
+    HTTP call in there would hold a database transaction open for the
+    length of a third party's response. Nothing here raises — see
+    ``fill_what3words`` — so a what3words outage costs the write nothing.
+
+    Args:
+        request: The current request, read for the ``what3words`` flag.
+        trip: The trip whose meeting point to resolve. Not re-saved here;
+            ``fill_what3words`` writes the two cache columns itself.
+
+    """
+    # Flag off means no call, no query and no behaviour change — the same
+    # gate ``_trip_context`` applies, resolved in the view rather than the
+    # template because it decides whether an outbound call happens.
+    if waffle.flag_is_active(request, "what3words"):
+        fill_what3words(trip.meeting_point)
 
 
 @require_htmx
@@ -853,6 +918,10 @@ def trip_create(request: HttpRequest) -> HttpResponse:
         logger.info("Trip create blocked: user=%s hit the cap", request.user.pk)
         return render(request, "trips/partials/_trip_limit.html", {}, status=409)
 
+    # Before the redirect, so the list this response sends the organiser
+    # to already has the address to print on the card it is about to mark.
+    _fill_meeting_address(request, trip)
+
     response = HttpResponse("")
     # To the LIST, carrying the new trip's uuid — not to the trip's own
     # page. Creating one trip is rarely creating only one, and the list is
@@ -875,7 +944,7 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
 
     Answers ``HX-Redirect`` back to the trip's own page on success. A
     redirect rather than a swapped-in summary because a trip page draws a
-    map, an elevation profile and a roster off one context — repainting
+    map, an elevation profile and a save card off one context — repainting
     part of that from a fragment would leave the rest describing the old
     plan.
 
@@ -927,7 +996,7 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
         )
 
     try:
-        update_trip(
+        trip = update_trip(
             request.user,
             uuid,
             date=form.cleaned_data["date"],
@@ -939,6 +1008,12 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
         )
     except Trip.DoesNotExist:
         return HttpResponse("Trip not found.", status=404)
+
+    # Moving the pin CLEARS the cached address — it named the square the
+    # pin used to stand on — so an edited trip would drop back to a
+    # coordinate pair on the list for no reason. A no-op when the pin did
+    # not move: ``fill_what3words`` returns the fresh cache untouched.
+    _fill_meeting_address(request, trip)
 
     response = HttpResponse("")
     response["HX-Redirect"] = reverse("trips:detail", args=[uuid])
@@ -1148,26 +1223,27 @@ def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
 
     context = _trip_context(trip, request)
     context["share_token"] = token
-    # The join endpoint is addressed by TOKEN, never by uuid: a
-    # link-holder who is not on the roster must not be handed the
+    # "Save this trip" is addressed by TOKEN, never by uuid: somebody who
+    # holds the link but has not saved the trip must not be handed the
     # identifier the participant-scoped endpoints key on. The routes app's
     # own pending rows follow the same rule.
-    context["join_url"] = reverse("trips:join", args=[token])
-    # Save is token-addressed on this surface for the same reason Join is:
-    # a link-holder must never be handed the uuid.
-    context["save_route_url"] = reverse("trips:save_route_shared", args=[token])
+    context["save_url"] = reverse("trips:join", args=[token])
     # SNOW-828. Token-addressed for the same reason, and answered by the
     # tokenised geojson endpoint rather than the participant-scoped one.
     context["map_url"] = _map_deep_link("trip_share", token)
-    # And Leave is NOT offered here. It is uuid-addressed and lives on the
-    # trip's own page, which every participant can reach — one exit, on the
-    # surface that also carries the plan being left.
-    context["leave_url"] = ""
+    # Remove is NOT offered here, and ``trip_url`` is what stands in its
+    # place: it is uuid-addressed and lives on the trip's own page, which
+    # every saver can reach — one exit, on the surface that also carries
+    # the plan being removed. A reader who has not saved the trip gets
+    # neither, and is handed no uuid.
+    if context["trip_is_saved"]:
+        context["trip_url"] = reverse("trips:detail", args=[trip.uuid])
     response = render(request, "trips/trip_share.html", context)
     # Per-recipient in the sense that matters: the page varies with who is
-    # signed in (SNOW-822 shows the roster's names to participants only), so
-    # it must never be held by an intermediate cache and handed to somebody
-    # else. Matches ``routes:share_redirect``'s own header.
+    # signed in — the save card shows a sign-in link, a Save button or the
+    # saved line depending on the reader — so it must never be held by an
+    # intermediate cache and handed to somebody else. Matches
+    # ``routes:share_redirect``'s own header.
     response["Cache-Control"] = "no-store"
     return response
 
@@ -1294,39 +1370,35 @@ def trip_share_route_geojson(request: HttpRequest, token: str) -> JsonResponse:
 # ---------------------------------------------------------------------------
 
 
-def _roster_fragment(
-    request: HttpRequest, trip: Trip, *, join_url: str = "", leave_url: str = ""
-) -> HttpResponse:
-    """Render the roster partial for one trip, for this viewer.
+def _saved_fragment(request: HttpRequest, trip: Trip) -> HttpResponse:
+    """Render the save card in its SAVED state.
 
-    The response of BOTH join and leave, so the count, the names and the
-    control are repainted from one read after either write — a fragment
-    that returned only the control would leave the count beside it stating
-    the state before the press.
+    The answer to a successful save, and the only state this helper
+    renders: the endpoint that calls it has just written the row, so the
+    card can say so without asking the database again.
+
+    ``remove_url`` is deliberately not passed. This fragment is the share
+    page's answer, and Remove is uuid-addressed — see ``trip_share_page``
+    for why a link-holder is never handed one. ``trip_url`` is, so the
+    saver's next step is the page where removing lives.
 
     Args:
         request: The current request, read for the viewer's identity.
-        trip: The trip whose roster to render.
-        join_url: The token-addressed join endpoint, when the surface
-            offers one.
-        leave_url: The uuid-addressed leave endpoint, likewise.
+        trip: The trip that was just saved.
 
     Returns:
-        The rendered roster fragment.
+        The rendered save-card fragment.
 
     """
-    viewer = request.user
     return render(
         request,
-        "trips/partials/_trip_roster.html",
+        "trips/partials/_trip_save.html",
         {
             "trip": trip,
-            "roster": roster_for(trip),
-            "roster_names_visible": roster_names_visible_to(viewer, trip),
-            "is_participant": is_participant(viewer, trip),
-            "is_organiser": viewer.is_authenticated and trip.created_by_id == viewer.pk,
-            "join_url": join_url,
-            "leave_url": leave_url,
+            "trip_is_saved": True,
+            "save_url": None,
+            "remove_url": None,
+            "trip_url": reverse("trips:detail", args=[trip.uuid]),
         },
     )
 
@@ -1347,8 +1419,9 @@ def trip_join(request: HttpRequest, token: str) -> HttpResponse:
     and answers 200 twice, rather than surfacing the ``(trip, user)``
     uniqueness constraint on a request path.
 
-    Answers the roster fragment, so the count, the names — which the
-    caller has just earned — and the control all repaint from one read.
+    Answers the save card in its saved state, so the control that was
+    just pressed repaints as the confirmation and a link on to the trip's
+    own page.
 
     Errors:
         400 — non-HTMX request.
@@ -1363,7 +1436,7 @@ def trip_join(request: HttpRequest, token: str) -> HttpResponse:
         token: The share token, from the URL.
 
     Returns:
-        The rendered roster fragment, or an error response.
+        The rendered save card, or an error response.
 
     """
     if not request.user.is_authenticated:
@@ -1382,7 +1455,7 @@ def trip_join(request: HttpRequest, token: str) -> HttpResponse:
 
     join_trip(request.user, trip)
 
-    return _roster_fragment(request, trip, join_url=reverse("trips:join", args=[token]))
+    return _saved_fragment(request, trip)
 
 
 @require_htmx
@@ -1413,7 +1486,7 @@ def trip_leave(request: HttpRequest, uuid: UUID) -> HttpResponse:
         uuid: The Trip's uuid, from the URL.
 
     Returns:
-        The rendered roster fragment, or an error response.
+        An empty 200 carrying ``HX-Redirect``, or an error response.
 
     """
     if not request.user.is_authenticated:
@@ -1430,12 +1503,16 @@ def trip_leave(request: HttpRequest, uuid: UUID) -> HttpResponse:
             status=409,
         )
 
-    # Re-read rather than reuse the instance ``leave_trip_by_uuid`` loaded:
-    # the caller is no longer on the roster, so a stale read would render
-    # the state before the press. This is one query, on a path that has
-    # just written.
-    trip = Trip.objects.get(uuid=uuid)
-    return _roster_fragment(request, trip)
+    # SNOW-848: HX-Redirect to the agenda rather than a fragment. This
+    # endpoint is only reachable from the trip's OWN page, which is
+    # participation-scoped — so the moment the row is gone the caller is
+    # standing on a page they can no longer reload, and swapping a control
+    # into it would leave them there. Sending them where the trip used to
+    # be is the honest end of "Remove from my trips", and it is the shape
+    # ``trip_delete`` beside it already uses.
+    response = HttpResponse(status=200)
+    response["HX-Redirect"] = reverse("trips:list")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -1638,6 +1715,51 @@ def _created_trip(request: HttpRequest, trips: list[Trip]) -> Trip | None:
     return next((trip for trip in trips if trip.uuid == created), None)
 
 
+def _attach_meeting_addresses(request: HttpRequest, trips: list[Trip]) -> None:
+    """Hang each trip's three word address on the instance, for the list.
+
+    **THE CACHE ONLY, NEVER A CONVERSION**, and that is the whole reason
+    this is not ``fill_what3words``. ``convert-to-3wa`` left what3words'
+    free plan in November 2024, so every conversion is billed against a
+    1,000-a-month allowance; a list page that converted per card would
+    spend an agenda's worth of that allowance on one render, and spend it
+    again for every reader of every agenda. ``Location.three_word_address``
+    is a plain property read — it returns the cached words, or None once
+    the licence's 30-day ceiling has passed.
+
+    A trip whose address is not cached shows its COORDINATE PAIR, exactly
+    as the trip's own page does when a conversion fails. There is never a
+    blank where the meeting point was. Opening the trip is what spends a
+    conversion, and the write it makes fills this cache for the list too.
+
+    Attributes on the instances rather than a parallel list: the card
+    partial reads ``trip.meeting_point_w3w`` beside ``trip.date``, and a
+    second structure keyed by uuid would put half a card's data one
+    lookup away from the other half.
+
+    Args:
+        request: The current request, read for the ``what3words`` flag.
+        trips: The trips to annotate, mutated in place.
+
+    """
+    # Read ONCE for the whole page, not per trip: a percentage-scoped flag
+    # is not obliged to answer the same way twice, and a page that showed
+    # some cards an address and others a coordinate would look broken
+    # rather than gated. Flag off means no address on any card.
+    active = waffle.flag_is_active(request, "what3words")
+    for trip in trips:
+        words = trip.meeting_point.three_word_address if active else None
+        # Hung on the instance for the card partial to read, the idiom
+        # ``apps.favourites.views`` uses for a region pin's day rating and
+        # for the same reason: the value is per-row, computed once here,
+        # and a parallel structure keyed by uuid would put half a card's
+        # data one lookup away from the other half.
+        trip.meeting_point_w3w = words  # type: ignore[attr-defined]
+        trip.meeting_point_w3w_url = _what3words_map_url(  # type: ignore[attr-defined]
+            words
+        )
+
+
 def trip_list(request: HttpRequest) -> HttpResponse:
     """Render the reader's own trips, split upcoming and past.
 
@@ -1677,16 +1799,15 @@ def trip_list(request: HttpRequest) -> HttpResponse:
     # "today" — and the only clock either half of the split may use, or a
     # trip could fall into both or neither.
     today = timezone.localdate()
-    # ``participant_count`` is annotated rather than read as
-    # ``trip.participants.count`` in the row partial: the template renders
-    # one row per trip, so the property form is one COUNT query per row and
-    # the page's query count grows with the reader's own agenda. One
-    # aggregate over the join answers every row.
-    trips = Trip.objects.for_user(request.user).annotate(
-        participant_count=Count("participants")
-    )
+    # ``select_related`` on the meeting point: every upcoming card prints
+    # its three word address, so the FK would otherwise be one query per
+    # card and the page's query count would grow with the reader's own
+    # agenda. (SNOW-848 removed the ``participant_count`` annotation this
+    # replaced — no card states a count any more.)
+    trips = Trip.objects.for_user(request.user).select_related("meeting_point")
     upcoming = list(trips.upcoming(today))
     past = list(trips.past(today))
+    _attach_meeting_addresses(request, upcoming)
 
     return render(
         request,

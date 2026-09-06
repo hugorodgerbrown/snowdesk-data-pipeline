@@ -81,15 +81,21 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  (FK to auth.User), surfaced in the map's routes panel
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
                  owns, on a named day, at a stated time and meeting point)
-                 and ``TripParticipant`` (every account on it, organiser
-                 included). ``/trips/`` is the one saved-thing LIST page
-                 that survived SNOW-803, because a trip is indexed by WHEN
-                 and the map indexes by where. The geometry is a SNAPSHOT copied at creation
-                 and never re-read, so a trip survives the source route
-                 being renamed or deleted. The first Snowdesk object that
-                 is interactive and multi-user; read
-                 docs/decisions/a-trip-is-one-object-with-a-roster.md
-                 before changing the roster's shape
+                 and ``TripParticipant`` (every account that has SAVED it,
+                 organiser included). ``/trips/`` is the one saved-thing
+                 LIST page that survived SNOW-803, because a trip is
+                 indexed by WHEN and the map indexes by where. The geometry
+                 is a SNAPSHOT copied at creation and never re-read, so a
+                 trip survives the source route being renamed or deleted.
+                 SNOW-848 took the SOCIAL surface off it: no roster, no
+                 count, no going state — someone plans a trip, sends the
+                 link, and whoever opens it saves it, seeing neither who
+                 else holds it nor how many do. The rows stay
+                 (``for_user`` filters on them) and the organiser is still
+                 named; read
+                 docs/decisions/a-trip-is-one-object-with-a-roster.md,
+                 whose disclosure-rule bullet SNOW-848 supersedes, before
+                 putting anything about the other savers back on a page
   downloads/     Offline basemap areas synced to an account (SNOW-749) — the
                  ``DownloadArea`` model (FK to auth.User) and its sync API.
                  The DEFINITION of an area only: the tiles stay in each

@@ -192,3 +192,43 @@ def leave_trip_by_uuid(user: "User", uuid: UUID) -> None:
     """
     trip = Trip.objects.for_user(user).get(uuid=uuid)
     leave_trip(user, trip)
+
+
+def display_label_for(user: "User") -> str:
+    """Return how one account is NAMED on a trip surface.
+
+    Their ``Account.display_name`` when they set one, and otherwise the
+    LOCAL PART of their email address — never the whole address.
+
+    The full address is what an account signs in with and what a stranger
+    would need to attempt one. A trip's share link travels, so its page is
+    read by people the organiser never chose; the local part identifies
+    somebody to people who already know them, which is exactly the
+    audience, and is not a deliverable address.
+
+    TWO CALLERS, which is why it is here rather than on one of them:
+    ``TripParticipant.display_label`` delegates to it, and SNOW-848's
+    organiser attribution — the "Marta's trip" eyebrow and the "Notes from
+    Marta" label — needs the same answer for ``trip.created_by``, who is
+    reached without a roster row.
+
+    Args:
+        user: The account to name.
+
+    Returns:
+        A short label for this person.
+
+    """
+    # Imported here rather than at module scope: ``apps.accounts`` reaches
+    # into ``apps.trips`` for account erasure, and a top-level import back
+    # the other way would close that loop. The same idiom
+    # ``apps.core.models.RequestLogManager.from_request`` uses.
+    from apps.accounts.models import Account  # noqa: PLC0415
+
+    email: str = user.email or ""
+    try:
+        name: str = user.account.display_name
+    except Account.DoesNotExist:
+        # A plain staff superuser has no Account profile.
+        name = ""
+    return name or email.split("@")[0] or "Somebody"
