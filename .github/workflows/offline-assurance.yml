@@ -1,0 +1,137 @@
+# .github/workflows/offline-assurance.yml — weekly offline-maps assurance.
+#
+# Runs `tox -e offline` (tests/offline/) on a Monday-morning cron. This is
+# NOT a merge gate and is deliberately not a required check:
+#
+#   * It downloads several hundred real basemap tiles from a live origin on
+#     every run, so putting it on the PR path would multiply that by every
+#     push and make someone else's server pay for our CI.
+#   * Its subject is fuzzed from the ISO week, so two runs of the same commit
+#     in different weeks legitimately test different ground. A required check
+#     has to be reproducible from the commit alone; this one is reproducible
+#     from the commit AND the seed, which is a different contract.
+#   * A red run here means the offline map is broken, which is worth waking
+#     someone for — but wedging every merge behind a suite that talks to a
+#     third-party tile origin trades one broken thing for a broken pipeline.
+#
+# So: it fails loudly, it uploads everything needed to reproduce, and it
+# blocks nothing. The failure notification and the artefacts are the product.
+#
+# The seed is printed in the job output and echoed into the summary. To
+# reproduce a red run exactly, locally or via workflow_dispatch:
+#
+#     SNOWDESK_OFFLINE_SEED=2026-W37 uv run tox -e offline
+
+name: Offline maps (weekly)
+
+on:
+  schedule:
+    # Mondays 05:00 UTC — ahead of the 06:00 security-audit cron so the two
+    # do not contend for runners, and early enough that a red run is waiting
+    # at the start of the week rather than discovered at the end of it.
+    - cron: "0 5 * * 1"
+
+  # Manual runs, with an optional seed. This is how a red weekly run is
+  # reproduced without waiting a week, and how a fix is confirmed.
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Seed to reproduce (e.g. 2026-W37). Blank = this ISO week."
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: Offline maps assurance
+    runs-on: ubuntu-latest
+    # Generous: a fuzzed draw can pick a 220-tile region, and every tile is
+    # a real request to a live origin. Well under the 6h default, so a hung
+    # run still frees the runner in reasonable time.
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python (3.14)
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Create .env
+        run: |
+          echo "SECRET_KEY=ci-offline-secret-key" > .env
+          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+
+      # Same reason as e2e.yml: the suite drives real pages, and
+      # static/css/output.css is a gitignored build artefact. The tox env
+      # builds it in commands_pre; Node is here so `npx @tailwindcss/cli`
+      # resolves the pinned CLI from node_modules rather than downloading it.
+      - name: Set up Node (22)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('uv.lock') }}
+
+      - name: Cache uv downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/uv
+          key: uv-offline-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-offline-
+
+      - name: Run the offline assurance suite
+        id: run
+        env:
+          SNOWDESK_OFFLINE_SEED: ${{ inputs.seed }}
+        run: |
+          pip install tox tox-uv
+          tox -e offline
+
+      # Runs whether the suite passed or failed: on a red run these are how
+      # it gets diagnosed without a local repro, and on a green one the seed
+      # is the record of what was actually covered that week.
+      - name: Record the seed in the run summary
+        if: always()
+        env:
+          SNOWDESK_OFFLINE_SEED: ${{ inputs.seed }}
+        run: |
+          seed="${SNOWDESK_OFFLINE_SEED:-$(date -u +%G-W%V)}"
+          {
+            echo "## Offline maps assurance"
+            echo
+            echo "Seed: \`${seed}\`"
+            echo
+            echo "Reproduce this exact run:"
+            echo
+            echo '```bash'
+            echo "SNOWDESK_OFFLINE_SEED=${seed} uv run tox -e offline"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload failure artefacts
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: offline-assurance-artefacts
+          path: |
+            test-results/
+            logs/
+          if-no-files-found: ignore
+          retention-days: 30

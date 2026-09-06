@@ -81,6 +81,18 @@ lint = [
 sast = [
     "semgrep>=1.171.0,<2",
 ]
+offline = [
+    # The weekly offline-maps assurance suite (tests/offline/, tox -e offline).
+    # Shares Playwright with the e2e group but is its own group so the two can
+    # move independently: this suite runs weekly and off the merge path, so a
+    # Playwright bump can be tried here before it gates every PR.
+    {include-group = "e2e"},
+    # tests/offline/conftest.py measures how much of the map canvas actually
+    # drew, by sampling a screenshot. Pillow is already in the `test` group for
+    # the PWA icon assertions; declared again here because this group does not
+    # include that one.
+    "pillow>=12,<13",
+]
 e2e = [
     # Upper-bounded below 1.62: that release (bundling a newer Chromium
     # build) broke test_offline_reload_preserves_sync_clock's offline-banner
@@ -109,6 +121,7 @@ dev = [
     {include-group = "lint"},
     {include-group = "sast"},
     {include-group = "e2e"},
+    {include-group = "offline"},
 ]
 
 [tool.uv]
@@ -160,7 +173,7 @@ testpaths = ["tests"]
 # ``loadgroup`` preserves xdist's per-test balancing for unmarked tests while
 # keeping the few tests that share an expensive class-scoped corpus fixture on
 # one worker. See the ``xdist_group`` markers in the golden-week test modules.
-addopts = "-n auto --dist=loadgroup --cov=apps.core --cov=apps.bulletins --cov=apps.regions --cov=apps.public --cov=apps.accounts --cov=apps.analytics --cov=apps.mcp_server --cov=apps.observations --cov=apps.favourites --cov=apps.weather --ignore=tests/e2e"
+addopts = "-n auto --dist=loadgroup --cov=apps.core --cov=apps.bulletins --cov=apps.regions --cov=apps.public --cov=apps.accounts --cov=apps.analytics --cov=apps.mcp_server --cov=apps.observations --cov=apps.favourites --cov=apps.weather --ignore=tests/e2e --ignore=tests/offline"
 # pytest-django defaults to DEBUG=False at test time, which silently
 # drops URL-conf entries gated on ``if settings.DEBUG:`` (the dev-only
 # SLF mirror in config/urls.py, the scrubber-perf debug page in

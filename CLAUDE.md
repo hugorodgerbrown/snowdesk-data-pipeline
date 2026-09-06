@@ -468,6 +468,7 @@ uv run tox -e docs-lint       # docs frontmatter + CLAUDE.md routing linter (see
 uv run tox -e fidelity-lint   # every CAAML sentinel path is rendered or reasoned away
 uv run tox -e migrations-lint # duplicate migration numbers / multi-leaf migration graph
 uv run tox -e e2e-lint        # Playwright guard: suite-size backstop, ≤40 lines each, scenario-mapped
+uv run tox -e offline         # weekly offline-maps assurance (tests/offline/) — real tiles, not a merge gate
 uv run tox -e audit           # pip-audit on the RUNTIME locked set (--no-dev); a required check
 uv run tox -e audit-dev       # pip-audit on the dev groups + npm audit; detection only, never gates
 uv run tox -e sast            # semgrep (Django + Python + security-audit rulesets)
@@ -618,6 +619,7 @@ Read these when working in the relevant area:
 | Account-area navigation (no sub-nav; menu is the navigation) | [`docs/decisions/account-area-navigation-lives-in-the-nav-menu.md`](docs/decisions/account-area-navigation-lives-in-the-nav-menu.md) |
 | Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Which test layer to use; the e2e cap; Playwright + Vitest harnesses | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
+| Weekly offline-maps assurance (tests/offline/, `tox -e offline`, the recording proxy, the fuzz seed) | [`docs/offline-assurance.md`](docs/offline-assurance.md) |
 | Manual testing scenarios | [`docs/testing-scenarios.md`](docs/testing-scenarios.md) |
 | Existing in-house packages to reuse | [`docs/useful-repos.md`](docs/useful-repos.md) |
 | Path to live (staging/production branch split, releases) | [`docs/deployment.md`](docs/deployment.md) |
