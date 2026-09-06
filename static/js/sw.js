@@ -428,6 +428,13 @@ const NETWORK_MODE_KEY = 'network.mode';
 // user's standing choice by itself.
 let _networkModeHydration = null;
 let _networkModePushed = false;
+// SNOW-852: has ``_hydrateNetworkMode`` finished? The fetch handler needs a
+// SYNCHRONOUS answer to "is it safe to pass this request through untouched",
+// because ``event.respondWith`` cannot be called after an await. Before
+// hydration settles the worker's ``_networkMode`` is a default, not a fact,
+// so this flag is what separates "we know it is auto" from "we have not
+// looked yet" — and only the first is safe to pass through.
+let _networkModeHydrated = false;
 
 // Consecutive read-path timeouts seen while in ``'auto'``. Reset to 0 by any
 // successful read-path response, and by an unlatch.
@@ -2337,6 +2344,34 @@ async function _shouldUseNetwork() {
 }
 
 /**
+ * SNOW-852: may this request be passed through to the browser untouched?
+ *
+ * The synchronous counterpart to ``_shouldUseNetwork``, and it exists for one
+ * structural reason: ``event.respondWith`` must be called synchronously, so
+ * the fetch handler cannot await the mode before deciding whether to
+ * intercept. This answers the only question it can answer without awaiting —
+ * "do we already KNOW the worker is in 'auto'?" — and answers ``false``
+ * whenever it does not know, which sends the request down the awaiting path
+ * rather than out of the device.
+ *
+ * Deliberately conservative in one direction only. A ``true`` here means the
+ * hydration read has landed AND it left the worker in ``'auto'``: no offline
+ * mode is in force, so passing through is exactly what the app should do and
+ * costs nothing. Everything else — a forced or latched mode, or a worker that
+ * has not read its persisted mode yet — returns ``false`` and pays one await.
+ *
+ * ``navigator.onLine`` is deliberately NOT consulted. A passthrough with the
+ * interface down fails natively and the browser reports it, which is what
+ * happened before this ticket and is not the defect being fixed; narrowing
+ * the condition to the mode keeps the change to the thing that was wrong.
+ *
+ * @returns {boolean}
+ */
+function _mayPassThrough() {
+  return _networkModeHydrated && _networkMode === 'auto';
+}
+
+/**
  * SNOW-490: the synthesized offline-miss response, stamped so
  * ``pwa_offline.js`` cannot mistake it for a successful sync.
  *
@@ -2627,6 +2662,12 @@ function _hydrateNetworkMode() {
       // ``'auto'``. Read paths behave as they did before this ticket, and the
       // next page load re-asserts the persisted mode.
     } finally {
+      // SNOW-852: set on EVERY exit, including the catch above. A failed
+      // read leaves the worker in 'auto' by design (see the catch), and
+      // that is a settled answer — leaving this false would put the fetch
+      // handler on the intercepting path for the rest of the worker's life
+      // over a DB it could not open once.
+      _networkModeHydrated = true;
       if (db) {
         try {
           db.close();
@@ -3204,18 +3245,65 @@ self.addEventListener('fetch', (event) => {
   }
   if (sync === 'network') {
     // Network-only: a non-GET request (any origin) or a same-origin GET
-    // that is neither a static-shell asset nor a navigation. No
-    // event.respondWith() call means the request is never seen by the
-    // SW's caching layer — the browser handles it natively.
+    // that is neither a static-shell asset nor a navigation — every
+    // `/api/` feed, every HTMX fragment, every mutation POST.
     //
-    // SNOW-846: recorded anyway, because "the worker never saw this; it
-    // went straight to the network" IS the answer when an `/api/` feed
+    // SNOW-846: recorded either way, because "the worker never saw this;
+    // it went straight to the network" IS the answer when an `/api/` feed
     // comes up empty offline — and it was the single biggest hole in the
-    // trace, which said nothing at all about same-origin requests. The
-    // outcome is deliberately not reported: intercepting these to observe
-    // them would put the worker on the path of every API call, which is a
-    // real cost paid for a diagnostic, so the line stops at the decision.
-    _debugServe(request, 'network', 'passthrough', null, null);
+    // trace, which said nothing at all about same-origin requests.
+    //
+    // SNOW-852: which of the two branches below runs is the whole fix.
+    //
+    // This used to return unconditionally, with no `respondWith` at all,
+    // on the reasoning that intercepting to OBSERVE these would put the
+    // worker on the path of every API call for a diagnostic. That
+    // reasoning was right about the diagnostic and wrong about the
+    // consequence, because `_networkMode` never got a say: a user who
+    // switched on "Offline mode" had the read paths go quiet while every
+    // API GET, HTMX fragment and POST carried on to the server. They press
+    // that switch precisely when they have a connection and have decided
+    // not to spend it, so it was spending the one thing it promised not
+    // to.
+    //
+    // The cost the old comment was protecting is still protected. In
+    // 'auto' — the overwhelmingly common case, and the only one where
+    // passthrough is the right answer anyway — nothing changes: no
+    // respondWith, no worker on the path, the browser fetches it
+    // natively. The interception is paid for only when an offline mode is
+    // actually in force, or in the brief window before the worker has
+    // read its persisted mode, where paying it is the entire point.
+    if (_mayPassThrough()) {
+      // The outcome is deliberately not reported: the browser owns this
+      // request and what happens to it is not ours to claim.
+      _debugServe(request, 'network', 'passthrough', null, null);
+      return;
+    }
+    event.respondWith(
+      (async () => {
+        const startedAt = Date.now();
+        if (!(await _shouldUseNetwork())) {
+          // No cache lookup: this classification is exactly the set of
+          // requests the worker never caches, so there is nothing to
+          // miss. The synthesized 504 is the same one every read path
+          // answers with when there is no route — 5xx, so the mutation
+          // queue treats a blocked POST as retryable and leaves the row
+          // queued, which is the state it is built around.
+          const offline = _synthesizedGatewayTimeout();
+          _debugServe(request, 'network', 'timeout-504', offline, startedAt);
+          return offline;
+        }
+        // Hydration landed on 'auto' after all — the race case. Fetch it
+        // ourselves, since respondWith has already been called and the
+        // browser is no longer going to.
+        const network = await fetch(request).catch((err) => {
+          _debugServe(request, 'network', 'network-error', null, startedAt);
+          throw err;
+        });
+        _debugServe(request, 'network', 'network', network, startedAt);
+        return network;
+      })(),
+    );
     return;
   }
 
@@ -3635,6 +3723,26 @@ const _INLINE_MUTATION_QUEUE_CORE = {
 };
 
 async function _selfDrainMutations() {
+  // SNOW-852: not one row is replayed while an offline mode is in force.
+  //
+  // This needs its own guard and cannot inherit the fetch handler's,
+  // because a service worker's own ``fetch()`` does not fire its own
+  // ``fetch`` event — the requests below never pass the point where that
+  // fix applies. So this path had the same defect for the same reason and
+  // would have survived the fix that looked like it covered everything.
+  //
+  // It is also the harder half to notice: the page-side drain already
+  // refuses under a forced mode (``mutation_queue.js``'s
+  // ``_networkInUse``), and this runs only when Background Sync fires with
+  // no window open at all — a user who closed the tab, on a connection
+  // they had asked the app not to spend, with no surface left to show them
+  // it was being spent.
+  //
+  // Returning early leaves every row queued and eligible, which is the
+  // state the queue is built around; the next sync or the next page load
+  // drains them once the user is back online.
+  if (!(await _shouldUseNetwork())) return;
+
   // Fall back to a hand-rolled version of the shared helpers if
   // importScripts failed at startup — keeps this path self-contained
   // rather than a hard dependency on the earlier try/catch succeeding.

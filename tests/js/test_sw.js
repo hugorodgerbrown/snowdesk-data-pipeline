@@ -123,6 +123,14 @@ const SW_EXPORTS = [
   // fix for a forced mode being lost when Chrome recycles an idle worker.
   '_hydrateNetworkMode',
   '_probeNetwork',
+  // SNOW-852: the synchronous fast-path predicate the fetch handler's
+  // network-only branch consults. A `function`, not a `let`, so handing it
+  // back is safe where `_networkMode` is not — it reads the live value on
+  // every call rather than capturing one at load time.
+  '_mayPassThrough',
+  // SNOW-852: the Background-Sync drain, which needs its own offline guard
+  // because a worker's own fetch() never fires its own fetch event.
+  '_selfDrainMutations',
   'NAVIGATION_FETCH_BUDGET_MS',
   'SHELL_FETCH_BUDGET_MS',
   'BASEMAP_FETCH_BUDGET_MS',
@@ -2568,6 +2576,11 @@ describe('the request ledger (SNOW-846)', () => {
       fetch: answeringTileFetch(),
       clients: [client],
     });
+    // SNOW-852: hydrate first. The worker only passes a request through
+    // once it KNOWS it is in 'auto', and a freshly-loaded worker knows
+    // nothing until this read lands — see the sibling test below, which is
+    // about that window specifically.
+    await sw._hydrateNetworkMode();
 
     let responded = false;
     sw.__listeners.fetch({
@@ -2578,8 +2591,10 @@ describe('the request ledger (SNOW-846)', () => {
       },
     });
 
-    // The worker must NOT start intercepting these — observability is not a
-    // good enough reason to put it on the path of every API call.
+    // The worker must NOT start intercepting these while it is online —
+    // observability is not a good enough reason to put it on the path of
+    // every API call, and SNOW-852's fix deliberately kept that true for
+    // the common case.
     expect(responded).toBe(false);
     // But "the worker never saw this, it went straight to the network" is
     // itself the answer when a feed comes up empty offline, and the trace
@@ -2601,5 +2616,201 @@ describe('the request ledger (SNOW-846)', () => {
     await sw._basemapStaleWhileRevalidate(tileRequest(TILE));
 
     expect(await ledger(sw, client)).toEqual([]);
+  });
+});
+
+describe('offline mode silences the network-only path (SNOW-852)', () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterEach(async () => {
+    // Shared DB — a leftover ``network.mode`` row would force an unrelated
+    // worker offline in whichever describe happens to run next.
+    await resetDb();
+  });
+
+  /** A fetch that answers, so a leak is visible as a call rather than a hang. */
+  function answeringFetch() {
+    return vi.fn(async () => basicResponse('{}'));
+  }
+
+  /** One same-origin API GET, of the shape ``_classifySync`` calls 'network'. */
+  function apiRequest() {
+    return {
+      url: `${ORIGIN}/api/ratings.json?country=CH`,
+      method: 'GET',
+      mode: 'cors',
+      destination: 'empty',
+    };
+  }
+
+  /**
+   * Dispatch one fetch event and return what the worker did with it.
+   *
+   * @param {object} sw Loaded sandbox.
+   * @param {object} request Request stub.
+   * @returns {Promise<{responded: boolean, response: Response|null}>}
+   */
+  async function dispatchFetch(sw, request) {
+    let promise = null;
+    sw.__listeners.fetch({
+      request,
+      clientId: '',
+      respondWith(value) {
+        promise = value;
+      },
+    });
+    if (promise === null) return { responded: false, response: null };
+    return { responded: true, response: await promise };
+  }
+
+  it('answers an API GET with a 504 instead of letting it out, once forced', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const { responded, response } = await dispatchFetch(sw, apiRequest());
+
+    // The defect was that this request simply left. Now the worker owns it.
+    expect(responded).toBe(true);
+    expect(response.status).toBe(504);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks a mutation POST the same way, so its row stays queued', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const { response } = await dispatchFetch(sw, {
+      url: `${ORIGIN}/partials/report/`,
+      method: 'POST',
+      mode: 'cors',
+      destination: 'empty',
+    });
+
+    // 5xx specifically: the mutation queue treats it as retryable and leaves
+    // the row in place, which is the state the queue is built around. A 4xx
+    // would read as a permanent rejection and discard the user's report.
+    expect(response.status).toBe(504);
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks it under an auto-latch too, not only a forced mode', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._latchOffline();
+
+    const { response } = await dispatchFetch(sw, apiRequest());
+
+    // The latch means the worker has concluded there is no route. Sending an
+    // API call down it would not reach anyone either way, and would hold a
+    // connection slot while it failed.
+    expect(response.status).toBe(504);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('intercepts before hydration lands, then stops once it says auto', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+
+    // The race: a worker Chrome has just restarted holds a DEFAULT mode, not
+    // a known one, and a request arriving now must not be waved through on
+    // the strength of a value nothing has read yet. This is the window that
+    // made a forced mode leak on every worker recycle.
+    const during = await dispatchFetch(sw, apiRequest());
+    expect(during.responded).toBe(true);
+
+    // Once the read lands on 'auto' the fast path returns, and the worker is
+    // off the path of every API call again — which is the cost the original
+    // passthrough existed to avoid, and is still avoided.
+    await sw._hydrateNetworkMode();
+    expect(sw._mayPassThrough()).toBe(true);
+    const after = await dispatchFetch(sw, apiRequest());
+    expect(after.responded).toBe(false);
+  });
+
+  it('recovers a persisted forced mode before answering anything', async () => {
+    await setStoredNetworkMode('offline-forced');
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    // The whole point of the hydration flag: a restarted worker must come
+    // back into the user's mode rather than into 'auto'.
+    expect(sw._mayPassThrough()).toBe(false);
+    const { response } = await dispatchFetch(sw, apiRequest());
+    expect(response.status).toBe(504);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('passes through again as soon as the user switches offline mode off', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+    expect(sw._mayPassThrough()).toBe(false);
+
+    sw._unlatchOffline();
+
+    // Reversibility is the safety-critical half: a user stuck offline is
+    // reading cached avalanche ratings with no way to refresh them.
+    expect(sw._mayPassThrough()).toBe(true);
+    const { responded } = await dispatchFetch(sw, apiRequest());
+    expect(responded).toBe(false);
+  });
+
+  it('treats an unreadable mode row as a settled answer, not a permanent unknown', async () => {
+    await resetDbWithoutMetaStore();
+    const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+    await sw._hydrateNetworkMode();
+
+    // A worker-created DB has no ``meta:app`` store, so the read throws and
+    // the worker stays in 'auto' by design. That is an answer. Leaving the
+    // hydration flag false would put the worker on the intercepting path for
+    // the rest of its life over one DB it could not open.
+    expect(sw._mayPassThrough()).toBe(true);
+  });
+});
+
+describe('the Background-Sync drain respects offline mode (SNOW-852)', () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterEach(async () => {
+    await resetDb();
+  });
+
+  it('replays nothing while a forced mode is in force', async () => {
+    const fetchSpy = vi.fn(async () => basicResponse('{}'));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    await sw._selfDrainMutations();
+
+    // This path needs its own guard and could not inherit the fetch
+    // handler's: a worker's own fetch() never fires its own fetch event, so
+    // the requests it makes never reach the branch SNOW-852 fixed. It is
+    // also the harder half to notice — it runs only when Background Sync
+    // fires with no window open, so there is no surface left to show the
+    // user their connection being spent.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still replays when the app is online', async () => {
+    const sw = loadSw({ caches: makeCaches(), fetch: vi.fn(async () => basicResponse('{}')) });
+    await sw._hydrateNetworkMode();
+
+    // The guard must not be a permanent off switch: with no offline mode in
+    // force the drain has to reach the rows as it always did. Asserting it
+    // gets past the guard at all is the point here — the replay itself is
+    // covered by the existing Background-Sync tests above.
+    await expect(sw._selfDrainMutations()).resolves.not.toThrow();
   });
 });

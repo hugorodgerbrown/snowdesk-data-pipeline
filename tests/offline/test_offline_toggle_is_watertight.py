@@ -21,13 +21,16 @@ The measuring instrument is the proxy rather than
 worker's own fetches and ``page.route`` cannot see them either. A proxy
 sits below all of it.
 
-**This test is currently RED, and that is the finding, not a fault in the
-test.** SNOW-852: ``sw.js``'s fetch handler classifies same-origin API GETs
-and HTMX fragment requests as ``sync === 'network'`` and returns without
-calling ``respondWith``, so ``_networkMode`` never gets a say and those
-requests leave the device under ``offline-forced``. The assertion stays at
-zero — weakening it to match the current behaviour would delete the only
-thing standing behind every other test in this directory.
+This test was RED when it was written, and that was the finding rather
+than a fault in the test: SNOW-852, ``sw.js``'s fetch handler classified
+same-origin API GETs, HTMX fragments and mutation POSTs as
+``sync === 'network'`` and returned without calling ``respondWith``, so
+``_networkMode`` never got a say and those requests left the device under
+``offline-forced``. It is green as of that fix.
+
+The assertion is zero, and it was zero while it failed. Anyone tempted to
+relax it to match some future behaviour should note that doing so deletes
+the only thing standing behind every other test in this directory.
 
 Scenario: P8, D3
 """
