@@ -1,0 +1,44 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_notes.html — what the organiser wrote (SNOW-848).
+
+FIRST CARD ON THE PAGE, above the details, and that is deliberate: the
+notes are the most human part of a shared trip. The day and the distance
+are facts anyone could read off the route; "bring a harness — there is a
+short exposed step below the shoulder" is the reason the organiser sent
+the link to these particular people.
+
+OMITTED ENTIRELY when there is no note, never rendered as an empty block.
+A trip with nothing written on it is a trip with nothing written on it,
+and a labelled blank claims otherwise.
+
+The note is rendered through ordinary Django auto-escaping. Nothing here
+calls ``mark_safe``, and nothing should: it is user-supplied prose
+(invariant 1). ``linebreaksbr`` turns the newlines the textarea captured
+into markup, which is a transform of whitespace only and does not admit
+any tag the escape pass has already neutralised.
+
+Context:
+    trip            : Trip — read for ``description``.
+    organiser_label : str — how the organiser is named, from
+                      ``apps.trips.services.participants.display_label_for``.
+    is_organiser    : bool — whether the reader wrote it, which is the
+                      difference between "Notes from Marta" and "Your
+                      notes". Naming the reader back to themselves reads
+                      as a page that has not noticed who is looking at it.
+{% endcomment %}
+{% if trip.description %}
+    {% card padding="p-4.5" extra="mt-3" %}
+    {% if is_organiser %}
+        {% trans "Your notes" as notes_label %}
+    {% else %}
+        {% blocktrans trimmed with name=organiser_label asvar notes_label %}
+            Notes from {{ name }}
+        {% endblocktrans %}
+    {% endif %}
+    {% include "includes/_meta_cell.html" with text=notes_label %}
+    <p class="text-sm leading-prose text-text-2" data-testid="trip-description">
+        {{ trip.description|linebreaksbr }}
+    </p>
+    {% endcard %}
+{% endif %}

@@ -20,6 +20,14 @@ No share card: this page is one signed-in reader's own agenda, so a preview
 of it is meaningless to anyone who could see one, and it is behind auth so
 no unfurler will ever reach it.
 
+SNOW-848 REDREW EVERY ROW AS A CARD and took the social labelling off it.
+An upcoming trip now carries the whole answer — when, what, the organiser's
+note, the three figures and the meeting point — where the row it replaced
+gave a day, a name and a distance. The "You organised this" chip and the
+"N people going" line are gone: nobody sees who else holds a trip. A past
+trip stays a ROW, on the subtle surface, because it is a history rather
+than a plan. See _trip_card.html and _trip_past_row.html.
+
 Unpaginated by design. A person organises a handful of trips a season and
 the cap is 25 organised each; a page that long needs no pagination and no
 new index.
@@ -34,7 +42,7 @@ trip's own page says what one trip is.
 
 {% block page_meta %}
     {% trans "Your trips" as page_name %}
-    {% trans "Every trip you're on, upcoming and past — the day, the meeting time and who else is going." as page_description %}
+    {% trans "Every trip you've saved, upcoming and past — the day, the meeting time and how big the day is." as page_description %}
     {% include "includes/_page_meta.html" with title=page_name|add:" · Snowdesk" description=page_description sharing=False %}
 {% endblock page_meta %}
 
@@ -46,49 +54,74 @@ trip's own page says what one trip is.
         {# its URLs. The same __UUID__ trick the trip page uses.             #}
         data-trip-share-url="{{ share_url_template }}"
     >
-        {# The token every row's Share posts with. A bare hidden input and #}
-        {# not a form: nothing on this page submits, and trip_share.js      #}
-        {# reads the field by name exactly as it does on the trip page.     #}
-        {% csrf_token %}
-        {% trans "Your trips" as page_heading %}
-        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-6" data_testid="trips-heading" %}
+        {# The inner 640px column — the idiom every account page uses, and #}
+        {# the width the trip's own page reads at.                          #}
+        <div class="max-w-narrow mx-auto">
+            {# The token every card's Share posts with. A bare hidden input #}
+            {# and not a form: nothing on this page submits, and            #}
+            {# trip_share.js reads the field by name exactly as it does on  #}
+            {# the trip page.                                               #}
+            {% csrf_token %}
+            {% comment %}
+                The heading and the way IN, on one baseline. "New trip"
+                points at the map with its routes panel open rather than
+                at an authoring form, because that is where a trip
+                actually starts: trip_new needs a route
+                (``?route=<uuid>``) and the routes panel is the one
+                surface that lists the reader's own. A link here that led
+                to a form with no route would 404.
+            {% endcomment %}
+            <div class="mb-5 flex items-baseline justify-between gap-3">
+                {% trans "Your trips" as page_heading %}
+                {% include "includes/_page_title.html" with text=page_heading class_extra="mb-0" data_testid="trips-heading" %}
+                <a
+                    href="{% url 'public:map' %}?panel=routes"
+                    class="shrink-0 text-summary whitespace-nowrap text-accent hover:text-accent-hover"
+                    data-testid="trips-new-link"
+                >{% trans "New trip" %}</a>
+            </div>
 
-        {% if not upcoming_trips and not past_trips %}
-            {% card padding="p-6" %}
-            <p class="text-text-2" data-testid="trips-empty">
-                {% blocktrans trimmed %}
-                    You're not on any trips yet. Plan one from a route in the map's routes panel, or open a link
-                    somebody sent you.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
-        {% endif %}
+            {% if not upcoming_trips and not past_trips %}
+                {% card padding="p-6" %}
+                <p class="text-text-2" data-testid="trips-empty">
+                    {% blocktrans trimmed %}
+                        You haven't saved any trips yet. Plan one from a route in the map's routes panel, or open a link
+                        somebody sent you.
+                    {% endblocktrans %}
+                </p>
+                {% endcard %}
+            {% endif %}
 
-        {% if upcoming_trips %}
-            <section class="mb-8" data-testid="trips-upcoming">
-                {% trans "Coming up" as upcoming_heading %}
-                {% include "includes/_eyebrow.html" with text=upcoming_heading class_extra="mb-3" %}
-                <ul>
-                    {% for trip in upcoming_trips %}
-                        {% include "trips/partials/_trip_list_row.html" with trip=trip %}
-                    {% endfor %}
-                </ul>
-            </section>
-        {% endif %}
+            {% if upcoming_trips %}
+                <section data-testid="trips-upcoming">
+                    {% trans "Coming up" as upcoming_heading %}
+                    {% include "includes/_eyebrow.html" with text=upcoming_heading class_extra="mb-3" %}
+                    <ul class="flex flex-col gap-3">
+                        {% for trip in upcoming_trips %}
+                            {% include "trips/partials/_trip_card.html" with trip=trip %}
+                        {% endfor %}
+                    </ul>
+                </section>
+            {% endif %}
 
-        {% if past_trips %}
-            <section data-testid="trips-past">
-                {% trans "Past" as past_heading %}
-                {% include "includes/_eyebrow.html" with text=past_heading class_extra="mb-3" %}
-                <ul>
-                    {% for trip in past_trips %}
-                        {% include "trips/partials/_trip_list_row.html" with trip=trip %}
-                    {% endfor %}
-                </ul>
-            </section>
-        {% endif %}
+            {% comment %}
+                "Earlier", not "Past". A history is read by when it was,
+                and the word that heads it should sit in the same tense as
+                "Coming up" above rather than naming a database predicate.
+            {% endcomment %}
+            {% if past_trips %}
+                <section class="mt-6" data-testid="trips-past">
+                    {% trans "Earlier" as past_heading %}
+                    {% include "includes/_eyebrow.html" with text=past_heading class_extra="mb-2.5" %}
+                    <ul class="flex flex-col gap-2">
+                        {% for trip in past_trips %}
+                            {% include "trips/partials/_trip_past_row.html" with trip=trip %}
+                        {% endfor %}
+                    </ul>
+                </section>
+            {% endif %}
 
-        {% comment %}
+            {% comment %}
             Two toasts, one per outcome, because a failure must not be
             painted in the success palette. Both are hidden until something
             says otherwise — except the success one on the render that
@@ -98,10 +131,11 @@ trip's own page says what one trip is.
             The share strings are the trip page's own, in one partial since
             SNOW-834 (see _trip_share_strings.html and docs/i18n.md).
         {% endcomment %}
-        {% if created_trip %}{% trans "Trip created." as created_toast_body %}{% endif %}
-        {% include "includes/_toast.html" with id="trip-toast-success" kind="success" group="trip" body=created_toast_body visible=created_trip timeout=6000 %}
-        {% include "includes/_toast.html" with id="trip-toast-error" kind="error" group="trip" body="" timeout=6000 %}
-        {% include "trips/partials/_trip_share_strings.html" %}
+            {% if created_trip %}{% trans "Trip created." as created_toast_body %}{% endif %}
+            {% include "includes/_toast.html" with id="trip-toast-success" kind="success" group="trip" body=created_toast_body visible=created_trip timeout=6000 %}
+            {% include "includes/_toast.html" with id="trip-toast-error" kind="error" group="trip" body="" timeout=6000 %}
+            {% include "trips/partials/_trip_share_strings.html" %}
+        </div>
     </main>
 {% endblock content %}
 

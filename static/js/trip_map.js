@@ -263,6 +263,11 @@
     if (typeof profile.minEle !== 'number' || typeof profile.maxEle !== 'number') {
       return;
     }
+    // UNGROUPED, and deliberately: `elevation-range` is the map popup's
+    // own string (`route-elevation-range` in static/js/map_state.js), and
+    // this caption has to read the same on both surfaces. The design
+    // draws "1,680–3,020 m"; grouping it here alone would give one
+    // measurement two spellings.
     host.textContent = self.pwaStrings.interpolate(STRINGS['elevation-range'], {
       low: String(Math.round(profile.minEle)),
       high: String(Math.round(profile.maxEle)),

@@ -30,6 +30,7 @@ from django.contrib.auth.models import AnonymousUser
 from apps.trips.models import Trip, TripParticipant
 from apps.trips.services.participants import (
     OrganiserCannotLeave,
+    display_label_for,
     is_participant,
     join_trip,
     leave_trip,
@@ -38,7 +39,7 @@ from apps.trips.services.participants import (
     roster_names_visible_to,
 )
 from apps.trips.services.trips import delete_trip
-from tests.factories import TripFactory, UserFactory
+from tests.factories import AccountFactory, TripFactory, UserFactory
 
 
 @pytest.mark.django_db
@@ -206,3 +207,51 @@ class TestDeletingATripEmptiesTheRoster:
         delete_trip(trip.created_by, trip.uuid)
 
         assert TripParticipant.objects.count() == 0
+
+
+@pytest.mark.django_db
+class TestDisplayLabelFor:
+    """``display_label_for`` — how one account is NAMED on a trip surface.
+
+    Extracted from ``TripParticipant.display_label`` by SNOW-848, which
+    needs the same answer for ``trip.created_by`` — reached without a
+    roster row — for the "Marta's trip" eyebrow.
+    """
+
+    def test_a_display_name_wins(self) -> None:
+        """What the person chose to be called."""
+        user = UserFactory.create(email="marta@example.com")
+        AccountFactory.create(user=user, display_name="Marta")
+
+        assert display_label_for(user) == "Marta"
+
+    def test_the_local_part_stands_in_for_a_missing_display_name(self) -> None:
+        """Never the whole address.
+
+        A trip link travels — forwarded out of one group chat and into
+        another — and the full address is what an account signs in with.
+        The local part identifies somebody to people who already know
+        them, which is exactly the audience, and is not a deliverable
+        address.
+        """
+        user = UserFactory.create(email="marta@example.com")
+
+        label = display_label_for(user)
+
+        assert label == "marta"
+        assert "@" not in label
+
+    def test_an_account_with_neither_still_gets_a_name(self) -> None:
+        """A plain staff superuser has no Account profile."""
+        assert display_label_for(UserFactory.create(email="")) == "Somebody"
+
+    def test_the_participant_property_gives_the_same_answer(self) -> None:
+        """The model delegates rather than keeping a second copy of the
+        rule — two copies of "never show the whole address" is one too
+        many.
+        """
+        trip = TripFactory.create()
+        joiner = UserFactory.create(email="anna@example.com")
+        participant = join_trip(joiner, trip)
+
+        assert participant.display_label == display_label_for(joiner)

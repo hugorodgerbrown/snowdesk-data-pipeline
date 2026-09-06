@@ -10,11 +10,20 @@ from the same context builder — the difference between the two surfaces is
 who may see the trip, never what it says about it.
 
 SCOPED BY PARTICIPATION since SNOW-822 (apps/trips/views.py's trip_detail):
-everybody on the trip gets this page, and what differs between the organiser
-and everyone else is which controls render. Somebody holding the LINK but not
-on the roster gets trips/trip_share.html instead — a different URL and a
-different surface, because the uuid in this one's address is the
-participants' identifier.
+everybody who has SAVED the trip gets this page, and what differs between the
+organiser and everyone else is which controls render. Somebody holding the
+LINK who has not saved it gets trips/trip_share.html instead — a different
+URL and a different surface, because the uuid in this one's address is the
+savers' identifier.
+
+SNOW-848 TOOK THE SOCIAL SURFACE OFF THIS PAGE. There was a roster card —
+"four people are going", the names, a Join/Leave control — and it is gone,
+along with the separate "Save route" control beside the map. A trip is a
+shareable item rather than a social event: it is planned, the link is sent,
+and whoever opens it saves it. Nobody sees who else holds it or how many do.
+The MODEL is untouched — ``TripParticipant`` still records every save, which
+is how ``Trip.objects.for_user`` knows whose agenda this belongs on — so do
+not read the rows being there as licence to print a count again.
 
 The edit form sits inside a <details>
 rather than on a page of its own: editing a trip is a correction to
@@ -46,81 +55,81 @@ its own metadata.
 
 {% block content %}
     <main class="{% page_shell_classes %}">
-        {% trans "Trip" as trip_eyebrow %}
-        {% include "includes/_eyebrow.html" with text=trip_eyebrow class_extra="mb-2" %}
-        {% trans "Untitled trip" as untitled_trip %}
-        {% firstof trip.display_name untitled_trip as trip_heading %}
-        {% include "includes/_page_title.html" with text=trip_heading class_extra="mb-6" data_testid="trip-heading" %}
+        {# The inner 640px column, the idiom every account page uses. A     #}
+        {# stack of small cards read at the shell's 720px puts two words at #}
+        {# either end of an empty line in the details grid. The design       #}
+        {# draws the column at 390px, which is the mock's phone width and    #}
+        {# not a desktop instruction — every other single-column page here   #}
+        {# (the account pages, the bulletin) is 640px, and this is now one   #}
+        {# of them.                                                          #}
+        <div class="max-w-narrow mx-auto">
+            {% include "trips/partials/_trip_header.html" %}
 
-        {% card padding="p-6" extra="mb-6" %}
-        {% include "trips/partials/_trip_summary.html" with trip=trip %}
-        {% endcard %}
+            {% include "trips/partials/_trip_notes.html" %}
+            <div class="mt-3">
+                {% include "trips/partials/_trip_details_card.html" %}
+            </div>
 
-        {% include "trips/partials/_trip_basemaps.html" %}
-        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload map_url=map_url %}
+            {% include "trips/partials/_trip_basemaps.html" %}
+            {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload map_url=map_url %}
 
-        {# SNOW-824: Save route. Beside the map, because what it saves is  #}
-        {# the line drawn there — and above the roster, because it is the   #}
-        {# viewer's own act on the route rather than on the group.          #}
-        <div class="mt-4">
-            {% include "trips/partials/_trip_save_route.html" %}
-        </div>
+            {# SNOW-848: the saved state, and the way out of it. NOT rendered   #}
+            {# for the organiser: their trip is on their agenda by authorship,  #}
+            {# they cannot remove themselves from it, and their exit is the     #}
+            {# Delete disclosure below — which says out loud that it removes    #}
+            {# the trip for everyone.                                           #}
+            {% if not is_organiser %}
+                {% include "trips/partials/_trip_save.html" %}
+            {% endif %}
 
-        {# SNOW-822: who is going. Below the plan, because the plan is what   #}
-        {# the page is for — but above the organiser's machinery, because the #}
-        {# roster is something every viewer reads and the machinery is not.   #}
-        {% card padding="p-6" extra="mt-6" %}
-        {% include "trips/partials/_trip_roster.html" %}
-        {% endcard %}
-
-        {% if is_organiser %}
-            {% comment %}
+            {% if is_organiser %}
+                {% comment %}
                 The organiser's controls, below the trip rather than above
                 it: the page's job is to say what the plan is, and the
                 machinery for changing it is secondary to reading it. Both
                 are disclosures so neither competes with the summary.
             {% endcomment %}
-            <div
-                class="mt-8 flex flex-col gap-4"
-                data-testid="trip-organiser-controls"
-                {# The URL templates, handed to the page rather than spelled #}
-                {# out in JS: static/js/trip_share.js must not know how this #}
-                {# project spells its URLs. The same __UUID__ trick the      #}
-                {# routes panel's rename control uses.                       #}
-                data-trip-share-url="{{ share_url_template }}"
-                data-trip-share-revoke-url="{{ share_revoke_url_template }}"
-            >
-                {% card padding="p-4" %}
-                {% include "trips/partials/_trip_share_controls.html" with trip=trip %}
-                {% endcard %}
-                <details class="rounded-card border border-border bg-card p-4">
-                    <summary class="cursor-pointer text-sm font-medium text-text-1">
-                        {% trans "Edit this trip" %}
-                    </summary>
-                    <div class="mt-4">
-                        {% include "trips/partials/_trip_form.html" with form=edit_form trip_uuid=trip.uuid %}
-                    </div>
-                </details>
-                <details class="rounded-card border border-border bg-card p-4">
-                    <summary class="cursor-pointer text-sm font-medium text-status-error-text">
-                        {% trans "Delete this trip" %}
-                    </summary>
-                    <div class="mt-4">
-                        {% include "trips/partials/_trip_delete_confirm.html" with trip=trip %}
-                    </div>
-                </details>
-            </div>
-        {% endif %}
+                <div
+                    class="mt-8 flex flex-col gap-4"
+                    data-testid="trip-organiser-controls"
+                    {# The URL templates, handed to the page rather than spelled #}
+                    {# out in JS: static/js/trip_share.js must not know how this #}
+                    {# project spells its URLs. The same __UUID__ trick the      #}
+                    {# routes panel's rename control uses.                       #}
+                    data-trip-share-url="{{ share_url_template }}"
+                    data-trip-share-revoke-url="{{ share_revoke_url_template }}"
+                >
+                    {% card padding="p-4" %}
+                    {% include "trips/partials/_trip_share_controls.html" with trip=trip %}
+                    {% endcard %}
+                    <details class="rounded-card border border-border bg-card p-4">
+                        <summary class="cursor-pointer text-sm font-medium text-text-1">
+                            {% trans "Edit this trip" %}
+                        </summary>
+                        <div class="mt-4">
+                            {% include "trips/partials/_trip_form.html" with form=edit_form trip_uuid=trip.uuid %}
+                        </div>
+                    </details>
+                    <details class="rounded-card border border-border bg-card p-4">
+                        <summary class="cursor-pointer text-sm font-medium text-status-error-text">
+                            {% trans "Delete this trip" %}
+                        </summary>
+                        <div class="mt-4">
+                            {% include "trips/partials/_trip_delete_confirm.html" with trip=trip %}
+                        </div>
+                    </details>
+                </div>
+            {% endif %}
+        </div>
     </main>
 {% endblock content %}
 
 {% block extra_js %}
-    {# htmx, OUTSIDE the is_organiser branch: the roster's Join and Leave  #}
-    {# and the Save route control are every viewer's, and the edit and     #}
-    {# delete forms are the organiser's. base.html does not ship htmx —    #}
-    {# each page that posts a fragment loads it itself — and this page not #}
-    {# loading it was SNOW-834: every one of those controls rendered its   #}
-    {# hx-post and nothing read it.                                        #}
+    {# htmx, OUTSIDE the is_organiser branch: "Remove from my trips" is    #}
+    {# every saver's, and the edit and delete forms are the organiser's.   #}
+    {# base.html does not ship htmx — each page that posts a fragment      #}
+    {# loads it itself — and this page not loading it was SNOW-834: every  #}
+    {# one of those controls rendered its hx-post and nothing read it.     #}
     <script defer src="{% static 'js/htmx.min.js' %}"></script>
     {% if is_organiser %}
         {# The native-share/clipboard helper, loaded BEFORE trip_share.js —  #}

@@ -1,0 +1,65 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_header.html — the back link, the attribution and the
+title (SNOW-848).
+
+ONE HEADER, TWO SURFACES: the trip's own page and the page behind its
+share link. The difference between those two is who may see the trip,
+never what it says about itself, so the heading block is shared for the
+same reason the details card and the route card are.
+
+THE ATTRIBUTION IS THE ONE PIECE OF SOCIAL INFORMATION LEFT. "Marta's
+trip" answers "who sent me this", which is already the answer the message
+carrying the link gave; withholding it would make the page more anonymous
+than the WhatsApp thread it arrived in. Everything else went in SNOW-848 —
+no count, no names, no going state. Nobody learns who else saved a trip.
+
+It says "Your trip" to the person who wrote it. Naming the reader back to
+themselves reads as a page that has not noticed who is looking at it.
+
+THE SUBLINE IS A FACT WITH AN EXPIRY, so it is conditional on
+``share_is_live``. "Anyone with the link can save it" is true exactly while
+a link is out there; printing it for a trip whose link was revoked, or one
+that was never shared, would be describing a trip that does not exist.
+
+THE BACK LINK IS FOR SOMEBODY WHO HAS A TRIPS PAGE, so it is gated on
+authentication. A signed-out recipient of a share link has no agenda to go
+back to, and pointing them at one would be a sign-in wall dressed as
+navigation.
+
+The chevron is includes/_icon_chevron.html rotated a quarter turn: that
+partial draws the site's one chevron and it points DOWN at rest, so
+``rotate-90`` turns it to point back the way this link goes. One glyph,
+one source.
+
+Context:
+    trip            : Trip — read for the title and ``share_is_live``.
+    organiser_label : str — how the organiser is named.
+    is_organiser    : bool — whether the reader wrote it.
+{% endcomment %}
+{% if request.user.is_authenticated %}
+    <a
+        href="{% url 'trips:list' %}"
+        class="mb-4.5 inline-flex items-center gap-1.5 text-summary text-text-3 hover:text-text-1"
+        data-testid="trip-back-link"
+    >
+        {% include "includes/_icon_chevron.html" with size=16 svg_class="rotate-90" only %}
+        {% trans "Your trips" %}
+    </a>
+{% endif %}
+{% if is_organiser %}
+    {% trans "Your trip" as trip_eyebrow %}
+{% else %}
+    {% blocktrans trimmed with name=organiser_label asvar trip_eyebrow %}
+        {{ name }}'s trip
+    {% endblocktrans %}
+{% endif %}
+{% include "includes/_eyebrow.html" with text=trip_eyebrow class_extra="mb-1.5" data_testid="trip-attribution" %}
+{% trans "Untitled trip" as untitled_trip %}
+{% firstof trip.display_name untitled_trip as trip_heading %}
+{% include "includes/_page_title.html" with text=trip_heading class_extra="mb-1" data_testid="trip-heading" %}
+{% if trip.share_is_live %}
+    <p class="text-summary text-text-3" data-testid="trip-share-note">
+        {% trans "Shared trip · anyone with the link can save it" %}
+    </p>
+{% endif %}

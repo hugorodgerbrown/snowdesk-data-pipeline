@@ -1,0 +1,61 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_meeting_address.html — where the group meets, as a
+three word address (SNOW-840, extracted SNOW-848).
+
+THE COORDINATE IS THE FALLBACK, ALWAYS. Flag off, no API key, the upstream
+down, the cached address past the 30 days its licence allows — every one of
+those renders the coordinate pair this project printed before SNOW-840.
+There is never a blank where the meeting point was. When the address IS
+shown the coordinate moves to the element's title, so the
+paste-into-a-map-app affordance survives at no visual cost.
+
+THE ADDRESS IS A LINK to what3words' own map, which is the only place the
+3m square can be SEEN. Three words are not self-evidently a place: somebody
+working out whether they can find the meeting point needs the square on a
+map, and sending them to search for the words themselves would be asking
+them to do the lookup by hand. Off-site, so ``target="_blank"`` and
+``rel="noopener noreferrer"`` — the destination is a third party's page and
+must get no handle on this one.
+
+The meeting point is a COORDINATE PAIR and never a place name. The Location
+it comes from is minted for this trip alone and carries no name,
+deliberately (naming a place is a curation act — see
+apps/trips/services/trips.py), so inventing a label here would be inventing
+a fact. A three word address is not a label somebody chose: it is a
+deterministic encoding of the same 3m square, so ///filled.count.soap and
+46.080012, 7.318197 say exactly the same thing and neither invents
+anything.
+
+TWO CALLERS at two sizes: the list card's footer strip (12px) and the trip
+view's details grid (15px), which is why the size is a parameter rather
+than baked in.
+
+Context:
+    trip        : Trip — read for the meeting point's coordinates.
+    words       : str|None — the address WITHOUT its /// prefix, which is
+                  presentation and is added here.
+    url         : str|None — where that address links to. None exactly when
+                  ``words`` is, so the coordinate fallback can never grow a
+                  link to nowhere.
+    size_class  : str, optional — the type utility for both states.
+                  Default ``"text-xs"``, the list card's size.
+    data_testid : str, optional — set on the rendered element.
+{% endcomment %}
+{% with lat=trip.meeting_point.latitude|floatformat:6 lon=trip.meeting_point.longitude|floatformat:6 %}
+    {% if words and url %}
+        <a
+            href="{{ url }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="{{ lat }}, {{ lon }}"
+            class='font-mono {{ size_class|default:"text-xs" }} font-medium text-accent hover:text-accent-hover'
+            {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
+        >///{{ words }}</a>
+    {% else %}
+        <span
+            class='font-mono {{ size_class|default:"text-xs" }} text-text-2'
+            {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
+        >{{ lat }}, {{ lon }}</span>
+    {% endif %}
+{% endwith %}

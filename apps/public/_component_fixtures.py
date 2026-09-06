@@ -596,6 +596,14 @@ BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "caption": "Accent · compact — saving somebody else's object",
+        "context": {
+            "label": "Save this trip",
+            "variant": "accent",
+            "size": "compact",
+        },
+    },
+    {
         "caption": "Primary · full width",
         "context": {
             "label": "Yes, unsubscribe me",
