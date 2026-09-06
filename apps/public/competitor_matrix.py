@@ -214,6 +214,47 @@ FEATURES: tuple[Feature, ...] = (
             snowdesk=_YES,
         ),
     ),
+    # The two absence-shaped rows. Both are phrased so that ● is still the
+    # answer a reader wants, which keeps one polarity across the whole
+    # grid — a row where a filled dot meant "this app has ads" would be
+    # read wrongly by everyone skimming, however carefully it was
+    # labelled. Values come from the store listings, 2026-09-05.
+    #
+    # These exist because a feature matrix counts what a product HAS, so
+    # it rewards accumulation and gives nothing back for restraint. Two
+    # of the things a person actually meets when they open one of these
+    # apps — an advert, and a prompt to pay — are invisible in every
+    # other row here.
+    Feature(
+        key="no_ads",
+        label=_("Free of advertising"),
+        question=_("Whether the app shows you adverts while you read."),
+        cells=_cells(
+            whiterisk=_YES,
+            snowsafe=Cell(Support.NO, _("Play lists it as containing ads")),
+            clarity=Cell(Support.YES, _("States no tracking and no ads")),
+            skitourenguru=_UNKNOWN,
+            whympr=_YES,
+            opensnow=_YES,
+            snowdesk=_YES,
+        ),
+    ),
+    Feature(
+        key="no_iap",
+        label=_("Costs nothing after you start"),
+        question=_(
+            "Every app here is free to open. This is whether it stays that way."
+        ),
+        cells=_cells(
+            whiterisk=Cell(Support.NO, _("Maps and lessons are paid")),
+            snowsafe=Cell(Support.NO, _("Paid weather tier")),
+            clarity=Cell(Support.YES, _("No in-app purchases")),
+            skitourenguru=Cell(Support.YES, _("Free since foundation funding")),
+            whympr=Cell(Support.NO, _("Premium, plus paid content")),
+            opensnow=Cell(Support.NO, _("Two paid tiers")),
+            snowdesk=Cell(Support.YES, _("Nothing to buy — see the note below")),
+        ),
+    ),
     Feature(
         key="offline",
         label=_("Works without signal"),
