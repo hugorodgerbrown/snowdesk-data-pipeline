@@ -197,3 +197,56 @@ describe('glyph promotion into a pinned bucket (SNOW-742)', () => {
     expect(cachesStub.urls(pinnedName())).toEqual([]);
   });
 });
+
+/*
+ * SNOW-844: the render-dependency probe and glyph promotion must not meet.
+ *
+ * Promotion copies whatever ranges ORDINARY BROWSING happened to cache, so
+ * the set in a pinned bucket is legitimately partial and unpredictable —
+ * ranges never browsed were never covered, which SNOW-742 states outright
+ * and did not change. A completeness check over that set would report a
+ * permanent fault with no repair able to clear it, which is worse than the
+ * silence it replaced. Pinning the ranges an area actually needs is
+ * SNOW-847's job.
+ *
+ * Asserted rather than left as a comment, so a later ticket cannot fold
+ * glyphs into the dependency list by reflex.
+ */
+describe('glyphs are outside the render-dependency check (SNOW-844)', () => {
+  it('promotes a partial glyph set, which no completeness check could pass', async () => {
+    // Two ranges of one fontstack exist; browsing cached one. Promotion
+    // copies that one and cannot know the other was ever wanted.
+    const browsed = `${GLYPH_PREFIX}Frutiger%20Regular/0-255.pbf`;
+    const neverBrowsed = `${GLYPH_PREFIX}Frutiger%20Regular/256-511.pbf`;
+    cachesStub.seed(sw.BASEMAP_CACHE, browsed, corsResponse('glyph bytes'));
+
+    await sw._warmCache([], { pinned: true, areaId: AREA_ID, glyphPrefix: GLYPH_PREFIX });
+
+    const pinned = cachesStub.urls(pinnedName());
+    expect(pinned).toContain(browsed);
+    expect(pinned).not.toContain(neverBrowsed);
+  });
+
+  it('carries the prefix as a promotion instruction, not as a URL list', async () => {
+    // The shape of the exclusion, in the wiring rather than in prose: a
+    // download hands the worker `glyphPrefix` — a string it SELECTS
+    // already-cached entries with — while the dependency list the record
+    // stores is built from real URLs the run fetched
+    // (`activeBasemapRenderDependencyURLs`). There is no point at which a
+    // glyph URL could join that list, because nothing ever enumerates one.
+    const glyph = `${GLYPH_PREFIX}Frutiger%20Regular/0-255.pbf`;
+    cachesStub.seed(sw.BASEMAP_CACHE, glyph, corsResponse('glyph bytes'));
+
+    const result = await sw._warmCache([], {
+      pinned: true,
+      areaId: AREA_ID,
+      glyphPrefix: GLYPH_PREFIX,
+    });
+
+    // Nothing was FETCHED — `ok` counts the URL list, which was empty. The
+    // glyph arrived by copy, which is why it can never be a dependency a
+    // repair could re-fetch.
+    expect(result.ok).toBe(0);
+    expect(cachesStub.urls(pinnedName())).toEqual([glyph]);
+  });
+});

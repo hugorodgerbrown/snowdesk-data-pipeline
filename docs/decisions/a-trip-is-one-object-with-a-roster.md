@@ -107,20 +107,47 @@ would show a group member abroad a different time for the same meeting.
   for it at all. Deleting the trip is the one exit, and it removes it for
   everyone — which the delete confirmation says out loud, naming the number
   of other people.
-- **Anyone holding the link sees the COUNT; only participants see the
-  NAMES; the organiser is named to everyone** (`roster_names_visible_to`).
-  A trip link travels — forwarded out of a group chat, pasted into another
-  one — and the people on the roster did not agree to be listed to whoever
-  it reached, so joining is what earns the group's names. The organiser is
-  the exception because their name is already the answer to "who is this
-  from", and withholding it would make the page more anonymous than the
-  message that carried it. A person is named by their `display_name`, or
-  by the LOCAL PART of their email — never the whole address, which is what
-  an account signs in with.
-- **Join is addressed by TOKEN and leave by UUID.** Holding a live link is
-  the whole access rule for joining, and the token is the only identifier a
-  non-participant has been given; the uuid keys the participant-scoped
-  endpoints, so a link-holder must never see one. `/trips/<uuid>/` 404s for
+- **~~Anyone holding the link sees the COUNT; only participants see the
+  NAMES~~ — SUPERSEDED by SNOW-848. Nobody sees either.** The rule was:
+  a link travels, forwarded out of one group chat and into another, and
+  the people on the roster did not agree to be listed to whoever it
+  reached, so joining is what earns the group's names. SNOW-848 answered
+  the same worry more simply by taking the whole roster surface off both
+  pages. A trip is a shareable ITEM rather than a social event: someone
+  plans a tour, sends the link, and whoever opens it saves it to their own
+  trips. There is no count, no names list, no going state, and no act that
+  earns any of them. `roster_names_visible_to` and `roster_for` survive as
+  services with no rendering caller; `apps/trips/templates/trips/partials/
+  _trip_roster.html` is gone.
+
+  **The organiser is still named to everyone**, and is now the only social
+  fact a trip surface carries: the eyebrow reads "Marta's trip" (or "Your
+  trip" to the person who wrote it) and the notes card reads "Notes from
+  Marta". Their name is already the answer to "who is this from", and
+  withholding it would make the page more anonymous than the message that
+  carried it. A person is named by their `display_name`, or by the LOCAL
+  PART of their email — never the whole address, which is what an account
+  signs in with. That rule moved out of `TripParticipant.display_label`
+  and into `display_label_for` in `apps/trips/services/participants.py`,
+  because the eyebrow names `trip.created_by`, who is reached without a
+  roster row.
+
+  **The rows are still written**, and reading their absence into the UI
+  would be a mistake: `TripParticipant` is what `Trip.objects.for_user`
+  filters on, so it is still how the site knows whose agenda a trip
+  belongs on. What "join" and "leave" mean to a reader changed — they are
+  "Save this trip" and "Remove from my trips" — and what the page says
+  about the other rows is now nothing.
+
+  **One count survives, to the organiser only**: the delete confirmation
+  still names how many other people hold the trip, because a destructive
+  action has to state its blast radius and "everyone" is vaguer than a
+  number.
+- **Save is addressed by TOKEN and remove by UUID** (`trips:join` and
+  `trips:leave`, whose endpoint names predate SNOW-848's relabelling).
+  Holding a live link is the whole access rule for saving, and the token
+  is the only identifier a non-saver has been given; the uuid keys the
+  participant-scoped endpoints, so a link-holder must never see one. `/trips/<uuid>/` 404s for
   them, and `/trips/s/<token>/` is their surface.
 - **A signed-out recipient gets a sign-in link and nothing more.** SNOW-764
   needed `PENDING_SESSION_KEY`, a bounded per-browser pending list and two

@@ -1,0 +1,45 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_past_row.html — one trip under "Earlier" (SNOW-848).
+
+A ROW, deliberately, where an upcoming trip is a card. A past trip is not
+a plan any more: nobody is going to read the meeting point off it or check
+how much climbing it carries before setting an alarm. What it answers is
+"which day was that, and how big was it", so it carries the date, the name
+and one figures line, on the subtle surface that says this half of the
+page is a history rather than an agenda.
+
+The WHOLE ROW is the link, unlike the card above where only the title is.
+There is nothing else in the row to click, so a title-only target would
+leave two thirds of a 390px row inert for no gain.
+
+Context:
+    trip : Trip — the past trip to render.
+{% endcomment %}
+<li>
+    <a
+        href="{% url 'trips:detail' trip.uuid %}"
+        class="flex items-center justify-between gap-3 rounded-tag border border-border bg-card-subtle px-4 py-3 hover:bg-card-hover"
+        data-testid="trip-past-row"
+    >
+        <span class="min-w-0">
+            <span class="block font-mono text-meta uppercase text-text-3">
+                {{ trip.date|date:"D j M Y"|upper }}
+            </span>
+            {% trans "Untitled trip" as untitled_trip %}
+            {% firstof trip.display_name untitled_trip as past_label %}
+            <span class="block text-label font-medium text-text-1">{{ past_label }}</span>
+        </span>
+        <span class="shrink-0 text-xs whitespace-nowrap text-text-3">
+            {% if trip.ascent_m is not None %}
+                {% blocktrans trimmed with km=trip.distance_km|floatformat:1 metres=trip.ascent_m|floatformat:0 %}
+                    {{ km }}km · {{ metres }}m
+                {% endblocktrans %}
+            {% else %}
+                {% blocktrans trimmed with km=trip.distance_km|floatformat:1 %}
+                    {{ km }}km
+                {% endblocktrans %}
+            {% endif %}
+        </span>
+    </a>
+</li>

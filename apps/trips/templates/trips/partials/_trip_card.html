@@ -1,0 +1,157 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_card.html — one upcoming trip on the agenda
+(SNOW-823, redrawn as a card by SNOW-848).
+
+A CARD, NOT A ROW, and that is the change. The row this replaced put the
+day, a label and a distance on three cramped lines and left everything a
+person actually decides on — how big the day is, where the group meets —
+off the page. The card carries the whole answer: when, what, the
+organiser's note, the three figures, and the meeting point.
+
+The day and time still LEAD, because an agenda is read by when; the title
+answers "which one" only after the reader has found the right morning.
+
+THE TITLE IS THE LINK, and it is text-1 rather than accent. A card whose
+every line is clickable teaches nothing about what is clickable; one
+semantic link, on the thing being opened, does.
+
+WHAT LEFT IN SNOW-848. The "You organised this" chip and the
+"N people going" line are both gone, along with the roster surface they
+belonged to. A trip is a shareable item, not a social event: someone plans
+a tour, sends the link, and whoever opens it saves it to their own trips.
+Nobody sees who else is on it or how many. The data model is untouched —
+``TripParticipant`` still records every save — this is what the page says
+about it.
+
+THE FOOTER'S RIGHT SLOT IS THE SHARE CONTROL, for a trip this reader
+organised. The design draws the footer as a space-between row with the
+meeting point alone on the left, and sharing is the entire journey a trip
+exists for — the organiser plans one and sends the link — so the slot the
+layout reserves is where that control belongs. Minting is organiser-scoped
+in ``mint_trip_share``, so a card for somebody else's trip carries no
+button at all rather than a disabled one: the site's "show controls, don't
+hide them" rule is about a control the reader could earn the right to
+press, and this is not one.
+
+SHARING AGAIN ROTATES THE LINK, which stops one already sent to a group
+chat working. The label says which press this is — "Share" for a trip with
+no live link, "Share again" for one that has — and the consequence rides in
+the button's title.
+
+Context:
+    trip         : Trip — the trip to render. ``trip_list`` selects
+                   ``meeting_point`` and hangs two extra attributes on each
+                   instance — ``meeting_point_w3w`` and
+                   ``meeting_point_w3w_url`` — because a three word address
+                   is resolved per trip and a template must not be the
+                   thing that decides whether an outbound HTTP call
+                   happens. See ``trip_list`` for why the list reads the
+                   CACHE only and never converts.
+    created_trip : Trip or None, optional — from the outer context. When it
+                   is this trip, the card is marked as the one just
+                   written, so the confirmation toast has something to
+                   point at on an agenda with several trips on it. Compared
+                   as objects: two model instances with the same primary
+                   key are equal, and a None never matches, so no guard is
+                   needed around the test.
+{% endcomment %}
+<li {% if trip == created_trip %}data-testid="trip-list-row-created"{% endif %}>
+    {% comment %}
+        padding="p-0" so the footer strip can run edge to edge, the same
+        shape includes/_hourly_chart.html uses for its own flush card.
+        overflow-hidden keeps the strip inside the 16px radius.
+    {% endcomment %}
+    {% comment %}
+        The just-created trip takes an accent ring, so the confirmation
+        toast has something to point at on an agenda with several trips
+        on it. A ring rather than the status-success fill the row this
+        replaced used: nothing has succeeded or failed here, the card is
+        simply the one being talked about, and a green card among white
+        ones reads as a state the trip is in.
+
+        The class string is chosen BEFORE the tag opens — {% templatetag openblock %} card {% templatetag closeblock %} is a
+        block tag, so an {% templatetag openblock %} if {% templatetag closeblock %} may not sit between it and its
+        {% templatetag openblock %} endcard {% templatetag closeblock %}.
+    {% endcomment %}
+    {% if trip == created_trip %}
+        {% firstof "overflow-hidden ring-2 ring-accent" as card_extra %}
+    {% else %}
+        {% firstof "overflow-hidden" as card_extra %}
+    {% endif %}
+    {% card padding="p-0" extra=card_extra %}
+    <div class="flex flex-col gap-2 px-4.5 pt-4 pb-3.5">
+        {% comment %}
+            A space-between row with one child today. The design reserves
+            the right slot — it held a status chip until those were
+            removed — and keeping the row means the next thing to earn a
+            place there does not have to re-lay the card out.
+        {% endcomment %}
+        <div class="flex items-center justify-between gap-2.5">
+            <span class="font-mono text-xs uppercase tracking-wide text-text-3" data-testid="trip-card-when">
+                {{ trip.date|date:"D j M"|upper }} · {{ trip.start_time|time:"H:i" }}
+            </span>
+        </div>
+        {% trans "Untitled trip" as untitled_trip %}
+        {% firstof trip.display_name untitled_trip as card_label %}
+        <h2 class="text-lg font-semibold tracking-tight">
+            <a
+                href="{% url 'trips:detail' trip.uuid %}"
+                class="text-text-1 hover:opacity-80"
+                data-testid="trip-list-row"
+            >{{ card_label }}</a>
+        </h2>
+        {% comment %}
+            The organiser's note, and only when there is one — an empty
+            block is a claim that something is missing. Rendered through
+            ordinary Django auto-escaping: it is user-supplied prose
+            (invariant 1) and nothing here calls mark_safe.
+        {% endcomment %}
+        {% if trip.description %}
+            <p class="text-summary leading-normal text-text-2" data-testid="trip-card-notes">
+                {{ trip.description }}
+            </p>
+        {% endif %}
+        <div class="pt-0.5">
+            {% include "trips/partials/_trip_stats.html" with trip=trip %}
+        </div>
+    </div>
+    <div class="flex items-center justify-between gap-3 border-t border-border bg-card-subtle px-4.5 py-2.75">
+        <span class="min-w-0 text-xs text-text-3">
+            {% trans "Meet at" %}
+            {% include "trips/partials/_trip_meeting_address.html" with trip=trip words=trip.meeting_point_w3w url=trip.meeting_point_w3w_url data_testid="trip-card-meeting-point" %}
+        </span>
+        {% if trip.created_by_id == request.user.pk %}
+            {% if trip.share_is_live %}
+                {% trans "Share again" as card_share_label %}
+                {% blocktrans trimmed asvar card_share_title %}
+                    Sharing again replaces this trip's link, and the link you already sent stops working.
+                {% endblocktrans %}
+            {% else %}
+                {% trans "Share" as card_share_label %}
+                {% blocktrans trimmed asvar card_share_title %}
+                    Anyone with the link can see this trip and save it.
+                {% endblocktrans %}
+            {% endif %}
+            {% comment %}
+                A text control rather than includes/_button.html: the
+                design's footer strip carries link-weight accent text, not
+                a filled or outlined button, and a compact button here
+                would out-shout the title above it. The button ELEMENT is
+                still a button — it posts — and it carries the data
+                attribute static/js/trip_share.js reads.
+            {% endcomment %}
+            <button
+                type="button"
+                data-trip-share="{{ trip.uuid }}"
+                data-testid="trip-list-share"
+                title="{{ card_share_title }}"
+                aria-label="{% blocktrans trimmed with name=card_label %}Share “{{ name }}”{% endblocktrans %}"
+                class="shrink-0 cursor-pointer text-summary font-medium whitespace-nowrap text-accent hover:text-accent-hover"
+            >
+                {{ card_share_label }}
+            </button>
+        {% endif %}
+    </div>
+    {% endcard %}
+</li>

@@ -477,23 +477,23 @@ class TripParticipant(BaseModel):
         that a plain staff superuser may not have, so its absence is
         handled rather than raised.
 
+        THE RULE ITSELF LIVES IN THE SERVICE LAYER since SNOW-848 —
+        ``apps.trips.services.participants.display_label_for`` — because
+        the organiser attribution on a trip page needs the same answer for
+        ``trip.created_by``, who is reached without a roster row. Two
+        copies of "never show the whole address" is one copy too many.
+
         Returns:
             A short label for this person.
 
         """
-        # Imported here rather than at module scope: ``apps.accounts``
-        # reaches into ``apps.trips`` for account erasure, and a top-level
-        # import back the other way would close that loop. The same idiom
-        # ``apps.core.models.RequestLogManager.from_request`` uses.
-        from apps.accounts.models import Account  # noqa: PLC0415
+        # Imported here rather than at module scope: the service imports
+        # this module, so a top-level import back would close the loop.
+        from apps.trips.services.participants import (  # noqa: PLC0415
+            display_label_for,
+        )
 
-        email: str = self.user.email or ""
-        try:
-            name: str = self.user.account.display_name
-        except Account.DoesNotExist:
-            # A plain staff superuser has no Account profile.
-            name = ""
-        return name or email.split("@")[0] or "Somebody"
+        return display_label_for(self.user)
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this row.

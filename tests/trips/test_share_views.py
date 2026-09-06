@@ -53,8 +53,9 @@ from tests.factories import LocationFactory, TripFactory, UserFactory
 # tests/trips/test_views.py's, matched for the same reason: the map
 # payload carries the same coordinates, so a whole-page search cannot
 # tell "the address replaced the pair" from "the pair is still somewhere".
-_MEETING_POINT_DD = re.compile(
-    r'<dd[^>]*data-testid="trip-meeting-point".*?</dd>', re.DOTALL
+_MEETING_POINT_ELEMENT = re.compile(
+    r'<(?P<tag>a|span)[^>]*data-testid="trip-meeting-point".*?</(?P=tag)>',
+    re.DOTALL,
 )
 
 # Well before TripFactory's default date, so a minted link is live.
@@ -399,7 +400,7 @@ class TestSharePageMeetingPoint:
         trip.refresh_from_db()
         return trip
 
-    def _meeting_point_dd(self, client: Client, trip: Trip) -> str:
+    def _meeting_point_element(self, client: Client, trip: Trip) -> str:
         """Return the meeting-point ``<dd>`` from the rendered share page.
 
         Args:
@@ -414,7 +415,7 @@ class TestSharePageMeetingPoint:
         html = client.get(
             reverse("trips:share_page", args=[trip.share_token])
         ).content.decode()
-        match = _MEETING_POINT_DD.search(html)
+        match = _MEETING_POINT_ELEMENT.search(html)
         assert match is not None, "the page rendered no meeting point"
         return match.group(0)
 
@@ -423,7 +424,7 @@ class TestSharePageMeetingPoint:
         trip = self._shared_trip()
 
         with patch("apps.locations.services.what3words.requests.get") as mock_get:
-            rendered = self._meeting_point_dd(client, trip)
+            rendered = self._meeting_point_element(client, trip)
 
         assert "46.080012, 7.318197" in rendered
         assert "///" not in rendered
@@ -434,7 +435,7 @@ class TestSharePageMeetingPoint:
         """An anonymous link-holder gets the address, not the numbers."""
         trip = self._shared_trip(cached=True)
 
-        rendered = self._meeting_point_dd(client, trip)
+        rendered = self._meeting_point_element(client, trip)
 
         assert "///filled.count.soap" in rendered
         assert 'title="46.080012, 7.318197"' in rendered
@@ -453,7 +454,7 @@ class TestSharePageMeetingPoint:
         """
         trip = self._shared_trip(cached=True)
 
-        rendered = self._meeting_point_dd(client, trip)
+        rendered = self._meeting_point_element(client, trip)
 
         assert 'href="https://w3w.example/filled.count.soap"' in rendered
         assert 'target="_blank"' in rendered
@@ -461,7 +462,7 @@ class TestSharePageMeetingPoint:
 
     def test_the_coordinate_fallback_carries_no_link(self, client: Client) -> None:
         """No address on the public page means no anchor either."""
-        rendered = self._meeting_point_dd(client, self._shared_trip())
+        rendered = self._meeting_point_element(client, self._shared_trip())
 
         assert "<a" not in rendered
         assert "46.080012, 7.318197" in rendered

@@ -457,6 +457,64 @@ describe('the tile URLs a download fetches', () => {
   });
 });
 
+/*
+ * SNOW-844: the composed probe — tiles AND the documents the map needs to
+ * draw them. The suite above proves the DOWNLOAD fetches all four; this
+ * proves the VERIFICATION asks about all four, which is the half that was
+ * missing and the reason an area downloaded before SNOW-843 still reads
+ * `done` today with no TileJSON in its bucket at all.
+ */
+describe('the render-dependency probe', () => {
+  /** The area's own pinned bucket, as a fresh Set. */
+  function pinnedURLs() {
+    const areaId = core.areaIdForRegion(REGION_ID);
+    return new Set(cachesStub.buckets.get(PINNED_PREFIX + areaId));
+  }
+
+  /** Every render dependency this style declares, as the download fetched them. */
+  const DEPENDENCIES = [STYLE_URL, RELIEF_TILEJSON, BASE_TILEJSON];
+
+  it('reports nothing missing for the area the run just completed', () => {
+    expect(core.missingRenderDependencies(DEPENDENCIES, pinnedURLs())).toEqual([]);
+  });
+
+  it("names a source's TileJSON as missing when its bucket has lost it", () => {
+    // The passive basemap cache is FIFO-trimmed and pinned buckets are
+    // not, but an area downloaded before SNOW-843 never pinned this
+    // document in the first place. Either way MapLibre offline cannot
+    // learn a single tile URL, so the map is blank over a full bucket —
+    // while `blobFullyCached` still, correctly, reports every tile there.
+    const cached = pinnedURLs();
+    cached.delete(BASE_TILEJSON);
+
+    expect(core.missingRenderDependencies(DEPENDENCIES, cached)).toEqual([BASE_TILEJSON]);
+    // The tile half of the answer is unchanged — which is precisely why
+    // asking it alone reported an unusable area as available offline.
+    const tiles = [...cached].filter((url) => url.endsWith('.pbf'));
+    expect(core.blobFullyCached([RELIEF, BASE], REGION_BLOB, tiles)).toBe(true);
+  });
+
+  it('names the style document, without which nothing resolves at all', () => {
+    const cached = pinnedURLs();
+    cached.delete(STYLE_URL);
+    expect(core.missingRenderDependencies(DEPENDENCIES, cached)).toEqual([STYLE_URL]);
+  });
+
+  it('never reports a glyph range missing (SNOW-847, not this ticket)', () => {
+    // Glyphs are deliberately outside the dependency list: MapLibre
+    // requests only the unicode ranges its labels use, so the honest set
+    // is not enumerable, and SNOW-742 PROMOTES whatever was already cached
+    // rather than fetching it. A check over a legitimately partial set
+    // would report a permanent, unrepairable fault. Asserted rather than
+    // assumed so a later ticket cannot fold them in by reflex.
+    const glyphs = [...pinnedURLs()].filter((url) => url.endsWith('.pbf') && url.includes('fonts'));
+    expect(glyphs).toEqual([]);
+    for (const url of core.missingRenderDependencies(DEPENDENCIES, new Set())) {
+      expect(url).not.toContain('/fonts/');
+    }
+  });
+});
+
 describe('the origins registered with the service worker', () => {
   it('include every host the live style fetches tiles from', () => {
     const origins = postedMessages
@@ -467,5 +525,42 @@ describe('the origins registered with the service worker', () => {
     // The style DOCUMENT's own origin stays in the list — it serves the
     // sprite and glyphs — but it was never the one that mattered for tiles.
     expect(origins).toContain('https://vectortiles.geo.admin.ch');
+  });
+});
+
+/*
+ * SNOW-844, end to end on the roundel: an area whose bucket has lost one
+ * source's TileJSON reads `incomplete` rather than `done`, and one tap
+ * fetches back exactly that document — not the eight tiles beside it.
+ *
+ * Runs LAST in the file because it mutates the bucket the describes above
+ * assert against.
+ */
+describe('an area that has lost a render dependency', () => {
+  it('reads incomplete, and one tap repairs just the missing document', async () => {
+    const btn = document.getElementById('map-download-control');
+    const areaId = core.areaIdForRegion(REGION_ID);
+    cachesStub.buckets.get(PINNED_PREFIX + areaId).delete(BASE_TILEJSON);
+
+    // Re-probe the same region: the tiles are all still there, so nothing
+    // about the tile answer has changed.
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:region-selected', {
+        detail: { region_id: REGION_ID, region_name: 'Martigny — Verbier' },
+      }),
+    );
+    await waitFor(() => btn.dataset.downloadState === 'incomplete');
+    expect(btn.dataset.downloadState).toBe('incomplete');
+    // Actionable, because the remedy is one tap — a warning the user
+    // cannot act on is worse than no warning.
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
+
+    warmedURLs = [];
+    btn.click();
+    await waitFor(() => btn.dataset.downloadState === 'done', 5000);
+
+    expect(btn.dataset.downloadState).toBe('done');
+    // The repair's whole point: one document, not a re-download.
+    expect(warmedURLs).toEqual([BASE_TILEJSON]);
   });
 });

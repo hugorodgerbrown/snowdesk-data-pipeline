@@ -1213,7 +1213,11 @@
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.
       paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
-      finish: async (result, runBlob, { core, progressFill, tileSources, basemapKey }) => {
+      finish: async (
+        result,
+        runBlob,
+        { core, progressFill, tileSources, basemapKey, renderDeps },
+      ) => {
         // SNOW-632: a cancelled run is neither success nor failure — the
         // user asked it to stop, not for it to fail — so this is checked
         // BEFORE `ok`. A cancelled run always has `failed === 0` (nothing
@@ -1264,6 +1268,13 @@
             // persisted key did not move.
             template: tileSources,
             basemapKey: basemapKey || null,
+            // SNOW-844: the run's own render dependencies — the style
+            // document, the sprite and each vector source's TileJSON.
+            // Recorded for the same reason `template` is, and mirroring
+            // `_recordRegionDownload`: the Manage downloads sheet checks
+            // rows whose basemap is not the one on screen, and an
+            // unloaded style cannot be asked what its sprite is.
+            deps: Array.isArray(renderDeps) ? renderDeps : [],
             bytes: Number(result.bytes) || 0,
             savedAt: new Date().toISOString(),
           };

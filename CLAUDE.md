@@ -81,15 +81,21 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  (FK to auth.User), surfaced in the map's routes panel
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
                  owns, on a named day, at a stated time and meeting point)
-                 and ``TripParticipant`` (every account on it, organiser
-                 included). ``/trips/`` is the one saved-thing LIST page
-                 that survived SNOW-803, because a trip is indexed by WHEN
-                 and the map indexes by where. The geometry is a SNAPSHOT copied at creation
-                 and never re-read, so a trip survives the source route
-                 being renamed or deleted. The first Snowdesk object that
-                 is interactive and multi-user; read
-                 docs/decisions/a-trip-is-one-object-with-a-roster.md
-                 before changing the roster's shape
+                 and ``TripParticipant`` (every account that has SAVED it,
+                 organiser included). ``/trips/`` is the one saved-thing
+                 LIST page that survived SNOW-803, because a trip is
+                 indexed by WHEN and the map indexes by where. The geometry
+                 is a SNAPSHOT copied at creation and never re-read, so a
+                 trip survives the source route being renamed or deleted.
+                 SNOW-848 took the SOCIAL surface off it: no roster, no
+                 count, no going state — someone plans a trip, sends the
+                 link, and whoever opens it saves it, seeing neither who
+                 else holds it nor how many do. The rows stay
+                 (``for_user`` filters on them) and the organiser is still
+                 named; read
+                 docs/decisions/a-trip-is-one-object-with-a-roster.md,
+                 whose disclosure-rule bullet SNOW-848 supersedes, before
+                 putting anything about the other savers back on a page
   downloads/     Offline basemap areas synced to an account (SNOW-749) — the
                  ``DownloadArea`` model (FK to auth.User) and its sync API.
                  The DEFINITION of an area only: the tiles stay in each
@@ -595,6 +601,7 @@ Read these when working in the relevant area:
 | On-device debug trace (window.pwaDebugLog, log:debug store, debug_log flag / GRP_DEBUG, the sw.js emitters) | [`docs/debug-log.md`](docs/debug-log.md) |
 | PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
 | Why a basemap is a list of tile sources, not a tile URL (tileSources, MapLibre's `(x+y) % hosts` rotation, the register-basemap-origins allowlist) | [`docs/decisions/a-basemap-is-a-list-of-tile-sources.md`](docs/decisions/a-basemap-is-a-list-of-tile-sources.md) |
+| Why a downloaded area is verified by what it renders, not by its tiles (missingRenderDependencies, the `incomplete` state, repair, the three-row resolution rule, why glyphs are excluded) | [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md) |
 | Why offline read paths are time-bounded and latch (a dead radio hangs, it doesn't reject) | [`docs/decisions/bounded-offline-read-paths.md`](docs/decisions/bounded-offline-read-paths.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |

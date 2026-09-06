@@ -27,9 +27,17 @@ had survived in the machine after the CSS took over the hiding, and it is
 now what shows.
 
 map.js's mapDownloadControlInit drives data-download-state
-(no-region/idle/busy/done/error/disabled/offline) and rewrites the
-title/aria-label to match — the done state is probed from real pinned-cache
-contents (every per-area bucket, unioned — SNOW-586), never a stored flag.
+(no-region/idle/busy/done/error/disabled/offline, plus SNOW-844's
+incomplete) and rewrites the title/aria-label to match — the done state is
+probed from real pinned-cache contents (every per-area bucket, unioned —
+SNOW-586), never a stored flag.
+
+SNOW-844: "done" now means the tiles AND the documents the map needs to
+draw them — the style JSON, each vector source's TileJSON and the sprite.
+An area holding the first and not the second paints "incomplete" (the
+--error glyph in amber, static/css/map.css) and its tap repairs exactly
+what is missing rather than re-downloading the area.
+
 "no-region" covers both the nothing-selected case and the
 focused-but-uncomputed one (properties.download is null): in both there is
 no basemap to fetch, which is what the label says.

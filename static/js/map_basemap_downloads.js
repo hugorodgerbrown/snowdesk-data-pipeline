@@ -306,6 +306,86 @@ function activeBasemapSourceDocumentURLs(map) {
   return urls;
 }
 
+/**
+ * SNOW-844: every RENDER dependency of the live style — the documents a
+ * pinned area needs in its bucket to draw at all, beyond its tiles.
+ *
+ * Three things, and they are the three a download already fetches: the
+ * active basemap's style document, its sprite JSON+PNG at 1x and 2x
+ * (`computeBasemapSpriteURLs`), and the TileJSON each vector source is
+ * declared by (`activeBasemapSourceDocumentURLs` — SNOW-843).
+ *
+ * It exists because those three pushes used to live inside
+ * `assembleBasemapDownloadFeedURLs` alone, where only the DOWNLOAD could
+ * see them. SNOW-844's probe has to check the same list, and a second copy
+ * of it is precisely the drift SNOW-843 was: what the download fetched and
+ * what the done-probe checked disagreed, and every surface reported the
+ * download's answer. So this is the one definition, and
+ * `assembleBasemapDownloadFeedURLs` below now calls it rather than
+ * repeating it.
+ *
+ * Glyph ranges are deliberately absent — see `missingRenderDependencies`
+ * (basemap_download_core.js) and this ticket's decision doc for why
+ * promotion, not enumeration, is how an area keeps its labels, and why
+ * checking a promoted set would report a permanent unrepairable failure.
+ *
+ * @param {object|null} map The live MapLibre map. Reading it is exactly
+ *   why this composer stays here rather than moving into
+ *   `basemap_download_core.js`, which is a dependency-free pure IIFE by
+ *   contract (its own header).
+ * @returns {string[]} Possibly empty — a style still settling yields no
+ *   source documents, and a basemap picker that has not resolved yields no
+ *   style URL. An empty list is the UNKNOWN case, never "nothing is
+ *   missing"; every caller reads it that way.
+ */
+function activeBasemapRenderDependencyURLs(map) {
+  const urls = [];
+  const activeBasemap = document.querySelector(
+    '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
+  );
+  if (activeBasemap && activeBasemap.dataset.basemapUrl) {
+    urls.push(activeBasemap.dataset.basemapUrl);
+  }
+  urls.push(...computeBasemapSpriteURLs(map));
+  urls.push(...activeBasemapSourceDocumentURLs(map));
+  return urls;
+}
+
+/**
+ * SNOW-844: which render-dependency list to check ONE recorded area
+ * against — the three-row resolution rule, in one place because three
+ * surfaces apply it (both download controls and the Manage downloads
+ * sheet) and a fourth would otherwise invent a fourth answer.
+ *
+ *   record's `deps` present   → the record's own list, whatever basemap
+ *                               the row belongs to. It names what that
+ *                               run actually fetched.
+ *   absent, basemap IS active → derive it live from the loaded style.
+ *   absent, basemap NOT active → NONE. Skip the check.
+ *
+ * The third row is the one that matters. A record written before this
+ * ticket names no dependencies, and a style that is not loaded cannot be
+ * asked what its sprite is — so for such an area we genuinely cannot
+ * answer, and reporting `incomplete` would be the same class of lie as
+ * today's false `done`, just pointing the other way. It resolves itself
+ * the moment the user switches to that basemap (the roundel then probes
+ * live and heals the record) or repairs.
+ *
+ * @param {string[] | null | undefined} recordedDeps The area's stored
+ *   `deps`, as written by its own download run.
+ * @param {boolean} basemapIsActive Whether the area's basemap is the one
+ *   currently on screen — the only condition under which the live style
+ *   can stand in for a record that names nothing.
+ * @returns {string[]} Possibly empty, and an empty list means UNKNOWN:
+ *   `pwaBasemapDownloadCore.missingRenderDependencies` answers `[]` for
+ *   it, which every caller reads as "no claim", never as "complete".
+ */
+function areaRenderDependencyURLs(recordedDeps, basemapIsActive) {
+  if (Array.isArray(recordedDeps) && recordedDeps.length > 0) return recordedDeps;
+  if (basemapIsActive) return activeBasemapRenderDependencyURLs(MAP);
+  return [];
+}
+
 // SNOW-521: same-origin data-feed + active-basemap-style URL list —
 // everything a basemap download warms besides its own tile ranges.
 // Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
@@ -338,15 +418,11 @@ function assembleBasemapDownloadFeedURLs() {
       urls.push(RATINGS_URL + '?country=' + code);
     }
   }
-  const activeBasemap = document.querySelector(
-    '#basemap-menu .basemap-menu-item[data-basemap-url][aria-checked="true"]',
-  );
-  if (activeBasemap) urls.push(activeBasemap.dataset.basemapUrl);
-  urls.push(...computeBasemapSpriteURLs(MAP));
-  // SNOW-843: and the TileJSON each vector source is declared by — see
-  // `activeBasemapSourceDocumentURLs` for why a download that skips it can
-  // be complete and still render nothing offline.
-  urls.push(...activeBasemapSourceDocumentURLs(MAP));
+  // SNOW-844: the style document, the sprite and each vector source's
+  // TileJSON, from the ONE definition the probe also reads — see
+  // `activeBasemapRenderDependencyURLs` for why a second copy of these
+  // three pushes here is the exact drift this ticket removes.
+  urls.push(...activeBasemapRenderDependencyURLs(MAP));
   return urls;
 }
 
@@ -761,6 +837,12 @@ async function basemapDownloadedAreas() {
         // belongs to `areaIdForRegion` and is deliberately never
         // reverse-engineered elsewhere.
         regionId: entry.region_id,
+        // SNOW-844: the render dependencies the run recorded, so the
+        // Manage downloads sheet can check a row whose basemap is not the
+        // one on screen. Absent on every record written before that ticket
+        // — normalised to `[]` here, which the sheet reads as UNKNOWN
+        // rather than as "nothing needed".
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
       });
     }
   } catch (_e) {
@@ -799,6 +881,8 @@ async function basemapDownloadedAreas() {
         // lets another device (or this one after an eviction) fetch the
         // same ground again, so it travels with the area.
         bbox: entry.bbox,
+        // SNOW-844: see the region branch above.
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
       });
     }
   } catch (_e) {
@@ -1166,6 +1250,79 @@ window.pwaBasemapDownloads = Object.freeze({
    * @returns {string[]}
    */
   basemapOrder: () => basemapOrder(),
+
+  /**
+   * SNOW-844: the picker's currently-checked basemap key, or null — see
+   * `activeBasemapKey`. The Manage downloads sheet needs it to apply the
+   * three-row resolution rule below to a row: only a row on the ACTIVE
+   * basemap may have its dependency list derived from the live style.
+   *
+   * @returns {string | null}
+   */
+  activeBasemapKey: () => activeBasemapKey(),
+
+  /**
+   * SNOW-844: the live style's render dependencies — see
+   * `activeBasemapRenderDependencyURLs`. Exposed for the same load-order
+   * reason `basemapLabel` and `basemapOrder` are: the Manage downloads
+   * sheet is outside the map bundle's parse-time contract, and it needs
+   * this list to resolve a row whose record predates the field.
+   *
+   * @returns {string[]}
+   */
+  renderDependencyUrls: () => activeBasemapRenderDependencyURLs(MAP),
+
+  /**
+   * SNOW-844: the three-row resolution rule — see
+   * `areaRenderDependencyURLs`. The sheet applies it per row, so it reads
+   * it from here rather than restating it.
+   *
+   * @param {string[] | null | undefined} recordedDeps
+   * @param {boolean} basemapIsActive
+   * @returns {string[]}
+   */
+  areaRenderDependencyUrls: (recordedDeps, basemapIsActive) =>
+    areaRenderDependencyURLs(recordedDeps, basemapIsActive),
+
+  /**
+   * SNOW-844: refetch `urls` into `areaId`'s pinned bucket — the Manage
+   * downloads sheet's Repair control. See `basemap_download_runner.js`'s
+   * `repair` for why this is NOT the download path (no eviction, no budget
+   * plan): a repair is a handful of documents, and running it through the
+   * eviction confirm could destroy another area to make room for a sprite.
+   *
+   * The sheet paints nothing while it runs — it re-renders on the result,
+   * and a repair is four small documents rather than a several-minute
+   * download — so the runner's `paint` is a no-op here.
+   *
+   * @param {string} areaId
+   * @param {string[]} urls The MISSING documents only.
+   * @returns {Promise<boolean>} Whether every one of them landed.
+   */
+  repair: (areaId, urls) =>
+    new Promise((resolve) => {
+      repairPinnedDownload({
+        areaId: areaId,
+        urls: urls,
+        paint: () => {},
+        finish: async (result, extras) => {
+          const runCore = extras && extras.core;
+          resolve(!!(runCore && runCore.downloadSucceeded(result)));
+        },
+      });
+    }),
+
+  /**
+   * SNOW-844: every URL held across every pinned bucket — see
+   * `pinnedBasemapCacheURLs`. The sheet asks the same question the
+   * roundels do ("is this area's whole render set on disk?"), and the
+   * service worker answers a basemap request from ANY pinned bucket
+   * (sw.js's `_pinnedBasemapMatch`), so the union is the honest set to
+   * check against rather than one area's own bucket.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  pinnedCacheUrls: () => pinnedBasemapCacheURLs(),
 
   // SNOW-649: the two render-scheduling primitives below are exposed for
   // ONE reason — they were untestable. Both are pure higher-order
@@ -1863,6 +2020,11 @@ const PINNED_DOWNLOAD_DEPS = {
   confirmEviction: (areas) => confirmBasemapEviction(areas),
   evict: (areaIds) => evictBasemapAreas(areaIds),
   feedUrls: () => assembleBasemapDownloadFeedURLs(),
+  // SNOW-844: the subset of `feedUrls` that is a RENDER dependency of the
+  // active style, captured at run start alongside `tileSources` so the
+  // record stores the list this run actually fetched rather than whatever
+  // the picker happens to say by the time `finish` runs.
+  renderDeps: () => activeBasemapRenderDependencyURLs(MAP),
   glyphPrefix: () => activeBasemapGlyphPrefix(MAP),
   progressGrid: (plan, offset) => createDownloadProgressGrid(plan, offset),
   warmCache: (urls, opts) =>
@@ -1901,6 +2063,36 @@ async function runPinnedDownload(options) {
     return;
   }
   return runner.run(PINNED_DOWNLOAD_DEPS, options);
+}
+
+/**
+ * SNOW-844: refetch one area's MISSING render dependencies — see
+ * `basemap_download_runner.js`'s `repair` for why this is a separate,
+ * much shorter path than `runPinnedDownload` above (no quota pre-flight,
+ * no budget plan, and above all no eviction confirm).
+ *
+ * The same thin-delegator shape, and the same treatment of a missing
+ * runner module: fail the repair rather than silently do nothing.
+ *
+ * @param {Object} options `areaId`, `urls`, `paint`, `finish` — the
+ *   runner's own argument contract.
+ * @returns {Promise<void>}
+ */
+async function repairPinnedDownload(options) {
+  // The bucket's size changes, so a cached orphan measurement of it is
+  // stale from here on — same reason `runPinnedDownload` forgets it.
+  forgetPinnedBucketMeasurement(options.areaId);
+  const runner = self.pwaBasemapDownloadRunner;
+  if (!runner || typeof runner.repair !== 'function') {
+    options.paint('error');
+    revealBasemapDownloadError(null);
+    // Settled even here, so a caller awaiting the outcome (the Manage
+    // downloads sheet's Repair control) is never left hanging on a
+    // promise an older cached shell can never resolve.
+    await options.finish(null, { core: self.pwaBasemapDownloadCore });
+    return;
+  }
+  return runner.repair(PINNED_DOWNLOAD_DEPS, options);
 }
 
 /**

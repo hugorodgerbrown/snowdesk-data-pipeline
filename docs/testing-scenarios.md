@@ -830,6 +830,45 @@ shell is cached), so there is state to clear.
 | 3 | Accept the dialog | IndexedDB, Cache storage and Service workers are cleared; the page reloads |
 | 4 | Go offline (DevTools → Network → Offline), navigate to a URL never visited (e.g. http://localhost:8000/some-page-never-visited/) | The fallback page renders **with** the reset control visible and working — `/static/js/pwa_reset.js` is in `PRECACHE_URLS` (`static/js/sw.js`) alongside the page itself, so it loads with no network. The panel reveals itself only once that script has defined `window.pwaResetLocalData`, so a control bound to nothing is never shown |
 
+### Scenario P13: A downloaded area that cannot render, and the repair
+
+> Not automated in a browser, deliberately. Every assertion here is
+> reachable from jsdom and lives in Vitest —
+> [tests/js/test_map_multi_source_basemap.js](../tests/js/test_map_multi_source_basemap.js)
+> (the probe, the roundel's `incomplete` state and the repair loop),
+> [tests/js/test_map_downloads_manager.js](../tests/js/test_map_downloads_manager.js)
+> (the sheet's row and its Repair control) and
+> [tests/js/test_basemap_download_runner.js](../tests/js/test_basemap_download_runner.js)
+> (the repair never reaches the eviction sequence). A browser test could
+> not run this journey anyway: a download's fetches are made by the
+> service worker, which Playwright's route interception does not see (see
+> `tests/e2e/conftest.py`), so the run would have to reach a real tile
+> origin from CI — and with the basemap style unreachable there, MapLibre
+> never fires `load` and the roundel never resolves a tile source at all.
+
+**Goal**: Verify that an area whose bucket holds every tile but not the
+documents MapLibre needs to draw them says so, and that one tap fixes it
+(SNOW-844).
+
+A pinned area renders offline only if its bucket also holds the basemap's
+style document, the TileJSON each vector source is declared by, and the
+sprite. An area downloaded before SNOW-843 never fetched its TileJSON at
+all, so this is reproducible on a real device that has been using the app
+for a while — not only by hand-editing a bucket.
+
+**Preconditions**: one downloaded region, on the basemap currently
+showing. Swisstopo is the sharpest case: its style declares two vector
+sources, each by a TileJSON document.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Download a region, wait for the roundel to go solid | The roundel reads `done`; DevTools → Application → Cache storage → `snowdesk-basemap-pinned-region-<id>` holds the tiles, the style JSON, both `tiles.json` documents and the sprite |
+| 2 | Delete ONE of the `tiles.json` entries from that bucket, then reload | The roundel reads `incomplete` — amber, with the exclamation glyph — and its tooltip says the basemap is missing part of itself. It is NOT `done` (the tiles are all still there, which is the whole bug) and NOT `idle` |
+| 3 | Open "Manage downloads" | The area's row reads "Incomplete", dims like an orphan, and carries a **Repair** control the other rows do not |
+| 4 | Tap the roundel | It goes busy briefly, then back to `done`. The Network panel shows ONE request — the deleted `tiles.json` — and no tiles: a repair fetches what is missing, not the area again |
+| 5 | Repeat step 2, then go offline before tapping | The roundel reads `offline`, not `incomplete` — a repair is a fetch, and the same refusal applies. Back online, `incomplete` returns |
+| 6 | Switch to a basemap this area was NOT downloaded under, and open the sheet | Its row is NOT marked incomplete. A record written before SNOW-844 names no dependencies, and a style that is not loaded cannot be asked what its sprite is, so an unanswerable row is left alone rather than accused |
+
 ---
 
 ## Offline Downloads (map coverage)
@@ -856,6 +895,12 @@ on `/help/`.
 >   `snowdesk-basemap-pinned-custom-<uuid>`.
 > - Coverage is **per basemap**. An area stored under OpenFreeMap is not
 >   coverage for swisstopo.
+> - Tiles alone are not coverage. A bucket also needs its **render
+>   dependencies** — the style document, the TileJSON each vector source
+>   is declared by, and the sprite (SNOW-844). An area holding every tile
+>   and missing one of those reads `incomplete`, not `done`, and is
+>   repaired rather than re-downloaded: that is P13's subject, and these
+>   scenarios assume it passes rather than repeating it.
 > - Per-run ceiling 200 MB; standing budget 500 MB, device-local and
 >   settable in the sheet.
 
@@ -888,8 +933,11 @@ for (const n of (await caches.keys()).filter(n => n.startsWith('snowdesk-basemap
 ```
 
 Healthy region bucket: tiles at **10, 11, 12, 13, 14 and no other zoom**,
-a non-zero `glyphs` count (labels survive offline) and a non-zero `docs`
-count (style + TileJSON — without those the pinned tiles are unreachable).
+a non-zero `glyphs` count (labels survive offline) and a `docs` count
+covering the style, one TileJSON per vector source, and the sprite —
+without those the pinned tiles are unreachable however complete they are.
+A `docs` count that looks short is the `incomplete` state's territory:
+run P13 rather than diagnosing it from here.
 
 ### Scenario D1: Download a region
 
@@ -901,9 +949,9 @@ truthfully across a reload.
 | 1 | Select CH-4115 (Martigny/Verbier) — search or tap the map | The readout chip fills, and a download roundel appears beside the region name |
 | 2 | Hover / inspect the roundel | `data-download-state="idle"`; the tooltip carries the size ("up to N MB") |
 | 3 | Tap it | State goes `busy`: the roundel fills bottom-up in the active basemap's colour, and the on-map grid fills square by square |
-| 4 | Wait for it to finish | State goes `done` — a solid disc, same glyph in white. **No toast**: the roundel is the only feedback |
+| 4 | Wait for it to finish | State goes `done` — a solid disc, same glyph in white. **No toast**: the roundel is the only feedback. `done` asserts both halves: every tile, *and* every render dependency (P13) |
 | 5 | Run the coverage probe | One bucket, `snowdesk-basemap-pinned-region-CH-4115`, with tiles at z10–14 only, plus glyphs and docs |
-| 6 | Reload the page, reselect the region | Still `done` — the state is a live cache read, never a stored flag |
+| 6 | Reload the page, reselect the region | Still `done` — the state is a live cache read of both halves, never a stored flag |
 
 ### Scenario D2: See the coverage you hold
 
@@ -982,8 +1030,9 @@ claims to be coverage.
 |------|--------|-----------------|
 | 1 | Tap the bin on a row | The row goes, its squares go, and its bucket is gone from the probe |
 | 2 | Start a region download and interrupt it mid-run (Network → Offline while `busy`) | The run reports cancelled, not failed; the roundel rests at `idle` — a partial run records nothing |
-| 3 | Reopen the sheet | The leftover bucket lists under "Unknown basemap" with its bucket id as the title and "Incomplete" as its whole meta line — no size, no kind, Remove the only action |
-| 4 | Remove it, re-run the probe | The bucket is gone |
+| 3 | Reopen the sheet | The leftover bucket lists under "Unknown basemap" with its bucket id as the title and "Incomplete" as its whole meta line — no size, no kind, **Remove the only action** |
+| 4 | Note what distinguishes it from P13's row | Both read "Incomplete", and the actions are the difference: an orphan has no record to repair *from*, so it gets Remove alone, where a render-incomplete area carries **Repair** as well |
+| 5 | Remove it, re-run the probe | The bucket is gone |
 
 ### Scenario D8: Areas follow the account, tiles do not
 

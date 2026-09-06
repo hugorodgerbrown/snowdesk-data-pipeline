@@ -17,12 +17,17 @@ The title and description are the TRIP's, not the site's. A card reading
 "Snowdesk" tells a recipient nothing; "Rosablanche · Saturday 14 March,
 07:30" is the message.
 
-No organiser controls, ever. This page has no `is_organiser` branch even
-though _trip_context computes one — an organiser opening their own link is
-looking at what their friends see, and edit and delete belong on the object
-page. The one control it DOES carry is the recipient's own verb: Join
-(SNOW-822), addressed by token, because holding a live link is the whole
-access rule and the token is the only identifier a non-participant has.
+No organiser controls, ever. This page has no `is_organiser` branch for
+editing even though _trip_context computes the flag — an organiser opening
+their own link is looking at what their friends see, and edit and delete
+belong on the object page. (The flag is still read, for the attribution
+line: it says "Your trip" rather than naming the reader back to
+themselves.)
+
+The one control it DOES carry is the recipient's own verb: Save this trip
+(SNOW-822's join endpoint, relabelled by SNOW-848), addressed by token,
+because holding a live link is the whole access rule and the token is the
+only identifier a non-saver has.
 {% endcomment %}
 {% load i18n static components %}
 
@@ -47,39 +52,35 @@ access rule and the token is the only identifier a non-participant has.
 
 {% block content %}
     <main class="{% page_shell_classes %}">
-        {% trans "You've been invited on a trip" as trip_eyebrow %}
-        {% include "includes/_eyebrow.html" with text=trip_eyebrow class_extra="mb-2" %}
-        {% trans "Untitled trip" as untitled_trip %}
-        {% firstof trip.display_name untitled_trip as trip_heading %}
-        {% include "includes/_page_title.html" with text=trip_heading class_extra="mb-6" data_testid="trip-heading" %}
+        {# The inner 640px column — see trips/trip.html for why this page   #}
+        {# is not read at the shell's own 720px, and why it is not the      #}
+        {# mock's 390px either.                                             #}
+        <div class="max-w-narrow mx-auto">
+            {% include "trips/partials/_trip_header.html" %}
 
-        {% card padding="p-6" extra="mb-6" %}
-        {% include "trips/partials/_trip_summary.html" with trip=trip %}
-        {% endcard %}
+            {% include "trips/partials/_trip_notes.html" %}
+            <div class="mt-3">
+                {% include "trips/partials/_trip_details_card.html" %}
+            </div>
 
-        {% include "trips/partials/_trip_basemaps.html" %}
-        {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload map_url=map_url %}
+            {% include "trips/partials/_trip_basemaps.html" %}
+            {% include "trips/partials/_trip_map.html" with trip=trip map_payload=map_payload map_url=map_url %}
 
-        {# SNOW-824: Save route. Available to anyone who can see the trip,  #}
-        {# participant or not — saving does not join and joining does not   #}
-        {# save.                                                            #}
-        <div class="mt-4">
-            {% include "trips/partials/_trip_save_route.html" %}
+            {# SNOW-848: Save this trip. This is the reason the link opens a #}
+            {# page rather than unfurling to a card and stopping — saving is #}
+            {# the thing it was sent for, and it is the ONLY act this page   #}
+            {# asks for. The roster card that used to sit here, with its     #}
+            {# count and its names and its Join, is gone: nobody sees who    #}
+            {# else holds a trip. See _trip_save.html.                       #}
+            {% include "trips/partials/_trip_save.html" %}
         </div>
-
-        {# SNOW-822: the count for anyone, the names for participants, and    #}
-        {# the recipient's own verb. This is the reason the link opens a page #}
-        {# rather than a card — Join is the thing it was sent for.            #}
-        {% card padding="p-6" extra="mt-6" %}
-        {% include "trips/partials/_trip_roster.html" %}
-        {% endcard %}
     </main>
 {% endblock content %}
 
 {% block extra_js %}
-    {# htmx, which Join posts over. This page carried no extra_js block at #}
-    {# all until SNOW-834, so the one control the link exists for did      #}
-    {# nothing at all when pressed — the recipient's Join rendered its     #}
-    {# hx-post and nothing read it. Save route posts the same way.         #}
+    {# htmx, which Save this trip posts over. This page carried no        #}
+    {# extra_js block at all until SNOW-834, so the one control the link   #}
+    {# exists for did nothing at all when pressed — it rendered its        #}
+    {# hx-post and nothing read it.                                        #}
     <script defer src="{% static 'js/htmx.min.js' %}"></script>
 {% endblock extra_js %}

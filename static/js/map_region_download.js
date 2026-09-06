@@ -273,9 +273,21 @@
    *   control's own roundel can show which basemap the region was
    *   downloaded under. Null on an unresolved picker; never used for the
    *   template-eviction decision above, which stays `template`-only.
+   * @param {string[]} renderDeps SNOW-844: the style/sprite/TileJSON URLs
+   *   the run fetched, resolved by the runner at run start and handed back
+   *   through `finish`'s `extras`. A record with none is UNKNOWN, never
+   *   incomplete — see `_probeDone` for the three-row resolution rule.
    * @returns {Promise<void>}
    */
-  async function _recordRegionDownload(regionId, tileSources, z, band, bytes, basemapKey) {
+  async function _recordRegionDownload(
+    regionId,
+    tileSources,
+    z,
+    band,
+    bytes,
+    basemapKey,
+    renderDeps,
+  ) {
     if (!z || !window.pwaDb) return;
     try {
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
@@ -290,6 +302,13 @@
         name: name,
         template: tileSources,
         basemapKey: basemapKey || null,
+        // SNOW-844: the RENDER dependencies this run fetched — the style
+        // document, the sprite and each vector source's TileJSON. Stored
+        // rather than re-derived, because the Manage downloads sheet lists
+        // areas downloaded under basemaps that are NOT the one on screen,
+        // and a style that is not loaded cannot be asked what its sprite
+        // is. Exactly the reason `template` and `basemapKey` are stored.
+        deps: Array.isArray(renderDeps) ? renderDeps : [],
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       });
@@ -383,9 +402,27 @@
   }
 
   /**
-   * Backfill absent `template` / `basemapKey` on `regionId`'s stored
-   * record, from values the caller has just PROVEN by probing real cache
-   * contents. Never overwrites a value that is already there.
+   * Whether `value` is a real stored value rather than an absence.
+   *
+   * SNOW-844: `_healRegionRecord` used a bare truthiness test, which is
+   * right for `template` and `basemapKey` (strings) and wrong for `deps`:
+   * an EMPTY array is truthy, so a record written by a run whose style had
+   * not settled — `deps: []` — would read as "already has a value" and
+   * never be healed, for the life of the install. An empty list is exactly
+   * the unknown this heal exists to resolve.
+   *
+   * @param {*} value
+   * @returns {boolean}
+   */
+  function _isUsable(value) {
+    if (Array.isArray(value)) return value.length > 0;
+    return !!value;
+  }
+
+  /**
+   * Backfill absent `template` / `basemapKey` / (SNOW-844) `deps` on
+   * `regionId`'s stored record, from values the caller has just PROVEN by
+   * probing real cache contents. Never overwrites a value that is already there.
    *
    * A record written before SNOW-632 (no `template`) or SNOW-645 (no
    * `basemapKey`) is missing exactly the two fields every other surface
@@ -406,7 +443,13 @@
    * leaves the record as it was and the next probe tries again.
    *
    * @param {string} regionId
-   * @param {{template: string[][], basemapKey: string | null}} fields
+   * @param {{template?: string[][], basemapKey?: string | null,
+   *   deps?: string[]}} fields SNOW-844 adds `deps` — the same backfill,
+   *   one field further out. A record written before that ticket names no
+   *   render dependencies at all, so the probe cannot tell an area that is
+   *   missing its sprite from one that never listed it; healing from the
+   *   ACTIVE style's list, at the moment the cache has just been found to
+   *   hold every one of those URLs, records something verified.
    * @returns {Promise<void>}
    */
   async function _healRegionRecord(regionId, fields) {
@@ -418,7 +461,7 @@
       for (const entry of value) {
         if (!entry || entry.region_id !== regionId) continue;
         for (const [name, next] of Object.entries(fields)) {
-          if (!next || entry[name]) continue;
+          if (!_isUsable(next) || _isUsable(entry[name])) continue;
           entry[name] = next;
           changed = true;
         }
@@ -580,8 +623,22 @@
    *     promote a guess to a stored fact. Only `_healRegionRecord` writes,
    *     and only from a value the cache itself has just proven.
    *
+   * SNOW-844: `done` is no longer tiles alone. A pinned area renders
+   * offline only if its bucket ALSO holds the style document, each vector
+   * source's TileJSON and the sprite, and nothing ever checked those —
+   * which is why an area downloaded before SNOW-843 (one that never
+   * fetched its TileJSON at all) still read `done` while the map came up
+   * blank. `missingDeps` names what is absent, so the roundel can paint
+   * the distinct 'incomplete' state and the tap can repair exactly that
+   * list. It is empty whenever the check was not applicable: the tiles are
+   * incomplete (the area is not downloaded at all — offer a download, not
+   * a repair), or the record belongs to another basemap and names no
+   * dependencies of its own (the third row of `areaRenderDependencyURLs`'s
+   * resolution rule — unknowable, so unaccused).
+   *
    * @param {{regionId: string, summary: Object}} data
-   * @returns {Promise<{done: boolean, otherBasemapKey: string | null} | null>}
+   * @returns {Promise<{done: boolean, missingDeps: string[],
+   *   otherBasemapKey: string | null} | null>}
    */
   async function _probeDone(data) {
     const core = self.pwaBasemapDownloadCore;
@@ -607,20 +664,42 @@
     const stored = await _storedRegionRecord(data.regionId);
     if (stored) {
       if (!stored.template || core.tileSourcesKey(stored.template) === activeKey) {
-        const done = core.blobFullyCached(tileSources, { z: stored.z }, cached);
+        const tilesCached = core.blobFullyCached(tileSources, { z: stored.z }, cached);
+        // SNOW-844: tiles are half the answer. This branch is the area's
+        // OWN basemap (or a pre-SNOW-632 record with no template, read the
+        // same way `handleClick`'s `beforeWarm` reads it), so the live
+        // style can stand in when the record names no dependencies — the
+        // second row of the resolution rule in `areaRenderDependencyURLs`.
+        const depURLs = areaRenderDependencyURLs(stored.deps, true);
+        // Only asked once the tiles are all present. An area still missing
+        // tiles is not downloaded at all, and 'idle' — download it — is
+        // the right thing to offer; 'incomplete' would send the user to a
+        // repair that fetches four documents and leaves the map blank.
+        const missingDeps = tilesCached
+          ? core.missingRenderDependencies(depURLs, cached)
+          : [];
         // The tile set is verified present under the ACTIVE template, so
         // an incomplete record can be completed from what was just proven
         // rather than left for the overlay to trip over. Awaited, not
         // fire-and-forget: the caller's next paint (and the overlay
         // refresh that follows a render) should read the healed record,
         // not race the write.
-        if (done) {
-          await _healRegionRecord(data.regionId, {
-            template: tileSources,
-            basemapKey: activeBasemapKey(),
-          });
+        //
+        // SNOW-844: `deps` is healed only when the cache has just been
+        // found to hold every URL in the list — the same standard the
+        // other two fields are held to. Healing an unverified list would
+        // freeze a guess into the record and make the area permanently
+        // 'incomplete' with nothing able to prove otherwise.
+        if (tilesCached) {
+          const fields = { template: tileSources, basemapKey: activeBasemapKey() };
+          if (missingDeps.length === 0) fields.deps = depURLs;
+          await _healRegionRecord(data.regionId, fields);
         }
-        return { done: done, otherBasemapKey: null };
+        return {
+          done: tilesCached && missingDeps.length === 0,
+          missingDeps: missingDeps,
+          otherBasemapKey: null,
+        };
       }
       // SNOW-645: a record for a DIFFERENT basemap. Verify its tiles are
       // still actually on disk before promising them back — an evicted
@@ -631,19 +710,37 @@
         { z: stored.z },
         cached,
       );
-      if (!otherStillCached) return { done: false, otherBasemapKey: null };
+      if (!otherStillCached) {
+        return { done: false, missingDeps: [], otherBasemapKey: null };
+      }
       // A keyless record's basemap can still be named, from any other
       // record sharing its template — so the ring takes that basemap's
       // identity colour rather than the "unknown" green, which is what
       // made one download read rust on its own basemap and green from
       // another. Only consulted when the record itself is silent.
       const key = stored.basemapKey || (await _basemapKeyForTemplate(stored.template));
-      return { done: false, otherBasemapKey: key || '' };
+      // SNOW-844: no dependency check on this branch — the record's own
+      // basemap is not the one loaded, so its sprite and TileJSON URLs are
+      // only knowable if the record itself named them, and this state does
+      // not paint them either way. The third row of the resolution rule.
+      return { done: false, missingDeps: [], otherBasemapKey: key || '' };
     }
 
     try {
       const blob = await _fetchRegionBlob(data.regionId);
-      return { done: core.blobFullyCached(tileSources, blob, cached), otherBasemapKey: null };
+      const tilesCached = core.blobFullyCached(tileSources, blob, cached);
+      // SNOW-844: no record at all, so nothing names this area's
+      // dependencies — but the question is being asked about the ACTIVE
+      // basemap's tiles, so the active style's own list is the right one
+      // to check (second row of the resolution rule).
+      const missingDeps = tilesCached
+        ? core.missingRenderDependencies(areaRenderDependencyURLs(null, true), cached)
+        : [];
+      return {
+        done: tilesCached && missingDeps.length === 0,
+        missingDeps: missingDeps,
+        otherBasemapKey: null,
+      };
     } catch (_e) {
       return null;
     }
@@ -656,7 +753,7 @@
    *
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
    *   'error' | 'disabled' | 'offline' | 'other-basemap' | (SNOW-749)
-   *   'signin'.
+   *   'signin' | (SNOW-844) 'incomplete'.
    * @param {number} mb The region's per-tile size estimate, as the API
    *   computed it. SNOW-843: scaled here by the number of vector sources
    *   the active style fetches, so the figure the user reads is the one
@@ -711,6 +808,10 @@
       state === 'idle' ||
         state === 'error' ||
         state === 'other-basemap' ||
+        // SNOW-844: 'incomplete' is actionable — the tap repairs the
+        // missing documents. A warning the user cannot act on is worse
+        // than no warning, and this one has a one-tap remedy.
+        state === 'incomplete' ||
         state === 'signin'
         ? 'false'
         : 'true',
@@ -753,6 +854,11 @@
       idle: self.pwaStrings.interpolate(MAP_STRINGS['download-idle'], { mb: mb }),
       busy: self.pwaStrings.interpolate(MAP_STRINGS['download-busy'], { pct: `${pct || 0}%` }),
       done: MAP_STRINGS['download-done'],
+      // SNOW-844: the tiles are all here; the style, sprite or TileJSON
+      // that lets the map draw them is not. Says what is wrong AND what
+      // the tap does, because the state is unfamiliar and the remedy is
+      // cheap — this is not a re-download.
+      incomplete: MAP_STRINGS['download-incomplete'],
       // SNOW-568: the toast carries the reason; the roundel just has to
       // say the run failed and is retryable.
       error: MAP_STRINGS['download-error'],
@@ -832,18 +938,41 @@
       _retryWhenStyleSettles();
       return;
     }
-    const { done, otherBasemapKey } = probe;
+    const { done, missingDeps, otherBasemapKey } = probe;
     // Offline-integrity: a region already downloaded (done) still reads as
     // the green offline circle; one that isn't can't be fetched now, so it
     // shows the offline-disabled state instead of an actionable idle —
     // including SNOW-645's 'other-basemap', which is just as much "start a
     // new download" as 'idle' is, and so just as unavailable offline.
+    //
+    // SNOW-844: and 'incomplete' with them, for the same reason — a repair
+    // is a download, of four documents rather than four hundred tiles, and
+    // the worker refuses it exactly as it refuses any other. Information is
+    // lost by saying 'offline' instead of 'incomplete' here, but nothing is
+    // misstated: 'offline' does not claim the area is fine, which is what
+    // the false 'done' this ticket removes did. The honest state arrives
+    // with the signal that makes it actionable.
     if (!networkInUse() && !done) {
       setState('offline', data.summary.mb);
       return;
     }
     if (done) {
       setState('done', data.summary.mb);
+      return;
+    }
+    // SNOW-844: the tiles are all here and something the map needs to draw
+    // them is not — the style document, a vector source's TileJSON, or the
+    // sprite. Its own state, not 'error' (nothing failed; this is usually
+    // an area downloaded before SNOW-843 ever fetched a TileJSON) and not
+    // 'idle' (offering a whole re-download for four small documents wastes
+    // the user's data and their time). The tap repairs.
+    //
+    // Deliberately NOT passed through `gateState`: this area is already on
+    // this device, and finishing it is not starting a new download. Gating
+    // it would leave a signed-out visitor holding a permanently blank map
+    // with the one control that could fix it refusing to.
+    if (missingDeps && missingDeps.length > 0) {
+      setState('incomplete', data.summary.mb);
       return;
     }
     if (otherBasemapKey !== null) {
@@ -888,12 +1017,77 @@
   }
 
   /**
+   * SNOW-844: refetch the render dependencies this region is missing.
+   *
+   * What a tap on 'incomplete' does. The missing list is re-derived here
+   * rather than stashed when the state was painted: the paint may be
+   * minutes old, another area's download may have landed the sprite in
+   * the meantime, and a repair that fetches a URL already on disk is a
+   * request spent saying nothing. `_probeDone` is one pinned-cache walk,
+   * which is what the roundel pays on every render anyway.
+   *
+   * The record's `deps` is healed by the re-probe that follows, not
+   * written here: `_probeDone`'s heal only writes a list the cache has
+   * just been found to hold, which after a successful repair it has.
+   *
+   * @param {{regionId: string, summary: Object}} data
+   * @returns {Promise<void>}
+   */
+  async function handleRepair(data) {
+    const probe = await _probeDone(data);
+    const missing = (probe && probe.missingDeps) || [];
+    if (missing.length === 0) {
+      // The fault fixed itself between the paint and the tap — another
+      // area's download, or a browse that recached the document. Settle on
+      // whatever the probe now says rather than dispatching a no-op run.
+      renderControl();
+      return;
+    }
+    const core = self.pwaBasemapDownloadCore;
+    const areaId = core ? core.areaIdForRegion(data.regionId) : '';
+    await repairPinnedDownload({
+      areaId: areaId,
+      urls: missing,
+      paint: (nextState, pct) => setState(nextState, data.summary.mb, pct),
+      finish: async (result, { core: runCore }) => {
+        // The same predicate a full download settles on — a partial,
+        // vacuous or absent result must not claim the area now renders.
+        if (runCore && runCore.downloadSucceeded(result)) {
+          // Drop the busy latch FIRST. `_renderControl` refuses to repaint
+          // a control it believes is mid-run (that guard is what stops a
+          // basemap switch or a connectivity flip clobbering a download's
+          // progress fill), so a re-render dispatched while 'busy' is
+          // still painted would return immediately and leave the roundel
+          // spinning for good. 'idle' is a real state with a real label
+          // rather than a bare attribute write, and it survives for the
+          // one tick before the probe below settles the true one.
+          setState(gateState('idle'), data.summary.mb);
+          // Re-probe rather than paint 'done' outright: the repair proves
+          // the documents landed, and the probe is what confirms the whole
+          // area — tiles included — and heals the record's `deps` from a
+          // list it has just verified.
+          await renderControl();
+        } else {
+          setState('error', data.summary.mb);
+          revealBasemapDownloadError(result ? result.reason : null);
+        }
+        // The layers menu is a live cache-state dashboard, and this run
+        // changed what is on disk — same post-run refresh a download does.
+        window.pwaLayerSyncStatus?.refresh();
+      },
+    });
+  }
+
+  /**
    * Run the download for the focused region.
    *
    * SNOW-611: the ordered pre-flight, the eviction and the warm-cache
    * dispatch all live in the shared `runPinnedDownload` — this supplies
    * only what is this control's own: how the roundel paints, where the
    * blob comes from, and what a successful run records.
+   *
+   * SNOW-844: a tap on 'incomplete' is handled first and separately — see
+   * `handleRepair`.
    *
    * @returns {Promise<void>}
    */
@@ -906,6 +1100,21 @@
     // when the template it reads has changed), so no new eviction logic
     // is needed for this state.
     const state = btn.dataset.downloadState;
+    // SNOW-844: a repair, before the sign-in gate rather than after it.
+    // This region is ALREADY on this device; finishing it is not starting
+    // a new download, and the gate is on starting one. Gating it would
+    // leave a signed-out visitor holding a blank map with the one control
+    // that could fix it sending them to a login page instead. Offline is
+    // still refused, below and in `_renderControl` — a repair is a fetch.
+    if (state === 'incomplete') {
+      if (!data) return;
+      if (!networkInUse()) {
+        setState('offline', data.summary.mb);
+        return;
+      }
+      await handleRepair(data);
+      return;
+    }
     // SNOW-749: the gate, before anything else. Checked twice on purpose —
     // once on the painted state (the visitor tapped what the label said)
     // and once on NEEDS_SIGNIN itself, which covers a race where a repaint
@@ -986,7 +1195,11 @@
           await evictBasemapAreas([evictAreaId]);
         }
       },
-      finish: async (result, blob, { core: runCore, progressFill, tileSources, basemapKey }) => {
+      finish: async (
+        result,
+        blob,
+        { core: runCore, progressFill, tileSources, basemapKey, renderDeps },
+      ) => {
         // "done" (the green offline circle) requires at least one success
         // and no failures; a partial, vacuous, or absent result must not
         // claim the region is downloaded.
@@ -1030,6 +1243,7 @@
             blob.band || runCore.MICRO_BAND,
             result.bytes,
             basemapKey,
+            renderDeps,
           );
         }
         // SNOW-569: await the on-map pulse before flipping the roundel — the

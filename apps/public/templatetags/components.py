@@ -89,6 +89,22 @@ _BUTTON_VARIANT_CLASSES: dict[str, str] = {
         "text-status-error-text border border-status-error-text"
         " hover:bg-status-error-bg transition-colors"
     ),
+    # SNOW-848 — the accent-filled CTA. The trips design draws "Save this
+    # trip" on ``--color-accent`` rather than the ink fill ``primary``
+    # uses, and it is the only button in the codebase that does.
+    #
+    # The two are not interchangeable and the rule is narrow: ``primary``
+    # stays the site's default CTA, the loudest thing on an ordinary page.
+    # ``accent`` is for the one control that puts SOMEBODY ELSE'S object on
+    # your account — today that is saving a shared trip. The blue is the
+    # same ink the w3w address and "View on the map" already carry on that
+    # page, so the page's one filled control matches its own links rather
+    # than importing the black CTA from the account forms.
+    #
+    # ``--color-accent-text`` is not theme-mirrored (see its note in
+    # src/css/main.css): it is white on a filled accent track, and that
+    # combination reads correctly in both themes.
+    "accent": ("bg-accent text-accent-text hover:bg-accent-hover transition-colors"),
 }
 
 _BUTTON_SIZE_CLASSES: dict[str, str] = {
@@ -133,7 +149,8 @@ def _button_chrome_classes(
     """Return the full Tailwind class string for a button element.
 
     Args:
-        variant: One of ``"primary"``, ``"secondary"``, ``"ghost"``.
+        variant: One of ``"primary"``, ``"secondary"``, ``"ghost"``,
+            ``"destructive"``, ``"accent"``.
         size: One of ``"standard"``, ``"compact"``.
         full_width: When ``True``, append ``w-full`` to the class string.
         is_anchor: When ``True``, append ``inline-block`` (required so an
@@ -253,7 +270,7 @@ def button_classes(
 
     Args:
         variant: Visual style — ``"primary"`` (default), ``"secondary"``,
-            ``"ghost"``, or ``"destructive"``.
+            ``"ghost"``, ``"destructive"``, or ``"accent"``.
         size: Padding scale — ``"standard"`` (default, ``px-5 py-2.5``) or
             ``"compact"`` (``px-4 py-2``).
         full_width: When ``True``, appends ``w-full``.

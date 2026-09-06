@@ -31,6 +31,12 @@
  *
  * Loaded from `public/home.html` before `map.js` (both `defer`, so
  * document order is execution order).
+ *
+ * SNOW-844 adds a SECOND entry point, `repair`, which deliberately does
+ * NOT go through `run`. See its docstring: the ordering above exists to
+ * protect a several-hundred-tile download, and running a four-document
+ * repair through it could ask the user to evict a whole region to make
+ * room for a sprite.
  */
 
 (function () {
@@ -61,6 +67,7 @@
    *   confirmEviction: function(Array<Object>): Promise<boolean>,
    *   evict: function(string[]): Promise<void>,
    *   feedUrls: function(): string[],
+   *   renderDeps?: function(): string[],
    *   progressGrid: function(Object|null, number): Object,
    *   warmCache: function(string[], Object): (Promise<Object>|null),
    *   isOnline: function(): boolean,
@@ -99,7 +106,11 @@
    *     was downloaded records the basemap that was actually fetched, not
    *     whatever happens to be active when `finish` runs) and, SNOW-645,
    *     `basemapKey` — the picker key captured alongside `tileSources` at run
-   *     start, display-only and possibly null. `result` is the
+   *     start, display-only and possibly null. SNOW-844 adds `renderDeps` —
+   *     the style/sprite/TileJSON URLs this run fetched, resolved at run
+   *     start for the same reason `tileSources` is, and recorded so a later
+   *     probe can check an area whose basemap is not the one on screen.
+   *     `result` is the
    *     worker's report, or `null` when there was no worker at all. SNOW-632:
    *     `result` can now carry `cancelled: true` — the run stopped early on
    *     a `pwaWarmCacheCancel()` request rather than exhausting the URL
@@ -229,8 +240,18 @@
       progressFill.update(done, total, settled);
     };
 
+    // SNOW-844: the render dependencies this run is fetching — the style
+    // document, the sprite and each vector source's TileJSON, all of them
+    // already inside `feedUrls` above. Resolved HERE, once, and handed to
+    // `finish` for the record, for the same reason `tileSources` is: a
+    // basemap switched mid-download would otherwise have the record name
+    // documents this run never fetched. A `deps` bundle without the member
+    // (an older shell mid-rollout) yields `[]`, which every reader treats
+    // as "unknown" rather than "complete".
+    const renderDeps = typeof deps.renderDeps === 'function' ? deps.renderDeps() : [];
+
     const settle = (result) =>
-      finish(result, blob, { core, progressFill, tileSources, basemapKey });
+      finish(result, blob, { core, progressFill, tileSources, basemapKey, renderDeps });
 
     // SNOW-521: `pinned: true` routes the basemap-origin writes into a
     // dedicated pinned bucket, exempt from the passive browsing LRU trim —
@@ -252,5 +273,95 @@
     }
   }
 
-  self.pwaBasemapDownloadRunner = { run: run };
+  /**
+   * Refetch an already-downloaded area's MISSING render dependencies into
+   * its own pinned bucket (SNOW-844).
+   *
+   * Deliberately not a call to `run` above, and this is the whole design
+   * of it. `run`'s pre-flight — quota estimate, budget plan, and above all
+   * the eviction confirm that DESTROYS another area's bucket — exists to
+   * guard a download of several hundred tiles priced in megabytes. A
+   * repair is a handful of small JSON and PNG documents; putting it
+   * through that sequence could ask the user to delete a whole downloaded
+   * region to make room for a sprite, which is a worse outcome than the
+   * fault being repaired. So this is the short path: paint busy, warm the
+   * missing URLs into the area's own bucket, hand the result back.
+   *
+   * It is also why `beforeWarm` has no counterpart here. Nothing about a
+   * repair invalidates the bucket's existing contents — the tiles it is
+   * completing are the ones already in it.
+   *
+   * @param {{
+   *   clearError: function(): void,
+   *   revealError: function(string|null): void,
+   *   warmCache: function(string[], Object): (Promise<Object>|null),
+   * }} deps The same `map.js` bundle `run` takes; a repair needs three of
+   *   its members and reads no others.
+   * @param {{
+   *   areaId: string,
+   *   urls: string[],
+   *   paint: function(string, number=, number=): void,
+   *   finish: function(Object|null, Object): Promise<void>,
+   * }} options
+   *   `areaId` — the pinned bucket to write into. The area's OWN bucket,
+   *     never a new one: a repair completes a download, it does not make a
+   *     second copy of it.
+   *   `urls` — the missing documents, and only those
+   *     (`pwaBasemapDownloadCore.missingRenderDependencies`). Warming the
+   *     whole dependency list instead would refetch what is already there.
+   *   `paint` — the caller's roundel/row painter, same contract as `run`'s.
+   *   `finish` — called as `(result, {core})` once the warm settles, and
+   *     on every early return too, with a `null` result.
+   * @returns {Promise<void>} Resolves once the repair has been DISPATCHED,
+   *   matching `run`.
+   */
+  async function repair(deps, options) {
+    const { areaId, urls, paint, finish } = options;
+    const list = (Array.isArray(urls) ? urls : []).filter(
+      (url) => typeof url === 'string' && url,
+    );
+
+    deps.clearError();
+    // Claimed synchronously, before any await, for the same re-entrancy
+    // reason `run` claims it: a second tap must find the control busy.
+    paint('busy', 0);
+
+    const core = deps.core ? deps.core() : self.pwaBasemapDownloadCore;
+
+    // Nothing to fetch is not a success. It means the caller asked for a
+    // repair it could not describe, and painting 'done' would claim the
+    // area renders when nothing was done about it.
+    if (list.length === 0) {
+      paint('error');
+      deps.revealError(null);
+      // `finish` is called on EVERY path, including this one — a caller
+      // that awaits the outcome (the Manage downloads sheet) must never be
+      // left holding a promise nothing resolves.
+      await finish(null, { core: core });
+      return;
+    }
+
+    const onProgress = (done, total, settled, bytes) => {
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      paint('busy', pct, bytes);
+    };
+
+    // `pinned: true` + `areaId` put the documents in the SAME bucket the
+    // area's tiles live in, so an eviction of that area still takes the
+    // whole of it and a repair can never strand documents behind.
+    //
+    // No `glyphPrefix`: glyph promotion is not a render dependency this
+    // ticket checks or repairs — see `missingRenderDependencies`'s
+    // docstring and SNOW-847.
+    const warming = deps.warmCache(list, { pinned: true, areaId, onProgress });
+    const settle = (result) => finish(result, { core });
+    if (warming) {
+      warming.then(settle).catch(() => settle(null));
+    } else {
+      // No active worker at all — nothing ran and nothing was cached.
+      settle(null);
+    }
+  }
+
+  self.pwaBasemapDownloadRunner = { run: run, repair: repair };
 }());

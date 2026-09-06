@@ -1,0 +1,37 @@
+{% comment %}
+templates/includes/_icon_repair.html — the "fetch what is missing again"
+glyph: a circular arrow over a downward stroke (SNOW-844).
+
+Used by the Manage downloads sheet's Repair control
+(includes/_map_downloads_row_actions.html), which refetches the
+style/sprite/TileJSON documents a downloaded area is missing rather than
+re-downloading its tiles.
+
+Deliberately NOT includes/_icon_download_arrow.html, which sits two
+controls away on the same row and means "fetch this area onto this device"
+— a whole download. A repair is the same verb applied to a hole in one, so
+it is the download arrow inside a refresh loop: recognisably related,
+unmistakably not the same action.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 17, the
+            design's row-action glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:17 }}"
+    height="{{ size|default:17 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+    <path d="M20 3v4h-4" />
+    <path d="M12 9v4" />
+    <path d="m10 11.5 2 2 2-2" />
+</svg>
