@@ -574,6 +574,7 @@ Read these when working in the relevant area:
 | Coding standards (repo layout, style, model/service/view/test conventions) | [`docs/coding-standards.md`](docs/coding-standards.md) |
 | Bulletin page design handover (fidelity-first principles, tokens, component layer) | [`docs/design-system.md`](docs/design-system.md) |
 | Why the page renders the provider's bulletin in full (subtraction pass retired) | [`docs/decisions/bulletin-fidelity-over-simplification.md`](docs/decisions/bulletin-fidelity-over-simplification.md) |
+| Why EAWS glossary terms are marked up after `bleach.clean` (eaws_glossary.yaml, load_glossary, inject_glossary_terms, native popover, no JS, narrow allowlist) | [`docs/decisions/glossary-terms-injected-after-sanitisation.md`](docs/decisions/glossary-terms-injected-after-sanitisation.md) |
 | Site structure (routes, AI-generated summary fields) | [`docs/site-structure.md`](docs/site-structure.md) |
 | How to read an avalanche bulletin (domain primer) | [`docs/bulletin-guide.md`](docs/bulletin-guide.md) |
 | User personas and core journeys | [`docs/user-journeys.md`](docs/user-journeys.md) |
