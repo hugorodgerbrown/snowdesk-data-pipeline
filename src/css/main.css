@@ -349,6 +349,11 @@
   --color-glass:          rgba(255, 255, 255, 0.85);
   --shadow-glass:         0 2px 14px rgba(0, 0, 0, 0.08);
 
+  /* Top-layer scrim — the ::backdrop behind a native [popover] (SNOW-853).
+     Its own token rather than an inline rgba() so the dark theme can dim
+     harder: the same 40% over a dark card barely separates the two. */
+  --color-scrim:          rgba(0, 0, 0, 0.4);
+
   /* MapLibre Popup glass (SNOW-174) — more translucent than --color-glass
      so the choropleth still shows through underneath a Popup. Shared by
      .region-popup and .community-report-popup-wrapper (static/css/map.css,
@@ -712,6 +717,9 @@
      basemaps / dark UI (SNOW-36). */
   --color-glass:          rgba(20, 22, 26, 0.78);
   --shadow-glass:         0 2px 14px rgba(0, 0, 0, 0.35);
+
+  /* Top-layer scrim — see the light-mode definition above. */
+  --color-scrim:          rgba(0, 0, 0, 0.6);
 
   /* MapLibre Popup glass — see the light-mode definition above. */
   --color-popup-glass:    rgba(20, 22, 26, 0.6);
@@ -1494,6 +1502,109 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 .slf-prose p   { margin: 4px 0; }
 .slf-prose ul  { margin: 4px 0; padding-left: 1.2em; }
 .slf-prose li  { margin: 2px 0; }
+
+
+/* —————————————————————————————————————————
+   EAWS glossary terms in prose (SNOW-853)
+
+   A term the provider used is marked where
+   the reader meets it, and its EAWS
+   definition opens in a native [popover] —
+   tap-to-open, light-dismiss, Escape and the
+   top layer, with no JavaScript at all. See
+   docs/decisions/glossary-terms-injected-after-sanitisation.md.
+
+   Hand-written rather than utilities for the
+   same reason .slf-prose is: the markup is
+   spliced into provider HTML by
+   apps/public/templatetags/snowdesk_html.py,
+   not authored in a template, so no template
+   exists to carry the classes.
+   ————————————————————————————————————————— */
+
+/* The term itself has to read as running prose, not as a control: a
+   <button> otherwise arrives with the UA's font, background, border and
+   padding, and would sit in the sentence as a grey box. */
+.glossary-term {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: inherit;
+  cursor: pointer;
+  /* The affordance. Dotted rather than solid so it is legible as "there is
+     more here" without reading as a link out of the page. */
+  text-decoration: underline dotted;
+  text-decoration-color: var(--color-text-3);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+.glossary-term:hover,
+.glossary-term:focus-visible {
+  text-decoration-color: var(--color-accent);
+}
+
+/* Bottom sheet by default — a phone is where bulletins are read, and a
+   centred card there covers the sentence the reader is asking about.
+   dvh, not vh, so the mobile URL bar cannot push the foot off-screen. */
+.glossary-def {
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 60dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--color-card);
+  color: var(--color-text-2);
+  font-size: 0.875rem;
+  line-height: var(--leading-prose);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Above the tablet breakpoint (= --breakpoint-tablet, which a media query
+   cannot read as a variable) the sheet becomes a centred card. */
+@media (min-width: 600px) {
+  .glossary-def {
+    inset: 0;
+    margin: auto;
+    width: min(28rem, calc(100vw - 2rem));
+    max-height: 70dvh;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+}
+
+/* Provenance. The definition is EAWS's wording, not Snowdesk's, and the
+   link says so and goes to the term's own anchor on the source page. */
+.glossary-src {
+  display: block;
+  margin-top: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--color-text-3);
+  text-decoration: underline;
+}
+
+.glossary-src:hover,
+.glossary-src:focus-visible {
+  color: var(--color-accent);
+}
+
+/* The top-layer scrim. Deliberately on [popover] rather than on
+   .glossary-def: this is the first native popover in the codebase, and the
+   next one should inherit the same dimming rather than re-declare it. */
+[popover]::backdrop {
+  background: var(--color-scrim);
+}
 
 
 /* —— Interactive affordance (SNOW-658) ——————
