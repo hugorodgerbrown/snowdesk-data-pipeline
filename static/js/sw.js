@@ -741,7 +741,11 @@ async function _searchPinnedBuckets(request) {
  *
  * @param {Request} request
  * @returns {Promise<Response|undefined>} A cached response, or
- *   ``undefined`` when the caller should go to the network.
+ *   ``undefined`` when no partition holds it. SNOW-854: that is not the
+ *   same as "go to the network" — the caller checks the offline mode
+ *   before it does, and this function is deliberately reached first
+ *   either way, because a cache the device holds should be read in every
+ *   mode.
  */
 async function _readOnlyBasemapCacheProbe(request) {
   try {
@@ -3230,6 +3234,14 @@ async function _guardedRespond(responsePromise, request, clientId) {
 // GET, which preserves the "unknown cross-origin stays network-only"
 // contract. (Non-GET cross-origin requests never reach here — they exit
 // synchronously at the ``'network'`` branch above.)
+//
+// SNOW-854: "network-only" is bounded by the offline mode, as every other
+// path in this file is. It always was for a RECOGNISED basemap origin,
+// because that branch runs a guarded strategy; the unrecognised branch
+// below simply had no guard, and an unrecognised origin is exactly what a
+// swisstopo tile becomes when the allowlist is lost. Both branches now
+// answer 504 rather than spending a connection the user asked the app not
+// to use.
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -3332,6 +3344,28 @@ self.addEventListener('fetch', (event) => {
         // doing its job.
         _debugServe(request, 'probe', 'cache', cached, startedAt);
         return cached;
+      }
+      // SNOW-854: the fourth network path, and the one that had no mode
+      // check. Three paths consult `_shouldUseNetwork()` — the shell, the
+      // basemap strategy and the network-only branch above — and this one
+      // fell straight through to `fetch`, so a user in offline mode kept
+      // paying for tiles as long as classification did not recognise the
+      // origin. On staging that was every swisstopo tile: `_basemapOrigins`
+      // is in-memory, an app-data reset had taken the `meta:app` mirror it
+      // rehydrates from, and half-megabyte relief tiles went out over a
+      // connection the user had asked the app not to spend. It looked like
+      // the download working — the panned-to region drew — which is why it
+      // survived SNOW-852.
+      //
+      // The guard goes HERE, below the probe, and moving it above would
+      // undo SNOW-722. That probe exists precisely for a lost allowlist,
+      // and a device holding the tile should serve it whatever mode it is
+      // in: refusing to read a cache is not a saving, it is a blank map
+      // over a full disk.
+      if (!(await _shouldUseNetwork())) {
+        const offline = _synthesizedGatewayTimeout();
+        _debugServe(request, 'probe', 'timeout-504', offline, startedAt);
+        return offline;
       }
       const network = await fetch(request).catch((err) => {
         _debugServe(request, 'probe', 'network-error', null, startedAt);

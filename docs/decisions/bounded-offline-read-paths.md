@@ -2,7 +2,7 @@
 name: bounded-offline-read-paths
 description: sw.js read paths are time-bounded and latch offline — _boundedFetch, OFFLINE_LATCH_THRESHOLD, /livez probe; a dead radio hangs, not rejects
 status: current
-last-reviewed: 2026-08-28
+last-reviewed: 2026-09-06
 ---
 
 # Offline read paths are bounded, and latch
@@ -225,3 +225,15 @@ while the read is in flight must not be forced offline again by it.
 - DevTools' "Offline" checkbox **does not reproduce** the bug this fixes — it
   makes fetches reject, which is the case that always worked. Reproducing it
   needs a hang: request blocking plus a high-latency throttle, or a real tunnel.
+- **Every path in `sw.js` that can reach the network has to consult
+  `_shouldUseNetwork()`, and enumerating them is not obvious.** There are four,
+  and they are not one per strategy: the shell, the basemap strategy, the
+  network-only branch of the fetch handler, and the *unclassified*
+  cross-origin branch — the last being SNOW-722's read-only probe, which
+  falls through to `fetch` when no cache holds the request. That fourth one
+  shipped unguarded and leaked half-megabyte basemap tiles under
+  `offline-forced` (SNOW-854), because the first three are the ones anyone
+  thinks of and the fourth only runs when classification fails. It is
+  reached whenever the in-memory `_basemapOrigins` allowlist is empty, which
+  an ordinary idle-worker recycle is enough to cause. Adding a fifth path
+  means adding a fifth guard; `tests/js/test_sw.js` covers all four.

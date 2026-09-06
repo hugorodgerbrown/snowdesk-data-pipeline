@@ -1545,6 +1545,92 @@ describe('cross-origin routing when the basemap allowlist is empty (SNOW-722)', 
     expect(cachesStub.counters.matchedNames).toContain(PINNED_BUCKET);
     expect(cachesStub.counters.matchedNames[0]).toBe(sw.BASEMAP_CACHE);
   });
+
+  // -- SNOW-854: offline mode reaches this branch too ------------------------
+  //
+  // Found on staging with SNOW-852 already shipped and demonstrably working:
+  // the same capture showed a synthesized 504 for an /api/ GET and half a
+  // megabyte of swisstopo relief tiles going out beside it. Three of the
+  // worker's four network paths consulted the mode; this one, the branch
+  // SNOW-722 added, went straight to fetch.
+  //
+  // The condition is an empty allowlist, which is what the tests above
+  // already construct — the whole reason the leak survived the SNOW-852 fix
+  // and the offline suite's own camera-move phase is that a REGISTERED
+  // basemap origin never comes down here. It takes the guarded strategy
+  // instead, and everything anyone looked at was registered.
+
+  it('refuses the network under a forced offline mode, rather than fetching', async () => {
+    // No basemap.origins row, so hydration succeeds and finds nothing: the
+    // allowlist is empty and every tile classifies as 'network'. Written
+    // this way rather than with resetDbWithoutMetaStore() because the mode
+    // lives in meta:app too — a DB with no such store would leave the
+    // worker in 'auto' and quietly test nothing.
+    await resetDb();
+    const cachesStub = makeCaches();
+    const fetchSpy = vi.fn(async () => basicResponse('network bytes'));
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const response = await dispatchFetch(sw, TILE_URL);
+
+    expect(response.status).toBe(504);
+    // The assertion that is actually about the user's bill.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still reads the pinned bucket in that mode — the guard is below the probe', async () => {
+    // The direction this fix could have been got wrong. Refusing to READ a
+    // cache saves nothing and costs the user the map: SNOW-722's whole
+    // subject is a device that holds the tiles and cannot classify the
+    // origin, and offline mode is when it needs them most.
+    await resetDb();
+    const cachesStub = makeCaches();
+    const fetchSpy = vi.fn(async () => basicResponse('network bytes'));
+    cachesStub.seed(PINNED_BUCKET, TILE_URL, basicResponse('pinned tile bytes'));
+    const sw = loadSw({ caches: cachesStub, fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const response = await dispatchFetch(sw, TILE_URL);
+
+    expect(await response.text()).toBe('pinned tile bytes');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks it under an auto-latch as well as a forced mode', async () => {
+    // The latch means the worker has concluded there is no route at all.
+    // Tiles are the highest-volume thing it fetches, so this is the path
+    // where an unbounded retry costs the most.
+    await resetDb();
+    const fetchSpy = vi.fn(async () => basicResponse('network bytes'));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._latchOffline();
+
+    const response = await dispatchFetch(sw, TILE_URL);
+
+    expect(response.status).toBe(504);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the network as soon as offline mode is switched off', async () => {
+    // Reversibility, asserted on this branch too: the guard must be the
+    // mode, not a latch of its own.
+    await resetDb();
+    const fetchSpy = vi.fn(async () => basicResponse('network bytes'));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+    await dispatchFetch(sw, TILE_URL);
+
+    sw._unlatchOffline();
+    const response = await dispatchFetch(sw, TILE_URL);
+
+    expect(await response.text()).toBe('network bytes');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
