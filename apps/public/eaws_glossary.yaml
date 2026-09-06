@@ -1,0 +1,349 @@
+# apps/public/eaws_glossary.yaml — EAWS glossary terms marked up inside provider prose.
+#
+# Each entry is one EAWS glossary term. ``text`` is the standard's own wording,
+# copied VERBATIM from https://www.avalanches.org/glossary/ (© Avalanche Warning
+# Service Tyrol) — never paraphrased. Writing our own version of a safety
+# definition is not a thing this project does; see
+# docs/decisions/glossary-terms-injected-after-sanitisation.md.
+#
+# ``synonyms`` are the surface forms matched in prose, lower-case. Matching is
+# case-insensitive and longest-first, so "melt-freeze crust" wins over "crust".
+# ``anchor`` is the term's own id on the EAWS page, used to link the popover
+# back to the source.
+#
+# v1 is deliberately a SUBSET of the ~165 EAWS entries: the vocabulary that
+# actually turns up in provider prose. The six avalanche PROBLEMS are the other
+# axis and are already explained by field_guidance.yaml — do not duplicate them
+# here. Entries whose EAWS definition is a table or a nested list (Additional
+# load, Avalanche size, Danger scale, Snowdrift accumulations, Altitudes) are
+# omitted because they do not read as a single self-contained paragraph.
+#
+# Fetched and verified against the live page on 2026-09-06.
+
+accumulation_zone:
+  anchor: accumulation-zone
+  synonyms:
+    - "accumulation zone"
+  text: >-
+    Area of slope where snow, transported by wind, accumulates and builds.
+
+artificial_avalanche_release:
+  anchor: artificial-avalanche-release
+  synonyms:
+    - "artificial avalanche release"
+  text: >-
+    An avalanche triggered by artifically applied force (e.g. explosives,
+    snow machines, people).
+
+aspect:
+  anchor: aspect
+  synonyms:
+    - "aspect"
+    - "aspects"
+  text: >-
+    Direction in which a slope faces as indicated by compass direction of
+    the fall line; i.e. a north slope faces in a northerly direction.
+
+avalanche_prone_location:
+  anchor: avalanche-prone-location-danger-zone
+  synonyms:
+    - "avalanche prone locations"
+    - "avalanche prone location"
+    - "danger zones"
+    - "danger zone"
+  text: >-
+    Locations delineated by aspect or altitude where avalanches can trigger
+    and people or objects are at risk.
+
+avalanche_runout_zone:
+  anchor: avalanche-runout-zone
+  synonyms:
+    - "avalanche runout zone"
+    - "runout zone"
+  text: >-
+    An avalanche runout zone is the lower portion of an avalanche path where
+    debris slows and stops, typically occurring on slopes of 15 degrees or
+    less. It represents a high-consequence area even when the avalanche
+    danger is low as avalanches may release from well above and reach low
+    elevations.
+
+avalanche_track:
+  anchor: avalanche-track
+  synonyms:
+    - "avalanche track"
+  text: >-
+    Where the avalanche gains speed and travels downslope. It is the middle
+    zone of an avalanche Path. Between avalanche initiation in the Starting
+    zone and where the avalanche slows down and stops in the Runout Zone.
+
+bed_surface:
+  anchor: bed-surface
+  synonyms:
+    - "bed surface"
+  text: >-
+    The surface across which a slab avalanche releases (can be the ground).
+    Attention: Not to be confused with the weak layer!
+
+blowing_snow:
+  anchor: blowing-snow
+  synonyms:
+    - "blowing snow"
+  text: >-
+    Snow being transported by wind high above (approximately 2m) snowpack
+    surface (visibility noticeably reduced).
+
+bowl:
+  anchor: bowl
+  synonyms:
+    - "bowl"
+    - "bowls"
+  text: >-
+    Rounded or elongated concavity; typically tending to accumulate
+    snowdrift.
+
+breakable_crust:
+  anchor: breakable-crust
+  synonyms:
+    - "breakable crust"
+  text: >-
+    Surface crust due to wind, sun or air temperature that breaks when
+    stepped upon.
+
+cornice:
+  anchor: cornice
+  synonyms:
+    - "cornice"
+    - "cornices"
+  text: >-
+    An overhanging mass of snow created by wind, usually near a sharp
+    terrain break such as a ridge.
+
+couloir:
+  anchor: couloir
+  synonyms:
+    - "couloir"
+    - "couloirs"
+  text: >-
+    A steep gully usually adjacent to ridgelines, flanked by rocks, often
+    containing rubble/scree; tends to accumulate drifted snow.
+
+crust:
+  anchor: crust
+  synonyms:
+    - "crust"
+  text: >-
+    Layer of hard-compacted snow resulting from a melt-freeze process or
+    wind.
+
+depth_hoar:
+  anchor: depth-hoar-cup-shaped-crystals
+  synonyms:
+    - "depth hoar"
+    - "cup-shaped crystals"
+  text: >-
+    Large, hollow crystals with edges, striations and facets on the surface,
+    the result of faceting amidst high internal temperature disparities.
+    Characteristic grain size: 2 to 5 mm or larger Depth hoar is an
+    accumulation of cup-shaped crystals. Weak layers are rather often made
+    of depth hoar. See also: www.snowcrystals.it
+
+drifting_snow:
+  anchor: drifting-snow
+  synonyms:
+    - "drifting snow"
+  text: >-
+    Snow being lifted from the snow surface and transported by wind just
+    above the snow surface (visibility not noticeably reduced).
+
+faceted_snow_crystals:
+  anchor: faceted-snow-crystals-grains
+  synonyms:
+    - "faceted snow crystals"
+    - "faceted crystals"
+  text: >-
+    Snow grains, solid, with multiple flat glassy faces and sharp edges.
+    Developed from faceting metamorphism, usually poorly bonded to one
+    another (fewer contact points), a critical factor in avalanches if a
+    faceted layer is covered with bonded snow. Typical grain size: 0.5 to 3
+    mm See also: www.snowcrystals.it
+
+fracture_depth:
+  anchor: fracture-depth
+  synonyms:
+    - "fracture depth"
+  text: >-
+    Slab thickness at the fracture line, measured vertically.
+
+glide_crack:
+  anchor: glide-crack
+  synonyms:
+    - "glide crack"
+    - "glide cracks"
+  text: >-
+    A crack visible on the snowpack surface formed by snow-gliding on steep,
+    and particularly grass-covered slopes. Areas below slopes with visible
+    glide cracks should be avoided whenever possible due to threat of
+    gliding sluffs or avalanches.
+
+gliding_snow:
+  anchor: gliding-snow
+  synonyms:
+    - "gliding snow"
+  text: >-
+    Slow, gliding movement of the snowpack over smooth or wet ground, e.g.
+    grassy slopes or smooth rock slabs, attaining velocities of a few
+    millimeters to a few meters per day. Glide cracks may appear as a result
+    of disparate gliding movements.
+
+graupel:
+  anchor: graupel
+  synonyms:
+    - "graupel"
+  text: >-
+    Special form of precipitation formed in the atmopshere by supercooled
+    water droplets adhering to snow crystals. Characteristic grain size: ≤5
+    mm See also: www.snowcrystals.it
+
+gully:
+  anchor: gully
+  synonyms:
+    - "gully"
+    - "gullies"
+  text: >-
+    Usually a steep, elongated, eroded trench; typically prone to snowdrift
+    accumulation.
+
+high_alpine_regions:
+  anchor: high-alpine-regions
+  synonyms:
+    - "high alpine regions"
+    - "high alpine"
+  text: >-
+    Areas above approximately 3000 m (particularly glaciated areas).
+
+lee_slope:
+  anchor: lee-slope
+  synonyms:
+    - "lee slope"
+    - "lee slopes"
+    - "leeward"
+  text: >-
+    Slope facing downwind/ wind sheltered aspect. Snow deposits can attain
+    several times average snow depth.
+
+melt_freeze_crust:
+  anchor: melt-freeze-crust
+  synonyms:
+    - "melt-freeze crust"
+  text: >-
+    Layer of hard-compacted snow resulting from a melt-freeze process;
+    increases firmness.
+
+old_snow_cover:
+  anchor: old-snow-cover-old-snowpack
+  synonyms:
+    - "old snow cover"
+    - "old snowpack"
+  text: >-
+    Snow layers deposited from earlier precipitation, prior to fresh fallen
+    snow. Old snow layers consist of metamorphosed snow crystals.
+
+slab_avalanche:
+  anchor: slab-avalanche
+  synonyms:
+    - "slab avalanche"
+    - "slab avalanches"
+  text: >-
+    The abrupt release of a slab of snow on a mountain slope. After crack
+    initiation and crack propagation in a weak layer the released slab
+    comprises 3 elements: The weak layer, the gliding horizon and the slab.
+    If the slope angle is steep enough, the slab will glide down. If the
+    slope is not steep enough, the slab will settle down on the failed weak
+    layer. Possibly a whumpf sound will follow due to air pressed out of the
+    weak layer. The fracture line will be sharp edged.
+
+snow_cover:
+  anchor: snow-cover-snowpack
+  synonyms:
+    - "snow cover"
+    - "snowpack"
+  text: >-
+    Snow deposited on the ground in a multiplicity of layers.
+
+starting_zone:
+  anchor: starting-zone
+  synonyms:
+    - "starting zone"
+    - "start zone"
+  text: >-
+    Sector of terrain where avalanche releases.An avalanche start zone is
+    the uppermost part of an avalanche path, typically on slopes between 30
+    and 45 degrees, where unstable snow breaks away, caused by a natural,
+    artificial or human triggers.
+
+surface_hoar:
+  anchor: surface-hoar-hoar-frost
+  synonyms:
+    - "surface hoar"
+    - "hoar frost"
+  text: >-
+    Transparent, frequently flat crystals forming on the snowpack when moist
+    air settles on the surface. It forms most often during cold, clear,
+    humid nights. Once it is blanketed by fresh fallen snow, surface hoar is
+    one of the most critical weak layer. See also: www.snowcrystals.it
+
+temperature_gradient:
+  anchor: temperature-gradient
+  synonyms:
+    - "temperature gradient"
+  text: >-
+    Change in temperature per unit distance of depth, expressed in °C/m or
+    °C/cm. The temperature gradient is recorded in the snowpack vertically
+    from the ground to the surface. It is determined as the difference
+    between adjacent measurements. For example a “small” temperature
+    gradient is 1 °C per meter, a “large” temperature gradient is 25 °C per
+    meter.
+
+weak_layer:
+  anchor: weak-layer
+  synonyms:
+    - "weak layer"
+    - "weak layers"
+  text: >-
+    Snowpack layer in which the crystals are poorly bonded and the layer has
+    the potential to fail. Typical crystals in dry weak layers causing
+    avalanches are : precipitation particles; surface hoar; faceted
+    crystals; hollow crystals; graupel. Generally >1mm in size, loose grains
+    with few bonds Wet weak layers can be formed by all snow crystal/grain
+    types.
+
+wet_snow_avalanche:
+  anchor: wet-snow-avalanche
+  synonyms:
+    - "wet snow avalanche"
+    - "wet snow avalanches"
+  text: >-
+    Avalanche of wet snow masses. Flowing more slowly than dry avalanches;
+    usually for shorter runout distances, however with greater impact on
+    obstacles due to higher snow density.
+
+whumpf:
+  anchor: whumpfing-collapsing-sound
+  synonyms:
+    - "whumpfing collapsing sound"
+    - "whumpf"
+    - "whumpfing"
+  text: >-
+    Distinctive noise (resembling a “whumpf” sound) occurring when a weak
+    layer beneath a slab collapses. The air of the weak layer is forced
+    outside the snowpack, with the resulting whumpf sound being heard. The
+    sound usually indicates an unstable situation and can be accompanied by
+    surface cracking. A whumpf is a clear avalanche alert.
+
+wind_crust:
+  anchor: wind-crust
+  synonyms:
+    - "wind crust"
+  text: >-
+    Layer of hard-compacted snow brought about by wind; often increases
+    firmness of the surface.

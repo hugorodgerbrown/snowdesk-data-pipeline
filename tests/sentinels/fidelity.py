@@ -26,7 +26,9 @@ decision down. ``bin/fidelity-lint --show-exclusions`` prints it for cold
 review, in the same spirit as ``bin/ds-lint --show-allows``.
 
 The two consumers deliberately need different things, so this module
-imports nothing from Django and nothing from the app tree:
+imports nothing from Django and nothing from the app tree (``tests`` is
+neither, and ``bin/fidelity-lint`` already puts the repo root on the path
+to reach this file):
 
 - ``bin/fidelity-lint`` asks the structural question — is every path in
   every sentinel classified, does every exclusion carry a reason, and are
@@ -52,6 +54,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from tests.glossary_markup import strip_glossary_markup
 
 SENTINELS_DIR = Path(__file__).resolve().parent
 
@@ -157,6 +161,12 @@ def visible_text(page_html: str) -> str:
 
     """
     stripped = _SCRIPT_OR_STYLE.sub(" ", page_html)
+    # The EAWS glossary injection (SNOW-853) is subtracted for the same
+    # reason <script> is: a reader sees neither at rest. The definition sits
+    # in a closed popover, and the term button's tag boundaries would
+    # otherwise split "the weak layer is buried" into fragments separated by
+    # that definition — breaking the contiguity every prose probe depends on.
+    stripped = strip_glossary_markup(stripped)
     stripped = _TAG.sub(" ", stripped)
     return _WHITESPACE.sub(" ", html_module.unescape(stripped)).strip().casefold()
 

@@ -144,6 +144,7 @@ Which coordinate on which model is exact, approximate or derived:
 | Term | Meaning | Code |
 |------|---------|------|
 | Overlay primitive | One of the four consolidated DS shapes — banner, toast, sheet, modal — sharing the `data-action="dismiss"` / `[data-overlay]` contract and the `--z-*` token scale | `templates/includes/_overlay_{banner,modal,sheet}.html`, `_toast.html`; `static/js/overlays.js`; [overlay-primitives.md](decisions/overlay-primitives.md) |
+| Glossary term | An EAWS term marked inside provider prose, opening the standard's verbatim definition in a native `[popover]` — no JavaScript. Curated data in `apps/public/eaws_glossary.yaml` (`anchor` / `synonyms` / `text`); loaded and compiled by `load_glossary()` / `glossary_matcher()`; injected *after* `bleach.clean` by the `snowdesk_html` filter, first occurrence per block, longest match first | `apps/public/glossary.py`; `inject_glossary_terms()` in `apps/public/templatetags/snowdesk_html.py`; [glossary-terms-injected-after-sanitisation.md](decisions/glossary-terms-injected-after-sanitisation.md) |
 
 ## Offline basemap downloads (PWA)
 
