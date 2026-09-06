@@ -114,6 +114,7 @@ class TestComparePageRenders:
             "compare-start-here",
             "compare-table",
             "compare-matrix",
+            "compare-focus",
             "compare-planning",
             "compare-profiles",
             "compare-others",
@@ -325,3 +326,46 @@ class TestFeatureMatrix:
         """A screen reader gets the label, never the decorative mark."""
         assert 'aria-hidden="true"' in page
         assert "Not established" in page
+
+
+class TestFocusSectionStaysHonest:
+    """The restraint argument is the easiest section to let drift into a boast.
+
+    It claims an advantage from ABSENCE, which no feature table can check,
+    so the guard has to be that the same paragraph keeps naming what the
+    absence costs. Each test here pins one half of that trade.
+    """
+
+    def test_concedes_the_matrix_favours_bigger_products(self, page: str) -> None:
+        """The page admits its own table is biased towards accumulation."""
+        assert "counts what a product has" in page
+
+    def test_names_what_our_restraint_costs_the_reader(self, page: str) -> None:
+        """Three concessions, each naming the competitor who does it better."""
+        assert "Restraint is a trade, not a free win" in page
+        assert "WhiteRisk will teach you properly and we will not" in page
+        assert "a hundred thousand and we have none" in page
+
+    def test_applies_the_no_business_model_risk_to_us_too(self, page: str) -> None:
+        """We flag this about AvalancheClarity; it has to cut both ways.
+
+        Without this the page criticises a competitor for being free with
+        no visible income while presenting the same fact about ourselves
+        as a virtue two sections later.
+        """
+        assert "That is exactly as true of us." in page
+
+    def test_absence_rows_keep_the_grid_polarity(self) -> None:
+        """A filled dot means "what the reader wants" on every row.
+
+        The two absence-shaped rows are phrased positively for this
+        reason. If either is ever relabelled to "Has ads" the dots invert
+        meaning mid-table and every skim-reader misreads them.
+        """
+        from apps.public.competitor_matrix import FEATURES, Support
+
+        by_key = {f.key: f for f in FEATURES}
+        assert by_key["no_ads"].cells["snowsafe"].support is Support.NO
+        assert by_key["no_ads"].cells["snowdesk"].support is Support.YES
+        assert by_key["no_iap"].cells["whympr"].support is Support.NO
+        assert by_key["no_iap"].cells["snowdesk"].support is Support.YES
