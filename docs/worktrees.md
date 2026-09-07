@@ -8,9 +8,10 @@ last-reviewed: 2026-08-02
 # Worktrees and DB seeding
 
 Every Claude worktree is bootstrapped by `bin/init-worktree`, which runs
-automatically via the `PostToolUse:EnterWorktree` hook in
-`.claude/settings.json`. The script is idempotent — re-running it on a
-fully-configured worktree is a no-op.
+automatically via the `SessionStart` hook in `.claude/settings.json` (see
+[`docs/claude-code-hooks.md`](claude-code-hooks.md) for every configured
+hook). The script is idempotent — re-running it on a fully-configured
+worktree is a no-op.
 
 ## Seed recipe
 

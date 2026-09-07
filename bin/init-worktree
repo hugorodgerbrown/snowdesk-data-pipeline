@@ -35,9 +35,10 @@
 #                    with misleading "outside the viewport" / intercepted-
 #                    click errors. See docs/client-side-tests.md.
 #
-# Idempotent: skips assets that already exist locally. Wired up via
-# the PostToolUse:EnterWorktree hook in .claude/settings.json so it
-# fires automatically when Claude creates a new worktree.
+# Idempotent: skips assets that already exist locally. Wired up via the
+# SessionStart hook in .claude/settings.json so it fires automatically at
+# the start of every session, including the first one in a new worktree.
+# See docs/claude-code-hooks.md for every configured hook.
 #
 # Refuses to run from the main worktree itself.
 
