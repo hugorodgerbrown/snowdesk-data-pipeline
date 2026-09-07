@@ -1629,9 +1629,73 @@ with a same-basemap RETRY (which re-counts bytes already on disk).
 ### Downloaded-tiles overlay (SNOW-570, rings removed SNOW-587, sheet-bound SNOW-645)
 
 The two roundels answer "is *this* area downloaded?" one area at a time.
-The **downloaded-tiles overlay** answers it for the whole map: one
-translucent square per tile of the ACTIVE basemap actually present in the
-pinned cache, in that basemap's identity colour (see "Colour" above).
+The **downloaded-tiles overlay** answers it for the whole map: one square
+per z14 tile actually present in the pinned cache — **hatched** in the
+active basemap's identity colour for that basemap's own downloads, and
+**outlined only** for every other basemap's, in the colour of the basemap
+it was downloaded under (SNOW-857).
+
+**It switches itself on while the app is offline (SNOW-857).** SNOW-856's
+shared base layer means MapLibre stretches a cached ancestor over ground
+the reader never downloaded, so the map no longer goes blank at the edge
+of coverage — and the blank edge was the only cue for where detail
+stopped. This overlay is what replaces it, so it can no longer be
+something the reader has to go and find at the foot of a sheet. The rule:
+
+* the stored preference is read **raw** (`readStorage`, not
+  `readBoolStorage`), giving three states — `'true'`, `'false'`, absent;
+* absent follows the connection, via `window.pwaConnectivity.isOnline()`
+  (the EFFECTIVE state, so a user-forced offline mode counts) and
+  `snowdesk:connectivity-changed`;
+* `'true'` / `'false'` always win, in both directions.
+
+`paintDownloadedOverlay()` is what the connectivity rule calls, and it
+deliberately does **not** write. `show()` / `hide()` still do. That split
+is the whole safety of it: a write from the automatic path would convert
+"never touched" into "explicitly off" behind the reader's back, and the
+rule would then never fire for them again — invisibly, and permanently.
+`tests/js/test_map_downloaded_overlay_offline.js` asserts on localStorage
+in every case for that reason.
+
+Because the overlay can now appear unprompted, the legend card carries a
+**coverage key** (`#map-coverage-section`, hidden until the overlay is
+drawn, synced by `syncCoverageLegend()` at boot and on every change) — a
+hatch that appears on its own with nothing to explain it is worse than no
+hatch.
+
+**Drawing other basemaps' downloads reverses SNOW-645, deliberately.**
+That ticket removed the per-feature `basemapKey` `match` on Hugo's
+instruction — *"it should filter to the current basemap, so it never
+overlays downloads"* — reasoning that two basemaps' squares over the same
+ground describe neither. That holds for two **fills**; it never applied to
+a fill and an outline, which is the distinction the download roundel has
+drawn since the same ticket (solid disc / hollow ring for
+`other-basemap`). The overlay was the one surface that could not say the
+third thing, so switching basemap read as data loss. Three layers now:
+
+| layer | draws | opacity |
+|-------|-------|---------|
+| `cached-tiles-fill` | `here == true` — the active basemap, hatched | flat |
+| `cached-tiles-line` | `here == true` — its outline | fades out below ~z12 |
+| `cached-tiles-line-elsewhere` | `here == false` — other basemaps | **constant** |
+
+The opacity difference is not an oversight. Up top the outline is an
+accent *on* a hatch, so dropping it at low zoom removes a mesh and loses
+nothing. An elsewhere outline is the **only** mark its tile gets, so the
+same fade would make every other-basemap download invisible below z10 —
+precisely the zoomed-out view SNOW-856 made worth reading.
+
+A tile downloaded under **both** basemaps is drawn once, as the active
+basemap's hatch: the elsewhere pass skips anything the active pass already
+covered, because an outline meaning "downloaded for another map" over
+ground downloaded for *this* one says the opposite of what it means.
+
+Cost, stated rather than assumed: `refreshDownloadedOverlay` now runs
+`cachedTilesFromURLs` once per **downloaded** basemap rather than once
+total. `basemapDownloadedTemplates()` only returns basemaps that actually
+have areas, so that is 1–2 in practice and 5 at the extreme, on a path
+that runs on basemap change, eviction and download completion — not per
+frame.
 
 **No longer a layers-menu toggle (SNOW-645).** It was originally a
 `data-overlay-key="downloaded"` row, off by default and persisted like
@@ -1649,11 +1713,11 @@ calling `show()` as well, so the switch is the overlay's only writer — and
 what it sets is persisted across a reload, like the other three panels'
 switches (see "No longer a layers-menu toggle" above).
 
-Two layers, both installed with the regions source (not lazy) so a basemap
-swap rebuilds them with everything else: `cached-tiles-fill` and
-`cached-tiles-line`, over a `cached-tiles` source that `refreshDownloadedOverlay`
-fills from `cachedTilesFromURLs`, run against the active basemap's
-template (see "Colour" above). Derived from
+Three layers (SNOW-857 — two before it), all installed with the regions
+source (not lazy) so a basemap swap rebuilds them with everything else,
+over one `cached-tiles` source that `refreshDownloadedOverlay` fills from
+`cachedTilesFromURLs` and the layers tell apart by a `here` property.
+Derived from
 `BASEMAP_PINNED_CACHE` contents ALONE — no stored record of any download
 is involved — so it cannot drift from what is on disk: eviction, a
 basemap swap and Clear Site Data all change the answer, and all of them

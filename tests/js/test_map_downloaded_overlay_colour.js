@@ -1,25 +1,36 @@
 /*
  * tests/js/test_map_downloaded_overlay_colour.js — the "downloaded areas"
- * map overlay (`cached-tiles-fill` / `cached-tiles-line`) draws the ACTIVE
- * basemap's downloads, and only those, in that basemap's own identity
- * colour — repainting to the new basemap's downloads when the basemap
- * changes under a switched-on overlay.
+ * map overlay draws the ACTIVE basemap's downloads as a hatch in that
+ * basemap's own identity colour (`cached-tiles-fill` / `cached-tiles-line`)
+ * and every OTHER basemap's as an outline in the colour of the basemap it
+ * was downloaded under (`cached-tiles-line-elsewhere`), swapping which is
+ * which when the basemap changes under a switched-on overlay.
  *
- * This file has now covered three rules in turn, and the middle one is
- * worth stating because its remains are still visible in the fixture. The
- * original overlay drew the active basemap's downloads in one flat colour.
- * SNOW-645's review widened it to draw EVERY downloaded basemap at once,
- * each area in the colour of the basemap it was downloaded UNDER, via a
- * MapLibre `match` expression keyed on a per-feature `basemapKey` property
- * — because switching basemap emptied the overlay and that read as data
- * loss. Hugo's call after living with it: two basemaps' squares stacked
- * over the same ground describe neither basemap's coverage. "It should
- * filter to the current basemap, so it never overlays downloads."
+ * This file has now covered FOUR rules in turn, and the history is worth
+ * keeping because the current rule is a synthesis of the middle two rather
+ * than a return to either.
  *
- * So the fixture still seeds downloads under TWO basemaps — that is the
- * case that matters — but the assertion is now that only the active one's
- * squares are on the map, and that the other's arrive when the user
- * switches to it with the overlay still on.
+ *   1. The original overlay drew the active basemap's downloads in one
+ *      flat colour.
+ *   2. SNOW-645's review widened it to draw EVERY downloaded basemap at
+ *      once, each in the colour of the basemap it was downloaded UNDER,
+ *      via a `match` on a per-feature `basemapKey` — because switching
+ *      basemap emptied the overlay and that read as data loss.
+ *   3. Hugo's call after living with it: two basemaps' squares stacked
+ *      over the same ground describe neither basemap's coverage. "It
+ *      should filter to the current basemap, so it never overlays
+ *      downloads." Back to one flat colour, one basemap.
+ *   4. SNOW-857: both are drawn again, but with DIFFERENT MARKS — the
+ *      active basemap hatched, the others outlined only. (3)'s reasoning
+ *      was about two FILLS and still stands; it never applied to a fill
+ *      and an outline, which is the distinction the download roundel has
+ *      drawn since SNOW-645 (solid disc / hollow ring). The `match` from
+ *      (2) comes back with it, because there is more than one answer on
+ *      screen again.
+ *
+ * So the fixture seeds downloads under TWO basemaps — that is the case
+ * that matters — and the assertions are about which mark each one gets,
+ * and that the marks swap when the user switches basemap.
  *
  * Booting map.js in jsdom follows test_map_download_bytes.js's pattern —
  * see its header for the general rationale. This file's stub additionally
@@ -92,7 +103,11 @@ function stubMapLibre() {
           : null,
     addSource: () => {},
     addLayer: (def) => {
-      layers.set(def.id, { ...(def.paint || {}) });
+      // SNOW-857: `filter` is recorded alongside the paint, because which
+      // features a layer draws is now half of what this suite asserts —
+      // the hatch and the two outline layers share one source and are
+      // told apart by nothing else.
+      layers.set(def.id, { ...(def.paint || {}), filter: def.filter });
       layouts.set(def.id, { ...(def.layout || {}) });
     },
     removeLayer: (id) => {
@@ -109,7 +124,10 @@ function stubMapLibre() {
       const paint = layers.get(id);
       if (paint) paint[prop] = value;
     },
-    setFilter: () => {},
+    setFilter: (id, filter) => {
+      const layer = layers.get(id);
+      if (layer) layer.filter = filter;
+    },
     setFeatureState: () => {},
     removeFeatureState: () => {},
     setStyle: () => {},
@@ -402,27 +420,73 @@ afterAll(() => {
   delete window.pwaDb;
 });
 
-describe('downloaded-areas overlay — the active basemap only', () => {
-  it('draws the active basemap\'s squares and not the other basemap\'s', async () => {
+describe('downloaded-areas overlay — this basemap filled, the others outlined', () => {
+  it('draws BOTH basemaps\' squares, tagged with which is which', async () => {
     await waitFor(() => (mapStub.getCachedTilesData()?.features || []).length > 0);
 
-    // Two areas are downloaded — one under OpenFreeMap (active), one under
-    // Swisstopo — and exactly one tile is on the map. Overlapping squares
-    // from two basemaps is the picture this rule exists to prevent.
-    expect(mapStub.getCachedTilesData().features).toHaveLength(1);
+    // SNOW-857 reverses SNOW-645's filter — see the module header. Two
+    // areas are downloaded, one under OpenFreeMap (active) and one under
+    // Swisstopo, and BOTH are now on the map. What SNOW-645 was protecting
+    // against was two FILLS over the same ground; the other basemap's
+    // square gets an outline instead, so `here` is what has to be right.
+    const features = mapStub.getCachedTilesData().features;
+    expect(features).toHaveLength(2);
+
+    const here = features.filter((f) => f.properties.here);
+    const elsewhere = features.filter((f) => !f.properties.here);
+    expect(here).toHaveLength(1);
+    expect(elsewhere).toHaveLength(1);
+    expect(here[0].properties.basemapKey).toBe('openfreemap_liberty');
+    expect(elsewhere[0].properties.basemapKey).toBe('swisstopo_winter');
   });
 
-  it('outlines and fills them in the active basemap\'s identity colour', async () => {
-    await waitFor(
-      () => mapStub.layers.get('cached-tiles-line')?.['line-color'] === LIBERTY_COLOUR,
-    );
+  it('hatches only the active basemap, in its own identity colour', async () => {
+    await waitFor(() => mapStub.layers.get('cached-tiles-fill')?.filter !== undefined);
 
-    // Flat values, not a `match` on a per-feature key: every square drawn
-    // belongs to the active basemap by construction, so there is nothing
-    // left for an expression to discriminate.
-    expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(LIBERTY_COLOUR);
+    // The hatch is the active basemap's mark alone — the filter is what
+    // stops another basemap's square being hatched in this one's colour,
+    // which would claim ground the reader does not have on this map.
+    expect(mapStub.layers.get('cached-tiles-fill').filter)
+      .toEqual(['==', ['get', 'here'], true]);
     expect(mapStub.layers.get('cached-tiles-fill')['fill-pattern'])
       .toBe('cached-tiles-hatch-openfreemap_liberty');
+  });
+
+  it('colours each outline by the basemap it was downloaded UNDER', async () => {
+    await waitFor(
+      () => Array.isArray(mapStub.layers.get('cached-tiles-line')?.['line-color']),
+    );
+
+    // The `match` SNOW-645 deleted, restored: with more than one answer on
+    // screen a flat colour would paint the other basemap's outline in the
+    // ACTIVE basemap's colour, saying it belongs to the map being looked
+    // at — the one thing it does not. Mirrors the download roundel's
+    // 'other-basemap' ring, which is likewise keyed on the other basemap.
+    const colour = mapStub.layers.get('cached-tiles-line')['line-color'];
+    expect(colour[0]).toBe('match');
+    expect(colour[1]).toEqual(['get', 'basemapKey']);
+    expect(colour).toContain('openfreemap_liberty');
+    expect(colour).toContain(LIBERTY_COLOUR);
+    expect(colour).toContain('swisstopo_winter');
+    expect(colour).toContain(SWISSTOPO_COLOUR);
+    // Both line layers share one expression, so they cannot disagree.
+    expect(mapStub.layers.get('cached-tiles-line-elsewhere')['line-color']).toEqual(colour);
+  });
+
+  it('gives the elsewhere outlines a constant opacity, not the fade', async () => {
+    await waitFor(() => mapStub.layers.has('cached-tiles-line-elsewhere'));
+
+    // The active layer's outline fades out below about z12 because it is an
+    // accent ON a hatch that carries the meaning without it. An elsewhere
+    // outline is the ONLY mark its tile gets, so the same fade would make
+    // every other-basemap download invisible below z10 — which is exactly
+    // the zoomed-out view SNOW-856 made worth reading.
+    expect(mapStub.layers.get('cached-tiles-line-elsewhere')['line-opacity'])
+      .toBe(0.4);
+    expect(Array.isArray(mapStub.layers.get('cached-tiles-line')['line-opacity']))
+      .toBe(true);
+    expect(mapStub.layers.get('cached-tiles-line-elsewhere').filter)
+      .toEqual(['==', ['get', 'here'], false]);
   });
 
   it('registers the image the pattern names — an absent one paints nothing', async () => {
@@ -443,39 +507,38 @@ describe('downloaded-areas overlay — the active basemap only', () => {
     expect(entry.image.width).toBe(globalThis.pwaHatchCore.SIZE);
   });
 
-  it('carries no per-feature basemapKey — there is one basemap to answer for', () => {
-    for (const feature of mapStub.getCachedTilesData().features) {
-      expect(feature.properties.basemapKey).toBeUndefined();
-    }
-  });
-
-  it('honours the switch across a basemap change and repaints for the new one', async () => {
-    // Hugo's own statement of the rule: "If you are on Swisstopo and toggle
-    // on the downloads it shows Swisstopo downloads. If you then switch maps
-    // it honours the toggle and shows the new map downloads." The overlay is
-    // already on; nothing here touches show()/hide().
+  it('swaps which basemap is filled when the basemap changes', async () => {
+    // Hugo's SNOW-645 rule, in the form that survives SNOW-857: "if you
+    // then switch maps it honours the toggle and shows the new map
+    // downloads." Both are still drawn; which one is FILLED changes. The
+    // overlay is already on — nothing here touches show()/hide().
     mapStub.setActiveBasemap(TEMPLATE_SWISSTOPO, 'swisstopo_winter');
     document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
 
     await waitFor(
-      () => mapStub.layers.get('cached-tiles-line')?.['line-color'] === SWISSTOPO_COLOUR,
+      () => mapStub.layers.get('cached-tiles-fill')?.['fill-pattern']
+        === 'cached-tiles-hatch-swisstopo_winter',
     );
 
-    // Still on, still one square — the Swisstopo custom area's, now, in
-    // Swisstopo's colour.
-    for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
+    for (const id of ['cached-tiles-fill', 'cached-tiles-line', 'cached-tiles-line-elsewhere']) {
       expect(mapStub.getLayoutProperty(id, 'visibility')).toBe('visible');
     }
-    expect(mapStub.getCachedTilesData().features).toHaveLength(1);
-    expect(mapStub.layers.get('cached-tiles-fill')['fill-pattern'])
-      .toBe('cached-tiles-hatch-swisstopo_winter');
+    // The `here` flag has flipped between the two features rather than
+    // either of them leaving the map.
+    const features = mapStub.getCachedTilesData().features;
+    expect(features).toHaveLength(2);
+    expect(features.find((f) => f.properties.here).properties.basemapKey)
+      .toBe('swisstopo_winter');
+    expect(features.find((f) => !f.properties.here).properties.basemapKey)
+      .toBe('openfreemap_liberty');
     expect(hatchColour(mapStub.images.get('cached-tiles-hatch-swisstopo_winter')))
       .toEqual([9, 8, 7]);
 
     mapStub.setActiveBasemap(TEMPLATE_LIBERTY, 'openfreemap_liberty');
     document.dispatchEvent(new CustomEvent('snowdesk:basemap-changed'));
     await waitFor(
-      () => mapStub.layers.get('cached-tiles-line')?.['line-color'] === LIBERTY_COLOUR,
+      () => mapStub.layers.get('cached-tiles-fill')?.['fill-pattern']
+        === 'cached-tiles-hatch-openfreemap_liberty',
     );
   });
 });
@@ -493,6 +556,11 @@ describe('downloaded-areas overlay — nothing downloaded under the active basem
     // The layers stay switched on and keep the active basemap's colour —
     // "on, with nothing to show" is a state the user asked for, and the
     // switch says so; see the isVisible/isEnabled note in map.js.
+    //
+    // A flat colour, not a `match`: with no downloaded basemaps there are
+    // no arms to build one from, and MapLibre rejects an empty `match`
+    // outright — so the expression is only assembled when something is
+    // actually on disk to discriminate between.
     expect(mapStub.layers.get('cached-tiles-line')['line-color']).toBe(LIBERTY_COLOUR);
   });
 });

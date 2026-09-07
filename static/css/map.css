@@ -1424,6 +1424,36 @@
    same swatch shape as the danger scale above. The tokens are in
    src/css/main.css's @theme; the values are the SLF classification and are
    read off the served tiles, so the legend and the raster cannot disagree. */
+/* SNOW-857: the downloaded-coverage overlay's two marks. Painted from
+   --color-sync-ok rather than a basemap identity token, because the swatch
+   has to stand for whichever basemap the reader is on and the identity
+   colour is resolved per-basemap in JS (basemapIdentityColour) — the same
+   green that function falls back to is the honest neutral for a key.
+
+   The hatch swatch is a CSS gradient rather than the real
+   buildHatchImage() pixels: it is 10px square, at which size the generated
+   pattern's 2x period reads as noise. The diagonal is what carries the
+   meaning, and a gradient draws one cleanly at any size. --color-sync-ok
+   is the FLOOR the JS shares, so the two never drift far enough to
+   mislead, but this is deliberately a family resemblance and not a
+   pixel match. */
+.map-legend-swatch--downloaded-here {
+    background: repeating-linear-gradient(
+        45deg,
+        var(--color-sync-ok) 0,
+        var(--color-sync-ok) 1.5px,
+        transparent 1.5px,
+        transparent 3.5px
+    );
+}
+/* Outline only, mirroring the download roundel's 'other-basemap' hollow
+   ring — "downloaded, but not usable here" is a third answer, not a shade
+   of the other two (see that rule's own comment). */
+.map-legend-swatch--downloaded-elsewhere {
+    background: transparent;
+    border: 1.5px solid var(--color-sync-ok);
+}
+
 .map-legend-swatch--slope-30 { background: var(--color-slope-30); }
 .map-legend-swatch--slope-35 { background: var(--color-slope-35); }
 .map-legend-swatch--slope-40 { background: var(--color-slope-40); }
