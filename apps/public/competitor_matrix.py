@@ -77,7 +77,7 @@ SUPPORT_GLYPHS: dict[Support, str] = {
     Support.YES: "●",
     Support.PARTIAL: "◐",
     Support.NO: "○",
-    Support.UNKNOWN: "·",
+    Support.UNKNOWN: "?",
 }
 
 
