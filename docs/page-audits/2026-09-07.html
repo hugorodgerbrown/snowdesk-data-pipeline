@@ -1,0 +1,668 @@
+<title>Snowdesk page audit — 7 September 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --card:        #FFFFFF;
+  --card-sunk:   #EDF1F4;
+  --text-1:      #0F1519;
+  --text-2:      #48545E;
+  --text-3:      #7A8792;
+  --border:      #DDE3E8;
+  --border-soft: #E9EEF1;
+  --accent:      #0B6273;
+  --accent-soft: #E2F0F3;
+  --sev-broken:  #A32E27;
+  --sev-broken-bg: #F8EAE9;
+  --sev-orphan:  #8A6210;
+  --sev-orphan-bg: #F8F0DF;
+  --sev-thin:    #0B6273;
+  --sev-thin-bg: #E2F0F3;
+  --ok:          #2E6B4F;
+  --ok-bg:       #E4F0EA;
+  --new:         #5B4B9E;
+  --new-bg:      #ECE9F6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0C1013;
+    --card:        #141A1F;
+    --card-sunk:   #10161A;
+    --text-1:      #E7EDF1;
+    --text-2:      #A0ABB5;
+    --text-3:      #6B7781;
+    --border:      #222A31;
+    --border-soft: #1B2229;
+    --accent:      #4FC6DC;
+    --accent-soft: #0E2A31;
+    --sev-broken:  #EC7B72;
+    --sev-broken-bg: #2A1614;
+    --sev-orphan:  #DDA544;
+    --sev-orphan-bg: #271D0D;
+    --sev-thin:    #4FC6DC;
+    --sev-thin-bg: #0E2A31;
+    --ok:          #6FBF95;
+    --ok-bg:       #12241B;
+    --new:         #A99AE0;
+    --new-bg:      #1C1830;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0C1013;
+  --card:        #141A1F;
+  --card-sunk:   #10161A;
+  --text-1:      #E7EDF1;
+  --text-2:      #A0ABB5;
+  --text-3:      #6B7781;
+  --border:      #222A31;
+  --border-soft: #1B2229;
+  --accent:      #4FC6DC;
+  --accent-soft: #0E2A31;
+  --sev-broken:  #EC7B72;
+  --sev-broken-bg: #2A1614;
+  --sev-orphan:  #DDA544;
+  --sev-orphan-bg: #271D0D;
+  --sev-thin:    #4FC6DC;
+  --sev-thin-bg: #0E2A31;
+  --ok:          #6FBF95;
+  --ok-bg:       #12241B;
+  --new:         #A99AE0;
+  --new-bg:      #1C1830;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text-1);
+  font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+.col { max-width: 43rem; }
+
+.eyebrow {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 1px solid var(--border); }
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0.75rem 0 0;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+}
+.masthead-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; margin-top: 2rem; }
+.masthead-meta p { margin: 0; }
+
+section { padding-top: 3.5rem; }
+section > .eyebrow { margin-bottom: 0.6rem; }
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+h3 { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code, .mono { font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+code {
+  background: var(--card-sunk);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+strong { font-weight: 600; color: var(--text-1); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 2rem 0 0;
+}
+.metric { background: var(--card); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.metric .figure {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.metric .label { font-size: 0.8125rem; line-height: 1.35; color: var(--text-3); }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.875rem; }
+thead th {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody td:first-child {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.pill {
+  display: inline-block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-broken { background: var(--sev-broken-bg); color: var(--sev-broken); }
+.pill-orphan { background: var(--sev-orphan-bg); color: var(--sev-orphan); }
+.pill-thin   { background: var(--sev-thin-bg);   color: var(--sev-thin); }
+.pill-ok     { background: var(--ok-bg);         color: var(--ok); }
+.pill-gone   { background: var(--card-sunk);     color: var(--text-3); }
+.pill-new    { background: var(--new-bg);        color: var(--new); }
+
+.findings { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.finding {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stripe, var(--text-3));
+  border-radius: 0 10px 10px 0;
+  padding: 1.25rem 1.4rem;
+}
+.finding.broken { --stripe: var(--sev-broken); }
+.finding.orphan { --stripe: var(--sev-orphan); }
+.finding.thin   { --stripe: var(--sev-thin); }
+.finding.done   { --stripe: var(--ok); }
+.finding.newwork { --stripe: var(--new); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.7rem; }
+.finding-head .ref { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--text-3); letter-spacing: 0.02em; }
+.finding p { font-size: 0.9375rem; color: var(--text-2); }
+
+.evidence {
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.95rem;
+  background: var(--card-sunk);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.evidence li { padding-left: 1.1rem; position: relative; }
+.evidence li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 5px; height: 1px; background: var(--text-3); }
+.evidence .k { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.9em; color: var(--text-1); }
+
+.statement {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1.75rem;
+}
+.statement p { font-size: 1.0625rem; line-height: 1.55; color: var(--text-1); }
+.statement p + p { color: var(--text-2); font-size: 0.9375rem; }
+
+.qgroups { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.qgroup { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.35rem 1.5rem; }
+.qgroup h3 { margin-bottom: 0.65rem; }
+.qgroup p { font-size: 0.9375rem; color: var(--text-2); }
+
+.note { border-left: 2px solid var(--border); padding-left: 1rem; color: var(--text-3); font-size: 0.875rem; margin-top: 1.5rem; }
+
+@media (prefers-reduced-motion: no-preference) { a { transition: color 120ms ease; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Page audit · week of 1–6 September · 7 September 2026</p>
+    <h1>The map ate five pages, and the lie moved house</h1>
+    <p class="standfirst">
+      71 commits, 604 files — the biggest window this series has reviewed, again, for the second week
+      running. One PR (SNOW-795, nine child tickets) deleted <code>/observations/</code>,
+      <code>/account/</code> and its three list pages, and <code>/favourites/&lt;uuid&gt;/</code>,
+      folded subscriptions into pinnable regions, and took every integer primary key out of a public
+      URL. A whole new app, <code>/trips/</code>, shipped reachable, tested and honest in the same
+      week. None of it touched the sentence this series has now flagged four audits running — and the
+      rewrite's own side effects mean the false promise is no longer confined to one paragraph.
+    </p>
+    <div class="masthead-meta">
+      <p class="eyebrow">Baseline <span class="mono">52c57eae</span> → now <span class="mono">8dfafb96</span></p>
+      <p class="eyebrow">71 commits · 604 files</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The short version</p>
+    <h2>Two pages closed by deletion, one shipped whole and clean — and the unsent-email claim now lives in four places instead of one.</h2>
+    <div class="col">
+      <p>
+        <code>docs/decisions/two-documents-and-a-map.md</code> is this week's real headline: Snowdesk
+        now has exactly two document pages — the bulletin and the weather page — plus the map, and
+        everything else is a way of reaching one of them. The account list pages
+        (<code>/account/favourites/</code>, <code>/account/observations/</code>,
+        <code>/account/routes/</code>), the hub itself, <code>/favourites/&lt;uuid&gt;/</code> and
+        <code>/observations/</code> are gone, each replaced by a permanent redirect into the map with
+        the matching sheet open. That closes last audit's C1 (<code>/observations/</code> orphaned) —
+        not by linking it, but by removing the reason a link was needed — and makes SNOW-669, the
+        ticket that asked for exactly that link, obsolete before anyone picked it up.
+      </p>
+      <p>
+        <code>apps/trips/</code> — a genuinely new, interactive, multi-user object — landed the same
+        week, complete: reachable from the nav (third time this series has watched that discipline
+        hold, after SNOW-668 and last week's downloads), a public share page that does what its
+        decision doc says, and SNOW-848's mid-week "take the roster off a trip" pass verified line by
+        line against the rendered templates, not just the ticket title. 255 tests back it.
+      </p>
+      <p>
+        The same week, the exact mechanism SNOW-795's own decision doc calls out by name —
+        "<em>Subscription</em> was justified as a notification channel and has never been one... it
+        produces nav links, account cards, a subscribed-state chip and an unsubscribe token for mail
+        that is never sent" — got ripped out of the product surfaces (the subscribe form, the hub
+        page, the confirmation partials) as a side effect of an unrelated IA rewrite. Nobody touched
+        <code>privacy.html:245</code>, still crediting Resend with sending "your bulletin notification
+        emails." Nobody touched <code>terms_of_service.html</code> §7, "Email subscriptions," which
+        now describes a feature whose entire UI was deleted three days ago. And the homepage's own
+        register CTA — untouched by this pass, present since before this series started — still
+        promises "daily region updates." Four surfaces, one true fact behind all of them: nothing
+        sends.
+      </p>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><span class="figure">2</span><span class="label">findings closed this week</span></div>
+      <div class="metric"><span class="figure">5</span><span class="label">unchanged findings re-verified</span></div>
+      <div class="metric"><span class="figure">4</span><span class="label">surfaces now carry the unsent-email claim, up from 2</span></div>
+      <div class="metric"><span class="figure">14</span><span class="label">apps — trips is new</span></div>
+      <div class="metric"><span class="figure">59</span><span class="label">decision docs, up from 46</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Closed</p>
+    <h2>What actually got fixed</h2>
+
+    <div class="findings">
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">C1</span>
+          <h3><code>/observations/</code> closed by deletion, not by linking</h3>
+          <span class="pill pill-ok">SNOW-804</span>
+        </div>
+        <p>
+          Three audits running, this series flagged <code>/observations/</code> as routed, viewed,
+          tested and reachable from nowhere. It is now a permanent redirect to
+          <code>/?panel=reports</code> — the same 48-hour stream, opened as a map sheet instead of a
+          standalone page. <code>apps/observations/urls.py</code> exposes only the HTMX partial
+          endpoints a sheet needs (<code>report_form</code>, <code>report_submit</code>, <code>list</code>,
+          <code>delete</code>); there is no page left to be an orphan. The decision doc is explicit
+          that this costs nothing in search — the page was excluded from the sitemap from the start,
+          because it showed an anonymous visitor a sign-in CTA rather than the stream.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">apps/public/urls.py:104-108</span> — <code>observations/</code> → 301 → <code>/?panel=reports</code></li>
+          <li><span class="k">docs/decisions/two-documents-and-a-map.md</span> — "Deleting <code>/observations/</code> costs nothing in search"</li>
+          <li>See Consequences: this obsoletes SNOW-669 rather than satisfying it</li>
+        </ul>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">A3</span>
+          <h3>docs/user-journeys.md rewritten around the new IA, and accurate</h3>
+          <span class="pill pill-ok">SNOW-808</span>
+        </div>
+        <p>
+          <code>last-reviewed: 2026-09-03</code>, four days old. J4 now states plainly: "No scheduled
+          job sends a bulletin — every email is transactional." J2 is rewritten around a signed-in
+          user's region pins and map sheets rather than the retired subscription flow. This is the
+          fastest a stale-docs finding has closed in this series — not because someone edited the one
+          flagged paragraph, but because the whole document was rewritten as part of SNOW-808's
+          "rewrite the docs for the two-documents IA" pass. Worth noting for how docs debt gets paid
+          down here: not point fixes, but swept up whole by the next big rewrite that touches the area.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">New</p>
+    <h2>What the audit didn't anticipate</h2>
+
+    <div class="findings">
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N1</span>
+          <h3>Two documents and a map: the site's whole information architecture changed in one PR</h3>
+          <span class="pill pill-new">SNOW-795, nine child tickets</span>
+        </div>
+        <p>
+          One PR (<code>fe70774e</code>, nine commits, each its own ticket) gave <code>Resort</code> a
+          stored slug and <code>Location</code> a short opaque id, taking every integer primary key out
+          of a public URL (SNOW-796/797/798); promoted the weather page with a sitemap section, a
+          canonical URL and two new MCP tools (SNOW-799); deleted <code>/favourites/&lt;uuid&gt;/</code>
+          in favour of a redirect to the pin's weather page (SNOW-800); collapsed the bulletin page's
+          four-affordance tail to one "See this region on the map" link (SNOW-806); removed the three
+          account list pages and cut the nav menu to Settings and Sign out (SNOW-803); removed
+          <code>/observations/</code> (SNOW-804, see Closed above); folded <code>Subscription</code>
+          into a pinnable region — a <code>Favourite</code> with a region and no coordinate — and closed
+          every Subscription write path (SNOW-802); rebuilt the resort page as a router to the two
+          documents rather than a third one (SNOW-807); and rewrote every doc that described the
+          retired shape (SNOW-808). The doc is explicit about the rule: "a thing gets a page when it is
+          read at length and is dated with an issuer" — regions, resorts, locations, observations and
+          routes are ways of reaching the bulletin or the weather page, not destinations of their own.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">docs/decisions/two-documents-and-a-map.md</span> — the decision, its "why," and every consequence enumerated</li>
+          <li><span class="k">docs/decisions/no-integer-pks-in-urls.md</span> — the slug/short_id mechanics</li>
+          <li>Every removed page keeps a redirect — confirmed for <code>/observations/</code>, <code>/account/</code>, <code>/account/favourites/</code>, <code>/account/routes/</code>, <code>/favourites/&lt;uuid&gt;/</code></li>
+        </ul>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">N2</span>
+          <h3>Trips shipped whole this week — reachable, tested, and honest about what it doesn't show</h3>
+          <span class="pill pill-new">SNOW-819, SNOW-823, SNOW-827, SNOW-834, SNOW-840, SNOW-848</span>
+        </div>
+        <p>
+          A brand-new, interactive, multi-user object — the first of its kind on the site, per its own
+          decision doc — arrived complete in the same week. The nav's Trips entry
+          (<code>templates/includes/nav.html:429</code>) is asserted by
+          <code>tests/public/test_nav_partial.py:218,239</code>, following exactly the discipline
+          SNOW-668 established. The public share page is genuinely public (no login check), renders a
+          snapshot of the route geometry rather than a live reference, sets
+          <code>Cache-Control: no-store</code>, and answers a uniform 404 for an unknown, revoked or
+          expired token. SNOW-848's mid-week "take the roster off a trip" was verified against the
+          rendered templates, not the ticket title: every participant/roster/going-state string in
+          <code>apps/trips/templates/</code> is either a removed-feature comment or the one deliberate
+          exception the decision doc names — a delete-confirmation count, gated behind
+          <code>{% if is_organiser %}</code>, never shown to anyone else. 13 test files, roughly 255
+          test functions.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">apps/trips/views.py:1183-1248</span> — <code>trip_share_page</code>, unauthenticated, snapshot geometry, 30/h rate limit</li>
+          <li><span class="k">apps/trips/templates/trips/partials/_trip_delete_confirm.html:18</span> — the one participant-count string, organiser-only</li>
+          <li><span class="k">docs/decisions/a-trip-is-one-object-with-a-roster.md</span> — disclosure bullet marked superseded by SNOW-848, matching the code</li>
+        </ul>
+      </article>
+
+      <article class="finding thin">
+        <div class="finding-head">
+          <span class="ref">N3</span>
+          <h3>The resort page's own meta description overclaims, for exactly the resorts N2-from-last-week warned about</h3>
+          <span class="pill pill-orphan">new gap</span>
+        </div>
+        <p>
+          <code>resort.html</code>'s meta description, emitted unconditionally for every resort, reads
+          "...links to the {region} avalanche bulletin and to forecasts for its village, mid-station
+          and summit." That is only true for a resort an editor has fully curated by hand. A resort
+          whose only <code>Location</code> link came from <code>link_resort_locations</code> — last
+          week's N2, still a manual step nobody re-checked this week — gets one anonymous point with a
+          deliberately blank role, not three named tiers; a resort with zero curated locations renders
+          no Forecasts section at all, which the template's own comment calls "normal." The rebuild
+          that introduced this exact page (SNOW-807, this week) had the context to get the conditional
+          right and didn't.
+        </p>
+        <ul class="evidence">
+          <li><span class="k">apps/public/templates/public/resort.html:82-87</span> — the unconditional description</li>
+          <li><span class="k">apps/locations/management/commands/link_resort_locations.py</span> — "role is left blank on purpose"</li>
+        </ul>
+      </article>
+
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">N4</span>
+          <h3>EAWS glossary terms, map calendar and what3words all landed working</h3>
+          <span class="pill pill-ok">SNOW-853, SNOW-792/793/794/801/814, SNOW-840</span>
+        </div>
+        <p>
+          Three smaller surfaces this week all check out. EAWS glossary injection
+          (<code>apps/public/glossary.py</code>) runs inside the same <code>snowdesk_html</code> filter
+          every bulletin prose block uses, after <code>bleach.clean</code> and before
+          <code>mark_safe</code> per its decision doc, reviewed one day before this audit. The map
+          calendar and region+date panel redesign is wired end to end — <code>_map_calendar.html</code>
+          dispatches to the scrubber, the region pin control moved into the region dropdown per SNOW-814
+          — and <code>map-defaults-to-today-not-the-last-rated-day.md</code> still matches
+          <code>readDisplayDate()</code> in <code>map_shared.js</code> exactly. What3words is real but
+          correctly dark-launched: gated behind a waffle flag that's superusers-only "because
+          convert-to-3wa is not on the what3words free plan," by the flag fixture's own comment — not a
+          bug, a deliberate pre-launch state, same pattern as the existing debug-log flag.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Unchanged</p>
+    <h2>What the re-run found exactly as it was — or worse</h2>
+    <div class="col">
+      <p>
+        Every item below was re-verified against current <code>main</code> (<code>8dfafb96</code>), not
+        assumed from ticket state. D3 is now the fourth audit running to find the same sentence; A1 is
+        the same underlying claim, now standing in two additional places it didn't occupy last week.
+      </p>
+    </div>
+
+    <div class="table-scroll" style="margin-top:1.75rem">
+      <table>
+        <thead>
+          <tr><th>Finding</th><th>Re-verified state</th><th>Ticket</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>A1 · unsent email, now in four places</td>
+            <td>The templates named in earlier audits (<code>subscribe_*.html</code>, <code>hub.html</code>)
+            are gone — deleted this week, see N1. The underlying claim survives in
+            <code>home.html:24</code>'s meta description ("Receive daily bulletin updates") and,
+            newly noticed, the homepage's own register CTA in
+            <code>_map_embed.html:1511-1512</code>: "Register with Snowdesk to... receive daily region
+            updates." <code>apps/accounts/services/email.py</code> still sends six transactional
+            templates and no digest.</td>
+            <td>SNOW-7 <span class="pill pill-orphan">Todo</span></td>
+          </tr>
+          <tr>
+            <td>B3 · bulletin guide is SLF-only</td>
+            <td><code>docs/bulletin-guide.md</code> still <code>last-reviewed: 2026-06-10</code> — 89
+            days stale — and still zero ALBINA/Météo-France mentions. The gap is sharper than last
+            week: the homepage tagline (<code>_map_embed.html:1503</code>) and meta description now
+            both advertise Switzerland, France, Austria, South Tyrol and Trentino in the same breath a
+            reader would reach the guide from.</td>
+            <td>SNOW-679 <span class="pill pill-ok">Ready</span></td>
+          </tr>
+          <tr>
+            <td>C2 · /examples/ orphaned</td>
+            <td>Still true. <code>examples_random</code>/<code>examples_category</code> remain live
+            views (unlike observations, not redirects) with zero <code>{% url %}</code> or
+            <code>href</code> references anywhere in templates or static.</td>
+            <td>SNOW-678 <span class="pill pill-ok">Ready</span></td>
+          </tr>
+          <tr>
+            <td>C3 · no regions index</td>
+            <td><code>apps/regions/</code> still has no <code>views.py</code>, no <code>urls.py</code>,
+            and no sitemap section — confirmed against the current <code>sitemaps.py</code>, which
+            gained a locations section this week (SNOW-799) but no regions one.</td>
+            <td>SNOW-674 <span class="pill pill-ok">Ready</span></td>
+          </tr>
+          <tr>
+            <td>D3 · privacy still names Resend as the bulletin-email sender</td>
+            <td><code>privacy.html:245</code>, unchanged word for word since the first audit: "Resend
+            (resend.com) — sends your bulletin notification emails." Resend is genuinely the production
+            SMTP relay (<code>config/settings/base.py</code>) — but for six transactional templates,
+            never a bulletin. Now joined by <code>terms_of_service.html</code> §7, "Email
+            subscriptions," which describes subscribing and unsubscribing to bulletin notifications as
+            a live feature — the exact UI it describes (<code>subscribe_form.html</code> and friends)
+            was deleted three days before this audit. The fourth audit running to find this sentence.</td>
+            <td>folded into SNOW-7 <span class="pill pill-orphan">Todo</span> (SNOW-707, the dedicated bug, was canceled — see Consequences)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Consequences</p>
+    <h2>Four things this week's work changes about the older tickets</h2>
+    <div class="col">
+      <p>
+        Connections between this cycle's decisions and tickets written before them — visible from
+        neither side alone.
+      </p>
+    </div>
+
+    <div class="qgroups">
+      <div class="qgroup">
+        <h3>SNOW-669 is now obsolete, not open</h3>
+        <p>
+          SNOW-669, "give the public observations stream a way in," has sat Ready for dev since
+          2026-08-11, asking for exactly one thing: a link somewhere to <code>/observations/</code>.
+          That page no longer exists — SNOW-804 deleted it and redirects to the map's reports sheet
+          instead. Building what SNOW-669 asks for is now impossible as written; the ticket should be
+          closed as obsolete, not left open waiting for work that would target a page nobody can reach
+          because it isn't there to reach.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3>A canceled bug ticket got half-fixed by accident, and the surviving half just grew</h3>
+        <p>
+          SNOW-707, "the product promises bulletin alerts it never sends," named thirteen surfaces on
+          2026-08-21 and was canceled twenty-seven minutes later. Five of its "product surfaces" —
+          <code>subscribe_form.html</code>, <code>hub.html</code>, <code>subscribe_success_added.html</code>,
+          the unsubscribe copy, the <code>account_subscribed</code> email — are gone this week, deleted
+          as a side effect of SNOW-795's unrelated IA rewrite, not because anyone acted on the bug
+          report. Its "legal pages" half — <code>privacy.html</code>, <code>terms_of_service.html</code>
+          §7, the sharpest examples the ticket named — is untouched. And the ticket's own list is now
+          incomplete in the other direction: <code>home.html</code>'s meta description and the
+          homepage's register CTA weren't on SNOW-707's original thirteen and still make the same
+          claim. A ticket closed as Canceled is not being tracked by anything; reopening it, rescoped to
+          the four surfaces that remain, is the only way this stops being invisible to whoever next
+          touches the legal pages.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3>SNOW-7's stated blocker is resolved — by different work, under a different ticket</h3>
+        <p>
+          SNOW-7's own description names SNOW-665 ("unify Subscription and Favourite into a single
+          places model") as what it's blocked on, "which settles what a place is." SNOW-665 was
+          canceled on 2026-08-23. This week, SNOW-802 did exactly what SNOW-665 asked — <code>Favourite</code>
+          is now the one saved-place model, with a region-pin kind absorbing everything
+          <code>Subscription</code> recorded — as part of the unrelated SNOW-795 rewrite. SNOW-7's
+          description is now stale in a way that matters: the open question it names as blocking it has
+          an answer in the codebase today. Building the digest no longer waits on a data-model decision;
+          it waits on being scheduled.
+        </p>
+      </div>
+
+      <div class="qgroup">
+        <h3>Last week's "watch" item left a trace this week's page-rebuild didn't catch</h3>
+        <p>
+          Last audit flagged <code>link_resort_locations</code> as a manual step with nothing to notice
+          a resort silently missing its weather link (N2 there). Nothing changed operationally this
+          week — still no monitoring, still manual — but <code>resort.html</code> was rebuilt from
+          scratch this week (SNOW-807) with full context on how a resort's locations get linked, and
+          its new meta description still overclaims three named forecast tiers for a resort that, via
+          exactly that manual command, may have only one anonymous one (N3 above). The gap didn't just
+          sit still; it grew a second symptom in a page written the same week the first one was flagged.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendation</p>
+    <h2>What I'd do next</h2>
+    <div class="col">
+      <p>
+        <strong>First, fix the four unsent-email surfaces in one pass and reopen a ticket to track
+        them.</strong> <code>privacy.html:245</code>, <code>terms_of_service.html</code> §7,
+        <code>home.html:24</code> and <code>_map_embed.html:1511-1512</code> — all four say the same
+        false thing, and SNOW-707, the ticket that named the first two, is Canceled. Rescope and
+        reopen it (or file fresh) rather than letting a fifth audit find the same sentence with no
+        ticket attached to it at all.
+      </p>
+      <p>
+        <strong>Then close SNOW-669 as obsolete.</strong> The page it asks to link into no longer
+        exists; leaving it open invites someone to scope work against a route that's now a redirect.
+      </p>
+      <p>
+        <strong>Then the remaining orphan-page cluster: SNOW-678, SNOW-674.</strong> Both still Ready
+        for dev, both untouched by a week that otherwise rewrote almost everything else about site
+        navigation.
+      </p>
+      <p>
+        <strong>Small: fix <code>resort.html</code>'s meta description (N3).</strong> Condition it on
+        whether any curated location actually has a named role — cheap, and closes a gap the page's
+        own rebuild this week had every chance to catch.
+      </p>
+      <p>
+        <strong>Decide SNOW-7 with its real blocker gone.</strong> The data-model question it was
+        waiting on is answered; what's left is a scheduling decision, not a design one.
+      </p>
+    </div>
+
+    <p class="note">
+      Re-verified against <span class="mono">8dfafb96</span> on 7 September 2026. Nothing was changed
+      and no tickets were created or edited in this pass — the branch was fast-forwarded to
+      <span class="mono">main</span> to read current state, and that is all.
+    </p>
+  </section>
+
+</div>
