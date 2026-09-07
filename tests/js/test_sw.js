@@ -131,6 +131,9 @@ const SW_EXPORTS = [
   // SNOW-852: the Background-Sync drain, which needs its own offline guard
   // because a worker's own fetch() never fires its own fetch event.
   '_selfDrainMutations',
+  // SNOW-859: the wrapper's own recovery re-fetch — the last fetch call site
+  // in the file that did not consult the mode.
+  '_guardedRespond',
   'NAVIGATION_FETCH_BUDGET_MS',
   'SHELL_FETCH_BUDGET_MS',
   'BASEMAP_FETCH_BUDGET_MS',
@@ -2860,6 +2863,112 @@ describe('offline mode silences the network-only path (SNOW-852)', () => {
     // hydration flag false would put the worker on the intercepting path for
     // the rest of its life over one DB it could not open.
     expect(sw._mayPassThrough()).toBe(true);
+  });
+});
+
+describe("_guardedRespond's recovery re-fetch respects offline mode (SNOW-859)", () => {
+  /*
+   * The last fetch call site in sw.js that did not consult the mode, and the
+   * only one that is unreachable today: _guardedRespond re-fetches when a
+   * strategy resolves to something that is not a Response, and all three
+   * wrapped strategies always resolve to one — the synthesized 504s included.
+   *
+   * Covered anyway. "It cannot happen" is the reasoning that left SNOW-854's
+   * branch unguarded through two tickets, and the failure here is the worse
+   * shape: a recovery path spends the network exactly when something else has
+   * already broken, so the offline promise goes with it and the blame lands on
+   * the regression rather than on the recovery.
+   */
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterEach(async () => {
+    await resetDb();
+  });
+
+  const ASSET = `${ORIGIN}/static/css/output.css`;
+
+  /** A request of the shape the fetch handler hands the wrapper. */
+  function assetRequest() {
+    return { url: ASSET, method: 'GET', mode: 'cors', destination: 'style' };
+  }
+
+  /** The client stub _postTelemetry broadcasts to via matchAll. */
+  function makeClient() {
+    const seen = [];
+    return { postMessage: (data) => seen.push(data), seen };
+  }
+
+  it('answers 504 rather than re-fetching, once offline mode is in force', async () => {
+    const fetchSpy = vi.fn(async () => basicResponse('recovered bytes'));
+    const client = makeClient();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy, clients: [client] });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    // A strategy that has gone wrong: the one precondition of this branch.
+    const response = await sw._guardedRespond(
+      Promise.resolve(undefined),
+      assetRequest(),
+    );
+
+    expect(response.status).toBe(504);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still reports the anomaly it was refused permission to recover from', async () => {
+    // The ordering that matters inside the branch. Refusing the re-fetch must
+    // not also swallow the telemetry: a strategy resolving to a non-Response
+    // is a defect worth knowing about whether or not the app is allowed to
+    // paper over it, and offline is when it is hardest to notice otherwise.
+    const client = makeClient();
+    const sw = loadSw({
+      caches: makeCaches(),
+      fetch: vi.fn(async () => basicResponse('recovered bytes')),
+      clients: [client],
+    });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    await sw._guardedRespond(Promise.resolve(undefined), assetRequest());
+    await flush();
+
+    expect(client.seen).toContainEqual(
+      expect.objectContaining({ type: 'pwa-telemetry', event: 'pwa.sw.fetch_undefined' }),
+    );
+  });
+
+  it('still recovers normally while the worker is online', async () => {
+    // The guard is the mode, not a disabling of the recovery. A page whose
+    // strategy misfired on a live connection should still get its asset.
+    const fetchSpy = vi.fn(async () => basicResponse('recovered bytes'));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy, clients: [makeClient()] });
+    await sw._hydrateNetworkMode();
+
+    const response = await sw._guardedRespond(
+      Promise.resolve(undefined),
+      assetRequest(),
+    );
+
+    expect(await response.text()).toBe('recovered bytes');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes a real Response through untouched in either mode', async () => {
+    // The wrapper must not start answering 504 for responses that were fine.
+    // Offline mode reaches it constantly — every guarded strategy returns its
+    // own synthesized 504 through here — and turning those into a second,
+    // freshly-minted 504 would lose whichever partition actually answered.
+    const sw = loadSw({ caches: makeCaches(), fetch: vi.fn() });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const served = basicResponse('cached bytes');
+    const response = await sw._guardedRespond(Promise.resolve(served), assetRequest());
+
+    expect(response).toBe(served);
   });
 });
 
