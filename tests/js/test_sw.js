@@ -2853,6 +2853,103 @@ describe('offline mode silences the network-only path (SNOW-852)', () => {
     expect(responded).toBe(false);
   });
 
+  // -- SNOW-862: the radio, not just the switch --------------------------
+  //
+  // ``_shouldUseNetwork`` has always been false when the interface is down.
+  // ``_mayPassThrough`` was not, so with a dead radio and the switch
+  // untouched every read path refused while API GETs, fragments and mutation
+  // POSTs went to the browser anyway. Nothing else covered it: the latch is
+  // evidence from three read-path TIMEOUTS, and a dead radio rejects rather
+  // than hangs, so it never fires.
+
+  /**
+   * Run ``fn`` with ``navigator.onLine`` forced to ``value``.
+   *
+   * jsdom defines ``onLine`` as a prototype getter that always answers true,
+   * so it is replaced for the duration rather than assigned — an assignment
+   * silently no-ops against an accessor with no setter, and the test would
+   * pass for the wrong reason.
+   *
+   * @param {boolean} value
+   * @param {Function} fn
+   */
+  async function withOnLine(value, fn) {
+    const spy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(value);
+    try {
+      await fn();
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('does not pass a request through while the interface is down', async () => {
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    // No offline mode at all: the mode is 'auto' and hydrated, which is
+    // precisely the state that used to wave this straight past the worker.
+    await withOnLine(false, async () => {
+      expect(sw._mayPassThrough()).toBe(false);
+      const { responded, response } = await dispatchFetch(sw, apiRequest());
+      expect(responded).toBe(true);
+      expect(response.status).toBe(504);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('blocks a mutation POST on a dead radio, leaving its row queued', async () => {
+    // 5xx rather than a rejection changes what the queue SEES, so the shape
+    // matters: mutation_queue_core classifies status >= 500 as 'retry', which
+    // is the same outcome a network error produced. A 4xx here would discard
+    // the user's report the moment they walked into a tunnel.
+    const fetchSpy = answeringFetch();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await withOnLine(false, async () => {
+      const { response } = await dispatchFetch(sw, {
+        url: `${ORIGIN}/partials/report/`,
+        method: 'POST',
+        mode: 'cors',
+        destination: 'empty',
+      });
+      expect(response.status).toBeGreaterThanOrEqual(500);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('agrees with _shouldUseNetwork about a dead radio', async () => {
+    // The invariant the defect broke. These two answer the same question —
+    // one synchronously for the respondWith decision, one after hydration —
+    // and a state where they disagree is a hole by construction, whatever
+    // that state happens to be.
+    const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+    await sw._hydrateNetworkMode();
+
+    await withOnLine(false, async () => {
+      expect(sw._mayPassThrough()).toBe(false);
+      expect(await sw._shouldUseNetwork()).toBe(false);
+    });
+  });
+
+  it('passes through again the moment the interface comes back', async () => {
+    // ``onLine`` is trusted in the negative only. Once it stops saying false
+    // the worker must get off the path of every API call — that passthrough
+    // is the ordinary case, and paying for interception in it is the cost
+    // SNOW-852 went to some trouble to avoid.
+    const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });
+    await sw._hydrateNetworkMode();
+
+    await withOnLine(false, async () => {
+      expect(sw._mayPassThrough()).toBe(false);
+    });
+
+    expect(sw._mayPassThrough()).toBe(true);
+    const { responded } = await dispatchFetch(sw, apiRequest());
+    expect(responded).toBe(false);
+  });
+
   it('treats an unreadable mode row as a settled answer, not a permanent unknown', async () => {
     await resetDbWithoutMetaStore();
     const sw = loadSw({ caches: makeCaches(), fetch: answeringFetch() });

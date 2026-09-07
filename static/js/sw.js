@@ -2364,14 +2364,30 @@ async function _shouldUseNetwork() {
  * costs nothing. Everything else — a forced or latched mode, or a worker that
  * has not read its persisted mode yet — returns ``false`` and pays one await.
  *
- * ``navigator.onLine`` is deliberately NOT consulted. A passthrough with the
- * interface down fails natively and the browser reports it, which is what
- * happened before this ticket and is not the defect being fixed; narrowing
- * the condition to the mode keeps the change to the thing that was wrong.
+ * SNOW-862: ``navigator.onLine === false`` blocks a passthrough too, so this
+ * and ``_shouldUseNetwork`` answer the same question. They used to disagree,
+ * and the gap was the whole of "the radio is off": every read path refused
+ * correctly while API GETs, HTMX fragments and mutation POSTs were handed to
+ * the browser anyway. SNOW-852 left it there on the reasoning that such a
+ * request fails natively and the browser reports it — true, and a fair scope
+ * call for that ticket, but not a reason for two predicates that mean the
+ * same thing to keep giving different answers.
+ *
+ * Nothing else covers it. The latch is evidence from three read-path
+ * TIMEOUTS, and a dead radio rejects rather than hangs (see
+ * ``_boundedFetch``), so it never fires; ``onLine`` is the only signal there
+ * is. Note the asymmetry, which is deliberate: ``false`` is trustworthy —
+ * there is no interface — while ``true`` means nothing, which is exactly why
+ * the latch has to exist alongside this rather than instead of it.
+ *
+ * The cost SNOW-852's passthrough protected is not a real one here. There is
+ * no throughput to preserve on a dead radio, and answering from memory beats
+ * a doomed trip through the network stack.
  *
  * @returns {boolean}
  */
 function _mayPassThrough() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   return _networkModeHydrated && _networkMode === 'auto';
 }
 
