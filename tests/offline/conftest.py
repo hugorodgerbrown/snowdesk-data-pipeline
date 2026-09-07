@@ -193,6 +193,74 @@ class OfflineMapPage:
         )
         self.close_account_menu()
 
+    def forget_basemap_origins(self) -> None:
+        """Empty the worker's basemap-origin allowlist, durably and in memory.
+
+        Stands in for the one worker state this suite has no other way to
+        reach: Chrome terminating an idle service worker. ``_basemapOrigins``
+        (``static/js/sw.js``) is an in-memory ``Set``, so a recycled worker
+        wakes with it empty, and its durable ``meta:app`` mirror can be
+        missing too — a reset takes it, and SNOW-722 exists because the
+        rehydration read can simply fail.
+
+        There is no user gesture for "recycle the worker", and Playwright has
+        no API for it, so the state is established rather than provoked: the
+        mirror row is deleted and an empty ``register-basemap-origins`` is
+        posted through the worker's own message contract — the same message
+        ``map.js`` sends, with the list a restarted worker actually holds.
+        Nothing private is reached into and no behaviour is stubbed.
+
+        This matters because an empty allowlist routes every cross-origin
+        tile down ``sw.js``'s unclassified branch instead of its basemap
+        strategy, and those are two different code paths with two different
+        network guards (SNOW-854). A test that never empties the allowlist
+        exercises only the first, which is how the leak survived both
+        SNOW-852 and this suite's own camera-move phase.
+
+        The ``version`` round-trip afterwards is the acknowledgement: a
+        worker processes messages in order, so its reply to a message sent
+        second proves it has already handled the registration sent first.
+        """
+        self.page.evaluate(
+            """async () => {
+                await window.pwaDb?.delete('meta:app', 'basemap.origins');
+                const worker = navigator.serviceWorker.controller;
+                worker.postMessage({ type: 'register-basemap-origins', origins: [] });
+                await new Promise((resolve) => {
+                    navigator.serviceWorker.addEventListener(
+                        'message',
+                        (event) => {
+                            if (event.data?.type === 'version') resolve();
+                        },
+                        { once: true },
+                    );
+                    worker.postMessage('version');
+                });
+            }"""
+        )
+
+    def stored_basemap_origins(self) -> list[str]:
+        """Return the durable ``basemap.origins`` mirror, or an empty list.
+
+        ``map.js`` writes this row in the same function that posts
+        ``register-basemap-origins`` (``registerBasemapOrigins``), so it is
+        a faithful read-back of whether the page has re-registered — including
+        from the ``style.load`` hook, which adds the style's own resolved
+        tile hosts after the map settles (SNOW-843).
+
+        Its use is to stop ``forget_basemap_origins`` from silently expiring.
+        A re-registration mid-test would refill the allowlist, send the tiles
+        back down the classified path, and leave the test passing while
+        proving nothing about the branch it was written for.
+        """
+        origins: list[str] = self.page.evaluate(
+            """async () => {
+                const row = await window.pwaDb?.get('meta:app', 'basemap.origins');
+                return row?.value ?? [];
+            }"""
+        )
+        return origins
+
     def discard_passive_basemap_cache(self) -> list[str]:
         """Delete every basemap cache that is not a pinned download bucket.
 
