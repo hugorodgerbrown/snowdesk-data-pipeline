@@ -3193,6 +3193,10 @@ async function _networkFirst(request) {
  * a ``Response`` today; this is a defensive guard against a future
  * regression in either function, not a documented current failure mode.
  *
+ * SNOW-859: the re-fetch is nonetheless subject to ``_shouldUseNetwork()``,
+ * so a defensive path cannot become the one that breaks the offline
+ * promise. The telemetry fires either way.
+ *
  * @param {Promise<Response>} responsePromise
  * @param {Request} request
  * @param {string} [clientId]
@@ -3208,6 +3212,25 @@ async function _guardedRespond(responsePromise, request, clientId) {
       { url: request.url, mode: request.mode },
       clientId,
     );
+    // SNOW-859: the recovery is subject to the offline mode, like every
+    // other network path in this file. Note the ordering — the telemetry
+    // above fires either way, because the anomaly is worth reporting
+    // whether or not the app is allowed to do anything about it.
+    //
+    // Unreachable today, and that is exactly why it is worth closing. All
+    // three wrapped strategies return a real Response on every path under
+    // an offline mode, the 504s included, so nothing gets here without a
+    // regression in one of them. "It cannot happen" is the argument that
+    // left SNOW-854's branch unguarded for two tickets, and this one is
+    // worse if it ever does happen: a recovery path that spends the
+    // network fires precisely when something has already gone wrong,
+    // taking the user's offline promise down with it and blaming the
+    // regression rather than itself.
+    if (!(await _shouldUseNetwork())) {
+      const offline = _synthesizedGatewayTimeout();
+      _debugServe(request, 'guard', 'timeout-504', offline, null);
+      return offline;
+    }
     // SNOW-846: the one branch this wrapper owns. Every other `serve` line
     // comes from the strategy that produced the response, because only it
     // knows which partition answered — but a strategy that resolved to

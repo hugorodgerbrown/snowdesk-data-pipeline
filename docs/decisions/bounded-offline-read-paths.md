@@ -235,5 +235,21 @@ while the read is in flight must not be forced offline again by it.
   `offline-forced` (SNOW-854), because the first three are the ones anyone
   thinks of and the fourth only runs when classification fails. It is
   reached whenever the in-memory `_basemapOrigins` allowlist is empty, which
-  an ordinary idle-worker recycle is enough to cause. Adding a fifth path
-  means adding a fifth guard; `tests/js/test_sw.js` covers all four.
+  an ordinary idle-worker recycle is enough to cause.
+
+  A fifth was found by auditing the call sites rather than the strategies:
+  `_guardedRespond`'s recovery re-fetch, which runs when a strategy resolves
+  to something that is not a `Response` (SNOW-859). Nothing reaches it today
+  — every wrapped strategy returns a real `Response` on every path — and it
+  is guarded anyway, because a recovery path spends the network exactly when
+  something else has already broken, which is the worst moment to discover
+  it was the one exception. Adding a sixth path means adding a sixth guard;
+  `tests/js/test_sw.js` covers all five.
+
+  Three network calls in the file are deliberately NOT guarded, and should
+  stay that way: `_probeNetwork`'s `/livez` request (it runs only under an
+  auto-latch, never a forced mode, and is how the app gets back online),
+  `_warmCache`'s fetches (a download is a long operation the user explicitly
+  asked for, so it ignores a latch — but it does refuse a forced mode), and
+  the `DEV_SHELL_BYPASS` branch of `_staleWhileRevalidate`, which is off in
+  production and enforced so by `apps.core.checks`.
