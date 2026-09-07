@@ -1440,6 +1440,105 @@ refusal it replaced survives as the guard for a connection lost between
 paint and tap), and this overlay's own Download button stays gated on
 connectivity as before, the same rule the per-region control applies.
 
+### The shared z0–z9 base layer (SNOW-856)
+
+A download pins `MICRO_BAND` — z10–14 — over its own ground. The map's
+camera goes down to `MIN_ZOOM = 4` (`static/js/map.js`). Nothing precached
+a basemap tile at any zoom (`PRECACHE_URLS` is `[OFFLINE_FALLBACK,
+RESET_SCRIPT]`). So for the project's whole life, an offline reader who
+zoomed out past z10 fell off the edge of every area they owned, and no
+surface said so.
+
+**Why it was invisible until SNOW-854.** Before that ticket, the
+unclassified cross-origin branch of the fetch handler fell straight
+through to `fetch()` with no offline-mode check, so those tiles were
+quietly pulled over a connection the user had told the app not to spend
+and the map drew. Closing the leak made the hole honest. The 504s in the
+staging capture that opened SNOW-856 are every tile below z10 plus every
+tile just outside the region's clipped boundary — nothing was mis-keyed,
+and nothing was ever in a cache to serve.
+
+**What it is.** One `base-<basemapKey>` pinned bucket per basemap,
+covering z0–9 — abutting `MICRO_BAND`'s floor exactly, so there is
+neither a gap nor a tile paid for twice. It is a third area-id namespace
+beside `region-` and `custom-`, which is what lets `sw.js`'s read path
+find it with **no change at all**: `_searchPinnedBuckets` already walks
+every bucket under `BASEMAP_PINNED_CACHE_PREFIX`.
+
+**Its extent is the CAMERA's, narrowed by the style's.** The first design
+derived it from each style's TileJSON `bounds` alone. That works for the
+three national basemaps and asks for roughly 350,000 tiles on the default
+one, because OpenFreeMap Liberty is global. So `baseLayerBBox` intersects
+`MAX_BOUNDS` — read back off the live map via `getMaxBounds()`, never
+duplicated as a constant — with the style's declared bounds where it has
+them. The camera makes the layer *sufficient* (the reader cannot pan
+outside it); the style's bounds make it *finite*. A source that declares
+no bounds is claiming all of them and collapses to the camera, which is
+exactly right for a global style.
+
+Measured on 2026-09-07 by fetching every tile:
+
+| bbox | tiles/source | |
+|------|--------------|---|
+| `MAX_BOUNDS` (Alps) | 682 | the global-style case |
+| ∩ swisstopo declared | 215 | 3.0 MB base + 5.5 MB relief = **8.5 MB** |
+
+Under a quarter of one region download (Martigny-Verbier is 37 MB), paid
+once and shared by every area on the device.
+
+**When it runs.** On the tail of any download, in
+`basemap_download_runner.js`'s `topUpBaseLayer` — after the area, after
+`settle`, and best-effort. All three are the same decision: the area is
+what the user asked for, and the base layer must never make it slower, hold
+its roundel on 'busy' through a supplementary fetch, or turn a complete
+download into a failed one. `deps.baseLayer()` resolves only the urls NOT
+already in any pinned bucket, so the first download per basemap pays and
+every one after finds an empty list — which is also the repair path, with
+no `incomplete` state and nothing for the user to do.
+
+**Eviction.** It is counted in the standing budget (real disk) and is
+never an eviction *candidate*: `planEviction` filters it out of the
+sorted candidate list and folds its bytes into the un-evictable floor that
+`impossible` is measured against. Before this the floor was zero, so
+exhausting the candidates was guaranteed to leave exactly the incoming
+run — a guarantee an un-evictable entry breaks, which is why the check
+moved rather than staying a comparison against `incoming.bytes` alone. It
+leaves when the last area under its basemap does
+(`evictOrphanedBaseLayers`, cascaded from `evictBasemapAreas`), with one
+deliberate conservatism: **an area whose `basemapKey` is null keeps every
+base layer alive**, because a pre-SNOW-645 record says "basemap unknown"
+and unknown is not evidence of absence.
+
+**The trade it makes, stated plainly.** MapLibre renders a cached
+ancestor wherever a tile is missing (`findLoadedParent`), so once a z0–9
+layer covers the whole camera extent the map draws **everywhere**
+offline — coarsely over ground the user never downloaded, in detail over
+ground they did. Before SNOW-856 the map went blank at the edge of
+coverage, and `tests/offline/` asserted that as the product's promise:
+*"a user who cannot see where their stored map ends will plan on ground
+they have no data for."*
+
+That promise is not abandoned, but it moved. The suite now asserts it
+against the cache (`stored_band_tiles_at` — no z10–14 tile is stored for
+undownloaded ground) rather than against pixels, because pixels can no
+longer express it. The reader-facing half — *seeing* where detail ends —
+has no cue at all until the coverage boundary is drawn, which is
+[SNOW-857](https://linear.app/hugorodgerbrown/issue/SNOW-857). **That
+ticket now carries a safety property, not a convenience.** Accepted on
+2026-09-07 on the grounds that coarse context everywhere beats a black
+hole one valley over, which is also how every other mapping app behaves —
+but the gap is real until SNOW-857 lands.
+
+**In the manage sheet** it is a row of its own — `kind: 'base'`,
+`deletable: false`, sorted first within its basemap group. It is listed
+because it spends the user's budget and a total that counts what it does
+not show is worse than no row; its Remove control is *removed* rather
+than disabled, because a disabled button still says this is a thing you
+could do. `map_layer_sync_status.js` excludes it from the basemap dots for
+the same reason it excludes an account-only area: z0–9 is the zoomed-out
+view, so a basemap holding only a base layer has no ground downloaded at
+any usable zoom and must not read as green.
+
 ### Download budget and whole-area eviction (SNOW-586)
 
 Both download controls write into their own dedicated Cache Storage

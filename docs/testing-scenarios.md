@@ -886,13 +886,25 @@ on `/help/`.
 > - It stores **basemap tiles only**. Bulletin pages and danger colours
 >   cache separately, by visiting them (see PWA Shell above).
 > - The band is **z10–14** (`MICRO_BAND`). Past z14 the stored tiles
->   overzoom (bigger, no new detail); below z10 nothing was stored.
+>   overzoom (bigger, no new detail).
+> - Below z10 a **shared base layer** takes over (SNOW-856) — z0–9 over
+>   the whole area the camera can reach, fetched on the tail of any
+>   download and shared by every area under that basemap. So zooming out
+>   offline keeps drawing.
+> - **Consequently the map no longer goes blank outside a download.**
+>   MapLibre stretches a stored z9 tile over ground you never fetched, so
+>   at z11 one valley over you get a coarse basemap rather than nothing.
+>   That is deliberate (accepted 2026-09-07), but it means **you cannot
+>   currently tell by eye where your detailed coverage ends** — the
+>   boundary overlay that fixes this is SNOW-857. Judge coverage by
+>   zooming in: past z10 the detail either appears or it does not.
 > - A **region** download is clipped to the region's real boundary plus
 >   about one z14 tile (~1.7 km) of margin — not its bounding rectangle.
 >   A **custom area** genuinely is the rectangle you framed.
 > - One Cache Storage bucket per area:
 >   `snowdesk-basemap-pinned-region-<REGION_ID>` or
->   `snowdesk-basemap-pinned-custom-<uuid>`.
+>   `snowdesk-basemap-pinned-custom-<uuid>`, plus one
+>   `snowdesk-basemap-pinned-base-<basemapKey>` for the shared layer.
 > - Coverage is **per basemap**. An area stored under OpenFreeMap is not
 >   coverage for swisstopo.
 > - Tiles alone are not coverage. A bucket also needs its **render
@@ -977,8 +989,8 @@ network; outside it, it does not — and neither state is a broken page.
 | 2 | DevTools → Network → **Offline** (or account menu → Offline mode) | The header network symbol switches to the struck-through glyph |
 | 3 | Hard-reload the map page | The map page loads from the shell cache; region overlays and the danger choropleth paint |
 | 4 | Pan to the landmark **inside** coverage | Basemap tiles draw, **with place labels** — glyphs are promoted into the pinned bucket at the end of a run |
-| 5 | Pan just past the shaded edge | The basemap goes blank (background colour); overlays keep painting. No error page, no spinner that never ends |
-| 6 | Inside coverage, zoom past z14, then out below z10 | Past z14 the tiles overzoom — larger, no new detail, never blank. Below z10 the basemap is blank: nothing below the band was stored |
+| 5 | Pan just past the shaded edge | The basemap keeps painting, but **coarsely** — stretched z9 tiles from the shared base layer (SNOW-856), not the detail you downloaded. Zoom in past z10 to tell them apart: detail appears inside coverage and does not outside. Overlays keep painting either way. No error page, no spinner that never ends |
+| 6 | Inside coverage, zoom past z14, then out below z10 | Past z14 the tiles overzoom — larger, no new detail, never blank. Below z10 the shared base layer draws (SNOW-856): less detail, never blank |
 
 ### Scenario D4: Download a custom area
 

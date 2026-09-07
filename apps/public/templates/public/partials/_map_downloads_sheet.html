@@ -196,6 +196,12 @@ the row's own label, so home.html loads that module once for both.
     <span data-string="repair-failed">{% trans "That download couldn't be repaired. Try again." %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
+    {# SNOW-856: the shared z0-9 overview map — one per basemap, and the #}
+    {# only row kind with no Remove control. "Shared" rather than a #}
+    {# restatement of the row's own title ("Overview map"), which would #}
+    {# read as "Overview map / Overview map · 8.5 MB": the fact worth #}
+    {# stating on this line is WHY it has no Remove button. #}
+    <span data-string="kind-base">{% trans "Shared" %}</span>
     <span data-string="row-meta">{% blocktrans %}%(kind)s · %(size)s{% endblocktrans %}</span>
     {# SNOW-832: the heading for the group whose basemap cannot be named — #}
     {# a record written before SNOW-645, an orphaned bucket, an account    #}
