@@ -19,6 +19,18 @@ last-reviewed: 2026-09-07
 >    scenario below. The
 >    canonical preview URL is `/ch-4115/martigny-verbier/2026-04-08/`.
 
+> **Reading this as a page**
+>
+> `bin/render-testing-scenarios` renders this file as one navigable HTML
+> page — an index of every section and scenario, an anchor on every heading,
+> and every `http://localhost:8000` URL turned into a link you can click
+> while the dev server is running. This markdown stays the source of truth;
+> the page is a projection of it, so re-render after editing.
+>
+> ```bash
+> uv run python bin/render-testing-scenarios --output /tmp/scenarios.html
+> ```
+
 ---
 
 ## Public Bulletin Site
