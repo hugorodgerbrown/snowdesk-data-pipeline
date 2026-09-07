@@ -320,6 +320,10 @@
     'repair-failed': "That download couldn't be repaired. Try again.",
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
+    // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
+    // second copy of the row's own title, because the fact worth stating
+    // on this line is why it has no Remove control.
+    'kind-base': 'Shared',
     'row-meta': '%(kind)s · %(size)s',
     // SNOW-832: the group of rows whose basemap cannot be named — a
     // record written before SNOW-645, an orphaned bucket, an account row
@@ -700,6 +704,8 @@
       // docstring for why. No `customLabel` any more either — a custom
       // row's label is `area.name`, already filled by the reader.
       isCustomAreaId: downloadCore()?.isCustomAreaId,
+      // SNOW-856: the shared overview map, listed but never deletable.
+      isBaseLayerAreaId: downloadCore()?.isBaseLayerAreaId,
     });
     // SNOW-844: and which of them are on this device but cannot render.
     // Awaited before the rows are built, not after: the flag decides the
@@ -1195,9 +1201,11 @@
       } else {
         subtitle.textContent = interpolate(STRINGS['row-meta'], {
           kind:
-            (row.kind === 'custom'
-              ? STRINGS['kind-custom']
-              : STRINGS['kind-region']) || '',
+            (row.kind === 'base'
+              ? STRINGS['kind-base']
+              : row.kind === 'custom'
+                ? STRINGS['kind-custom']
+                : STRINGS['kind-region']) || '',
           size: row.size,
         });
       }
@@ -1210,7 +1218,14 @@
     }
 
     const button = fragment.querySelector('[data-downloads-delete]');
-    if (button) {
+    // SNOW-856: the base layer is shared by every area under its basemap,
+    // so there is no such thing as deleting "just" it — the control is
+    // REMOVED rather than disabled, because a disabled button still says
+    // "this is a thing you could do to this row". It leaves on its own
+    // when the last area that needs it is deleted.
+    if (button && row.deletable === false) {
+      button.remove();
+    } else if (button) {
       button.setAttribute('data-downloads-delete', row.id);
       // Carried on the element so the delegated handler can name the area
       // in its confirmation without re-reading the record.

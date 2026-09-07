@@ -621,6 +621,196 @@ async function basemapDownloadBudgetBytes() {
 const CUSTOM_AREAS_KEY = 'basemap.customAreas';
 const LEGACY_CUSTOM_AREA_KEY = 'basemap.customArea';
 
+// SNOW-856: the shared z0-9 base layers, one entry per basemap that has
+// one — `[{basemapKey, band, bbox, bytes, savedAt}]`. A sibling of the two
+// records above rather than an entry in either, because a base layer is
+// not an area: no user chose it, no user can delete it, and it outlives
+// every area that shares it.
+const BASE_LAYERS_KEY = 'basemap.baseLayers';
+
+/**
+ * SNOW-856: the `basemap.baseLayers` record. Best-effort — a failed read
+ * is "no base layer recorded", which makes the next download re-warm one
+ * it may already hold. That costs a `cache.keys()` walk and no bytes
+ * (`resolveBaseLayerPlan` fetches only what is genuinely missing), which
+ * is the right way round for a read that must never throw on the boot path.
+ *
+ * @returns {Promise<Array<Object>>}
+ */
+async function _readBaseLayers() {
+  if (!window.pwaDb) return [];
+  try {
+    const row = await window.pwaDb.get('meta:app', BASE_LAYERS_KEY);
+    return Array.isArray(row && row.value) ? row.value : [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+/**
+ * The bbox every vector source in the active style declares coverage for
+ * (SNOW-856) — the UNION of their TileJSON `bounds`.
+ *
+ * Union rather than intersection, and rather than per-source boxes: the
+ * base layer is enumerated once for all sources (one blob, one call to
+ * `rangesToTileURLs`), so the choice is which way to err. A union asks a
+ * narrower source for a few tiles outside its coverage, which answers 404
+ * and which `warmOne` already classifies as `'other'` and carries on past.
+ * An intersection would instead leave a HOLE in the wider source, which
+ * nothing detects and which shows up as a blank patch offline. Wasting a
+ * handful of requests beats silently not downloading ground.
+ *
+ * A source that declares no `bounds` is claiming all of them, so it
+ * collapses the union to null and leaves the camera as the only bound —
+ * which is exactly right for the global default basemap.
+ *
+ * @param {Object} map The live MapLibre instance.
+ * @returns {number[]|null} `[minLon, minLat, maxLon, maxLat]`, or null for
+ *   "unbounded, or nothing to read yet".
+ */
+function activeBasemapSourceBounds(map) {
+  if (!map || !map.isStyleLoaded()) return null;
+  const style = map.getStyle();
+  if (!style || !style.sources) return null;
+  let union = null;
+  for (const sourceId of Object.keys(style.sources)) {
+    if (style.sources[sourceId].type !== 'vector') continue;
+    const runtime = map.getSource(sourceId);
+    const bounds = runtime && runtime.bounds;
+    // One unbounded source makes the whole union unbounded.
+    if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isFinite)) {
+      return null;
+    }
+    union = union
+      ? [
+          Math.min(union[0], bounds[0]),
+          Math.min(union[1], bounds[1]),
+          Math.max(union[2], bounds[2]),
+          Math.max(union[3], bounds[3]),
+        ]
+      : bounds.slice();
+  }
+  return union;
+}
+
+/**
+ * The map's own camera extent as a bbox (SNOW-856).
+ *
+ * Read off the LIVE map rather than from `map.js`'s `MAX_BOUNDS`
+ * constant, which is scoped inside that file's IIFE and is in any case
+ * loaded AFTER this module. Reading it back through `getMaxBounds()` means
+ * there is exactly one definition of where this map can go, and the base
+ * layer cannot drift out of agreement with it.
+ *
+ * @param {Object} map The live MapLibre instance.
+ * @returns {number[]|null} `[minLon, minLat, maxLon, maxLat]`, or null on
+ *   a map with no max bounds set.
+ */
+function mapCameraBBox(map) {
+  try {
+    const bounds = map && typeof map.getMaxBounds === 'function' ? map.getMaxBounds() : null;
+    if (!bounds) return null;
+    const [[west, south], [east, north]] = bounds.toArray();
+    const bbox = [west, south, east, north];
+    return bbox.every(Number.isFinite) ? bbox : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * The active basemap's base-layer top-up plan (SNOW-856).
+ *
+ * Resolves the bucket to write into and — the important half — only the
+ * urls NOT already cached. That is what makes the base layer a one-off
+ * cost rather than a tax on every download: the second area downloaded
+ * under a basemap finds an empty list here and the runner returns
+ * immediately.
+ *
+ * Missing-only is also the repair path. A run interrupted halfway leaves a
+ * partial bucket, and the next download completes it with no separate
+ * machinery, no `incomplete` state and nothing for the user to do.
+ *
+ * The cached set is the union across EVERY pinned bucket, not just the
+ * base layer's own. A z10 tile inside a downloaded region is genuinely
+ * available offline whichever bucket holds it, and re-fetching it into a
+ * second bucket would spend bytes to store a duplicate.
+ *
+ * @returns {Promise<{areaId: string, basemapKey: string|null,
+ *   bbox: number[], urls: string[]}|null>} `null` when the style has not
+ *   settled, when there is no basemap key to file it under, or when the
+ *   style's coverage does not meet the map's own extent.
+ */
+async function resolveBaseLayerPlan() {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !core.baseLayerTileURLs) return null;
+  const tileSources = activeBasemapTileSources(MAP);
+  const basemapKey = activeBasemapKey();
+  // Keyless would mean a bucket nothing can later match to a basemap, so
+  // it could never be evicted with the areas that share it.
+  if (!tileSources || !basemapKey) return null;
+  const cameraBBox = mapCameraBBox(MAP);
+  if (!cameraBBox) return null;
+  // Read ONCE and reused for both calls below: they must agree, and a
+  // second read is a second chance for the style to have changed between
+  // the extent this plan reports and the urls it hands over.
+  const sourceBounds = activeBasemapSourceBounds(MAP);
+  const bbox = core.baseLayerBBox(cameraBBox, sourceBounds);
+  if (!bbox) return null;
+  const all = core.baseLayerTileURLs(tileSources, cameraBBox, sourceBounds);
+  const cached = await pinnedBasemapCacheURLs();
+  const urls = all.filter((url) => !cached.has(url));
+  window.pwaDebugLog?.record('cache', 'baselayer.plan', {
+    basemapKey: basemapKey,
+    bbox: bbox,
+    total: all.length,
+    missing: urls.length,
+  });
+  return { areaId: core.areaIdForBaseLayer(basemapKey), basemapKey, bbox, urls };
+}
+
+/**
+ * Record what a base-layer top-up fetched (SNOW-856).
+ *
+ * `bytes` ACCUMULATES across top-ups rather than replacing, because a
+ * top-up only ever fetches what was missing: a run that completes a
+ * half-warmed layer reports only its own half, and overwriting would halve
+ * the recorded size of a bucket that just got bigger. The same reasoning
+ * `planEviction` applies to a re-downloaded area does not hold here — that
+ * is a replacement, this is an addition.
+ *
+ * Best-effort: a base layer whose record fails to write still SERVES (the
+ * bucket is on disk and `_searchPinnedBuckets` finds it). All that is lost
+ * is its line in the budget, and the next top-up writes one.
+ *
+ * @param {Object|null} result The warm run's report.
+ * @param {{areaId: string, basemapKey: string|null, bbox: number[]}} plan
+ * @returns {Promise<void>}
+ */
+async function recordBaseLayer(result, plan) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !window.pwaDb || !plan || !plan.basemapKey) return;
+  // A cancelled or wholly-failed top-up has nothing to record. A PARTIAL
+  // one does: those bytes are on disk and the budget has to know.
+  if (!result || !(Number(result.ok) > 0)) return;
+  try {
+    const existing = await _readBaseLayers();
+    const previous = existing.find((entry) => entry && entry.basemapKey === plan.basemapKey);
+    const next = existing.filter((entry) => entry && entry.basemapKey !== plan.basemapKey);
+    next.push({
+      basemapKey: plan.basemapKey,
+      band: core.BASE_LAYER_BAND,
+      bbox: plan.bbox,
+      bytes: (Number(previous && previous.bytes) || 0) + (Number(result.bytes) || 0),
+      savedAt: new Date().toISOString(),
+    });
+    await window.pwaDb.put('meta:app', { key: BASE_LAYERS_KEY, value: next });
+  } catch (err) {
+    console.warn('base layer record write failed', err);
+  }
+  forgetPinnedBucketMeasurement(plan.areaId);
+}
+
 /**
  * SNOW-635: read `basemap.customAreas`, migrating the legacy single-row
  * `basemap.customArea` into it on first read if the new key is absent.
@@ -883,6 +1073,32 @@ async function basemapDownloadedAreas() {
         bbox: entry.bbox,
         // SNOW-844: see the region branch above.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+      });
+    }
+  } catch (_e) {
+    // Best-effort — see docstring.
+  }
+
+  // SNOW-856: and the shared base layers. They belong in this list for
+  // exactly one reason — they are real bytes against the user's budget,
+  // and a total that counts what it does not list is worse than one that
+  // lists everything. Every consumer for which a base layer is NOT an
+  // area excludes it explicitly via `core.isBaseLayerAreaId`:
+  // `planEviction` (never a candidate), `manageRows` (never deletable)
+  // and `map_layer_sync_status.js` (a basemap with only a base layer has
+  // no ground downloaded, so its dot must not go green).
+  try {
+    for (const entry of await _readBaseLayers()) {
+      if (!entry || !entry.basemapKey) continue;
+      areas.push({
+        id: core.areaIdForBaseLayer(entry.basemapKey),
+        name: MAP_STRINGS['base-layer-name'] || 'Overview map',
+        bytes: Number(entry.bytes) || 0,
+        savedAt: entry.savedAt,
+        basemapKey: entry.basemapKey,
+        bbox: entry.bbox,
+        // Not a render dependency of anything — the tiles ARE the layer.
+        deps: [],
       });
     }
   } catch (_e) {
@@ -1159,6 +1375,13 @@ async function evictBasemapAreas(areaIds) {
     // Best-effort — see the comment above.
   }
 
+  // SNOW-856: a base layer outlives the area that fetched it, but not the
+  // LAST one. Cascaded here rather than exposed as its own control,
+  // because "delete the overview map" is not a thing the user should have
+  // to think about — it appears when their first download does and leaves
+  // with their last.
+  await evictOrphanedBaseLayers();
+
   // SNOW-613: tell the worker its memoised pinned-bucket list is stale.
   // It has no other way to learn about a page-side deletion, and a stale
   // name there would be handed to `caches.open`, recreating the bucket the
@@ -1169,6 +1392,74 @@ async function evictBasemapAreas(areaIds) {
   // SNOW-570: an evicted area's ring must disappear immediately, not at
   // the next refresh trigger.
   window.pwaDownloadedOverlay?.refresh();
+}
+
+/**
+ * Drop any base layer no remaining area needs (SNOW-856).
+ *
+ * A base layer belongs to a BASEMAP, so it is needed exactly as long as
+ * some area was downloaded under that basemap. Cascaded from
+ * `evictBasemapAreas` rather than offered as its own delete control: the
+ * user chose regions and custom areas, they did not choose an overview
+ * map, and a row they can delete independently is a row they can use to
+ * break the zoomed-out view of every download they kept.
+ *
+ * **An area whose `basemapKey` is null keeps every base layer alive.** A
+ * record written before SNOW-645 says "downloaded, basemap unknown", and
+ * unknown is not evidence of absence — deleting on it would strand an area
+ * whose overview map we simply failed to identify. Erring towards a few
+ * retained megabytes beats erring towards a blank map at z8.
+ *
+ * Best-effort throughout: this runs after the deletions the user actually
+ * asked for have already landed, and must never turn a successful eviction
+ * into a thrown error.
+ *
+ * @returns {Promise<void>}
+ */
+async function evictOrphanedBaseLayers() {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !window.pwaDb) return;
+  try {
+    const baseLayers = await _readBaseLayers();
+    if (!baseLayers.length) return;
+
+    // The records directly, not `basemapDownloadedAreas()` — that reader
+    // now INCLUDES base layers (so the budget can count them), which would
+    // make every base layer evidence for its own survival.
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const regions = Array.isArray(row && row.value) ? row.value : [];
+    const customAreas = await _readCustomAreas();
+    const remaining = [...regions, ...customAreas].filter(Boolean);
+
+    // See the docstring: one unidentifiable area protects them all.
+    if (remaining.some((entry) => !entry.basemapKey)) return;
+    const stillNeeded = new Set(remaining.map((entry) => entry.basemapKey));
+
+    const orphaned = baseLayers.filter(
+      (entry) => entry && entry.basemapKey && !stillNeeded.has(entry.basemapKey),
+    );
+    if (!orphaned.length) return;
+
+    await Promise.all(
+      orphaned.map(async (entry) => {
+        const areaId = core.areaIdForBaseLayer(entry.basemapKey);
+        try {
+          await caches.delete(core.pinnedCacheName(areaId));
+        } catch (_e) {
+          // Best-effort.
+        }
+        forgetPinnedBucketMeasurement(areaId);
+      }),
+    );
+    const orphanedKeys = new Set(orphaned.map((entry) => entry.basemapKey));
+    await window.pwaDb.put('meta:app', {
+      key: BASE_LAYERS_KEY,
+      value: baseLayers.filter((entry) => entry && !orphanedKeys.has(entry.basemapKey)),
+    });
+  } catch (_e) {
+    // Best-effort — a retained base layer is wasted bytes the next
+    // eviction reconsiders, never a broken map.
+  }
 }
 
 // SNOW-588: the two functions above, for modules OUTSIDE this file — the
@@ -2038,6 +2329,11 @@ const PINNED_DOWNLOAD_DEPS = {
   // run.
   isOnline: () =>
     window.pwaConnectivity ? window.pwaConnectivity.isOnline() : navigator.onLine !== false,
+  // SNOW-856: the shared z0-9 base layer, topped up AFTER the area this
+  // run was actually for — see `topUpBaseLayer` in the runner for why
+  // after, and why its failures never reach `finish`.
+  baseLayer: () => resolveBaseLayerPlan(),
+  finishBaseLayer: (result, plan) => recordBaseLayer(result, plan),
 };
 
 /**

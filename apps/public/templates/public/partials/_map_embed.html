@@ -1808,6 +1808,13 @@ Optional context:
     {# Kept in this one template rather than duplicated into              #}
     {# _map_downloads_sheet.html's own strings template.                  #}
     <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
+    {# SNOW-856: the shared z0-9 base layer's row title in the manage      #}
+    {# sheet. Filled in by basemapDownloadedAreas() alongside the default  #}
+    {# custom-area name above, and here for the same reason — the name is  #}
+    {# composed by the reader, never persisted, so it stays translatable   #}
+    {# rather than freezing in whatever language was active at download    #}
+    {# time.                                                              #}
+    <span data-string="base-layer-name">{% trans "Overview map" %}</span>
     {# SNOW-642: #region-readout's empty state. The readout used to be     #}
     {# `hidden` until a region was focused, taking the download and        #}
     {# view-bulletin roundels with it (both are sibling-ruled off          #}

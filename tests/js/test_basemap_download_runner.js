@@ -44,6 +44,12 @@ function deps(overrides) {
       // SNOW-843: the runner scales the caller's per-tile `mb` estimate by
       // the number of vector sources before spending it on a pre-flight.
       sourceScaledMb: (mb, spec) => mb * Math.max(1, (spec || []).length),
+      // SNOW-856: `topUpBaseLayer` gates on this before asking for a base
+      // layer — a run that did not succeed is almost always offline,
+      // cancelled or out of quota, none of which is improved by eight more
+      // megabytes.
+      downloadSucceeded: (result) =>
+        !!(result && !result.cancelled && result.ok > 0 && result.failed === 0),
       CUSTOM_AREA_ID: 'custom',
     })),
     tileSources: vi.fn(() => {
@@ -586,5 +592,154 @@ describe('repair', () => {
     await repairAndSettle(d, o);
 
     expect(o.finish.mock.calls[0][0]).toEqual({ ok: 1, failed: 0, bytes: 900 });
+  });
+});
+
+/*
+ * SNOW-856: the shared base layer's top-up, which rides on the tail of a
+ * download run rather than being a run of its own.
+ *
+ * Everything asserted here is about the boundary between the two: the
+ * area is what the user asked for, and the base layer must never make it
+ * slower, less legible, or less likely to be reported as finished. So the
+ * top-up happens AFTER `finish`, its result never reaches `finish`, and
+ * its failures are swallowed whole.
+ */
+describe('base layer top-up', () => {
+  /**
+   * A deps bundle that offers a base layer with `urls` still missing.
+   *
+   * @param {string[]} urls
+   * @param {Object} [overrides]
+   * @returns {Object}
+   */
+  function withBaseLayer(urls, overrides) {
+    return deps(
+      Object.assign(
+        {
+          baseLayer: vi.fn(async () => {
+            calls.push('baseLayer');
+            return { areaId: 'base-openfreemap_liberty', basemapKey: 'openfreemap_liberty', bbox: [0, 40, 10, 50], urls };
+          }),
+          finishBaseLayer: vi.fn(async () => {
+            calls.push('finishBaseLayer');
+          }),
+          warmCache: vi.fn(async (list, opts) => {
+            calls.push(`warmCache:${opts.areaId}`);
+            return { ok: list.length, failed: 0, bytes: 1024 };
+          }),
+        },
+        overrides || {},
+      ),
+    );
+  }
+
+  it('warms the base layer into its OWN bucket, after the area', () => {
+    // Two properties in one assertion, because they are one decision. The
+    // base layer goes to `base-…`, never into the area's bucket — sharing
+    // one would tie it to that area's lifetime. And it runs after
+    // `finish`, so the roundel reports the area as complete (which it is)
+    // rather than staying busy through a supplementary fetch.
+    const d = withBaseLayer(['/base/1', '/base/2']);
+
+    return runAndSettle(d, options()).then(() => {
+      expect(calls).toContain('warmCache:region:ch-4115');
+      expect(calls.indexOf('finish')).toBeLessThan(calls.indexOf('warmCache:base-openfreemap_liberty'));
+      expect(d.warmCache).toHaveBeenCalledWith(['/base/1', '/base/2'], {
+        pinned: true,
+        areaId: 'base-openfreemap_liberty',
+      });
+    });
+  });
+
+  it('records what the top-up fetched', async () => {
+    const d = withBaseLayer(['/base/1']);
+
+    await runAndSettle(d, options());
+
+    expect(d.finishBaseLayer).toHaveBeenCalledTimes(1);
+    expect(d.finishBaseLayer.mock.calls[0][0]).toEqual({ ok: 1, failed: 0, bytes: 1024 });
+    expect(d.finishBaseLayer.mock.calls[0][1].areaId).toBe('base-openfreemap_liberty');
+  });
+
+  it('does nothing when the base layer is already complete', async () => {
+    // The plan resolves only the MISSING urls, so this is the ordinary
+    // case from the second download onwards — and it is what makes the
+    // base layer a one-off cost rather than a tax on every run.
+    const d = withBaseLayer([]);
+
+    await runAndSettle(d, options());
+
+    expect(calls).not.toContain('warmCache:base-openfreemap_liberty');
+    expect(d.finishBaseLayer).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the style has no base layer to fetch', async () => {
+    const d = deps({
+      baseLayer: vi.fn(async () => null),
+      finishBaseLayer: vi.fn(async () => {}),
+    });
+
+    await runAndSettle(d, options());
+
+    expect(d.finishBaseLayer).not.toHaveBeenCalled();
+  });
+
+  it('skips the top-up when the area run itself failed', async () => {
+    // Offline, cancelled or out of quota — none of them improved by
+    // asking for several more megabytes.
+    const d = withBaseLayer(['/base/1'], {
+      warmCache: vi.fn(async (list, opts) => {
+        calls.push(`warmCache:${opts.areaId}`);
+        return { ok: 0, failed: list.length, bytes: 0 };
+      }),
+    });
+
+    await runAndSettle(d, options());
+
+    expect(d.baseLayer).not.toHaveBeenCalled();
+    expect(calls).not.toContain('warmCache:base-openfreemap_liberty');
+  });
+
+  it('skips the top-up when the area run was cancelled', async () => {
+    const d = withBaseLayer(['/base/1'], {
+      warmCache: vi.fn(async (list, opts) => {
+        calls.push(`warmCache:${opts.areaId}`);
+        return { ok: 1, failed: 0, bytes: 10, cancelled: true };
+      }),
+    });
+
+    await runAndSettle(d, options());
+
+    expect(d.baseLayer).not.toHaveBeenCalled();
+  });
+
+  it('never lets a base-layer failure reach the area run', async () => {
+    // The area IS downloaded. A supplementary fetch that throws must not
+    // turn that into a failed download the user is told to retry — the
+    // next run tops up whatever this one left missing.
+    const d = withBaseLayer(['/base/1'], {
+      baseLayer: vi.fn(async () => {
+        throw new Error('cache storage unavailable');
+      }),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.finish).toHaveBeenCalledTimes(1);
+    expect(o.finish.mock.calls[0][0]).toEqual({ ok: 3, failed: 0, bytes: 1024 });
+    expect(calls).not.toContain('paint:error');
+  });
+
+  it('runs unchanged against a deps bundle with no base-layer members', async () => {
+    // An older shell mid-rollout, and every existing caller of `run`.
+    const d = deps();
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.finish).toHaveBeenCalledTimes(1);
+    expect(d.warmCache).toHaveBeenCalledTimes(1);
   });
 });

@@ -747,6 +747,13 @@
         // it would be the single worst thing this ticket could do to a
         // surface whose whole job is reporting real cache state.
         if (area.onDevice === false) continue;
+        // SNOW-856: nor is a base layer. It is z0-9 only — the zoomed-out
+        // view — so a basemap holding one and nothing else has no ground
+        // downloaded at any usable zoom, and this dot would be claiming
+        // offline coverage the reader does not have the moment they zoom
+        // in. Same reasoning as the account-only skip above: real tiles
+        // for real ground, or no green.
+        if (self.pwaBasemapDownloadCore?.isBaseLayerAreaId(area.id)) continue;
         const key = area.basemapKey || activeKey;
         if (key) keys.add(key);
       }

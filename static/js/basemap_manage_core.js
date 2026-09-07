@@ -300,6 +300,12 @@
 
       var id = String(area.id);
       var isCustom = typeof opts.isCustomAreaId === 'function' && opts.isCustomAreaId(id);
+      // SNOW-856: the shared z0-9 overview map. Listed because it spends
+      // the user's budget and a total that counts what it does not show is
+      // worse than no row — but it is not an area, so it is neither
+      // renameable, deletable nor re-downloadable. It leaves when the last
+      // area under its basemap does (`evictOrphanedBaseLayers`).
+      var isBase = typeof opts.isBaseLayerAreaId === 'function' && opts.isBaseLayerAreaId(id);
       // SNOW-749: default true, so an area list built before this ticket
       // (or by a caller that does not reconcile) reads as on-device —
       // which is what it was.
@@ -317,7 +323,7 @@
       // for an area this device has never downloaded — the editor would
       // accept a name and drop it. Renaming it where it does exist is a
       // download away.
-      var renameable = isCustom && !area.orphaned && onDevice;
+      var renameable = isCustom && !area.orphaned && onDevice && !isBase;
 
       // Uniform for every row now: the record's own name (always present
       // except for an orphan — see the docstring) falls back to the id,
@@ -333,7 +339,13 @@
         // area — `orphaned` says the record is missing, not that it is a
         // third kind of thing, so the sheet can label it without the
         // caller having to re-derive which it was.
-        kind: isCustom ? 'custom' : 'region',
+        kind: isBase ? 'base' : isCustom ? 'custom' : 'region',
+        // SNOW-856: the one row the sheet must not offer a Remove control
+        // for. Carried as its own flag rather than left for each renderer
+        // to re-derive from `kind`, because a renderer that forgets hands
+        // the user a button that breaks every other download's zoomed-out
+        // view.
+        deletable: !isBase,
         orphaned: !!area.orphaned,
         label: String(label),
         renameable: renameable,
@@ -357,7 +369,7 @@
         // the download control, so the affordance is withheld rather than
         // rendered dead.
         redownloadable:
-          !onDevice && (isCustom ? Array.isArray(area.bbox) : !!area.regionId),
+          !isBase && !onDevice && (isCustom ? Array.isArray(area.bbox) : !!area.regionId),
         bbox: Array.isArray(area.bbox) ? area.bbox : null,
         regionId: area.regionId || '',
         // SNOW-844: the render dependencies this area recorded, carried
@@ -370,8 +382,14 @@
 
     // SNOW-832: kind, then name. See this function's own docstring for why
     // the size axis stopped being the ordering one.
+    //
+    // SNOW-856 puts `base` FIRST rather than folding it in alphabetically:
+    // it is the ground every other row in its group sits on, and a shared
+    // foundation listed between two of the things that depend on it reads
+    // as a peer of theirs. A group has at most one.
+    var KIND_ORDER = { base: 0, region: 1, custom: 2 };
     rows.sort(function (a, b) {
-      if (a.kind !== b.kind) return a.kind === 'custom' ? 1 : -1;
+      if (a.kind !== b.kind) return KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
       var byLabel = a.label.localeCompare(b.label);
       if (byLabel !== 0) return byLabel;
       return a.id.localeCompare(b.id);

@@ -243,6 +243,10 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // SNOW-635: an unrenamed custom area's default display name, filled in
   // by basemapDownloadedAreas() itself — see that function's own comment.
   'default-custom-name': 'Custom area %(n)s',
+  // SNOW-856: the shared z0-9 base layer's display name in the Manage
+  // downloads sheet — the zoomed-out map every area under a basemap
+  // reads once the camera passes a download's z10 floor.
+  'base-layer-name': 'Overview map',
   // SNOW-642: #region-readout's empty state — see updateReadout below.
   'no-region': 'No region selected',
   // SNOW-645: the per-region download roundel's own labels
