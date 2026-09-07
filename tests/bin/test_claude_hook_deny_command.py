@@ -94,6 +94,10 @@ def assert_allowed(command: str) -> None:
         "git stash pop",
         "git stash pop --index",
         "git -C /repo stash pop",
+        # `push` names the subcommand but still leaves an unlabelled entry
+        # when no message is given, which is the hazard the rule addresses.
+        "git stash push",
+        "git stash push -u",
     ],
 )
 def test_denies_the_unlabelled_and_destructive_stash_forms(command: str) -> None:
@@ -105,6 +109,10 @@ def test_denies_the_unlabelled_and_destructive_stash_forms(command: str) -> None
     "command",
     [
         'git stash push -u -m "SNOW-858: half-finished hook"',
+        # Short-option clusters and the long form carry a message too.
+        'git stash push -um "SNOW-858: half-finished hook"',
+        'git stash push --message "SNOW-858: half-finished hook"',
+        'git stash push --message="SNOW-858: half-finished hook"',
         "git stash list",
         "git stash show",
         "git stash apply 0f1e2d3",
