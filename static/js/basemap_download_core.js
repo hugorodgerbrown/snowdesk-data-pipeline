@@ -182,10 +182,13 @@
  * ``base-`` id namespace and therefore its own pinned bucket, which is
  * what lets the worker's read path find it with no change at all.
  *
- *   areaIdForBaseLayer(basemapKey) / isBaseLayerAreaId(areaId)
- *     The ``base-<basemapKey>`` id and its predicate — the third
- *     namespace beside ``region-`` and ``custom-``. Every surface that
- *     lists or evicts areas has to exclude these.
+ *   areaIdForBaseLayer(basemapKey) / isBaseLayerAreaId(areaId) /
+ *   baseLayerBasemapKey(areaId)
+ *     The ``base-<basemapKey>`` id, its predicate, and its inverse — the
+ *     third namespace beside ``region-`` and ``custom-``. Every surface
+ *     that lists or evicts areas has to exclude these. SNOW-863 added the
+ *     inverse so a bucket can name its own basemap without the
+ *     ``meta:app`` record, which is written later and can be missing.
  *   intersectBBox(a, b)
  *     The overlap of two bboxes, or null.
  *   baseLayerBBox(cameraBBox, styleBounds) / baseLayerBlob(…) /
@@ -443,6 +446,30 @@
    */
   function isBaseLayerAreaId(areaId) {
     return typeof areaId === 'string' && areaId.indexOf('base-') === 0;
+  }
+
+  /**
+   * The basemap a base-layer area id belongs to (SNOW-863).
+   *
+   * The inverse of ``areaIdForBaseLayer``, and the only sanctioned way to
+   * read a key back out of an id — the ``'base-'`` prefix stays private to
+   * this module, exactly as ``'region-'`` and ``'custom-'`` do.
+   *
+   * It exists because the BUCKET has to be able to describe itself. A
+   * base layer's ``meta:app`` record is written by the page after the
+   * service worker's warm resolves, so a reader who closes the tab in
+   * between is left with a complete bucket and no record — and before
+   * this function the only thing that could name that bucket's basemap
+   * was the record that is missing. The result was a row labelled with a
+   * raw bucket id under "Unknown basemap", offering to delete the shared
+   * overview map.
+   *
+   * @param {string} areaId
+   * @returns {string} The ``settings.BASEMAP_STYLES`` key, or ``''`` for
+   *   an id that is not a base layer's.
+   */
+  function baseLayerBasemapKey(areaId) {
+    return isBaseLayerAreaId(areaId) ? areaId.slice('base-'.length) : '';
   }
 
   /**
@@ -1709,6 +1736,7 @@
     isCustomAreaId: isCustomAreaId,
     areaIdForBaseLayer: areaIdForBaseLayer,
     isBaseLayerAreaId: isBaseLayerAreaId,
+    baseLayerBasemapKey: baseLayerBasemapKey,
     intersectBBox: intersectBBox,
     baseLayerBBox: baseLayerBBox,
     baseLayerBlob: baseLayerBlob,

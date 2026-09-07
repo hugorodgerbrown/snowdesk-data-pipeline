@@ -630,3 +630,79 @@ describe('the custom roundel describes nothing about what is downloaded', () => 
     ]);
   });
 });
+
+describe('a base-layer bucket with no record (SNOW-863)', () => {
+  // The bug this suite exists for, reported from staging as a row reading
+  // "base-swisstopo_winter" under "Unknown basemap", carrying a delete
+  // button for the shared overview map.
+  //
+  // How it happens: a base layer's `meta:app` record is written by the
+  // PAGE once the service worker's warm resolves, and that warm is the
+  // tail of a download the roundel has already reported as finished. Close
+  // the tab in between and the bucket is complete with no record. Before
+  // this fix, `basemapDownloadedAreas()` built base-layer rows from the
+  // records alone, so the bucket fell through to the orphan reconciliation
+  // with nothing able to name it.
+  const BASE_BUCKET = 'snowdesk-basemap-pinned-base-swisstopo_winter';
+
+  it('still names it, under the right basemap, with no record at all', async () => {
+    installDbStub({});
+    cachesStub.buckets.set(BASE_BUCKET, new Set(['https://tiles.example.invalid/9/266/181.pbf']));
+
+    const areas = await window.pwaBasemapDownloads.areas();
+    const base = areas.find((a) => a.id === 'base-swisstopo_winter');
+
+    expect(base).toBeTruthy();
+    // Not the raw bucket id, and not "unknown basemap".
+    expect(base.name).not.toBe('base-swisstopo_winter');
+    expect(base.basemapKey).toBe('swisstopo_winter');
+    // The record is what carries the size, so an unsized row is the
+    // honest cost of it being missing — and it is a small lie beside an
+    // unnamed, deletable one.
+    expect(base.bytes).toBe(0);
+  });
+
+  it('is not reported as an orphan', async () => {
+    // The orphan path is what put the raw id on screen. A base layer named
+    // by its own bucket is in `areas` before reconciliation runs, so it
+    // can never be picked up as one.
+    installDbStub({});
+    cachesStub.buckets.set(BASE_BUCKET, new Set(['https://tiles.example.invalid/9/266/181.pbf']));
+
+    const areas = await window.pwaBasemapDownloads.areas();
+    const base = areas.find((a) => a.id === 'base-swisstopo_winter');
+
+    expect(base.orphaned).toBeFalsy();
+  });
+
+  it('takes the size from the record when there is one', async () => {
+    installDbStub({
+      'basemap.baseLayers': [{
+        basemapKey: 'swisstopo_winter',
+        band: [0, 9],
+        bbox: [3.57, 44.18, 13.66, 48.88],
+        bytes: 15 * MB,
+        savedAt: '2026-09-07T10:00:00.000Z',
+      }],
+    });
+    cachesStub.buckets.set(BASE_BUCKET, new Set(['https://tiles.example.invalid/9/266/181.pbf']));
+
+    const areas = await window.pwaBasemapDownloads.areas();
+    const base = areas.find((a) => a.id === 'base-swisstopo_winter');
+
+    expect(base.bytes).toBe(15 * MB);
+    expect(base.savedAt).toBe('2026-09-07T10:00:00.000Z');
+  });
+
+  it('lists nothing for a record whose bucket is gone', async () => {
+    // The other direction: the BUCKET is the evidence now, so a stale
+    // record with nothing behind it must not put a row on the budget.
+    installDbStub({
+      'basemap.baseLayers': [{ basemapKey: 'swisstopo_winter', bytes: 15 * MB }],
+    });
+
+    const areas = await window.pwaBasemapDownloads.areas();
+
+    expect(areas.find((a) => a.id === 'base-swisstopo_winter')).toBeUndefined();
+  });
+});

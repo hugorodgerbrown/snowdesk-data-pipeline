@@ -1476,15 +1476,45 @@ outside it); the style's bounds make it *finite*. A source that declares
 no bounds is claiming all of them and collapses to the camera, which is
 exactly right for a global style.
 
-Measured on 2026-09-07 by fetching every tile:
+**What it costs, and the mistake that hid it (SNOW-863).** SNOW-856 put
+"8.5 MB" here, in its ticket and in its PR. That number was swisstopo's
+**wire** bytes over swisstopo's own narrow declared bounds, and two things
+break it: OpenFreeMap Liberty is global, so it is clamped to `MAX_BOUNDS`
+and buys 682 tiles rather than 215; and **Cache Storage holds responses
+decompressed**, so the gzipped wire size is not what the budget spends.
+Re-measured by fetching every tile of every basemap's set:
 
-| bbox | tiles/source | |
-|------|--------------|---|
-| `MAX_BOUNDS` (Alps) | 682 | the global-style case |
-| ∩ swisstopo declared | 215 | 3.0 MB base + 5.5 MB relief = **8.5 MB** |
+| basemap | requests | wire MB | **disk MB** |
+|---------|---------:|--------:|------------:|
+| **openfreemap_liberty** (default) | 682 | 100.1 | **144.4** |
+| swisstopo_winter | 430 | 8.5 | 14.8 |
+| swisstopo_light | 430 | 8.5 | 14.8 |
+| ign_plan | 682 | 8.1 | 8.1 |
 
-Under a quarter of one region download (Martigny-Verbier is 37 MB), paid
-once and shared by every area on the device.
+On the default basemap that is **29% of the 500 MB budget before a single
+area is downloaded** — one reported device held 105 MB of base layer
+against 6.8 MB of region. Where the cost sits, per zoom, OpenFreeMap over
+`MAX_BOUNDS`:
+
+| z | tiles | disk MB | cumulative |
+|---|------:|--------:|-----------:|
+| 0–6 | 21 | 9.9 | 9.9 |
+| 7 | 35 | 11.0 | **20.9** |
+| 8 | 140 | 32.4 | 53.3 |
+| 9 | 486 | 91.2 | **144.4** |
+
+z9 alone is 63% of it. The band was chosen to abut `MICRO_BAND`'s z10
+floor with no gap, and that neatness is what costs 123 MB: **z0–7 would be
+20.9 MB**, with MapLibre overzooming z7 to fill z8–z9 — the same "coarse
+but present" outcome. Trimming the band, clipping the layer to the user's
+own areas, or stating the cost in the panel is an open decision
+(SNOW-863); nothing has been changed here yet.
+
+`basemap_at` is unmeasured: it declares an ESRI VectorTileServer source
+(directory `url`, `{z}/{y}/{x}` tiles) that the measuring harness could not
+resolve. `map.js` normalises ESRI styles before `setStyle` and
+`_tileMatcher` reads the placeholder order from the template, so it is
+probably fine in the app — but check rather than assume.
 
 **When it runs.** On the tail of any download, in
 `basemap_download_runner.js`'s `topUpBaseLayer` — after the area, after
@@ -1528,6 +1558,17 @@ ticket now carries a safety property, not a convenience.** Accepted on
 2026-09-07 on the grounds that coarse context everywhere beats a black
 hole one valley over, which is also how every other mapping app behaves —
 but the gap is real until SNOW-857 lands.
+
+**Its row is driven by the BUCKET, not the record (SNOW-863).** The
+`meta:app` record is written by the page once the worker's warm resolves,
+and that warm is the tail of a download the roundel has already reported
+as finished — so closing the tab in between leaves a complete bucket with
+no record. That shipped as a row reading `base-swisstopo_winter` under
+"Unknown basemap" with a delete button, because the record-driven pass
+could not name it and `reconcileAreas` picked the bucket up as an orphan.
+`baseLayerBasemapKey()` lets a bucket name its own basemap, so a missing
+record now costs only the SIZE (0 until the next top-up writes one) and a
+stale record with no bucket behind it produces no row at all.
 
 **In the manage sheet** it is a row of its own — `kind: 'base'`,
 `deletable: false`, sorted first within its basemap group. It is listed

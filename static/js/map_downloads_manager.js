@@ -388,6 +388,12 @@
       'Remove %(name)s from your account and from this device? This frees ' +
       '%(size)s here and removes it from your other devices too.',
     'download-here-failed': "That download couldn't be started here. Try again.",
+    // SNOW-863: the refusal a user actually reaches. One roundel drives
+    // every region download, so a second tap while a run is going is
+    // refused — and "try again" was false, because it fails identically
+    // until the first finishes.
+    'download-here-busy': 'Another download is still running — try again when it finishes.',
+    'download-here-already': 'That area is already downloaded on this device.',
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -1566,6 +1572,27 @@
    * @param {MouseEvent} event
    * @returns {boolean} Whether this click was a "Download here".
    */
+  /**
+   * The strings key for a refused "Download here" (SNOW-863).
+   *
+   * Only the reasons a user can actually reach get their own sentence.
+   * `'busy'` is the one that matters — a single shared roundel means a
+   * second tap while a run is going is refused, and the generic "try
+   * again" was a lie there. `'done'`/`'incomplete'` are reachable when
+   * the row's account state lags what this device holds. Everything else
+   * (an unloaded country, over the ceiling, a state that raced) keeps the
+   * generic message: a sentence per state nobody hits is copy to
+   * translate and maintain for no reader.
+   *
+   * @param {string} reason From `pwaRegionDownload.start`.
+   * @returns {string} A key of `STRINGS`.
+   */
+  function _downloadHereMessage(reason) {
+    if (reason === 'busy') return 'download-here-busy';
+    if (reason === 'done' || reason === 'incomplete') return 'download-here-already';
+    return 'download-here-failed';
+  }
+
   function _handleDownloadHereClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return false;
@@ -1597,11 +1624,23 @@
 
     sheet.hidden = true;
     if (regionId && window.pwaRegionDownload) {
-      window.pwaRegionDownload.start(regionId).then(function (started) {
+      window.pwaRegionDownload.start(regionId).then(function (outcome) {
         // A refusal is silent on the roundel — it settles into whatever
         // state it settled into — so say so here rather than leaving the
         // tap unanswered.
-        if (!started) window.MapSheet?.toast(STRINGS['download-here-failed']);
+        //
+        // SNOW-863: and say WHICH refusal. This used to toast "That
+        // download couldn't be started here. Try again." for every one of
+        // them, which is false for the only refusal a user actually
+        // reaches: the region control is a single shared roundel, so a
+        // second "Download here" while the first is still running is
+        // refused, and trying again fails identically until it finishes.
+        if (outcome && outcome.started) return;
+        const reason = (outcome && outcome.reason) || '';
+        // Already sent to sign-in — they are looking at another page, and
+        // a toast would be talking to nobody.
+        if (reason === 'signin') return;
+        window.MapSheet?.toast(STRINGS[_downloadHereMessage(reason)]);
       });
       return true;
     }

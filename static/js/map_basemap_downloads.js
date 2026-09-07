@@ -1087,16 +1087,39 @@ async function basemapDownloadedAreas() {
   // `planEviction` (never a candidate), `manageRows` (never deletable)
   // and `map_layer_sync_status.js` (a basemap with only a base layer has
   // no ground downloaded, so its dot must not go green).
+  //
+  // SNOW-863: driven by the BUCKETS on disk, joined to the records for
+  // their sizes — not by the records alone, which is what shipped and was
+  // wrong. A base layer's record is written by the page once the service
+  // worker's warm resolves, and that warm is the tail of a download the
+  // roundel has already reported as finished; a reader who closes the tab
+  // in between (or reloads, or whose device sleeps) is left with a
+  // complete bucket and no record. Reported on staging as a row reading
+  // "base-swisstopo_winter" under "Unknown basemap", with a delete button
+  // — the reconciliation below had picked the bucket up as an orphan,
+  // because nothing in the record-driven pass could name it.
+  //
+  // The bucket names its own basemap now (`baseLayerBasemapKey`), so a
+  // missing record costs only the SIZE, which reads 0 until the next
+  // download's top-up writes one. An unsized row is a small lie; an
+  // unnamed deletable one was a trap.
   try {
+    const byKey = new Map();
     for (const entry of await _readBaseLayers()) {
-      if (!entry || !entry.basemapKey) continue;
+      if (entry && entry.basemapKey) byKey.set(entry.basemapKey, entry);
+    }
+    for (const areaId of await pinnedBucketAreaIds()) {
+      if (!core.isBaseLayerAreaId(areaId)) continue;
+      const basemapKey = core.baseLayerBasemapKey(areaId);
+      if (!basemapKey) continue;
+      const entry = byKey.get(basemapKey);
       areas.push({
-        id: core.areaIdForBaseLayer(entry.basemapKey),
+        id: areaId,
         name: MAP_STRINGS['base-layer-name'] || 'Overview map',
-        bytes: Number(entry.bytes) || 0,
-        savedAt: entry.savedAt,
-        basemapKey: entry.basemapKey,
-        bbox: entry.bbox,
+        bytes: Number(entry && entry.bytes) || 0,
+        savedAt: (entry && entry.savedAt) || '',
+        basemapKey: basemapKey,
+        bbox: entry && entry.bbox,
         // Not a render dependency of anything — the tiles ARE the layer.
         deps: [],
       });
