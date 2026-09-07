@@ -641,4 +641,5 @@ Read these when working in the relevant area:
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |
 | Self-hosted basemap origin cutover (tiles.snowdesk-data.info; origin is in the snowdesk-tiles repo) | [`docs/runbooks/self-hosted-tiles.md`](docs/runbooks/self-hosted-tiles.md) |
 | Worktree DB seeding, dev credentials, seed_test_data + seed_test_week (golden week) dataset coverage | [`docs/worktrees.md`](docs/worktrees.md) |
+| Claude Code hooks (SessionStart/SessionEnd/PreToolUse, setup-remote-env, init-worktree, mark-worktree-cleanable, claude-hook-deny-command) | [`docs/claude-code-hooks.md`](docs/claude-code-hooks.md) |
 | Domains requesting network-egress allowlisting for Claude Code on the web environments (accumulated from EGRESS_BLOCKED hits during routines) | [`docs/environment-network-allowlist.md`](docs/environment-network-allowlist.md) |
