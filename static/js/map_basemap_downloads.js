@@ -1319,74 +1319,6 @@ async function planBasemapDownloadBudget(areaId, mb) {
  * @param {string[]} areaIds
  * @returns {Promise<void>}
  */
-/**
- * Drop any base layer no remaining area needs (SNOW-856).
- *
- * A base layer belongs to a BASEMAP, so it is needed exactly as long as
- * some area was downloaded under that basemap. Cascaded from
- * `evictBasemapAreas` rather than offered as its own delete control: the
- * user chose regions and custom areas, they did not choose an overview
- * map, and a row they can delete independently is a row they can use to
- * break the zoomed-out view of every download they kept.
- *
- * **An area whose `basemapKey` is null keeps every base layer alive.** A
- * record written before SNOW-645 says "downloaded, basemap unknown", and
- * unknown is not evidence of absence — deleting on it would strand an area
- * whose overview map we simply failed to identify. Erring towards a few
- * retained megabytes beats erring towards a blank map at z8.
- *
- * Best-effort throughout: this runs after the deletions the user actually
- * asked for have already landed, and must never turn a successful eviction
- * into a thrown error.
- *
- * @returns {Promise<void>}
- */
-async function evictOrphanedBaseLayers() {
-  const core = self.pwaBasemapDownloadCore;
-  if (!core || !window.pwaDb) return;
-  try {
-    const baseLayers = await _readBaseLayers();
-    if (!baseLayers.length) return;
-
-    // The records directly, not `basemapDownloadedAreas()` — that reader
-    // now INCLUDES base layers (so the budget can count them), which would
-    // make every base layer evidence for its own survival.
-    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
-    const regions = Array.isArray(row && row.value) ? row.value : [];
-    const customAreas = await _readCustomAreas();
-    const remaining = [...regions, ...customAreas].filter(Boolean);
-
-    // See the docstring: one unidentifiable area protects them all.
-    if (remaining.some((entry) => !entry.basemapKey)) return;
-    const stillNeeded = new Set(remaining.map((entry) => entry.basemapKey));
-
-    const orphaned = baseLayers.filter(
-      (entry) => entry && entry.basemapKey && !stillNeeded.has(entry.basemapKey),
-    );
-    if (!orphaned.length) return;
-
-    await Promise.all(
-      orphaned.map(async (entry) => {
-        const areaId = core.areaIdForBaseLayer(entry.basemapKey);
-        try {
-          await caches.delete(core.pinnedCacheName(areaId));
-        } catch (_e) {
-          // Best-effort.
-        }
-        forgetPinnedBucketMeasurement(areaId);
-      }),
-    );
-    const orphanedKeys = new Set(orphaned.map((entry) => entry.basemapKey));
-    await window.pwaDb.put('meta:app', {
-      key: BASE_LAYERS_KEY,
-      value: baseLayers.filter((entry) => entry && !orphanedKeys.has(entry.basemapKey)),
-    });
-  } catch (_e) {
-    // Best-effort — a retained base layer is wasted bytes the next
-    // eviction reconsiders, never a broken map.
-  }
-}
-
 async function evictBasemapAreas(areaIds) {
   const core = self.pwaBasemapDownloadCore;
   const ids = Array.isArray(areaIds) ? areaIds : [];
@@ -1460,6 +1392,74 @@ async function evictBasemapAreas(areaIds) {
   // SNOW-570: an evicted area's ring must disappear immediately, not at
   // the next refresh trigger.
   window.pwaDownloadedOverlay?.refresh();
+}
+
+/**
+ * Drop any base layer no remaining area needs (SNOW-856).
+ *
+ * A base layer belongs to a BASEMAP, so it is needed exactly as long as
+ * some area was downloaded under that basemap. Cascaded from
+ * `evictBasemapAreas` rather than offered as its own delete control: the
+ * user chose regions and custom areas, they did not choose an overview
+ * map, and a row they can delete independently is a row they can use to
+ * break the zoomed-out view of every download they kept.
+ *
+ * **An area whose `basemapKey` is null keeps every base layer alive.** A
+ * record written before SNOW-645 says "downloaded, basemap unknown", and
+ * unknown is not evidence of absence — deleting on it would strand an area
+ * whose overview map we simply failed to identify. Erring towards a few
+ * retained megabytes beats erring towards a blank map at z8.
+ *
+ * Best-effort throughout: this runs after the deletions the user actually
+ * asked for have already landed, and must never turn a successful eviction
+ * into a thrown error.
+ *
+ * @returns {Promise<void>}
+ */
+async function evictOrphanedBaseLayers() {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !window.pwaDb) return;
+  try {
+    const baseLayers = await _readBaseLayers();
+    if (!baseLayers.length) return;
+
+    // The records directly, not `basemapDownloadedAreas()` — that reader
+    // now INCLUDES base layers (so the budget can count them), which would
+    // make every base layer evidence for its own survival.
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const regions = Array.isArray(row && row.value) ? row.value : [];
+    const customAreas = await _readCustomAreas();
+    const remaining = [...regions, ...customAreas].filter(Boolean);
+
+    // See the docstring: one unidentifiable area protects them all.
+    if (remaining.some((entry) => !entry.basemapKey)) return;
+    const stillNeeded = new Set(remaining.map((entry) => entry.basemapKey));
+
+    const orphaned = baseLayers.filter(
+      (entry) => entry && entry.basemapKey && !stillNeeded.has(entry.basemapKey),
+    );
+    if (!orphaned.length) return;
+
+    await Promise.all(
+      orphaned.map(async (entry) => {
+        const areaId = core.areaIdForBaseLayer(entry.basemapKey);
+        try {
+          await caches.delete(core.pinnedCacheName(areaId));
+        } catch (_e) {
+          // Best-effort.
+        }
+        forgetPinnedBucketMeasurement(areaId);
+      }),
+    );
+    const orphanedKeys = new Set(orphaned.map((entry) => entry.basemapKey));
+    await window.pwaDb.put('meta:app', {
+      key: BASE_LAYERS_KEY,
+      value: baseLayers.filter((entry) => entry && !orphanedKeys.has(entry.basemapKey)),
+    });
+  } catch (_e) {
+    // Best-effort — a retained base layer is wasted bytes the next
+    // eviction reconsiders, never a broken map.
+  }
 }
 
 // SNOW-588: the two functions above, for modules OUTSIDE this file — the
