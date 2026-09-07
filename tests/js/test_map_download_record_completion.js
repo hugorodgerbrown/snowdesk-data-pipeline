@@ -425,12 +425,16 @@ describe('a record with no stored template', () => {
     // This is the region the staging screenshot showed as a solid roundel
     // over empty map.
     //
-    // ONE feature, not two: the overlay draws the active basemap's downloads
-    // and only those, so the Swisstopo record's tile is not on this map (see
-    // refreshDownloadedOverlay's own block comment). Its own tile is asserted
-    // through the roundel below, which is the surface that still answers for
-    // an area downloaded under another basemap.
-    expect(features).toHaveLength(1);
+    // TWO features since SNOW-857: the Swisstopo record's tile is on the map
+    // as well now, as an OUTLINE. What this test is about is the templateless
+    // one, and what matters for it is that it lands on the `here` side —
+    // falling back to the active basemap's template has to mean falling back
+    // to the active basemap's MARK, or the fallback would draw it as
+    // somebody else's download.
+    expect(features).toHaveLength(2);
+    const here = features.filter((f) => f.properties.here);
+    expect(here).toHaveLength(1);
+    expect(here[0].properties.basemapKey).toBe('openfreemap_liberty');
   });
 
   it('is completed from what the probe verified, once its region is read', async () => {

@@ -894,10 +894,12 @@ on `/help/`.
 > - **Consequently the map no longer goes blank outside a download.**
 >   MapLibre stretches a stored z9 tile over ground you never fetched, so
 >   at z11 one valley over you get a coarse basemap rather than nothing.
->   That is deliberate (accepted 2026-09-07), but it means **you cannot
->   currently tell by eye where your detailed coverage ends** — the
->   boundary overlay that fixes this is SNOW-857. Judge coverage by
->   zooming in: past z10 the detail either appears or it does not.
+>   That is deliberate (accepted 2026-09-07).
+> - **So the coverage overlay is what marks the edge, and offline it turns
+>   itself on** (SNOW-857) unless you have set the "Display on the map"
+>   switch yourself — a hatch over ground downloaded for the basemap you
+>   are on, an outline in another basemap's colour over ground downloaded
+>   for that one. The legend card carries the key while it is showing.
 > - A **region** download is clipped to the region's real boundary plus
 >   about one z14 tile (~1.7 km) of margin — not its bounding rectangle.
 >   A **custom area** genuinely is the rectangle you framed.
@@ -989,7 +991,7 @@ network; outside it, it does not — and neither state is a broken page.
 | 2 | DevTools → Network → **Offline** (or account menu → Offline mode) | The header network symbol switches to the struck-through glyph |
 | 3 | Hard-reload the map page | The map page loads from the shell cache; region overlays and the danger choropleth paint |
 | 4 | Pan to the landmark **inside** coverage | Basemap tiles draw, **with place labels** — glyphs are promoted into the pinned bucket at the end of a run |
-| 5 | Pan just past the shaded edge | The basemap keeps painting, but **coarsely** — stretched z9 tiles from the shared base layer (SNOW-856), not the detail you downloaded. Zoom in past z10 to tell them apart: detail appears inside coverage and does not outside. Overlays keep painting either way. No error page, no spinner that never ends |
+| 5 | Pan just past the shaded edge | The basemap keeps painting, but **coarsely** — stretched z9 tiles from the shared base layer (SNOW-856), not the detail you downloaded. The hatched overlay is what marks the real edge, and offline it is on by default (SNOW-857). Overlays keep painting either way. No error page, no spinner that never ends |
 | 6 | Inside coverage, zoom past z14, then out below z10 | Past z14 the tiles overzoom — larger, no new detail, never blank. Below z10 the shared base layer draws (SNOW-856): less detail, never blank |
 
 ### Scenario D4: Download a custom area

@@ -1044,6 +1044,53 @@ Optional context:
             {# ODbL compliance problem — map.js warns to the console so the  #}
             {# collapse cannot hide it from QA. This is the presentation     #}
             {# half only; the data has to be fixed where it is served.       #}
+            {% comment %}
+                SNOW-857: what the downloaded-coverage overlay's two marks
+                mean. Hidden until the overlay is actually drawn — map.js
+                toggles it from the same `snowdesk:downloaded-overlay-changed`
+                announcement the sheet's switch listens to — because a key
+                for something not on screen is clutter on every other visit.
+
+                It has to live HERE rather than only beside the switch that
+                turns the overlay on, because SNOW-857's whole point is that
+                the overlay now appears on its own when the reader goes
+                offline. A legend reachable only through the panel they did
+                not open explains nothing.
+
+                Same `hidden` + JS-reveal shape as the attribution section
+                below, and for the same reason: a heading with nothing under
+                it reads as a rendering fault.
+            {% endcomment %}
+            <section id="map-coverage-section" class="map-legend-section" hidden>
+                <div class="map-legend-title">{% trans "Downloaded maps" %}</div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--downloaded-here"
+                        aria-hidden="true"
+                    ></span>{% trans "Downloaded for this map" %}
+                </div>
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--downloaded-elsewhere"
+                        aria-hidden="true"
+                    ></span>{% trans "Downloaded for another map" %}
+                </div>
+                {% comment %}
+                    The band, in plain language. The floor is the shared
+                    overview map SNOW-856 pins (z0–9); the ceiling is z14,
+                    which is the PROVIDER's limit — swisstopo and IGN both
+                    declare maxzoom 14, so MapLibre overzooms rather than
+                    asking for more. Detail stopping there is not a failed
+                    download, and the copy must not imply it was our choice
+                    to stop.
+                {% endcomment %}
+                <p class="map-legend-attribution">
+                    {% blocktrans trimmed %}
+                        Elsewhere, and when zoomed out, you are seeing the low-detail overview map. Zoom in to check
+                        whether an area is really downloaded.
+                    {% endblocktrans %}
+                </p>
+            </section>
             <section id="map-attribution-section" class="map-legend-section" hidden>
                 <div class="map-legend-title">{% trans "Map data" %}</div>
                 {% comment %}
