@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Domains needing egress allowlisting for Claude Code — web routines hitting EGRESS_BLOCKED, and the Browser pane 403ing every basemap tile
 status: current
-last-reviewed: 2026-09-05
+last-reviewed: 2026-09-06
 ---
 
 # Environment network allow-list
@@ -76,6 +76,28 @@ until then, every finding involving them is search-corroborated only.
 | `bergundsteigen.com` | WhiteRisk redesign coverage |
 | `tracxn.com` | Whympr funding/employee-count data |
 | `the-ski-guru.com` | Diedamskopf geofenced-alert coverage |
+
+## Requested — 2026-09-06 (competitor-scan routine)
+
+New domains that returned `EGRESS_BLOCKED` on direct `WebFetch` during the
+[2026-09-06 competitor scan](competitors.md), not already covered by the
+2026-08-30 table above.
+
+| Domain | Why it matters |
+|---|---|
+| `peakvisor.com` | PeakVisor — new entrant this pass (3D peaks/ski-touring map app with a new avalanche-bulletin layer); one scan pass so far |
+| `www.skida.app` | Skida (Alpine Adventures) — `skida.app` is already listed above, but this pass's fetch was redirected to and blocked at the `www.` host specifically; listing it in case the policy matches by exact hostname |
+
+**Also worth recording — a block that *cleared*.** `avalancheclarity.com`,
+listed above as blocked on three consecutive passes (2026-08-19,
+2026-08-23, 2026-08-30), was **reachable via direct `WebFetch` this pass**
+(both the homepage and `/en/about/`). Nothing in this session changed the
+egress policy, so either the environment's allowlist was updated by a
+human between passes, or the block was intermittent rather than a fixed
+denial — this doc can't tell which. Leaving the row above in place rather
+than deleting it: if a future pass finds it blocked again, that confirms
+intermittency; if it stays reachable, it's safe to move to "Actioned" at
+that point.
 
 ## How to add these
 
