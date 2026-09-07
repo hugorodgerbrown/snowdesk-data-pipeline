@@ -37,40 +37,36 @@ tall on a `bg-chip` track and the <select> is mono on `bg-tag` at
 now, not the header, at that strip's own 16px.
 {% endcomment %}
 <div class="mt-4 flex flex-col gap-2.5">
-    <div class="flex items-center gap-2">
-        {# SNOW-646/832: the track is no longer aria-hidden. It was, while  #}
-        {# it was one flat fill saying nothing the sentence beside it did   #}
-        {# not already say. SNOW-645 segmented it by basemap, and SNOW-832  #}
-        {# made those segments a legend for the groups below — so it now    #}
-        {# encodes a COMPOSITION that no sentence on the panel states, and  #}
-        {# a decorative bar would be the only place that composition is     #}
-        {# available. `role="img"` with an aria-label render() builds from  #}
-        {# budgetSegments(): one image with one description, rather than a  #}
-        {# progressbar, because the reading is "what is in it", not "how    #}
-        {# far along".                                                      #}
-        <div data-downloads-track class="h-2 flex-1 overflow-hidden rounded-pill bg-chip" role="img">
-            <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
-        </div>
-        {# The used figure is three spans: a static "Using" in text-2       #}
-        {# (SNOW-646 — the readout said "18.4 MB of 500 MB" and never said  #}
-        {# what the number WAS; one word makes it a sentence, and the       #}
-        {# context strip one line above already says whose device it is     #}
-        {# about), the number+unit in mono/medium/text-1                    #}
-        {# (data-downloads-summary-value, set by render() directly —        #}
-        {# core.formatMegabytes() is a locale-invariant numeral, not        #}
-        {# translatable text), then a plain "of" in text-2. Both words are  #}
-        {# STATIC translated nodes: neither changes, so neither needs JS.   #}
+    {# SNOW-XXX lays this block out after the design handoff: the figure  #}
+    {# and its cap on one line, the bar full-width beneath, and nothing    #}
+    {# else. The words that used to wrap the numbers ("Using", "of") are   #}
+    {# gone — two numbers with a bar between them already say what they    #}
+    {# are, and the <select> IS the cap, so it reads as the second half.   #}
+    {#                                                                     #}
+    {# data-downloads-summary-value is set by render() directly:           #}
+    {# core.formatMegabytes() returns a locale-invariant numeral, not      #}
+    {# translatable text.                                                  #}
+    <div class="flex items-center justify-between gap-2">
         <p data-downloads-summary class="flex shrink-0 items-baseline gap-1 whitespace-nowrap text-xs">
-            <span class="text-text-2">{% trans "Using" %}</span>
             <span data-downloads-summary-value class="font-mono font-medium text-text-1"></span>
-            <span class="text-text-2">{% trans "of" %}</span>
         </p>
         <select
             id="map-downloads-budget"
             data-downloads-budget
-            class="shrink-0 rounded-tag border border-border bg-tag px-1.5 py-0.75 font-mono text-xs text-text-1 focus:outline-none"
+            class="shrink-0 rounded-tag border border-border bg-tag px-1.5 py-0.75 font-mono text-xs text-text-2 focus:outline-none"
         >
         </select>
+    </div>
+    {# SNOW-646/832: the track is no longer aria-hidden. It was, while it   #}
+    {# was one flat fill saying nothing the sentence beside it did not      #}
+    {# already say. SNOW-645 segmented it by basemap, and SNOW-832 made     #}
+    {# those segments a legend for the groups below — so it now encodes a   #}
+    {# COMPOSITION that no sentence on the panel states. `role="img"` with  #}
+    {# an aria-label render() builds from budgetSegments(): one image with  #}
+    {# one description, rather than a progressbar, because the reading is   #}
+    {# "what is in it", not "how far along".                                #}
+    <div data-downloads-track class="h-2 w-full overflow-hidden rounded-pill bg-chip" role="img">
+        <div data-downloads-bar class="flex h-full rounded-pill" style="width: 0%"></div>
     </div>
     {# Shown only when stored downloads exceed the budget — reachable by    #}
     {# lowering the budget below what is already held, which is allowed     #}

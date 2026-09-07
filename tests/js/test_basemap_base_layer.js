@@ -235,13 +235,21 @@ describe('planEviction with a base layer present', () => {
   const oldArea = { id: 'region-CH-1', bytes: 30 * MB, savedAt: '2026-02-01T00:00:00Z' };
   const newArea = { id: 'region-CH-2', bytes: 30 * MB, savedAt: '2026-03-01T00:00:00Z' };
 
-  it('counts a base layer toward the standing total', () => {
-    // It is real disk. A budget that ignores it would let the device run
-    // over by however much every base layer on it weighs.
+  // SNOW-XXX reverses what SNOW-856 asserted here. It counted a base layer
+  // toward the standing total, on the reasoning that a budget ignoring real
+  // disk is a lie. True, but it is the wrong budget: the z0-9 layer is the
+  // app's own map data — fetched once per basemap, shared by every area,
+  // never chosen and never removable on its own — and this budget is the
+  // one the user set for their downloads. Charging it here spent up to
+  // 100 MB of their allowance on something they cannot point at, and on a
+  // small budget could make their second download impossible. It is
+  // accounted for in account settings' Reset local data summary instead.
+
+  it('does not count a base layer toward the standing total', () => {
     const plan = core.planEviction([base], { id: 'region-CH-3', bytes: 30 * MB }, 100 * MB);
 
     expect(plan.fits).toBe(true);
-    expect(plan.projectedBytes).toBe(40 * MB);
+    expect(plan.projectedBytes).toBe(30 * MB);
   });
 
   it('never proposes evicting one, even as the oldest entry', () => {
@@ -257,42 +265,39 @@ describe('planEviction with a base layer present', () => {
 
     expect(plan.evict).not.toContain(base.id);
     expect(plan.evict).toEqual([oldArea.id]);
-    expect(plan.projectedBytes).toBe(70 * MB);
+    expect(plan.projectedBytes).toBe(60 * MB);
   });
 
-  it('refuses a run the un-evictable floor makes impossible', () => {
-    // Evicting every area still leaves the base layer, so a run that only
-    // fits with the base layer gone does not fit at all. Before SNOW-856
-    // the floor was zero and the first check compared `incoming` alone;
-    // returning a plan here instead would evict the user's whole library
-    // and then fail anyway.
+  it('lets a run fit that the old un-evictable floor refused', () => {
+    // The case the change is FOR. 35 MB incoming against a 40 MB budget
+    // fits once the areas are evicted; under SNOW-856 the base layer's
+    // 10 MB sat in the way and this was refused outright.
     const plan = core.planEviction(
       [base, oldArea, newArea],
       { id: 'region-CH-3', bytes: 35 * MB },
       40 * MB,
     );
 
-    expect(plan.impossible).toBe(true);
-    expect(plan.evict).toEqual([]);
-    // Nothing changes, so the reported total is the standing one.
-    expect(plan.projectedBytes).toBe(70 * MB);
-  });
-
-  it('still evicts down to the floor when that is enough', () => {
-    const plan = core.planEviction(
-      [base, oldArea, newArea],
-      { id: 'region-CH-3', bytes: 30 * MB },
-      45 * MB,
-    );
-
     expect(plan.impossible).toBe(false);
     expect(plan.evict).toEqual([oldArea.id, newArea.id]);
-    expect(plan.projectedBytes).toBe(40 * MB);
+    expect(plan.projectedBytes).toBe(35 * MB);
+  });
+
+  it('still refuses a run bigger than the whole budget', () => {
+    // Nothing un-evictable is left in the arithmetic, so the only
+    // impossible run is one that does not fit an empty device.
+    const plan = core.planEviction(
+      [base, oldArea, newArea],
+      { id: 'region-CH-3', bytes: 90 * MB },
+      80 * MB,
+    );
+
+    expect(plan.impossible).toBe(true);
+    expect(plan.evict).toEqual([]);
   });
 
   it('is unchanged for a device with no base layer', () => {
-    // The pre-SNOW-856 behaviour, asserted so the floor arithmetic cannot
-    // quietly alter the ordinary case.
+    // The pre-SNOW-856 behaviour, which is also the behaviour now.
     const plan = core.planEviction(
       [oldArea, newArea],
       { id: 'region-CH-3', bytes: 30 * MB },

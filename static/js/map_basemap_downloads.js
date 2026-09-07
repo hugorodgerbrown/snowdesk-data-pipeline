@@ -741,6 +741,7 @@ function mapCameraBBox(map) {
  *   settled, when there is no basemap key to file it under, or when the
  *   style's coverage does not meet the map's own extent.
  */
+
 async function resolveBaseLayerPlan() {
   const core = self.pwaBasemapDownloadCore;
   if (!core || !core.baseLayerTileURLs) return null;
@@ -862,6 +863,99 @@ async function _forgetBaseLayerRecord(basemapKey) {
  * @param {{areaId: string, basemapKey: string|null, bbox: number[]}} plan
  * @returns {Promise<void>}
  */
+/**
+ * Fetch the shown basemap's z0-7 overview, if this device has not got it
+ * (SNOW-XXX).
+ *
+ * The wide half is the app's own map data, and it is small — measured
+ * across the four basemaps on 2026-09-07: OpenFreeMap 12.6 MB (56 tiles,
+ * world bounds so nothing clips it), IGN 4.0 MB, basemap.at 3.2 MB,
+ * Swisstopo 2.7 MB (25 tiles, two sources each). All four on one device is
+ * about 22 MB.
+ *
+ * At that size it should not wait for a download. It used to arrive as a
+ * top-up after the first area was downloaded, which meant a user who
+ * simply switched basemap and went offline had no zoomed-out map at all,
+ * and a user who did download one paid for their area and the overview in
+ * the same wait. Fetching it when the basemap is first SHOWN separates the
+ * two: the map you are looking at is complete on its own, and a download
+ * is only ever the area you asked for plus its own deep zooms.
+ *
+ * Online only, and best-effort throughout: it is not the user's request,
+ * so it must never surface an error, block anything, or spend a byte on a
+ * connection they have told the app not to use. `resolveBaseLayerPlan`
+ * hands back only the urls not already cached, so the common case — every
+ * later switch back to a basemap — resolves an empty list and fetches
+ * nothing.
+ *
+ * @returns {Promise<void>} Always resolves.
+ */
+// How long `warmBaseLayerWideBand` waits for the style before giving up
+// on this attempt. Bounded because a style that never settles must not
+// leave a promise standing for the life of the page; the next basemap
+// change, or the next app open, tries again.
+const WIDE_BAND_STYLE_SETTLE_MS = 10000;
+
+// Basemap keys whose wide half this session has already warmed. The plan
+// itself is the real check — it resolves only the urls NOT already cached
+// — but resolving one walks EVERY pinned bucket's key list, several
+// thousand entries on a device holding a few areas, and a user flipping
+// through the picker triggers a walk per switch. Session-scoped rather
+// than persisted: a reload should re-check the disk, not trust a memory
+// of it.
+const WARMED_WIDE_BANDS = new Set();
+
+async function warmBaseLayerWideBand() {
+  try {
+    const connectivity = window.pwaConnectivity;
+    const online = connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+    if (!online) return;
+    if (typeof window.pwaWarmCache !== 'function') return;
+    const activeKey = activeBasemapKey();
+    if (activeKey && WARMED_WIDE_BANDS.has(activeKey)) return;
+    let plan = await resolveBaseLayerPlan();
+    if (!plan) {
+      // No plan means the style has not settled: `activeBasemapTileSources`
+      // is gated on `isStyleLoaded()`, which is false for the whole of the
+      // boot sequence that resolves MAP_READY_PROMISE. Waiting one `idle`
+      // is the difference between warming at boot and not warming until
+      // the user next changes basemap — which, for someone who never
+      // changes it, is never.
+      await new Promise((resolve) => {
+        if (!MAP || typeof MAP.once !== 'function') {
+          resolve();
+          return;
+        }
+        MAP.once('idle', resolve);
+        setTimeout(resolve, WIDE_BAND_STYLE_SETTLE_MS);
+      });
+      plan = await resolveBaseLayerPlan();
+    }
+    if (!plan || !Array.isArray(plan.urls) || plan.urls.length === 0) {
+      // Nothing missing — which is the answer the session cache above
+      // exists to remember.
+      if (plan && plan.basemapKey) WARMED_WIDE_BANDS.add(plan.basemapKey);
+      return;
+    }
+    const warming = window.pwaWarmCache(plan.urls, { pinned: true, areaId: plan.areaId });
+    if (!warming) return;
+    const result = await warming;
+    await recordBaseLayer(result, plan);
+    // Only a run that lost nothing is remembered: a partial warm has to be
+    // retried on the next switch, which is how an interrupted first visit
+    // completes itself.
+    if (plan.basemapKey && result && !Number(result.failed)) {
+      WARMED_WIDE_BANDS.add(plan.basemapKey);
+    }
+    // The layers menu claims a basemap is available offline; one more
+    // filled bucket can change that answer.
+    window.pwaLayerSyncStatus?.refresh();
+  } catch (_err) {
+    // Best-effort by design — the next switch to this basemap retries
+    // whatever this attempt left missing.
+  }
+}
+
 async function recordBaseLayer(result, plan) {
   const core = self.pwaBasemapDownloadCore;
   if (!core || !window.pwaDb || !plan || !plan.basemapKey) return;
@@ -1142,6 +1236,12 @@ async function basemapDownloadedAreas() {
         savedAt: entry.savedAt,
         // SNOW-645: see the region branch above for the "unknown" fallback.
         basemapKey: entry.basemapKey || null,
+        // SNOW-XXX: which KIND of user-made area this is — a framed box
+        // ('custom') or a circle dropped on the user's own position
+        // ('dropzone'). The sheet names it in words on every row, and a
+        // record written before the field existed is what it was: a
+        // framed box.
+        type: entry.type === 'dropzone' ? 'dropzone' : 'custom',
         // SNOW-749: a custom area IS its box — it is the only thing that
         // lets another device (or this one after an eviction) fetch the
         // same ground again, so it travels with the area.
@@ -1478,7 +1578,19 @@ async function evictBasemapAreas(areaIds) {
   // because "delete the overview map" is not a thing the user should have
   // to think about — it appears when their first download does and leaves
   // with their last.
-  await evictOrphanedBaseLayers();
+  // SNOW-XXX removed an `evictOrphanedBaseLayers()` call here. The base
+  // layer used to be deleted once no downloaded area was left to need it,
+  // which followed from its being a cost the user's downloads incurred.
+  // It is the app's own map data now — fetched when a basemap is SHOWN,
+  // and the reason opening the app offline gets you a map at all — so
+  // deleting the last area is no longer a reason to take it. It goes with
+  // a full reset from account settings, which is where the app's own
+  // storage is stated and cleared.
+  //
+  // What this does keep on disk is the near half (z8-9) of areas since
+  // deleted: a few MB per part of the map, in the same bucket, with
+  // nothing to prune it individually. Named here rather than left for a
+  // reader to find.
 
   // SNOW-613: tell the worker its memoised pinned-bucket list is stale.
   // It has no other way to learn about a page-side deletion, and a stale
@@ -1492,73 +1604,6 @@ async function evictBasemapAreas(areaIds) {
   window.pwaDownloadedOverlay?.refresh();
 }
 
-/**
- * Drop any base layer no remaining area needs (SNOW-856).
- *
- * A base layer belongs to a BASEMAP, so it is needed exactly as long as
- * some area was downloaded under that basemap. Cascaded from
- * `evictBasemapAreas` rather than offered as its own delete control: the
- * user chose regions and custom areas, they did not choose an overview
- * map, and a row they can delete independently is a row they can use to
- * break the zoomed-out view of every download they kept.
- *
- * **An area whose `basemapKey` is null keeps every base layer alive.** A
- * record written before SNOW-645 says "downloaded, basemap unknown", and
- * unknown is not evidence of absence — deleting on it would strand an area
- * whose overview map we simply failed to identify. Erring towards a few
- * retained megabytes beats erring towards a blank map at z8.
- *
- * Best-effort throughout: this runs after the deletions the user actually
- * asked for have already landed, and must never turn a successful eviction
- * into a thrown error.
- *
- * @returns {Promise<void>}
- */
-async function evictOrphanedBaseLayers() {
-  const core = self.pwaBasemapDownloadCore;
-  if (!core || !window.pwaDb) return;
-  try {
-    const baseLayers = await _readBaseLayers();
-    if (!baseLayers.length) return;
-
-    // The records directly, not `basemapDownloadedAreas()` — that reader
-    // now INCLUDES base layers (so the budget can count them), which would
-    // make every base layer evidence for its own survival.
-    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
-    const regions = Array.isArray(row && row.value) ? row.value : [];
-    const customAreas = await _readCustomAreas();
-    const remaining = [...regions, ...customAreas].filter(Boolean);
-
-    // See the docstring: one unidentifiable area protects them all.
-    if (remaining.some((entry) => !entry.basemapKey)) return;
-    const stillNeeded = new Set(remaining.map((entry) => entry.basemapKey));
-
-    const orphaned = baseLayers.filter(
-      (entry) => entry && entry.basemapKey && !stillNeeded.has(entry.basemapKey),
-    );
-    if (!orphaned.length) return;
-
-    await Promise.all(
-      orphaned.map(async (entry) => {
-        const areaId = core.areaIdForBaseLayer(entry.basemapKey);
-        try {
-          await caches.delete(core.pinnedCacheName(areaId));
-        } catch (_e) {
-          // Best-effort.
-        }
-        forgetPinnedBucketMeasurement(areaId);
-      }),
-    );
-    const orphanedKeys = new Set(orphaned.map((entry) => entry.basemapKey));
-    await window.pwaDb.put('meta:app', {
-      key: BASE_LAYERS_KEY,
-      value: baseLayers.filter((entry) => entry && !orphanedKeys.has(entry.basemapKey)),
-    });
-  } catch (_e) {
-    // Best-effort — a retained base layer is wasted bytes the next
-    // eviction reconsiders, never a broken map.
-  }
-}
 
 // SNOW-588: the two functions above, for modules OUTSIDE this file — the
 // "Manage downloads" sheet (static/js/map_downloads_manager.js), which
@@ -1577,6 +1622,25 @@ async function evictOrphanedBaseLayers() {
 //
 // Exposed as one frozen object beside pwaDownloadedOverlay, the bridge
 // this file already uses for its sibling IIFEs.
+// SNOW-XXX: the shown basemap's z0-7 overview is fetched when it is first
+// shown, not when something is first downloaded — see
+// `warmBaseLayerWideBand` for the sizes that make that affordable. Two
+// triggers, because there are two ways a basemap comes to be on screen:
+// the app opening on the one the user left it on, and the picker changing
+// it. Both are no-ops once that basemap's wide half is on disk.
+//
+// The boot trigger is wrapped because this module is also imported on its
+// own by the JS unit tests, where `map_state.js` — and so
+// `MAP_READY_PROMISE` — does not exist. A bare identifier throws a
+// ReferenceError, which is catchable; the listener below needs no such
+// guard, since a page with no map dispatches no basemap change.
+try {
+  MAP_READY_PROMISE.then(() => warmBaseLayerWideBand());
+} catch (_e) {
+  // Loaded outside the map page. Nothing to warm.
+}
+document.addEventListener('snowdesk:basemap-changed', () => warmBaseLayerWideBand());
+
 window.pwaBasemapDownloads = Object.freeze({
   /**
    * Every recorded area, normalised to
@@ -1938,6 +2002,58 @@ function clearBasemapDownloadError() {
 //
 // @param {number} mb
 // @returns {Promise<boolean>}
+// SNOW-XXX: the device's own download ceiling, resolved once and reused.
+//
+// `navigator.storage.estimate()` is async and the callers are not: both
+// framing surfaces recompute their selection once per animation frame, and
+// awaiting a storage estimate inside that loop would be a promise per frame
+// for a number that changes on the timescale of downloads, not frames. So
+// it is resolved on the edges that can actually change it — a surface
+// opening, a run settling, an area being deleted — and read synchronously
+// in between.
+//
+// `null` until the first resolve, which the getter reports as the core's
+// fallback constant rather than as "unlimited".
+let _basemapDeviceCeilingMb = null;
+
+/**
+ * The last resolved device ceiling, in megabytes.
+ *
+ * @returns {number} The device's own ceiling, or
+ *   `DOWNLOAD_CEILING_MB` before the first resolve (and on a device that
+ *   will not report its quota).
+ */
+function basemapDeviceCeilingMb() {
+  const core = self.pwaBasemapDownloadCore;
+  if (_basemapDeviceCeilingMb !== null) return _basemapDeviceCeilingMb;
+  return core ? core.DOWNLOAD_CEILING_MB : 200;
+}
+
+/**
+ * Re-read the device's storage estimate and cache the ceiling it implies.
+ *
+ * Best-effort: a browser with no Storage API, or one that refuses to
+ * answer, leaves the cached value alone and the getter keeps reporting the
+ * fallback constant.
+ *
+ * @returns {Promise<number>} The resolved ceiling, for a caller that wants
+ *   to act on it immediately rather than read it back.
+ */
+async function refreshBasemapDeviceCeiling() {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.deviceCeilingMb !== 'function') return basemapDeviceCeilingMb();
+  if (!('storage' in navigator) || typeof navigator.storage.estimate !== 'function') {
+    return basemapDeviceCeilingMb();
+  }
+  try {
+    _basemapDeviceCeilingMb = core.deviceCeilingMb(await navigator.storage.estimate());
+  } catch (_e) {
+    // Leave the previous answer standing — a failed estimate is not
+    // evidence that the device shrank.
+  }
+  return basemapDeviceCeilingMb();
+}
+
 async function basemapDownloadFitsQuota(mb) {
   const core = self.pwaBasemapDownloadCore;
   if (!core || typeof core.hasStorageHeadroom !== 'function') return true;

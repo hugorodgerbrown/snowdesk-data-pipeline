@@ -715,13 +715,17 @@
     // ceiling under it is smaller — the frame shrinks with the basemap
     // rather than promising a run the budget pre-flight would then refuse.
     const sourceCount = core.tileSourceCount(activeBasemapTileSources(MAP));
-    const scale = core.budgetScaleForBBox(naturalBbox, minZ, maxZ, sourceCount);
+    // The ceiling is the DEVICE's (map_basemap_downloads.js), not a
+    // constant — the frame a user may draw is bounded by what their own
+    // phone can hold.
+    const ceilingMb = basemapDeviceCeilingMb();
+    const scale = core.budgetScaleForBBox(naturalBbox, minZ, maxZ, sourceCount, ceilingMb);
 
     if (scale >= 1) {
       lockedSize = null;
       lockedBbox = null;
       _releaseFrame();
-      return { bbox: naturalBbox, blob: core.buildBlob(naturalBbox, minZ, maxZ) };
+      return { bbox: naturalBbox, blob: core.buildBlob(naturalBbox, minZ, maxZ, ceilingMb) };
     }
 
     if (lockedSize === null) {
@@ -744,7 +748,7 @@
     // caller skips the tile math and leaves the readout alone.
     if (_bboxesEqual(bbox, lockedBbox)) return null;
     lockedBbox = bbox;
-    return { bbox, blob: core.buildBlob(bbox, minZ, maxZ) };
+    return { bbox, blob: core.buildBlob(bbox, minZ, maxZ, ceilingMb) };
   }
 
   /**
@@ -772,10 +776,11 @@
     // will spend — `blob.mb` prices one tile per cell, and a multi-source
     // style fetches one per cell PER SOURCE.
     const scaledMb = core.sourceScaledMb(pendingBlob.mb, activeBasemapTileSources(MAP));
-    const overCeiling = pendingBlob.over_ceiling || scaledMb > core.DOWNLOAD_CEILING_MB;
+    const ceilingMb = basemapDeviceCeilingMb();
+    const overCeiling = pendingBlob.over_ceiling || scaledMb > ceilingMb;
     const text = overCeiling
       ? self.pwaStrings.interpolate(MAP_STRINGS['frame-over-ceiling'], {
-          mb: core.DOWNLOAD_CEILING_MB,
+          mb: ceilingMb,
         })
       : self.pwaStrings.interpolate(MAP_STRINGS['frame-up-to'], { mb: scaledMb });
     // Same no-op guard as the frame's own size write above: the estimate
@@ -1015,6 +1020,9 @@
    */
   function openFraming() {
     if (!MAP) return;
+    // What the device can hold bounds the frame — re-read on open, and
+    // repaint once it lands (the previous answer stands until then).
+    refreshBasemapDeviceCeiling().then(() => _updateReadout());
     overlayEl.removeAttribute('hidden');
     // SNOW-632: undo whatever the PREVIOUS session's completed run left on
     // the CTA bar (paintRun's 'done' branch hides Download and relabels

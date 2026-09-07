@@ -3,19 +3,17 @@
 templates/includes/_map_downloads_row_actions.html — the "Manage
 downloads" row's icon controls (SNOW-658).
 
-includes/_ugc_panel_row.html's `actions_template` slot. Replaces
-_map_downloads_row_menu_items.html, the "…" overflow menu this row carried
-for one day: Hugo's design took the ellipsis menu off every panel. Remove
-is a visible trash control in the same place on every row, and Rename —
-which only a custom area has — is a pencil before it that hands off to the
-row's own inline label edit.
+includes/_ugc_panel_row.html's `actions_template` slot.
 
-That still holds HERE, and SNOW-830 narrowed the ruling rather than
-reversing it: the ROUTES row went back to a menu, because SNOW-764 and
-SNOW-819 grew it to four inline controls and squeezed the route's own
-name out of a 380px row. This row has three at most and room for them, so
-it keeps the visible trash — one tap beats two wherever a row can afford
-it.
+THE RULE, as of 2026-09-07 and for every panel: **more than one action is
+a "…"; exactly one action is a bare icon.** SNOW-658 ruled the opposite
+(a visible trash on every row, one tap not two) and SNOW-830 narrowed it
+for the routes row alone; Hugo reversed it. So this row now renders both
+shapes and buildRow keeps whichever the row has earned — the bare trash
+for a region, the bare download for an account-only row, the menu for
+anything with two things to offer.
+
+The items themselves are in public/partials/_map_downloads_row_menu_items.html.
 
 Both buttons are value-less here. This partial is rendered ONCE, inside
 the sheet's row `<template>`, and map_downloads_manager.js's buildRow
@@ -51,6 +49,9 @@ so for a row that is on both. The automatic budget eviction
 {% endcomment %}
 {# The constructive action, first. Removed by buildRow for every row that #}
 {# is already on this device — there is nothing to fetch.                 #}
+{# ONE action → a bare icon. These two are the rows that have exactly     #}
+{# one: an account-only row can only be downloaded, and a region on this  #}
+{# device can only be removed.                                            #}
 <button
     type="button"
     data-downloads-here
@@ -58,36 +59,6 @@ so for a row that is on both. The automatic budget eviction
     class="{% icon_button_classes %}"
 >
     {% include "includes/_icon_download_arrow.html" only %}
-</button>
-{# SNOW-844: "Repair" — refetch just the style/sprite/TileJSON documents  #}
-{# this area is missing, without re-downloading a tile. buildRow removes  #}
-{# it from every row that does not need one, which is nearly all of them: #}
-{# only a row whose render-dependency check failed keeps it, and an       #}
-{# ORPHAN never does — it has no record naming what to fetch, so remove   #}
-{# stays its only action (SNOW-612). Constructive, so it sits beside      #}
-{# "Download here" ahead of the pencil and the trash; the two are         #}
-{# mutually exclusive on a row (one is for an area that is here, the      #}
-{# other for one that is not), so the cluster is still three at most.     #}
-<button
-    type="button"
-    data-downloads-repair
-    aria-label="{% trans 'Repair' %}"
-    class="{% icon_button_classes %}"
->
-    {% include "includes/_icon_repair.html" only %}
-</button>
-{# Two hooks, two readers: `data-row-rename` is the shared one every       #}
-{# renameable panel's pencil carries, so static/js/inline_rename.js can    #}
-{# recognise a rename click without knowing which panel it is on;          #}
-{# `data-downloads-rename` carries this row's area id for the commit.      #}
-<button
-    type="button"
-    data-row-rename
-    data-downloads-rename
-    aria-label="{% trans 'Rename' %}"
-    class="{% icon_button_classes %}"
->
-    {% include "includes/_icon_pencil.html" only %}
 </button>
 <button
     type="button"
@@ -97,3 +68,10 @@ so for a row that is on both. The automatic budget eviction
 >
     {% include "includes/_icon_trash.html" only %}
 </button>
+{# MORE THAN ONE → the "…". A custom area or a drop zone can be renamed   #}
+{# and removed; a row that cannot render can be repaired and removed.     #}
+{# buildRow keeps either this trigger or the bare trash above, never      #}
+{# both, and rewrites the two ids per clone (the partial's own header     #}
+{# requires that of any caller that clones it).                           #}
+{% trans "More actions" as downloads_row_actions_label %}
+{% include "includes/_overflow_menu.html" with trigger_id="downloads-row-actions" menu_id="downloads-row-actions-menu" trigger_label=downloads_row_actions_label items_template="public/partials/_map_downloads_row_menu_items.html" %}

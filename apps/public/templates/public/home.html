@@ -171,6 +171,14 @@ in addition to the shared map assets.
     {# (public/partials/_routes_surface.html), not from here, because it is #}
     {# that surface's dependency and no other page needs it. The other      #}
     {# three panels keep their visible trash and load nothing extra.        #}
+    {# SNOW-XXX: the "…" row menus. Loaded HERE, once, because two surfaces  #}
+    {# on this page now carry one — the routes panel (SNOW-830) and the      #}
+    {# downloads panel, whose rows went back to a menu when Hugo reversed    #}
+    {# SNOW-658's ruling: more than one action is a "…", exactly one is a    #}
+    {# bare icon. It used to load from _routes_surface.html as that panel's  #}
+    {# own dependency; a second tag there would run the module twice, since  #}
+    {# browsers do not deduplicate script elements by URL.                   #}
+    <script defer src="{% static 'js/overflow_menu.js' %}"></script>
     <script defer src="{% static 'js/inline_rename.js' %}"></script>
     {# SNOW-711: the server half of that rename — read the row's uuid off   #}
     {# the pencil, POST the committed name, hand the response back. The     #}
@@ -381,6 +389,19 @@ in addition to the shared map assets.
     {# bundle module reads it), which is what                                #}
     {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
     <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
+    {# HACK MODE (feature discovery): the drop-zone control — one-tap        #}
+    {# "download the ground around me". Outside the map bundle (nothing in    #}
+    {# the bundle reads it), so its tag sits BELOW the bundle's contiguous    #}
+    {# run — see tests/public/test_map_script_order.py. After                 #}
+    {# map_geolocate.js, whose listener answers the locate request it         #}
+    {# dispatches.                                                            #}
+    <script defer src="{% static 'js/map_drop_zone.js' %}"></script>
+    {# HACK MODE, DEBUG only: the tile-zoom readout beside the help        #}
+    {# roundel. Outside the map bundle, so it sits below the bundle's run —  #}
+    {# see tests/public/test_map_script_order.py.                            #}
+    {% if zoom_readout_visible %}
+        <script defer src="{% static 'js/map_zoom_readout.js' %}"></script>
+    {% endif %}
     {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
     <script defer src="{% static 'js/home_intro.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}

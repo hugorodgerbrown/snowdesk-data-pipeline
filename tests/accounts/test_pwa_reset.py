@@ -61,3 +61,30 @@ def test_settings_page_has_reset_helper_copy() -> None:
     collapsed = " ".join(body.split())
     assert "Clears cached bulletins" in collapsed
     assert "Your subscription is not affected." in collapsed
+
+
+@pytest.mark.django_db
+def test_settings_page_discloses_shared_map_data() -> None:
+    """The row carries the shared-map-data line pwa_reset.js fills.
+
+    The z0-9 overview map is the app's own map data — fetched once per
+    basemap, shared by every downloaded area, never chosen and never
+    removable on its own — so the downloads panel neither lists it nor
+    charges its budget for it. That leaves this row as the only place it is
+    disclosed, and the only control that clears it. Storage the user cannot
+    see is storage they cannot consent to clearing.
+
+    The sentence is server-rendered (so ``makemessages`` sees it) with the
+    numeral left to JS; it ships ``hidden`` and is revealed only when there
+    is a figure to show.
+    """
+    account = AccountFactory.create()
+    client = Client()
+    client.force_login(account.user)
+
+    response = client.get("/account/settings/")
+    body = response.content.decode("utf-8")
+
+    assert "data-pwa-reset-size" in body
+    assert "data-pwa-reset-size-value" in body
+    assert "of shared map data" in body

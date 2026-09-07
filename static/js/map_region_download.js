@@ -916,7 +916,13 @@
     const scaledMb = core
       ? core.sourceScaledMb(data.summary.mb, activeBasemapTileSources(MAP))
       : data.summary.mb;
-    if (data.summary.over_ceiling || (core && scaledMb > core.DOWNLOAD_CEILING_MB)) {
+    // SNOW-XXX: the ceiling is the DEVICE's, so `data.summary.over_ceiling`
+    // — computed server-side against a constant, because the server cannot
+    // see a device — is no longer what disables this control. A region that
+    // flag calls too large is downloaded anyway on a phone with the room
+    // for it; the stored flag stays in the payload and the admin as the
+    // sizing signal it always was.
+    if (core && scaledMb > basemapDeviceCeilingMb()) {
       setState('disabled', data.summary.mb);
       return;
     }
@@ -1297,6 +1303,12 @@
   // main IIFE fires this once the new style's overlays are back) so the icon
   // flips done↔idle to match the basemap you're now on — e.g. download on
   // OpenFreeMap, switch to Swisstopo, and the icon reverts to "download".
+  // The device's ceiling is what decides whether this region is offerable,
+  // and it is resolved asynchronously — so ask for it once at boot and
+  // repaint when it lands. Until then the control sizes against the core's
+  // fallback constant, which is the old behaviour rather than a wrong one.
+  refreshBasemapDeviceCeiling().then(() => renderControl());
+
   document.addEventListener('snowdesk:basemap-changed', () => renderControl());
 
   // Offline-integrity: re-render on every connectivity transition so the

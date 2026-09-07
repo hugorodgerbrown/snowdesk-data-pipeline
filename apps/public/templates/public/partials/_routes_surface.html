@@ -150,8 +150,6 @@ Context expected:
 {# it. Order does not matter for THIS one: it publishes no global and      #}
 {# routes.js never reads it. It self-wires delegated document listeners at #}
 {# parse time and finds every menu by attribute, including the ones HTMX   #}
-{# swaps in long afterwards.                                               #}
-<script defer src="{% static 'js/overflow_menu.js' %}"></script>
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}

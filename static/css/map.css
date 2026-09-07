@@ -353,6 +353,73 @@
     animation: locate-searching 1100ms ease-in-out infinite;
 }
 
+/* HACK MODE (feature discovery): #locate-toggle carries two glyphs and
+   `data-mode` picks one — crosshair for "find me", concentric rings for
+   "download the ground around me" once a fix has armed a drop zone
+   (static/js/map_drop_zone.js). Both are rendered server-side and one is
+   hidden, rather than the JS writing SVG into the button: the markup stays
+   in the template and the mode switch stays a single attribute write.
+
+   The pulse rule above is deliberately NOT scoped to a mode — a fix in
+   flight looks the same whichever glyph is showing. */
+.map-locate-glyph--drop,
+#locate-toggle[data-mode='drop'] .map-locate-glyph--locate {
+    display: none;
+}
+
+/* HACK MODE: a spoofed position (?loc=, superusers and local dev only —
+   static/js/map_geolocate.js) marks the roundel, because a fake fix that
+   looks exactly like a real one is how a test aid becomes a bug report.
+   An amber pip in the corner: visible enough to notice, quiet enough not
+   to read as an error state. */
+/* While a drop zone is drawn (static/js/map_drop_zone.js adds this class to
+   the map container), MapLibre's own accuracy circle comes off the screen.
+   Both are translucent discs about the user's position, and they answer
+   different questions — "roughly where you are" against "exactly what will
+   be downloaded" — which is unreadable as two overlapping circles. The
+   accuracy circle is useful during the locate step and stays there; the
+   user-location DOT stays throughout, since the drop zone no longer draws a
+   centre of its own. */
+.map-drop-zone-open .maplibregl-user-location-accuracy-circle {
+    display: none;
+}
+
+/* The spoofed position's beacon (static/js/map_geolocate.js). Shaped like
+   the MapLibre control's own dot — a filled disc with a white collar —
+   because it stands in for exactly that; the roundel's amber pip is where
+   "this position is made up" is said. */
+.map-fake-beacon {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    /* MapLibre paint colours and marker elements take literal values; this
+       one matches the drop zone's own circle (map_drop_zone.js). */
+    background: #2563eb;
+    border: 3px solid #ffffff;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.15);
+}
+
+#locate-toggle[data-fake-location='true'] {
+    /* .map-utility-button is `position: static`, so the pip below needs a
+       containing block of its own. */
+    position: relative;
+}
+
+#locate-toggle[data-fake-location='true']::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-status-warning-text);
+}
+
+#locate-toggle[data-mode='drop'] .map-locate-glyph--drop {
+    display: block;
+}
+
 @keyframes locate-searching {
     0%,
     100% {
@@ -3403,6 +3470,55 @@ body.map-framing #map-legend {
    #map-frame-confirm. */
 .map-frame-readout--over-ceiling {
     color: var(--color-status-error-text);
+}
+
+/* HACK MODE (feature discovery): the drop-zone bar. Deliberately the same
+   surface as .map-frame-cta above — same card, same border, same padding
+   rhythm — because it answers the same question ("this much, this big, for
+   this many MB?") in a different flow. What differs is that there is no mask
+   and no frame: the map stays live and fully visible behind it, since the
+   selection is a circle drawn ON the map rather than a reticle over it. So
+   this positions itself against the map container instead of filling it. */
+.map-drop-zone-cta {
+    position: absolute;
+    z-index: 5;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px calc(env(safe-area-inset-bottom, 0px) + 14px);
+    background: var(--color-card);
+    border-top: 0.5px solid var(--border);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: var(--sans);
+}
+
+.map-drop-zone-cta[hidden] {
+    display: none;
+}
+
+/* The bar's left half: the size readout with the "zoom to change it" line
+   under it. Stacked rather than run together on one line because the two say
+   different KINDS of thing — one is the current state, the other is how to
+   change it — and a bar that reads as one long sentence gets skipped whole. */
+.map-drop-zone-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    /* Lets the pair shrink and wrap under the buttons on a narrow phone
+       instead of pushing Drop off the edge. */
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.map-drop-zone-hint {
+    color: var(--color-text-2);
+    font-size: 12px;
 }
 
 .map-frame-cta-actions {

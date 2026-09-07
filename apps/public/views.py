@@ -770,6 +770,35 @@ def _edit_locations_context() -> dict[str, str]:
 _EDIT_TARGETS: frozenset[str] = frozenset({"resorts", "locations"})
 
 
+def _fake_location_allowed(request: HttpRequest) -> bool:
+    """Whether this request may spoof its own position with ``?loc=``.
+
+    A testing aid, gated the same way ``?edit=`` is (SNOW-724): superusers,
+    plus local development. The drop zone and the field-report flow both
+    ask the device where it is, and neither can be exercised from a desk in
+    London against a map of the Alps — so ``?loc=46.0961,7.2286`` (or a
+    named preset) stands in for a real fix. See
+    ``static/js/map_geolocate.js``.
+
+    Gated rather than shipped open because the same fix reaches the field
+    report: a spoofed position on a community observation is bad data other
+    people act on, which is a different thing from a spoofed position on
+    your own map.
+
+    Costs no query: ``request.user`` is already resolved for the several
+    other eligibility flags on this page, and ``is_superuser`` is a column
+    on the row that resolved it.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        True when the client may honour ``?loc=``.
+
+    """
+    return bool(settings.DEBUG or request.user.is_superuser)
+
+
 def _edit_target(request: HttpRequest) -> str:
     """Return the estate ``?edit=`` selects for this request, or "".
 
@@ -903,6 +932,14 @@ def home(request: HttpRequest) -> HttpResponse:
         edit_context.update(_edit_locations_context())
 
     report_ctx = _report_context(request)
+    fake_location_ctx = {
+        "fake_location_allowed": _fake_location_allowed(request),
+        # HACK MODE: the zoom readout beside the help roundel. DEBUG only —
+        # it is a developer's instrument for work on the tile bands (which
+        # zoom is being fetched at any moment), not a map feature, and it
+        # says nothing a reader of the map wants.
+        "zoom_readout_visible": bool(settings.DEBUG),
+    }
     favourites_ctx = _favourites_context(request)
     routes_ctx = _routes_context(request)
     downloads_ctx = _downloads_context(request)
@@ -917,6 +954,7 @@ def home(request: HttpRequest) -> HttpResponse:
         {
             **base_ctx,
             **edit_context,
+            **fake_location_ctx,
             **report_ctx,
             **favourites_ctx,
             **routes_ctx,

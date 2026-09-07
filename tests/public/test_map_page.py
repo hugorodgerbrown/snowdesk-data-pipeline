@@ -1549,3 +1549,40 @@ def test_downloads_strings_template_carries_the_focus_label() -> None:
     )[0]
     assert 'data-string="focus-row-label"' in strings
     assert "Zoom to" in strings
+
+
+@pytest.mark.django_db
+class TestFakeLocationGate:
+    """``data-fake-location-allowed`` opens ``?loc=`` for testing only.
+
+    A spoofed fix reaches the field-report flow as readily as it reaches the
+    drop zone, and a made-up position on a community observation is bad data
+    other people act on. So the client only honours ``?loc=`` when the
+    server says it may.
+    """
+
+    def _flag(self, client: Client) -> str:
+        content = client.get(reverse("public:home")).content.decode()
+        marker = 'data-fake-location-allowed="'
+        return content.split(marker, 1)[1].split('"', 1)[0]
+
+    def test_anonymous_visitor_may_not_spoof(self, client: Client) -> None:
+        """The gate is shut for the public, DEBUG off."""
+        with override_settings(DEBUG=False):
+            assert self._flag(client) == "false"
+
+    def test_superuser_may_spoof(self, client: Client) -> None:
+        """A superuser can test the position-dependent surfaces."""
+        superuser = AccountFactory.create(
+            user__email="loc-super@example.com",
+            user__is_superuser=True,
+            user__is_staff=True,
+        )
+        client.force_login(superuser.user)
+        with override_settings(DEBUG=False):
+            assert self._flag(client) == "true"
+
+    def test_local_development_may_spoof(self, client: Client) -> None:
+        """DEBUG is the other half — a dev server has no superuser to hand."""
+        with override_settings(DEBUG=True):
+            assert self._flag(client) == "true"

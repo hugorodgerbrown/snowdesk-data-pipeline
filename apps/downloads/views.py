@@ -38,13 +38,14 @@ wrong first:
 - A posted bbox is **priced**, not merely range-checked. Bounding each
   ordinate to a valid lon/lat leaves ``[-179, -89, 179, 89]`` acceptable,
   and that box is 357 million tiles across the micro band. ``_clean_bbox``
-  therefore prices it against the shared ``DOWNLOAD_CEILING_MB`` from
-  ``apps.regions.services.basemap_tiles`` — the same constant
-  ``static/js/basemap_download_core.js`` mirrors and the framing control
-  already enforces, imported rather than restated so there is one ceiling
-  and not three. This matters because a stored bbox is replayed on another
-  device by ``openFramingAt``: a box we know to be undownloadable would be
-  a row whose only purpose is to be acted on and cannot be.
+  therefore prices it, against ``_MAX_STORED_AREA_MB`` — an absurdity
+  backstop rather than a download ceiling, because there is no fixed
+  ceiling to borrow any more: the limit on a download is the free storage
+  of the device running it, which only that device can know
+  (``basemap_download_core.js``'s ``deviceCeilingMb``). This matters
+  because a stored bbox is replayed on another device by ``openFramingAt``,
+  and that other device may have far more room than the one that framed
+  it.
 - An over-long ``name``, ``region_id`` or ``basemap_key`` is **refused**,
   never truncated, in both write paths. See ``_too_long_error``.
 
@@ -75,7 +76,6 @@ from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
 from apps.regions.services.basemap_tiles import (
-    DOWNLOAD_CEILING_MB,
     MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE,
     tile_count,
@@ -94,6 +94,22 @@ logger = logging.getLogger(__name__)
 # ``basemap_download_core.js``'s ``areaIdForRegion`` and
 # ``generateCustomAreaId`` produce.
 _AREA_ID_RE = re.compile(r"^(region|custom)-[A-Za-z0-9_-]{1,88}$")
+
+# The largest posted bbox this endpoint will store, in megabytes.
+#
+# NOT the download ceiling. There no longer is a fixed one: how large a
+# download may be is decided on the device that runs it, from its own free
+# storage (``basemap_download_core.js``'s ``deviceCeilingMb``), so a phone
+# with room legitimately frames an area far past any constant this module
+# could name — and refusing to STORE that area's definition would break the
+# feature for exactly the devices that can most afford it.
+#
+# What this number is instead is an absurdity backstop, and the docstring
+# below explains why one is still needed: coordinate-range validation alone
+# accepts ``[-179, -89, 179, 89]``, which is 357 million tiles and roughly
+# 17 TB at the worst-case rate. 4 TB is far above any real device's storage
+# and far below that, which is all a backstop has to be.
+_MAX_STORED_AREA_MB: int = 4 * 1024 * 1024
 
 # Longest accepted ``name``, mirroring ``DownloadArea.name``'s max_length.
 _NAME_MAX_LENGTH = 100
@@ -137,18 +153,16 @@ def _bbox_download_mb(bbox: list[float]) -> float:
 
     The same arithmetic ``build_blob`` performs for a region, applied to a
     posted box: expand it into per-zoom tile ranges across the micro band,
-    count the tiles, and price them at the worst-case bytes-per-tile figure
-    SNOW-631 calibrated. Every constant is imported from
-    ``apps.regions.services.basemap_tiles`` rather than restated here —
-    there is one download ceiling in this system, and it is mirrored in
-    ``static/js/basemap_download_core.js`` as it is, so a second one would
-    be a limit no control was designed against.
+    count the tiles, and price them at ``WORST_CASE_BYTES_PER_TILE``. The
+    band and the rate are imported from
+    ``apps.regions.services.basemap_tiles`` rather than restated here, so
+    this prices a box exactly as every other surface does.
 
     Deliberately a worst case, not an estimate of what a run would really
-    fetch. It over-reads on sparse alpine terrain by three to five times,
-    which is the trade that keeps a single constant that never
-    under-promises — and under-promising is the direction that matters for
-    a ceiling.
+    fetch: it over-reads sparse alpine terrain by around 1.5x (re-measured
+    2026-09-07 — see that constant's comment). For this guard the direction
+    barely matters, since the backstop it feeds is orders of magnitude
+    above anything a device could hold either way.
 
     Args:
         bbox: ``[west, south, east, north]`` in degrees, already validated
@@ -184,12 +198,12 @@ def _clean_bbox(raw: str) -> list[float] | None:
     only purpose is to be acted on and cannot be, so it is refused at the
     door rather than stored for a second device to discover.
 
-    It is deliberately the SAME ceiling the framing control already
-    enforces client-side (``basemap_download_core.js``'s
-    ``DOWNLOAD_CEILING_MB``, mirroring the constant imported here), so no
-    box a legitimate client can frame is ever refused here. This is the
-    backstop for a client that is not the one we ship — not a second,
-    tighter policy.
+    The bound is ``_MAX_STORED_AREA_MB`` — an absurdity backstop, not a
+    ceiling. The ceiling is the DEVICE's own free storage and is applied
+    where it can be known, on the client
+    (``basemap_download_core.js``'s ``deviceCeilingMb``); a server that
+    priced areas against a constant would refuse to store the very areas a
+    roomy device is entitled to download.
 
     Args:
         raw: The posted JSON string.
@@ -222,11 +236,11 @@ def _clean_bbox(raw: str) -> list[float] | None:
     # zoom levels of index arithmetic — and every cheaper rejection above
     # has already run.
     size_mb = _bbox_download_mb(bbox)
-    if size_mb > DOWNLOAD_CEILING_MB:
+    if size_mb > _MAX_STORED_AREA_MB:
         logger.info(
-            "Download area bbox refused: %.0f MB exceeds the %d MB ceiling",
+            "Download area bbox refused: %.0f MB exceeds the %d MB backstop",
             size_mb,
-            DOWNLOAD_CEILING_MB,
+            _MAX_STORED_AREA_MB,
         )
         return None
     return bbox
