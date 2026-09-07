@@ -53,7 +53,7 @@ repos:
         types: [python]
         pass_filenames: false
 
-      # SNOW-858. The four bespoke lint guards below existed only as tox envs
+      # SNOW-858. The five bespoke lint guards below existed only as tox envs
       # and CI matrix legs, so a token violation or a hardcoded JS string was
       # reported minutes later, in a CI log, on a branch already pushed. They
       # are cheap (~80–240ms each) and dependency-free — stdlib python3, no
@@ -111,3 +111,17 @@ repos:
         language: system
         types: [markdown]
         files: ^docs/
+
+      - id: migrations-lint
+        name: migrations-lint
+        entry: .venv/bin/python bin/migrations-lint
+        language: system
+        types: [python]
+        # Only a migration can create a collision, so the guard is worth its
+        # 77ms only when one is staged. The regex mirrors the tree the script
+        # walks: every apps/*/migrations/ directory.
+        files: ^apps/[^/]+/migrations/.*\.py$
+        # Whole-graph by construction — it takes no paths, only --show-leaves,
+        # because a duplicate number and a split migration graph are both
+        # properties of the SET of migrations, invisible in any one file.
+        pass_filenames: false
