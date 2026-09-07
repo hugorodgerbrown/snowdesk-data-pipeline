@@ -887,10 +887,12 @@ on `/help/`.
 >   cache separately, by visiting them (see PWA Shell above).
 > - The band is **z10–14** (`MICRO_BAND`). Past z14 the stored tiles
 >   overzoom (bigger, no new detail).
-> - Below z10 a **shared base layer** takes over (SNOW-856) — z0–9 over
+> - Below z10 a **shared base layer** takes over (SNOW-856) — z0–7 over
 >   the whole area the camera can reach, fetched on the tail of any
 >   download and shared by every area under that basemap. So zooming out
->   offline keeps drawing.
+>   offline keeps drawing. z8 and z9 are deliberately not stored
+>   (SNOW-863: they were 86% of the layer's size); they draw from the z7
+>   tile, softer but never blank.
 > - **Consequently the map no longer goes blank outside a download.**
 >   MapLibre stretches a stored z9 tile over ground you never fetched, so
 >   at z11 one valley over you get a coarse basemap rather than nothing.

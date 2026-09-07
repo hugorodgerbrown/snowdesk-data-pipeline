@@ -282,6 +282,14 @@ the row's own label, so home.html loads that module once for both.
     <span data-string="confirm-forget">{% blocktrans %}Remove %(name)s from your account and from this device? This
             frees %(size)s here and removes it from your other devices too.{% endblocktrans %}</span>
     <span data-string="download-here-failed">{% trans "That download couldn't be started here. Try again." %}</span>
+    {# SNOW-863: the refusal a reader actually reaches. One roundel drives  #}
+    {# every region download, so a second "Download here" while a run is    #}
+    {# going is refused — and the generic message above told them to try    #}
+    {# again, which fails identically until the first finishes.             #}
+    <span
+        data-string="download-here-busy"
+    >{% trans "Another download is still running — try again when it finishes." %}</span>
+    <span data-string="download-here-already">{% trans "That area is already downloaded on this device." %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}

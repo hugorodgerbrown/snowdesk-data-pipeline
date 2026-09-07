@@ -621,7 +621,7 @@ async function basemapDownloadBudgetBytes() {
 const CUSTOM_AREAS_KEY = 'basemap.customAreas';
 const LEGACY_CUSTOM_AREA_KEY = 'basemap.customArea';
 
-// SNOW-856: the shared z0-9 base layers, one entry per basemap that has
+// SNOW-856: the shared base layers, one entry per basemap that has
 // one — `[{basemapKey, band, bbox, bytes, savedAt}]`. A sibling of the two
 // records above rather than an entry in either, because a base layer is
 // not an area: no user chose it, no user can delete it, and it outlives
@@ -758,15 +758,90 @@ async function resolveBaseLayerPlan() {
   const bbox = core.baseLayerBBox(cameraBBox, sourceBounds);
   if (!bbox) return null;
   const all = core.baseLayerTileURLs(tileSources, cameraBBox, sourceBounds);
-  const cached = await pinnedBasemapCacheURLs();
+  const areaId = core.areaIdForBaseLayer(basemapKey);
+  // SNOW-863: a bucket holding anything the CURRENT band does not ask for
+  // is from an older one, and is dropped whole before planning.
+  //
+  // Needed because SNOW-856 shipped z0-9 and this is z0-7. Without it,
+  // every device that ever ran the old band keeps its z8 and z9 tiles for
+  // good: they are a superset, so the missing-url plan below is empty,
+  // nothing ever re-warms, and 123 MB sits there on the default basemap
+  // with no path out short of a full reset.
+  //
+  // Detected from the bucket's own contents rather than the record's
+  // stored `band`, deliberately — the record can be absent (see
+  // `basemapDownloadedAreas`' note on why), and a migration that only
+  // fires for devices with an intact record would miss exactly the ones
+  // in the worst state. A superset is also the only shape this can be in:
+  // the url set is a pure function of band, camera and style.
+  const stale = await _baseLayerBucketIsStale(areaId, all);
+  if (stale) {
+    await evictBasemapAreas([areaId]);
+    await _forgetBaseLayerRecord(basemapKey);
+  }
+  const cached = stale ? new Set() : await pinnedBasemapCacheURLs();
   const urls = all.filter((url) => !cached.has(url));
   window.pwaDebugLog?.record('cache', 'baselayer.plan', {
     basemapKey: basemapKey,
     bbox: bbox,
     total: all.length,
     missing: urls.length,
+    rebanded: stale,
   });
-  return { areaId: core.areaIdForBaseLayer(basemapKey), basemapKey, bbox, urls };
+  return { areaId: areaId, basemapKey, bbox, urls };
+}
+
+/**
+ * Whether `areaId`'s bucket holds tiles the current band does not want
+ * (SNOW-863).
+ *
+ * True only for a bucket that has an entry outside `expected`. An empty
+ * or absent bucket is not stale — there is nothing to throw away — and
+ * neither is a partial one, which the ordinary missing-url plan completes.
+ *
+ * Best-effort: a bucket that cannot be read is treated as NOT stale, so a
+ * transient Cache Storage failure can never destroy a good download.
+ *
+ * @param {string} areaId
+ * @param {string[]} expected Every url the current band asks for.
+ * @returns {Promise<boolean>}
+ */
+async function _baseLayerBucketIsStale(areaId, expected) {
+  if (!('caches' in window) || !expected.length) return false;
+  try {
+    const core = self.pwaBasemapDownloadCore;
+    const cache = await caches.open(core.pinnedCacheName(areaId));
+    const requests = await cache.keys();
+    if (!requests.length) return false;
+    const wanted = new Set(expected);
+    return requests.some((request) => !wanted.has(request.url));
+  } catch (_e) {
+    return false;
+  }
+}
+
+/**
+ * Drop one basemap's `basemap.baseLayers` entry (SNOW-863).
+ *
+ * Paired with the eviction above so a re-banded bucket does not leave its
+ * old byte total behind on the budget. Best-effort — a stale record with
+ * no bucket produces no row (see `basemapDownloadedAreas`), so failing
+ * here costs nothing the reader sees.
+ *
+ * @param {string} basemapKey
+ * @returns {Promise<void>}
+ */
+async function _forgetBaseLayerRecord(basemapKey) {
+  if (!window.pwaDb) return;
+  try {
+    const existing = await _readBaseLayers();
+    await window.pwaDb.put('meta:app', {
+      key: BASE_LAYERS_KEY,
+      value: existing.filter((entry) => entry && entry.basemapKey !== basemapKey),
+    });
+  } catch (_e) {
+    // Best-effort — see docstring.
+  }
 }
 
 /**
@@ -1087,16 +1162,39 @@ async function basemapDownloadedAreas() {
   // `planEviction` (never a candidate), `manageRows` (never deletable)
   // and `map_layer_sync_status.js` (a basemap with only a base layer has
   // no ground downloaded, so its dot must not go green).
+  //
+  // SNOW-863: driven by the BUCKETS on disk, joined to the records for
+  // their sizes — not by the records alone, which is what shipped and was
+  // wrong. A base layer's record is written by the page once the service
+  // worker's warm resolves, and that warm is the tail of a download the
+  // roundel has already reported as finished; a reader who closes the tab
+  // in between (or reloads, or whose device sleeps) is left with a
+  // complete bucket and no record. Reported on staging as a row reading
+  // "base-swisstopo_winter" under "Unknown basemap", with a delete button
+  // — the reconciliation below had picked the bucket up as an orphan,
+  // because nothing in the record-driven pass could name it.
+  //
+  // The bucket names its own basemap now (`baseLayerBasemapKey`), so a
+  // missing record costs only the SIZE, which reads 0 until the next
+  // download's top-up writes one. An unsized row is a small lie; an
+  // unnamed deletable one was a trap.
   try {
+    const byKey = new Map();
     for (const entry of await _readBaseLayers()) {
-      if (!entry || !entry.basemapKey) continue;
+      if (entry && entry.basemapKey) byKey.set(entry.basemapKey, entry);
+    }
+    for (const areaId of await pinnedBucketAreaIds()) {
+      if (!core.isBaseLayerAreaId(areaId)) continue;
+      const basemapKey = core.baseLayerBasemapKey(areaId);
+      if (!basemapKey) continue;
+      const entry = byKey.get(basemapKey);
       areas.push({
-        id: core.areaIdForBaseLayer(entry.basemapKey),
+        id: areaId,
         name: MAP_STRINGS['base-layer-name'] || 'Overview map',
-        bytes: Number(entry.bytes) || 0,
-        savedAt: entry.savedAt,
-        basemapKey: entry.basemapKey,
-        bbox: entry.bbox,
+        bytes: Number(entry && entry.bytes) || 0,
+        savedAt: (entry && entry.savedAt) || '',
+        basemapKey: basemapKey,
+        bbox: entry && entry.bbox,
         // Not a render dependency of anything — the tiles ARE the layer.
         deps: [],
       });
@@ -1498,6 +1596,21 @@ window.pwaBasemapDownloads = Object.freeze({
    *   the read fails — never rejects.
    */
   areas: () => basemapDownloadedAreas(),
+
+  /**
+   * The shared base layer's top-up plan for the ACTIVE basemap
+   * (SNOW-856), including SNOW-863's re-banding of a bucket left by an
+   * older `BASE_LAYER_BAND`.
+   *
+   * The download runner reaches this through its own deps bundle
+   * (`PINNED_DOWNLOAD_DEPS.baseLayer`) rather than here — this is the
+   * same function, published so the behaviour can be driven directly in
+   * tests. Both go through one implementation, so a test cannot pass
+   * against a plan the runner would never get.
+   *
+   * @returns {Promise<Object|null>} See `resolveBaseLayerPlan`.
+   */
+  baseLayerPlan: () => resolveBaseLayerPlan(),
 
   /**
    * Delete whole areas — bucket and record entry both.
@@ -2329,7 +2442,7 @@ const PINNED_DOWNLOAD_DEPS = {
   // run.
   isOnline: () =>
     window.pwaConnectivity ? window.pwaConnectivity.isOnline() : navigator.onLine !== false,
-  // SNOW-856: the shared z0-9 base layer, topped up AFTER the area this
+  // SNOW-856: the shared base layer, topped up AFTER the area this
   // run was actually for — see `topUpBaseLayer` in the runner for why
   // after, and why its failures never reach `finish`.
   baseLayer: () => resolveBaseLayerPlan(),

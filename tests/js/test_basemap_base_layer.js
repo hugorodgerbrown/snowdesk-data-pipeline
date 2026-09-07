@@ -1,12 +1,18 @@
 /*
  * tests/js/test_basemap_base_layer.js — Vitest unit tests for SNOW-856's
- * shared z0-9 base layer in static/js/basemap_download_core.js.
+ * shared base layer in static/js/basemap_download_core.js.
  *
  * The bug: a download pins ``MICRO_BAND`` (z10-14) and the map's camera
  * goes down to z4, so an offline reader who zoomed out fell off the edge
  * of every area they owned and nothing said so. The base layer is the
- * z0-9 tiles that close that gap — one per BASEMAP, shared by every area
- * under it, in its own pinned bucket.
+ * shallow-zoom tiles that close that gap — one per BASEMAP, shared by
+ * every area under it, in its own pinned bucket.
+ *
+ * SNOW-863 trimmed it from z0-9 to z0-7 after measuring what it actually
+ * cost (144.4 MB on the default basemap, 29% of the standing budget). The
+ * SIZE assertions below are load-bearing for that reason and not
+ * decoration — the old cost was invisible until a user complained about
+ * their budget.
  *
  * What is actually worth asserting here, and why:
  *
@@ -98,7 +104,7 @@ describe('baseLayerBBox', () => {
     const WORLD = [-180, -85.05113, 180, 85.05113];
 
     expect(core.baseLayerBBox(CAMERA, WORLD)).toEqual(CAMERA);
-    expect(core.baseLayerBlob(CAMERA, WORLD).count).toBe(682);
+    expect(core.baseLayerBlob(CAMERA, WORLD).count).toBe(56);
   });
 
   it('ignores a malformed bounds array rather than trusting it', () => {
@@ -137,29 +143,38 @@ describe('baseLayerBBox', () => {
 });
 
 describe('baseLayerBlob', () => {
-  it('covers z0-9 — everything below a download band, and no overlap', () => {
+  it('covers z0-7 and deliberately leaves a gap below MICRO_BAND', () => {
     const blob = core.baseLayerBlob(CAMERA, SWISSTOPO);
 
-    expect(blob.band).toEqual([0, 9]);
+    expect(blob.band).toEqual([0, 7]);
     expect(Object.keys(blob.z).map(Number).sort((a, b) => a - b)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+      0, 1, 2, 3, 4, 5, 6, 7,
     ]);
-    // The two bands abut: the base layer stops exactly where MICRO_BAND
-    // starts, so there is neither a gap nor a tile paid for twice.
-    expect(core.BASE_LAYER_BAND[1] + 1).toBe(core.MICRO_BAND[0]);
+    // SNOW-863: the bands do NOT meet, and the assertion is inverted from
+    // the one that shipped. SNOW-856 chose z0-9 so they would abut, and
+    // that tidiness cost 123 MB on the default basemap — z8 and z9 are
+    // most of the layer's size (see BASE_LAYER_BAND's own comment). They
+    // draw from the stored z7 tile via MapLibre's findLoadedParent, which
+    // is the same mechanism the whole feature already relies on.
+    expect(core.BASE_LAYER_BAND[1] + 1).toBeLessThan(core.MICRO_BAND[0]);
   });
 
-  it('is 215 tiles per source over swisstopo — the measured figure', () => {
-    // Fetched for real on 2026-09-07 while scoping SNOW-856: 215 tiles per
-    // source, 3.0 MB for ch.swisstopo.base.vt and 5.5 MB for
-    // ch.swisstopo.relief.vt, 8.5 MB the pair. The count is what this can
-    // assert; it is here so a change to the band or the bbox that quietly
-    // multiplies the download fails loudly instead.
-    expect(core.baseLayerBlob(CAMERA, SWISSTOPO).count).toBe(215);
+  it('is 25 tiles per source over swisstopo, not 215', () => {
+    // Measured 2026-09-07 (SNOW-863): the z0-9 band was 215 tiles per
+    // source and 14.8 MB on disk for swisstopo's two; z0-7 is 25. The
+    // count is asserted so a band or bbox change that quietly multiplies
+    // the download fails loudly rather than showing up as a budget
+    // complaint months later — which is exactly how the z0-9 cost was
+    // found.
+    expect(core.baseLayerBlob(CAMERA, SWISSTOPO).count).toBe(25);
   });
 
-  it('stays bounded for a global style — the camera holds it to 682', () => {
-    expect(core.baseLayerBlob(CAMERA, null).count).toBe(682);
+  it('is 56 tiles for a global style — the camera holds it, not the style', () => {
+    // The case that made the size matter: OpenFreeMap Liberty declares the
+    // whole world, so only the camera bounds it. At z0-9 that was 682
+    // tiles and 144.4 MB on disk, 29% of the standing budget before a
+    // single area was downloaded.
+    expect(core.baseLayerBlob(CAMERA, null).count).toBe(56);
   });
 
   it('answers null where the extent does', () => {
@@ -175,9 +190,9 @@ describe('baseLayerTileURLs', () => {
     const sources = [[A], [B]];
     const urls = core.baseLayerTileURLs(sources, CAMERA, SWISSTOPO);
 
-    expect(urls).toHaveLength(215 * 2);
-    expect(urls.filter((url) => url.startsWith('https://a.'))).toHaveLength(215);
-    expect(urls.filter((url) => url.startsWith('https://b.'))).toHaveLength(215);
+    expect(urls).toHaveLength(25 * 2);
+    expect(urls.filter((url) => url.startsWith('https://a.'))).toHaveLength(25);
+    expect(urls.filter((url) => url.startsWith('https://b.'))).toHaveLength(25);
   });
 
   it("picks each tile's host the way MapLibre does", () => {
