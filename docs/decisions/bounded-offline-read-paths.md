@@ -246,6 +246,18 @@ while the read is in flight must not be forced offline again by it.
   it was the one exception. Adding a sixth path means adding a sixth guard;
   `tests/js/test_sw.js` covers all five.
 
+  The two predicates that gate all five must agree, and for a while they did
+  not. `_shouldUseNetwork()` is false under either offline mode **or** when
+  `navigator.onLine === false`; `_mayPassThrough()` — its synchronous
+  counterpart, needed because `respondWith` cannot be called after an `await`
+  — checked only the mode until SNOW-862. The gap was exactly "the radio is
+  off": read paths refused while API GETs, HTMX fragments and mutation POSTs
+  were handed to the browser anyway. Nothing else covered it, because the
+  latch is evidence from three read-path *timeouts* and a dead radio rejects
+  rather than hangs. `onLine` is trusted in the negative only — `false` means
+  there is no interface, `true` means nothing at all, which is why the latch
+  exists alongside it rather than instead of it.
+
   Three network calls in the file are deliberately NOT guarded, and should
   stay that way: `_probeNetwork`'s `/livez` request (it runs only under an
   auto-latch, never a forced mode, and is how the app gets back online),
