@@ -2246,14 +2246,14 @@
     fill: currentColor;
 }
 
-.dark .map-region-pin-control {
-    color: var(--ink);
-}
-
-.dark .map-region-pin-control[data-pin-state="no-region"],
-.dark .map-region-pin-control[data-pin-state="signin"] {
-    color: var(--muted);
-}
+/* The dark-mode colours are NOT here: this control joins the shared
+   `.dark .map-download-control` lists further down, so the two roundels that
+   sit side by side in .ribbon-header take their ink from one declaration and
+   cannot drift apart again. They did: this control shipped with its own pair
+   of rules naming --ink and --muted — the two tokens in this file that have
+   no dark counterpart — so in dark mode its star was near-black on the dark
+   glass while the download arrow beside it was white (Hugo's screenshot:
+   "the pin star icon should be white on gray like the download one"). */
 
 /* SNOW-522: the custom-area download control shares .map-download-control's
    glass-roundel chrome and lives in the bottom-right stack with no
@@ -2345,7 +2345,8 @@
 .dark .region-readout,
 .dark .region-readout-name,
 .dark .region-readout-leaf,
-.dark .map-download-control {
+.dark .map-download-control,
+.dark .map-region-pin-control {
     color: var(--color-text-1);
 }
 
@@ -2355,7 +2356,9 @@
 .dark .map-download-control[data-download-state="no-region"],
 .dark .map-download-control[data-download-state="disabled"],
 .dark .map-download-control[data-download-state="offline"],
-.dark .map-download-control[data-download-state="signin"] {
+.dark .map-download-control[data-download-state="signin"],
+.dark .map-region-pin-control[data-pin-state="no-region"],
+.dark .map-region-pin-control[data-pin-state="signin"] {
     color: var(--color-text-2);
 }
 
@@ -3877,7 +3880,10 @@ body.map-framing #map-legend {
        and a chevron trailing the text mid-row reads as punctuation rather
        than as the control's affordance. */
     margin-left: auto;
-    color: var(--muted);
+    /* --color-text-2, not --muted: this glyph sits on the --color-glass chip,
+       which goes dark under .dark while --muted does not. Same swap, same
+       reason, as the SNOW-645 dark-mode block further up this file. */
+    color: var(--color-text-2);
     transition: transform 150ms ease;
 }
 
@@ -3900,7 +3906,14 @@ body.map-framing #map-legend {
     border: 0.5px solid var(--border);
     border-radius: 12px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-    color: var(--ink);
+    /* Review (Hugo's dark-mode screenshot): was --ink, this file's private
+       near-black with no dark counterpart, painted on a --color-glass ground
+       that DOES go dark — #1a1a1a on rgba(20, 22, 26, 0.78), which is the
+       panel being unreadable in dark mode. --color-text-1 (src/css/main.css)
+       is the same colour in light mode and already mirrored for dark. This is
+       the exact trap the SNOW-645 block further up this file documents; the
+       panel arrived in SNOW-801, after it, and re-set it. */
+    color: var(--color-text-1);
     padding: 12px 14px;
     /* A surface floating over the map declares a height bound and scrolls.
        dvh, not vh, so a mobile URL bar cannot push the bottom off screen.
@@ -3944,7 +3957,8 @@ body.map-framing #map-legend {
     font-size: 10px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--muted);
+    /* --color-text-2 for the same reason .region-panel takes --color-text-1. */
+    color: var(--color-text-2);
     margin: 0 0 4px;
 }
 
@@ -3982,7 +3996,8 @@ body.map-framing #map-legend {
     bottom: 6px;
     width: 2px;
     border-radius: 1px;
-    background: var(--ink);
+    /* Dark-mirrored, or the bar is a black stripe on the dark panel. */
+    background: var(--color-text-1);
 }
 
 /* SNOW-814: the shared UGC row truncates its label, which is right on a
@@ -4005,7 +4020,7 @@ body.map-framing #map-legend {
 .region-panel-empty {
     margin: 0;
     font-size: 13px;
-    color: var(--muted);
+    color: var(--color-text-2);
 }
 
 /* SNOW-801: open state — the ribbon row and the panel read as ONE surface.
