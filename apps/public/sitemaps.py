@@ -289,7 +289,8 @@ class StaticViewSitemap(Sitemap):
     """
     Sitemap listing the public pages that aren't generated from data (SNOW-676).
 
-    The homepage, the two guides, and the four legal pages. Priority varies
+    The homepage, the guides, the comparison page, and the legal pages.
+    Priority varies
     by route rather than being flat — a sitemap that claims the data-licence
     page matters as much as the homepage is telling the crawler nothing.
 
@@ -324,6 +325,7 @@ class StaticViewSitemap(Sitemap):
         "public:home": ("daily", 1.0),
         "public:how_to_read_bulletin": ("monthly", 0.5),
         "public:help": ("monthly", 0.5),
+        "public:compare": ("monthly", 0.5),
         "public:privacy": ("yearly", 0.3),
         "public:terms_of_service": ("yearly", 0.3),
         "public:colophon": ("yearly", 0.3),

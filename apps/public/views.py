@@ -119,6 +119,7 @@ from apps.weather.services.weather_display import (
     build_point_forecast_panel,
 )
 
+from . import competitor_matrix
 from .component_previews import help_illustrations
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
@@ -954,6 +955,54 @@ def colophon(request: HttpRequest) -> HttpResponse:
 
     """
     return render(request, "public/colophon.html")
+
+
+def compare(request: HttpRequest) -> HttpResponse:
+    """
+    Render the /compare page (SNOW-836).
+
+    A public, reader-facing comparison of the avalanche apps in this
+    category, derived from ``docs/competitors.md`` — the weekly competitor
+    scan — with everything written from our own side of the table removed:
+    the feature backlog, the scan process, and the reasoning about where we
+    are exposed. What is left answers the reader's question instead, which
+    is which of these to install.
+
+    Prose is authored directly in the template. The one piece of context is
+    the feature matrix from ``apps.public.competitor_matrix`` — data rather
+    than table markup because it is 91 cells, and because the honesty
+    properties the page rests on (no competitor marked absent on evidence we
+    do not have; our own column not a clean sweep) are checkable there and
+    nowhere else.
+
+    Both are static: nothing here reads the database. The page states what
+    each product does on a stated check date, and a figure assembled at
+    request time from our own tables would be a different kind of claim —
+    one the reader could not date, and one that would silently disagree with
+    every hand-checked line beside it.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered comparison page.
+
+    """
+    return render(
+        request,
+        "public/compare.html",
+        {
+            "matrix_products": competitor_matrix.PRODUCTS,
+            "matrix_rows": competitor_matrix.rows(),
+            "matrix_legend": [
+                (
+                    competitor_matrix.SUPPORT_GLYPHS[support],
+                    competitor_matrix.SUPPORT_LABELS[support],
+                )
+                for support in competitor_matrix.Support
+            ],
+        },
+    )
 
 
 def privacy(request: HttpRequest) -> HttpResponse:
