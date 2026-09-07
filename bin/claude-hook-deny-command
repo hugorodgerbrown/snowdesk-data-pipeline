@@ -112,9 +112,21 @@ def split_segments(command: str) -> list[list[str]]:
     the token stream on the shell operators in `SEGMENT_SEPARATORS`. An
     unparseable command (unbalanced quotes, most often a heredoc) yields no
     segments, so nothing is denied.
+
+    `punctuation_chars=True` is required, not stylistic. `shlex.split` is a
+    word splitter, not a shell tokeniser: it only yields an operator as its
+    own token when whitespace surrounds it on both sides, so `a; b` becomes
+    `['a;', 'b']` and `a;b` a single token. Either collapses two commands
+    into one segment, and since only a segment's first word is inspected,
+    everything after the operator escapes the check — `git add -A; git
+    commit -m x` was allowed through with no author. The punctuation-aware
+    lexer splits on the operator wherever it sits, while still keeping a
+    quoted `;` inside an argument intact.
     """
     try:
-        tokens = shlex.split(command, comments=False)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
     except ValueError:
         return []
 
@@ -198,10 +210,22 @@ def _commit_verdict(arguments: list[str]) -> str:
     """Return a deny reason for a `git commit`, or "" if it records an author.
 
     `--amend` counts: it preserves the author already on the commit.
+
+    The value of a `-m`/`--message` is skipped rather than inspected, so a
+    commit message that happens to begin with the literal text `--author=`
+    cannot be mistaken for the flag itself.
     """
-    has_author = any(
-        word == "--author" or word.startswith("--author=") for word in arguments
-    )
+    has_author = False
+    skip_next = False
+    for word in arguments:
+        if skip_next:
+            skip_next = False
+            continue
+        if word in {"-m", "--message"}:
+            skip_next = True
+            continue
+        if word == "--author" or word.startswith("--author="):
+            has_author = True
     if has_author or "--amend" in arguments:
         return ""
     return COMMIT_REASON

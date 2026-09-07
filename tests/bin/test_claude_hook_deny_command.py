@@ -208,6 +208,38 @@ def test_denies_a_prohibited_command_chained_behind_an_allowed_one() -> None:
     assert_denied("git add -A && git commit -m 'SNOW-858: x'")
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        # `shlex.split` only yields an operator as its own token when
+        # whitespace surrounds it on BOTH sides, so every spacing below
+        # once collapsed into a single segment and escaped the check
+        # entirely. Spacing is not a thing a caller thinks about.
+        "git add -A; git commit -m 'x'",
+        "git add -A;git commit -m 'x'",
+        "git add -A &&git commit -m 'x'",
+        "git add -A& git commit -m 'x'",
+        "echo done; pytest tests/",
+        "echo done;pytest tests/",
+        "(git commit -m 'x')",
+        "git status | head; git stash pop",
+    ],
+)
+def test_operator_spacing_does_not_change_the_verdict(command: str) -> None:
+    """A segment boundary is the operator, wherever the caller put the spaces."""
+    assert_denied(command)
+
+
+def test_a_quoted_operator_inside_an_argument_is_not_a_boundary() -> None:
+    """A `;` inside a quoted message is part of the message, not a new command."""
+    assert_allowed("git commit --author='Claude <x@y.z>' -m 'fix; then ship'")
+
+
+def test_a_message_that_looks_like_the_author_flag_does_not_satisfy_it() -> None:
+    """The value of `-m` is skipped, so it cannot be read as `--author=`."""
+    assert_denied('git commit -m "--author=Claude <noreply@anthropic.com>"')
+
+
 # ── malformed input: the session-blocking cases ────────────────────────────
 
 
