@@ -8,8 +8,9 @@
  *        after a sign-out replayed the previous user's page. Covered here
  *        at the strategy level (the ``no-store`` skip, the
  *        ``X-SW-Principal`` stamp, and the principal check on the two
- *        request-matched reads); the full browser journey is
- *        tests/e2e/test_offline_account_principal.py.
+ *        request-matched reads). The browser journey lived in
+ *        tests/e2e/test_offline_account_principal.py until SNOW-649
+ *        retired it, so this file is the whole of the automated coverage.
  *   D3 — ``_warmCacheWorseReason``'s inline fallback ranked by argument
  *        order rather than by ``basemap_cache_core.js``'s
  *        ``REASON_PRECEDENCE``. The table below runs both implementations

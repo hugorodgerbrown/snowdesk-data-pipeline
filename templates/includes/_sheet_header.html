@@ -85,18 +85,14 @@ this ×, a row's Rename, a row's Remove — at a 44×44 target with a 17–18px
 glyph, and those controls now live in five templates across three apps.
 The 2px is not the point; one decision in one place is.
 
-KNOWN TEST BREAKAGE from the glyph swap (not fixed here — test files are
-out of scope for this pass): ``tests/e2e/test_report_sheet.py``
-(``test_report_form_close_button_hides_sheet``,
-``test_anonymous_signin_cta_has_close_button``) and
-``tests/e2e/test_favourites.py`` (``test_create_form_close_button_hides_sheet``,
-``test_anonymous_signin_cta_has_close_button``) each disambiguate this
-button from the Cancel button (which also carries
-``data-action="dismiss"``) via ``page.locator(…, has_text="×")`` — a
-locator that now matches nothing, since the visible mark is an SVG with
-no text content. The fix, when tests are back in scope, is a structural
-locator (e.g. scoped to this header's own row, or an
-``aria-label="Close"`` filter) rather than one keyed to the glyph's text.
+A LOCATOR TRAP the glyph swap left behind: the browser tests that
+disambiguated this button from Cancel (which also carries
+``data-action="dismiss"``) did it with ``page.locator(…, has_text="×")``,
+which now matches nothing — the visible mark is an SVG with no text
+content. SNOW-649 removed those tests, so nothing is failing today; a
+browser test written for this header again needs a structural locator
+(this header's own row, or an ``aria-label="Close"`` filter) rather than
+one keyed to the glyph's text.
 {% endcomment %}
 <div class="flex items-center justify-between gap-4 px-2 pt-1 pb-3">
     {# The icon and the title read as one unit — `min-w-0` so a long title  #}

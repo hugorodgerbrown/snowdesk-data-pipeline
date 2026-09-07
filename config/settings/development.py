@@ -107,8 +107,11 @@ RATELIMIT_ENABLE = False
 # base.py defaults this to False; development flips the default to True so a
 # fresh worktree gets the fix for stale-shell-after-git-pull with no .env
 # change. The env var still wins either way — the e2e tox env sets
-# SW_DEV_SHELL_BYPASS=false so tests/e2e/test_pwa_lifecycle_update.py keeps
-# exercising production semantics (banner + pwa.sw.update_available).
+# SW_DEV_SHELL_BYPASS=false so that suite keeps exercising production
+# semantics. (SNOW-649 retired the lifecycle suite that pinned the banner and
+# pwa.sw.update_available; tests/e2e/test_pwa_lifecycle_offline.py still needs
+# the production path, since the bypass skips the shell cache entirely and an
+# offline reload would have nothing to serve.)
 SW_DEV_SHELL_BYPASS = config("SW_DEV_SHELL_BYPASS", default=True, cast=bool)
 
 # Use ImmediateBackend in development: tasks run inline so email lands in

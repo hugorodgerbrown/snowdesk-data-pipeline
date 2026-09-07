@@ -22,9 +22,10 @@
  * sample-rate/critical-event/enqueue logic directly, rather than another
  * module's wiring INTO telemetry.js (sw_register.js's message bridge,
  * pwa_install.js's funnel, and pwa_client_version.js's header-stamping
- * test other modules' behaviour, not telemetry.js's — those stay in
- * Playwright; see
- * test_pwa_client_signals.py's updated module docstring):
+ * test other modules' behaviour, not telemetry.js's — those now have
+ * Vitest files of their own: test_sw_register_warm_cache.js,
+ * test_pwa_install.js and test_pwa_client_version.js, SNOW-649 having
+ * retired the Playwright module that held them):
  *   - the freshness-indicator sample-rate gate (3 cases: fresh/stale/
  *     unsafe) — calls `emit()` directly with the same event
  *     name/properties `_freshness_indicator.html`'s inline script uses,

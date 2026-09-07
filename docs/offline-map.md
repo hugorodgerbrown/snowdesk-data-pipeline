@@ -183,8 +183,9 @@ would otherwise tell the developer to do something the bypass has already
 done. An opt-in checkbox on `/_sw-version/` (`static/js/pwa_dev_shell_toggle.js`)
 restores ordinary stale-while-revalidate for anyone who deliberately wants
 to exercise the production cache path locally. `tox -e e2e` pins
-`SW_DEV_SHELL_BYPASS=false` so `tests/e2e/test_pwa_lifecycle_update.py` keeps
-testing production semantics. Full rationale:
+`SW_DEV_SHELL_BYPASS=false` so that suite keeps testing production semantics
+— `tests/e2e/test_pwa_lifecycle_offline.py` reloads offline, and the bypass
+would leave the shell cache empty. Full rationale:
 [`docs/decisions/dev-bypasses-the-shell-cache.md`](decisions/dev-bypasses-the-shell-cache.md).
 
 ---
@@ -1322,8 +1323,9 @@ cutout, reading as part of the area being chosen. The class is removed in
 `_closeFramingAfterRun`: a completed run no longer closes the overlay, so
 an explicit dismiss is the only way out.) The furniture therefore cannot
 be left stripped. Pan and zoom are untouched — they are
-the whole interaction. Covered by
-`tests/e2e/test_custom_download_area.py::test_framing_strips_the_map_furniture_and_cancel_restores_it`.
+the whole interaction. The browser test that pinned strip-and-restore went
+with the Playwright suite in SNOW-649; framing is Scenario D4 in
+[`testing-scenarios.md`](testing-scenarios.md).
 
 **The size estimate is computed entirely client-side**, not via a new
 endpoint — this is the reason `basemap_download_core.js`'s tile math
@@ -2341,18 +2343,14 @@ against all three, including the two tighter headers.
 parameter — purely so this sheet's own title can be larger without
 resizing the other two sheets' headers.
 
-**Known test breakage from the glyph swap** (not fixed — test files are
-out of scope for this pass): `tests/e2e/test_report_sheet.py`
-(`test_report_form_close_button_hides_sheet`,
-`test_anonymous_signin_cta_has_close_button`) and
-`tests/e2e/test_favourites.py` (`test_create_form_close_button_hides_sheet`,
-`test_anonymous_signin_cta_has_close_button`) each disambiguate this
-button from the Cancel button (which also carries
-`data-action="dismiss"`) via `page.locator(…, has_text="×")`. That locator
-now matches nothing — the visible mark is an SVG with no text content —
-so all four will fail. The fix, once tests are back in scope, is a
-structural locator (e.g. scoped to the header row specifically, or an
-`aria-label="Close"` filter) rather than one keyed to the glyph's text.
+**A locator trap the glyph swap left behind.** The four browser tests that
+disambiguated this button from Cancel (which also carries
+`data-action="dismiss"`) did it with `page.locator(…, has_text="×")`. The
+visible mark is an SVG with no text content, so that locator matches
+nothing. SNOW-649 removed those tests, so nothing is failing today — but a
+browser test written for this header again needs a structural locator (the
+header row specifically, or an `aria-label="Close"` filter), never one keyed
+to the glyph's text.
 
 **Running order:** the header block (title, budget), then the over-budget
 warning (when shown), then the overlay switch panel, then the REGIONS and
@@ -2393,8 +2391,10 @@ Cache Storage is per-browser, so a signed-in user with a phone and a
 laptop has two independent sets of downloads and two independent budgets.
 Putting that on `/account/manage/` would read as an account setting and
 imply the list follows the user between devices, which would simply be
-untrue. Every string in the sheet is written to say otherwise, and
-`tests/e2e/test_manage_downloads.py` asserts the copy does.
+untrue. Every string in the sheet is written to say otherwise;
+`tests/js/test_map_downloads_manager.js` asserts the sheet's behaviour and
+`tests/public/test_map_page.py` asserts the row and strings templates as the
+server actually renders them.
 
 An earlier version of this section gave a fourth reason — that region
 downloads recorded only a `region_id`, so only the map could resolve a
@@ -2654,7 +2654,8 @@ yet). It re-probes on every popover open and, now, on every
 bulletin-boundary layer has no row in `#basemap-menu` — SNOW-521 removed
 `data-overlay-key="l3"` from
 `apps/public/templates/public/partials/_map_embed.html`
-(`tests/e2e/test_layers_menu_removed_items.py` asserts its absence), and
+(`tests/public/test_map_page.py` asserts its absence in the rendered page,
+alongside `#basemap-sync-status`), and
 since PR #506 the boundary follows L4's visibility rather than carrying a
 toggle of its own. SNOW-526 nonetheless added an `OVERLAY_RESOURCES.l3`
 entry (`kind: 'dated-geojson'`) plus a date-scoped probe; with no matching
@@ -3002,46 +3003,36 @@ underlying PNGs.
 - `tests/public/test_map_page.py` — the inverted offline-toggle
   assertion: `#offline-toggle` must **not** appear in the rendered
   map page.
-- `tests/e2e/test_offline_map.py` (SNOW-492, `tox -e e2e`) — the
-  blank-map bug fix (a tile/source-scoped `error` must not engage the
-  cold-boot fallback; a genuine style-load failure still does),
-  favourites/community-reports offline install + expiry-on-read-back,
-  the per-overlay "unavailable offline" toast, and `window.pwaWarmCache`
-  / the single-region "Download basemap" icon. See that file's module
-  docstring for which parts deliberately avoid the real basemap CDN (documented
-  elsewhere as flaky/unreachable in this harness — see
-  `tests/e2e/test_offline_basemap_cache.py`) and which offline-mutation
-  scenarios are already covered by `test_offline_favourite_submit.py` /
-  `test_offline_observation_submit.py` rather than duplicated here.
-- `tests/e2e/test_cache_this_area.py` (SNOW-492, SNOW-493, SNOW-521
-  final shape, `tox -e e2e`) — the micro download icon's full flow:
-  idle→busy→done transitions with no toast (the icon carries the
-  outcome); a reselected region reading `done` from real per-area pinned
-  bucket state rather than in-page memory; a probe that
-  couldn't resolve the active basemap's tile template re-running once
-  the style settles; the `over_ceiling` disabled state; and the
-  partial/failed/vacuous `{ok, failed}` branches reverting to idle
-  rather than done.
-- `tests/e2e/test_layers_menu_removed_items.py` (SNOW-521, `tox -e
-  e2e`) — a real layers-menu open asserting the three items dropped
+- `tests/js/test_sw_register_warm_cache.js`, `tests/js/test_basemap_cache_core.js`
+  (`tox -e js`) — the `warm-cache` message bridge, and the classification +
+  eviction rules the worker's basemap partition runs on.
+- `tests/js/test_basemap_download_outcome.js`,
+  `tests/js/test_basemap_download_runner.js`,
+  `tests/js/test_map_render_scheduling.js` (`tox -e js`) — the download
+  roundel's outcome predicate (`downloadSucceeded`), the run sequence, and
+  the style-settle retry that re-probes once a basemap's tile template
+  resolves.
+- `tests/js/test_map_download_eviction.js`, `tests/js/test_map_download_bytes.js`,
+  `tests/js/test_basemap_custom_areas.js` (`tox -e js`) — the pre-flight
+  ORDER (eviction runs only after every check that can abort the run), the
+  byte accounting including the re-download path, and the custom-area store.
+- `tests/js/test_map_downloads_manager.js` (`tox -e js`) plus
+  `tests/public/test_map_page.py` — the Manage downloads sheet's rows and
+  states, and the row/strings templates as the server renders them.
+- `tests/public/test_map_page.py` (SNOW-521, SNOW-532) — the items dropped
   alongside the download rework (`[data-overlay-key="l3"]`,
-  `#autozoom-toggle`, `#basemap-sync-status`) are absent from the live
-  DOM and the menu still functions.
-- `tests/e2e/test_basemap_download_budget.py` (SNOW-586, `tox -e e2e`) —
-  the regression that matters: downloading a second area that cannot
-  coexist with the first under the standing budget must remove the first
-  area ENTIRELY (its whole bucket gone), never perforate it, and the
-  second must read as fully available — the old shared-cache FIFO trim
-  left both partial. Also covers: the coverage probe still answering
-  correctly with several per-area buckets present; a run larger than the
-  whole budget refused up front with nothing half-written; and the
-  confirm banner naming the area that would be evicted, where cancelling
-  writes nothing. `tests/e2e/test_cache_this_area.py`,
-  `test_offline_basemap_cache.py`, `test_downloaded_areas_overlay.py`,
-  and `test_custom_download_area.py` were all updated for the per-area
-  bucket naming (`_stub_warm_cache` now writes into
-  `BASEMAP_PINNED_CACHE_PREFIX + options.areaId` rather than one shared
-  constant).
+  `#basemap-sync-status`) are absent from the rendered map page.
+
+  SNOW-649 retired the Playwright modules that used to hold the browser
+  ends of all of the above (`test_offline_map.py`, `test_cache_this_area.py`,
+  `test_basemap_download_budget.py`, `test_offline_basemap_cache.py`,
+  `test_layers_menu_removed_items.py`, `test_custom_download_area.py`). Two
+  things went with them and have no automated home: the cold-boot style
+  fallback (a tile-scoped `error` must not engage it; a genuine style-load
+  failure must) and whole-area eviction observed against real Cache Storage.
+  Both are manual — Scenarios D3, D6 and D10 in
+  [`testing-scenarios.md`](testing-scenarios.md) — and the weekly
+  `tox -e offline` suite exercises the render half against real tiles.
 - `tests/core/test_sw_shell.py` (SNOW-517, SNOW-590) — `compute_shell_hash()`
   against a throwaway shell tree, parametrised over every tracked source so
   a source the hash ignores fails the suite; the derived `cache_version()`
@@ -3059,10 +3050,9 @@ underlying PNGs.
 - `tests/public/test_debug_views.py::TestSwVersionPage` (SNOW-517) — the
   staff-only `/_sw-version/` page requires staff and server-renders the
   derived `CACHE_VERSION` / `APP_VERSION` (the JS-off baseline).
-- `tests/e2e/test_sw_version_page.py` (SNOW-517, `tox -e e2e`) — a
-  staff-authenticated, real-SW page load asserts the live-version
-  element gets populated by `static/js/pwa_sw_version_probe.js`'s
-  `'version'` probe.
+  (SNOW-649 retired `tests/e2e/test_sw_version_page.py`, which asserted the
+  live-version element being populated by `static/js/pwa_sw_version_probe.js`
+  against a real worker; the server-rendered half above is what remains.)
 - `tests/js/test_sw.js` (SNOW-607, `tox -e js`) — the principal
   partitioning at strategy level: `_isNoStore`'s token match,
   `_principalFromHtml` over a signed-in / anonymous / tag-less page, and
@@ -3074,14 +3064,11 @@ underlying PNGs.
   suite also runs `_warmCacheWorseReason`'s inline fallback and
   `basemap_cache_core.js`'s `worseReason` over one shared input table so
   a drift between them fails.
-- `tests/e2e/test_offline_account_principal.py` (SNOW-607, `tox -e e2e`)
-  — the browser journey for the write side: an ordinary navigation is
-  cached carrying its stamp, and `/account/manage/` is cached under the
-  account it was rendered for rather than kept out of the cache. Both
-  assert Cache-Storage membership rather than inferring it from a failed
-  fetch — `page.context.set_offline(True)` governs page-side network
-  only, so a request the worker handles still reaches the server (see
-  the module docstring).
+  (SNOW-649 retired `tests/e2e/test_offline_account_principal.py`, the
+  browser journey for the write side. Its one durable lesson: assert
+  Cache-Storage membership rather than inferring it from a failed fetch —
+  `page.context.set_offline(True)` governs page-side network only, so a
+  request the worker handles still reaches the server.)
 - `tests/accounts/test_views.py::test_response_is_not_no_store`
   (SNOW-607, `tox -e test`) — the server-side half of the same choice:
   `/account/` must not answer `no-store`. Its twin for the page that

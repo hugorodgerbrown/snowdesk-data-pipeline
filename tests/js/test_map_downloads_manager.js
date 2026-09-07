@@ -22,10 +22,11 @@
  * apps/public/templates/public/partials/_map_downloads_sheet.html. It is a
  * hand-copy, which is the standing trade-off for this harness: Vitest
  * cannot render a Django template, so the alternative is not a better
- * fixture but no DOM coverage at all. Anything structural asserted here —
- * the ``data-`` hooks, the template ids — is also exercised end-to-end
- * against the REAL template by tests/e2e/test_manage_downloads.py, which is
- * what catches the two drifting apart.
+ * fixture but no DOM coverage at all. The row and strings templates are
+ * asserted against the REAL rendered page in
+ * tests/public/test_map_page.py, which is what catches those two drifting
+ * apart; SNOW-649 retired tests/e2e/test_manage_downloads.py, which used to
+ * cover the rest of the sheet's markup the same way.
  *
  * SNOW-844 adds a row state the sheet did not have: an area that is on
  * this device, holds every tile, and still cannot render, because the

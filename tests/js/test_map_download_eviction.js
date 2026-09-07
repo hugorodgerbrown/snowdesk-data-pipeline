@@ -29,8 +29,9 @@
  * to the surface map.js uses. The eviction-confirm banner markup mirrors
  * templates/includes/_overlay_banner.html as rendered by
  * _map_embed.html:1163 — a hand-copy, the standing trade-off in this
- * harness (see test_map_downloads_manager.js's header); the real markup is
- * exercised by tests/e2e/test_basemap_download_budget.py.
+ * harness (see test_map_downloads_manager.js's header). SNOW-649 retired
+ * tests/e2e/test_basemap_download_budget.py, which exercised the real
+ * markup, so nothing now catches this fixture drifting from the template.
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
