@@ -75,7 +75,7 @@
    *     basemapKey: string|null, bbox: number[]}|null>,
    *   finishBaseLayer?: function(Object|null, Object): Promise<void>,
    * }} deps `map.js`'s helpers, bound once at its module level.
-   *   SNOW-856: `baseLayer` resolves the shared z0-9 base layer's bucket
+   *   SNOW-856: `baseLayer` resolves the shared base layer's bucket
    *   id and the subset of its urls NOT already cached — so a second
    *   download finds nothing to do — and `finishBaseLayer` records what
    *   the top-up fetched. Both optional; see `topUpBaseLayer`.
@@ -293,7 +293,7 @@
    * Warm this basemap's shared base layer, after the area it accompanies
    * (SNOW-856).
    *
-   * The base layer is the z0-9 tiles every area on the device reads once
+   * The base layer is the shallow-zoom tiles every area on the device reads once
    * the camera is zoomed out past a download's z10 floor. It belongs to
    * the BASEMAP, not to any area, so it lives in its own pinned bucket and
    * is topped up by whichever download happens to run — the first one pays

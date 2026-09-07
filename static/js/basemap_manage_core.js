@@ -300,7 +300,7 @@
 
       var id = String(area.id);
       var isCustom = typeof opts.isCustomAreaId === 'function' && opts.isCustomAreaId(id);
-      // SNOW-856: the shared z0-9 overview map. Listed because it spends
+      // SNOW-856: the shared overview map. Listed because it spends
       // the user's budget and a total that counts what it does not show is
       // worse than no row — but it is not an area, so it is neither
       // renameable, deletable nor re-downloadable. It leaves when the last

@@ -13,7 +13,7 @@ they have map data they do not have. On a mountain that is the more
 dangerous failure of the two.
 
 SNOW-856 changed how that second half is measured, and the change is
-worth understanding before reading any assertion below. The shared z0-9
+worth understanding before reading any assertion below. The shared
 base layer covers everything the camera can reach, and MapLibre's
 ``findLoadedParent`` stretches a stored ancestor wherever a tile is
 missing — so the map now draws *everywhere* offline, coarsely, with
@@ -128,7 +128,7 @@ def test_outside_the_downloaded_area_no_detail_is_stored(
     for, and the download panel will have told them they hold 200 MB of
     it. What changed is where that property can be measured.
 
-    **This test asserted a blank canvas until SNOW-856.** The shared z0-9
+    **This test asserted a blank canvas until SNOW-856.** The shared
     base layer covers everything the camera can reach, and MapLibre's
     ``findLoadedParent`` renders a cached ancestor wherever a tile is
     missing — so at z11 over undownloaded ground a stored z9 tile is
@@ -279,7 +279,7 @@ def test_stored_tiles_overzoom_past_the_band_and_the_base_layer_holds_below_it(
     assert below >= _DREW, (
         f"At z{subject.below_band_zoom}, below the stored band, "
         f"{subject.region_id} drew only {below:.1%} of the canvas. The "
-        "shared z0-9 base layer should be answering here — it is fetched "
+        "shared base layer should be answering here — it is fetched "
         "on the tail of every download and covers the whole area the "
         "camera can reach. A blank view means it was never stored, was "
         "stored under urls the map does not ask for, or was evicted by "

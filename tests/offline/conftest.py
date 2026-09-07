@@ -493,7 +493,7 @@ class OfflineMapPage:
         )
 
     def wait_for_base_layer(self, timeout_ms: int = 240_000) -> int:
-        """Wait for the shared z0-9 base layer to finish landing (SNOW-856).
+        """Wait for the shared base layer to finish landing (SNOW-856).
 
         Needed because the top-up is deliberately NOT part of the download
         the roundel reports on. ``basemap_download_runner.js``'s
@@ -549,7 +549,7 @@ class OfflineMapPage:
         """Return the download-band tiles stored for one point, if any.
 
         The cache-level replacement for "the canvas is blank outside
-        coverage" (SNOW-856). Once a shared z0-9 base layer exists,
+        coverage" (SNOW-856). Once a shared base layer exists,
         MapLibre's ``findLoadedParent`` stretches an ancestor over
         undownloaded ground, so pixels can no longer answer "is there
         detail stored here?". This asks it directly.
@@ -557,7 +557,7 @@ class OfflineMapPage:
         Searches EVERY pinned bucket, not just the region's own: a tile is
         available offline whichever bucket holds it, and the question is
         what the device can draw, not who fetched it. Deliberately scoped
-        to ``MICRO_BAND`` — z0-9 hits are the base layer doing its job and
+        to ``MICRO_BAND`` — shallower hits are the base layer doing its job and
         are not detail.
 
         Matching is on the ``/{z}/{x}/{y}`` path segment rather than a

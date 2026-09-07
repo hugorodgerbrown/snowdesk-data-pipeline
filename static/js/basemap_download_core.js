@@ -175,7 +175,7 @@
  *     The Cache Storage name for ``areaId``'s pinned bucket
  *     (``PINNED_CACHE_PREFIX + areaId``).
  *
- * SNOW-856 adds a third group — the SHARED BASE LAYER, the z0-9 tiles
+ * SNOW-856 adds a third group — the SHARED BASE LAYER, the z0-7 tiles
  * every area on the device reads when the camera is zoomed out past a
  * download's z10 floor. It is not an area: one per BASEMAP, shared by
  * every area under it, and outliving any of them. It gets its own
@@ -270,10 +270,10 @@
   // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
   var DOWNLOAD_CEILING_MB = 200;
 
-  // SNOW-856: the zoom band the SHARED BASE LAYER covers — everything
-  // below ``MICRO_BAND``'s floor, so the two abut with no gap and no
-  // overlap. An area download pins z10-14 over its own ground; this pins
-  // z0-9 over the whole map, once per basemap, for every area to share.
+  // SNOW-856: the zoom band the SHARED BASE LAYER covers. An area
+  // download pins ``MICRO_BAND`` (z10-14) over its own ground; this pins a
+  // shallow band over the whole map, once per basemap, for every area to
+  // share.
   //
   // The gap this closes: the map's camera goes down to z4
   // (``MIN_ZOOM``, static/js/map.js), a download's floor is z10, and
@@ -285,10 +285,31 @@
   // fetched over a connection the user had told the app not to spend, and
   // the map drew.
   //
+  // **It stops at z7, and does NOT abut MICRO_BAND's floor (SNOW-863).**
+  // It shipped as z0-9 precisely so the two bands would meet with no gap,
+  // and that tidiness turned out to cost more than the feature. Measured
+  // by fetching every tile, OpenFreeMap Liberty — the DEFAULT basemap,
+  // global, so clamped to the camera's 682 tiles rather than a national
+  // style's 215 — comes to 144.4 MB on disk, 29% of the standing 500 MB
+  // budget before a single area is downloaded. z9 alone is 91.2 MB of it
+  // and z8 another 32.4; z0-7 is 20.9 MB, seven times cheaper.
+  //
+  // The two-level gap costs nothing the reader can see. MapLibre renders
+  // the nearest cached ancestor for a tile it does not hold
+  // (``findLoadedParent``), so z8 and z9 draw from the stored z7 tile —
+  // softer, never blank, which is the whole promise. That same mechanism
+  // is what makes the map draw coarsely outside a download's ground
+  // (SNOW-856's accepted trade), so this is not a new behaviour to reason
+  // about, just the same one over two more levels.
+  //
+  // Do not "restore" the gap on tidiness grounds. Anything below z10 is
+  // context; detail is the area download's job, and 123 MB is not a price
+  // worth paying to be able to say the numbers touch.
+  //
   // No ``basemap_tiles.py`` counterpart, and it needs none: the base
   // layer's extent is the CAMERA's, which is a client-side constraint the
   // server has no view of.
-  var BASE_LAYER_BAND = [0, 9];
+  var BASE_LAYER_BAND = [0, 7];
 
   // SNOW-568: the fraction of the origin's REMAINING storage quota a
   // single download may claim. Client-only — no basemap_tiles.py twin.

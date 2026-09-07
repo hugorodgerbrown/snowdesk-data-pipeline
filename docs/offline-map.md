@@ -1440,7 +1440,7 @@ refusal it replaced survives as the guard for a connection lost between
 paint and tap), and this overlay's own Download button stays gated on
 connectivity as before, the same rule the per-region control applies.
 
-### The shared z0–z9 base layer (SNOW-856)
+### The shared low-zoom base layer (SNOW-856, re-banded SNOW-863)
 
 A download pins `MICRO_BAND` — z10–14 — over its own ground. The map's
 camera goes down to `MIN_ZOOM = 4` (`static/js/map.js`). Nothing precached
@@ -1459,8 +1459,10 @@ tile just outside the region's clipped boundary — nothing was mis-keyed,
 and nothing was ever in a cache to serve.
 
 **What it is.** One `base-<basemapKey>` pinned bucket per basemap,
-covering z0–9 — abutting `MICRO_BAND`'s floor exactly, so there is
-neither a gap nor a tile paid for twice. It is a third area-id namespace
+covering **z0–7**. It shipped as z0–9, abutting `MICRO_BAND`'s floor
+exactly; SNOW-863 trimmed it after measuring what that tidiness cost —
+see the size table below. The two-level gap draws from the stored z7 tile
+via MapLibre's `findLoadedParent`, so it is softer, never blank. It is a third area-id namespace
 beside `region-` and `custom-`, which is what lets `sw.js`'s read path
 find it with **no change at all**: `_searchPinnedBuckets` already walks
 every bucket under `BASEMAP_PINNED_CACHE_PREFIX`.
@@ -1503,12 +1505,22 @@ against 6.8 MB of region. Where the cost sits, per zoom, OpenFreeMap over
 | 8 | 140 | 32.4 | 53.3 |
 | 9 | 486 | 91.2 | **144.4** |
 
-z9 alone is 63% of it. The band was chosen to abut `MICRO_BAND`'s z10
-floor with no gap, and that neatness is what costs 123 MB: **z0–7 would be
-20.9 MB**, with MapLibre overzooming z7 to fill z8–z9 — the same "coarse
-but present" outcome. Trimming the band, clipping the layer to the user's
-own areas, or stating the cost in the panel is an open decision
-(SNOW-863); nothing has been changed here yet.
+z9 alone is 63% of it, and z8+z9 together are 86%. The band was chosen to
+abut `MICRO_BAND`'s z10 floor with no gap, and that neatness is what cost
+123 MB — so **SNOW-863 trimmed it to z0–7, 20.9 MB**, and MapLibre
+overzooms z7 to fill z8–z9. That is the same "coarse but present" outcome
+the feature already relies on everywhere outside a download's ground, so
+the gap costs nothing a reader can see.
+
+**Existing devices are re-banded, not stranded.** The old z0–9 set is a
+SUPERSET of the new one, so the ordinary "fetch what is missing" plan
+would find nothing to do and 123 MB would sit there for the life of the
+install. `resolveBaseLayerPlan` detects a bucket holding any url the
+current band does not ask for and drops it whole before planning — read
+from the BUCKET's own contents rather than the record's stored `band`,
+because that record can be absent (see below) and a migration that only
+fired for devices with an intact record would miss the ones in the worst
+state.
 
 `basemap_at` is unmeasured: it declares an ESRI VectorTileServer source
 (directory `url`, `{z}/{y}/{x}` tiles) that the measuring harness could not
@@ -1540,7 +1552,7 @@ base layer alive**, because a pre-SNOW-645 record says "basemap unknown"
 and unknown is not evidence of absence.
 
 **The trade it makes, stated plainly.** MapLibre renders a cached
-ancestor wherever a tile is missing (`findLoadedParent`), so once a z0–9
+ancestor wherever a tile is missing (`findLoadedParent`), so once a
 layer covers the whole camera extent the map draws **everywhere**
 offline — coarsely over ground the user never downloaded, in detail over
 ground they did. Before SNOW-856 the map went blank at the edge of
@@ -1576,7 +1588,7 @@ because it spends the user's budget and a total that counts what it does
 not show is worse than no row; its Remove control is *removed* rather
 than disabled, because a disabled button still says this is a thing you
 could do. `map_layer_sync_status.js` excludes it from the basemap dots for
-the same reason it excludes an account-only area: z0–9 is the zoomed-out
+the same reason it excludes an account-only area: the base layer is the zoomed-out
 view, so a basemap holding only a base layer has no ground downloaded at
 any usable zoom and must not read as green.
 

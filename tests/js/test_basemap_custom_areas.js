@@ -42,6 +42,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMapBundle } from './_load_map_bundle.js';
 
+// SNOW-863: the active style's tile template, so the base-layer plan has
+// urls to compare a bucket's contents against.
+const BASE_TEMPLATE = 'https://tiles.example.invalid/{z}/{x}/{y}.pbf';
+
 const MB = 1024 * 1024;
 
 /** Minimal MapLibre stub — see test_map_download_eviction.js for the full rationale. */
@@ -61,7 +65,12 @@ function stubMapLibre() {
     getPaintProperty: () => null,
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
-    getSource: () => null,
+    // SNOW-863: a vector source and a camera box, so
+    // `resolveBaseLayerPlan` can resolve at all — it needs the active
+    // style's tile urls and MAX_BOUNDS to know what the band asks for.
+    // Additive: nothing else in this suite reads either.
+    getSource: (id) => (id === 'basemap' ? { tiles: [BASE_TEMPLATE], bounds: null } : null),
+    getMaxBounds: () => ({ toArray: () => [[0.9482, 41.9952], [19.6674, 49.9983]] }),
     addSource: () => {},
     addLayer: () => {},
     removeLayer: () => {},
@@ -73,7 +82,7 @@ function stubMapLibre() {
     removeFeatureState: () => {},
     setStyle: () => {},
     isStyleLoaded: () => true,
-    getStyle: () => ({ layers: [], sources: {} }),
+    getStyle: () => ({ layers: [], sources: { basemap: { type: 'vector' } } }),
     getCanvas: () => ({ style: {} }),
     getContainer: () => document.getElementById('map'),
     loaded: () => true,
@@ -704,5 +713,59 @@ describe('a base-layer bucket with no record (SNOW-863)', () => {
     const areas = await window.pwaBasemapDownloads.areas();
 
     expect(areas.find((a) => a.id === 'base-swisstopo_winter')).toBeUndefined();
+  });
+});
+
+describe('re-banding an old base-layer bucket (SNOW-863)', () => {
+  // SNOW-856 shipped the base layer as z0-9; SNOW-863 trimmed it to z0-7
+  // after measuring the cost (144.4 MB on the default basemap). The old
+  // set is a SUPERSET of the new one, so the ordinary "fetch what is
+  // missing" plan finds nothing to do and the extra z8/z9 tiles — 123 MB
+  // of them — would sit there for the life of the install with no path out
+  // short of a full reset. The bucket is dropped whole instead.
+  const BASE_BUCKET = 'snowdesk-basemap-pinned-base-openfreemap_liberty';
+
+  /** Drive the plan the way `topUpBaseLayer` does, via the deps bundle. */
+  async function plan() {
+    return window.pwaBasemapDownloads.baseLayerPlan();
+  }
+
+  it('drops a bucket holding tiles the current band does not want', async () => {
+    installDbStub({
+      'basemap.baseLayers': [{ basemapKey: 'openfreemap_liberty', bytes: 144 * MB }],
+    });
+    cachesStub.buckets.set(BASE_BUCKET, new Set([
+      // A z9 url from the old band — not in any z0-7 set, whatever the
+      // style, which is what marks the bucket as another band's.
+      'https://tiles.example.invalid/9/266/181.pbf',
+    ]));
+
+    const result = await plan();
+
+    expect(cachesStub.buckets.has(BASE_BUCKET)).toBe(false);
+    // And it re-plans the whole band rather than the difference.
+    expect(result.urls.length).toBeGreaterThan(0);
+  });
+
+  it('drops the stale record with it, so its bytes leave the budget', async () => {
+    const rows = installDbStub({
+      'basemap.baseLayers': [{ basemapKey: 'openfreemap_liberty', bytes: 144 * MB }],
+    });
+    cachesStub.buckets.set(BASE_BUCKET, new Set([
+      'https://tiles.example.invalid/9/266/181.pbf',
+    ]));
+
+    await plan();
+
+    expect(rows.get('basemap.baseLayers')).toEqual([]);
+  });
+
+  it('leaves an empty bucket alone — there is nothing to throw away', async () => {
+    installDbStub({});
+    cachesStub.buckets.set(BASE_BUCKET, new Set());
+
+    await plan();
+
+    expect(cachesStub.buckets.has(BASE_BUCKET)).toBe(true);
   });
 });
