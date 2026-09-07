@@ -2,7 +2,7 @@
 name: bounded-offline-read-paths
 description: sw.js read paths are time-bounded and latch offline — _boundedFetch, OFFLINE_LATCH_THRESHOLD, /livez probe; a dead radio hangs, not rejects
 status: current
-last-reviewed: 2026-08-28
+last-reviewed: 2026-09-06
 ---
 
 # Offline read paths are bounded, and latch
@@ -225,3 +225,43 @@ while the read is in flight must not be forced offline again by it.
 - DevTools' "Offline" checkbox **does not reproduce** the bug this fixes — it
   makes fetches reject, which is the case that always worked. Reproducing it
   needs a hang: request blocking plus a high-latency throttle, or a real tunnel.
+- **Every path in `sw.js` that can reach the network has to consult
+  `_shouldUseNetwork()`, and enumerating them is not obvious.** There are four,
+  and they are not one per strategy: the shell, the basemap strategy, the
+  network-only branch of the fetch handler, and the *unclassified*
+  cross-origin branch — the last being SNOW-722's read-only probe, which
+  falls through to `fetch` when no cache holds the request. That fourth one
+  shipped unguarded and leaked half-megabyte basemap tiles under
+  `offline-forced` (SNOW-854), because the first three are the ones anyone
+  thinks of and the fourth only runs when classification fails. It is
+  reached whenever the in-memory `_basemapOrigins` allowlist is empty, which
+  an ordinary idle-worker recycle is enough to cause.
+
+  A fifth was found by auditing the call sites rather than the strategies:
+  `_guardedRespond`'s recovery re-fetch, which runs when a strategy resolves
+  to something that is not a `Response` (SNOW-859). Nothing reaches it today
+  — every wrapped strategy returns a real `Response` on every path — and it
+  is guarded anyway, because a recovery path spends the network exactly when
+  something else has already broken, which is the worst moment to discover
+  it was the one exception. Adding a sixth path means adding a sixth guard;
+  `tests/js/test_sw.js` covers all five.
+
+  The two predicates that gate all five must agree, and for a while they did
+  not. `_shouldUseNetwork()` is false under either offline mode **or** when
+  `navigator.onLine === false`; `_mayPassThrough()` — its synchronous
+  counterpart, needed because `respondWith` cannot be called after an `await`
+  — checked only the mode until SNOW-862. The gap was exactly "the radio is
+  off": read paths refused while API GETs, HTMX fragments and mutation POSTs
+  were handed to the browser anyway. Nothing else covered it, because the
+  latch is evidence from three read-path *timeouts* and a dead radio rejects
+  rather than hangs. `onLine` is trusted in the negative only — `false` means
+  there is no interface, `true` means nothing at all, which is why the latch
+  exists alongside it rather than instead of it.
+
+  Three network calls in the file are deliberately NOT guarded, and should
+  stay that way: `_probeNetwork`'s `/livez` request (it runs only under an
+  auto-latch, never a forced mode, and is how the app gets back online),
+  `_warmCache`'s fetches (a download is a long operation the user explicitly
+  asked for, so it ignores a latch — but it does refuse a forced mode), and
+  the `DEV_SHELL_BYPASS` branch of `_staleWhileRevalidate`, which is off in
+  production and enforced so by `apps.core.checks`.

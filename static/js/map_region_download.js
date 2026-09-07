@@ -1341,24 +1341,39 @@
    * whether a run is allowed at all.
    *
    * @param {string} regionId
-   * @returns {Promise<boolean>} Whether a run was started. False when the
-   *   region is unknown to this page, when the control settled on a state
-   *   that cannot run (offline, over the ceiling, already downloaded), or
-   *   when the visitor needs to sign in — in which case they have been
-   *   sent there.
+   * @returns {Promise<{started: boolean, reason: string}>} SNOW-863: a
+   *   REASON, not just a boolean. `reason` is `''` on success,
+   *   `'signin'` when the visitor has been sent to sign in (so the caller
+   *   should say nothing — they are already looking at a new page),
+   *   `'unknown-region'` when this page has no geometry for it (a country
+   *   that has not been lazily loaded), or the roundel's own settled
+   *   state when that state cannot run — `'busy'`, `'done'`,
+   *   `'incomplete'`, `'disabled'`, `'offline'`. The caller picks its
+   *   message from that; see `map_downloads_manager.js`.
    */
   async function startRegionDownload(regionId) {
     if (NEEDS_SIGNIN) {
       goToSignIn();
-      return false;
+      return { started: false, reason: 'signin' };
     }
-    if (!regionId || !FEATURE_BY_REGION_ID[regionId]) return false;
+    if (!regionId || !FEATURE_BY_REGION_ID[regionId]) {
+      return { started: false, reason: 'unknown-region' };
+    }
     applyRegion(regionId);
     await renderControl();
     const state = btn.dataset.downloadState;
-    if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') return false;
+    if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') {
+      // SNOW-863: the refused STATE travels back, because "it did not
+      // start" and "here is why" are different facts and the caller could
+      // only ever say the first. The state that actually reaches a user
+      // here is 'busy' — this control is a single shared roundel, so a
+      // second "Download here" while the first run is still going is
+      // refused, and the sheet's only message was "Try again", which is
+      // untrue: trying again fails identically until the run finishes.
+      return { started: false, reason: state || 'unknown' };
+    }
     await handleClick();
-    return true;
+    return { started: true, reason: '' };
   }
 
   window.pwaRegionDownload = Object.freeze({

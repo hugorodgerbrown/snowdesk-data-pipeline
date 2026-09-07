@@ -31,19 +31,17 @@ Fixtures defined here:
     Loading it function-scoped, AFTER the flush, ensures the rows are present
     when the test body runs.
 
-``pwa_page`` / ``signed_in_page`` (SNOW-389)
-    Real-service-worker lifecycle fixtures — see their docstrings below.
-    Every other fixture and test in this directory that touches
-    ``navigator.serviceWorker`` disables or strips it (``_disable_real_sw``
-    in ``test_pwa_client_signals.py``, the stripped-``serviceWorker`` init
-    script in ``test_offline_favourite_submit.py`` /
-    ``test_offline_observation_submit.py``) because a real SW's own
-    lifecycle timing used to be unreliable to assert on. SNOW-389's
-    spike (``tests/e2e/_spike_results.py``) found the opposite once the SW
-    is driven correctly (poll ``navigator.serviceWorker.controller?.state``
-    rather than relying on Playwright's page/context network-interception
-    hooks, which do not see a service worker's own script fetches at all) —
-    these two fixtures are the ones that actually drive it.
+``pwa_page`` (SNOW-389)
+    The real-service-worker lifecycle fixture — see its docstring below.
+    Before SNOW-389 every test here disabled or stripped
+    ``navigator.serviceWorker``, on the belief that a real SW's own
+    lifecycle timing could not be asserted on reliably. That spike found
+    the opposite, provided the SW is driven correctly: poll
+    ``navigator.serviceWorker.controller?.state`` rather than relying on
+    Playwright's page/context network-interception hooks, which do not see
+    a service worker's own script fetches at all. (SNOW-649 removed the
+    suites that used the stripped-``serviceWorker`` pattern, and
+    ``signed_in_page`` with them.)
 
 ``favourites_page`` (SNOW-414)
     A plain ``page`` + ``live_server`` combination (no ``pwa_page`` — the
@@ -442,9 +440,9 @@ def _session_login(context: BrowserContext, live_server_url: str, user: User) ->
 class FavouritesPage:
     """A plain (no real-SW) ``Page`` authenticated as a regular Account.
 
-    Unlike ``signed_in_page``, this does not go through ``pwa_page`` — the
-    favourites map-surface tests don't need a real service-worker
-    lifecycle, and skipping it keeps the fixture cheap.
+    This does not go through ``pwa_page`` — the favourites map-surface
+    tests don't need a real service-worker lifecycle, and skipping it keeps
+    the fixture cheap.
     """
 
     page: Page
@@ -458,10 +456,9 @@ def favourites_page(
 ) -> FavouritesPage:
     """A live-server ``page``, navigated nowhere yet, with an account session.
 
-    Tests using this fixture are responsible for their own ``page.goto()``
-    (mirroring ``tests/e2e/test_home_ribbon.py``'s ``_navigate_home``
-    convention) since the session cookie must be added to the browser
-    context before the first navigation to the live-server origin.
+    Tests using this fixture are responsible for their own ``page.goto()``:
+    the session cookie must be added to the browser context before the first
+    navigation to the live-server origin.
 
     Args:
         live_server: The live Django server.

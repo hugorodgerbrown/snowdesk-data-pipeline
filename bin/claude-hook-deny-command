@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+# bin/claude-hook-deny-command — refuse three shell commands that are
+# prohibited in prose and enforced by nothing.
+#
+# SNOW-858 moved the repo's four bespoke lint guards into pre-commit, which
+# is the right mechanism for anything that is a file change: it protects
+# every committer, not only a Claude Code session. This script is the
+# remainder — three prohibitions that pre-commit structurally cannot see,
+# because the thing being prohibited is a command, not a diff.
+#
+# What it refuses, and why:
+#
+#   1. A bare ``git stash`` (the implicit push) and ``git stash pop``.
+#      The stash stack belongs to the repository, not the worktree, so
+#      every Claude worktree shares one list and ``pop`` takes whatever
+#      sits at stash@{0} — which may be another session's in-flight work,
+#      dropped from the stack as it lands in the wrong tree. The named
+#      forms are allowed: ``push -u -m <label>`` (which says whose it is),
+#      ``list``, ``apply <sha>``, ``drop``.
+#
+#   2. A bare ``pytest``. tox is the project's single sanctioned entry
+#      point, and a bare ``pytest`` resolves against whatever interpreter
+#      happens to be on PATH — usually the system 3.9, which cannot even
+#      parse this project's ``except A, B:`` syntax. ``uv run pytest`` is
+#      allowed: the implement skill prescribes it for targeted runs.
+#
+#   3. ``git commit`` without ``--author``. Every commit here is authored
+#      by Claude and committed by Hugo, which is what keeps it Verified
+#      under the main branch's signature ruleset; the flag is the only
+#      thing that produces that split, and it is silently absent by
+#      default. ``git commit --amend`` is allowed because it preserves the
+#      author already recorded.
+#
+# Wiring: a ``PreToolUse`` hook with matcher ``Bash`` in
+# ``.claude/settings.json``. It reads the event JSON on stdin and writes a
+# ``permissionDecision: "deny"`` payload on stdout; a decision of "deny"
+# stops the tool call and hands the reason back to the model, so the
+# reason text has to say what to run instead.
+#
+# It is Python rather than shell because it must parse the event JSON, and
+# ``jq`` is not a repo dependency. Stdlib only, no Django, no venv: the
+# hook runs before anything in the session has been set up.
+#
+# **Every failure path exits 0 silently.** Malformed JSON, empty stdin, a
+# missing key, an unparseable command — none of them are this script's
+# business, and an exception here would surface as a blocked Bash call on
+# every single tool use for the rest of the session. It denies what it
+# recognises and gets out of the way otherwise.
+"""Deny three prohibited shell commands from a Claude Code PreToolUse hook."""
+
+from __future__ import annotations
+
+import json
+import shlex
+import sys
+
+# Shell operators that end one command and begin another. The rules below
+# inspect the first word of each segment, so a command word buried in a
+# heredoc body or an argument list is not mistaken for an invocation.
+SEGMENT_SEPARATORS: frozenset[str] = frozenset({"&&", "||", ";", "|", "&", "(", ")"})
+
+STASH_REASON = (
+    "The stash stack is shared by every worktree in this repository, so a bare "
+    "`git stash` leaves an unlabelled entry and `git stash pop` can take another "
+    "session's work off the top and drop it. Use `git stash push -u -m "
+    '"SNOW-NN: what this is"`, then `git stash list` and `git stash apply <sha>` '
+    "to get it back."
+)
+
+PYTEST_REASON = (
+    "A bare `pytest` runs against whatever interpreter is on PATH, which is not "
+    "this project's. Use `uv run pytest <path>` for a targeted run, or "
+    "`uv run tox -e test` for the run CI performs."
+)
+
+COMMIT_REASON = (
+    "Every commit in this repository is authored by Claude and committed by Hugo "
+    "— that split is what keeps it Verified under the main branch's signature "
+    'ruleset. Pass `--author="Claude <noreply@anthropic.com>"`. (`git commit '
+    "--amend` needs no flag: it preserves the author already recorded.)"
+)
+
+
+def read_command() -> str:
+    """Return the Bash command from the PreToolUse event on stdin.
+
+    Returns an empty string for anything that is not a readable event
+    carrying a string command — empty stdin, malformed JSON, a payload
+    that is not an object, a missing `tool_input`, a non-string command.
+    Every one of those is a "not my business" case, never an error.
+    """
+    try:
+        payload = json.loads(sys.stdin.read())
+    except ValueError:
+        # Covers both failures here: json.JSONDecodeError (malformed or
+        # empty payload) and UnicodeDecodeError (non-UTF-8 bytes on stdin)
+        # are each a ValueError subclass.
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return ""
+    command = tool_input.get("command")
+    return command if isinstance(command, str) else ""
+
+
+def split_segments(command: str) -> list[list[str]]:
+    """Split one shell command string into a list of per-command word lists.
+
+    Tokenises with `shlex` so quoted arguments survive intact, then breaks
+    the token stream on the shell operators in `SEGMENT_SEPARATORS`. An
+    unparseable command (unbalanced quotes, most often a heredoc) yields no
+    segments, so nothing is denied.
+
+    `punctuation_chars=True` is required, not stylistic. `shlex.split` is a
+    word splitter, not a shell tokeniser: it only yields an operator as its
+    own token when whitespace surrounds it on both sides, so `a; b` becomes
+    `['a;', 'b']` and `a;b` a single token. Either collapses two commands
+    into one segment, and since only a segment's first word is inspected,
+    everything after the operator escapes the check — `git add -A; git
+    commit -m x` was allowed through with no author. The punctuation-aware
+    lexer splits on the operator wherever it sits, while still keeping a
+    quoted `;` inside an argument intact.
+    """
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return []
+
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in SEGMENT_SEPARATORS:
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _strip_env_prefix(words: list[str]) -> list[str]:
+    """Drop a leading `env`/`VAR=value` prefix so the real command word is first.
+
+    `DJANGO_SETTINGS_MODULE=… pytest` is still a bare pytest invocation.
+    """
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word == "env" or ("=" in word and not word.startswith("-")):
+            index += 1
+            continue
+        break
+    return words[index:]
+
+
+def _git_subcommand(words: list[str]) -> tuple[str, list[str]]:
+    """Return git's subcommand and its arguments, or ("", []) if there is none.
+
+    Skips the global options that may precede it, so `git -C <path> stash`
+    is recognised as a stash. `-C` and `-c` take a value and consume it.
+    """
+    index = 1
+    while index < len(words) and words[index].startswith("-"):
+        index += 2 if words[index] in {"-C", "-c"} else 1
+    if index >= len(words):
+        return "", []
+    return words[index], words[index + 1 :]
+
+
+def _has_message_flag(arguments: list[str]) -> bool:
+    """Return True if these `git stash push` arguments carry a message.
+
+    Recognises `--message`, `--message=…`, and any short-option cluster
+    containing `m`, so the common `-um "label"` counts as well as `-m`.
+    """
+    for word in arguments:
+        if word == "--message" or word.startswith("--message="):
+            return True
+        if word.startswith("-") and not word.startswith("--") and "m" in word[1:]:
+            return True
+    return False
+
+
+def _stash_verdict(arguments: list[str]) -> str:
+    """Return a deny reason for a `git stash` invocation, or "" if allowed.
+
+    Three forms are refused, all for the same reason — the stack is shared
+    and an entry has to be identifiable to be safely recovered. No
+    subcommand at all is the implicit push; `pop` is the destructive read
+    that takes whatever sits on top; and a `push` with no message leaves
+    precisely the unlabelled entry the rule exists to prevent, so naming
+    the subcommand is not on its own enough. The read-only and
+    sha-addressed forms — `list`, `show`, `apply`, `drop` — are allowed.
+    """
+    action = next((word for word in arguments if not word.startswith("-")), "")
+    if action in {"", "pop"}:
+        return STASH_REASON
+    if action == "push" and not _has_message_flag(arguments):
+        return STASH_REASON
+    return ""
+
+
+def _commit_verdict(arguments: list[str]) -> str:
+    """Return a deny reason for a `git commit`, or "" if it records an author.
+
+    `--amend` counts: it preserves the author already on the commit.
+
+    The value of a `-m`/`--message` is skipped rather than inspected, so a
+    commit message that happens to begin with the literal text `--author=`
+    cannot be mistaken for the flag itself.
+    """
+    has_author = False
+    skip_next = False
+    for word in arguments:
+        if skip_next:
+            skip_next = False
+            continue
+        if word in {"-m", "--message"}:
+            skip_next = True
+            continue
+        if word == "--author" or word.startswith("--author="):
+            has_author = True
+    if has_author or "--amend" in arguments:
+        return ""
+    return COMMIT_REASON
+
+
+def verdict(words: list[str]) -> str:
+    """Return a deny reason for one command's words, or "" if it is allowed."""
+    words = _strip_env_prefix(words)
+    if not words:
+        return ""
+
+    if words[0] == "pytest":
+        return PYTEST_REASON
+
+    if words[0] != "git":
+        return ""
+
+    subcommand, arguments = _git_subcommand(words)
+    if subcommand == "stash":
+        return _stash_verdict(arguments)
+    if subcommand == "commit":
+        return _commit_verdict(arguments)
+    return ""
+
+
+def main() -> int:
+    """Emit a deny payload for the first prohibited command found, else nothing."""
+    command = read_command()
+    if not command:
+        return 0
+
+    for words in split_segments(command):
+        reason = verdict(words)
+        if reason:
+            print(  # noqa: T201 - stdout is the hook's response channel
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "PreToolUse",
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": reason,
+                        }
+                    }
+                )
+            )
+            return 0
+
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:  # noqa: BLE001 - see the header: never block the session
+        sys.exit(0)

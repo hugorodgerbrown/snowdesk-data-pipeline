@@ -47,6 +47,7 @@ from PIL import Image
 from playwright.sync_api import Browser, Page
 from pytest_django.live_server_helper import LiveServer
 
+from apps.regions.services.basemap_tiles import MICRO_BAND, lon_lat_to_tile
 from tests.factories import AccountFactory
 from tests.offline.fuzz import OfflineSubject, default_seed, draw_subject
 from tests.offline.proxy import NetworkRecorder, RecordingProxy
@@ -192,6 +193,74 @@ class OfflineMapPage:
             timeout=10_000,
         )
         self.close_account_menu()
+
+    def forget_basemap_origins(self) -> None:
+        """Empty the worker's basemap-origin allowlist, durably and in memory.
+
+        Stands in for the one worker state this suite has no other way to
+        reach: Chrome terminating an idle service worker. ``_basemapOrigins``
+        (``static/js/sw.js``) is an in-memory ``Set``, so a recycled worker
+        wakes with it empty, and its durable ``meta:app`` mirror can be
+        missing too — a reset takes it, and SNOW-722 exists because the
+        rehydration read can simply fail.
+
+        There is no user gesture for "recycle the worker", and Playwright has
+        no API for it, so the state is established rather than provoked: the
+        mirror row is deleted and an empty ``register-basemap-origins`` is
+        posted through the worker's own message contract — the same message
+        ``map.js`` sends, with the list a restarted worker actually holds.
+        Nothing private is reached into and no behaviour is stubbed.
+
+        This matters because an empty allowlist routes every cross-origin
+        tile down ``sw.js``'s unclassified branch instead of its basemap
+        strategy, and those are two different code paths with two different
+        network guards (SNOW-854). A test that never empties the allowlist
+        exercises only the first, which is how the leak survived both
+        SNOW-852 and this suite's own camera-move phase.
+
+        The ``version`` round-trip afterwards is the acknowledgement: a
+        worker processes messages in order, so its reply to a message sent
+        second proves it has already handled the registration sent first.
+        """
+        self.page.evaluate(
+            """async () => {
+                await window.pwaDb?.delete('meta:app', 'basemap.origins');
+                const worker = navigator.serviceWorker.controller;
+                worker.postMessage({ type: 'register-basemap-origins', origins: [] });
+                await new Promise((resolve) => {
+                    navigator.serviceWorker.addEventListener(
+                        'message',
+                        (event) => {
+                            if (event.data?.type === 'version') resolve();
+                        },
+                        { once: true },
+                    );
+                    worker.postMessage('version');
+                });
+            }"""
+        )
+
+    def stored_basemap_origins(self) -> list[str]:
+        """Return the durable ``basemap.origins`` mirror, or an empty list.
+
+        ``map.js`` writes this row in the same function that posts
+        ``register-basemap-origins`` (``registerBasemapOrigins``), so it is
+        a faithful read-back of whether the page has re-registered — including
+        from the ``style.load`` hook, which adds the style's own resolved
+        tile hosts after the map settles (SNOW-843).
+
+        Its use is to stop ``forget_basemap_origins`` from silently expiring.
+        A re-registration mid-test would refill the allowlist, send the tiles
+        back down the classified path, and leave the test passing while
+        proving nothing about the branch it was written for.
+        """
+        origins: list[str] = self.page.evaluate(
+            """async () => {
+                const row = await window.pwaDb?.get('meta:app', 'basemap.origins');
+                return row?.value ?? [];
+            }"""
+        )
+        return origins
 
     def discard_passive_basemap_cache(self) -> list[str]:
         """Delete every basemap cache that is not a pinned download bucket.
@@ -422,6 +491,111 @@ class OfflineMapPage:
             "— the style, a TileJSON or the sprite — did not, so the area "
             "cannot draw offline however complete its tile set looks."
         )
+
+    def wait_for_base_layer(self, timeout_ms: int = 240_000) -> int:
+        """Wait for the shared base layer to finish landing (SNOW-856).
+
+        Needed because the top-up is deliberately NOT part of the download
+        the roundel reports on. ``basemap_download_runner.js``'s
+        ``topUpBaseLayer`` runs after ``settle``, so ``done`` means the AREA
+        is complete — which is the truth the roundel should tell — and the
+        shared layer is still arriving behind it. A test that measured ink
+        below z10 without waiting here would be racing several hundred
+        tiles and would fail intermittently for a reason that has nothing
+        to do with what it is asserting.
+
+        Settles on the bucket's entry count holding steady rather than on a
+        target number: the count depends on the fuzzed basemap (a
+        two-source style stores twice as many) and on how much of the layer
+        the passive cache had already supplied.
+
+        Args:
+            timeout_ms: How long the top-up may take. As generous as the
+                download's own default, and for the same reason — these are
+                real tiles from a live origin.
+
+        Returns:
+            How many entries the base-layer bucket ended up holding.
+
+        Raises:
+            AssertionError: If no base-layer bucket ever appears.
+
+        """
+        self.page.wait_for_function(
+            """async () => {
+                const names = await caches.keys();
+                const name = names.find(
+                    (n) => n.startsWith('snowdesk-basemap-pinned-base-'),
+                );
+                if (!name) return false;
+                const count = (await (await caches.open(name)).keys()).length;
+                if (count === 0) return false;
+                const settled = window.__baseLayerCount === count;
+                window.__baseLayerCount = count;
+                return settled;
+            }""",
+            timeout=timeout_ms,
+            polling=1000,
+        )
+        count: int = self.page.evaluate("() => window.__baseLayerCount || 0")
+        assert count > 0, (
+            "No shared base layer was stored after downloading "
+            f"{self.subject.region_id} under {self.subject.basemap_key}. "
+            "Without it the map is blank below z10 — the whole of SNOW-856."
+        )
+        return count
+
+    def stored_band_tiles_at(self, longitude: float, latitude: float) -> list[str]:
+        """Return the download-band tiles stored for one point, if any.
+
+        The cache-level replacement for "the canvas is blank outside
+        coverage" (SNOW-856). Once a shared base layer exists,
+        MapLibre's ``findLoadedParent`` stretches an ancestor over
+        undownloaded ground, so pixels can no longer answer "is there
+        detail stored here?". This asks it directly.
+
+        Searches EVERY pinned bucket, not just the region's own: a tile is
+        available offline whichever bucket holds it, and the question is
+        what the device can draw, not who fetched it. Deliberately scoped
+        to ``MICRO_BAND`` — shallower hits are the base layer doing its job and
+        are not detail.
+
+        Matching is on the ``/{z}/{x}/{y}`` path segment rather than a
+        rebuilt url, so it holds across every basemap's url shape and does
+        not need to know the host rotation.
+
+        Args:
+            longitude: Degrees east.
+            latitude: Degrees north.
+
+        Returns:
+            The matching urls, empty when nothing in the band is stored.
+
+        """
+        segments = []
+        for zoom in range(MICRO_BAND[0], MICRO_BAND[1] + 1):
+            x, y = lon_lat_to_tile(longitude, latitude, zoom)
+            segments.append(f"/{zoom}/{x}/{y}")
+        found: list[str] = self.page.evaluate(
+            """async (segments) => {
+                const names = (await caches.keys()).filter(
+                    (n) => n.startsWith('snowdesk-basemap-pinned-'),
+                );
+                const hits = [];
+                for (const name of names) {
+                    const cache = await caches.open(name);
+                    for (const request of await cache.keys()) {
+                        const url = new URL(request.url).pathname;
+                        if (segments.some((s) => url.includes(s))) {
+                            hits.push(name + ' :: ' + request.url);
+                        }
+                    }
+                }
+                return hits;
+            }""",
+            segments,
+        )
+        return found
 
     # -- What actually drew ---------------------------------------------------
 

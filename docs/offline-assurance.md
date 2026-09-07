@@ -86,6 +86,16 @@ modules `sw.js` pulls in with `importScripts` are exempt too, and are read
 out of `sw.js`'s source rather than listed, so the list cannot drift
 silently in the direction that weakens the test.
 
+It also empties the worker's basemap-origin allowlist for one test
+(`forget_basemap_origins`), because `sw.js` sends a cross-origin GET down
+two different routes with two different network guards, and only the
+registered-origin one had ever been exercised here. SNOW-854 was found by
+hand on staging while this file was green: an idle worker recycle empties
+that in-memory allowlist, every basemap tile becomes "unrecognised", and
+the unrecognised branch went straight to `fetch`. The test asserts the
+mirror is still empty afterwards — a re-registration mid-test would put
+the tiles back on the covered route and make the zero vacuous.
+
 Render tests call `go_offline()`, which presses the switch **and** cuts the
 proxy. Belt and braces on purpose: a render test whose only guarantee is
 the switch is measuring the switch.

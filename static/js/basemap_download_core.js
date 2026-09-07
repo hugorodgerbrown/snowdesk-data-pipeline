@@ -174,6 +174,29 @@
  *   pinnedCacheName(areaId)
  *     The Cache Storage name for ``areaId``'s pinned bucket
  *     (``PINNED_CACHE_PREFIX + areaId``).
+ *
+ * SNOW-856 adds a third group — the SHARED BASE LAYER, the z0-7 tiles
+ * every area on the device reads when the camera is zoomed out past a
+ * download's z10 floor. It is not an area: one per BASEMAP, shared by
+ * every area under it, and outliving any of them. It gets its own
+ * ``base-`` id namespace and therefore its own pinned bucket, which is
+ * what lets the worker's read path find it with no change at all.
+ *
+ *   areaIdForBaseLayer(basemapKey) / isBaseLayerAreaId(areaId) /
+ *   baseLayerBasemapKey(areaId)
+ *     The ``base-<basemapKey>`` id, its predicate, and its inverse — the
+ *     third namespace beside ``region-`` and ``custom-``. Every surface
+ *     that lists or evicts areas has to exclude these. SNOW-863 added the
+ *     inverse so a bucket can name its own basemap without the
+ *     ``meta:app`` record, which is written later and can be missing.
+ *   intersectBBox(a, b)
+ *     The overlap of two bboxes, or null.
+ *   baseLayerBBox(cameraBBox, styleBounds) / baseLayerBlob(…) /
+ *   baseLayerTileURLs(spec, …)
+ *     The base layer's extent, blob and tile URLs. The camera bbox makes
+ *     it sufficient and the style's declared bounds make it finite — see
+ *     ``baseLayerBBox`` for why deriving it from the style alone breaks
+ *     on the global default basemap.
  *   planEviction(areas, incoming, budgetBytes)
  *     Given the areas currently on disk and an incoming run, decides
  *     whether it fits the standing budget and, if not, which areas to
@@ -246,6 +269,47 @@
 
   // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
   var DOWNLOAD_CEILING_MB = 200;
+
+  // SNOW-856: the zoom band the SHARED BASE LAYER covers. An area
+  // download pins ``MICRO_BAND`` (z10-14) over its own ground; this pins a
+  // shallow band over the whole map, once per basemap, for every area to
+  // share.
+  //
+  // The gap this closes: the map's camera goes down to z4
+  // (``MIN_ZOOM``, static/js/map.js), a download's floor is z10, and
+  // nothing precached a basemap tile at any zoom
+  // (``PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT]``, static/js/sw.js).
+  // So an offline reader who zoomed out fell off the edge of every area
+  // they owned. That was invisible until SNOW-854 closed the
+  // unclassified-cross-origin leak — before it, those tiles were quietly
+  // fetched over a connection the user had told the app not to spend, and
+  // the map drew.
+  //
+  // **It stops at z7, and does NOT abut MICRO_BAND's floor (SNOW-863).**
+  // It shipped as z0-9 precisely so the two bands would meet with no gap,
+  // and that tidiness turned out to cost more than the feature. Measured
+  // by fetching every tile, OpenFreeMap Liberty — the DEFAULT basemap,
+  // global, so clamped to the camera's 682 tiles rather than a national
+  // style's 215 — comes to 144.4 MB on disk, 29% of the standing 500 MB
+  // budget before a single area is downloaded. z9 alone is 91.2 MB of it
+  // and z8 another 32.4; z0-7 is 20.9 MB, seven times cheaper.
+  //
+  // The two-level gap costs nothing the reader can see. MapLibre renders
+  // the nearest cached ancestor for a tile it does not hold
+  // (``findLoadedParent``), so z8 and z9 draw from the stored z7 tile —
+  // softer, never blank, which is the whole promise. That same mechanism
+  // is what makes the map draw coarsely outside a download's ground
+  // (SNOW-856's accepted trade), so this is not a new behaviour to reason
+  // about, just the same one over two more levels.
+  //
+  // Do not "restore" the gap on tidiness grounds. Anything below z10 is
+  // context; detail is the area download's job, and 123 MB is not a price
+  // worth paying to be able to say the numbers touch.
+  //
+  // No ``basemap_tiles.py`` counterpart, and it needs none: the base
+  // layer's extent is the CAMERA's, which is a client-side constraint the
+  // server has no view of.
+  var BASE_LAYER_BAND = [0, 7];
 
   // SNOW-568: the fraction of the origin's REMAINING storage quota a
   // single download may claim. Client-only — no basemap_tiles.py twin.
@@ -365,6 +429,164 @@
   }
 
   /**
+   * The area id for a basemap's shared base layer (SNOW-856).
+   *
+   * A THIRD id namespace beside ``region-`` and ``custom-``, and the
+   * reason it is one rather than a flag on an existing area: the base
+   * layer is not an area. It is shared by every area on the device, it
+   * covers ground no area asked for, and it must survive the eviction of
+   * the area whose download happened to fetch it. Giving it its own
+   * ``PINNED_CACHE_PREFIX`` bucket buys all of that for free — the
+   * worker's ``_searchPinnedBuckets`` walks every bucket under the
+   * prefix, so the offline READ path needs no change whatsoever.
+   *
+   * Keyed by basemap rather than being a single global bucket because
+   * the tiles are a specific style's: a device holding areas under both
+   * swisstopo and OpenFreeMap needs both base layers, and neither can
+   * answer for the other.
+   *
+   * @param {string} basemapKey A ``settings.BASEMAP_STYLES`` key.
+   * @returns {string}
+   */
+  function areaIdForBaseLayer(basemapKey) {
+    return 'base-' + basemapKey;
+  }
+
+  /**
+   * Whether ``areaId`` names a base layer rather than a user's area.
+   *
+   * Every surface that lists, sizes, evicts or reconciles "the areas on
+   * this device" has to be able to tell the two apart — a base layer is
+   * real bytes the user is spending, but it is not a download they chose
+   * and must never be offered for deletion or picked as an eviction
+   * candidate. Mirrors ``isCustomAreaId``'s shape so the ``'base-'``
+   * prefix stays private to this module.
+   *
+   * @param {string} areaId
+   * @returns {boolean}
+   */
+  function isBaseLayerAreaId(areaId) {
+    return typeof areaId === 'string' && areaId.indexOf('base-') === 0;
+  }
+
+  /**
+   * The basemap a base-layer area id belongs to (SNOW-863).
+   *
+   * The inverse of ``areaIdForBaseLayer``, and the only sanctioned way to
+   * read a key back out of an id — the ``'base-'`` prefix stays private to
+   * this module, exactly as ``'region-'`` and ``'custom-'`` do.
+   *
+   * It exists because the BUCKET has to be able to describe itself. A
+   * base layer's ``meta:app`` record is written by the page after the
+   * service worker's warm resolves, so a reader who closes the tab in
+   * between is left with a complete bucket and no record — and before
+   * this function the only thing that could name that bucket's basemap
+   * was the record that is missing. The result was a row labelled with a
+   * raw bucket id under "Unknown basemap", offering to delete the shared
+   * overview map.
+   *
+   * @param {string} areaId
+   * @returns {string} The ``settings.BASEMAP_STYLES`` key, or ``''`` for
+   *   an id that is not a base layer's.
+   */
+  function baseLayerBasemapKey(areaId) {
+    return isBaseLayerAreaId(areaId) ? areaId.slice('base-'.length) : '';
+  }
+
+  /**
+   * The overlap of two ``[minLon, minLat, maxLon, maxLat]`` boxes.
+   *
+   * @param {number[]} a
+   * @param {number[]} b
+   * @returns {number[]|null} ``null`` when they do not overlap, or when
+   *   either is not a well-formed 4-number box.
+   */
+  function intersectBBox(a, b) {
+    const ok = (box) => Array.isArray(box) && box.length === 4 && box.every(Number.isFinite);
+    if (!ok(a)) return null;
+    if (!ok(b)) return a;
+    const out = [
+      Math.max(a[0], b[0]),
+      Math.max(a[1], b[1]),
+      Math.min(a[2], b[2]),
+      Math.min(a[3], b[3]),
+    ];
+    return out[0] < out[2] && out[1] < out[3] ? out : null;
+  }
+
+  /**
+   * The ground a basemap's base layer covers (SNOW-856).
+   *
+   * ``cameraBBox`` is the authority and ``styleBounds`` only ever
+   * narrows it. That order is the whole design:
+   *
+   *   - The CAMERA bbox (``MAX_BOUNDS`` in static/js/map.js — passed in
+   *     rather than duplicated here, so there is one definition of where
+   *     this map can go) is what makes the layer SUFFICIENT. The reader
+   *     cannot pan outside it, so a layer covering it cannot leave a hole.
+   *   - The STYLE's declared bounds are what make it FINITE. Deriving the
+   *     extent from those alone — the first design this ticket had —
+   *     works for the three national styles and blows up on the default
+   *     one: OpenFreeMap Liberty is global, and z0-9 worldwide is roughly
+   *     350,000 tiles. Intersecting instead means a global style is
+   *     bounded by the camera and a national one is bounded by its own
+   *     coverage, and neither ever asks a provider for ground it does not
+   *     serve.
+   *
+   * @param {number[]} cameraBBox ``[minLon, minLat, maxLon, maxLat]``.
+   * @param {number[]|null|undefined} styleBounds The source's TileJSON
+   *   ``bounds``, in the same order. Absent or malformed leaves
+   *   ``cameraBBox`` unnarrowed — a style that declares no coverage is
+   *   claiming all of it, and the camera is still a bound.
+   * @returns {number[]|null} ``null`` when the style covers no part of
+   *   the map's own extent, which is a style nothing here should be
+   *   downloading a base layer for.
+   */
+  function baseLayerBBox(cameraBBox, styleBounds) {
+    return intersectBBox(cameraBBox, styleBounds);
+  }
+
+  /**
+   * The base layer's blob for one basemap (SNOW-856).
+   *
+   * Deliberately ``buildBlob`` rather than a bespoke shape: the result
+   * is then interchangeable with a region's server-computed blob and a
+   * custom area's locally-built one, so ``rangesToTileURLs``,
+   * ``blobFullyCached`` and the byte estimate all work on it unchanged.
+   * A rectangle is also the right shape here — unlike a region, there is
+   * no boundary to clip to.
+   *
+   * @param {number[]} cameraBBox See ``baseLayerBBox``.
+   * @param {number[]|null|undefined} styleBounds See ``baseLayerBBox``.
+   * @returns {Object|null} ``null`` when there is no overlap.
+   */
+  function baseLayerBlob(cameraBBox, styleBounds) {
+    const bbox = baseLayerBBox(cameraBBox, styleBounds);
+    if (!bbox) return null;
+    return buildBlob(bbox, BASE_LAYER_BAND[0], BASE_LAYER_BAND[1]);
+  }
+
+  /**
+   * Every tile URL a basemap's base layer needs (SNOW-856).
+   *
+   * One URL per tile PER SOURCE, each from the host MapLibre will
+   * actually ask that source for — this goes through ``rangesToTileURLs``
+   * precisely so the ``urls[(x + y) % urls.length]`` rotation is the same
+   * one the area download and the live map both use. A base layer stored
+   * under a host the map never asks is a bucket full of tiles that never
+   * serve, which is the SNOW-843 failure repeated one layer down.
+   *
+   * @param {string | string[][]} spec The style's tile sources.
+   * @param {number[]} cameraBBox See ``baseLayerBBox``.
+   * @param {number[]|null|undefined} styleBounds See ``baseLayerBBox``.
+   * @returns {string[]}
+   */
+  function baseLayerTileURLs(spec, cameraBBox, styleBounds) {
+    const blob = baseLayerBlob(cameraBBox, styleBounds);
+    return blob ? rangesToTileURLs(spec, blob) : [];
+  }
+
+  /**
    * Decide whether an incoming download fits the standing budget and,
    * when it doesn't, which areas to evict (oldest first) to make it fit.
    *
@@ -380,14 +602,19 @@
    * added back in, so re-downloading an area never counts its own old
    * copy against itself.
    *
-   * ``incoming.bytes`` exceeding ``budgetBytes`` on its own is refused
-   * outright (``impossible: true``, ``evict: []``) rather than evicting
-   * every other area and still failing — no amount of eviction could ever
-   * make it fit.
+   * ``incoming.bytes`` exceeding what the budget has left ONCE the
+   * un-evictable floor is accounted for is refused outright
+   * (``impossible: true``, ``evict: []``) rather than evicting every other
+   * area and still failing — no amount of eviction could ever make it fit.
+   *
+   * SNOW-856: that floor is the shared base layers. They are counted in
+   * the standing total (real disk) and excluded from the candidate list
+   * (shared, and not the user's to be offered) — see the inline comment.
    *
    * @param {Array<{id: string, bytes: number, savedAt?: string}>} areas
    *   Areas currently on disk, most fields best-effort (a record with no
-   *   usable ``bytes``/``savedAt`` is treated as ``0``/unset).
+   *   usable ``bytes``/``savedAt`` is treated as ``0``/unset). May include
+   *   ``base-`` entries, which this counts but never evicts.
    * @param {{id: string, bytes: number}} incoming The run being planned.
    * @param {number} budgetBytes The standing budget, in bytes.
    * @returns {{fits: boolean, impossible: boolean, evict: string[],
@@ -406,12 +633,34 @@
     const incomingId = incoming && incoming.id;
     const incomingBytes = Number((incoming && incoming.bytes) || 0);
 
-    if (incomingBytes > budget) {
+    const others = list.filter((a) => a && a.id !== incomingId);
+    // SNOW-856: a base layer counts toward the standing total — it is real
+    // disk — but is never an eviction CANDIDATE. Two reasons, and either
+    // alone would be enough. It is shared, so evicting it to make room for
+    // one area silently breaks the zoomed-out view of every other area on
+    // the device. And it is not the user's: the eviction confirm names
+    // areas they chose, and this would offer to delete something they have
+    // never heard of. It goes when the last area under its basemap goes
+    // (`evictBasemapAreas`), which is the only moment nothing needs it.
+    const evictable = others.filter((a) => !isBaseLayerAreaId(a.id));
+    const unevictableBytes = others
+      .filter((a) => isBaseLayerAreaId(a.id))
+      .reduce((sum, a) => sum + (Number(a.bytes) || 0), 0);
+
+    // The floor no eviction can get below, so it is what `impossible` has
+    // to be measured against. Before SNOW-856 every stored byte was
+    // evictable and the floor was zero, which is why this used to compare
+    // `incomingBytes` alone: exhausting the candidate list was guaranteed
+    // to leave exactly the incoming run, and this first check had already
+    // proved that fits. With an un-evictable base layer that guarantee is
+    // gone — a plan could evict every area the user has and still not fit
+    // — so the floor is folded in here rather than discovered as a bad
+    // plan at the bottom of the function.
+    if (incomingBytes + unevictableBytes > budget) {
       const standing = list.reduce((sum, a) => sum + (Number(a && a.bytes) || 0), 0);
       return { fits: false, impossible: true, evict: [], projectedBytes: standing };
     }
 
-    const others = list.filter((a) => a && a.id !== incomingId);
     let total = others.reduce((sum, a) => sum + (Number(a.bytes) || 0), 0) + incomingBytes;
 
     if (total <= budget) {
@@ -421,7 +670,7 @@
     // Oldest savedAt first; id is a deterministic tiebreak for equal or
     // missing timestamps, so a re-run of the same standing set always
     // proposes the same eviction order.
-    const sorted = others.slice().sort((a, b) => {
+    const sorted = evictable.slice().sort((a, b) => {
       const ta = Date.parse(a.savedAt) || 0;
       const tb = Date.parse(b.savedAt) || 0;
       if (ta !== tb) return ta - tb;
@@ -1506,9 +1755,17 @@
     areaIdForRegion: areaIdForRegion,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,
+    areaIdForBaseLayer: areaIdForBaseLayer,
+    isBaseLayerAreaId: isBaseLayerAreaId,
+    baseLayerBasemapKey: baseLayerBasemapKey,
+    intersectBBox: intersectBBox,
+    baseLayerBBox: baseLayerBBox,
+    baseLayerBlob: baseLayerBlob,
+    baseLayerTileURLs: baseLayerTileURLs,
     pinnedCacheName: pinnedCacheName,
     planEviction: planEviction,
     MICRO_BAND: MICRO_BAND,
+    BASE_LAYER_BAND: BASE_LAYER_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,

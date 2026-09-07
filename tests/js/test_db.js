@@ -36,7 +36,7 @@ const V5_STORES = [...V4_STORES, 'log:debug'];
 /**
  * Delete the PWA database and wait for the deletion to actually complete.
  *
- * Mirrors `tests/e2e/test_pwa_db.py::_delete_db` — deliberately does not
+ * Mirrors the retired `tests/e2e/test_pwa_db.py::_delete_db` — deliberately does not
  * resolve on `onblocked` (a pending, not yet completed, delete): db.js
  * yields its memoised connection on `versionchange`, so a blocked delete
  * unblocks itself and `onsuccess` still fires.

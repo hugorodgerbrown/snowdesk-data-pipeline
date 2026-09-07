@@ -113,6 +113,12 @@ e2e = [
 ]
 dev = [
     "pre-commit>=4.6.1,<5",
+    # bin/render-testing-scenarios renders docs/testing-scenarios.md as a
+    # navigable page. markdown-it-py already resolves as a transitive of the
+    # tooling; declared here so the script doesn't rest on someone else's
+    # dependency tree — the same reasoning as pillow in the `test` group. No
+    # tox env runs it, so it belongs to `dev` rather than a scoped group.
+    "markdown-it-py>=4,<5",
     "tox>=4.52.1,<5",
     "tox-uv>=1.0,<2",
     "tox-gh-actions>=3.5.0,<4",
@@ -222,6 +228,7 @@ extend-exclude = ["docs/research", "*.md"]
 # missing here.
 extend-include = [
     "bin/build-weather-icons",
+    "bin/claude-hook-deny-command",
     "bin/docs-lint",
     "bin/ds-lint",
     "bin/e2e-lint",
@@ -230,6 +237,7 @@ extend-include = [
     "bin/js-globals-lint",
     "bin/migrations-lint",
     "bin/render-day-summary-matrix",
+    "bin/render-testing-scenarios",
 ]
 
 [tool.ruff.lint]

@@ -315,8 +315,15 @@ where nobody can answer the prompt.
 
 ## What's NOT here
 
-- **Hooks.** No `PreToolUse` blockers, no `Stop` hook on failing tests. The
-  state-machine preconditions in the skills cover the main drift scenarios.
+- **A `Stop` hook on failing tests, or a `PostToolUse` lint wrapper.** Hooks
+  themselves are no longer absent: two `SessionStart` entries, one
+  `SessionEnd`, and — since SNOW-858 — a `PreToolUse` deny on three
+  prohibited Bash commands. All four are catalogued in
+  [`docs/claude-code-hooks.md`](../docs/claude-code-hooks.md). What is still
+  not here is anything reacting to a *file change*: the lint guards run as
+  pre-commit hooks instead, which protects every committer rather than only a
+  Claude Code session. Beyond that, the state-machine preconditions in the
+  skills cover the main drift scenarios.
 - **Sub-specialised agents.** No separate Django / frontend / Celery agents.
   Single `implementer` until proven insufficient.
 - **Autonomous merging or releasing.** `merge-prs` and `release` both exist,

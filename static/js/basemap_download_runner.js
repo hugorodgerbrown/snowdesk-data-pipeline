@@ -71,7 +71,14 @@
    *   progressGrid: function(Object|null, number): Object,
    *   warmCache: function(string[], Object): (Promise<Object>|null),
    *   isOnline: function(): boolean,
+   *   baseLayer?: function(): Promise<{areaId: string, urls: string[],
+   *     basemapKey: string|null, bbox: number[]}|null>,
+   *   finishBaseLayer?: function(Object|null, Object): Promise<void>,
    * }} deps `map.js`'s helpers, bound once at its module level.
+   *   SNOW-856: `baseLayer` resolves the shared base layer's bucket
+   *   id and the subset of its urls NOT already cached — so a second
+   *   download finds nothing to do — and `finishBaseLayer` records what
+   *   the top-up fetched. Both optional; see `topUpBaseLayer`.
    * @param {{
    *   areaId: string,
    *   mb: number,
@@ -266,10 +273,78 @@
     const glyphPrefix = typeof deps.glyphPrefix === 'function' ? deps.glyphPrefix() : '';
     const warming = deps.warmCache(urls, { pinned: true, areaId, onProgress, glyphPrefix });
     if (warming) {
-      warming.then(settle).catch(() => settle(null));
+      warming
+        .then((result) => {
+          settle(result);
+          return result;
+        })
+        .catch(() => {
+          settle(null);
+          return null;
+        })
+        .then((result) => topUpBaseLayer(deps, core, result));
     } else {
       // No active worker at all — nothing ran and nothing was cached.
       settle(null);
+    }
+  }
+
+  /**
+   * Warm this basemap's shared base layer, after the area it accompanies
+   * (SNOW-856).
+   *
+   * The base layer is the shallow-zoom tiles every area on the device reads once
+   * the camera is zoomed out past a download's z10 floor. It belongs to
+   * the BASEMAP, not to any area, so it lives in its own pinned bucket and
+   * is topped up by whichever download happens to run — the first one pays
+   * for it and every one after finds it already there.
+   *
+   * Three deliberate choices about WHEN, and they are all the same choice:
+   * the area is what the user asked for, and this must never make that
+   * slower, less legible or less likely to succeed.
+   *
+   *   - **After the area, not before.** Ahead of it, the first download on
+   *     a device would spend several megabytes before the region the user
+   *     actually clicked started arriving.
+   *   - **After ``settle``, not before.** The roundel reports the AREA, and
+   *     the area genuinely is complete at that point. Holding it on 'busy'
+   *     through a supplementary fetch would misreport a finished download
+   *     as unfinished.
+   *   - **Best-effort, and never able to fail the run.** Its result is not
+   *     passed to ``finish`` and its failures are swallowed: a base layer
+   *     that half-lands is topped up by the next download (``baseLayer()``
+   *     resolves only the MISSING urls), whereas letting it mark a complete
+   *     area as failed would be a lie the user cannot act on.
+   *
+   * Skipped entirely when the area run itself did not succeed —
+   * ``downloadSucceeded`` false almost always means offline, cancelled or
+   * out of quota, and none of those is improved by asking for eight more
+   * megabytes.
+   *
+   * @param {Object} deps The same bundle ``run`` takes. ``baseLayer`` and
+   *   ``finishBaseLayer`` are both OPTIONAL — a bundle without them (an
+   *   older shell mid-rollout, or a test fake) simply does nothing here.
+   * @param {Object} core ``pwaBasemapDownloadCore``.
+   * @param {Object|null} result The area run's own report.
+   * @returns {Promise<void>} Always resolves.
+   */
+  async function topUpBaseLayer(deps, core, result) {
+    try {
+      if (!core || !core.downloadSucceeded(result)) return;
+      if (typeof deps.baseLayer !== 'function') return;
+      const plan = await deps.baseLayer();
+      // No plan is a style whose bounds do not meet the map's own extent;
+      // no urls is the common case — the base layer is already complete.
+      if (!plan || !Array.isArray(plan.urls) || plan.urls.length === 0) return;
+      const warming = deps.warmCache(plan.urls, { pinned: true, areaId: plan.areaId });
+      if (!warming) return;
+      const baseResult = await warming;
+      if (typeof deps.finishBaseLayer === 'function') {
+        await deps.finishBaseLayer(baseResult, plan);
+      }
+    } catch (_err) {
+      // Best-effort by design — see the docstring. The next download
+      // retries whatever this attempt left missing.
     }
   }
 

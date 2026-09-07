@@ -466,7 +466,49 @@
   // overlayState is also what keeps a basemap swap from reaching in and
   // closing the overlay out from under an open panel — the swap re-seeds
   // overlayState wholesale, and this must survive it untouched.
-  let downloadedOverlayVisible = readBoolStorage(OVERLAY_STORAGE_KEY.downloads, false);
+  //
+  // SNOW-857: the stored value is now read RAW rather than through
+  // ``readBoolStorage``, because "the user has never touched this switch"
+  // and "the user switched it off" have to stay distinguishable. They were
+  // the same value — ``false`` — for this overlay's whole life, and that is
+  // exactly what an auto-on rule cannot work against: it would either
+  // override a deliberate off, or never fire for anyone.
+  //
+  // Same technique, and for the same reason, as SNOW-656's bulletins/l4
+  // hand-over a few lines below — see its comment.
+  //
+  //   'true' / 'false' — the user said so, and their choice always wins.
+  //   null             — untouched, so the effective state is derived.
+  //
+  // The DERIVED state is "on while offline", which is the whole of
+  // SNOW-857. Offline is when the reader has no other cue for where their
+  // detailed coverage ends — SNOW-856's shared base layer means the map
+  // now draws coarsely everywhere rather than going blank at the edge of a
+  // download — and it is the only time the answer is worth the ink. Online
+  // it is noise over a map that can fetch anything.
+  let downloadedOverlayPreference = readStorage(OVERLAY_STORAGE_KEY.downloads);
+
+  /**
+   * Whether the overlay should be painted right now.
+   *
+   * @returns {boolean}
+   */
+  const downloadedOverlayShouldPaint = () => {
+    if (downloadedOverlayPreference === 'true') return true;
+    if (downloadedOverlayPreference === 'false') return false;
+    // Untouched: follow the connection. `pwaConnectivity` is the EFFECTIVE
+    // state (interface up AND no latched or user-forced offline mode), not
+    // `navigator.onLine` — a user who has forced offline mode is exactly
+    // the reader this overlay is for. The bare `navigator.onLine` fallback
+    // matches every other consumer's, for a page where pwa_offline.js has
+    // not run.
+    const online = window.pwaConnectivity
+      ? window.pwaConnectivity.isOnline()
+      : navigator.onLine !== false;
+    return !online;
+  };
+
+  let downloadedOverlayVisible = downloadedOverlayShouldPaint();
 
   // The bulletin-boundary layer (internal key ``l3``) is not an overlay the
   // user toggles — it is a companion to the choropleth, drawn whenever the
@@ -1235,7 +1277,7 @@
         // SNOW-570/SNOW-587: the cached-tiles overlay is installed below,
         // so it has to come off here — a re-install over a surviving
         // layer throws.
-        'cached-tiles-fill', 'cached-tiles-line',
+        'cached-tiles-fill', 'cached-tiles-line', 'cached-tiles-line-elsewhere',
         'regions-label',
       ]) {
         if (map.getLayer(id)) map.removeLayer(id);
@@ -1411,6 +1453,11 @@
       id: 'cached-tiles-fill',
       type: 'fill',
       source: 'cached-tiles',
+      // SNOW-857: the hatch is the ACTIVE basemap's mark. Declared here as
+      // well as re-applied on every refresh, so a layer re-installed by a
+      // style swap is never briefly hatching another basemap's tiles in
+      // this one's colour before the refresh lands.
+      filter: ['==', ['get', 'here'], true],
       layout: { visibility: downloadedOverlayVisible ? 'visible' : 'none' },
       paint: {
         // No tiles painted yet at (re)install time, and the active basemap's
@@ -1425,6 +1472,10 @@
       id: 'cached-tiles-line',
       type: 'line',
       source: 'cached-tiles',
+      // SNOW-857: the ACTIVE basemap's tiles only. Its companion below
+      // draws the others, and the two cannot share a layer because they
+      // need opposite opacity rules — see that layer's comment.
+      filter: ['==', ['get', 'here'], true],
       layout: {
         visibility: downloadedOverlayVisible ? 'visible' : 'none',
         'line-join': 'round',
@@ -1445,6 +1496,38 @@
           CACHED_TILES_ZOOM + DOWNLOAD_PROGRESS_GRID_FADE_END,
           CACHED_TILES_LINE_OPACITY,
         ],
+      },
+    });
+    // SNOW-857: "downloaded, but for a different basemap" — the overlay's
+    // half of the roundel's 'other-basemap' ring. Outline only, in the
+    // colour of the basemap it was downloaded UNDER, and never a fill:
+    // SNOW-645's "two basemaps' squares over the same ground is a picture
+    // of nothing anyone asked for" is about two FILLS and still stands.
+    //
+    // A separate layer rather than a filter on the one above, because the
+    // fade is exactly wrong here. Up there an outline is an accent ON a
+    // hatch, so letting it drop out below z12 removes a mesh and loses
+    // nothing — the hatch still says "downloaded". Here the outline is the
+    // ONLY mark the tile gets, so the same fade would make every
+    // other-basemap download invisible below z10 and faint to z12 — which
+    // is precisely the zoomed-out view SNOW-856 made worth reading. So it
+    // holds a constant opacity, and at low zoom a contiguous downloaded
+    // area reads as a block of its basemap's colour rather than a mesh,
+    // because there is no hatch underneath for it to interfere with.
+    map.addLayer({
+      id: 'cached-tiles-line-elsewhere',
+      type: 'line',
+      source: 'cached-tiles',
+      filter: ['==', ['get', 'here'], false],
+      layout: {
+        visibility: downloadedOverlayVisible ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': basemapIdentityColour(null),
+        'line-width': 0.75,
+        'line-opacity': CACHED_TILES_LINE_OPACITY,
       },
     });
 
@@ -4503,13 +4586,69 @@
       // SNOW-843: source SETS are compared, not template strings — see
       // `pwaBasemapDownloadCore.tileSourcesKey`.
       const activeSourcesKey = core.tileSourcesKey(activeSources);
+
+      // SNOW-857: every downloaded basemap's tiles, not just the active
+      // one's — and this REVERSES SNOW-645, which is why the reasoning is
+      // written out rather than left to a ticket number.
+      //
+      // SNOW-645 removed the per-feature `basemapKey` expression that used
+      // to live here, on Hugo's instruction, quoted a few hundred lines
+      // above: "it should filter to the current basemap, so it never
+      // overlays downloads." Its reasoning was that "two basemaps' squares
+      // over the same ground is a picture of nothing anyone asked for."
+      //
+      // That reasoning holds for two FILLS. It does not hold for a fill and
+      // an OUTLINE, which is a different mark answering a different
+      // question — and the download roundel has answered it that way since
+      // the same ticket: a solid identity-coloured disc for "downloaded for
+      // this basemap", a hollow ring in the OTHER basemap's colour for
+      // "downloaded, but not usable here" (static/css/map.css's
+      // 'other-basemap' block spells the three-way language out). The
+      // overlay was the one surface that could not say the third thing, so
+      // switching basemap read as data loss. It mirrors the roundel now.
+      //
+      // Cost, stated rather than assumed: the `continue` this replaces
+      // skipped `cachedTilesFromURLs` for every non-active basemap, so one
+      // walk of the pinned URL set ran per refresh; now one runs per
+      // DOWNLOADED basemap. `basemapDownloadedTemplates()` only ever
+      // returns basemaps that actually have areas, so that is 1–2 in
+      // practice and 5 for someone who has downloaded under every basemap
+      // in the picker. Left as separate walks deliberately: collapsing them
+      // into one would mean widening `cachedTilesFromURLs` to take several
+      // source specs at once, which every other caller would then have to
+      // be re-read against, for a saving on a path that runs on basemap
+      // change, eviction and download completion — not per frame.
       const features = [];
+      // The active basemap's own tiles, keyed, because they are also the
+      // suppression set below.
+      const activeTiles = new Set();
       for (const { tileSources } of templates) {
         if (core.tileSourcesKey(tileSources) !== activeSourcesKey) continue;
         for (const tile of core.cachedTilesFromURLs(tileSources, cached, CACHED_TILES_ZOOM)) {
+          activeTiles.add(`${tile.z}/${tile.x}/${tile.y}`);
           features.push({
             type: 'Feature',
-            properties: {},
+            properties: { basemapKey: activeKey || '', here: true },
+            geometry: core.bboxPolygon(core.tileBounds(tile.z, tile.x, tile.y)),
+          });
+        }
+      }
+      // Then every OTHER basemap's, minus anything the active one already
+      // covers. An outline meaning "downloaded for another map" drawn over
+      // ground that is downloaded for THIS one says the opposite of what it
+      // means, and the two marks would be stacked on the same square edges
+      // with nothing to separate them.
+      for (const { tileSources, basemapKey } of templates) {
+        if (core.tileSourcesKey(tileSources) === activeSourcesKey) continue;
+        for (const tile of core.cachedTilesFromURLs(tileSources, cached, CACHED_TILES_ZOOM)) {
+          const key = `${tile.z}/${tile.x}/${tile.y}`;
+          if (activeTiles.has(key)) continue;
+          features.push({
+            type: 'Feature',
+            // A record written before SNOW-645 has no key of its own; ''
+            // reaches the `match` expression's default rather than a wrong
+            // basemap's colour — "downloaded elsewhere, unnamed".
+            properties: { basemapKey: basemapKey || '', here: false },
             geometry: core.bboxPolygon(core.tileBounds(tile.z, tile.x, tile.y)),
           });
         }
@@ -4528,9 +4667,46 @@
         // nothing at all, so the image comes first.
         ensureHatchImage(activeKey);
         map.setPaintProperty('cached-tiles-fill', 'fill-pattern', hatchImageId(activeKey));
+        // SNOW-857: the HATCH is the active basemap's mark alone. The other
+        // basemaps' tiles are in the same source and get the outline only —
+        // filtering here rather than splitting the source keeps one
+        // `setData` and one geometry per tile.
+        map.setFilter('cached-tiles-fill', ['==', ['get', 'here'], true]);
       }
       if (map.getLayer('cached-tiles-line')) {
-        map.setPaintProperty('cached-tiles-line', 'line-color', basemapIdentityColour(activeKey));
+        // SNOW-857: coloured per feature again — the expression SNOW-645
+        // removed, restored because there is more than one answer on screen
+        // once other basemaps' downloads are drawn. Each outline takes the
+        // identity colour of the basemap it was DOWNLOADED under, matching
+        // the roundel's 'other-basemap' ring (which is likewise keyed on the
+        // other basemap, not the active one) — colouring them all in the
+        // active basemap's colour would say they belong to the map on
+        // screen, which is the one thing they do not.
+        //
+        // Built here rather than written as a static expression because
+        // MapLibre paint values cannot reference a CSS custom property:
+        // `basemapIdentityColour` reads the live token off the document, so
+        // the match has to be assembled from resolved colours each refresh.
+        const outlineColour = ['match', ['get', 'basemapKey']];
+        const seenKeys = new Set();
+        for (const { basemapKey } of templates) {
+          if (!basemapKey || seenKeys.has(basemapKey)) continue;
+          seenKeys.add(basemapKey);
+          outlineColour.push(basemapKey, basemapIdentityColour(basemapKey));
+        }
+        // The default arm, which a `match` requires and which a keyless
+        // record (pre-SNOW-645, no basemap named) legitimately reaches.
+        outlineColour.push(basemapIdentityColour(activeKey));
+        // A `match` with no arms is invalid, so a single-basemap device
+        // keeps the flat colour it had before this ticket.
+        const lineColour = seenKeys.size ? outlineColour : basemapIdentityColour(activeKey);
+        map.setPaintProperty('cached-tiles-line', 'line-color', lineColour);
+        // The elsewhere outlines take the SAME expression: it is keyed on
+        // each feature's own `basemapKey`, so one expression answers for
+        // both layers and they cannot disagree about a colour.
+        if (map.getLayer('cached-tiles-line-elsewhere')) {
+          map.setPaintProperty('cached-tiles-line-elsewhere', 'line-color', lineColour);
+        }
       }
 
       const tileSource = map.getSource('cached-tiles');
@@ -4558,8 +4734,35 @@
     document.dispatchEvent(new CustomEvent('snowdesk:downloaded-overlay-changed', {
       detail: { visible: downloadedOverlayVisible },
     }));
+    syncCoverageLegend();
     announceOverlayVisibility();
   };
+
+  /**
+   * Show the legend card's coverage key while the overlay is drawn
+   * (SNOW-857).
+   *
+   * Driven from this IIFE rather than by a listener on
+   * ``snowdesk:downloaded-overlay-changed``, because this IIFE owns the
+   * flag and a second reader would be free to disagree with it — the same
+   * reason the sheet's switch reads ``isEnabled()`` rather than keeping a
+   * flag of its own.
+   *
+   * Called at boot as well as on every change: the overlay can now start
+   * visible without anyone touching it (a reader who opens the map already
+   * offline), and a key that only appeared when something CHANGED would
+   * miss exactly that case.
+   *
+   * ``hidden`` rather than a class, matching the attribution section it
+   * sits beside. A missing element is not an error — this partial is
+   * embedded on pages that carry no legend.
+   *
+   * @returns {void}
+   */
+  function syncCoverageLegend() {
+    const section = document.getElementById('map-coverage-section');
+    if (section) section.hidden = !downloadedOverlayVisible;
+  }
 
   /**
    * Switch the overlay on and (re)probe it. Called only from
@@ -4586,14 +4789,37 @@
    *
    * @returns {Promise<void>}
    */
-  const showDownloadedOverlay = () => {
-    downloadedOverlayVisible = true;
-    writeStorage(OVERLAY_STORAGE_KEY.downloads, 'true');
-    for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
+  /**
+   * Paint (or unpaint) the overlay WITHOUT touching the stored preference
+   * (SNOW-857).
+   *
+   * The split this function exists for: ``show()``/``hide()`` below both
+   * persist, because a user flicking the switch is stating a preference.
+   * The connectivity rule must not, because a preference the app wrote on
+   * the user's behalf is indistinguishable from one they set — and the
+   * first time the network came back it would have silently converted
+   * "never touched" into "explicitly off", which is the one state that
+   * stops the rule ever firing again.
+   *
+   * @param {boolean} visible
+   * @returns {Promise<void>} Resolves once a newly-shown overlay has
+   *   probed; immediately when hiding (nothing on screen to be wrong).
+   */
+  const paintDownloadedOverlay = (visible) => {
+    downloadedOverlayVisible = visible;
+    for (const id of ['cached-tiles-fill', 'cached-tiles-line', 'cached-tiles-line-elsewhere']) {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+      }
     }
     announceDownloadedOverlay();
-    return refreshDownloadedOverlay();
+    return visible ? refreshDownloadedOverlay() : Promise.resolve();
+  };
+
+  const showDownloadedOverlay = () => {
+    downloadedOverlayPreference = 'true';
+    writeStorage(OVERLAY_STORAGE_KEY.downloads, 'true');
+    return paintDownloadedOverlay(true);
   };
 
   /**
@@ -4607,13 +4833,31 @@
    * @returns {void}
    */
   const hideDownloadedOverlay = () => {
-    downloadedOverlayVisible = false;
+    downloadedOverlayPreference = 'false';
     writeStorage(OVERLAY_STORAGE_KEY.downloads, 'false');
-    for (const id of ['cached-tiles-fill', 'cached-tiles-line']) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
-    }
-    announceDownloadedOverlay();
+    paintDownloadedOverlay(false);
   };
+
+  // SNOW-857: follow the connection, but only for a reader who has never
+  // touched the switch. An explicit choice — either way — outranks this
+  // and is never overwritten; see `downloadedOverlayShouldPaint`.
+  //
+  // Bound here rather than inside `refreshDownloadedOverlay`'s existing
+  // listeners because this changes WHETHER the overlay is painted, not
+  // what it holds. A no-op when the answer has not moved, so the ordinary
+  // interface flap of a phone in a valley does not repaint the map or
+  // re-announce a state nothing changed.
+  document.addEventListener('snowdesk:connectivity-changed', () => {
+    const next = downloadedOverlayShouldPaint();
+    if (next !== downloadedOverlayVisible) paintDownloadedOverlay(next);
+  });
+
+  // SNOW-857: and once at boot, for the reader who opens the map already
+  // offline. The layers install with the right visibility from
+  // `downloadedOverlayVisible` directly, so the map itself is correct
+  // without this — it is the legend key that would otherwise stay hidden
+  // over an overlay nobody switched on and nobody can explain.
+  syncCoverageLegend();
 
   // The tile set can change under a switched-on overlay — a lazy country
   // load brings regions whose download state has never been probed, and a

@@ -22,10 +22,11 @@
  * apps/public/templates/public/partials/_map_downloads_sheet.html. It is a
  * hand-copy, which is the standing trade-off for this harness: Vitest
  * cannot render a Django template, so the alternative is not a better
- * fixture but no DOM coverage at all. Anything structural asserted here —
- * the ``data-`` hooks, the template ids — is also exercised end-to-end
- * against the REAL template by tests/e2e/test_manage_downloads.py, which is
- * what catches the two drifting apart.
+ * fixture but no DOM coverage at all. The row and strings templates are
+ * asserted against the REAL rendered page in
+ * tests/public/test_map_page.py, which is what catches those two drifting
+ * apart; SNOW-649 retired tests/e2e/test_manage_downloads.py, which used to
+ * cover the rest of the sheet's markup the same way.
  *
  * SNOW-844 adds a row state the sheet did not have: an area that is on
  * this device, holds every tile, and still cannot render, because the
@@ -1596,7 +1597,7 @@ describe('account-only rows (SNOW-749)', () => {
 
   it('starts the region download and hides the sheet on Download here', async () => {
     installAreas([ACCOUNT_ONLY_REGION]);
-    window.pwaRegionDownload = { start: vi.fn(async () => true) };
+    window.pwaRegionDownload = { start: vi.fn(async () => ({ started: true, reason: '' })) };
     await loadModule();
     openSheet();
     await settle();
@@ -1606,6 +1607,99 @@ describe('account-only rows (SNOW-749)', () => {
 
     expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-1000');
     expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    delete window.pwaRegionDownload;
+  });
+
+  it('says nothing on a successful Download here', async () => {
+    // The success path must be silent: the roundel is already reporting
+    // the run, and a toast on top of it would be the app narrating itself.
+    installAreas([ACCOUNT_ONLY_REGION]);
+    window.pwaRegionDownload = { start: vi.fn(async () => ({ started: true, reason: '' })) };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+    delete window.pwaRegionDownload;
+  });
+
+  it('says a download is already running, not "try again" (SNOW-863)', async () => {
+    // The refusal a user actually reaches. One roundel drives every region
+    // download, so a second Download here while the first is going is
+    // refused — and "Try again" was false, because it fails identically
+    // until that run finishes. Reported from staging as a bare failure
+    // toast with no way to tell what to do about it.
+    installAreas([ACCOUNT_ONLY_REGION]);
+    window.pwaRegionDownload = {
+      start: vi.fn(async () => ({ started: false, reason: 'busy' })),
+    };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      'Another download is still running — try again when it finishes.',
+    );
+    delete window.pwaRegionDownload;
+  });
+
+  it('says an area is already here when the account row lags the device', async () => {
+    installAreas([ACCOUNT_ONLY_REGION]);
+    window.pwaRegionDownload = {
+      start: vi.fn(async () => ({ started: false, reason: 'done' })),
+    };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      'That area is already downloaded on this device.',
+    );
+    delete window.pwaRegionDownload;
+  });
+
+  it('stays silent when the visitor was sent to sign in', async () => {
+    // They are looking at another page by now; a toast would be talking to
+    // nobody.
+    installAreas([ACCOUNT_ONLY_REGION]);
+    window.pwaRegionDownload = {
+      start: vi.fn(async () => ({ started: false, reason: 'signin' })),
+    };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+    delete window.pwaRegionDownload;
+  });
+
+  it('keeps the generic message for a reason with no sentence of its own', async () => {
+    installAreas([ACCOUNT_ONLY_REGION]);
+    window.pwaRegionDownload = {
+      start: vi.fn(async () => ({ started: false, reason: 'unknown-region' })),
+    };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      "That download couldn't be started here. Try again.",
+    );
     delete window.pwaRegionDownload;
   });
 
@@ -1635,7 +1729,7 @@ describe('account-only rows (SNOW-749)', () => {
 
   it('refuses Download here while offline', async () => {
     installAreas([ACCOUNT_ONLY_REGION]);
-    window.pwaRegionDownload = { start: vi.fn(async () => true) };
+    window.pwaRegionDownload = { start: vi.fn(async () => ({ started: true, reason: '' })) };
     await loadModule();
     openSheet();
     await settle();

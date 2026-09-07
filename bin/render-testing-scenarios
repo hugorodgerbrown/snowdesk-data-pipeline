@@ -1,0 +1,593 @@
+#!/usr/bin/env python3
+# bin/render-testing-scenarios — render the manual test script as a page.
+#
+# docs/testing-scenarios.md is a working document: someone opens it, works
+# down a scenario, and keeps a browser beside it. Read as markdown that is
+# awkward — sixty-odd scenarios in one file, no way to jump between them,
+# and every http://localhost:8000 URL in it has to be copied by hand.
+#
+# This renders the same file as one navigable page: an index of every
+# section and scenario, an anchor on every heading, and every localhost URL
+# turned into a link you can click while the dev server is running.
+#
+# The markdown stays the source of truth. Nothing here is authored — the
+# page is a projection of the file, so a scenario edited there and not
+# re-rendered shows up as a stale page rather than as a page that quietly
+# disagrees with the document.
+#
+# The output is a self-contained HTML fragment — no <!doctype>, <html>,
+# <head> or <body> of its own — the same convention as
+# bin/render-day-summary-matrix, docs/page-audits/ and docs/research/, so it
+# publishes as an Artifact and still renders opened straight from disk.
+#
+# Reads only. Prints to stdout unless --output names a file.
+#
+#     uv run python bin/render-testing-scenarios --output /tmp/scenarios.html
+#
+# ruff: noqa: T201, E501
+# T201 — CLI script; print() is the intended output channel.
+# E501 — most of this file is an embedded HTML document. Rewrapping its
+#        markup and CSS to 88 columns to satisfy a Python line-length rule
+#        would damage the output for no reader's benefit, which is the same
+#        reasoning bin/render-day-summary-matrix's header gives.
+
+"""Manual test-script renderer — see the header block above for full behaviour."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import html
+import pathlib
+import re
+import sys
+from dataclasses import dataclass
+
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+SOURCE = REPO_ROOT / "docs" / "testing-scenarios.md"
+
+# The dev-server URLs the script sends a tester to often enough to be worth
+# a permanent strip at the top. Each one is checked into the document or
+# into CLAUDE.md; none is invented here.
+ENVIRONMENT_LINKS: list[tuple[str, str, str]] = [
+    ("Map (home)", "http://localhost:8000/", "the page most scenarios start on"),
+    (
+        "Bulletin",
+        "http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/",
+        "the canonical preview bulletin",
+    ),
+    (
+        "Account settings",
+        "http://localhost:8000/account/settings/",
+        "sign-out, passkeys, Reset local data",
+    ),
+    ("Mailpit", "http://localhost:8025/", "every outbound email in dev"),
+    ("Components", "http://localhost:8000/_components/", "the design-system reference"),
+    ("SW version", "http://localhost:8000/_sw-version/", "deployed vs live worker"),
+]
+
+# "### Scenario P12: Reset local data (settings page button)" — the document's
+# own vernacular. The id becomes the anchor and the chip; the rest is the title.
+SCENARIO_HEADING = re.compile(r"^Scenario\s+([A-Za-z]*\d+[a-z]?):\s*(.+)$")
+
+# A bare URL in running text. The document writes dev-server URLs unlinked
+# (`Navigate to http://localhost:8000/account/settings/`), which is the form
+# a reader of the markdown wants and a reader of this page does not.
+BARE_URL = re.compile(r"https?://[^\s<>()\[\]{}\"']+[^\s<>()\[\]{}\"'.,;:]")
+
+# Splits rendered HTML into tags and the text between them.
+TAG_SPLIT = re.compile(r"(<[^>]+>)")
+
+
+@dataclass(frozen=True)
+class Entry:
+    """One index entry — a section (level 2) or a scenario (level 3)."""
+
+    level: int
+    anchor: str
+    label: str
+    title: str
+
+
+def slugify(text: str) -> str:
+    """Reduce heading text to a URL-safe anchor.
+
+    Args:
+        text: The heading's plain-text content.
+
+    Returns:
+        A lowercase, hyphen-separated slug.
+
+    """
+    slug = re.sub(r"[^\w\s-]", "", text.lower())
+    return re.sub(r"[\s_]+", "-", slug).strip("-")
+
+
+def strip_frontmatter(text: str) -> str:
+    """Drop the YAML frontmatter block docs-lint requires on every doc.
+
+    Args:
+        text: The raw markdown file contents.
+
+    Returns:
+        The markdown body, frontmatter removed.
+
+    """
+    if not text.startswith("---\n"):
+        return text
+    end = text.find("\n---\n", 4)
+    return text if end == -1 else text[end + 5 :]
+
+
+def anchor_headings(tokens: list[Token]) -> list[Entry]:
+    """Give every heading a stable id and collect the index entries.
+
+    A scenario heading is anchored on its id (``scenario-p12``) rather than
+    its full title, so an anchor survives the title being reworded.
+
+    Args:
+        tokens: The parsed markdown token stream, modified in place.
+
+    Returns:
+        The level-2 and level-3 entries, in document order.
+
+    """
+    entries: list[Entry] = []
+    seen: dict[str, int] = {}
+
+    for index, token in enumerate(tokens):
+        if token.type != "heading_open":
+            continue
+        content = tokens[index + 1].content
+        match = SCENARIO_HEADING.match(content)
+        label, title = (match.group(1), match.group(2)) if match else ("", content)
+        base = slugify(f"scenario-{label}" if label else content) or "section"
+        seen[base] = seen.get(base, 0) + 1
+        anchor = base if seen[base] == 1 else f"{base}-{seen[base]}"
+        token.attrSet("id", anchor)
+
+        level = int(token.tag[1:])
+        if level in (2, 3):
+            entries.append(Entry(level=level, anchor=anchor, label=label, title=title))
+
+    return entries
+
+
+def linkify(rendered: str) -> str:
+    """Turn bare URLs in the rendered HTML into links.
+
+    Only the text between tags is touched, and never inside an anchor or a
+    code span — a URL already linked must not be linked twice, and one shown
+    as code is being quoted rather than offered.
+
+    Args:
+        rendered: The HTML markdown-it produced.
+
+    Returns:
+        The same HTML with bare URLs wrapped in anchors.
+
+    """
+    out: list[str] = []
+    depth = 0
+
+    for part in TAG_SPLIT.split(rendered):
+        if part.startswith("<"):
+            name = part.lstrip("</").split(" ", 1)[0].rstrip(">")
+            if name in ("a", "code", "pre"):
+                depth += -1 if part.startswith("</") else 1
+            out.append(part)
+        elif depth > 0 or not part.strip():
+            out.append(part)
+        else:
+            out.append(
+                BARE_URL.sub(
+                    lambda m: (
+                        f'<a class="url" href="{m.group(0)}" target="_blank" rel="noopener">{m.group(0)}</a>'
+                    ),
+                    part,
+                )
+            )
+
+    return "".join(out)
+
+
+def defuse_repo_links(rendered: str) -> str:
+    """Render repo-relative links as code rather than as dead anchors.
+
+    The document links to source files (``../tests/js/test_sw.js``) and to
+    sibling docs. Neither resolves from a standalone page, and a link that
+    goes nowhere is worse than a path the reader can copy.
+
+    Args:
+        rendered: The HTML markdown-it produced.
+
+    Returns:
+        The same HTML with off-site relative anchors replaced by code spans.
+
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        href, text = match.group(1), match.group(2)
+        if href.startswith(("http://", "https://", "#", "mailto:")):
+            return match.group(0)
+        return f'<code class="path">{text}</code>'
+
+    return re.sub(
+        r'<a href="([^"]+)"[^>]*>(.*?)</a>', replace, rendered, flags=re.DOTALL
+    )
+
+
+def render_index(entries: list[Entry]) -> str:
+    """Build the navigation rail from the collected headings.
+
+    Args:
+        entries: The index entries, in document order.
+
+    Returns:
+        The index markup.
+
+    """
+    rows: list[str] = []
+    open_section = False
+
+    for entry in entries:
+        if entry.level == 2:
+            if open_section:
+                rows.append("</ul></li>")
+            rows.append(
+                f'<li class="nav-section"><a href="#{entry.anchor}">{html.escape(entry.title)}</a><ul>'
+            )
+            open_section = True
+            continue
+
+        if not open_section:
+            rows.append('<li class="nav-section"><ul>')
+            open_section = True
+
+        chip = (
+            f'<span class="chip">{html.escape(entry.label)}</span>'
+            if entry.label
+            else ""
+        )
+        rows.append(
+            f'<li class="nav-scenario"><a href="#{entry.anchor}">{chip}<span>{html.escape(entry.title)}</span></a></li>'
+        )
+
+    if open_section:
+        rows.append("</ul></li>")
+
+    return f'<ul class="nav-list">{"".join(rows)}</ul>'
+
+
+def render_environment() -> str:
+    """Build the dev-server link strip.
+
+    Returns:
+        The environment strip markup.
+
+    """
+    cards = "".join(
+        f'<a class="env-card" href="{url}" target="_blank" rel="noopener">'
+        f'<span class="env-name">{html.escape(name)}</span>'
+        f'<span class="env-url">{html.escape(url.replace("http://", ""))}</span>'
+        f'<span class="env-note">{html.escape(note)}</span></a>'
+        for name, url, note in ENVIRONMENT_LINKS
+    )
+    return f'<nav class="env" aria-label="Dev server links">{cards}</nav>'
+
+
+def page(body: str, index: str, scenario_count: int, generated: dt.date) -> str:
+    """Assemble the complete HTML fragment.
+
+    Args:
+        body: The rendered document.
+        index: The navigation rail markup.
+        scenario_count: How many scenarios the document holds.
+        generated: The date this render was made.
+
+    Returns:
+        A self-contained HTML fragment.
+
+    """
+    return f"""<title>Snowdesk Test Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap">
+<style>
+/* Snowdesk's own tokens (src/css/main.css @theme and its .dark block), so the
+   test script reads as part of the product it tests. Light is the base; both
+   dark paths redefine only the tokens. */
+:root {{
+  --bg:            #f2f0ec;
+  --card:          #ffffff;
+  --card-subtle:   #fafaf8;
+  --tag:           #f5f3ef;
+  --text-1:        #1a1916;
+  --text-2:        #6b6860;
+  --text-3:        #6e6b65;
+  --border:        rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --accent:        #2563eb;
+  --ok:            #16a34a;
+  --partial:       #d97706;
+  --shadow:        0 1px 2px rgba(0, 0, 0, 0.04);
+  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}}
+@media (prefers-color-scheme: dark) {{
+  :root:not([data-theme="light"]) {{
+    --bg:            #1c1b19;
+    --card:          #2a2825;
+    --card-subtle:   #23211f;
+    --tag:           #302e2a;
+    --text-1:        #edece8;
+    --text-2:        #a8a49c;
+    --text-3:        #9a968e;
+    --border:        rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --accent:        #7ea2f5;
+    --shadow:        0 1px 2px rgba(0, 0, 0, 0.3);
+  }}
+}}
+:root[data-theme="dark"] {{
+  --bg:            #1c1b19;
+  --card:          #2a2825;
+  --card-subtle:   #23211f;
+  --tag:           #302e2a;
+  --text-1:        #edece8;
+  --text-2:        #a8a49c;
+  --text-3:        #9a968e;
+  --border:        rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --accent:        #7ea2f5;
+  --shadow:        0 1px 2px rgba(0, 0, 0, 0.3);
+}}
+
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}}
+a {{ color: var(--accent); }}
+a:focus-visible, summary:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }}
+
+.layout {{ display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }}
+@media (min-width: 1080px) {{
+  .layout {{ grid-template-columns: 300px minmax(0, 1fr); align-items: start; }}
+}}
+
+/* ——— masthead ——— */
+.masthead {{ grid-column: 1 / -1; border-bottom: 1px solid var(--border); background: var(--card); }}
+.masthead-inner {{ max-width: 1360px; margin: 0 auto; padding: 34px 28px 26px; }}
+.eyebrow {{
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--text-3); margin: 0 0 10px;
+}}
+.masthead h1 {{
+  font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; margin: 0 0 10px;
+  color: var(--text-1); font-weight: 600; letter-spacing: -0.02em; text-wrap: balance;
+}}
+.standfirst {{ margin: 0; max-width: 62ch; color: var(--text-2); }}
+.meta {{
+  margin: 18px 0 0; display: flex; flex-wrap: wrap; gap: 8px 20px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}}
+
+/* ——— dev-server strip ——— */
+.env {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 24px; }}
+.env-card {{
+  display: flex; flex-direction: column; gap: 3px; padding: 11px 13px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--card-subtle);
+  text-decoration: none; transition: border-color 120ms ease, background 120ms ease;
+}}
+.env-card:hover {{ border-color: var(--border-strong); background: var(--tag); }}
+.env-name {{ color: var(--text-1); font-weight: 600; font-size: 13px; }}
+.env-url {{ font-family: var(--font-mono); font-size: 11px; color: var(--accent); word-break: break-all; }}
+.env-note {{ font-size: 11px; color: var(--text-3); }}
+
+/* ——— index rail ——— */
+.rail {{ padding: 22px 20px 40px; border-bottom: 1px solid var(--border); }}
+@media (min-width: 1080px) {{
+  .rail {{
+    position: sticky; top: 0; max-height: 100vh; overflow-y: auto;
+    border-bottom: none; border-right: 1px solid var(--border); padding: 26px 18px 40px;
+  }}
+}}
+.rail h2 {{
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--text-3); margin: 0 0 12px; font-weight: 500;
+}}
+.nav-list, .nav-list ul {{ list-style: none; margin: 0; padding: 0; }}
+.nav-section > a {{
+  display: block; padding: 9px 8px 6px; color: var(--text-1); font-weight: 600;
+  font-size: 13px; text-decoration: none; border-radius: 6px;
+}}
+.nav-section > a:hover {{ background: var(--tag); }}
+.nav-section + .nav-section {{ margin-top: 6px; border-top: 1px solid var(--border); padding-top: 4px; }}
+.nav-scenario a {{
+  display: flex; gap: 8px; align-items: baseline; padding: 5px 8px;
+  color: var(--text-2); font-size: 13px; text-decoration: none; border-radius: 6px;
+}}
+.nav-scenario a:hover {{ background: var(--tag); color: var(--text-1); }}
+.chip {{
+  flex: none; min-width: 3.1em; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-3); font-variant-numeric: tabular-nums;
+}}
+
+/* ——— document ——— */
+main {{ min-width: 0; padding: 30px 28px 96px; max-width: 1060px; }}
+main > * {{ max-width: 74ch; }}
+main > .table-wrap, main > h2 {{ max-width: none; }}
+h2 {{
+  font-size: 13px; font-family: var(--font-mono); letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--text-3); font-weight: 500;
+  margin: 56px 0 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border-strong);
+}}
+h2:first-child {{ margin-top: 0; }}
+h3 {{
+  font-size: 21px; color: var(--text-1); font-weight: 600; letter-spacing: -0.01em;
+  margin: 44px 0 12px; text-wrap: balance; scroll-margin-top: 16px;
+}}
+h4 {{
+  font-size: 12px; font-family: var(--font-mono); letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-3); font-weight: 500; margin: 30px 0 10px;
+}}
+h2, h3, h4 {{ scroll-margin-top: 16px; }}
+p {{ margin: 0 0 14px; }}
+strong {{ color: var(--text-1); font-weight: 600; }}
+hr {{ border: none; border-top: 1px solid var(--border); margin: 40px 0; }}
+ul, ol {{ margin: 0 0 16px; padding-left: 22px; }}
+li {{ margin-bottom: 6px; }}
+
+code {{
+  font-family: var(--font-mono); font-size: 0.88em; background: var(--tag);
+  padding: 1px 5px; border-radius: 4px; color: var(--text-1);
+}}
+code.path {{ background: none; padding: 0; color: var(--text-3); }}
+pre {{
+  background: var(--card-subtle); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.55;
+}}
+pre code {{ background: none; padding: 0; font-size: inherit; }}
+a.url {{ font-family: var(--font-mono); font-size: 0.9em; word-break: break-all; }}
+
+/* Blockquotes carry the document's asides — "Automated:", preconditions,
+   "read this before you judge a result". A rule, not a filled card: they sit
+   inside scenarios that are already cards' worth of structure. */
+blockquote {{
+  margin: 0 0 18px; padding: 2px 0 2px 16px; border-left: 2px solid var(--border-strong);
+  color: var(--text-3); font-size: 14px;
+}}
+blockquote p {{ margin: 0 0 8px; }}
+blockquote p:last-child {{ margin-bottom: 0; }}
+
+.table-wrap {{ overflow-x: auto; margin: 0 0 22px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); box-shadow: var(--shadow); }}
+table {{ border-collapse: collapse; width: 100%; font-size: 14px; }}
+th, td {{ text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--border); }}
+tr:last-child td {{ border-bottom: none; }}
+th {{
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-3); font-weight: 500;
+  background: var(--card-subtle); white-space: nowrap;
+}}
+/* Step tables are Step | Action | Expected Result. The step number is a
+   counter, not prose — hold it narrow and lined up. */
+td:first-child {{
+  font-family: var(--font-mono); color: var(--text-3); font-variant-numeric: tabular-nums;
+  white-space: nowrap; width: 1%;
+}}
+td:first-child:not(:only-child) {{ text-align: right; }}
+table code {{ font-size: 0.85em; }}
+
+.top {{
+  display: inline-block; margin-left: 10px; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-3); text-decoration: none; vertical-align: middle; opacity: 0;
+  transition: opacity 120ms ease;
+}}
+h3:hover .top, .top:focus-visible {{ opacity: 1; }}
+@media (hover: none) {{ .top {{ opacity: 1; }} }}
+
+@media (prefers-reduced-motion: reduce) {{
+  * {{ transition: none !important; }}
+}}
+</style>
+
+<div class="layout" id="top">
+  <header class="masthead">
+    <div class="masthead-inner">
+      <p class="eyebrow">Snowdesk · manual QA</p>
+      <h1>Test run</h1>
+      <p class="standfirst">Every manual scenario for the bulletin site, the map, accounts, the PWA shell and offline downloads — with the dev-server links live, so you can work down a scenario with the app open beside it.</p>
+      <p class="meta">
+        <span>{scenario_count} scenarios</span>
+        <span>Rendered {generated:%-d %B %Y}</span>
+        <span>Source: docs/testing-scenarios.md</span>
+      </p>
+      {render_environment()}
+    </div>
+  </header>
+
+  <aside class="rail">
+    <h2>Index</h2>
+    {index}
+  </aside>
+
+  <main>
+{body}
+  </main>
+</div>
+"""
+
+
+def build() -> tuple[str, int]:
+    """Render the document.
+
+    Returns:
+        The page HTML and the number of scenarios it holds.
+
+    """
+    markdown = strip_frontmatter(SOURCE.read_text(encoding="utf-8"))
+    md = MarkdownIt("commonmark").enable("table").enable("strikethrough")
+    tokens = md.parse(markdown)
+    entries = anchor_headings(tokens)
+
+    rendered = md.renderer.render(tokens, md.options, {})
+    rendered = defuse_repo_links(rendered)
+    rendered = linkify(rendered)
+    rendered = rendered.replace("<table>", '<div class="table-wrap"><table>').replace(
+        "</table>", "</table></div>"
+    )
+    # A way back to the index from every scenario, without a floating control
+    # over a page that is mostly tables.
+    rendered = re.sub(
+        r'(<h3 id="([^"]+)">)(.*?)(</h3>)',
+        lambda m: (
+            f'{m.group(1)}{m.group(3)}<a class="top" href="#top" aria-label="Back to the index">index ↑</a>{m.group(4)}'
+        ),
+        rendered,
+        flags=re.DOTALL,
+    )
+
+    # Drop the document's own H1 — the masthead carries it.
+    rendered = re.sub(r"<h1[^>]*>.*?</h1>", "", rendered, count=1, flags=re.DOTALL)
+
+    scenarios = sum(1 for entry in entries if entry.level == 3 and entry.label)
+    return page(rendered, render_index(entries), scenarios, dt.date.today()), scenarios
+
+
+def main() -> int:
+    """Entry point.
+
+    Returns:
+        Process exit code.
+
+    """
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output",
+        type=pathlib.Path,
+        help="write the page here instead of stdout",
+    )
+    args = parser.parse_args()
+
+    rendered, scenarios = build()
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+        print(f"wrote {args.output} — {scenarios} scenarios", file=sys.stderr)
+    else:
+        print(rendered)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

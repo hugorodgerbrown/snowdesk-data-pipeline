@@ -741,7 +741,11 @@ async function _searchPinnedBuckets(request) {
  *
  * @param {Request} request
  * @returns {Promise<Response|undefined>} A cached response, or
- *   ``undefined`` when the caller should go to the network.
+ *   ``undefined`` when no partition holds it. SNOW-854: that is not the
+ *   same as "go to the network" — the caller checks the offline mode
+ *   before it does, and this function is deliberately reached first
+ *   either way, because a cache the device holds should be read in every
+ *   mode.
  */
 async function _readOnlyBasemapCacheProbe(request) {
   try {
@@ -2360,14 +2364,30 @@ async function _shouldUseNetwork() {
  * costs nothing. Everything else — a forced or latched mode, or a worker that
  * has not read its persisted mode yet — returns ``false`` and pays one await.
  *
- * ``navigator.onLine`` is deliberately NOT consulted. A passthrough with the
- * interface down fails natively and the browser reports it, which is what
- * happened before this ticket and is not the defect being fixed; narrowing
- * the condition to the mode keeps the change to the thing that was wrong.
+ * SNOW-862: ``navigator.onLine === false`` blocks a passthrough too, so this
+ * and ``_shouldUseNetwork`` answer the same question. They used to disagree,
+ * and the gap was the whole of "the radio is off": every read path refused
+ * correctly while API GETs, HTMX fragments and mutation POSTs were handed to
+ * the browser anyway. SNOW-852 left it there on the reasoning that such a
+ * request fails natively and the browser reports it — true, and a fair scope
+ * call for that ticket, but not a reason for two predicates that mean the
+ * same thing to keep giving different answers.
+ *
+ * Nothing else covers it. The latch is evidence from three read-path
+ * TIMEOUTS, and a dead radio rejects rather than hangs (see
+ * ``_boundedFetch``), so it never fires; ``onLine`` is the only signal there
+ * is. Note the asymmetry, which is deliberate: ``false`` is trustworthy —
+ * there is no interface — while ``true`` means nothing, which is exactly why
+ * the latch has to exist alongside this rather than instead of it.
+ *
+ * The cost SNOW-852's passthrough protected is not a real one here. There is
+ * no throughput to preserve on a dead radio, and answering from memory beats
+ * a doomed trip through the network stack.
  *
  * @returns {boolean}
  */
 function _mayPassThrough() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   return _networkModeHydrated && _networkMode === 'auto';
 }
 
@@ -3189,6 +3209,10 @@ async function _networkFirst(request) {
  * a ``Response`` today; this is a defensive guard against a future
  * regression in either function, not a documented current failure mode.
  *
+ * SNOW-859: the re-fetch is nonetheless subject to ``_shouldUseNetwork()``,
+ * so a defensive path cannot become the one that breaks the offline
+ * promise. The telemetry fires either way.
+ *
  * @param {Promise<Response>} responsePromise
  * @param {Request} request
  * @param {string} [clientId]
@@ -3204,6 +3228,25 @@ async function _guardedRespond(responsePromise, request, clientId) {
       { url: request.url, mode: request.mode },
       clientId,
     );
+    // SNOW-859: the recovery is subject to the offline mode, like every
+    // other network path in this file. Note the ordering — the telemetry
+    // above fires either way, because the anomaly is worth reporting
+    // whether or not the app is allowed to do anything about it.
+    //
+    // Unreachable today, and that is exactly why it is worth closing. All
+    // three wrapped strategies return a real Response on every path under
+    // an offline mode, the 504s included, so nothing gets here without a
+    // regression in one of them. "It cannot happen" is the argument that
+    // left SNOW-854's branch unguarded for two tickets, and this one is
+    // worse if it ever does happen: a recovery path that spends the
+    // network fires precisely when something has already gone wrong,
+    // taking the user's offline promise down with it and blaming the
+    // regression rather than itself.
+    if (!(await _shouldUseNetwork())) {
+      const offline = _synthesizedGatewayTimeout();
+      _debugServe(request, 'guard', 'timeout-504', offline, null);
+      return offline;
+    }
     // SNOW-846: the one branch this wrapper owns. Every other `serve` line
     // comes from the strategy that produced the response, because only it
     // knows which partition answered — but a strategy that resolved to
@@ -3230,6 +3273,14 @@ async function _guardedRespond(responsePromise, request, clientId) {
 // GET, which preserves the "unknown cross-origin stays network-only"
 // contract. (Non-GET cross-origin requests never reach here — they exit
 // synchronously at the ``'network'`` branch above.)
+//
+// SNOW-854: "network-only" is bounded by the offline mode, as every other
+// path in this file is. It always was for a RECOGNISED basemap origin,
+// because that branch runs a guarded strategy; the unrecognised branch
+// below simply had no guard, and an unrecognised origin is exactly what a
+// swisstopo tile becomes when the allowlist is lost. Both branches now
+// answer 504 rather than spending a connection the user asked the app not
+// to use.
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -3332,6 +3383,28 @@ self.addEventListener('fetch', (event) => {
         // doing its job.
         _debugServe(request, 'probe', 'cache', cached, startedAt);
         return cached;
+      }
+      // SNOW-854: the fourth network path, and the one that had no mode
+      // check. Three paths consult `_shouldUseNetwork()` — the shell, the
+      // basemap strategy and the network-only branch above — and this one
+      // fell straight through to `fetch`, so a user in offline mode kept
+      // paying for tiles as long as classification did not recognise the
+      // origin. On staging that was every swisstopo tile: `_basemapOrigins`
+      // is in-memory, an app-data reset had taken the `meta:app` mirror it
+      // rehydrates from, and half-megabyte relief tiles went out over a
+      // connection the user had asked the app not to spend. It looked like
+      // the download working — the panned-to region drew — which is why it
+      // survived SNOW-852.
+      //
+      // The guard goes HERE, below the probe, and moving it above would
+      // undo SNOW-722. That probe exists precisely for a lost allowlist,
+      // and a device holding the tile should serve it whatever mode it is
+      // in: refusing to read a cache is not a saving, it is a blank map
+      // over a full disk.
+      if (!(await _shouldUseNetwork())) {
+        const offline = _synthesizedGatewayTimeout();
+        _debugServe(request, 'probe', 'timeout-504', offline, startedAt);
+        return offline;
       }
       const network = await fetch(request).catch((err) => {
         _debugServe(request, 'probe', 'network-error', null, startedAt);

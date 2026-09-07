@@ -28,6 +28,15 @@ same-origin API GETs, HTMX fragments and mutation POSTs as
 ``_networkMode`` never got a say and those requests left the device under
 ``offline-forced``. It is green as of that fix.
 
+It caught a second leak by not catching it, which is the more useful
+lesson: SNOW-854, cross-origin basemap tiles, found by hand on staging
+while this file was green. The gap was that the module tested ONE of the
+two routes ``sw.js`` sends a cross-origin GET down. A registered basemap
+origin takes the guarded strategy; an unregistered one takes SNOW-722's
+probe, which had no guard at all — and every basemap origin becomes
+unregistered the moment an idle worker is recycled. The third test below
+empties the allowlist first, so both routes are now covered.
+
 The assertion is zero, and it was zero while it failed. Anyone tempted to
 relax it to match some future behaviour should note that doing so deletes
 the only thing standing behind every other test in this directory.
@@ -136,6 +145,66 @@ def test_offline_mode_stops_all_traffic_while_the_network_is_available(
         + "\n".join(f"    {line}" for line in leaked)
         + "\n\nEach line is a request that reached the proxy while the user "
         "had asked the app not to use the network."
+    )
+
+
+@pytest.mark.usefixtures("_load_offline_dataset")
+def test_offline_mode_holds_when_the_worker_cannot_classify_the_tile_origin(
+    offline_map_page: OfflineMapPage,
+) -> None:
+    """The switch holds for tiles the worker does not recognise as basemap.
+
+    The test above passes a camera move over ground the app has never
+    fetched, and it did so while this leak was live. Both facts are true
+    because ``sw.js`` routes a cross-origin GET two ways: a REGISTERED
+    basemap origin goes to the basemap strategy, and everything else goes
+    to SNOW-722's read-only probe. Only the first was guarded. The page had
+    registered its origins, so nothing above ever reached the second.
+
+    On staging it did. An app-data reset had taken the durable allowlist
+    mirror, the worker held nothing in memory, and every swisstopo tile
+    became "unrecognised" — half-megabyte relief tiles went out with
+    Offline mode switched on, while the ``/api/`` calls beside them were
+    correctly refused. The download looked like it was working, because
+    the panned-to region drew.
+
+    So the allowlist is emptied here before the camera moves, and the
+    assertion is the same zero. It has to be the same zero: an app that
+    keeps its promise only while an in-memory ``Set`` survives is not
+    keeping it.
+    """
+    offline_map_page.switch_offline_mode(True)
+    offline_map_page.forget_basemap_origins()
+
+    watermark = offline_map_page.network.mark()
+
+    # Ground nothing has stored, at a zoom nothing was stored at — the
+    # request MapLibre cannot answer from any cache, and therefore the one
+    # that has to be refused rather than fetched.
+    offline_map_page.jump_to(7.6, 46.1, offline_map_page.subject.inside_zoom)
+    offline_map_page.page.wait_for_timeout(3_000)
+
+    leaked = _leaks(offline_map_page, watermark)
+
+    # Checked before the leak assertion, because it is the one that says
+    # whether the leak assertion means anything. A re-registration would
+    # have put the tiles back on the classified path, where they were
+    # always refused correctly, and this test would pass without ever
+    # reaching the branch it exists for.
+    assert not offline_map_page.stored_basemap_origins(), (
+        "The page re-registered its basemap origins during the test, so the "
+        "worker classified these tiles after all and the unclassified branch "
+        "was never exercised. The assertion below is vacuous until this is "
+        "fixed — see OfflineMapPage.forget_basemap_origins."
+    )
+    assert not leaked, (
+        "Offline mode is switched on, but the app still used the network for "
+        "tiles whose origin the worker could not classify.\n"
+        f"{len(leaked)} request(s) left the device:\n"
+        + "\n".join(f"    {line}" for line in leaked)
+        + "\n\nAn unrecognised origin is what every basemap origin becomes "
+        "once the in-memory allowlist is lost, which costs nothing to reach: "
+        "an idle worker being recycled does it."
     )
 
 

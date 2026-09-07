@@ -460,8 +460,11 @@ worker asks for the fallback by constant, and `offline.html` is a plain
 static file that hardcodes the script path in its own markup, so
 precache and request agree.
 
-The offline journey is covered by `test_offline_page_reset_control_offline`
-in `tests/e2e/test_pwa_lifecycle_kill_and_reset.py`.
+The control is covered by `tests/js/test_offline_page_reset.js`, which
+asserts it against the shipped `static/offline.html` rather than a fixture
+copy, and by `tests/public/test_offline_api.py`, which asserts the page loads
+only `pwa_reset.js` and carries the trigger. The browser journey went with
+the Playwright lifecycle suite in SNOW-649.
 
 ## Install prompt orchestration (SNOW-379)
 

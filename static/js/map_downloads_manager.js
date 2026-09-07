@@ -320,6 +320,10 @@
     'repair-failed': "That download couldn't be repaired. Try again.",
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
+    // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
+    // second copy of the row's own title, because the fact worth stating
+    // on this line is why it has no Remove control.
+    'kind-base': 'Shared',
     'row-meta': '%(kind)s · %(size)s',
     // SNOW-832: the group of rows whose basemap cannot be named — a
     // record written before SNOW-645, an orphaned bucket, an account row
@@ -384,6 +388,12 @@
       'Remove %(name)s from your account and from this device? This frees ' +
       '%(size)s here and removes it from your other devices too.',
     'download-here-failed': "That download couldn't be started here. Try again.",
+    // SNOW-863: the refusal a user actually reaches. One roundel drives
+    // every region download, so a second tap while a run is going is
+    // refused — and "try again" was false, because it fails identically
+    // until the first finishes.
+    'download-here-busy': 'Another download is still running — try again when it finishes.',
+    'download-here-already': 'That area is already downloaded on this device.',
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -700,6 +710,8 @@
       // docstring for why. No `customLabel` any more either — a custom
       // row's label is `area.name`, already filled by the reader.
       isCustomAreaId: downloadCore()?.isCustomAreaId,
+      // SNOW-856: the shared overview map, listed but never deletable.
+      isBaseLayerAreaId: downloadCore()?.isBaseLayerAreaId,
     });
     // SNOW-844: and which of them are on this device but cannot render.
     // Awaited before the rows are built, not after: the flag decides the
@@ -1195,9 +1207,11 @@
       } else {
         subtitle.textContent = interpolate(STRINGS['row-meta'], {
           kind:
-            (row.kind === 'custom'
-              ? STRINGS['kind-custom']
-              : STRINGS['kind-region']) || '',
+            (row.kind === 'base'
+              ? STRINGS['kind-base']
+              : row.kind === 'custom'
+                ? STRINGS['kind-custom']
+                : STRINGS['kind-region']) || '',
           size: row.size,
         });
       }
@@ -1210,7 +1224,14 @@
     }
 
     const button = fragment.querySelector('[data-downloads-delete]');
-    if (button) {
+    // SNOW-856: the base layer is shared by every area under its basemap,
+    // so there is no such thing as deleting "just" it — the control is
+    // REMOVED rather than disabled, because a disabled button still says
+    // "this is a thing you could do to this row". It leaves on its own
+    // when the last area that needs it is deleted.
+    if (button && row.deletable === false) {
+      button.remove();
+    } else if (button) {
       button.setAttribute('data-downloads-delete', row.id);
       // Carried on the element so the delegated handler can name the area
       // in its confirmation without re-reading the record.
@@ -1551,6 +1572,27 @@
    * @param {MouseEvent} event
    * @returns {boolean} Whether this click was a "Download here".
    */
+  /**
+   * The strings key for a refused "Download here" (SNOW-863).
+   *
+   * Only the reasons a user can actually reach get their own sentence.
+   * `'busy'` is the one that matters — a single shared roundel means a
+   * second tap while a run is going is refused, and the generic "try
+   * again" was a lie there. `'done'`/`'incomplete'` are reachable when
+   * the row's account state lags what this device holds. Everything else
+   * (an unloaded country, over the ceiling, a state that raced) keeps the
+   * generic message: a sentence per state nobody hits is copy to
+   * translate and maintain for no reader.
+   *
+   * @param {string} reason From `pwaRegionDownload.start`.
+   * @returns {string} A key of `STRINGS`.
+   */
+  function _downloadHereMessage(reason) {
+    if (reason === 'busy') return 'download-here-busy';
+    if (reason === 'done' || reason === 'incomplete') return 'download-here-already';
+    return 'download-here-failed';
+  }
+
   function _handleDownloadHereClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return false;
@@ -1582,11 +1624,23 @@
 
     sheet.hidden = true;
     if (regionId && window.pwaRegionDownload) {
-      window.pwaRegionDownload.start(regionId).then(function (started) {
+      window.pwaRegionDownload.start(regionId).then(function (outcome) {
         // A refusal is silent on the roundel — it settles into whatever
         // state it settled into — so say so here rather than leaving the
         // tap unanswered.
-        if (!started) window.MapSheet?.toast(STRINGS['download-here-failed']);
+        //
+        // SNOW-863: and say WHICH refusal. This used to toast "That
+        // download couldn't be started here. Try again." for every one of
+        // them, which is false for the only refusal a user actually
+        // reaches: the region control is a single shared roundel, so a
+        // second "Download here" while the first is still running is
+        // refused, and trying again fails identically until it finishes.
+        if (outcome && outcome.started) return;
+        const reason = (outcome && outcome.reason) || '';
+        // Already sent to sign-in — they are looking at another page, and
+        // a toast would be talking to nobody.
+        if (reason === 'signin') return;
+        window.MapSheet?.toast(STRINGS[_downloadHereMessage(reason)]);
       });
       return true;
     }
