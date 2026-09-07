@@ -747,14 +747,26 @@
         // it would be the single worst thing this ticket could do to a
         // surface whose whole job is reporting real cache state.
         if (area.onDevice === false) continue;
-        // SNOW-856: nor is a base layer. It is z0-9 only — the zoomed-out
-        // view — so a basemap holding one and nothing else has no ground
-        // downloaded at any usable zoom, and this dot would be claiming
-        // offline coverage the reader does not have the moment they zoom
-        // in. Same reasoning as the account-only skip above: real tiles
-        // for real ground, or no green.
-        if (self.pwaBasemapDownloadCore?.isBaseLayerAreaId(area.id)) continue;
-        const key = area.basemapKey || activeKey;
+        // SNOW-XXX: a base layer DOES count, where SNOW-856 skipped it.
+        //
+        // That skip was right about the old base layer and wrong about
+        // this one. It was z0-9 arriving as a side effect of a download,
+        // so a basemap holding one and nothing else was a basemap the user
+        // had never chosen to store — greening it claimed coverage they
+        // had not asked for and would lose the moment they zoomed in.
+        //
+        // The wide half is now fetched when a basemap is SHOWN
+        // (`warmBaseLayerWideBand`), which is what makes it the honest
+        // answer to this dot's question: with it on disk the app opens
+        // offline on that basemap and draws a map. That is the claim —
+        // "this basemap works offline" — and the row's own subtitle,
+        // plus the downloads panel, is where "how much ground do you hold
+        // here" is answered.
+        const isBase = self.pwaBasemapDownloadCore?.isBaseLayerAreaId(area.id);
+        // A base layer names its own basemap in its record, so unlike an
+        // area it never falls back to the active one — a keyless base
+        // layer is not a thing this can be handed.
+        const key = area.basemapKey || (isBase ? '' : activeKey);
         if (key) keys.add(key);
       }
       return keys;

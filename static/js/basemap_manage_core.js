@@ -72,7 +72,7 @@
  *     ``name`` upstream, by ``map.js``'s ``basemapDownloadedAreas()``
  *     (which has the translation catalogue this module does not), not
  *     built here.
- *   groupRowsByBasemap(rows, order)
+ *   groupRowsByPresence(rows)
  *     SNOW-832: manageRows' own rows grouped by the BASEMAP each was
  *     downloaded under, in the picker's own order — the sheet's group
  *     headings — without re-sorting any group. Replaces SNOW-645's
@@ -300,12 +300,26 @@
 
       var id = String(area.id);
       var isCustom = typeof opts.isCustomAreaId === 'function' && opts.isCustomAreaId(id);
-      // SNOW-856: the shared overview map. Listed because it spends
-      // the user's budget and a total that counts what it does not show is
-      // worse than no row — but it is not an area, so it is neither
-      // renameable, deletable nor re-downloadable. It leaves when the last
-      // area under its basemap does (`evictOrphanedBaseLayers`).
+      // SNOW-856 / SNOW-863 / SNOW-867: the shared z0-7 overview map is
+      // not a row on this panel, and not in its budget either.
+      //
+      // This took two wrong turns before it settled, and both are worth
+      // stating so the third does not repeat them. It was a row beside the
+      // user's own areas, which made it look like one of them and then
+      // denied it the one control they all have. It was briefly a neutral
+      // "system files" segment on the budget bar, which was closer but
+      // still charged the user's allowance for it.
+      //
+      // What it is: the app's own map data. Fetched once per basemap when
+      // that basemap is first SHOWN (`warmBaseLayerWideBand`), shared by
+      // every area, never chosen, never removable on its own — every area
+      // reads it once the camera passes their z10 floor. So it is not a
+      // download, and this panel — which is the user's downloads and the
+      // budget they set for them — is the wrong place to account for it.
+      // Account settings' "Reset local data" summary is the right one:
+      // that row is where the app's own storage is stated and cleared.
       var isBase = typeof opts.isBaseLayerAreaId === 'function' && opts.isBaseLayerAreaId(id);
+      if (isBase) continue;
       // SNOW-749: default true, so an area list built before this ticket
       // (or by a caller that does not reconcile) reads as on-device —
       // which is what it was.
@@ -323,7 +337,7 @@
       // for an area this device has never downloaded — the editor would
       // accept a name and drop it. Renaming it where it does exist is a
       // download away.
-      var renameable = isCustom && !area.orphaned && onDevice && !isBase;
+      var renameable = isCustom && !area.orphaned && onDevice;
 
       // Uniform for every row now: the record's own name (always present
       // except for an orphan — see the docstring) falls back to the id,
@@ -339,13 +353,16 @@
         // area — `orphaned` says the record is missing, not that it is a
         // third kind of thing, so the sheet can label it without the
         // caller having to re-derive which it was.
-        kind: isBase ? 'base' : isCustom ? 'custom' : 'region',
-        // SNOW-856: the one row the sheet must not offer a Remove control
-        // for. Carried as its own flag rather than left for each renderer
-        // to re-derive from `kind`, because a renderer that forgets hands
-        // the user a button that breaks every other download's zoomed-out
-        // view.
-        deletable: !isBase,
+        // SNOW-XXX: the design names the kind in words on every row —
+        // "Region · Swisstopo (CH) · 13.6 MB" — and a drop zone is its own
+        // kind, not a custom area with a particular name. The record says
+        // so (`type`), and an older record that predates the field falls
+        // back to the shape it was: a custom id is a custom area.
+        kind: isCustom ? (area.type === 'dropzone' ? 'dropzone' : 'custom') : 'region',
+        // Every row here is a download the user made and can remove. The
+        // flag stays because each renderer reads it, and because the next
+        // row type that cannot be removed should have somewhere to say so.
+        deletable: true,
         orphaned: !!area.orphaned,
         label: String(label),
         renameable: renameable,
@@ -399,83 +416,42 @@
   }
 
   /**
-   * ``manageRows``' own rows grouped by the BASEMAP each was downloaded
-   * under (SNOW-832 — Hugo's "group by basemap, not by kind" handoff).
+   * Split the rows into the two groups the panel lists (SNOW-XXX).
    *
-   * This replaces ``groupRowsByKind``. SNOW-645 split the sheet under two
-   * fixed REGIONS / CUSTOM AREAS headings and carried the basemap as each
-   * row's subtitle; the handoff turns that inside out, because the basemap
-   * is the axis along which a download is or is not usable — switching
-   * basemap is switching to a map you have not stored — while the kind is
-   * merely how it was framed, which is why the kind moves down into the
-   * row's own meta line beside the size.
+   * By PRESENCE — is this area on this device — where SNOW-832 grouped by
+   * basemap with a coloured heading and a per-basemap total.
    *
-   * A grouping, not a re-sort: each group keeps ``manageRows``' own
-   * regions-then-custom, alphabetical order, so the sheet's ``render()``
-   * never has to re-apply that ordering itself.
+   * The basemap has not stopped mattering; it moved. It is a dot on each
+   * row and a word in its subtitle, which scales as areas accumulate in a
+   * way headings do not: a user with eight areas across three basemaps had
+   * three headings, three totals and three rules between them and their
+   * list. What they are scanning for is "what have I got here", and the
+   * one split that changes what a row can DO is whether it is here at all
+   * — an account-only row can be downloaded, an on-device row can be
+   * removed, and never both.
    *
-   * @param {Array<{kind: string, basemapKey?: string, bytes?: number}>} rows
-   *   As ``manageRows`` returns them.
-   * @param {string[]} [order] The canonical basemap order — the picker's
-   *   own, via ``map_basemap_downloads.js``'s ``basemapOrder()``, so the
-   *   sheet lists basemaps in the order the user is offered them rather
-   *   than in whatever order they happen to have been downloaded. A key
-   *   the order does not mention still gets its group (a deployment
-   *   ``BASEMAP=`` override, or a style since retired from the picker):
-   *   dropping the rows would hide real downloads, so those groups follow
-   *   the known ones, in first-appearance order.
-   * @returns {Array<{basemapKey: string, rows: Array<Object>,
-   *   totalBytes: number}>} One entry per basemap that actually has rows —
-   *   an empty group is never returned, because a heading with nothing
-   *   under it says a basemap has downloads when it has none. The KEYLESS
-   *   group (``basemapKey: ''`` — a record written before SNOW-645, an
-   *   orphaned bucket, an account row with no basemap) is always LAST,
-   *   whatever the order says: it is the group that cannot be named, so it
-   *   is the one to read after the ones that can. ``totalBytes`` is what
-   *   THIS DEVICE holds for the group — an account-only row contributes 0,
-   *   so a group's total can legitimately read smaller than its row count
-   *   suggests.
+   * An empty group is omitted rather than rendered with a heading and
+   * nothing under it.
+   *
+   * @param {Array<{onDevice?: boolean}>} rows As ``manageRows`` returns
+   *   them, in its own order — preserved within each group.
+   * @returns {Array<{key: string, rows: Array<Object>}>} ``device`` first,
+   *   then ``account``; either may be absent.
    */
-  function groupRowsByBasemap(rows, order) {
+  function groupRowsByPresence(rows) {
     var list = Array.isArray(rows) ? rows : [];
-    var canonical = Array.isArray(order) ? order : [];
-
-    var byKey = Object.create(null);
-    var seen = [];
+    var device = [];
+    var account = [];
     for (var i = 0; i < list.length; i += 1) {
       var row = list[i];
       if (!row) continue;
-      var key = row.basemapKey || '';
-      if (!(key in byKey)) {
-        byKey[key] = { basemapKey: key, rows: [], totalBytes: 0 };
-        seen.push(key);
-      }
-      byKey[key].rows.push(row);
-      var bytes = Number(row.bytes);
-      if (Number.isFinite(bytes) && bytes > 0) byKey[key].totalBytes += bytes;
+      if (row.onDevice === false) account.push(row);
+      else device.push(row);
     }
-
-    // Canonical order first, then anything the order does not mention in
-    // the order it was met, then the keyless group. Built as a list of
-    // keys rather than by sorting the groups, so "not in the order at all"
-    // needs no sentinel index to stand in for a position it does not have.
-    var ordered = [];
-    var taken = Object.create(null);
-    for (var c = 0; c < canonical.length; c += 1) {
-      var known = canonical[c];
-      if (!known || known === '' || taken[known] || !(known in byKey)) continue;
-      taken[known] = true;
-      ordered.push(byKey[known]);
-    }
-    for (var s = 0; s < seen.length; s += 1) {
-      var key2 = seen[s];
-      if (key2 === '' || taken[key2]) continue;
-      taken[key2] = true;
-      ordered.push(byKey[key2]);
-    }
-    if ('' in byKey) ordered.push(byKey['']);
-
-    return ordered;
+    var groups = [];
+    if (device.length) groups.push({ key: 'device', rows: device });
+    if (account.length) groups.push({ key: 'account', rows: account });
+    return groups;
   }
 
   /**
@@ -570,6 +546,10 @@
         bytes: Number(area.bytes) || 0,
         savedAt: area.savedAt,
         orphaned: false,
+        // SNOW-XXX: 'custom' or 'dropzone' for a user-made area, absent
+        // for a region (whose kind its id already gives). `manageRows`
+        // reads it to name the kind in words on the row.
+        type: area.type,
         // SNOW-645: absent on a pre-SNOW-645 record — see manageRows.
         basemapKey: area.basemapKey || null,
         // SNOW-749: the tiles are here.
@@ -700,6 +680,10 @@
       var area = list[i];
       var bytes = Number(area && area.bytes);
       if (!Number.isFinite(bytes) || bytes <= 0) continue;
+      // The shared overview map counts under its own basemap, like every
+      // other download of it — a pass in this session split it out as a
+      // neutral "system files" segment, which said it was something the
+      // user never chose. It is the z0-9 half of the areas they did.
       var key = (area && area.basemapKey) || '';
       if (!(key in totals)) {
         totals[key] = 0;
@@ -729,7 +713,7 @@
     clampBudgetMb: clampBudgetMb,
     budgetSummary: budgetSummary,
     manageRows: manageRows,
-    groupRowsByBasemap: groupRowsByBasemap,
+    groupRowsByPresence: groupRowsByPresence,
     reconcileAreas: reconcileAreas,
     budgetSegments: budgetSegments,
     BUDGET_CHOICES_MB: BUDGET_CHOICES_MB,

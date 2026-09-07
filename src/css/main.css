@@ -896,6 +896,35 @@
    completed. */
 .basemap-identity-fill { background: var(--color-sync-ok); }
 
+/* HACK MODE, DEBUG only: the tile-zoom readout beside the help roundel
+   (static/js/map_zoom_readout.js). It borrows .map-legend-toggle's roundel
+   shape from the stack it sits in and only has to make the text fit —
+   mono, because it is a number that changes and a proportional font makes
+   it jump about. */
+.map-zoom-readout {
+    /* The roundel shape from .map-legend-toggle (static/css/map.css),
+       copied rather than shared: that class is what marks an interactive
+       map control, and this reads a value. Everything here is shape; none
+       of it is hover, cursor or focus. */
+    display: inline-flex;
+    width: var(--map-control-sm);
+    height: var(--map-control-sm);
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--color-text-1);
+}
+
 
 /* —— Hero rating badge tokens ———————————————
    EAWS-coloured badge pinned to the bulletin hero

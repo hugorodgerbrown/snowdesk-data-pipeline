@@ -57,7 +57,39 @@ triggerSkipConfirm.setAttribute('data-pwa-reset-trigger', '');
 triggerSkipConfirm.setAttribute('data-pwa-reset-skip-confirm', '');
 document.body.appendChild(triggerSkipConfirm);
 
+// SNOW-XXX: the shared-map-data line the settings row now carries. Same
+// before-import reasoning as the buttons above — `renderSharedMapDataSize`
+// runs once at import time, so both the elements and the fake `pwaDb` it
+// reads have to exist by then.
+const sizeLine = document.createElement('p');
+sizeLine.setAttribute('data-pwa-reset-size', '');
+sizeLine.hidden = true;
+const sizeValue = document.createElement('span');
+sizeValue.setAttribute('data-pwa-reset-size-value', '');
+sizeLine.appendChild(sizeValue);
+document.body.appendChild(sizeLine);
+window.pwaDb = {
+  get: async (store, key) =>
+    store === 'meta:app' && key === 'basemap.baseLayers'
+      ? { value: [{ basemapKey: 'openfreemap_liberty', bytes: 100 * 1024 * 1024 }] }
+      : null,
+};
+
 await import('../../static/js/pwa_reset.js');
+
+describe('shared map data disclosure', () => {
+  // The z0-9 overview map is the app's own map data, so the downloads
+  // panel neither lists it nor charges its budget for it. That leaves this
+  // row as the only place it is disclosed — storage the user cannot see is
+  // storage they cannot consent to clearing.
+  it('states the size beside the reset control', async () => {
+    // The renderer is async and fired at import; one macrotask is enough
+    // for its single `pwaDb.get` to settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sizeValue.textContent).toBe('100 MB');
+    expect(sizeLine.hidden).toBe(false);
+  });
+});
 
 /**
  * Stub `indexedDB.deleteDatabase` with a request that settles on the named

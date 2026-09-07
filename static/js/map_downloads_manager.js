@@ -324,7 +324,19 @@
     // second copy of the row's own title, because the fact worth stating
     // on this line is why it has no Remove control.
     'kind-base': 'Shared',
-    'row-meta': '%(kind)s · %(size)s',
+    'row-meta': '%(kind)s · %(basemap)s · %(size)s',
+    // SNOW-XXX: a drop zone is a circle around where you were standing; a
+    // custom area is a box you framed. Both are yours, both renameable —
+    // and which one a row is is worth a word.
+    'kind-dropzone': 'Drop zone',
+    // SNOW-XXX: the "…" trigger names the row it acts on — the glyph
+    // alone names nothing to a screen reader.
+    'row-actions-label': 'Actions for %(name)s',
+    // The two lists. Uppercased by the eyebrow's own styling, so the
+    // strings are sentence case and a locale that does not uppercase is
+    // not fighting the CSS.
+    'group-device': 'On this device',
+    'group-account': 'Not on this device',
     // SNOW-832: the group of rows whose basemap cannot be named — a
     // record written before SNOW-645, an orphaned bucket, an account row
     // with no basemap. Named rather than left blank: an unlabelled
@@ -337,9 +349,12 @@
     'budget-bar-label': 'Space used, by base map: %(segments)s',
     'budget-bar-empty': 'Nothing downloaded on this device',
     'budget-segment': '%(basemap)s %(size)s',
+    // SNOW-XXX: one message for every row, and it speaks only about THIS
+    // device — see the confirm site for why the "removes it from your
+    // other devices too" branch went.
     'confirm-remove':
-      "Remove the offline map for %(name)s? This frees %(size)s. You can " +
-      "download it again when you're back online.",
+      'Remove the offline map for %(name)s? This frees %(size)s on this ' +
+      'device. You can download it again whenever you like.',
     'remove-failed': "That download couldn't be removed. Try again.",
     // SNOW-634: [data-panel-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
@@ -371,22 +386,7 @@
     // SNOW-811: the row's NAME frames its area, as on the other three
     // panels. Same reason as the two above for being interpolated here.
     'focus-row-label': 'Zoom to %(name)s',
-    // SNOW-749: an area on the account that this device does not hold.
-    // The subtitle replaces the basemap name for such a row — which
-    // basemap it was fetched under elsewhere is a fact about a device the
-    // reader is not looking at, while "not here" is the reason the row
-    // looks different.
-    'not-on-device': 'On your account — not downloaded here',
     'download-here-row-label': 'Download %(name)s to this device',
-    // SNOW-832 removed `free-space-row-label` and `confirm-free-space`
-    // with the control they belonged to — see
-    // includes/_map_downloads_row_actions.html for why the second
-    // destructive verb went. The two confirmations below are the whole
-    // set again: one for a row with an account row behind it, one for a
-    // row without.
-    'confirm-forget':
-      'Remove %(name)s from your account and from this device? This frees ' +
-      '%(size)s here and removes it from your other devices too.',
     'download-here-failed': "That download couldn't be started here. Try again.",
     // SNOW-863: the refusal a user actually reaches. One roundel drives
     // every region download, so a second tap while a run is going is
@@ -659,6 +659,60 @@
   }
 
   /**
+   * Tell the account about areas this device holds that it does not know
+   * about (SNOW-XXX).
+   *
+   * The other half of "the record goes when the last reference goes". The
+   * forget that accompanies a local removal takes the row away
+   * immediately; this is what puts it back while somebody still has the
+   * area, so the row tracks whether ANY device holds it rather than
+   * whichever device last touched it.
+   *
+   * Deliberately not `adopt()`, which guards on this device's own
+   * `basemap.syncedAreaIds` markers — an area pushed once is marked
+   * forever, so `adopt` would never re-push one another device deleted.
+   * That marker answers "has this device ever told the account", and the
+   * question here is "does the account know NOW".
+   *
+   * @param {Array<Object>} areas The reconciled list, carrying `onDevice`
+   *   and `synced`.
+   * @returns {void} Fire-and-forget: the panel must render at the speed of
+   *   the local read, never at the speed of a queued mutation.
+   */
+  function _reassertHeldAreas(areas) {
+    const sync = window.pwaDownloadsSync;
+    // `push` is checked as well as the module: an older cached shell can
+    // have a sync bridge that predates it, and a render that throws here
+    // would take the whole panel down over a background repair.
+    if (!sync || typeof sync.push !== 'function' || !sync.isEnabled()) return;
+    const connectivity = window.pwaConnectivity;
+    const online = connectivity ? connectivity.isOnline() : navigator.onLine !== false;
+    if (!online) return;
+    const core = downloadCore();
+    for (const area of areas) {
+      if (!area || !area.id || area.synced) continue;
+      // Not held here: there is nothing to assert.
+      if (area.onDevice === false) continue;
+      // An orphan describes a download that never finished, and a base
+      // layer is not an area at all — neither is something to offer
+      // another device. Same two exclusions `adopt` makes.
+      if (area.orphaned) continue;
+      if (core?.isBaseLayerAreaId(area.id)) continue;
+      const isCustom = core ? core.isCustomAreaId(area.id) : false;
+      // The server refuses a custom area with no box, so it is skipped
+      // here rather than posted to be rejected.
+      if (isCustom && !Array.isArray(area.bbox)) continue;
+      sync.push({
+        areaId: area.id,
+        regionId: isCustom ? '' : String(area.id).replace(/^region-/, ''),
+        bbox: area.bbox,
+        basemapKey: area.basemapKey,
+        name: area.name,
+      });
+    }
+  }
+
+  /**
    * Populate the budget ``<select>`` from the core's offered choices.
    *
    * Built here rather than server-rendered so the offered sizes live in
@@ -700,9 +754,35 @@
     // An area forgotten and then RE-DOWNLOADED here is back on the device,
     // so it is listed again: the local record is newer than the pending
     // forget, and the user is looking at the thing they just made.
+    const isBaseLayerAreaId = downloadCore()?.isBaseLayerAreaId;
     const list = allAreas.filter(
       (area) => !FORGOTTEN.has(area.id) || area.onDevice !== false,
+    ).filter(
+      // SNOW-XXX: the shared overview maps are the app's own map data, not
+      // downloads — see basemap_manage_core.js's `manageRows`. Filtered
+      // once, here, so the rows, the segments, the legend and the "Using X
+      // of Y" total all describe the same set: what the user downloaded.
+      // Their size is stated in account settings, under Reset local data.
+      (area) => !(isBaseLayerAreaId && isBaseLayerAreaId(String(area.id || ''))),
     );
+    // SNOW-XXX: re-assert what this device holds.
+    //
+    // The account row is a hint — "you downloaded this somewhere else,
+    // download it here too" — and the thing a hint must not do is outlive
+    // the fact. Deleting an area removes its account row, but another
+    // device may still hold that area, which makes the hint true again;
+    // nothing told the account so.
+    //
+    // So a row this device HAS and the account does not know about is
+    // pushed back. Between them the devices refcount it: the row exists
+    // while at least one device that opens this panel still holds the
+    // area, and stays gone once none do.
+    //
+    // Online only. `synced` is false for every row when the account list
+    // could not be read at all (offline, anonymous, flag off), and pushing
+    // the lot on that reading would queue a mutation per area per open.
+    _reassertHeldAreas(list);
+
     const chosenMb = core.clampBudgetMb(budgetMb);
     const summary = core.budgetSummary(list, core.megabytesToBytes(chosenMb));
     const rows = core.manageRows(list, {
@@ -842,20 +922,13 @@
     const overlayStrip = sheet.querySelector('[data-panel-overlay-toggle]');
     if (overlayStrip) overlayStrip.hidden = rows.length === 0;
 
-    // SNOW-832: rows are grouped by BASEMAP, each group under a heading
-    // carrying that basemap's own identity colour, in the order the
-    // picker offers them (basemapOrder() — see its own docstring for why
-    // the order is read off the picker's DOM rather than declared here).
-    // This replaces SNOW-645's two fixed REGIONS / CUSTOM AREAS wrappers;
-    // a row's kind is now its own meta line (see buildRow).
-    //
-    // groupRowsByBasemap groups manageRows' own regions-then-custom,
-    // alphabetical order without re-sorting it, and never returns an
-    // empty group — so there is no hidden-wrapper state to manage here,
-    // unlike the two wrappers this replaces.
+    // SNOW-XXX: two groups — what is on this device, and what is only on
+    // the account. SNOW-832's per-basemap headings are gone; the basemap
+    // is a dot and a word on each row now. See `groupRowsByPresence` for
+    // why the split moved, and `buildGroup` for what a heading carries.
     const groupHost = sheet.querySelector('[data-downloads-groups]');
     if (groupHost && groupTemplate) {
-      for (const group of core.groupRowsByBasemap(rows, basemapOrder())) {
+      for (const group of core.groupRowsByPresence(rows)) {
         groupHost.appendChild(buildGroup(groupTemplate, group, core));
       }
     }
@@ -961,7 +1034,26 @@
   }
 
   /**
-   * Build one basemap group: its heading, its identity colour and its rows
+   * A row's kind, in words (SNOW-XXX).
+   *
+   * Four, where the meta line used to compose three: a DROP ZONE is its
+   * own kind rather than a custom area with a particular name — it is a
+   * circle around where the user was standing, and a custom area is a box
+   * they framed. Both are theirs and both are renameable; what they are
+   * is still worth saying.
+   *
+   * @param {string} kind
+   * @returns {string}
+   */
+  function kindLabel(kind) {
+    if (kind === 'base') return STRINGS['kind-base'] || '';
+    if (kind === 'dropzone') return STRINGS['kind-dropzone'] || '';
+    if (kind === 'custom') return STRINGS['kind-custom'] || '';
+    return STRINGS['kind-region'] || '';
+  }
+
+  /**
+   * Build one group: its heading and its rows
    * (SNOW-832).
    *
    * @param {HTMLTemplateElement} template The group `<template>`.
@@ -976,36 +1068,26 @@
     );
 
     const label = fragment.querySelector('[data-hook="group-label"]');
-    if (label) label.textContent = basemapName(group.basemapKey);
+    if (label) {
+      label.textContent =
+        group.key === 'account'
+          ? STRINGS['group-account'] || ''
+          : STRINGS['group-device'] || '';
+    }
 
-    // What THIS DEVICE holds for the group. An account-only row counts 0
-    // (it costs this device nothing — the same reason it is out of the
-    // budget), so a group's total can read smaller than its rows suggest.
-    // That is the truth this panel exists to tell: listed is not the same
-    // as available offline.
-    const total = fragment.querySelector('[data-group-total]');
-    if (total) total.textContent = core.formatMegabytes(group.totalBytes);
-
-    // The identity colour, on both marks at once — the round swatch
-    // before the label and the rule under the whole heading line. Both
-    // branches are written, rather than one being left to the template's
-    // own default: a keyless group must NOT fall through to
-    // `.basemap-identity-fill`'s keyless green, which means "downloaded,
-    // basemap unknown" and would give these rows a colour identity they
-    // do not have. `bg-sync-off` — the "absent, not an error" grey — is
-    // the same call SNOW-749 made for an account-only row's rule.
+    // A heading is a label and nothing else now. SNOW-832 gave it a
+    // basemap swatch, a coloured rule and a running total, all of which
+    // said "this basemap" — a claim that belongs to the ROW, since these
+    // groups no longer sort by basemap. The total went with them: the
+    // panel already states what this device holds, once, at the top, and
+    // a second figure per group invited the reader to add them up.
     for (const mark of fragment.querySelectorAll(
       '[data-group-swatch], [data-group-rule]',
     )) {
-      if (group.basemapKey) {
-        mark.classList.remove('bg-sync-off');
-        mark.classList.add('basemap-identity-fill');
-        mark.dataset.basemapKey = group.basemapKey;
-      } else {
-        mark.classList.remove('basemap-identity-fill');
-        mark.classList.add('bg-sync-off');
-      }
+      mark.remove();
     }
+    const total = fragment.querySelector('[data-group-total]');
+    if (total) total.remove();
 
     const rows = fragment.querySelector('[data-group-rows]');
     if (rows) {
@@ -1191,6 +1273,25 @@
     //     here". It costs this device nothing, so a size would be "0.0 MB"
     //     — a download that somehow takes no space rather than one that is
     //     not here.
+    // SNOW-XXX: the basemap identity dot. It is the whole of what the
+    // per-basemap group headings used to carry, moved onto the row so the
+    // colour survives the list being grouped by presence instead — the
+    // same `.basemap-identity-fill` rules the bar segments use, so the two
+    // readings of "which basemap is this" cannot drift.
+    //
+    // An account-only row has NO dot: nothing of it is stored here, so no
+    // basemap has been chosen for it, and a colour would imply one.
+    const swatch = fragment.querySelector('[data-row-swatch]');
+    if (swatch) {
+      if (row.onDevice === false || !row.basemapKey) {
+        swatch.remove();
+      } else {
+        swatch.classList.remove('bg-sync-off');
+        swatch.classList.add('basemap-identity-fill');
+        swatch.dataset.basemapKey = row.basemapKey;
+      }
+    }
+
     const subtitle = fragment.querySelector('[data-row-meta]');
     if (subtitle) {
       // SNOW-844: a row that cannot render takes the same "Incomplete"
@@ -1203,15 +1304,20 @@
       if (row.orphaned || row.incomplete) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
       } else if (row.onDevice === false) {
-        subtitle.textContent = STRINGS['not-on-device'] || '';
+        // SNOW-XXX: the kind alone. This row is under a heading that
+        // already says these are not here, and it has no size (nothing of
+        // it is on this device) and no basemap (nothing has been stored,
+        // so no basemap has been chosen — naming one would imply a colour
+        // this row deliberately does not carry).
+        subtitle.textContent = kindLabel(row.kind);
       } else {
+        // SNOW-XXX: kind, basemap, size — "Region · Swisstopo (CH) ·
+        // 13.6 MB". The basemap moved here from the group heading it used
+        // to sort under, so the fact survives the grouping change: the dot
+        // gives it at a glance, the word gives it exactly.
         subtitle.textContent = interpolate(STRINGS['row-meta'], {
-          kind:
-            (row.kind === 'base'
-              ? STRINGS['kind-base']
-              : row.kind === 'custom'
-                ? STRINGS['kind-custom']
-                : STRINGS['kind-region']) || '',
+          kind: kindLabel(row.kind),
+          basemap: basemapName(row.basemapKey),
           size: row.size,
         });
       }
@@ -1223,13 +1329,89 @@
       // available offline".
     }
 
+    // SNOW-XXX: which SHAPE this row's actions take, decided before any of
+    // them are stamped. More than one action is a "…"; exactly one is a
+    // bare icon. Hugo reversed SNOW-658's ruling (a visible trash on every
+    // row) for every panel on 2026-09-07 — see
+    // includes/_map_downloads_row_actions.html.
+    //
+    //   region here            Remove alone            → bare trash
+    //   custom area / drop     Rename and Remove       → menu
+    //   cannot render          Repair and Remove       → menu
+    //   not here               Download alone          → bare download
+    //   base layer / orphan    see below
+    const renameable = row.renameable && row.onDevice !== false;
+    const repairable =
+      row.incomplete && Array.isArray(row.missingDeps) && row.missingDeps.length > 0;
+    const deletable = row.deletable !== false && row.onDevice !== false;
+    const useMenu = deletable && (renameable || repairable);
+
+    // `useMenu` is also gated on the template ACTUALLY carrying a menu: an
+    // older cached shell whose row template predates it would otherwise
+    // have its inline controls removed in favour of a menu that is not
+    // there, leaving the row with no actions at all.
+    const menu = fragment.querySelector('[data-overflow-menu]');
+    const showMenu = useMenu && !!menu;
+    if (menu) {
+      if (!showMenu) {
+        menu.remove();
+      } else {
+        // The partial's ids are fixed in the template it is rendered from
+        // ONCE; every clone must carry its own, or `aria-controls` on the
+        // second row points at the first row's menu. The open/close logic
+        // itself is scoped by DOM traversal and never reads these.
+        const trigger = menu.querySelector('[aria-controls]');
+        const list = menu.querySelector('[role="menu"]');
+        if (trigger && list) {
+          const menuId = 'downloads-row-actions-menu-' + row.id;
+          const triggerId = 'downloads-row-actions-' + row.id;
+          trigger.id = triggerId;
+          trigger.setAttribute('aria-controls', menuId);
+          trigger.setAttribute(
+            'aria-label',
+            interpolate(STRINGS['row-actions-label'], { name: row.label }),
+          );
+          list.id = menuId;
+          list.setAttribute('aria-labelledby', triggerId);
+        }
+        // Inside the menu, the same three controls the row would otherwise
+        // have carried inline — so everything below stamps whichever copy
+        // survived, and neither branch needs to know which that was.
+      }
+    }
+
+    // The inline copies, kept only for the single-action rows. Selected by
+    // "not inside the menu" rather than by position: the actions partial
+    // renders both shapes as siblings under whatever wrapper the row
+    // template provides, so a `:scope >` selector matches neither and
+    // leaves the row carrying the same action twice — an inline trash
+    // stamped with the area id AND a menu item without one.
+    if (showMenu) {
+      for (const inline of fragment.querySelectorAll(
+        '[data-downloads-delete], [data-downloads-repair], [data-row-rename]',
+      )) {
+        if (inline.closest('[data-overflow-menu]')) continue;
+        inline.remove();
+      }
+    }
+
     const button = fragment.querySelector('[data-downloads-delete]');
-    // SNOW-856: the base layer is shared by every area under its basemap,
-    // so there is no such thing as deleting "just" it — the control is
-    // REMOVED rather than disabled, because a disabled button still says
-    // "this is a thing you could do to this row". It leaves on its own
-    // when the last area that needs it is deleted.
-    if (button && row.deletable === false) {
+    // SNOW-XXX: the two verbs are mutually exclusive, and which one a row
+    // gets is decided by one fact — is this area on THIS device.
+    //
+    //   not here → "Download here", and nothing else. The account row is a
+    //     hint ("you downloaded this somewhere else"), so there is nothing
+    //     here to delete and deleting the hint is not a thing a user wants
+    //     to do to a suggestion.
+    //   here → Remove, and no "Download here" (there is nothing to fetch —
+    //     that half was already true).
+    //
+    // SNOW-856 removes it for another reason that still stands: the base
+    // layer is shared by every area under its basemap, so there is no such
+    // thing as deleting "just" it. Removed rather than disabled in both
+    // cases, because a disabled button still says "this is a thing you
+    // could do to this row".
+    if (button && (row.deletable === false || row.onDevice === false)) {
       button.remove();
     } else if (button) {
       button.setAttribute('data-downloads-delete', row.id);
@@ -1246,7 +1428,6 @@
       // and working, and the confirmation must not promise to remove it
       // from other devices it was never on.
       button.setAttribute('data-downloads-on-device', String(row.onDevice !== false));
-      button.setAttribute('data-downloads-synced', String(!!row.synced));
       // SNOW-658: and the control names the row it acts on. A server-
       // rendered panel interpolates this in its own template; a row cloned
       // from a <template> has no name until here.
@@ -1716,7 +1897,6 @@
     const name = button.getAttribute('data-downloads-label') || areaId;
     const size = button.getAttribute('data-downloads-size') || '';
     const onDevice = button.getAttribute('data-downloads-on-device') !== 'false';
-    const synced = button.getAttribute('data-downloads-synced') === 'true';
     // Two confirmations, because there are two outcomes and the user is
     // choosing between them:
     //   remove (synced) — gone from here AND from the other devices;
@@ -1734,9 +1914,16 @@
     // The queued `forget()` is still harmless for such a row (404, which
     // the client treats as success — the row is gone either way), so the
     // defect was purely in what we said, which is the half a user acts on.
-    const message = synced
-      ? interpolate(STRINGS['confirm-forget'], { name: name, size: size })
-      : interpolate(STRINGS['confirm-remove'], { name: name, size: size });
+    // SNOW-XXX: one message, where there were two.
+    //
+    // The synced branch promised that removing took the area "from your
+    // other devices too". That was never true of the DATA — another device
+    // keeps its tiles and goes on using them offline — and it is no longer
+    // true of the account row either: a device that still holds the area
+    // re-asserts it on its next sheet open (see `render`). What removing
+    // does is take it off THIS device, and let the account entry go when
+    // the last device holding it has done the same.
+    const message = interpolate(STRINGS['confirm-remove'], { name: name, size: size });
     // window.confirm, matching pwa_reset.js's destructive-action idiom —
     // the copy names what goes and what it frees, so the choice can be
     // judged before it is made.

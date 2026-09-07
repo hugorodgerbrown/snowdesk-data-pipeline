@@ -94,27 +94,36 @@
  *   centreTile(bbox, z)
  *     The tile at ``bbox``'s centre point, at zoom ``z`` — mirror of
  *     ``basemap_tiles.centre_tile``.
- *   buildBlob(bbox, minZ, maxZ)
+ *   buildBlob(bbox, minZ, maxZ, ceilingMb?)
  *     The full blob (``{band, count, mb, over_ceiling, centre_tile, z}``)
  *     — mirror of ``basemap_tiles.build_blob`` — produced in the SAME
  *     shape ``rangesToTileURLs`` already consumes, so a
  *     locally-built blob and a server-fetched one are interchangeable.
- *   budgetScaleForBBox(bbox, minZ, maxZ)
+ *     ``ceilingMb`` is what ``over_ceiling`` is measured against; omitted,
+ *     it falls back to ``DOWNLOAD_CEILING_MB``. Every page caller passes
+ *     the DEVICE's ceiling (``map_basemap_downloads.js``'s
+ *     ``basemapDeviceCeilingMb``) — see ``deviceCeilingMb`` below.
+ *   budgetScaleForBBox(bbox, minZ, maxZ, sourceCount?, ceilingMb?)
  *     The largest factor in ``[0, 1]`` by which ``bbox`` may be scaled
- *     about its centre while its download still fits under
- *     ``DOWNLOAD_CEILING_MB``. Client-only — it has no
- *     ``basemap_tiles.py`` counterpart and needs none: the server never
- *     sizes a framing rectangle. Do NOT go looking for a Python twin to
- *     keep it honest against.
+ *     about its centre while its download still fits under that same
+ *     ceiling. Client-only — it has no ``basemap_tiles.py`` counterpart
+ *     and needs none: the server never sizes a framing rectangle. Do NOT
+ *     go looking for a Python twin to keep it honest against.
+ *   deviceCeilingMb(estimate)
+ *     The largest download THIS device may hold — the real ceiling, and
+ *     the exact inverse of ``hasStorageHeadroom``. Client-only for the
+ *     obvious reason: the server cannot see a device's storage.
  *   hasStorageHeadroom(estimate, mb)
  *     SNOW-568: whether a download of ``mb`` megabytes fits in the
  *     origin's remaining storage quota, with a safety margin. Client-only,
  *     like ``budgetScaleForBBox`` — no ``basemap_tiles.py`` counterpart.
- *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, DOWNLOAD_CEILING_MB,
- *   STORAGE_HEADROOM_FACTOR
+ *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, DOWNLOAD_DOCUMENTS_MB,
+ *   DOWNLOAD_CEILING_MB, STORAGE_HEADROOM_FACTOR
  *     Constants mirroring ``basemap_tiles.py``'s module-level constants
  *     of the same name (see there for the sizing rationale) — except
  *     ``STORAGE_HEADROOM_FACTOR``, which is client-only.
+ *     ``DOWNLOAD_CEILING_MB`` is now only a fallback on this side: the
+ *     ceiling a page applies comes from ``deviceCeilingMb``.
  *
  * SNOW-586: a third client-only group — area identity and the standing
  * download-budget arithmetic that replaced the pinned cache's old
@@ -263,11 +272,29 @@
 
   // Mirrors apps/regions/services/basemap_tiles.py::WORST_CASE_BYTES_PER_TILE
   // — calibrated against seven real max-size custom-area downloads
-  // (SNOW-631), not a worst-case guess; see that constant's comment for
-  // the measured ratios.
+  // (SNOW-631), and re-checked 2026-09-07 against a real 253-tile download
+  // that averaged 34 KB a tile. See that constant's comment for why an
+  // estimate-vs-actual gap of 3x turned out not to be this number.
   var WORST_CASE_BYTES_PER_TILE = 50 * 1024;
 
-  // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB.
+  // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_DOCUMENTS_MB —
+  // the style, sprite, TileJSON and promoted glyphs a run writes into the
+  // bucket beside its tiles, which the estimate used to ignore entirely.
+  // An allowance rather than a prediction: see that constant's comment for
+  // the measured split and for why the glyph half cannot be predicted from
+  // a bbox.
+  var DOWNLOAD_DOCUMENTS_MB = 2;
+
+  // The FALLBACK ceiling, used only when the device cannot say what it can
+  // hold. The real ceiling is ``deviceCeilingMb`` below: how large one
+  // download may be is a question about the device it lands on, so a
+  // constant is the wrong kind of answer — it either refuses a download a
+  // phone had room for, or lets one through that it did not.
+  //
+  // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_CEILING_MB,
+  // which is that module's only ceiling: the server has no view of a
+  // device, so the ``over_ceiling`` flag it stores on a region row is
+  // advisory and the client decides for itself.
   var DOWNLOAD_CEILING_MB = 200;
 
   // SNOW-856: the zoom band the SHARED BASE LAYER covers. An area
@@ -310,6 +337,13 @@
   // layer's extent is the CAMERA's, which is a client-side constraint the
   // server has no view of.
   var BASE_LAYER_BAND = [0, 7];
+
+
+  // Kilometres in a degree of latitude. Equirectangular, and deliberately
+  // the same figure `map_drop_zone.js` draws its ring with — the circle on
+  // screen and the tiles fetched under it have to agree with each other
+  // more than either has to be geodesic.
+  var KM_PER_DEGREE_LAT = 111.32;
 
   // SNOW-568: the fraction of the origin's REMAINING storage quota a
   // single download may claim. Client-only — no basemap_tiles.py twin.
@@ -633,31 +667,32 @@
     const incomingId = incoming && incoming.id;
     const incomingBytes = Number((incoming && incoming.bytes) || 0);
 
-    const others = list.filter((a) => a && a.id !== incomingId);
-    // SNOW-856: a base layer counts toward the standing total — it is real
-    // disk — but is never an eviction CANDIDATE. Two reasons, and either
-    // alone would be enough. It is shared, so evicting it to make room for
-    // one area silently breaks the zoomed-out view of every other area on
-    // the device. And it is not the user's: the eviction confirm names
-    // areas they chose, and this would offer to delete something they have
-    // never heard of. It goes when the last area under its basemap goes
+    // The base layers are not in this arithmetic at all — not as
+    // candidates, and (SNOW-XXX) not as bytes either.
+    //
+    // They were counted, on the reasoning that they are real disk and a
+    // budget ignoring real disk is a lie. What that missed is WHOSE budget
+    // it is. The z0-9 layer is the app's own map data: fetched once per
+    // basemap, shared by every area, never chosen and never removable on
+    // its own. Charging it to the user's download budget spends up to
+    // 100 MB of a 500 MB allowance on something they cannot point at,
+    // cannot delete, and did not ask for — and on a 200 MB budget it can
+    // make their SECOND download impossible. It is accounted for where the
+    // app's own storage is: the Reset local data summary in account
+    // settings.
+    //
+    // It still goes when the last area under its basemap goes
     // (`evictBasemapAreas`), which is the only moment nothing needs it.
-    const evictable = others.filter((a) => !isBaseLayerAreaId(a.id));
-    const unevictableBytes = others
-      .filter((a) => isBaseLayerAreaId(a.id))
-      .reduce((sum, a) => sum + (Number(a.bytes) || 0), 0);
+    const others = list.filter(
+      (a) => a && a.id !== incomingId && !isBaseLayerAreaId(a.id),
+    );
+    const evictable = others;
 
-    // The floor no eviction can get below, so it is what `impossible` has
-    // to be measured against. Before SNOW-856 every stored byte was
-    // evictable and the floor was zero, which is why this used to compare
-    // `incomingBytes` alone: exhausting the candidate list was guaranteed
-    // to leave exactly the incoming run, and this first check had already
-    // proved that fits. With an un-evictable base layer that guarantee is
-    // gone — a plan could evict every area the user has and still not fit
-    // — so the floor is folded in here rather than discovered as a bad
-    // plan at the bottom of the function.
-    if (incomingBytes + unevictableBytes > budget) {
-      const standing = list.reduce((sum, a) => sum + (Number(a && a.bytes) || 0), 0);
+    // Nothing un-evictable is left in the total now, so exhausting the
+    // candidate list always leaves exactly the incoming run — which is the
+    // guarantee this check restores from before SNOW-856.
+    if (incomingBytes > budget) {
+      const standing = others.reduce((sum, a) => sum + (Number(a.bytes) || 0), 0);
       return { fits: false, impossible: true, evict: [], projectedBytes: standing };
     }
 
@@ -1034,16 +1069,111 @@
    *   over_ceiling: boolean, centre_tile: {z: number, x: number, y:
    *   number}, z: Object<string, number[]>}}
    */
-  function buildBlob(bbox, minZ, maxZ) {
+  function buildBlob(bbox, minZ, maxZ, ceilingMb) {
     const ranges = tileRangesForBBox(bbox, minZ, maxZ);
     const count = tileCount(ranges);
     const totalBytes = count * WORST_CASE_BYTES_PER_TILE;
-    const mb = Math.ceil(totalBytes / (1024 * 1024));
+    // Plus the run's non-tile documents — see DOWNLOAD_DOCUMENTS_MB. Added
+    // after the round-up so the two terms cannot both round the same
+    // megabyte up.
+    const mb = Math.ceil(totalBytes / (1024 * 1024)) + DOWNLOAD_DOCUMENTS_MB;
     return {
       band: [minZ, maxZ],
       count: count,
       mb: mb,
-      over_ceiling: mb > DOWNLOAD_CEILING_MB,
+      over_ceiling: mb > resolveCeilingMb(ceilingMb),
+      centre_tile: centreTile(bbox, maxZ),
+      z: ranges,
+    };
+  }
+
+  /**
+   * Build a download blob for a CIRCLE rather than a box (hack mode).
+   *
+   * Same shape as ``buildBlob`` and interchangeable with it everywhere —
+   * the ``z`` map is written as row spans (``{"<z>": {"<y>": [xmin,
+   * xmax]}}``) instead of a rectangle, which every consumer already
+   * handles: ``zoomRows`` normalises the two, and row spans are how a
+   * REGION download clips its tiles to the region's boundary
+   * (``basemap_tiles.build_region_blob``). This is the same trick against
+   * a shape whose clipping needs no polygon maths.
+   *
+   * Why it is worth doing at all. The drop zone draws a circle, and a
+   * circle is what the user chose; downloading its bounding box fetched a
+   * fifth more tiles than they asked for and — the part that showed — drew
+   * a SQUARE on the map afterwards. The downloaded-tiles overlay does not
+   * render the stored bbox: it reads the real cached tiles out of Cache
+   * Storage and draws one square per tile (``map.js``'s
+   * ``refreshDownloadedOverlay``), so the shape on screen is exactly the
+   * shape of what was fetched. Clipping here is therefore the whole fix —
+   * no overlay change, no new geometry to store.
+   *
+   * Per row, the widest part of the circle within that row's latitude band
+   * is at the latitude NEAREST the centre (the band's own edge, or the
+   * centre's latitude for the row containing it). Taking the span there
+   * over-includes a tile whose corner clips the circle, which is the right
+   * direction: a tile the circle touches is a tile the map will ask for.
+   *
+   * Equirectangular, matching ``map_drop_zone.js``'s own circle geometry —
+   * the ring drawn on screen and the tiles fetched under it have to agree
+   * with each other more than either has to be geodesic.
+   *
+   * Client-only, like ``budgetScaleForBBox``: the server never sizes one of
+   * these, and there is no ``basemap_tiles.py`` twin to keep it honest
+   * against.
+   *
+   * @param {number} lat Centre latitude.
+   * @param {number} lon Centre longitude.
+   * @param {number} radiusKm Radius in kilometres.
+   * @param {number} minZ Shallowest zoom (inclusive).
+   * @param {number} maxZ Detail floor (inclusive).
+   * @param {number} [ceilingMb] What ``over_ceiling`` is measured against;
+   *   defaults to ``DOWNLOAD_CEILING_MB``.
+   * @returns {{band: [number, number], count: number, mb: number,
+   *   over_ceiling: boolean, centre_tile: {z: number, x: number, y:
+   *   number}, z: Object<string, Object<string, [number, number]>>}}
+   */
+  function circleBlob(lat, lon, radiusKm, minZ, maxZ, ceilingMb) {
+    const latDelta = radiusKm / KM_PER_DEGREE_LAT;
+    const bbox = [
+      lon - radiusKm / (KM_PER_DEGREE_LAT * Math.cos((lat * Math.PI) / 180)),
+      lat - latDelta,
+      lon + radiusKm / (KM_PER_DEGREE_LAT * Math.cos((lat * Math.PI) / 180)),
+      lat + latDelta,
+    ];
+    const ranges = {};
+    let count = 0;
+    for (let z = minZ; z <= maxZ; z++) {
+      const [, southY] = lonLatToTile(bbox[0], bbox[1], z);
+      const [, northY] = lonLatToTile(bbox[0], bbox[3], z);
+      const rows = {};
+      // Mercator tile y runs southward, so the north edge has the lower y.
+      for (let y = northY; y <= southY; y++) {
+        const [, tileSouth, , tileNorth] = tileBounds(z, 0, y);
+        // The latitude in this row closest to the centre — where the
+        // circle is at its widest within the row.
+        const nearLat = Math.min(Math.max(lat, tileSouth), tileNorth);
+        const dLatKm = Math.abs(nearLat - lat) * KM_PER_DEGREE_LAT;
+        if (dLatKm > radiusKm) continue;
+        const halfKm = Math.sqrt(radiusKm * radiusKm - dLatKm * dLatKm);
+        const cos = Math.cos((nearLat * Math.PI) / 180);
+        // A row at the pole would divide by ~0; nothing this control is for
+        // goes there, and clamping is cheaper than reasoning about it.
+        const halfLon = halfKm / (KM_PER_DEGREE_LAT * Math.max(cos, 1e-6));
+        const [xmin] = lonLatToTile(lon - halfLon, nearLat, z);
+        const [xmax] = lonLatToTile(lon + halfLon, nearLat, z);
+        rows[String(y)] = [xmin, xmax];
+        count += xmax - xmin + 1;
+      }
+      ranges[String(z)] = rows;
+    }
+    const mb =
+      Math.ceil((count * WORST_CASE_BYTES_PER_TILE) / (1024 * 1024)) + DOWNLOAD_DOCUMENTS_MB;
+    return {
+      band: [minZ, maxZ],
+      count: count,
+      mb: mb,
+      over_ceiling: mb > resolveCeilingMb(ceilingMb),
       centre_tile: centreTile(bbox, maxZ),
       z: ranges,
     };
@@ -1094,13 +1224,16 @@
    *   the shape the golden vector asserts.
    * @returns {number} A factor in ``(0, 1]``.
    */
-  function budgetScaleForBBox(bbox, minZ, maxZ, sourceCount) {
+  function budgetScaleForBBox(bbox, minZ, maxZ, sourceCount, ceilingMb) {
     const [west, south, east, north] = bbox;
     // Whole tiles, not MB: buildBlob rounds bytes UP to the next MB, so a
     // count at exactly this budget is the largest that still reports
-    // ``mb <= DOWNLOAD_CEILING_MB``.
+    // ``mb <= ceiling``. The documents come off the ceiling first — they
+    // are fetched whatever the area's size, so they are not part of what
+    // scaling the box can trade away.
     const sources = Number.isFinite(sourceCount) && sourceCount > 1 ? sourceCount : 1;
-    const budget = (DOWNLOAD_CEILING_MB * 1024 * 1024) / (WORST_CASE_BYTES_PER_TILE * sources);
+    const tileBudgetMb = Math.max(1, resolveCeilingMb(ceilingMb) - DOWNLOAD_DOCUMENTS_MB);
+    const budget = (tileBudgetMb * 1024 * 1024) / (WORST_CASE_BYTES_PER_TILE * sources);
     // World-fraction spans. Longitude is linear in the projection and
     // latitude is not, hence the Mercator y difference rather than a
     // degree one.
@@ -1156,6 +1289,64 @@
    * @param {number} mb Estimated download size in megabytes.
    * @returns {boolean}
    */
+  /**
+   * The largest download this device may hold, in megabytes.
+   *
+   * The ceiling, and the answer to "how big may one download be": as much
+   * as the device can take. Nothing else about the app has an opinion —
+   * an app-chosen cap either refuses a download a phone had room for, or
+   * waves through one it did not, and only the device knows which.
+   *
+   * This is the exact inverse of ``hasStorageHeadroom`` below, deliberately
+   * so: the largest ``mb`` that function will pass is the number this one
+   * returns, which is what keeps the frame a user is offered and the
+   * pre-flight that accepts it from ever disagreeing. ``STORAGE_HEADROOM_
+   * FACTOR`` is not an app cap in disguise — it is the margin a browser
+   * needs before it starts evicting the origin, and a download that lands
+   * exactly at the quota is the first thing it takes back.
+   *
+   * Pure, like its inverse: takes the resolved estimate rather than calling
+   * ``navigator.storage.estimate()``.
+   *
+   * Falls back to ``DOWNLOAD_CEILING_MB`` when the device will not say
+   * (no Storage API, or a browser reporting no quota) — an unknown device
+   * gets the old constant rather than an unbounded download.
+   *
+   * Floored at 1 MB: a device with nothing left yields a ceiling that no
+   * area could ever meet, and every surface that reads this would have to
+   * grow a second empty state to say so. The quota pre-flight refuses that
+   * download on its own, with a message about storage, which is the honest
+   * place for it.
+   *
+   * @param {{quota?: number, usage?: number}|null|undefined} estimate
+   * @returns {number} Megabytes.
+   */
+  function deviceCeilingMb(estimate) {
+    if (!estimate) return DOWNLOAD_CEILING_MB;
+    const quota = Number(estimate.quota);
+    const usage = Number(estimate.usage);
+    if (!Number.isFinite(quota) || quota <= 0) return DOWNLOAD_CEILING_MB;
+    if (!Number.isFinite(usage) || usage < 0) return DOWNLOAD_CEILING_MB;
+    const free = Math.max(0, quota - usage) * STORAGE_HEADROOM_FACTOR;
+    return Math.max(1, Math.floor(free / (1024 * 1024)));
+  }
+
+  /**
+   * Read a caller-supplied ceiling, falling back to the constant.
+   *
+   * One place, so ``buildBlob`` and ``budgetScaleForBBox`` can never
+   * disagree about what a missing, zero or nonsense ceiling means — the
+   * frame a user is offered and the flag that disables the button are the
+   * same question asked twice.
+   *
+   * @param {number|null|undefined} ceilingMb
+   * @returns {number} Megabytes.
+   */
+  function resolveCeilingMb(ceilingMb) {
+    const mb = Number(ceilingMb);
+    return Number.isFinite(mb) && mb > 0 ? mb : DOWNLOAD_CEILING_MB;
+  }
+
   function hasStorageHeadroom(estimate, mb) {
     if (!estimate) return true;
     const quota = Number(estimate.quota);
@@ -1743,8 +1934,10 @@
     tileCount: tileCount,
     centreTile: centreTile,
     buildBlob: buildBlob,
+    circleBlob: circleBlob,
     budgetScaleForBBox: budgetScaleForBBox,
     hasStorageHeadroom: hasStorageHeadroom,
+    deviceCeilingMb: deviceCeilingMb,
     bboxPolygon: bboxPolygon,
     tileBounds: tileBounds,
     cachedTilesFromURLs: cachedTilesFromURLs,
@@ -1768,6 +1961,7 @@
     BASE_LAYER_BAND: BASE_LAYER_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
+    DOWNLOAD_DOCUMENTS_MB: DOWNLOAD_DOCUMENTS_MB,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
     DOWNLOAD_BUDGET_MB: DOWNLOAD_BUDGET_MB,
     PINNED_CACHE_PREFIX: PINNED_CACHE_PREFIX,

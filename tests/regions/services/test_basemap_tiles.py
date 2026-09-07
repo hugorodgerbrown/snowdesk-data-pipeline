@@ -31,6 +31,7 @@ from typing import Any
 
 from apps.regions.services.basemap_tiles import (
     DOWNLOAD_CEILING_MB,
+    DOWNLOAD_DOCUMENTS_MB,
     MICRO_BAND,
     WORST_CASE_BYTES_PER_TILE,
     bbox_from_boundary,
@@ -200,8 +201,9 @@ def test_build_blob_shape_and_arithmetic() -> None:
     assert blob["band"] == [min_z, max_z]
     assert set(blob["z"].keys()) == {str(z) for z in range(min_z, max_z + 1)}
     assert blob["count"] == tile_count(blob["z"])
-    assert blob["mb"] == math.ceil(
-        blob["count"] * WORST_CASE_BYTES_PER_TILE / (1024 * 1024)
+    assert blob["mb"] == (
+        math.ceil(blob["count"] * WORST_CASE_BYTES_PER_TILE / (1024 * 1024))
+        + DOWNLOAD_DOCUMENTS_MB
     )
     assert blob["over_ceiling"] is (blob["mb"] > DOWNLOAD_CEILING_MB)
     assert blob["centre_tile"] == centre_tile(bbox, max_z)
@@ -244,7 +246,7 @@ def test_build_blob_golden_vector_matches_js_twin() -> None:
     assert blob == {
         "band": [10, 14],
         "count": 205,
-        "mb": 11,
+        "mb": 13,
         "over_ceiling": False,
         "centre_tile": {"z": 14, "x": 8515, "y": 5822},
         "z": {
@@ -346,8 +348,9 @@ def test_build_region_blob_shape_and_arithmetic() -> None:
     assert blob["band"] == [min_z, max_z]
     assert set(blob["z"].keys()) <= {str(z) for z in range(min_z, max_z + 1)}
     assert blob["count"] == row_tile_count(blob["z"])
-    assert blob["mb"] == math.ceil(
-        blob["count"] * WORST_CASE_BYTES_PER_TILE / (1024 * 1024)
+    assert blob["mb"] == (
+        math.ceil(blob["count"] * WORST_CASE_BYTES_PER_TILE / (1024 * 1024))
+        + DOWNLOAD_DOCUMENTS_MB
     )
     assert blob["over_ceiling"] is (blob["mb"] > DOWNLOAD_CEILING_MB)
     assert blob["centre_tile"] == centre_tile(bbox_from_boundary(boundary), max_z)

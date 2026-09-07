@@ -127,12 +127,58 @@ MICRO_BAND: tuple[int, int] = (10, 14)
 # overstate by 3-5x — a deliberate trade for keeping a single constant that
 # never under-promises. Mirrors the JS twin at
 # ``static/js/basemap_download_core.js``'s ``WORST_CASE_BYTES_PER_TILE``.
+#
+# Re-checked 2026-09-07 and LEFT ALONE, after a report of a 10 km drop zone
+# estimated at 13 MB reporting 36.3 MB downloaded. Sampling individual
+# tiles suggests this figure is far too low (fifteen tiles across Verbier,
+# Martigny and Sion averaged 78 KB by ``Content-Length``), but that sample
+# is biased: every tile in it is centred on a town, which is the densest
+# tile in its area. A real 10 km area download around Verbier — 253 tiles,
+# measured entry by entry in its own pinned bucket — averaged 34 KB a tile,
+# with its 182 z14 tiles at 30 KB. This constant over-reads that by 1.5x,
+# which is what it says it does.
+#
+# The gap the report is really about is NOT here: it is that the estimate
+# counts tiles only, while a run also writes documents and promoted glyphs
+# into the same bucket and reports their bytes too. See
+# ``DOWNLOAD_DOCUMENTS_MB``.
 WORST_CASE_BYTES_PER_TILE: int = 50 * 1024
 
-# Download hard ceiling. A region whose worst-case estimate exceeds this
-# is flagged ``over_ceiling`` — a backstop against a pathologically large
-# micro-region, surfaced client-side as a disabled download icon rather
-# than starting a run with no sensible bound.
+# What a run writes into the area's bucket that is not a tile, in
+# megabytes. The estimate counted none of it, and a run's reported byte
+# total counts all of it, which is most of the gap between the two.
+#
+# Two parts, measured 2026-09-07 on one real download:
+#
+#   - The documents proper: the style (42 KB), both sprite sheets and their
+#     JSON (218 KB) and the source TileJSON (19 KB) — 0.27 MB, and near
+#     enough fixed for a given basemap.
+#   - Promoted glyphs (``sw.js::_promoteGlyphs``): every glyph range the
+#     device has ALREADY cached by browsing, copied into the bucket so the
+#     area keeps its labels. 1.6 MB on the browser measured, and NOT a
+#     property of the area at all — it scales with how much of the map the
+#     user has panned around, up to the passive cache's own 600-entry cap.
+#
+# So 2 MB is an allowance, not a prediction, and the second part is why no
+# constant can be one. Estimating that part honestly means asking the
+# worker how many glyph bytes it would promote before the run starts, which
+# is a message this side does not have; until then this under-reads on a
+# well-used device.
+#
+# Mirrors ``static/js/basemap_download_core.js``'s ``DOWNLOAD_DOCUMENTS_MB``.
+DOWNLOAD_DOCUMENTS_MB: int = 2
+
+# The server's fallback ceiling, and the ONLY ceiling this module can
+# apply: how much a download may cost is a question about the device it
+# lands on, and the server has no view of one.
+#
+# The client no longer asks it. ``basemap_download_core.js``'s
+# ``deviceCeilingMb`` derives the real ceiling from
+# ``navigator.storage.estimate()`` — what one download may claim is what
+# that device can hold — so a region flagged ``over_ceiling`` here is
+# advisory, and a phone with room downloads it anyway. What survives here
+# is the stored flag on the region row, which the admin and the API
+# payload still carry.
 DOWNLOAD_CEILING_MB: int = 200
 
 # Keys copied from a full blob into its "summary" projection — everything
@@ -290,7 +336,10 @@ def build_blob(bbox: list[float], min_z: int, max_z: int) -> dict[str, Any]:
     ranges = tile_ranges(bbox, min_z, max_z)
     count = tile_count(ranges)
     total_bytes = count * WORST_CASE_BYTES_PER_TILE
-    mb = math.ceil(total_bytes / (1024 * 1024))
+    # Plus the run's non-tile documents — see DOWNLOAD_DOCUMENTS_MB. Added
+    # after the round-up so the two terms cannot both round the same
+    # megabyte up.
+    mb = math.ceil(total_bytes / (1024 * 1024)) + DOWNLOAD_DOCUMENTS_MB
     return {
         "band": [min_z, max_z],
         "count": count,
@@ -501,7 +550,10 @@ def build_region_blob(
     clipped = clip_ranges(boundary, candidates, max_z)
     count = row_tile_count(clipped)
     total_bytes = count * WORST_CASE_BYTES_PER_TILE
-    mb = math.ceil(total_bytes / (1024 * 1024))
+    # Plus the non-tile documents, exactly as ``build_blob`` does — a
+    # region download fetches the same style, sprite and feeds a custom
+    # area does.
+    mb = math.ceil(total_bytes / (1024 * 1024)) + DOWNLOAD_DOCUMENTS_MB
     return {
         "band": [min_z, max_z],
         "count": count,

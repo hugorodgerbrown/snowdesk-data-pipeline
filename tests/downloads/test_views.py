@@ -153,19 +153,19 @@ class TestAreaSyncGuards:
             # at the worst-case rate — this is the box the range check was
             # once claimed to stop and never did.
             (json.dumps([-179.0, -89.0, 179.0, 89.0]), "whole world"),
-            # Switzerland: legal, plausible, and still ~1.8 GB.
-            (json.dumps([5.9, 45.8, 10.5, 47.8]), "whole country"),
         ],
     )
     def test_an_undownloadable_box_is_refused(
         self, client: Client, signed_in: Any, bbox: str, label: str
     ) -> None:
-        """A box over the download ceiling is refused rather than stored.
+        """A box past the absurdity backstop is refused rather than stored.
 
-        A stored bbox is not inert: another device replays it through
-        ``openFramingAt`` and is offered a download. Storing a box this
-        server knows to be undownloadable produces a row whose only purpose
-        is to be acted on and cannot be.
+        The bound is ``_MAX_STORED_AREA_MB``, not a download ceiling —
+        there is no fixed ceiling any more, because how much a download may
+        cost is a question about the device running it. What survives is a
+        guard against a box no device could ever hold: a stored bbox is not
+        inert, since another device replays it through ``openFramingAt``
+        and is offered a download.
         """
         response = client.post(
             SYNC_URL, {**CUSTOM_PAYLOAD, "bbox": bbox}, **HTMX_HEADERS
@@ -177,32 +177,31 @@ class TestAreaSyncGuards:
     def test_a_box_a_real_client_could_frame_is_accepted(
         self, client: Client, signed_in: Any
     ) -> None:
-        """The ceiling is the client's own, so it never refuses a real frame.
+        """A box far past the old 200 MB ceiling is stored, not refused.
 
-        The bound reuses ``basemap_tiles.DOWNLOAD_CEILING_MB`` — the same
-        constant ``basemap_download_core.js`` mirrors and the framing
-        control already enforces — so this is a backstop for a client we
-        did not ship, not a second, tighter policy. A box at the largest
-        size the real control permits has to pass.
+        This is the case the device-derived ceiling exists for: a phone
+        with room downloads an area a constant would have refused, and the
+        row recording it has to survive the trip through this endpoint.
+        Switzerland end to end prices at roughly 1.8 GB — comfortably past
+        any ceiling this project ever shipped, comfortably under
+        ``_MAX_STORED_AREA_MB``.
         """
-        # ~0.9° x 0.6°, which prices just under the 200 MB ceiling.
-        bbox = json.dumps([7.0, 46.0, 7.9, 46.6])
+        bbox = json.dumps([5.9, 45.8, 10.5, 47.8])
         response = client.post(
             SYNC_URL, {**CUSTOM_PAYLOAD, "bbox": bbox}, **HTMX_HEADERS
         )
 
         assert response.status_code == 200
-        assert DownloadArea.objects.get().bbox == [7.0, 46.0, 7.9, 46.6]
+        assert DownloadArea.objects.get().bbox == [5.9, 45.8, 10.5, 47.8]
 
-    def test_the_ceiling_is_the_shared_constant_not_a_second_one(self) -> None:
+    def test_the_pricing_is_the_shared_arithmetic_not_a_second_one(self) -> None:
         """``_clean_bbox`` prices against ``basemap_tiles``, not a local copy.
 
-        There is one download ceiling in this system and it is already
-        mirrored in JavaScript. A third would be a limit no control was
-        designed against — so this asserts the module reads the shared one
-        rather than restating it.
+        The BOUND is this module's own now (``_MAX_STORED_AREA_MB``, an
+        absurdity backstop rather than a ceiling), but what it prices with
+        must stay the shared band and rate — a second copy of those would
+        make this endpoint disagree with every surface that sizes an area.
         """
-        assert views.DOWNLOAD_CEILING_MB is basemap_tiles.DOWNLOAD_CEILING_MB
         assert views.MICRO_BAND is basemap_tiles.MICRO_BAND
         assert (
             views.WORST_CASE_BYTES_PER_TILE is basemap_tiles.WORST_CASE_BYTES_PER_TILE

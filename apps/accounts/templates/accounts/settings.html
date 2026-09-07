@@ -399,6 +399,31 @@ because the repository is the authority and the mock is a drawing:
                                     subscription is not affected.
                                 {% endblocktrans %}
                             </p>
+                            {# SNOW-XXX: what the app itself is holding, filled by         #}
+                            {# pwa_reset.js from the base-layer records and left EMPTY    #}
+                            {# (so it collapses) on a device with none.                    #}
+                            {#                                                             #}
+                            {# The shared overview map — the zoomed-out z0-9 tiles a       #}
+                            {# basemap needs once, so a downloaded area does not end at a  #}
+                            {# blank screen when you zoom out — is the app's own map data,  #}
+                            {# not one of the user's downloads: fetched once per basemap,   #}
+                            {# shared by every area, never chosen and never removable on    #}
+                            {# its own. The downloads panel therefore does not list it or   #}
+                            {# charge the budget for it, which leaves exactly one place it  #}
+                            {# has to be stated: here, beside the control that clears it.   #}
+                            {# Storage the user cannot see is storage they cannot consent   #}
+                            {# to.                                                          #}
+                            {# Hidden until JS has a figure: the sentence is                #}
+                            {# server-rendered so makemessages can see it, and only the      #}
+                            {# NUMERAL is written by JS (the same split the downloads        #}
+                            {# panel's "Using X of Y" uses).                                  #}
+                            <p data-pwa-reset-size hidden class="mt-1 text-sm text-text-3">
+                                {% blocktrans trimmed %}
+                                    Includes
+                                    <span data-pwa-reset-size-value class="font-mono"></span>
+                                    of shared map data — the zoomed-out tiles your downloaded areas need.
+                                {% endblocktrans %}
+                            </p>
                         </div>
                         <button
                             type="button"

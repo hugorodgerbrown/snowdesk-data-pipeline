@@ -360,155 +360,72 @@ describe('manageRows', () => {
   });
 });
 
-describe('groupRowsByBasemap (SNOW-832 — grouped-by-basemap sheet)', () => {
-  // Replaces groupRowsByKind. The sheet's headings name BASEMAPS now,
-  // because that is the axis along which a stored area is or is not
-  // usable; the kind moved down into each row's own meta line.
-  const ORDER = ['openfreemap_liberty', 'swisstopo_winter', 'ign_plan'];
+describe('groupRowsByPresence (SNOW-XXX — grouped by what is here)', () => {
+  // SNOW-832 grouped by basemap, each group under a coloured heading with
+  // its own total. The basemap moved onto the row — a dot and a word —
+  // and the split became the one that changes what a row can DO: an
+  // account-only row can be downloaded, an on-device row can be removed,
+  // never both.
+  const HERE = { id: 'region-A', onDevice: true, basemapKey: 'swisstopo_winter' };
+  const HERE_2 = { id: 'custom-b', onDevice: true, basemapKey: 'openfreemap_liberty' };
+  const ELSEWHERE = { id: 'region-C', onDevice: false, basemapKey: 'swisstopo_winter' };
 
-  const rowFor = (id, basemapKey, bytes) => ({
-    id: id,
-    kind: id.indexOf('custom-') === 0 ? 'custom' : 'region',
-    label: id,
-    basemapKey: basemapKey,
-    bytes: bytes,
-  });
+  it('puts what is here first, and what is only on the account after', () => {
+    const groups = core.groupRowsByPresence([ELSEWHERE, HERE]);
 
-  it('honours the canonical order, not the order the rows arrived in', () => {
-    // Swisstopo's rows come first and are bigger; the picker offers
-    // OpenFreeMap first, so the sheet lists it first.
-    const groups = core.groupRowsByBasemap(
-      [
-        rowFor('region-a', 'swisstopo_winter', 90 * MB),
-        rowFor('region-b', 'openfreemap_liberty', 10 * MB),
-      ],
-      ORDER,
-    );
-    expect(groups.map((g) => g.basemapKey)).toEqual([
-      'openfreemap_liberty',
-      'swisstopo_winter',
-    ]);
+    expect(groups.map((group) => group.key)).toEqual(['device', 'account']);
+    expect(groups[0].rows.map((row) => row.id)).toEqual(['region-A']);
+    expect(groups[1].rows.map((row) => row.id)).toEqual(['region-C']);
   });
 
   it('keeps manageRows own row order inside a group, never re-sorting it', () => {
-    const groups = core.groupRowsByBasemap(
-      [
-        rowFor('region-CH-2101', 'openfreemap_liberty', MB),
-        rowFor('region-CH-2102', 'openfreemap_liberty', 90 * MB),
-        rowFor('custom-a1', 'openfreemap_liberty', 40 * MB),
-      ],
-      ORDER,
-    );
-    expect(groups[0].rows.map((r) => r.id)).toEqual([
-      'region-CH-2101',
-      'region-CH-2102',
-      'custom-a1',
-    ]);
+    const groups = core.groupRowsByPresence([HERE_2, HERE]);
+
+    expect(groups[0].rows.map((row) => row.id)).toEqual(['custom-b', 'region-A']);
   });
 
-  it('sums each group total from its own rows', () => {
-    const groups = core.groupRowsByBasemap(
-      [
-        rowFor('region-a', 'openfreemap_liberty', 10 * MB),
-        rowFor('custom-a1', 'openfreemap_liberty', 5 * MB),
-        rowFor('region-b', 'swisstopo_winter', 8 * MB),
-      ],
-      ORDER,
-    );
-    expect(groups.map((g) => g.totalBytes)).toEqual([15 * MB, 8 * MB]);
+  it('omits a group with no rows rather than rendering an empty heading', () => {
+    expect(core.groupRowsByPresence([HERE, HERE_2]).map((g) => g.key)).toEqual(['device']);
+    expect(core.groupRowsByPresence([ELSEWHERE]).map((g) => g.key)).toEqual(['account']);
+    expect(core.groupRowsByPresence([])).toEqual([]);
   });
 
-  it('counts an account-only row as 0 bytes, which is what this device holds', () => {
-    // SNOW-749 rows carry bytes: 0. A group can therefore show a total
-    // smaller than its row count suggests — correct, and the whole point
-    // of the panel: listed is not the same as available offline.
-    const groups = core.groupRowsByBasemap(
-      [
-        rowFor('region-a', 'openfreemap_liberty', 10 * MB),
-        rowFor('region-b', 'openfreemap_liberty', 0),
-      ],
-      ORDER,
-    );
-    expect(groups[0].rows).toHaveLength(2);
-    expect(groups[0].totalBytes).toBe(10 * MB);
+  it('treats a row with no onDevice flag as here', () => {
+    // The pre-SNOW-749 shape, and the reading that was true then: a
+    // recorded area was on the device that recorded it.
+    const groups = core.groupRowsByPresence([{ id: 'region-D' }]);
+
+    expect(groups.map((group) => group.key)).toEqual(['device']);
+  });
+});
+
+describe('the shared overview map is app data, not a download', () => {
+  // It is fetched once per basemap, shared by every area, never chosen and
+  // never removable on its own. This panel is the user's DOWNLOADS and the
+  // budget they set for them, so it does not appear here at all — neither
+  // as a row nor in the total. Account settings' Reset local data summary
+  // is where the app's own storage is stated and cleared.
+  //
+  // Two earlier passes put it here in different clothes: a row beside the
+  // user's areas (which denied it their one control), and a neutral
+  // "system files" segment on the budget bar (which still spent their
+  // allowance on it).
+  const isBaseLayerAreaId = (id) => id.indexOf('base-') === 0;
+  const AREAS = [
+    { id: 'base-openfreemap_liberty', basemapKey: 'openfreemap_liberty', bytes: 100 * MB },
+    { id: 'region-CH-1111', name: 'Wildhorn', basemapKey: 'openfreemap_liberty', bytes: 4 * MB },
+  ];
+
+  it('is not listed among the rows', () => {
+    const rows = core.manageRows(AREAS, { isBaseLayerAreaId });
+    expect(rows.map((row) => row.id)).toEqual(['region-CH-1111']);
   });
 
-  it('puts a key the order does not mention after every key it does', () => {
-    // A deployment BASEMAP= override, or a style since retired from the
-    // picker. The rows are real downloads, so dropping them would hide
-    // storage the user is paying for.
-    const groups = core.groupRowsByBasemap(
-      [
-        rowFor('region-a', 'no_such_basemap', MB),
-        rowFor('region-b', 'swisstopo_winter', MB),
-      ],
-      ORDER,
-    );
-    expect(groups.map((g) => g.basemapKey)).toEqual([
-      'swisstopo_winter',
-      'no_such_basemap',
-    ]);
-  });
-
-  it('puts the keyless group last, whatever the order and whatever its size', () => {
-    // Legacy records, orphaned buckets. It is the group that cannot be
-    // named, so it is the one to read after the ones that can.
-    const groups = core.groupRowsByBasemap(
-      [
-        rowFor('orphan-1', '', 500 * MB),
-        rowFor('region-b', 'swisstopo_winter', MB),
-        rowFor('region-c', 'openfreemap_liberty', MB),
-      ],
-      ORDER,
-    );
-    expect(groups.map((g) => g.basemapKey)).toEqual([
-      'openfreemap_liberty',
-      'swisstopo_winter',
-      '',
-    ]);
-  });
-
-  it('treats a null basemapKey as the keyless group, never its own', () => {
-    const groups = core.groupRowsByBasemap(
-      [rowFor('orphan-1', null, MB), rowFor('orphan-2', undefined, MB)],
-      ORDER,
-    );
-    expect(groups).toHaveLength(1);
-    expect(groups[0].basemapKey).toBe('');
-    expect(groups[0].rows).toHaveLength(2);
-  });
-
-  it('never returns an empty group', () => {
-    // A heading with nothing under it says a basemap has downloads when
-    // it has none — which is exactly what the two fixed SNOW-645 wrappers
-    // needed a `hidden` state to avoid.
-    const groups = core.groupRowsByBasemap(
-      [rowFor('region-b', 'swisstopo_winter', MB)],
-      ORDER,
-    );
-    expect(groups.map((g) => g.basemapKey)).toEqual(['swisstopo_winter']);
-  });
-
-  it('falls back to first-appearance order with no canonical order at all', () => {
-    // No picker in the document (basemapOrder() answers []). An order,
-    // just not the curated one.
-    const groups = core.groupRowsByBasemap([
-      rowFor('region-a', 'swisstopo_winter', MB),
-      rowFor('region-b', 'openfreemap_liberty', MB),
-    ]);
-    expect(groups.map((g) => g.basemapKey)).toEqual([
-      'swisstopo_winter',
-      'openfreemap_liberty',
-    ]);
-  });
-
-  it('gives back an empty list for nothing stored, never undefined', () => {
-    expect(core.groupRowsByBasemap([], ORDER)).toEqual([]);
-  });
-
-  it('tolerates a non-array input the same way manageRows does', () => {
-    expect(core.groupRowsByBasemap(undefined, ORDER)).toEqual([]);
-    expect(core.groupRowsByBasemap(null, ORDER)).toEqual([]);
+  it('leaves every listed row removable', () => {
+    // The flag existed to say "except that one". With that one gone, a row
+    // the user cannot act on would be a new bug, not a known state.
+    const rows = core.manageRows(AREAS, { isBaseLayerAreaId });
+    expect(rows.every((row) => row.deletable)).toBe(true);
   });
 });
 

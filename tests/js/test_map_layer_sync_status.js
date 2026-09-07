@@ -596,6 +596,36 @@ describe('per-basemap rows', () => {
     expect(basemapRowDisabled('standard')).toBe(false);
   });
 
+  it('a basemap whose overview map is stored reads as available offline', async () => {
+    // SNOW-XXX: the z0-7 overview is fetched when a basemap is first
+    // SHOWN, so holding one is exactly the claim this dot makes — open the
+    // app offline on that basemap and a map draws. SNOW-856 skipped base
+    // layers here, correctly for the old ones: they arrived as a side
+    // effect of a download, so greening a basemap the user had never
+    // chosen to store would have over-claimed.
+    setOnline(false);
+    fakeDownloads([{ id: 'base-swisstopo', basemapKey: 'swisstopo' }]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('swisstopo')).toBe('cached');
+  });
+
+  it('an overview map never greens a basemap other than its own', async () => {
+    // An AREA with no recorded basemap is attributed to the active one —
+    // "downloaded, basemap unknown" is still a download. A base layer
+    // always names its own basemap, so it must never fall through to that
+    // rule and green whatever happens to be on screen.
+    setOnline(false);
+    fakeDownloads([{ id: 'base-swisstopo', basemapKey: null }]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('swisstopo')).not.toBe('cached');
+  });
+
   it('offline: a downloaded non-active basemap stays selectable', async () => {
     setOnline(false);
     fakeDownloads([{ id: 'area-1', basemapKey: 'swisstopo' }]);

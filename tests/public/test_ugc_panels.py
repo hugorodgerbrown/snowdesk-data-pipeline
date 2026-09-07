@@ -86,15 +86,16 @@ PANEL_TEMPLATE_IDS = tuple(PANEL_ICONS)
 # the sentence: a panel that stopped saying whether its contents leave the
 # device would still render a strip, and still pass a shape-only check.
 PANEL_CONTEXT_LINES = {
-    "map-downloads-body-template": (
-        # SNOW-749: the areas follow the account now, so the old
-        # "Downloads and budget stay on this device." was half false. The
-        # half that survived is the load-bearing one — it is what explains
-        # how a row can be listed in this panel and still not be available
-        # offline here.
-        "Your areas follow your account. The map data and the budget stay "
-        "on this device."
-    ),
+    # SNOW-XXX: the downloads panel has NO strip, and that is the one
+    # exemption here. Its sentence said which rows leave the device and
+    # which stay; its two list headings — "On this device" / "On your
+    # account only" — now say the same thing where it applies, over the
+    # rows it applies to, and a sentence repeating them above was the panel
+    # saying one thing twice. The headings are rendered by JS, so this
+    # server-side check cannot read them: the strings they are built from
+    # are asserted instead, in
+    # ``test_the_downloads_panel_says_it_in_its_list_headings``.
+    "map-downloads-body-template": None,
     "favourite-list-template": "Favourites are private and not shared.",
     "report-list-template": "Reports are shared with the community.",
     # SNOW-765: conditional, and the condition is the point. It said
@@ -275,10 +276,16 @@ class TestUgcPanelSkeleton:
         """
         body = _panel_body(home_html, template_id)
         header = body.index("text-lg font-semibold")
-        strip = body.index(PANEL_CONTEXT_LINES[template_id])
         scroll = body.index("overflow-y-auto")
         cta = body.index("data-panel-add")
         switch = body.index("rounded-tag bg-tag")
+        line = PANEL_CONTEXT_LINES[template_id]
+        if line is None:
+            # No strip on this panel — the four parts it does have still
+            # run in the same order.
+            assert header < scroll < cta < switch
+            return
+        strip = body.index(line)
         assert header < strip < scroll < cta < switch
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
@@ -310,7 +317,10 @@ class TestUgcPanelSkeleton:
         classes and lose its whole reason for being there.
         """
         body = _panel_body(home_html, template_id)
-        assert PANEL_CONTEXT_LINES[template_id] in body
+        line = PANEL_CONTEXT_LINES[template_id]
+        if line is None:
+            pytest.skip("this panel says it in its list headings — see the dict")
+        assert line in body
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_heads_its_list_with_a_mono_section_label(
@@ -332,6 +342,24 @@ class TestUgcPanelSkeleton:
         assert body.count(section_label_classes) == len(labels)
         for label in labels:
             assert f">{label}<" in body
+
+    def test_the_downloads_panel_says_it_in_its_list_headings(
+        self, home_html: str
+    ) -> None:
+        """The one panel with no context strip still says where its data is.
+
+        SNOW-XXX deleted its sentence — "Your areas follow your account.
+        The map data and the budget stay on this device." — because its two
+        list headings say the same thing over the rows it is true of. That
+        makes the headings load-bearing rather than decorative, which is
+        what this asserts: they are rendered by JS, so what is checked is
+        that the strings it builds them from are on the page for it to
+        read.
+        """
+        assert '<span data-string="group-device">On this device</span>' in home_html
+        assert (
+            '<span data-string="group-account">Not on this device</span>' in home_html
+        )
 
     def test_the_downloads_group_heading_is_the_same_label_primitive(
         self, home_html: str

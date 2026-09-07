@@ -232,7 +232,10 @@ describe('buildBlob (golden vector)', () => {
     expect(blob).toEqual({
       band: [10, 14],
       count: 205,
-      mb: 11,
+      // 205 tiles at WORST_CASE_BYTES_PER_TILE (50 KB) = 11 MB, plus
+      // DOWNLOAD_DOCUMENTS_MB for the style, sprite and promoted glyphs a
+      // run writes beside its tiles.
+      mb: 13,
       over_ceiling: false,
       centre_tile: { z: 14, x: 8515, y: 5822 },
       z: {
@@ -379,6 +382,7 @@ describe('MICRO_BAND / WORST_CASE_BYTES_PER_TILE / DOWNLOAD_CEILING_MB', () => {
   it('mirror the Python module-level constants', () => {
     expect(core.MICRO_BAND).toEqual([10, 14]);
     expect(core.WORST_CASE_BYTES_PER_TILE).toBe(50 * 1024);
+    expect(core.DOWNLOAD_DOCUMENTS_MB).toBe(2);
     expect(core.DOWNLOAD_CEILING_MB).toBe(200);
   });
 });
@@ -388,6 +392,130 @@ describe('MICRO_BAND / WORST_CASE_BYTES_PER_TILE / DOWNLOAD_CEILING_MB', () => {
  * its job is to refuse a download that cannot fit BEFORE the run spends
  * a few hundred fetches finding out.
  */
+describe('circleBlob', () => {
+  const [minZ, maxZ] = core.MICRO_BAND;
+  const lat = 46.0961;
+  const lon = 7.2286;
+  const radiusKm = 10;
+
+  it('fetches fewer tiles than the bounding box it fits in', () => {
+    // A circle is pi/4 of its box, so this is the whole point of clipping:
+    // roughly a fifth of the tiles a box download spent were corners the
+    // user never selected.
+    const latD = radiusKm / 111.32;
+    const lonD = radiusKm / (111.32 * Math.cos((lat * Math.PI) / 180));
+    const box = core.buildBlob([lon - lonD, lat - latD, lon + lonD, lat + latD], minZ, maxZ);
+    const circle = core.circleBlob(lat, lon, radiusKm, minZ, maxZ);
+    expect(circle.count).toBeLessThan(box.count);
+    // Not a savage crop either — a clip that lost half the area would mean
+    // the geometry is wrong, not tight.
+    expect(circle.count).toBeGreaterThan(box.count * 0.6);
+  });
+
+  it('writes row spans every consumer already understands', () => {
+    // Row spans are the shape a REGION download uses to clip to a boundary,
+    // which is why nothing downstream needed changing.
+    const blob = core.circleBlob(lat, lon, radiusKm, minZ, maxZ);
+    const rows = blob.z[String(maxZ)];
+    expect(Array.isArray(rows)).toBe(false);
+    const spans = Object.values(rows);
+    expect(spans.length).toBeGreaterThan(1);
+    // A circle's rows are not all the same width; a rectangle's are.
+    const widths = spans.map(([xmin, xmax]) => xmax - xmin);
+    expect(new Set(widths).size).toBeGreaterThan(1);
+    // Widest through the middle, narrowest at the ends.
+    expect(Math.max(...widths)).toBe(widths[Math.floor(widths.length / 2)]);
+  });
+
+  it('agrees with tileCount and the URL list it produces', () => {
+    const blob = core.circleBlob(lat, lon, radiusKm, minZ, maxZ);
+    expect(core.tileCount(blob.z)).toBe(blob.count);
+    const urls = core.rangesToTileURLs([['https://tiles.example/{z}/{x}/{y}.pbf']], blob);
+    expect(urls.length).toBe(blob.count);
+  });
+
+  it('carries the same shape as buildBlob, ceiling included', () => {
+    const blob = core.circleBlob(lat, lon, radiusKm, minZ, maxZ, 1);
+    expect(blob.band).toEqual([minZ, maxZ]);
+    expect(blob.centre_tile).toEqual(core.centreTile([lon, lat, lon, lat], maxZ));
+    expect(blob.over_ceiling).toBe(true);
+    expect(core.circleBlob(lat, lon, radiusKm, minZ, maxZ, 8000).over_ceiling).toBe(false);
+  });
+
+  it('grows with the radius', () => {
+    const small = core.circleBlob(lat, lon, 2, minZ, maxZ);
+    const large = core.circleBlob(lat, lon, 20, minZ, maxZ);
+    expect(large.count).toBeGreaterThan(small.count);
+  });
+});
+
+describe('deviceCeilingMb', () => {
+  const MB = 1024 * 1024;
+
+  it('is the largest download hasStorageHeadroom will pass', () => {
+    // The two are inverses, and this is the property that matters: the
+    // frame a user is offered and the pre-flight that accepts it must
+    // never disagree about what fits.
+    const estimate = { quota: 1000 * MB, usage: 137 * MB };
+    const ceiling = core.deviceCeilingMb(estimate);
+    expect(core.hasStorageHeadroom(estimate, ceiling)).toBe(true);
+    expect(core.hasStorageHeadroom(estimate, ceiling + 1)).toBe(false);
+  });
+
+  it('grows with the device, past any constant', () => {
+    // The point of the whole change: a roomy device is not held to
+    // 200 MB because that number was once written down.
+    expect(core.deviceCeilingMb({ quota: 64 * 1024 * MB, usage: 0 })).toBeGreaterThan(
+      core.DOWNLOAD_CEILING_MB
+    );
+  });
+
+  it('shrinks as the device fills', () => {
+    const empty = core.deviceCeilingMb({ quota: 1000 * MB, usage: 0 });
+    const full = core.deviceCeilingMb({ quota: 1000 * MB, usage: 900 * MB });
+    expect(full).toBeLessThan(empty);
+  });
+
+  it('falls back to the constant when the device will not say', () => {
+    // An unknown device gets the old fixed ceiling — never an unbounded
+    // one, which is the failure that would matter.
+    expect(core.deviceCeilingMb(null)).toBe(core.DOWNLOAD_CEILING_MB);
+    expect(core.deviceCeilingMb({})).toBe(core.DOWNLOAD_CEILING_MB);
+    expect(core.deviceCeilingMb({ quota: 0, usage: 0 })).toBe(core.DOWNLOAD_CEILING_MB);
+  });
+
+  it('never returns zero on a full device', () => {
+    // A ceiling of 0 would make every surface that reads it grow a second
+    // empty state; the quota pre-flight is where "no room" is said.
+    expect(core.deviceCeilingMb({ quota: 1000 * MB, usage: 1000 * MB })).toBe(1);
+  });
+});
+
+describe('buildBlob ceiling', () => {
+  const [minZ, maxZ] = core.MICRO_BAND;
+  // ~2 x 1.5 degrees — a few hundred MB at the current rate, so it is over
+  // a 200 MB ceiling and well under a device-sized one.
+  const bbox = [7.0, 46.0, 9.0, 47.5];
+
+  it('measures over_ceiling against the ceiling it is given', () => {
+    expect(core.buildBlob(bbox, minZ, maxZ, 200).over_ceiling).toBe(true);
+    expect(core.buildBlob(bbox, minZ, maxZ, 8000).over_ceiling).toBe(false);
+  });
+
+  it('falls back to the constant when given none', () => {
+    expect(core.buildBlob(bbox, minZ, maxZ).over_ceiling).toBe(
+      core.buildBlob(bbox, minZ, maxZ, core.DOWNLOAD_CEILING_MB).over_ceiling
+    );
+  });
+
+  it('lets budgetScaleForBBox draw a bigger box on a bigger ceiling', () => {
+    const tight = core.budgetScaleForBBox(bbox, minZ, maxZ, 1, 200);
+    const roomy = core.budgetScaleForBBox(bbox, minZ, maxZ, 1, 8000);
+    expect(tight).toBeLessThan(1);
+    expect(roomy).toBeGreaterThan(tight);
+  });
+});
+
 describe('hasStorageHeadroom', () => {
   const MB = 1024 * 1024;
 

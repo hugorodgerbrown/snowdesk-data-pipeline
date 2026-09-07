@@ -216,6 +216,17 @@ buildRow still finds its hooks by attribute, not by depth.
     {% if renameable %}data-row-renameable{% endif %}
 >
     <div class="flex items-center gap-2 py-2.25">
+        {# SNOW-XXX: an optional leading mark, rendered only for a panel   #}
+        {# that asks for one. The downloads panel uses it for the basemap  #}
+        {# identity dot its rows carry since the per-basemap group         #}
+        {# headings went — the colour has to live somewhere, and on the    #}
+        {# row is where it survives the list being grouped another way.    #}
+        {# Filled by the panel's own JS (map_downloads_manager.js's        #}
+        {# buildRow), which sets the key or removes the element; the       #}
+        {# neutral default is what an unkeyed row keeps.                   #}
+        {% if swatch %}
+            <span data-row-swatch class="size-2.5 shrink-0 rounded-pill bg-sync-off"></span>
+        {% endif %}
         <span class="flex min-w-0 flex-1 flex-col gap-0.5">
             {# The label's own box is the inline editor's box: identical        #}
             {# padding, radius and negative margins in both states, so          #}

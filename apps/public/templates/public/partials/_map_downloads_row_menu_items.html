@@ -1,0 +1,68 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_downloads_row_menu_items.html — the "…" menu items on
+a downloads row that has more than one action (SNOW-XXX).
+
+includes/_overflow_menu.html's `items_template` slot, the same way
+routes/partials/_route_row_menu_items.html fills it.
+
+THE RULE THIS IMPLEMENTS, which supersedes the one the shared row partial
+and the overflow-menu partial both still described: **more than one action
+on a row is a "…"; exactly one action is a bare icon.** SNOW-658 ruled the
+other way (a visible trash on every row, one tap not two) and SNOW-830
+narrowed it for the routes row alone; Hugo reversed it on 2026-09-07 for
+every panel. On this panel it means:
+
+  a REGION on this device      Remove alone → the bare trash stays.
+  a CUSTOM AREA or DROP ZONE   Rename and Remove → this menu.
+  a row NOT on this device     Download alone → the bare download icon.
+  a row that cannot render     Repair and Remove → this menu.
+
+The buttons are value-less here, exactly as the inline controls were: this
+partial is rendered ONCE inside the row `<template>`, and
+map_downloads_manager.js's buildRow stamps each area id after cloning. The
+two hooks on Rename are the same pair the inline pencil carried —
+`data-row-rename` for static/js/inline_rename.js (which recognises a
+rename click without knowing which panel it is on) and
+`data-downloads-rename` for this panel's own commit.
+
+Remove last, as everywhere else: the destructive item is in the same place
+wherever a user meets it.
+{% endcomment %}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-repair
+        aria-label="{% trans 'Repair' %}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_repair.html" only %}
+        {% trans "Repair" %}
+    </button>
+</li>
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-row-rename
+        data-downloads-rename
+        aria-label="{% trans 'Rename' %}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_pencil.html" only %}
+        {% trans "Rename" %}
+    </button>
+</li>
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-delete
+        aria-label="{% trans 'Remove' %}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text"
+    >
+        {% include "includes/_icon_trash.html" only %}
+        {% trans "Remove" %}
+    </button>
+</li>

@@ -125,6 +125,11 @@ Optional context:
     {# template would be an invitation to install the layer anyway.            #}
     {% if slope_layer_eligible %}data-slope-tile-url="{{ slope_tile_url }}"{% endif %}
     data-slope-layer-eligible="{{ slope_layer_eligible|yesno:'true,false' }}"
+    {# HACK MODE (feature discovery): may this request spoof its position   #}
+    {# with ?loc=? Superusers and local development only — see              #}
+    {# apps.public.views._fake_location_allowed for why the field report is #}
+    {# the reason it is gated at all. Read by static/js/map_geolocate.js.   #}
+    data-fake-location-allowed="{{ fake_location_allowed|yesno:'true,false' }}"
     {# SNOW-687: saved-routes layer. The URL is omitted entirely for an     #}
     {# ineligible request, mirroring data-favourites-url above: the         #}
     {# endpoint is per-user and 403s for anyone else, so there would be     #}
@@ -238,11 +243,22 @@ Optional context:
         {# the visible affordance. Rendered on both /map/ and /.       #}
         {# SNOW-664: FIRST in the stack, and the only child outside     #}
         {# #map-controls-collapsible — see the stack comment above.     #}
+        {# HACK MODE (feature discovery): this roundel carries TWO modes, and #}
+        {# `data-mode` says which. Idle it is "locate me"; the tap that finds  #}
+        {# you also arms a drop zone around you, and the roundel becomes       #}
+        {# "download this" until it times out (static/js/map_drop_zone.js).    #}
+        {# One control because it is one thought — the position is a one-shot  #}
+        {# fix, not a live track, so there was never a reason for a second     #}
+        {# roundel to ask for the same fix a moment later.                     #}
+        {# Both glyphs are rendered and CSS shows one, rather than the JS      #}
+        {# writing SVG: the markup stays server-rendered and the mode switch   #}
+        {# stays a single attribute write.                                     #}
         <div class="map-utility-pill map-utility-pill--locate">
             <button
                 id="locate-toggle"
                 type="button"
                 class="map-utility-button hover-affordance"
+                data-mode="locate"
                 aria-label='{% trans "Locate me" %}'
             >
                 <svg
@@ -251,8 +267,32 @@ Optional context:
                     viewBox="0 0 24 24"
                     fill="currentColor"
                     aria-hidden="true"
+                    class="map-locate-glyph map-locate-glyph--locate"
                 >
                     <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
+                </svg>
+                {# Concentric rings around a filled centre — a radius about a  #}
+                {# point, which is what the drop draws. Deliberately close to  #}
+                {# the crosshair above without being it: the same place, a     #}
+                {# different verb.                                             #}
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    class="map-locate-glyph map-locate-glyph--drop"
+                >
+                    <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+                    <circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
+                    <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-dasharray="3 3"
+                    />
                 </svg>
             </button>
         </div>
@@ -1154,6 +1194,30 @@ Optional context:
         {# dismissed the panel with no way back to it. map_help.js decides     #}
         {# from the presence of #home-intro, so a page embedding this partial  #}
         {# without show_intro still gets the tour straight from the roundel.   #}
+        {% if zoom_readout_visible %}
+            {# HACK MODE, DEBUG only (apps.public.views.home): the tile zoom  #}
+            {# the map is currently asking for, and the camera zoom under it. #}
+            {# The two are not the same thing and the difference is the whole #}
+            {# point of it — the camera is continuous, the tiles are whole    #}
+            {# numbers, so z9.99 is still fetching z9 tiles. Work on the      #}
+            {# download bands (z0-7 shared, z8-9 near, z10-14 the area)       #}
+            {# constantly needs to know which side of a boundary the view is  #}
+            {# on, and nothing on the map says.                               #}
+            {#                                                                #}
+            {# Not a button: it does nothing when pressed. It takes the       #}
+            {# roundel's shape because it sits in a stack of them and an      #}
+            {# oddly-shaped thing there reads as broken.                      #}
+            {# Its own class, not .map-legend-toggle's: that class means an  #}
+            {# interactive control, and tests/public/test_map_page.py checks  #}
+            {# every one of them carries the shared hover affordance. This    #}
+            {# does nothing when pressed, so it borrows the SHAPE in CSS and  #}
+            {# none of the behaviour.                                         #}
+            <output
+                id="map-zoom-readout"
+                class="map-zoom-readout"
+                aria-label='{% trans "Current zoom level" %}'
+            ></output>
+        {% endif %}
         <button
             id="map-help-toggle"
             type="button"
@@ -1340,7 +1404,7 @@ Optional context:
         {# collapsible group, and the layers roundel moved one slot down into   #}
         {# that group, so these two swapped to keep the walk in DOM order.      #}
         <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
-            {% trans "Centre the map on your current position." %}
+            {% trans "Centre the map on your current position, then tap again to save the area around you for offline use." %}
         </li>
         <li data-help-target="#basemap-toggle" data-help-title='{% trans "Map detail" %}'>
             {% trans "Switch base maps and toggle overlays and map location data." %}
@@ -1691,6 +1755,57 @@ Optional context:
             </div>
         </div>
     </div>
+    {# HACK MODE (feature discovery): the drop-zone bar — the whole surface of  #}
+    {# the one-tap "download around me" flow. A docked CTA rather than a full     #}
+    {# framing overlay: there is nothing to frame, so the map stays live behind   #}
+    {# it and the circle static/js/map_drop_zone.js draws is the selection.       #}
+    {# Hidden until the roundel is tapped; `data-run-state` carries the same      #}
+    {# idle/busy/done/error/offline states the framing overlay's CTA does.        #}
+    <div
+        id="map-drop-zone-overlay"
+        class="map-drop-zone-cta"
+        hidden
+        role="dialog"
+        aria-modal="false"
+        aria-label='{% trans "Download the area around me" %}'
+        data-run-state="idle"
+    >
+        {# The size readout and, under it, the one line saying what changes  #}
+        {# it. There is no −/+ control: the radius IS the map's zoom (see     #}
+        {# static/js/map_drop_zone.js's header), so the gesture the user      #}
+        {# already uses to look closer is the one that makes a drop smaller.  #}
+        <div class="map-drop-zone-lines">
+            <span id="map-drop-zone-readout" class="map-frame-readout" aria-live="polite"></span>
+            <span id="map-drop-zone-hint" class="map-drop-zone-hint"></span>
+        </div>
+        <div class="map-frame-cta-actions">
+            <button type="button" id="map-drop-zone-cancel" class="map-frame-btn map-frame-btn--text">
+                {% trans "Cancel" %}
+            </button>
+            <button type="button" id="map-drop-zone-confirm" class="map-frame-btn map-frame-btn--primary">
+                {% trans "Drop" %}
+            </button>
+        </div>
+    </div>
+    {# The drop-zone module's own strings. Its own template id rather than keys   #}
+    {# in map-strings-template above, because                                     #}
+    {# tests/test_js_strings_are_translatable.py maps each template id to the ONE #}
+    {# module that reads it.                                                      #}
+    <template id="map-drop-zone-strings-template">
+        <span data-string="readout">{% blocktrans %}%(km)s km around you · up to %(mb)s MB{% endblocktrans %}</span>
+        <span data-string="readout-capped">{% blocktrans %}%(km)s km around you · up to %(mb)s MB (as big as one drop
+                goes){% endblocktrans %}</span>
+        <span data-string="hint">{% trans "Zoom the map to change how far this reaches" %}</span>
+        <span data-string="busy">{% blocktrans %}%(pct)s · %(mb)s{% endblocktrans %}</span>
+        <span data-string="done">{% blocktrans %}%(mb)s downloaded around you{% endblocktrans %}</span>
+        <span data-string="error">{% trans "Download failed — try again" %}</span>
+        <span data-string="offline">{% trans "Offline — reconnect to drop" %}</span>
+        <span data-string="area-name">{% blocktrans %}Drop zone %(n)s{% endblocktrans %}</span>
+        <span data-string="action-close">{% trans "Close" %}</span>
+        {# The merged roundel's two labels — see the control's own comment. #}
+        <span data-string="roundel-locate">{% trans "Locate me" %}</span>
+        <span data-string="roundel-drop">{% trans "Download the area around you" %}</span>
+    </template>
 </div>
 {# SNOW-492: per-overlay "unavailable offline" toasts. Hidden by default;   #}
 {# map.js reveals the matching id (remove `hidden`, add `flex` — see        #}

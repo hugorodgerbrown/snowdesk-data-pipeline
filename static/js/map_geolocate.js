@@ -116,6 +116,134 @@
   // is obtained, not at addControl time.
   MAP.addControl(control, 'top-right');
 
+  // HACK MODE (feature discovery): a stand-in for a real fix, so the drop
+  // zone and the field-report flow can be exercised from a desk that is not
+  // in the Alps — and, just as usefully, on a desktop browser that refuses
+  // Geolocation outright.
+  //
+  // Gated server-side (`data-fake-location-allowed`, superusers and local
+  // development — see apps.public.views._fake_location_allowed). The gate
+  // exists because the same fix reaches a community field observation,
+  // which other people act on; spoofing your own map is a different thing
+  // from spoofing that.
+  //
+  // Usage: `?loc=46.0961,7.2286` — or a preset name below. It persists to
+  // localStorage, so a reload keeps it and the querystring only has to be
+  // typed once; `?loc=off` clears it.
+  const FAKE_LOCATION_KEY = 'snowdesk.map.fakeLocation';
+
+  // How long the spoofed fix takes to "arrive". Long enough to be a later
+  // task than the click that asked for it (which is the part that matters —
+  // see `requestFix`), and short enough to feel like a device that knew the
+  // answer already.
+  const FAKE_FIX_DELAY_MS = 250;
+
+  // Somewhere to start from in each of the three providers' territory,
+  // because "does this work outside Switzerland" is the other question a
+  // spoofed fix answers. Values, not UI strings — nothing here reaches the
+  // page as text.
+  const FAKE_LOCATION_PRESETS = {
+    verbier: [46.0961, 7.2286],
+    zermatt: [46.0207, 7.7491],
+    davos: [46.8027, 9.8360],
+    chamonix: [45.9237, 6.8694],
+    tignes: [45.4685, 6.9058],
+    innsbruck: [47.2692, 11.4041],
+    bolzano: [46.4983, 11.3548],
+  };
+
+  /**
+   * Parse a `?loc=` value into a fix, or null.
+   *
+   * @param {string|null} raw A preset name, `"<lat>,<lon>"`, or `"off"`.
+   * @returns {{lat: number, lon: number}|null} Null for anything
+   *   unparseable, and for the empty/`off` clear values — the caller
+   *   distinguishes those by having asked for them.
+   */
+  function parseFakeLocation(raw) {
+    if (!raw) return null;
+    const key = String(raw).trim().toLowerCase();
+    const preset = FAKE_LOCATION_PRESETS[key];
+    const parts = preset || key.split(',');
+    if (parts.length !== 2) return null;
+    const lat = Number(parts[0]);
+    const lon = Number(parts[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return { lat: lat, lon: lon };
+  }
+
+  /**
+   * The fix this session is spoofing, or null for a real one.
+   *
+   * Reads `?loc=` first and remembers it, so the parameter can be dropped
+   * from the URL afterwards; `?loc=off` (or an empty value) forgets it.
+   * Returns null outright when the server did not open the gate, whatever
+   * localStorage happens to hold — a stored value must not survive the
+   * user losing the permission that set it.
+   *
+   * @returns {{lat: number, lon: number}|null}
+   */
+  function fakeLocation() {
+    const mapEl = document.getElementById('map');
+    if (!mapEl || mapEl.dataset.fakeLocationAllowed !== 'true') return null;
+    let stored = null;
+    try {
+      stored = localStorage.getItem(FAKE_LOCATION_KEY);
+    } catch (_e) {
+      // Private browsing, or storage disabled — the querystring still works
+      // for the life of the page.
+    }
+    const param = new URLSearchParams(window.location.search).get('loc');
+    if (param !== null) {
+      const parsed = parseFakeLocation(param);
+      try {
+        if (parsed) localStorage.setItem(FAKE_LOCATION_KEY, `${parsed.lat},${parsed.lon}`);
+        else localStorage.removeItem(FAKE_LOCATION_KEY);
+      } catch (_e) {
+        // As above — the value below still applies to this page.
+      }
+      return parsed;
+    }
+    return parseFakeLocation(stored);
+  }
+
+  // Resolved once at parse time: a value that changed under a running page
+  // would make two fixes in one session disagree about where the user is.
+  const FAKE_FIX = fakeLocation();
+  if (FAKE_FIX) {
+    // The roundel says so — a spoofed position that looks exactly like a
+    // real one is how a test aid becomes a bug report. CSS draws the mark
+    // (static/css/map.css); this attribute is the whole of the state.
+    btn.dataset.fakeLocation = 'true';
+  }
+
+  // The spoofed position's own beacon. The real path gets one from the
+  // MapLibre control (`control.trigger()` adds its dot and accuracy
+  // circle), and that control would go and ask the device — so a spoofed
+  // fix has to draw its own or the locate tap lands the camera somewhere
+  // with nothing marking the spot.
+  let fakeBeacon = null;
+
+  /**
+   * Show (or move) the spoofed position's beacon.
+   *
+   * A DOM marker rather than a style layer: it survives a basemap swap
+   * without a listener, because MapLibre re-attaches markers itself while
+   * layers are torn off with the style.
+   *
+   * @returns {void}
+   */
+  function showFakeBeacon() {
+    if (!FAKE_FIX) return;
+    if (!fakeBeacon) {
+      const el = document.createElement('div');
+      el.className = 'map-fake-beacon';
+      fakeBeacon = new maplibregl.Marker({ element: el });
+    }
+    fakeBeacon.setLngLat([FAKE_FIX.lon, FAKE_FIX.lat]).addTo(MAP);
+  }
+
   /**
    * SNOW-682: one fix request, one answer, inside a fixed budget.
    *
@@ -135,6 +263,27 @@
    * @returns {void}
    */
   function requestFix(onFix, onFail) {
+    // The spoofed fix answers instead of the device — every caller
+    // downstream (the pill's own fly-to, the drop zone, the field report)
+    // sees an ordinary successful fix, shaped like a GeolocationPosition so
+    // nothing has to know which kind it got.
+    //
+    // ASYNCHRONOUSLY, and that is not a detail. `getCurrentPosition` always
+    // calls back in a later task; a stand-in that answers inside the click
+    // handler is a stand-in for something that cannot happen, and it broke
+    // the drop zone the first time it ran — the fix armed the roundel
+    // during the same click event, so the drop-zone listener (registered
+    // after this module's, so it runs second on the same tap) saw an armed
+    // roundel and immediately confirmed the download. One tap did both
+    // halves. The delay also lets the roundel's "looking for you" state
+    // paint, which is what the real thing looks like.
+    if (FAKE_FIX) {
+      setTimeout(
+        () => onFix({ coords: { latitude: FAKE_FIX.lat, longitude: FAKE_FIX.lon, accuracy: 25 } }),
+        FAKE_FIX_DELAY_MS
+      );
+      return;
+    }
     if (!navigator.geolocation) {
       onFail();
       return;
@@ -182,6 +331,14 @@
    */
   function locate() {
     if (locating) return;
+    // HACK MODE (feature discovery): this roundel has a second mode. Once a
+    // fix has armed a drop zone (static/js/map_drop_zone.js sets
+    // `data-mode="drop"`), the next tap means "download that area", not
+    // "find me again" — and that module owns it. The guard lives here
+    // rather than in a stopPropagation over there because this listener is
+    // registered first (document order: map_geolocate.js loads before
+    // map_drop_zone.js), so a later listener could not have stopped it.
+    if (btn.dataset.mode === 'drop') return;
     // Both outcomes below are answers to THIS tap, so neither banner should
     // still be showing an answer to the last one.
     offMapBanner.hide();
@@ -201,7 +358,34 @@
           !bounds ||
           bounds.contains([position.coords.longitude, position.coords.latitude]);
         if (onMap) {
-          control.trigger();
+          // A spoofed fix has no device behind it, so the MapLibre control
+          // would go and get the REAL position (or fail) rather than fly to
+          // the one just reported. Move the camera ourselves instead; the
+          // drop zone draws its own centre dot, so nothing is lost but the
+          // control's accuracy circle.
+          if (FAKE_FIX) {
+            showFakeBeacon();
+            MAP.easeTo({ center: [FAKE_FIX.lon, FAKE_FIX.lat], zoom: Math.max(MAP.getZoom(), 11) });
+          } else {
+            control.trigger();
+          }
+          // HACK MODE: announce the fix this roundel just took. The report
+          // flow's own `snowdesk:locate-request` path below has always
+          // broadcast its result; this is the same broadcast for the fix
+          // the PILL takes, which is what lets the drop zone arm itself off
+          // a tap the user has already made rather than asking the device
+          // for a second fix moments later. `source` is what keeps the two
+          // apart — a report asking for coordinates must not open a drop.
+          document.dispatchEvent(
+            new CustomEvent('snowdesk:geolocate', {
+              detail: {
+                lat: position.coords.latitude,
+                lon: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                source: 'pill',
+              },
+            })
+          );
         } else {
           offMapBanner.show();
         }
