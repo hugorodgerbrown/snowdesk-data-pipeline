@@ -482,8 +482,9 @@ matches the affordance the user sees and honours each icon's anchor/offset
 pin is a proxy for its parent region, so tapping one still selects that
 region. Because the dispatcher is a plain (non-layer-scoped) listener, it is
 also the one handler a synthetic `MAP.fire('click', …)` reaches, which is
-how the e2e suite (`tests/e2e/test_map_marker_exclusion.py`) drives it
-deterministically.
+how a test can drive it deterministically without a real canvas. (The
+Playwright test that did so went in SNOW-649; the property is what makes
+re-testing it cheap.)
 
 The same markers are also kept **always on top** of every other layer.
 MapLibre paints layers in insertion order and the overlays are
@@ -536,9 +537,9 @@ it exists. `enter()`/`exit()` dispatch `snowdesk:placement-focus
 entry (a card anchored to a region that is no longer drawn is a leftover).
 Popups are not reopened on exit. A basemap swap mid-placement re-installs
 every overlay visible, so the module re-hides and re-snapshots on
-`snowdesk:basemap-changed`. Tests: `tests/js/test_map_placement_focus.js`
-(module bookkeeping against a fake map) and
-`tests/e2e/test_map_placement_focus.py` (the real wiring).
+`snowdesk:basemap-changed`. Tests: `tests/js/test_map_placement_focus.js` (module bookkeeping against a
+fake map). The Playwright test that drove the real wiring went in
+SNOW-649.
 
 **Placement pin lift (`static/js/place_picker.js`, SNOW-538)**: the pin the
 user pans the map under is *not* pinned to the map's centre. Both placement
@@ -562,8 +563,8 @@ doesn't shift the fix the moment it opens. A `ResizeObserver` on the sheet
 plus a window `resize` listener re-measure on layout changes, holding the
 already-chosen point under the pin across the move so a sheet growing
 under the user's finger never silently re-picks. Tests:
-`tests/js/test_place_picker.js` (the geometry, against a fake map) and
-`tests/e2e/test_place_pin_clearance.py` (the real thing, at 375x812).
+`tests/js/test_place_picker.js` (the geometry, against a fake map). The
+375x812 browser check went in SNOW-649.
 
 **Route ordering**: `/map/` (the redirect) is registered before `<str:region_id>/` in
 `apps/public/urls.py`. Do not reorder these — Django matches URL patterns
@@ -673,9 +674,11 @@ touch problem. Edit-resorts is a staff tool driven with a mouse on a
 desktop, where the trade runs the other way: a marker is anchored to its
 coordinate, so zooming in to check a placement keeps the pin locked to the
 spot it marks instead of leaving it on screen while the ground moves
-underneath. `tests/e2e/test_edit_resorts_panel.py` pins this down, so a
-later "unify the placement surfaces" pass has to argue with it rather than
-silently regress the tool.
+underneath. SNOW-649 dropped the Playwright panel tests without porting them,
+by explicit decision — a staff-only editing surface on no user journey, where
+a break costs a staff member an afternoon rather than a user a bad decision on
+a slope. The manual script covers it, so a later "unify the placement
+surfaces" pass has to argue with this paragraph rather than with a test.
 
 While a draft marker exists the map is cleared to the basemap
 (`window.PlacementFocus`), which hides the resort-points layer — so

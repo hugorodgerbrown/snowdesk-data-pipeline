@@ -1,8 +1,8 @@
 ---
 name: testing-scenarios
-description: Manual test scenarios — homepage, bulletin, map, search, accounts, pins, PWA install/update/kill-switch, offline downloads, basemap coverage
+description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-09-05
+last-reviewed: 2026-09-07
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -499,7 +499,11 @@ compliance index is [`offline-first.md`](offline-first.md).
 
 ### Scenario P1: First visit installs and controls the second load
 
-> Automated: [test_pwa_lifecycle_install.py::test_first_install_registers_and_caches_shell](../tests/e2e/test_pwa_lifecycle_install.py)
+> Manual-only since SNOW-649 retired the Playwright lifecycle suite. The
+> worker's own strategies are unit-tested in
+> [tests/js/test_sw.js](../tests/js/test_sw.js) and the `/sw.js` response in
+> [tests/public/test_offline_api.py](../tests/public/test_offline_api.py);
+> register-and-cache as a journey is this scenario.
 
 **Goal**: Verify the SW registers on first visit, caches the shell, and
 serves the second load from cache.
@@ -516,8 +520,9 @@ serves the second load from cache.
 > Manual-only: Chromium's install engagement heuristic (scroll/tap
 > thresholds before `beforeinstallprompt` fires) is not drivable from
 > Playwright. The install funnel's telemetry (`pwa.install.prompted` /
-> `.accepted` / `.dismissed` / `.completed`) IS covered — see
-> [test_pwa_client_signals.py](../tests/e2e/test_pwa_client_signals.py).
+> `.accepted` / `.dismissed` / `.completed`) IS covered, along with the
+> eligibility gate and the 30-day cool-off, in
+> [tests/js/test_pwa_install.js](../tests/js/test_pwa_install.js).
 
 **Goal**: Verify `#pwa-install-banner` reveals when the browser fires
 `beforeinstallprompt`, and that clicking Install completes the flow.
@@ -552,12 +557,14 @@ the LAN — `runserver 0.0.0.0:8000`).
 
 ### Scenario P4: Update banner via a new sw.js (SW-driven path)
 
-> Automated: [test_pwa_lifecycle_update.py::test_update_banner_appears_on_new_sw_bytes](../tests/e2e/test_pwa_lifecycle_update.py)
-> — drives the byte-diff via a server-side monkeypatch of
-> `apps.public.views._serve_sw_file` rather than DevTools' "Update" button;
-> Playwright cannot observe or intercept a service worker's own script
-> fetch (confirmed during the SNOW-389 spike — see
-> [_spike_results.py](../tests/e2e/_spike_results.py)).
+> Automated in part: what the banner shows, and what Reload does when it is
+> pressed, are covered in
+> [tests/js/test_sw_register_update_feedback.js](../tests/js/test_sw_register_update_feedback.js)
+> and [tests/js/test_sw_register_update_throttle.js](../tests/js/test_sw_register_update_throttle.js).
+> The browser-level byte-diff test went with the Playwright lifecycle suite in
+> SNOW-649, so the trigger itself is manual — and Playwright could not observe
+> or intercept a service worker's own script fetch in any case, which the
+> SNOW-389 spike established before its artefact was removed with the suite.
 
 **Goal**: Verify the soft update banner appears when a new SW installs,
 and clicking Reload lands cleanly on the new shell in a single reload.
@@ -578,11 +585,12 @@ the scenario.
 
 ### Scenario P5: Update banner via server X-App-Version drift (header path)
 
-> Automated: [test_pwa_lifecycle_update.py::test_header_drift_shows_banner_and_clears_shell_caches](../tests/e2e/test_pwa_lifecycle_update.py)
-> — the header drift is injected via `page.route()` on one fetch rather
-> than restarting the server with `APP_VERSION` overridden; the reload's
-> cache wipe is proven by planting a cache-entry marker and observing it
-> gone afterwards.
+> Automated: [tests/js/test_pwa_version_check.js](../tests/js/test_pwa_version_check.js)
+> — the drift-is-only-a-hint rule, the authoritative `/api/version` round
+> trip, the soft banner on a confirmed drift, and the shell wipe that spares
+> the pinned basemap buckets. The endpoint's own side is
+> [tests/public/test_pwa_version_api.py](../tests/public/test_pwa_version_api.py).
+> The browser journey went with the Playwright lifecycle suite in SNOW-649.
 
 **Goal**: Verify the same banner also appears when `sw.js` is unchanged
 but the server has moved on, and that Reload clears the shell caches so
@@ -605,14 +613,20 @@ APP_VERSION=test-newer-build uv run python manage.py runserver
 
 A header mismatch the `/api/version` body does **not** back — e.g. a
 response replayed from the browser HTTP cache right after a deploy —
-reveals nothing (automated:
-[test_pwa_lifecycle_update.py::test_stale_cached_header_does_not_show_banner](../tests/e2e/test_pwa_lifecycle_update.py)).
+reveals nothing (automated: the "does not re-verify a header the server has
+already disowned" and "cannot confirm" cases in
+[tests/js/test_pwa_version_check.js](../tests/js/test_pwa_version_check.js)).
 This is the fix for the staging stuck-banner bug, where Reload could
 never clear a banner triggered by stale cached headers.
 
 ### Scenario P6: Forced update via APP_BLOCKED_VERSIONS
 
-> Automated: [test_pwa_lifecycle_update.py::test_blocked_build_shows_modal_and_waits_for_the_click](../tests/e2e/test_pwa_lifecycle_update.py)
+> Automated: [tests/js/test_pwa_version_check.js](../tests/js/test_pwa_version_check.js)
+> — the modal waits for the click, touches nothing until it, emits
+> `pwa.forced_update.triggered` once, and spares the pinned buckets. The
+> server-side verdict is
+> [tests/public/test_pwa_version_api.py](../tests/public/test_pwa_version_api.py)
+> (`test_update_required_true_for_a_blocked_client` and its fail-open cases).
 
 **Goal**: Verify the blocking modal appears when the server names this
 build as blocked, that it *waits* for the click, and that the click
@@ -652,8 +666,9 @@ server cannot identify.
 > via `history.replaceState`, the same mechanism `map.js`'s `commitDate()`
 > uses when scrubbing (MapLibre tiles don't load in headless Chromium, so
 > driving the actual scrubber UI isn't reliable here — see
-> [test_scrubber_reverse.py](../tests/e2e/test_scrubber_reverse.py) for
-> the dedicated scrubber-UI coverage).
+> [tests/js/test_scrubber_core.js](../tests/js/test_scrubber_core.js) and
+> [tests/js/test_map_scrubber_reveal.js](../tests/js/test_map_scrubber_reveal.js)
+> for the scrubber's own coverage).
 
 **Goal**: Verify a page that was successfully loaded online serves from
 cache when offline, including `/?d=X` variants that only exist via
@@ -726,9 +741,12 @@ when both the network and the cache miss.
 
 ### Scenario P10: Kill switch A — /api/sw-config flip
 
-> Automated: [test_pwa_lifecycle_kill_and_reset.py::test_kill_switch_a_prevents_registration](../tests/e2e/test_pwa_lifecycle_kill_and_reset.py)
-> — `/api/sw-config` is routed to `kill: true` via `page.route()` on a
-> fresh tab rather than restarting the server with `SW_KILL=true`.
+> Automated in part: the endpoint's states are covered server-side in
+> [tests/public/test_pwa_version_api.py](../tests/public/test_pwa_version_api.py)
+> (`test_sw_config_default_shape`, `test_sw_config_kill_true_evicts_client`,
+> `test_sw_config_can_swap_sw_url`). The browser half — a fresh tab
+> unregistering rather than registering — went with the Playwright lifecycle
+> suite in SNOW-649 and is the walkthrough below.
 
 **Goal**: Verify setting `SW_KILL=true` causes new tabs to unregister
 their SW without ever registering a new one (Mechanism A —
@@ -755,8 +773,9 @@ SW_KILL=true uv run python manage.py runserver
 > pass surfaced a genuine, non-marginal "did not converge to zero
 > registrations" failure in the install → skipWaiting → activate → wipe
 > → unregister chain — raising the poll deadline did not fix it. Dropped
-> per the scope's fallback ladder ("flaky > absent, but flaky < manual")
-> — see [_spike_results.py](../tests/e2e/_spike_results.py).
+> per the scope's fallback ladder ("flaky > absent, but flaky < manual").
+> The spike's `_spike_results.py` artefact was removed with the Playwright
+> lifecycle suite in SNOW-649; its findings are the two paragraphs here.
 >
 > Correction from that implementation attempt, still useful for the
 > manual walkthrough below: `registration.update()` (DevTools' "Update"
@@ -784,15 +803,23 @@ SW_URL=/sw-kill.js uv run python manage.py runserver
 | 3 | Reload the tab | Page loads over the network; no SW controls it; `sw_register.js` re-registers `/sw.js` if `SW_URL` was reverted, or `/sw-kill.js` again if not |
 | 4 | Restart the server with defaults (`SW_URL=/sw.js`, `SW_KILL=false`), reset state, reload | Back to Scenario P1's clean state |
 
-### Scenario P12: Reset local data (manage page button)
+### Scenario P12: Reset local data (settings page button)
 
-> Automated: [test_pwa_lifecycle_kill_and_reset.py::test_manage_page_reset_local_data](../tests/e2e/test_pwa_lifecycle_kill_and_reset.py)
-> — correction from implementation: `[data-pwa-reset-trigger]` on the
-> manage page is bound by `pwa_reset.js`, which gates on a native
-> `window.confirm()` dialog, not the `#pwa-reset-required` overlay. That
-> overlay is a distinct, unrelated mechanism — `db.js`'s terminal Reset
-> Required state after an IndexedDB migration failure — and is never
-> shown by this button.
+> Automated: [tests/accounts/test_pwa_reset.py](../tests/accounts/test_pwa_reset.py)
+> asserts the settings page carries the trigger and its copy;
+> [tests/js/test_pwa_reset.js](../tests/js/test_pwa_reset.js) covers the
+> clearing itself, including the `onblocked` IndexedDB delete that must not
+> count as a success. The browser journey went with the Playwright lifecycle
+> suite in SNOW-649.
+>
+> Two corrections from implementation. The control moved from
+> `/account/manage/` to `/account/settings/` in SNOW-667 — `/account/manage/`
+> is now a 301 to `/?panel=favourites` and has no button on it. And
+> `[data-pwa-reset-trigger]` is bound by `pwa_reset.js`, which gates on a
+> native `window.confirm()` dialog, not the `#pwa-reset-required` overlay:
+> that overlay is a distinct, unrelated mechanism — `db.js`'s terminal Reset
+> Required state after an IndexedDB migration failure — and is never shown by
+> this button.
 
 **Goal**: Verify the "Reset local data" control on the manage page
 clears IndexedDB + Cache storage + unregisters the SW.
@@ -802,16 +829,19 @@ completed so state exists to clear.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Navigate to http://localhost:8000/account/manage/ and locate the "Reset local data" button in the account section | Button is visible with a short explanation of what it does |
-| 2 | Click "Reset local data" | A native confirm dialog opens, summarising what will and won't be cleared |
-| 3 | Accept the dialog | Application → IndexedDB (`snowdesk-pwa-v1`), Cache storage (`snowdesk-shell-*`), and Service workers are all cleared; page reloads and re-registers a fresh SW |
+| 1 | Navigate to http://localhost:8000/account/settings/ and find the "Reset local data" row | The row's heading names what is reset and a short line explains it; the button beside it reads **Reset** (SNOW-746 moved the label onto the heading) |
+| 2 | Click "Reset" | A native confirm dialog opens, summarising what will and won't be cleared |
+| 3 | Accept the dialog | **Every** Cache Storage bucket goes — the shell and the pinned `snowdesk-basemap-*` downloads alike, since `pwa_reset.js` walks `caches.keys()` — along with every IndexedDB database and local/sessionStorage; the SW is unregistered and the page reloads onto a fresh one. This is not a downloads-only control: to clear one area, use the bin on its row in the downloads sheet (D7) |
 
 ### Scenario P12b: Reset local data (offline fallback page)
 
-> Automated: [test_pwa_lifecycle_kill_and_reset.py::test_offline_page_reset_control](../tests/e2e/test_pwa_lifecycle_kill_and_reset.py).
-> The offline half of the journey (step 4) is covered by
-> `test_offline_page_reset_control_offline` in the same file — see
-> [`offline-first.md`](offline-first.md#reset-local-data-snow-378).
+> Automated: [tests/js/test_offline_page_reset.js](../tests/js/test_offline_page_reset.js)
+> asserts the control against the shipped `static/offline.html` rather than a
+> fixture copy, so the page and `pwa_reset.js` cannot drift; the server-side
+> half — that the page loads only that one script and carries the trigger —
+> is in [tests/public/test_offline_api.py](../tests/public/test_offline_api.py).
+> The browser journey went with the Playwright lifecycle suite in SNOW-649.
+> See [`offline-first.md`](offline-first.md#reset-local-data-snow-378).
 
 **Goal**: Verify the same "Reset local data" control on
 `static/offline.html` — the surface that reaches a user who is stuck
@@ -1073,3 +1103,198 @@ and nothing else.
 | 2 | While signed out, check what you already hold | The sheet still lists, sizes, renames and deletes; the squares still draw; an offline reload still shows the stored map |
 | 3 | Sign back in, then go offline (Network → Offline, or account menu → Offline mode) | The sheet's add-CTA is disabled and reads "Downloading needs a connection"; the region roundel is dimmed and non-actionable (`aria-disabled="true"`) — both explained, neither hidden |
 | 4 | Return online | Both controls re-enable without a reload |
+
+### Scenario D10: The full offline run, end to end
+
+**Goal**: The pass to run before shipping anything that touches the
+worker, the download runner or the basemap layers. D1–D9 each isolate one
+mechanism; this walks the journey they decompose — download at home, lose
+the network on the hill, open the app — and it deliberately covers the
+three things that survive every isolated test: **which** kind of offline
+you are in, a **recycled** worker, and a **cold** start.
+
+It is longer than the scenarios above and duplicates a few of their
+assertions on purpose. Where a step has a scenario of its own, it is named
+rather than repeated.
+
+> **Read this before you judge a result**
+>
+> - **"Offline" is three different states**, and they exercise different
+>   code (see [`offline-map.md`](offline-map.md), "Network mode"):
+>   DevTools → Network → Offline is a **dead radio** (`fetch` rejects,
+>   `navigator.onLine` false); the account menu's **Offline mode** switch
+>   is a user instruction with the radio still **up** (`offline-forced`);
+>   a network that accepts and never answers makes `fetch` **hang**, which
+>   is the only state that exercises the read-path latch
+>   ([`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)).
+>   Part B runs the first two. The third has no comfortable manual
+>   recipe — a throttling profile with an enormous latency approximates it
+>   — and is the weekly suite's `blackhole` mode
+>   ([`offline-assurance.md`](offline-assurance.md)).
+> - **"No network requests" proves nothing under DevTools Offline.** The
+>   browser blocks everything, so zero is guaranteed whatever the app
+>   does. The claim worth testing — that the app *declines* to spend a
+>   connection it has — needs the Offline mode switch with the radio up.
+>   That is Part B, step 3 — the only step here that can catch a leak.
+> - **The map no longer goes blank outside a download** (SNOW-856).
+>   MapLibre stretches a stored z9 tile from the shared base layer over
+>   ground nobody fetched, so "it still draws" is not evidence of
+>   coverage. The hatch is (SNOW-857). Judge the edge by the overlay, and
+>   the bucket by the coverage probe above.
+
+**Preconditions**
+
+1. Signed in (Scenario 10 or 21) — *starting* a download needs an
+   account (D9).
+2. A clean slate: `/account/settings/` → **Reset local data** (P12).
+   Note what that clears — every Cache Storage bucket including the
+   **shell**, every IndexedDB database, and local/sessionStorage. It is
+   not a downloads-only control; to clear only downloads, use the bin on
+   each row in the sheet (D7).
+3. `localStorage.removeItem('snowdesk.map.overlay.downloads')` in the
+   Console. The auto-on rule in Part D fires only for a reader who has
+   never touched "Display on the map" — an explicit choice, either way,
+   is persisted and always wins (SNOW-857). Running D2 first sets it.
+4. DevTools open on **Application → Cache storage**, **Application →
+   Service workers**, **Network** and **Console**.
+
+#### Part A — prime and download
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | After the reset, reload the map **online** once | The shell re-caches. Skipping this is the most common false failure in this scenario: the reset took the shell with it, so an offline reload later fails for a reason that has nothing to do with the download |
+| 2 | Switch the basemap to **Swisstopo** | Swisstopo is the sharpest subject: its style declares two vector sources, so it has two TileJSON documents to lose (P13) |
+| 3 | Select CH-4115 and run the download (D1) | The roundel settles on `done` — which asserts every tile **and** every render dependency, not tiles alone |
+| 4 | Run the coverage probe from the top of this section | The region bucket holds tiles at z10–14 **only**, a non-zero `glyphs` count, and a `docs` count covering the style, **both** `tiles.json` documents and the sprite. A short `docs` count is P13's subject, not a finding here |
+| 5 | Look for a second new bucket | `snowdesk-basemap-pinned-base-swisstopo…` — the shared z0–9 layer (SNOW-856), topped up on the tail of the run. Without it Part D's zoom-out has nothing to draw |
+
+#### Part B — the two kinds of offline
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | DevTools → Network → **Offline** | The header symbol goes struck-through, `data-network-state="offline"` |
+| 2 | Trigger any API-backed interaction (change the date, open a region) | Requests answer **504 with `X-SW-Cache: miss`** from the worker — not `net::ERR_INTERNET_DISCONNECTED`. A native browser failure here means `_mayPassThrough` has drifted back from `_shouldUseNetwork` (SNOW-862) |
+| 3 | Network → **No throttling**, then account menu → **Offline mode** on. Clear the Network panel and use the app: pan, zoom, change date, open a region | The symbol is struck-through while `navigator.onLine` is still true, and **nothing leaves the machine**. Expected exemptions, and only these: `/sw.js` (a worker cannot intercept its own script) and `/csp/report-uri/` (the browser's policy engine, specified to bypass workers). Anything else is a leak — this is the one step here that can find one |
+| 4 | Watch for a `/livez` request | None. The probe belongs to the worker's own auto-latch; a mode the user asked for is never probed out from under them |
+| 5 | Panel copy: press the symbol | "Offline mode — last synced …", "You asked the app to stay offline", and a **Use the network again** button (P8) |
+
+#### Part C — a recycled worker, and a cold start
+
+This is the part no other scenario covers, and it is where the last two
+offline defects actually shipped (SNOW-722, SNOW-854): both were found by
+hand on staging while the automated suites were green.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Still offline, DevTools → Application → **Service workers** → **Stop** | The worker is terminated. Its in-memory basemap-origin allowlist dies with it |
+| 2 | Reload the map | It draws. The worker rehydrates the allowlist from `meta:app`, and any tile it still cannot classify gets a read-only probe of the pinned buckets before it would reach the network. A blank map here is the SNOW-854 class of fault, not a missing download — check the buckets are still populated before blaming the download |
+| 3 | Close the tab entirely. Reopen the app (installed PWA, or a new tab) with the network still down | Cold start: the shell paints from cache and the map draws. A refresh of a page that was already open never reaches this path |
+
+#### Part D — where the coverage stops
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Look at the map without touching any switch | The coverage hatch is **on** — offline it switches itself on for a reader who has never set it (SNOW-857) — and the legend card carries the key explaining it |
+| 2 | Pan to a landmark inside the hatch | Tiles draw **with place labels**. Missing labels mean the glyph promotion did not run; the tiles themselves are a separate question |
+| 3 | Pan just past the hatched edge | The basemap keeps drawing, **coarsely** — stretched z9 tiles. The hatch is the only honest edge. No error page, no spinner that never ends |
+| 4 | Zoom past z14, then out below z10 | Past z14 the stored tiles overzoom: larger, no new detail, never blank. Below z10 the shared base layer draws |
+| 5 | Switch to a basemap you did not download under | The region roundel is a **hollow ring** in the other basemap's colour, and the downloaded ground is drawn as an **outline** rather than a hatch (SNOW-857) — "downloaded, for a different map", not data loss (D5) |
+
+#### Part E — the things that are not tiles
+
+A download stores basemap tiles and nothing else. Every step above can
+pass while the safety data the map exists to carry is missing.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Still offline, look at the danger choropleth | It paints — `/api/ratings/` is stale-while-revalidate cached per `?d=` (P7) |
+| 2 | Reload a bulletin page visited online earlier | It renders from cache with its freshness stamp |
+| 3 | Navigate to a URL never visited | The branded `/static/offline.html`, with a working "Reset local data" control (P9, P12b) |
+| 4 | Open a favourite whose rating is older than 48h | It reads **EXPIRED** — "Rating expired — reconnect to see today's danger level" — never a stale-looking danger chip. Weather, being non-safety, does not expire this way |
+| 5 | Submit a field report, then return online | It queues offline without spending an attempt and goes out on reconnect ([`mutation-queue.md`](mutation-queue.md)) |
+
+**What this pass does not prove.** Glyph coverage is legitimately partial
+— only the ranges ordinary browsing already cached are promoted, so a
+label can be missing on ground you downloaded without anything being
+broken (SNOW-847). And a green run says nothing about a **hanging**
+network: that is the third state above, and only `tox -e offline` covers
+it.
+
+---
+
+## Offline, as a user meets it
+
+D10 above is the engineering pass: it needs DevTools, the Console and a
+cache probe, and it is written to localise a fault. This section answers
+the question the person holding the phone actually asks — **"is this
+working offline?"** — using nothing but the phone, the app and a place
+with no signal.
+
+Run it on a **real phone**, on the app installed to the home screen, on
+whichever basemap you would really use. Everything below is judged by
+what is on the screen. If you find yourself opening a developer tool, you
+have left this script and joined D10.
+
+> **Two things to know before you start, or you will report the wrong
+> thing**
+>
+> - **Outside the area you downloaded, the map still draws — just
+>   roughly.** Streets and place names thin out and it goes coarse, like
+>   a map seen from much higher up. That is deliberate, not a fault. The
+>   **shaded pattern** is what marks the ground you actually stored.
+> - **A download stores the map, not the avalanche bulletin.** Danger
+>   ratings and bulletin pages are kept by *visiting* them before you
+>   lose signal. U1 step 6 is what sets that up, and U2 steps 7–8 check it.
+
+### Scenario U1: The night before (at home, on wifi)
+
+| Step | What you do | What you should see |
+|------|-------------|---------------------|
+| 1 | Open the app and sign in | The map |
+| 2 | Find the area you are going to — search for the region or tap it on the map | Its name fills the bar at the top, with a small circular download button beside it |
+| 3 | Press the download button | It fills up as it works, and squares appear on the map showing what is being stored. Nothing else demands your attention |
+| 4 | Wait for it to finish | The button becomes a solid filled disc. That is the only "done" signal there is — there is no message or tick |
+| 5 | Press the framed-square button at the bottom right | A panel listing what you have stored, with a size against each one and a bar showing how much of your allowance you have used |
+| 6 | Look at the region you are going to, and open its bulletin page. Look at the day you are going, too | You have now *read* them, which is what keeps them available later |
+
+### Scenario U2: On the hill (no signal)
+
+Genuinely no signal is the real test. If you cannot get to one, put the
+phone in **aeroplane mode**, which is the same thing from the app's point
+of view. Doing it from your desk with wifi on is a weaker test — for that
+one, use the **Offline mode** switch at the top of the account menu
+instead, which tells the app to behave as though the signal were gone.
+
+| Step | What you do | What you should see |
+|------|-------------|---------------------|
+| 1 | With no signal, open the app **from the home screen icon** — not from a tab you left open | It opens to the map, as usual. Not a browser error page, not a blank screen, not a spinner that never stops |
+| 2 | Look at the top of the screen | The signal symbol has a line through it. Press it and the app tells you it is offline and when it last managed to fetch anything |
+| 3 | Look at the map | A shaded pattern is showing, over the ground you downloaded. You did not turn it on — offline the app puts it there, because it is the only way to see where your stored map ends. A key explaining it sits with the legend |
+| 4 | Zoom into the area you downloaded | Streets, contours and **place names** all draw, at full detail, straight away |
+| 5 | Pan out of the shaded area | The map keeps drawing but goes coarse. Correct — see the note above. The edge of the shading is the honest answer to "where does my map stop" |
+| 6 | Zoom right in, past where you downloaded, then right out | Zoomed in, the detail stops improving and the map goes soft — it never goes blank. Zoomed out, you keep getting a whole-country view |
+| 7 | Open the region you looked at last night | The bulletin and its danger rating are there, with a note saying when they were last fetched |
+| 8 | Open a region you have never opened | It cannot show you a bulletin — it has never had one to keep — and says so in a sentence ("Region details are unavailable offline."). Not a spinner, not an empty panel |
+| 9 | Try to start a new download | The control is visibly unavailable and says it needs a connection. It should not be hidden, and it should not fail silently after you press it |
+| 10 | Leave the app for twenty minutes, then open it again, still with no signal | Everything in steps 3–7 is still true. This is the step most likely to catch a real fault: the app is more thoroughly asleep than it was, and has to rebuild more of itself |
+
+### Scenario U3: Back in signal
+
+| Step | What you do | What you should see |
+|------|-------------|---------------------|
+| 1 | Turn the signal back on (or aeroplane mode off) | Within a few seconds the symbol at the top loses its line. You should not have to reload anything |
+| 2 | Look at the map | The shading turns itself off again, and the download control works once more |
+| 3 | Open a bulletin | It refreshes to today's |
+
+### What counts as a pass
+
+Everything above happened, and at no point did you see: a browser error
+page, a blank grey map inside the shading, a spinner that never resolved,
+a danger rating that looked current but was days old, or a control that
+did nothing when pressed.
+
+**If something fails**, write down — before you do anything else — the
+time, roughly where you were, what you had done in the app just before,
+and whether the phone had partial signal rather than none. Partial signal
+is a genuinely different case from none, and it is the one hardest to
+reproduce later.

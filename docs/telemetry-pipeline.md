@@ -426,26 +426,26 @@ module instance; see `test_telemetry.js`'s own docstring for the full
 per-file rationale, including why this only needed a JS-unit harness at
 all: no real page, DOM, or service worker is involved in any of the above.
 
-`tests/e2e/test_pwa_client_signals.py` (SNOW-384) covers the consumer
-wire-ups that DO need a real page/DOM (other modules calling INTO
-telemetry.js, not telemetry.js's own logic) and don't require a real
-installed + activated service worker: the message bridge itself
-(simulated via a `MessageEvent` dispatched on `navigator.serviceWorker`),
-Mechanism-A kill switch, the install funnel, the blocked-build forced
-update, and `pwa_client_version.js`'s `X-Client-Version` header stamping.
-
-SNOW-389 added a second class of test that DOES drive a real, undisabled
-service worker (the `pwa_page` fixture in `tests/e2e/conftest.py`),
-closing most of the "not covered" gap this section used to describe:
+The consumer wire-ups — other modules calling INTO telemetry.js, rather
+than telemetry.js's own logic — are covered a layer down, in Vitest:
 
 | File | Covers |
 |------|--------|
-| `tests/e2e/test_pwa_lifecycle_install.py` | `pwa.sw.installed`, `.activated` (first install) |
-| `tests/e2e/test_pwa_lifecycle_update.py` | `pwa.sw.update_available` (a byte-different `sw.js`, via a server-side monkeypatch of `apps.public.views._serve_sw_file` — Playwright cannot intercept a SW's own script fetch); the header-drift and forced-update paths (no dedicated `pwa.sw.*` event, but the banner/modal/reset behaviour itself) |
-| `tests/e2e/test_pwa_lifecycle_kill_and_reset.py` | Mechanism A's pre-register kill gate and `pwa.reset.user_initiated` (best-effort) |
-| `tests/e2e/test_pwa_push_journey.py` | `pwa.push.received`, `.shown` |
+| `tests/js/test_pwa_install.js` | the install funnel (`pwa.install.prompted` / `.accepted` / `.dismissed` / `.completed`), the eligibility gate, the 30-day cool-off |
+| `tests/js/test_pwa_client_version.js` | `pwa_client_version.js`'s `X-Client-Version` header stamping (and `…_no_meta.js` for the tag-less page) |
+| `tests/js/test_pwa_version_check.js` | the blocked-build forced update, including that it emits `pwa.forced_update.triggered` exactly once |
+| `tests/js/test_pwa_reset.js`, `test_offline_page_reset.js` | `pwa.reset.user_initiated` from both reset surfaces |
+| `tests/public/test_pwa_version_api.py` | Mechanism A's `/api/sw-config` verdict, server-side |
 
-**Still not covered by Playwright**:
+SNOW-389 had added a Playwright class on top of that, driving a real,
+undisabled service worker: `pwa.sw.installed` / `.activated` on first
+install, `pwa.sw.update_available` on a byte-different `sw.js`, Mechanism
+A's pre-register kill gate, and `pwa.push.received` / `.shown`. SNOW-649
+retired those modules with the rest of the lifecycle suite, so **those four
+event families now have no automated coverage** and are exercised through
+`docs/testing-scenarios.md` (P1, P4, P10, and the push scenarios) instead.
+
+**Also not covered, and not by Playwright before either**:
 
 - `pwa.sw.activation_failed` / `.fetch_undefined` — both require
   provoking a genuine SW-internal failure (a thrown `activate` handler, a
@@ -462,8 +462,8 @@ closing most of the "not covered" gap this section used to describe:
 - `pwa.sw.update_applied` — `sw_register.js`'s own comment documents the
   emit as a best-effort race against the reload tearing the page down
   before the IndexedDB write settles; asserting on it would encode a
-  known flake rather than catch one, so `test_pwa_lifecycle_update.py`
-  deliberately doesn't.
+  known flake rather than catch one, so the update tests deliberately
+  didn't.
 - Mechanism B's `pwa.kill_switch.activated` (`mechanism: 'b'`,
   `sw-kill.js`) — a real-SW test for this was written and initially
   looked solid, but a wider anti-flake pass surfaced a genuine
@@ -473,11 +473,12 @@ closing most of the "not covered" gap this section used to describe:
   the SNOW-389 scope's fallback ladder; stays manual — see
   `docs/testing-scenarios.md` Scenario P11.
 
-Full findings, including the two Playwright/Chromium quirks discovered
-along the way (a SW's own script fetch is invisible to `page.route()`;
-a second `wait_for_function()`/`evaluate()` call issued while an earlier
-SW-driven promise is still settling can read back empty), live in
-[`tests/e2e/_spike_results.py`](../tests/e2e/_spike_results.py).
+Two Playwright/Chromium quirks discovered along the way are worth keeping:
+a SW's own script fetch is invisible to `page.route()`, and a second
+`wait_for_function()`/`evaluate()` call issued while an earlier SW-driven
+promise is still settling can read back empty. The spike's full findings
+lived in `tests/e2e/_spike_results.py`, removed with the suite in
+SNOW-649.
 
 The real SW lifecycle triggers for the still-uncovered events should be
 spot-checked manually (devtools Application → Service Workers,

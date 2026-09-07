@@ -40,12 +40,14 @@ bypass ships in its bytes, every subsequent `git pull` is clean on the
 first reload.
 
 `DEBUG` alone would be the wrong gate: `tox -e e2e` runs under
-`config.settings.development` (`DEBUG = True`) and
-`tests/e2e/test_pwa_lifecycle_update.py` asserts the banner and
-`pwa.sw.update_available` fire — both of which this bypass suppresses. The
-e2e tox env therefore pins `SW_DEV_SHELL_BYPASS=false` so that suite keeps
-testing production semantics, while a bare local dev server (no override)
-gets the fix by default.
+`config.settings.development` (`DEBUG = True`), and this bypass suppresses
+both the update banner and the shell cache the suite depends on — with
+`_staleWhileRevalidate` skipping the cache entirely, an offline reload has
+nothing to serve. The e2e tox env therefore pins `SW_DEV_SHELL_BYPASS=false`
+so that suite keeps testing production semantics, while a bare local dev
+server (no override) gets the fix by default. (SNOW-649 retired the
+lifecycle tests that first justified the pin; `test_pwa_lifecycle_offline.py`
+is what needs it now.)
 
 The page-side suppression rides a `<meta>` tag rather than the existing
 async `/api/sw-config` fetch: two independent scripts reveal the banner

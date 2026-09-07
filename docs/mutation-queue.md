@@ -32,9 +32,10 @@ queue with no call-site changes for any adopter.
   copy/i18n/design-tokens live in one place), and reveals a "will sync
   when you're back online" line when the tap happened offline. See
   `apps/observations/views.py`'s module docstring for the server-side
-  `observed_at` validation contract, and
-  `tests/e2e/test_offline_observation_submit.py` for the full offline →
-  reconnect journey test.
+  `observed_at` validation contract, and `tests/js/test_report_panel.js` /
+  `tests/js/test_report_forced_offline.js` for the submission path and the
+  "will sync when you're back online" line under both kinds of offline.
+  (SNOW-649 retired the Playwright journey that used to sit here.)
 
 - **`static/js/favourites.js`** (SNOW-479) — the second consumer.
   Favourite *creation* (`apps.favourites.views.favourite_create`) is routed
@@ -51,9 +52,10 @@ queue with no call-site changes for any adopter.
   cap (a non-retry 4xx, so the queue treats it as an immediate permanent
   failure — see the state machine), which fires the standard failure toast
   + nav badge; `favourites.js`'s `pwa:mutation-failed-permanent` listener
-  drops the now-doomed pending pin. See
-  `tests/e2e/test_offline_favourite_submit.py` for the full journey +
-  cap-failure test.
+  drops the now-doomed pending pin. See `tests/js/test_favourites.js` and
+  `tests/js/test_favourites_forced_offline.js` for the optimistic pin, the
+  cap failure and the queued-save copy. (SNOW-649 retired the Playwright
+  journey that used to sit here.)
 
 ### Drain → favourites refresh (SNOW-479)
 
@@ -367,9 +369,10 @@ live in their own files —
 whichever `#mutation-queue-toast` element is in the DOM at that moment, so
 the fixture has to be built before the import.
 `tests/templates/includes/test_toast_banner.py`
-covers the toast partial's render contract. `tests/e2e/test_offline_observation_submit.py`
-(SNOW-420) and `test_offline_favourite_submit.py` (SNOW-479) cover the
-real consumers end to end: an offline tap enqueues with no network
+covers the toast partial's render contract. `tests/js/test_report_panel.js` +
+`test_report_forced_offline.js` (SNOW-420) and `tests/js/test_favourites.js` +
+`test_favourites_forced_offline.js` (SNOW-479) cover the
+real consumers: an offline tap enqueues with no network
 round-trip, the optimistic confirmation + sync-pending line + nav badge
 render immediately, a reconnect drains the queue against the real
 `report_submit` / `favourite_create` view (the latter with the tap-time

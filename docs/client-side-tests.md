@@ -311,11 +311,9 @@ Two different fixture families exercise the service worker, and picking
 the wrong one for a new test either pollutes an unrelated assertion or
 misses the thing you actually meant to test:
 
-- **Simulated** (`_disable_real_sw` in `test_pwa_client_signals.py`, or
-  the stripped-`navigator.serviceWorker` pattern used throughout
-  `tests/e2e/test_offline_favourite_submit.py` /
-  `test_offline_observation_submit.py`) — the real `/sw.js` never
-  registers. Use this when the test is about something ELSE that happens
+- **Simulated** (the stripped-`navigator.serviceWorker` pattern the
+  offline-mutation suites used before SNOW-649 retired them) — the real
+  `/sw.js` never registers. Use this when the test is about something ELSE that happens
   to load on a page the SW would otherwise control (the install-prompt
   funnel, a real-server mutation-queue round trip) and a real SW's own
   asynchronous lifecycle events would just be timing noise for that
@@ -349,8 +347,9 @@ suite, worth knowing before adding another one:
    see `test_pwa_push_journey.py`'s module docstring for the specific
    case that surfaced this.
 
-Full findings from the spike that shaped this design:
-[`tests/e2e/_spike_results.py`](../tests/e2e/_spike_results.py).
+The spike that shaped this design (SNOW-389) recorded its findings in
+`tests/e2e/_spike_results.py`, which was removed with the suite it described
+in SNOW-649; the two that still bite are stated above.
 
 ---
 

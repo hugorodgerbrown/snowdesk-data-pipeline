@@ -3,10 +3,12 @@
  * static/js/basemap_cache_core.js (SNOW-496).
  *
  * Covers the classification + eviction assertions moved out of
- * tests/e2e/test_offline_basemap_cache.py's ``evaluate()`` calls (that file
- * keeps only what genuinely needs a real activated service worker + real
+ * tests/e2e/test_offline_basemap_cache.py's ``evaluate()`` calls. That file
+ * kept what genuinely needed a real activated service worker + real
  * CacheStorage — serving, meta:app hydration, the message race, and the
- * map.js registration wiring).
+ * map.js registration wiring — and SNOW-649 retired it, so those four have
+ * no automated coverage now; the weekly tests/offline suite exercises
+ * serving against real tiles.
  *
  * ``basemap_cache_core.js`` is a plain IIFE that assigns a frozen
  * ``self.pwaBasemapCacheCore`` — jsdom's global is ``window``, which is also
