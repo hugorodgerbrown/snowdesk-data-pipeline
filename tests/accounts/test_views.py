@@ -538,13 +538,13 @@ class TestDeleteAccount:
         assert "_auth_user_id" not in client.session
 
     def test_responds_with_hx_redirect(self) -> None:
-        """Response includes HX-Redirect header pointing to unsubscribe-done."""
+        """Response includes HX-Redirect header pointing to the deleted page."""
         account = AccountFactory.create()
         client = _make_session_client(account)
         response = client.post(reverse("accounts:delete_account"), **_HTMX_HEADERS)
         assert response.status_code == 200
         assert "HX-Redirect" in response
-        assert "unsubscribe" in response["HX-Redirect"]
+        assert response["HX-Redirect"] == reverse("accounts:account_deleted")
 
     def test_no_session_returns_403(self) -> None:
         """Unauthenticated POST returns 403."""
@@ -786,6 +786,36 @@ class TestUnsubscribeDoneView:
         response = client.get(reverse("accounts:unsubscribe_done"))
         assert response.status_code == 200
         assert b"unsubscribed" in response.content.lower()
+
+
+# ---------------------------------------------------------------------------
+# account_deleted_view
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAccountDeletedView:
+    """Tests for the standalone account_deleted_view (SNOW-875)."""
+
+    def test_get_renders_deleted_page(self) -> None:
+        """GET /account/deleted/ renders the account-deleted page."""
+        client = Client()
+        response = client.get(reverse("accounts:account_deleted"))
+        assert response.status_code == 200
+        assert b"Your account has been deleted" in response.content
+
+    def test_page_uses_the_status_shell(self) -> None:
+        """The page renders through includes/_status_page.html."""
+        client = Client()
+        response = client.get(reverse("accounts:account_deleted"))
+        assert "includes/_status_page.html" in [t.name for t in response.templates]
+
+    def test_copy_does_not_mention_unsubscribing(self) -> None:
+        """The wrong-copy bug SNOW-875 fixed must not come back."""
+        client = Client()
+        body = client.get(reverse("accounts:account_deleted")).content.lower()
+        assert b"unsubscrib" not in body
+        assert b"pinned regions" not in body
 
 
 # ---------------------------------------------------------------------------

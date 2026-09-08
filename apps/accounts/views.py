@@ -37,8 +37,10 @@ Implements the subscription flow built around Django's TimestampSigner:
   manage_view         GET  — authenticated "your subscriptions" page.
                             Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
-  delete_account      POST — HTMX: hard-delete the account and redirect to done.
-  unsubscribe_view    GET/POST — token-verified one-click unsubscribe.
+  delete_account      POST — HTMX: hard-delete the account and redirect to the
+                            account-deleted page.
+  account_deleted_view
+                      GET  — post-deletion landing page.
 
 Rate limiting via django-ratelimit (block=False pattern):
   subscribe_partial:  5 requests/min per IP.
@@ -150,8 +152,9 @@ _REFERRER_CONFIRM_PAGE = "same-origin"
 # SNOW-802: where a just-verified account lands — the map, pins sheet open.
 _VERIFIED_LANDING_URL = "/?panel=favourites"
 
-# URL for the unsubscribe-done page — used in HX-Redirect headers.
-_UNSUBSCRIBE_DONE_URL = "/account/unsubscribe-done/"
+# URL for the account-deleted page — used in the HX-Redirect header sent by
+# delete_account once the row is gone and the session has been dropped.
+_ACCOUNT_DELETED_URL = "/account/deleted/"
 
 
 def _get_account(request: HttpRequest) -> Account | None:
@@ -1179,8 +1182,31 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     )
 
     response = HttpResponse(status=200)
-    response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
+    response["HX-Redirect"] = _ACCOUNT_DELETED_URL
     return response
+
+
+# ---------------------------------------------------------------------------
+# account_deleted — standalone page for post-deletion landing
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def account_deleted_view(request: HttpRequest) -> HttpResponse:
+    """
+    Render the "your account has been deleted" confirmation page.
+
+    This view exists so that the HX-Redirect from ``delete_account`` can
+    point at a stable GET URL that the just-logged-out visitor can reach.
+
+    Args:
+        request: Incoming GET request.
+
+    Returns:
+        Rendered account-deleted page.
+
+    """
+    return render(request, "accounts/account_deleted.html", {})
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ URL map
 /account/access/<token>/              account                GET/POST — access token
 /account/manage/                      manage                 301 → /?panel=favourites
 /account/manage/delete/               delete_account         POST HTMX
+/account/deleted/                     account_deleted        GET  — deletion done
 /account/manage/passkeys/<uuid>/delete/ passkey_delete       POST HTMX
 /account/sign-out/                    sign_out               POST
 /account/unsubscribe/<token>/         unsubscribe            GET/POST
@@ -101,6 +102,7 @@ urlpatterns = [
         name="manage",
     ),
     path("manage/delete/", views.delete_account, name="delete_account"),
+    path("deleted/", views.account_deleted_view, name="account_deleted"),
     path("sign-out/", views.sign_out, name="sign_out"),
     path(
         "manage/passkeys/<str:passkey_uuid>/delete/",

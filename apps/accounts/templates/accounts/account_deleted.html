@@ -1,0 +1,33 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+apps/accounts/templates/accounts/account_deleted.html — Account deleted.
+
+Shown after a successful account deletion (SNOW-875). ``delete_account``
+HX-Redirects here once ``erase_account`` has run and the session is gone,
+so the page is always reached anonymously.
+{% endcomment %}
+{% load i18n components %}
+
+{# SNOW-553: sharing=False. A confirmation / dead-end page in an        #}
+{# account flow, reached only by an HX-Redirect after the account was   #}
+{# deleted — not a URL anyone means to share, and under the /account/   #}
+{# prefix robots.txt disallows. Tab title and description still render. #}
+{% block page_meta %}
+    {% trans "Account deleted — Snowdesk" as page_title %}
+    {% trans "Your Snowdesk account and its data have been deleted." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block status_heading %}{% trans "Your account has been deleted" %}{% endblock %}
+
+{% block status_body %}
+    {% trans "Your account and the data stored with it have been permanently deleted. You can create a new account at any time." %}
+{% endblock %}
+
+{% block status_cta %}
+    <div class="mt-6">
+        {% url 'public:home' as home_url %}
+        {% trans "Back to Snowdesk" as label %}
+        {% include "includes/_button.html" with label=label href=home_url variant="primary" %}
+    </div>
+{% endblock %}
