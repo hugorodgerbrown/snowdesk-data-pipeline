@@ -26,10 +26,33 @@ Comments are stripped before matching. ``templates/includes/nav.html``
 describes a menu whose subscribed-region links SNOW-802 removed, and a
 comment about history is not a claim to a reader.
 
+Matching runs over the whole file rather than line by line, because
+``djangofmt`` wraps a ``{% blocktrans %}`` body at column 120 and a claim
+that straddles the wrap would otherwise walk through: the guard's first
+draft missed "Your / subscription and account" in
+``_pwa_reset_required.html`` for exactly that reason. Line numbers are
+recovered from the match offset, so a failure still names the line.
+
 ``_ALLOWED`` is the escape hatch, and it is deliberately per-line: a
 pattern loose enough to spare the legitimate strings would be loose
 enough to miss the next false one. To add a line, say in the reason why
 the thing it describes actually happens.
+
+**What this guard does not cover.** Web Push is the hard case, because
+some of it is true: a browser really does create a push subscription,
+Snowdesk really does store it, and the privacy policy has to say so. The
+patterns therefore discriminate rather than ban the word — "your
+subscriptions" is caught, "your browser creates a subscription" is not.
+Two consequences a reader should know about:
+
+* A false promise phrased in Web Push's own vocabulary — "push
+  subscriptions", "a subscription is created for you" — passes. Nothing
+  short of reading the sentence can separate that from the true copy, so
+  the guard does not try.
+* A claim split across a sentence boundary, or worded with none of these
+  phrases at all ("we'll be in touch when conditions change"), passes.
+  The guard catches the phrasings the site actually used, not every
+  phrasing it could.
 """
 
 from __future__ import annotations
@@ -77,6 +100,32 @@ _CLAIMS: dict[str, re.Pattern[str]] = {
         r"|notifications?\s+when\s+a\s+new",
         re.IGNORECASE,
     ),
+    # A subscription the reader owns. Snowdesk has none to offer: the
+    # email subscription is retired (SNOW-802/805) and the only push
+    # subscription is one the browser creates on a staff demo page. The
+    # possessive is what discriminates — "your subscriptions" is a
+    # promise, "your browser creates a subscription" is a description of
+    # Web Push and true, so the intervening-word budget is short and an
+    # article immediately before the noun disqualifies the match.
+    "your-subscriptions": re.compile(
+        r"\byour\s+(?:[\w'-]+\s+){0,3}(?<!a )(?<!an )(?<!the )subscriptions?\b",
+        re.IGNORECASE,
+    ),
+    # A subscription listed among the things an account holds, which is
+    # how the delete-account copy described one. Plural only, and not the
+    # push or feed kind: both of those are real.
+    "account-holds-subscriptions": re.compile(
+        r"\b(saved|stored|holds|keeps|contains|delete|deletes|remove|removes)\b"
+        r"[^.]{0,60}?(?<!push )(?<!rss )\bsubscriptions\b",
+        re.IGNORECASE,
+    ),
+    # Installing to the home screen unlocks nothing: the service worker
+    # registers on any page load, so a downloaded area reads offline in
+    # the browser tab too, and there is no notification to unlock.
+    "install-unlocks-notifications": re.compile(
+        r"\bunlocks?\s+(?:[\w-]+\s+){0,3}(notification|alert|update|subscription)s?\b",
+        re.IGNORECASE,
+    ),
 }
 
 # Lines that match a pattern and are nonetheless true. Keyed by the
@@ -90,7 +139,89 @@ _ALLOWED: dict[str, list[tuple[str, str]]] = {
             "outright so a reader stops looking for the setting.",
         ),
     ],
+    "templates/_debug/push_demo.html": [
+        (
+            "All stored subscriptions",
+            "Web Push subscriptions do exist and are stored — PushSubscription "
+            "rows the browser created. This is the staff-only push demo page "
+            "(every push_views route is @staff_member_required), so no reader "
+            "is being offered anything.",
+        ),
+    ],
 }
+
+
+# The copy the site actually carried, and the claim that must catch each
+# line. Every entry is a verbatim string from a template as it stood
+# before SNOW-707, so a pattern edited until it stops matching one of
+# these has silently stopped guarding the surface that string came from.
+_ORIGINALS: list[tuple[str, str]] = [
+    (
+        "bulletin-notification",
+        "Sign in to manage your Snowdesk avalanche bulletin subscriptions.",
+    ),
+    (
+        "daily-updates",
+        "Avalanche bulletins for Switzerland, France, Austria, South Tyrol and "
+        "Trentino. Receive daily bulletin updates, submit field observations.",
+    ),
+    (
+        "email-notification",
+        "Signing in unlocks extras such as email alerts and saved favourite locations.",
+    ),
+    (
+        "subscribed-region",
+        "Manage or remove your subscribed regions at any time from the account menu.",
+    ),
+    (
+        "subscribe-to-a-region",
+        "Once signed in, subscribe to a region from its bulletin page to get an "
+        "email whenever a new bulletin is published for it.",
+    ),
+    ("unsubscribe", "Unsubscribe with one click from any alert email."),
+    (
+        "we-will-tell-you",
+        "Add Snowdesk to your home screen for one-tap access and notifications "
+        "when a new bulletin lands.",
+    ),
+    (
+        "your-subscriptions",
+        "This account link has expired or is invalid. Request a new one to "
+        "manage your Snowdesk subscriptions.",
+    ),
+    (
+        "your-subscriptions",
+        "We've sent you an account link. Check your inbox to manage your "
+        "Snowdesk subscriptions.",
+    ),
+    (
+        "your-subscriptions",
+        "If that address is registered, we've sent you a link to manage your "
+        "subscriptions. It expires in 24 hours.",
+    ),
+    (
+        "your-subscriptions",
+        "Your email address is confirmed. You can manage your account and "
+        "subscriptions from here.",
+    ),
+    (
+        "your-subscriptions",
+        "Snowdesk needs to reset local data on this device to keep working. "
+        "Your subscription and account are stored on the server and are not "
+        "affected.",
+    ),
+    (
+        "account-holds-subscriptions",
+        "Permanently deletes your account and everything saved to it — "
+        "subscriptions, favourites, passkeys and any field reports you have "
+        "submitted. This cannot be undone.",
+    ),
+    (
+        "install-unlocks-notifications",
+        "Tap the Share icon, then choose Add to Home Screen. Home-screen "
+        "installs unlock notifications and offline access.",
+    ),
+]
 
 
 def _template_files() -> list[Path]:
@@ -123,24 +254,33 @@ def _strip_comments(source: str) -> str:
     return _COMMENT_RE.sub(lambda m: "\n" * m.group().count("\n"), source)
 
 
-def _is_allowed(relative_path: str, line: str) -> bool:
-    """Report whether this line is a known-true use of a claim phrase.
+def _allowed_reason(relative_path: str, context: str) -> str | None:
+    """Return why this text is a known-true use of a claim phrase.
 
     Args:
         relative_path: The template's path relative to the repository root.
-        line: The matching line, comments already stripped.
+        context: The matching text plus the line it sits on, comments
+            already stripped.
 
     Returns:
-        True when the line is listed in ``_ALLOWED`` for this template.
+        The recorded reason when the text is listed in ``_ALLOWED`` for
+        this template, otherwise None.
 
     """
-    return any(
-        fragment in line for fragment, _reason in _ALLOWED.get(relative_path, [])
-    )
+    for fragment, reason in _ALLOWED.get(relative_path, []):
+        if fragment in context:
+            return reason
+    return None
 
 
 def _offences() -> list[str]:
-    """Return one description per template line that promises an alert.
+    """Return one description per template passage that promises an alert.
+
+    Patterns run against the whole file, not one line at a time: a
+    ``{% blocktrans %}`` body is wrapped at column 120 by ``djangofmt``,
+    so a claim regularly straddles two lines. Whitespace in every pattern
+    is matched with a class that already spans a newline; the line number
+    comes back from the match offset.
 
     Returns:
         Human-readable ``path:line: claim: text`` strings, empty when
@@ -151,13 +291,16 @@ def _offences() -> list[str]:
     for path in _template_files():
         relative_path = str(path.relative_to(_ROOT))
         source = _strip_comments(path.read_text(encoding="utf-8"))
-        for number, line in enumerate(source.splitlines(), start=1):
-            if _is_allowed(relative_path, line):
-                continue
-            for claim, pattern in _CLAIMS.items():
-                if pattern.search(line):
-                    found.append(f"{relative_path}:{number}: {claim}: {line.strip()}")
-    return found
+        lines = source.splitlines()
+        for claim, pattern in _CLAIMS.items():
+            for match in pattern.finditer(source):
+                number = source.count("\n", 0, match.start()) + 1
+                matched = " ".join(match.group().split())
+                line = lines[number - 1] if number <= len(lines) else ""
+                if _allowed_reason(relative_path, f"{matched}\n{line}") is not None:
+                    continue
+                found.append(f"{relative_path}:{number}: {claim}: {matched}")
+    return sorted(found)
 
 
 class TestNoBulletinAlertClaims:
@@ -196,21 +339,7 @@ class TestNoBulletinAlertClaims:
             str(path).endswith("includes/_pwa_install_prompt.html") for path in files
         ), "the project-level template root is not being read"
 
-    @pytest.mark.parametrize(
-        ("claim", "sample"),
-        [
-            ("bulletin-notification", "Manage your avalanche bulletin subscriptions."),
-            ("daily-updates", "Receive daily bulletin updates."),
-            ("email-notification", "Optional email notifications for your regions."),
-            ("subscribed-region", "Remove your subscribed regions at any time."),
-            ("subscribe-to-a-region", "Once signed in, subscribe to a region."),
-            ("unsubscribe", "Unsubscribe with one click from any alert email."),
-            (
-                "we-will-tell-you",
-                "Install Snowdesk for notifications when a new bulletin lands.",
-            ),
-        ],
-    )
+    @pytest.mark.parametrize(("claim", "sample"), _ORIGINALS)
     def test_each_claim_pattern_matches_the_copy_it_was_written_for(
         self, claim: str, sample: str
     ) -> None:
@@ -218,9 +347,24 @@ class TestNoBulletinAlertClaims:
 
         The patterns are the whole guard, and a typo in one is invisible —
         it fails nothing and reports nothing. These samples are the real
-        sentences the site carried before SNOW-707 corrected them.
+        sentences the site carried before SNOW-707 corrected them, so a
+        pattern that stops matching one has stopped guarding the surface
+        the string came from.
         """
         assert _CLAIMS[claim].search(sample), f"{claim} no longer matches its own copy"
+
+    def test_every_pattern_has_a_sentence_it_was_written_for(self) -> None:
+        """A pattern with no sample is a pattern nothing proves works.
+
+        The first draft of this guard shipped patterns that matched none
+        of five real strings, and nothing said so, because the samples
+        were written to the patterns rather than the patterns to the copy.
+        """
+        covered = {claim for claim, _ in _ORIGINALS}
+
+        assert covered == set(_CLAIMS), (
+            f"claims with no sample sentence: {sorted(set(_CLAIMS) - covered)}"
+        )
 
     def test_the_legitimate_strings_are_not_caught(self) -> None:
         """The true things the site says must survive the guard.
@@ -233,9 +377,27 @@ class TestNoBulletinAlertClaims:
         legitimate = [
             "Push notifications — consent. Your browser asks you before a "
             "subscription is created, and turning notifications off removes it.",
+            "Your browser's push service (Google, Mozilla or Apple, depending on "
+            "your browser) — if you turn on push notifications, your browser "
+            "creates a subscription on its vendor's service and we send "
+            "notifications through it. We never include bulletin content or your "
+            "email address in a notification payload.",
+            "Create a Snowdesk account to save favourites and share field reports.",
             "Enter your email address and we'll send you a link to verify it.",
+            "If that address needs verifying, we've sent you a link to confirm "
+            "it. It expires in 24 hours.",
+            "Enter your email address and we'll send you a sign-in link.",
             "If that address is registered, we've sent you a link to sign in.",
             "Click the button below to sign in to your Snowdesk account.",
+            "Enter your email address and we'll send you a link to choose a new "
+            "password.",
+            "If that address has a Snowdesk account with a password, we've sent "
+            "you a link to reset it. It expires in 24 hours.",
+            "Change the email address on your Snowdesk account.",
+            "We've sent a confirmation link to your new Snowdesk email address.",
+            "Verify your email to submit a field observation. Check your inbox "
+            "for the verification link.",
+            "Reports are shared with the community.",
             "subscribe a feed reader to the RSS feed for the country you follow",
             "Avalanche information across the Alps, sourced daily from SLF.",
         ]
@@ -243,3 +405,20 @@ class TestNoBulletinAlertClaims:
         for text in legitimate:
             caught = [claim for claim, p in _CLAIMS.items() if p.search(text)]
             assert not caught, f"{caught} wrongly caught: {text}"
+
+    def test_every_allowlist_entry_still_describes_a_real_line(self) -> None:
+        """An allowlist entry outlives the copy it excused, and then hides.
+
+        Each ``_ALLOWED`` fragment must still appear in the template it is
+        recorded against. A stale one is a standing permission to write the
+        claim back, granted for a reason nobody can check.
+        """
+        for relative_path, entries in _ALLOWED.items():
+            source = _strip_comments(
+                (_ROOT / relative_path).read_text(encoding="utf-8")
+            )
+            for fragment, reason in entries:
+                assert fragment in source, (
+                    f"{relative_path} no longer contains {fragment!r}, allowed "
+                    f"because: {reason}"
+                )
