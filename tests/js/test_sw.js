@@ -155,6 +155,9 @@ const SW_EXPORTS = [
  *   resolves with, so a test can assert on what the worker broadcasts
  *   (SNOW-748's hydration publishes the mode it recovered). Defaults to none,
  *   which is the ordinary case of a worker with every tab closed.
+ * @param {Function} [options.showNotification] - stub for
+ *   ``self.registration.showNotification``, so a test can assert on the
+ *   options the ``push`` handler passes it (SNOW-874).
  * @returns {object} The helpers named in ``SW_EXPORTS``.
  */
 function loadSw(options = {}) {
@@ -171,7 +174,9 @@ function loadSw(options = {}) {
       get: () => Promise.resolve(null),
       matchAll: () => Promise.resolve(options.clients || []),
     },
-    registration: { showNotification: () => Promise.resolve() },
+    registration: {
+      showNotification: options.showNotification || (() => Promise.resolve()),
+    },
   };
   if (options.core) selfStub.pwaBasemapCacheCore = options.core;
   const factory = new Function(
@@ -3105,5 +3110,78 @@ describe('the Background-Sync drain respects offline mode (SNOW-852)', () => {
     // gets past the guard at all is the point here — the replay itself is
     // covered by the existing Background-Sync tests above.
     await expect(sw._selfDrainMutations()).resolves.not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-874 — the push handler's notification options
+// ---------------------------------------------------------------------------
+
+describe('push handler', () => {
+  /**
+   * Fire the real ``push`` listener and resolve whatever it holds the event
+   * open for, so an assertion runs after ``showNotification`` was called.
+   *
+   * @param {object} sw The loaded worker.
+   * @param {object} payload The JSON body the push service delivered.
+   */
+  async function dispatchPush(sw, payload) {
+    let held;
+    sw.__listeners.push({
+      data: { json: () => payload, text: () => JSON.stringify(payload) },
+      waitUntil: (promise) => {
+        held = promise;
+      },
+    });
+    await held;
+  }
+
+  it('asks for a re-alert so a replacement is not silent', async () => {
+    const shown = vi.fn(() => Promise.resolve());
+    const sw = loadSw({ showNotification: shown });
+
+    await dispatchPush(sw, { title: 'Snowdesk', body: 'Fresh bulletin', url: '/x/' });
+
+    // The tag and renotify are a pair, and the pair is the point: the tag
+    // collapses repeat pushes onto one entry, and without renotify the
+    // browser swaps that entry in without alerting. On /_push-demo/ that
+    // makes the second and every later test send look like a dead pipeline
+    // — which is exactly how an hour went on 2026-09-08.
+    expect(shown).toHaveBeenCalledWith(
+      'Snowdesk',
+      expect.objectContaining({ tag: 'snowdesk-push', renotify: true }),
+    );
+  });
+
+  it('badges with the alpha silhouette, not the tile', async () => {
+    const shown = vi.fn(() => Promise.resolve());
+    const sw = loadSw({ showNotification: shown });
+
+    await dispatchPush(sw, { title: 'Snowdesk', body: 'b', url: '/' });
+
+    // Android throws away the badge's colours and keeps its alpha, so
+    // handing it icon-192 — opaque across its whole rounded rect — put a
+    // solid white square in the status bar. The distinction is invisible
+    // in every other surface, which is why it needs asserting here rather
+    // than left to whoever next reads the handler.
+    // tests/public/test_pwa_icons.py asserts the file itself has an alpha
+    // channel and is a genuine silhouette; this pins the reference to it.
+    const [, options] = shown.mock.calls[0];
+    expect(options.badge).toBe('/static/icons/pwa/badge-96.png');
+    expect(options.icon).toBe('/static/icons/pwa/icon-192.png');
+  });
+
+  it('carries the payload through to the notification', async () => {
+    const shown = vi.fn(() => Promise.resolve());
+    const sw = loadSw({ showNotification: shown });
+
+    await dispatchPush(sw, { title: 'Verbier', body: 'Level 3', url: '/ch-4115/' });
+
+    const [title, options] = shown.mock.calls[0];
+    expect(title).toBe('Verbier');
+    expect(options.body).toBe('Level 3');
+    // notificationclick reads the URL back off data, so a drop here would
+    // send every tap to the map root instead of the bulletin.
+    expect(options.data).toEqual({ url: '/ch-4115/' });
   });
 });

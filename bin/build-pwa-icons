@@ -13,6 +13,12 @@
  *                               can't render transparency in home-screen
  *                               icons cleanly)
  *
+ * Plus one file that belongs to neither set:
+ *   - badge-96.png            (96×96, the Android notification badge —
+ *                              SNOW-874. Alpha-only silhouette; see
+ *                              buildBadge below for why it cannot be one
+ *                              of the tiles.)
+ *
  * Staging set (static/icons/pwa-staging/, SNOW-399) — same four files but
  * on an amber tile with an asterisk set off the mountain's top right.
  * Both sit inside the maskable safe zone (80% of the canvas) so
@@ -261,6 +267,51 @@ async function buildAppleTouchIcon(size, outName, outDir, srcSvg, tileColour) {
   );
 }
 
+/**
+ * Render the Android notification badge: the mountain glyph alone, white
+ * on transparent.
+ *
+ * SNOW-874. Android draws a notification's ``badge`` in the status bar by
+ * throwing away its colours and keeping only its alpha channel, then
+ * tinting the result. Handing it one of the tiles — which is what the
+ * service worker did — hands it a rounded rect with no transparency
+ * anywhere inside it, so the silhouette Android extracts is the whole
+ * square and the status bar shows a solid white block. Nothing reports an
+ * error; the notification itself looks right, and only the status-bar
+ * glyph is wrong.
+ *
+ * So the badge drops the rect and keeps the path. The fill is white by
+ * convention only — Android never reads it, and the same file would
+ * render identically if the mountain were magenta.
+ *
+ * The viewBox is a 26-unit square centred on the glyph's bounding box
+ * (x 5..27, y 10..25 of the source's 32-unit canvas), which trims the
+ * tile's padding: at 24dp in a status bar the glyph needs the whole
+ * canvas to read as mountains rather than as a smudge.
+ *
+ * There is no staging variant. The badge is an alpha mask, so the amber
+ * tile colour cannot survive into it and the asterisk would be a few
+ * illegible pixels — a staging badge would be byte-identical in every way
+ * that reaches the screen.
+ */
+async function buildBadge(size, outName, outDir) {
+  const outPath = path.join(outDir, outName);
+  const svg = fs.readFileSync(SRC_SVG, 'utf8');
+  const glyph = /<path [^>]*\/>/.exec(svg);
+  if (!glyph) {
+    throw new Error('no <path> found in static/favicon.svg for the badge');
+  }
+  const badgeSvg = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="3 4.5 26 26">' +
+      `${glyph[0].replace(/fill="[^"]*"/, 'fill="#ffffff"')}</svg>`,
+    'utf8',
+  );
+  await sharp(badgeSvg).resize(size, size).png().toFile(outPath);
+  console.log(
+    `wrote ${path.relative(REPO_ROOT, outPath)} (${size}×${size}, badge, alpha-only)`,
+  );
+}
+
 async function buildSet({ variant, outDir, tileColour, label }) {
   fs.mkdirSync(outDir, { recursive: true });
   const srcSvg = loadSourceSvg(variant, label);
@@ -311,6 +362,9 @@ async function main() {
     tileColour: TILE_COLOUR_STAGING,
     label,
   });
+  // One badge, in the production directory, for both environments —
+  // static/js/sw.js reads it by that path whichever host it is running on.
+  await buildBadge(96, 'badge-96.png', OUT_DIR_PROD);
 
   // Record what was baked into the committed PNGs so a test can fail when
   // the configured season moves on and the icons aren't regenerated.

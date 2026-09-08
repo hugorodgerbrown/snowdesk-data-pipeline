@@ -1,7 +1,7 @@
 """
 apps/accounts/push_views.py — Web Push JSON endpoints (staff-only).
 
-Three views, all JSON in / JSON out:
+Four views, all JSON in / JSON out:
 
 - ``push_register``   POST  — body: ``{endpoint, keys: {p256dh, auth}, mechanism?}``.
                               Upserts a PushSubscription keyed by endpoint.
@@ -16,10 +16,13 @@ Three views, all JSON in / JSON out:
                               Enqueues one ``_worker_dispatch_push`` task per
                               matching subscription (or all rows if no endpoint
                               is passed) and returns a count of rows enqueued.
+- ``push_subscriptions`` GET — every stored row, for the demo page's list
+                              (SNOW-874). Read-only, so no CSRF token and no
+                              POST; the three writes above still take both.
 
-All three are guarded by ``@staff_member_required`` and rely on Django's
-default CSRF middleware. The JS client at ``static/js/push_demo.js`` sends
-the ``X-CSRFToken`` header read from the ``csrftoken`` cookie.
+All four are guarded by ``@staff_member_required`` and the three POSTs rely on
+Django's default CSRF middleware. The JS client at ``static/js/push_demo.js``
+sends the ``X-CSRFToken`` header read from the ``csrftoken`` cookie.
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ from typing import Any
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.accounts.models import Account, PushSubscription
 from apps.accounts.push_service import enqueue_push
@@ -144,3 +147,33 @@ def push_test(request: HttpRequest) -> HttpResponse:
         count += 1
 
     return JsonResponse({"ok": True, "enqueued": count})
+
+
+@staff_member_required
+@require_GET
+def push_subscriptions(request: HttpRequest) -> HttpResponse:
+    """Return every stored PushSubscription, newest first.
+
+    SNOW-874: the demo page used to render this list server-side at page
+    load, so it froze at whatever the table held when the page was opened.
+    Enabling push then created a row the list never showed, and the page
+    ended up displaying one endpoint in its State panel and a different,
+    hour-old one directly below — which is worse than showing nothing,
+    because it invites the reader to reconcile two views that were never
+    describing the same moment. The list is now fetched alongside the rest
+    of the state, so it moves when the state moves.
+
+    Each row carries the endpoint, the owning account's email (or a
+    placeholder for the anonymous staff rows the spike allows), the
+    mechanism, and whether a 410 has marked it inactive.
+    """
+    rows = [
+        {
+            "endpoint": sub.endpoint,
+            "label": sub.account.user.email if sub.account else "(anon)",
+            "mechanism": sub.mechanism,
+            "inactive": sub.inactive_at is not None,
+        }
+        for sub in PushSubscription.objects.select_related("account__user")
+    ]
+    return JsonResponse({"ok": True, "subscriptions": rows})

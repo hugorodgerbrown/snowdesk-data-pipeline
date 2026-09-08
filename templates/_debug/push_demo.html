@@ -1,8 +1,8 @@
 {% extends "public/base.html" %}
 {% load static components %}
 
-{# SNOW-553: sharing=False. Staff-only debug page, mounted only when     #}
-{# DEBUG is on. It has no public URL to share.                          #}
+{# SNOW-553: sharing=False. Staff-only debug page — mounted on every     #}
+{# environment and gated on staff, not on DEBUG. No public URL to share. #}
 {% block page_meta %}
     {% include "includes/_page_meta.html" with title="Push notifications — spike" description="Staff-only Web Push debug page." sharing=False %}
 {% endblock page_meta %}
@@ -70,17 +70,14 @@
         </section>
 
         <section class="bg-card border border-border rounded-card p-4 space-y-2">
-            <h2 class="font-semibold text-text-1">All stored subscriptions ({{ subscriptions.count }})</h2>
-            <ul class="text-xs text-text-2 space-y-1">
-                {% for sub in subscriptions %}
-                    <li class="font-mono break-all">
-                        {{ sub.account.user.email|default:"(anon)" }}
-                        — {{ sub.endpoint|slice:":80" }}…
-                    </li>
-                {% empty %}
-                    <li class="text-text-3">No subscriptions yet.</li>
-                {% endfor %}
-            </ul>
+            {# SNOW-874: the list is fetched by push_demo.js alongside the rest of #}
+            {# the state, not rendered here. A server-rendered list freezes at     #}
+            {# page load, and a frozen list next to a live State panel is what      #}
+            {# made a working push look broken.                                     #}
+            <h2 class="font-semibold text-text-1">
+                All stored subscriptions (<span id="push-subs-count">—</span>)
+            </h2>
+            <ul id="push-subs" class="text-xs text-text-2 space-y-1"></ul>
         </section>
 
         <section class="bg-card border border-border rounded-card p-4">

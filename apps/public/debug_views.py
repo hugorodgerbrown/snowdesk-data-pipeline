@@ -23,7 +23,6 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
 from django.shortcuts import render
 
-from apps.accounts.models import PushSubscription
 from apps.accounts.push_config import VAPID_PUBLIC_KEY
 from apps.core.decorators import require_htmx
 from apps.core.sw_shell import cache_version
@@ -94,14 +93,18 @@ def component_library_panel(
 
 @staff_member_required
 def push_demo(request: HttpRequest) -> HttpResponse:
-    """Spike demo page for Web Push notifications."""
+    """Spike demo page for Web Push notifications.
+
+    SNOW-874: the stored-subscription list is no longer passed in here.
+    Rendered server-side it was a snapshot of page-load time, which went
+    stale the moment the tester clicked Enable push — leaving the page
+    showing a live endpoint above and an hour-old one below. The client
+    reads it from ``accounts:push_subscriptions`` instead.
+    """
     return render(
         request,
         "_debug/push_demo.html",
-        {
-            "vapid_public_key": VAPID_PUBLIC_KEY,
-            "subscriptions": PushSubscription.objects.all(),
-        },
+        {"vapid_public_key": VAPID_PUBLIC_KEY},
     )
 
 

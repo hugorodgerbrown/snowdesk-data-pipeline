@@ -3,7 +3,8 @@
  *
  * Wires three buttons (#push-enable, #push-disable, #push-test) on the
  * /_push-demo/ page to the PushManager + the register/unregister/test
- * endpoints.
+ * endpoints, and renders the stored-subscription list from the fourth,
+ * read-only endpoint (SNOW-874) so it tracks the state above it.
  *
  * Reads the VAPID public key from the meta tag `<meta name="vapid-public-key">`
  * that the template emits. The key is URL-safe-base64 (RFC 7515) and must be
@@ -99,6 +100,66 @@
     const sub = await currentSubscription();
     $('#push-state').textContent = sub ? 'subscribed' : 'not subscribed';
     $('#push-endpoint').textContent = sub ? sub.endpoint : '—';
+    await refreshSubscriptions(sub ? sub.endpoint : null);
+  }
+
+  /**
+   * Render the stored-subscription list from the JSON read endpoint.
+   *
+   * SNOW-874: this list used to be server-rendered at page load and never
+   * moved again, so enabling push left the State panel showing one endpoint
+   * and the list below showing another. Reading it here means it is fetched
+   * whenever the state is, and the row matching the browser's live
+   * subscription is marked — the one question the list is ever asked is
+   * "is this device in there?", and it now answers it directly instead of
+   * leaving two 80-character endpoints to be compared by eye.
+   *
+   * @param {?string} currentEndpoint This browser's live endpoint, if any.
+   */
+  async function refreshSubscriptions(currentEndpoint) {
+    const list = $('#push-subs');
+    const count = $('#push-subs-count');
+    if (!list || !count) return;
+
+    let rows;
+    try {
+      const resp = await fetch('/account/push/subscriptions/', {
+        credentials: 'same-origin',
+      });
+      rows = (await resp.json()).subscriptions || [];
+    } catch (_e) {
+      // A failed read must not blank a list that was correct a moment ago,
+      // so say the count is unknown and leave the rows alone.
+      count.textContent = '?';
+      return;
+    }
+
+    count.textContent = String(rows.length);
+    list.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement('li');
+      empty.className = 'text-text-3';
+      // i18n-allow: /_push-demo/ is a staff-only diagnostic page, not a
+      // public surface — see apps/public/debug_views.py.
+      empty.textContent = 'No subscriptions yet.';
+      list.append(empty);
+      return;
+    }
+
+    for (const row of rows) {
+      const li = document.createElement('li');
+      li.className = 'font-mono break-all';
+      // i18n-allow: /_push-demo/ is a staff-only diagnostic page, not a
+      // public surface — see apps/public/debug_views.py.
+      const inactive = row.inactive ? ' [inactive]' : '';
+      // i18n-allow: /_push-demo/ is a staff-only diagnostic page, not a
+      // public surface — see apps/public/debug_views.py.
+      const mine = row.endpoint === currentEndpoint ? ' ← this device' : '';
+      li.textContent =
+        `${row.label} — ${row.endpoint.slice(0, 80)}… ` +
+        `(${row.mechanism})${inactive}${mine}`;
+      list.append(li);
+    }
   }
 
   async function enablePush() {

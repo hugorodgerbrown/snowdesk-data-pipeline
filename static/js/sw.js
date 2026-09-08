@@ -4000,9 +4000,21 @@ self.addEventListener('push', (event) => {
     .showNotification(payload.title, {
       body: payload.body,
       icon: '/static/icons/pwa/icon-192.png',
-      badge: '/static/icons/pwa/icon-192.png',
+      // SNOW-874: the badge is NOT a small icon — Android keeps only its
+      // alpha channel and tints the result for the status bar. icon-192 has
+      // no transparency inside its rounded rect, so the silhouette Android
+      // extracted was the whole square and the status bar showed a solid
+      // white block. badge-96 is the mountain glyph on transparent.
+      badge: '/static/icons/pwa/badge-96.png',
       data: { url: payload.url },
       tag: 'snowdesk-push',
+      // SNOW-874: the tag collapses repeat pushes into one entry, which is
+      // what we want — but without renotify a replacement arrives silently,
+      // so a second send to a device that already holds one looks like
+      // nothing happened at all. On /_push-demo/, where the whole point is
+      // to click Send and watch a notification arrive, that reads as a
+      // broken pipeline rather than a working one.
+      renotify: true,
     })
     .then(() => {
       // SNOW-384: emitted only after showNotification's promise

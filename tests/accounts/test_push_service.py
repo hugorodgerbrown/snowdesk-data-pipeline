@@ -289,3 +289,64 @@ class TestWorkerDispatchPush:
         assert any(f"pk={nonexistent_pk}" in msg for msg in all_messages), (
             f"No log record contains pk={nonexistent_pk}; records: {all_messages}"
         )
+
+
+@pytest.mark.django_db
+class TestDispatchPushSuccessLogging:
+    """SNOW-874: a successful dispatch says so, and says what came back."""
+
+    def test_success_logs_the_push_service_status(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A 201 leaves a log record carrying the pk and the status code.
+
+        Before this, ``dispatch_push`` warned on failure and was silent on
+        success, so reading a production log to answer "did the push service
+        take it?" meant proving a negative — no warning, therefore fine.
+        That reasoning is sound (``webpush`` raises above 202) but it is not
+        something a log reader can see, and on 2026-09-08 it cost an hour of
+        a live investigation.
+
+        The accounts logger has propagate=False in base.py; flip it for the
+        test so caplog can capture the records.
+        """
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
+        sub = PushSubscriptionFactory.create()
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+
+        with (
+            patch("apps.accounts.push_service.webpush", return_value=mock_response),
+            caplog.at_level(logging.INFO, logger="apps.accounts.push_service"),
+        ):
+            dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(f"pk={sub.pk}" in msg and "201" in msg for msg in messages), (
+            f"No success record carries pk={sub.pk} and the status; got {messages}"
+        )
+
+    def test_success_log_omits_the_account_email(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The new success record obeys SNOW-311 like every other one."""
+        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
+        account = AccountFactory.create(user__email="success-caplog@example.com")
+        sub = PushSubscriptionFactory.create(account=account)
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+
+        with (
+            patch("apps.accounts.push_service.webpush", return_value=mock_response),
+            caplog.at_level(logging.INFO, logger="apps.accounts.push_service"),
+        ):
+            dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
+
+        for message in (record.getMessage() for record in caplog.records):
+            assert "success-caplog@example.com" not in message, (
+                f"Account email found in log: {message!r}"
+            )
