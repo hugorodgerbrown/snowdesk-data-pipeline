@@ -34,7 +34,7 @@ Content is authored directly in this template; no runtime context required.
         {% trans "Terms of Service" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="tos-heading" %}
         <p class="text-xs text-text-3 mb-6">
-            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 30 August 2026 &middot; Version 1.1" %}
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 8 September 2026 &middot; Version 1.2" %}
         </p>
 
         <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
@@ -53,8 +53,8 @@ Content is authored directly in this template; no runtime context required.
                     Snowdesk is operated by Hugo Rodger-Brown ("I", "me", "my"), an individual based in London, UK.
                     Snowdesk displays avalanche bulletins published by the WSL Institute for Snow and Avalanche Research
                     (SLF) for Switzerland, by ALBINA / EUREGIO for Tyrol, South Tyrol and Trentino, and by
-                    Météo-France for the French mountain ranges, and provides optional email notifications for
-                    subscribed regions. There are no employees; the service is run entirely by the sole operator.
+                    Météo-France for the French mountain ranges. It publishes no avalanche forecast of its own. There
+                    are no employees; the service is run entirely by the sole operator.
                 {% endblocktrans %}
             </p>
         </section>
@@ -78,7 +78,10 @@ Content is authored directly in this template; no runtime context required.
                 </li>
                 <li>{% trans "An interactive map showing current avalanche danger ratings by region" %}</li>
                 <li>
-                    {% trans "Optional email notifications when new bulletins are published for subscribed regions" %}
+                    {% trans "An RSS feed per country, which lists each bulletin as it is published and needs no account" %}
+                </li>
+                <li>
+                    {% trans "An optional free account, which holds the places and regions you pin, the routes and trips you save, and the map areas you download to read offline" %}
                 </li>
             </ul>
             <p>
@@ -251,25 +254,8 @@ Content is authored directly in this template; no runtime context required.
             </ul>
         </section>
 
-        <section data-testid="tos-subscriptions">
-            <h2>{% trans "7. Email subscriptions" %}</h2>
-            <p class="mb-2">
-                {% blocktrans trimmed %}
-                    You can subscribe to receive email notifications when new avalanche bulletins are published for one
-                    or more Swiss regions. To subscribe, you provide your email address. By subscribing you agree to
-                    receive those notifications.
-                {% endblocktrans %}
-            </p>
-            <p>
-                {% blocktrans trimmed %}
-                    You can unsubscribe at any time by clicking the unsubscribe link in any email we send you. We will
-                    not send you anything other than bulletin notifications and essential service messages.
-                {% endblocktrans %}
-            </p>
-        </section>
-
         <section data-testid="tos-acceptable-use">
-            <h2>{% trans "8. Acceptable use" %}</h2>
+            <h2>{% trans "7. Acceptable use" %}</h2>
             <p class="mb-2">{% trans "You agree not to:" %}</p>
             <ul class="list-disc pl-5 space-y-1">
                 <li>
@@ -284,7 +270,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-liability">
-            <h2>{% trans "9. Limitation of liability" %}</h2>
+            <h2>{% trans "8. Limitation of liability" %}</h2>
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     To the maximum extent permitted by law, Snowdesk and its operator shall not be liable for any
@@ -302,7 +288,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-governing-law">
-            <h2>{% trans "10. Governing law" %}</h2>
+            <h2>{% trans "9. Governing law" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     These terms are governed by the laws of England and Wales. Any disputes shall be subject to the
@@ -312,7 +298,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-changes">
-            <h2>{% trans "11. Changes to these terms" %}</h2>
+            <h2>{% trans "10. Changes to these terms" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     We may update these terms from time to time. We will update the effective date at the top. Continued
@@ -322,7 +308,7 @@ Content is authored directly in this template; no runtime context required.
         </section>
 
         <section data-testid="tos-contact">
-            <h2>{% trans "12. Contact" %}</h2>
+            <h2>{% trans "11. Contact" %}</h2>
             <p>
                 {% blocktrans trimmed %}
                     Questions about these terms? Email:
