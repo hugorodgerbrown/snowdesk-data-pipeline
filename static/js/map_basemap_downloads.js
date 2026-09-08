@@ -758,16 +758,21 @@ async function resolveBaseLayerPlan() {
   const sourceBounds = activeBasemapSourceBounds(MAP);
   const bbox = core.baseLayerBBox(cameraBBox, sourceBounds);
   if (!bbox) return null;
-  const all = core.baseLayerTileURLs(tileSources, cameraBBox, sourceBounds);
+  // SNOW-868: the band is the BASEMAP's, not one global constant — a
+  // national style closes the seam to z9 for 4.4 MB, which the global
+  // default cannot do for 121. Threading the key here is also what makes
+  // the migration below per-basemap, with no second lookup to keep in
+  // step.
+  const all = core.baseLayerTileURLs(tileSources, cameraBBox, sourceBounds, basemapKey);
   const areaId = core.areaIdForBaseLayer(basemapKey);
   // SNOW-863: a bucket holding anything the CURRENT band does not ask for
   // is from an older one, and is dropped whole before planning.
   //
-  // Needed because SNOW-856 shipped z0-9 and this is z0-7. Without it,
-  // every device that ever ran the old band keeps its z8 and z9 tiles for
-  // good: they are a superset, so the missing-url plan below is empty,
-  // nothing ever re-warms, and 123 MB sits there on the default basemap
-  // with no path out short of a full reset.
+  // Needed because SNOW-856 shipped z0-9 and the default band is z0-7.
+  // Without it, every device that ever ran the old band keeps its z8 and
+  // z9 tiles for good: they are a superset, so the missing-url plan below
+  // is empty, nothing ever re-warms, and 121 MB sits there on the default
+  // basemap with no path out short of a full reset.
   //
   // Detected from the bucket's own contents rather than the record's
   // stored `band`, deliberately — the record can be absent (see
@@ -775,6 +780,21 @@ async function resolveBaseLayerPlan() {
   // fires for devices with an intact record would miss exactly the ones
   // in the worst state. A superset is also the only shape this can be in:
   // the url set is a pure function of band, camera and style.
+  //
+  // SNOW-868 made the band per basemap and needed nothing added here.
+  // Two things follow, and both are the reason:
+  //
+  //   - `all` is already this basemap's own url set, because the key is
+  //     threaded into `baseLayerTileURLs` above. The comparison is
+  //     therefore per-basemap by construction, not by a second lookup
+  //     that could drift out of step with the first.
+  //   - The national bands WIDEN (z0-7 -> z0-9), so a national bucket
+  //     filled under the old band is a strict SUBSET of what the new one
+  //     asks for. Subsets are not stale: nothing is evicted, nothing
+  //     already held is re-fetched, and the ordinary missing-url plan
+  //     below tops the bucket up with the two new levels. Only
+  //     OpenFreeMap's old z0-9 buckets are supersets, and dropping those
+  //     is exactly what this path already existed to do.
   const stale = await _baseLayerBucketIsStale(areaId, all);
   if (stale) {
     await evictBasemapAreas([areaId]);
@@ -968,7 +988,12 @@ async function recordBaseLayer(result, plan) {
     const next = existing.filter((entry) => entry && entry.basemapKey !== plan.basemapKey);
     next.push({
       basemapKey: plan.basemapKey,
-      band: core.BASE_LAYER_BAND,
+      // SNOW-868: the band this basemap actually asked for, not the
+      // default one. Writing the constant here recorded z0-7 against a
+      // bucket holding z0-9, which is the read `_baseLayerBucketIsStale`
+      // deliberately does not trust — but a wrong number in a stored
+      // record is a trap for the next reader either way.
+      band: core.baseLayerBand(plan.basemapKey),
       bbox: plan.bbox,
       bytes: (Number(previous && previous.bytes) || 0) + (Number(result.bytes) || 0),
       savedAt: new Date().toISOString(),
@@ -1664,7 +1689,8 @@ window.pwaBasemapDownloads = Object.freeze({
   /**
    * The shared base layer's top-up plan for the ACTIVE basemap
    * (SNOW-856), including SNOW-863's re-banding of a bucket left by an
-   * older `BASE_LAYER_BAND`.
+   * older band. SNOW-868: which band that is depends on the basemap —
+   * see `baseLayerBand`.
    *
    * The download runner reaches this through its own deps bundle
    * (`PINNED_DOWNLOAD_DEPS.baseLayer`) rather than here — this is the

@@ -215,12 +215,16 @@
  *     ``meta:app`` record, which is written later and can be missing.
  *   intersectBBox(a, b)
  *     The overlap of two bboxes, or null.
- *   baseLayerBBox(cameraBBox, styleBounds) / baseLayerBlob(…) /
- *   baseLayerTileURLs(spec, …)
- *     The base layer's extent, blob and tile URLs. The camera bbox makes
- *     it sufficient and the style's declared bounds make it finite — see
- *     ``baseLayerBBox`` for why deriving it from the style alone breaks
- *     on the global default basemap.
+ *   baseLayerBBox(cameraBBox, styleBounds) / baseLayerBand(basemapKey?) /
+ *   baseLayerBlob(…) / baseLayerTileURLs(spec, …)
+ *     The base layer's extent, band, blob and tile URLs. The camera bbox
+ *     makes the extent sufficient and the style's declared bounds make it
+ *     finite — see ``baseLayerBBox`` for why deriving it from the style
+ *     alone breaks on the global default basemap. SNOW-868: the BAND is
+ *     per basemap too (``BASE_LAYER_BANDS``), because what it costs to
+ *     cover a country is not what it costs to cover the world — the last
+ *     two arguments of ``baseLayerBlob``/``baseLayerTileURLs`` are the
+ *     basemap key, and omitting it keeps the default band.
  *   planEviction(areas, incoming, budgetBytes)
  *     Given the areas currently on disk and an incoming run, decides
  *     whether it fits the standing budget and, if not, which areas to
@@ -403,31 +407,74 @@
   // fetched over a connection the user had told the app not to spend, and
   // the map drew.
   //
-  // **It stops at z7, and does NOT abut MICRO_BAND's floor (SNOW-863).**
-  // It shipped as z0-9 precisely so the two bands would meet with no gap,
-  // and that tidiness turned out to cost more than the feature. Measured
-  // by fetching every tile, OpenFreeMap Liberty — the DEFAULT basemap,
-  // global, so clamped to the camera's 682 tiles rather than a national
-  // style's 215 — comes to 144.4 MB on disk, 29% of the standing 500 MB
-  // budget before a single area is downloaded. z9 alone is 91.2 MB of it
-  // and z8 another 32.4; z0-7 is 20.9 MB, seven times cheaper.
+  // **The band is a function of the BASEMAP'S EXTENT, not a global
+  // constant (SNOW-868).** This is the DEFAULT — what an unknown basemap
+  // gets — and it is OpenFreeMap's, because a band's cost is set by how
+  // much ground the style covers, and the default basemap covers the
+  // world while the other three cover one country each.
   //
-  // The two-level gap costs nothing the reader can see. MapLibre renders
-  // the nearest cached ancestor for a tile it does not hold
-  // (``findLoadedParent``), so z8 and z9 draw from the stored z7 tile —
-  // softer, never blank, which is the whole promise. That same mechanism
+  // The history reads like a flip-flop and is not one. SNOW-856 shipped
+  // z0-9, so the base layer would abut ``MICRO_BAND``'s z10 floor with no
+  // gap. SNOW-863 trimmed it to z0-7 for everything, having measured the
+  // default basemap. SNOW-868 measured the OTHER THREE and found the
+  // ruling was right for OpenFreeMap and was never a statement about a
+  // national style. z8+z9 over each basemap's own extent:
+  //
+  //   openfreemap_liberty   33.4 + 88.0 MB  = 121 MB   (140 + 486 tiles,
+  //                                                     Alps-wide)
+  //   swisstopo (both srcs)  1.4 +  3.0 MB  = 4.4 MB   (CH)
+  //   ign_plan               2.1 +  2.3 MB  = 4.4 MB   (FR)
+  //   basemap_at            ~3.2 + ~4.1 MB  = ~7.3 MB  (AT)
+  //
+  // The OpenFreeMap figure independently reproduces the 123 MB the
+  // SNOW-863 comment carried, which is what makes the other three
+  // trustworthy. 121 MB is a quarter of the standing 500 MB budget spent
+  // before a single area is downloaded; 4.4 MB is not a price, it is a
+  // rounding error, and it buys the seam away for every Swiss, French and
+  // Austrian reader.
+  //
+  // **Do not restore the gap for the DEFAULT basemap on tidiness
+  // grounds.** The two-level gap costs nothing the reader can see there:
+  // MapLibre renders the nearest cached ancestor for a tile it does not
+  // hold (``findLoadedParent``), so z8 and z9 draw from the stored z7 tile
+  // — softer, never blank, which is the whole promise. That same mechanism
   // is what makes the map draw coarsely outside a download's ground
   // (SNOW-856's accepted trade), so this is not a new behaviour to reason
-  // about, just the same one over two more levels.
-  //
-  // Do not "restore" the gap on tidiness grounds. Anything below z10 is
-  // context; detail is the area download's job, and 123 MB is not a price
-  // worth paying to be able to say the numbers touch.
+  // about, just the same one over two more levels. Anything below z10 is
+  // context; detail is the area download's job, and 121 MB is not worth
+  // paying to be able to say the numbers touch.
   //
   // No ``basemap_tiles.py`` counterpart, and it needs none: the base
   // layer's extent is the CAMERA's, which is a client-side constraint the
   // server has no view of.
   var BASE_LAYER_BAND = [0, 7];
+
+  // SNOW-868: the band per basemap, defaulting to ``BASE_LAYER_BAND``
+  // above for anything not listed. The national styles close the seam
+  // because closing it costs them 4.4 to 7.3 MB; OpenFreeMap is listed
+  // explicitly at the default rather than left implicit, so a reader can
+  // see the ruling was made for it and not merely omitted.
+  var BASE_LAYER_BANDS = {
+    openfreemap_liberty: [0, 7],
+    swisstopo_winter: [0, 9],
+    swisstopo_light: [0, 9],
+    ign_plan: [0, 9],
+    basemap_at: [0, 9],
+  };
+
+  /**
+   * The base layer's zoom band for one basemap (SNOW-868).
+   *
+   * @param {string} [basemapKey] A ``BASEMAP_STYLES`` key. Omitted or
+   *   unknown yields ``BASE_LAYER_BAND``, the default — the conservative
+   *   direction, since the default is the CHEAPEST band and an unknown
+   *   basemap is one whose extent nothing here has measured.
+   * @returns {number[]} ``[minZ, maxZ]``.
+   */
+  function baseLayerBand(basemapKey) {
+    var band = BASE_LAYER_BANDS[basemapKey];
+    return band || BASE_LAYER_BAND;
+  }
 
 
   // Kilometres in a degree of latitude. Equirectangular, and deliberately
@@ -683,12 +730,15 @@
    *
    * @param {number[]} cameraBBox See ``baseLayerBBox``.
    * @param {number[]|null|undefined} styleBounds See ``baseLayerBBox``.
+   * @param {string} [basemapKey] SNOW-868: whose band to build. Omitted
+   *   keeps ``BASE_LAYER_BAND``, the default — see ``baseLayerBand``.
    * @returns {Object|null} ``null`` when there is no overlap.
    */
-  function baseLayerBlob(cameraBBox, styleBounds) {
+  function baseLayerBlob(cameraBBox, styleBounds, basemapKey) {
     const bbox = baseLayerBBox(cameraBBox, styleBounds);
     if (!bbox) return null;
-    return buildBlob(bbox, BASE_LAYER_BAND[0], BASE_LAYER_BAND[1]);
+    const band = baseLayerBand(basemapKey);
+    return buildBlob(bbox, band[0], band[1]);
   }
 
   /**
@@ -704,10 +754,12 @@
    * @param {string | string[][]} spec The style's tile sources.
    * @param {number[]} cameraBBox See ``baseLayerBBox``.
    * @param {number[]|null|undefined} styleBounds See ``baseLayerBBox``.
+   * @param {string} [basemapKey] SNOW-868: whose band to build. Omitted
+   *   keeps ``BASE_LAYER_BAND``, the default — see ``baseLayerBand``.
    * @returns {string[]}
    */
-  function baseLayerTileURLs(spec, cameraBBox, styleBounds) {
-    const blob = baseLayerBlob(cameraBBox, styleBounds);
+  function baseLayerTileURLs(spec, cameraBBox, styleBounds, basemapKey) {
+    const blob = baseLayerBlob(cameraBBox, styleBounds, basemapKey);
     return blob ? rangesToTileURLs(spec, blob) : [];
   }
 
@@ -2153,12 +2205,14 @@
     baseLayerBasemapKey: baseLayerBasemapKey,
     intersectBBox: intersectBBox,
     baseLayerBBox: baseLayerBBox,
+    baseLayerBand: baseLayerBand,
     baseLayerBlob: baseLayerBlob,
     baseLayerTileURLs: baseLayerTileURLs,
     pinnedCacheName: pinnedCacheName,
     planEviction: planEviction,
     MICRO_BAND: MICRO_BAND,
     BASE_LAYER_BAND: BASE_LAYER_BAND,
+    BASE_LAYER_BANDS: BASE_LAYER_BANDS,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
     BYTES_PER_TILE_BY_BASEMAP: BYTES_PER_TILE_BY_BASEMAP,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
