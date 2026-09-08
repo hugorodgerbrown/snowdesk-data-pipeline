@@ -783,14 +783,41 @@
   // SNOW-843: teach the service worker which origins THIS style fetches
   // from, so its tiles can be opportunistically cached (see
   // `learnBasemapTileOrigins` above for why the style catalogue alone is
-  // not enough). Twice per style, deliberately: `style.load` catches a
-  // source whose `tiles` are declared inline, and the following `idle`
-  // catches one that had to resolve a TileJSON document first. The second
-  // call is a no-op unless it finds an origin the first did not — nothing
-  // is re-sent for a set that has not grown.
-  map.on('style.load', () => {
-    learnBasemapTileOrigins(map);
-    map.once('idle', () => learnBasemapTileOrigins(map));
+  // not enough).
+  //
+  // SNOW-870: the timing rule, which was never written down and which
+  // SNOW-843's `style.load` + one-shot `idle` pair got wrong. A source
+  // declared by `url` — a TileJSON document, which is how swisstopo names
+  // both of its vector sources — has an EMPTY `tiles` at `style.load`,
+  // because that document has not been fetched yet. So `style.load` alone
+  // structurally cannot learn a swisstopo tile host. And `idle` is a
+  // guarantee of nothing: it needs a completed render pass, so it may
+  // never fire at all (it did not, in the reported trace), and on a
+  // device that does render it can arrive BEFORE the TileJSON resolves.
+  // Either way the five `vectortiles0-4.geo.admin.ch` hosts never joined
+  // the allowlist and every swisstopo tile classified `unclassified` for
+  // the whole session.
+  //
+  // `style.load` stays: it is cheap, and it catches a source whose `tiles`
+  // are declared inline plus `style.sprite` / `style.glyphs`, which are
+  // plain strings on the parsed style and already resolved by then.
+  //
+  // `sourcedata` with `sourceDataType === 'metadata'` is what MapLibre
+  // emits when a source's TileJSON has resolved, which is the first moment
+  // its tile URLs are knowable. The guard is load-bearing: the `content`
+  // variant of the same event fires per TILE — hundreds of times during a
+  // pan — and each unguarded call would run `getStyle()`, the exact cost
+  // SNOW-614 removed from the attribution handler below.
+  //
+  // Bound once here rather than inside `style.load`, and never unbound:
+  // one listener covers every future basemap swap with no accumulation
+  // and no bookkeeping. The `once`-then-`off` pattern used for favourites,
+  // resorts and routes is deliberately not copied — those wait for one
+  // named source to appear, this has to keep working across every style.
+  // Repeat calls are free: nothing is re-sent for a set that has not grown.
+  map.on('style.load', () => learnBasemapTileOrigins(map));
+  map.on('sourcedata', (e) => {
+    if (e && e.sourceDataType === 'metadata') learnBasemapTileOrigins(map);
   });
 
   // SNOW-483: retry the real basemap once connectivity returns. Reuses the

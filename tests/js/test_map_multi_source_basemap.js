@@ -134,9 +134,14 @@ function expectedTileURLs() {
 
 /**
  * Minimal MapLibre stub with a two-source, five-host vector style — the
- * shape `activeBasemapTileSources` reads. `once` records its handlers (the
- * SNOW-843 origin learner hangs off a one-shot `idle`), unlike the
- * no-op in test_map_download_bytes.js's stub.
+ * shape `activeBasemapTileSources` reads. `once` records its handlers,
+ * unlike the no-op in test_map_download_bytes.js's stub.
+ *
+ * `getSource` answers with resolved `tiles` from the first call, so this
+ * file models a style whose TileJSON is ALREADY read — the origin learner
+ * has everything it needs on `style.load`. The gap between the two, which
+ * is what SNOW-870 fixed, is covered in
+ * test_map_basemap_origin_learning.js.
  */
 function stubMapLibre() {
   const handlers = {};
@@ -388,11 +393,13 @@ beforeAll(async () => {
   loadMapBundle();
   core = window.pwaBasemapDownloadCore;
   // MapLibre never fires these in jsdom; the data load hangs off 'load',
-  // and the origin learner off 'style.load' plus the one-shot 'idle' it
-  // registers.
+  // and the origin learner off 'style.load' plus the permanently-bound
+  // 'sourcedata' listener SNOW-870 replaced the one-shot 'idle' with.
   for (const handler of mapStub.handlers.load || []) await handler();
   for (const handler of mapStub.handlers['style.load'] || []) await handler();
-  for (const handler of mapStub.handlers['once:idle'] || []) await handler();
+  for (const handler of mapStub.handlers.sourcedata || []) {
+    await handler({ sourceDataType: 'metadata' });
+  }
   await waitFor(() => postedMessages.length > 0);
 });
 
