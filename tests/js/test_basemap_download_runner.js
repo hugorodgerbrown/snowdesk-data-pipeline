@@ -43,7 +43,12 @@ function deps(overrides) {
       tileGridPlan: () => ({ urls: ['/tile/1', '/tile/2'], cells: [] }),
       // SNOW-843: the runner scales the caller's per-tile `mb` estimate by
       // the number of vector sources before spending it on a pre-flight.
-      sourceScaledMb: (mb, spec) => mb * Math.max(1, (spec || []).length),
+      // SNOW-868 widened the seam with the blob's tile `count`, which the
+      // real implementation prices per basemap; this stub keeps the simple
+      // multiple, so the runner's own tests stay about the ORDER of the
+      // pre-flights rather than the arithmetic inside them (that is
+      // tests/js/test_basemap_download_core.js's job).
+      sourceScaledMb: (mb, spec, _count) => mb * Math.max(1, (spec || []).length),
       // SNOW-856: `topUpBaseLayer` gates on this before asking for a base
       // layer — a run that did not succeed is almost always offline,
       // cancelled or out of quota, none of which is improved by eight more
