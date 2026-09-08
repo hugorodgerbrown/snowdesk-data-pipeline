@@ -358,12 +358,17 @@
     // The ceiling is the DEVICE's, not a constant: how big a drop may be is
     // a question about what this phone can hold.
     const ceilingMb = basemapDeviceCeilingMb();
+    // SNOW-868: sized at the price the readout below charges the same
+    // circle at, or every drop reads as over the ceiling on a national
+    // basemap — see `budgetScaleForBBox`'s own note.
+    const bytesPerTile = core.bytesPerTileForSources(activeBasemapTileSources(MAP));
     const scale = core.budgetScaleForBBox(
       circleBBox(centre.lat, centre.lon, asked),
       minZ,
       maxZ,
       sources,
-      ceilingMb
+      ceilingMb,
+      bytesPerTile
     );
     const radiusKm = scale < 1 ? asked * scale : asked;
     pending = {
@@ -407,7 +412,11 @@
     if (runState === 'busy' || runState === 'done') return;
     if (!pending) return;
     const core = self.pwaBasemapDownloadCore;
-    const mb = core.sourceScaledMb(pending.blob.mb, activeBasemapTileSources(MAP));
+    const mb = core.sourceScaledMb(
+      pending.blob.mb,
+      activeBasemapTileSources(MAP),
+      pending.blob.count
+    );
     readoutEl.textContent = self.pwaStrings.interpolate(
       STRINGS[pending.capped ? 'readout-capped' : 'readout'],
       { km: formatKm(pending.radiusKm), mb: mb }
@@ -643,6 +652,9 @@
     await runPinnedDownload({
       areaId: areaId,
       mb: blob.mb,
+      // SNOW-868: the tile count the per-basemap price multiplies — see the
+      // runner's own `count` note.
+      count: blob.count,
       paint: (nextState, pct, bytes) => paintRun(nextState, pct, bytes),
       loadBlob: () => blob,
       finish: async (result, runBlob, { core, progressFill, tileSources, basemapKey, renderDeps }) => {

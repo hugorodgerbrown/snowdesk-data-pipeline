@@ -81,6 +81,15 @@
  * deploy) or a clipped region blob's ``{"<y>": [xmin, xmax]}`` row-span
  * map (``apps.regions.services.basemap_tiles.build_region_blob``).
  *
+ * SNOW-868 adds the per-basemap price at the end — a tile is not one size
+ * across every style, and the single 50 KB figure the estimate spent on
+ * all of them was OpenFreeMap's. Those tests are guards as much as
+ * assertions: each constant is checked against the measured worst-region
+ * p99 it has to clear, with the measurement in the comment, so a later
+ * "tidy up these numbers" edit fails loudly rather than quietly turning
+ * the readout's "up to N MB" back into something that is not an upper
+ * bound.
+ *
  * `basemap_download_core.js` is a plain IIFE that assigns a frozen
  * `self.pwaBasemapDownloadCore` — jsdom's global is `window`, which is
  * also `self` in a window context, so importing it for side effects is
@@ -1320,9 +1329,18 @@ describe('tile sources — several sources, several hosts (SNOW-843)', () => {
   });
 
   describe('sourceScaledMb', () => {
-    it('charges one estimate per source', () => {
-      expect(core.sourceScaledMb(50, SOURCES)).toBe(100);
-      expect(core.sourceScaledMb(50, [RELIEF])).toBe(50);
+    it("charges one estimate per source, at that basemap's own price", () => {
+      // SOURCES is a two-source swisstopo spec, so SNOW-868 prices it at
+      // 96 KB a tile a source rather than the blob's own 50 KB. With no
+      // tile count to recompute from, only the TILE half of `mb` scales:
+      // (50 - 2) * 2 * 96/50 rounds up to 185 MB of tiles, plus the
+      // documents allowance once — not once per source, which is what the
+      // old `mb * sources` charged.
+      expect(core.sourceScaledMb(50, SOURCES)).toBe(187);
+      // A SINGLE-source NATIONAL style still costs more than the fallback,
+      // which is why the old `count <= 1` early return had to become an
+      // unresolved-spec test: (50 - 2) * 96/50 -> 93, plus the documents.
+      expect(core.sourceScaledMb(50, [RELIEF])).toBe(95);
     });
 
     it('leaves the estimate alone when the style is unresolved', () => {
@@ -1346,7 +1364,12 @@ describe('tile sources — several sources, several hosts (SNOW-843)', () => {
     it('still fits the ceiling at the size it allows', () => {
       const bbox = [7.0, 46.0, 8.0, 47.0];
       const [minZ, maxZ] = core.MICRO_BAND;
-      const scale = core.budgetScaleForBBox(bbox, minZ, maxZ, 2);
+      // The frame is sized at the SAME price the estimate charges it at —
+      // size at 50 KB while pricing at 96 and every frame the control lets
+      // you draw is over the ceiling, which latches Download off for good
+      // (see budgetScaleForBBox's own note).
+      const bytesPerTile = core.bytesPerTileForSources(SOURCES);
+      const scale = core.budgetScaleForBBox(bbox, minZ, maxZ, 2, undefined, bytesPerTile);
       const width = (bbox[2] - bbox[0]) * scale;
       const height = (bbox[3] - bbox[1]) * scale;
       const cx = (bbox[0] + bbox[2]) / 2;
@@ -1356,9 +1379,148 @@ describe('tile sources — several sources, several hosts (SNOW-843)', () => {
         minZ,
         maxZ,
       );
-      expect(core.sourceScaledMb(blob.mb, SOURCES)).toBeLessThanOrEqual(
+      expect(core.sourceScaledMb(blob.mb, SOURCES, blob.count)).toBeLessThanOrEqual(
         core.DOWNLOAD_CEILING_MB,
       );
+    });
+  });
+});
+
+describe('bytes per tile, per basemap (SNOW-868)', () => {
+  // Real tile-source specs, in the shape `activeBasemapTileSources` hands
+  // over. Only the HOST is load-bearing here — that is what the price is
+  // resolved from, deliberately, rather than the basemap picker (see
+  // `basemapKeyForTileSources`).
+  const SWISSTOPO = [0, 1, 2, 3, 4].flatMap((n) => [
+    [`https://vectortiles${n}.geo.admin.ch/tiles/relief.vt/{z}/{x}/{y}.pbf`],
+    [`https://vectortiles${n}.geo.admin.ch/tiles/base.vt/{z}/{x}/{y}.pbf`],
+  ]);
+  const SWISSTOPO_TWO_SOURCE = [
+    ['https://vectortiles0.geo.admin.ch/tiles/relief.vt/{z}/{x}/{y}.pbf'],
+    ['https://vectortiles1.geo.admin.ch/tiles/base.vt/{z}/{x}/{y}.pbf'],
+  ];
+  const IGN = [['https://data.geopf.fr/tms/1.0.0/PLAN.IGN/{z}/{x}/{y}.pbf']];
+  const BASEMAP_AT = [['https://mapsneu.wien.gv.at/basemapv/bmapv/{z}/{x}/{y}.pbf']];
+  // OpenFreeMap's origin is deployment-dependent — staging self-hosts at
+  // tiles.snowdesk-data.info — so there is no host to match on and it
+  // resolves through the fallback, which is its own measured figure.
+  const OPENFREEMAP = [['https://tiles.snowdesk-data.info/planet/{z}/{x}/{y}.pbf']];
+
+  describe('basemapKeyForTileSources', () => {
+    it('resolves each national basemap from its host', () => {
+      expect(core.basemapKeyForTileSources(SWISSTOPO)).toBe('swisstopo_winter');
+      expect(core.basemapKeyForTileSources(IGN)).toBe('ign_plan');
+      expect(core.basemapKeyForTileSources(BASEMAP_AT)).toBe('basemap_at');
+    });
+
+    it('names no basemap for a host it does not know, OpenFreeMap included', () => {
+      expect(core.basemapKeyForTileSources(OPENFREEMAP)).toBe('');
+      expect(core.basemapKeyForTileSources(null)).toBe('');
+    });
+  });
+
+  describe('bytesPerTileForSources', () => {
+    it("falls back to OpenFreeMap's own measured figure", () => {
+      // The fallback IS the default basemap's price (mean 25.2 KB a tile,
+      // worst-region p99 34.7), which is why an unmatched host is not a
+      // guess — it is the figure the whole estimate was calibrated on.
+      expect(core.bytesPerTileForSources(OPENFREEMAP)).toBe(
+        core.WORST_CASE_BYTES_PER_TILE,
+      );
+      expect(core.bytesPerTileForBasemap('openfreemap_liberty')).toBe(
+        core.WORST_CASE_BYTES_PER_TILE,
+      );
+    });
+  });
+
+  describe('sourceScaledMb', () => {
+    it('prices a thousand tiles per basemap', () => {
+      // Written out rather than derived, so this asserts the arithmetic and
+      // not our restatement of it. 1,000 tiles at each basemap's own figure,
+      // times its source count, plus DOWNLOAD_DOCUMENTS_MB once.
+      const mb = 51; // what buildBlob would have said on its own
+      expect(core.sourceScaledMb(mb, SWISSTOPO_TWO_SOURCE, 1000)).toBe(190);
+      expect(core.sourceScaledMb(mb, IGN, 1000)).toBe(96);
+      expect(core.sourceScaledMb(mb, BASEMAP_AT, 1000)).toBe(143);
+      expect(core.sourceScaledMb(mb, OPENFREEMAP, 1000)).toBe(51);
+    });
+
+    it('is exactly a no-op for a single-source basemap at the fallback price', () => {
+      // The fallback is buildBlob's OWN arithmetic, so re-pricing a blob it
+      // built must return the number it already carries — an estimate that
+      // moved here would be this seam inventing megabytes.
+      const blob = core.buildBlob([7.0, 46.0, 7.2, 46.2], 10, 12);
+      expect(core.sourceScaledMb(blob.mb, OPENFREEMAP, blob.count)).toBe(blob.mb);
+      expect(core.sourceScaledMb(blob.mb, OPENFREEMAP)).toBe(blob.mb);
+    });
+
+    it('leaves the estimate alone when the style is unresolved', () => {
+      // Unchanged rule, narrower test: an unresolved SPEC never inflates an
+      // estimate on a guess. A single-source national style is no longer
+      // covered by it — those cost more than the fallback and are priced.
+      expect(core.sourceScaledMb(42, [])).toBe(42);
+      expect(core.sourceScaledMb(42, null)).toBe(42);
+    });
+
+    it('charges the documents allowance once, not once per source', () => {
+      // The bug the count-based path fixes: `mb * sources` multiplied
+      // DOWNLOAD_DOCUMENTS_MB too, so a two-source style was charged 4 MB of
+      // style, sprite and TileJSON it fetches one copy of.
+      expect(core.sourceScaledMb(2, SWISSTOPO_TWO_SOURCE, 0)).toBe(
+        core.DOWNLOAD_DOCUMENTS_MB,
+      );
+    });
+
+    it('stays above what a real swisstopo download actually wrote', () => {
+      // Both figures are OBSERVED, not modelled. The 400-tile sample was
+      // fetched from the real hosts over the real CH tile mix and averaged
+      // 60.8 KB a tile a source; the Ybrig region download's own trace
+      // reported 59.9 KB across 474 URLs. "Up to N MB" is only a promise if
+      // the estimate clears both.
+      const sampleMb = (400 * 2 * 60.8 * 1024) / (1024 * 1024);
+      expect(core.sourceScaledMb(22, SWISSTOPO_TWO_SOURCE, 400)).toBeGreaterThan(
+        sampleMb,
+      );
+      const ybrigMb = (474 * 59.9 * 1024) / (1024 * 1024);
+      expect(core.sourceScaledMb(14, SWISSTOPO_TWO_SOURCE, 237)).toBeGreaterThan(
+        ybrigMb,
+      );
+    });
+  });
+
+  describe('BYTES_PER_TILE_BY_BASEMAP', () => {
+    it('keeps every constant above its measured worst-region p99', () => {
+      // A download averages hundreds of tiles, so what the constant has to
+      // bound is a DOWNLOAD's mean rather than the fattest tile. Bootstrapped
+      // from the 400-tile sample at the real CH region sizes (min 56 tiles,
+      // median 181, max 2,816), the worst case is the SMALLEST region:
+      // OpenFreeMap 34.7 KB, swisstopo 85.5 KB per source. This is why 72 KB
+      // was rejected for swisstopo despite clearing the 60.8 KB mean — a
+      // small region would have exceeded it about 1% of the time. Do not
+      // "tidy" these downwards without re-measuring; this assertion is what
+      // makes that fail loudly.
+      expect(core.BYTES_PER_TILE_BY_BASEMAP.openfreemap_liberty).toBeGreaterThan(
+        34.7 * 1024,
+      );
+      expect(core.BYTES_PER_TILE_BY_BASEMAP.swisstopo_winter).toBeGreaterThan(
+        85.5 * 1024,
+      );
+      // The two swisstopo styles differ in paint, not in tile sources, which
+      // is also why the host cannot tell them apart — see
+      // `basemapKeyForTileSources` on the key being a pricing representative.
+      expect(core.BYTES_PER_TILE_BY_BASEMAP.swisstopo_light).toBe(
+        core.BYTES_PER_TILE_BY_BASEMAP.swisstopo_winter,
+      );
+    });
+
+    it('keeps the two PROVISIONAL constants above their crude samples', () => {
+      // IGN and basemap.at have no stratified sample behind them — only CH
+      // region geometry exists in the local fixture — so these come from a
+      // four-point sample (IGN ~52 KB, basemap.at ~85 KB, the latter with a
+      // 782 KB z10 tile in it) scaled by the CH worst-region factor. They are
+      // generous rather than accurate, and this guards the direction.
+      expect(core.BYTES_PER_TILE_BY_BASEMAP.ign_plan).toBeGreaterThan(52 * 1024);
+      expect(core.BYTES_PER_TILE_BY_BASEMAP.basemap_at).toBeGreaterThan(85 * 1024);
     });
   });
 });

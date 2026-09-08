@@ -603,6 +603,7 @@ Read these when working in the relevant area:
 | On-device debug trace (window.pwaDebugLog, log:debug store, debug_log flag / GRP_DEBUG, the sw.js emitters) | [`docs/debug-log.md`](docs/debug-log.md) |
 | PWA shell (service worker, manifest icons, cache strategy) | [`docs/offline-map.md`](docs/offline-map.md) |
 | Why a basemap is a list of tile sources, not a tile URL (tileSources, MapLibre's `(x+y) % hosts` rotation, the register-basemap-origins allowlist) | [`docs/decisions/a-basemap-is-a-list-of-tile-sources.md`](docs/decisions/a-basemap-is-a-list-of-tile-sources.md) |
+| Why the base layer's zoom band follows the basemap's extent (BASE_LAYER_BANDS, baseLayerBand, z0-9 for the national styles, z0-7 for OpenFreeMap) | [`docs/decisions/the-base-layer-band-follows-the-basemap-extent.md`](docs/decisions/the-base-layer-band-follows-the-basemap-extent.md) |
 | Why a downloaded area is verified by what it renders, not by its tiles (missingRenderDependencies, the `incomplete` state, repair, the three-row resolution rule, why glyphs are excluded) | [`docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](docs/decisions/a-downloaded-area-is-verified-by-what-it-renders.md) |
 | Why offline read paths are time-bounded and latch (a dead radio hangs, it doesn't reject) | [`docs/decisions/bounded-offline-read-paths.md`](docs/decisions/bounded-offline-read-paths.md) |
 | Offline-first PWA compliance index (spec §12 non-negotiables) | [`docs/offline-first.md`](docs/offline-first.md) |

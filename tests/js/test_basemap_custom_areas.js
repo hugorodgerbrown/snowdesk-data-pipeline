@@ -37,6 +37,13 @@
  * persisted), so every downstream reader — this banner included — can
  * read `area.name` uniformly. See the "default display name" describe
  * block below.
+ *
+ * SNOW-868 added the last describe block, which is about a different
+ * thing but needs this suite's harness: the base-layer plan reads the
+ * picker DOM and the rendered style separately, and those two disagree
+ * for as long as a basemap switch is in flight. The fixture below already
+ * carries both a two-row picker and a stubbed style, so the disagreement
+ * can be staged directly.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -235,10 +242,11 @@ function switchBasemap(key) {
 }
 
 let cachesStub;
+let mapStub;
 
 beforeEach(async () => {
   buildFixture();
-  stubMapLibre();
+  mapStub = stubMapLibre();
   cachesStub = installCachesStub();
   Object.defineProperty(navigator, 'storage', {
     value: { estimate: async () => ({ quota: 10 * 1024 * MB, usage: 0 }) },
@@ -767,5 +775,95 @@ describe('re-banding an old base-layer bucket (SNOW-863)', () => {
     await plan();
 
     expect(cachesStub.buckets.has(BASE_BUCKET)).toBe(true);
+  });
+});
+
+describe('which key picks the base layer band (SNOW-868)', () => {
+  // The race this exists for: `map_basemap_picker.js` flips the checked
+  // radio row SYNCHRONOUSLY on click, so `activeBasemapKey()` reports the
+  // INCOMING basemap while MapLibre's asynchronous `setStyle()` is still
+  // in flight and `activeBasemapTileSources()` still returns the OUTGOING
+  // style's templates. Tiles fetched in that window come from the
+  // outgoing style, so the BAND has to be the outgoing style's too:
+  // picking it off the picker asks an OpenFreeMap style for the national
+  // z0-9 band — the 121 MB SNOW-868 exists to avoid — or asks a national
+  // style for z0-7 and leaves the seam it was meant to close.
+  //
+  // Bucket IDENTITY is the other half and goes the other way: it stays on
+  // the picker's key, because `basemapKeyForTileSources` matches on the
+  // template's HOST and `swisstopo_winter` and `swisstopo_light` share
+  // hosts — deriving identity from the template would collapse two
+  // buckets into one. Both halves are asserted in the same test on
+  // purpose, so the two keys cannot be tidied into one without a red one.
+
+  /** The zoom range a plan's urls actually cover, read off the url paths. */
+  function bandOf(urls) {
+    const zooms = urls.map((url) => Number(new URL(url).pathname.split('/')[1]));
+    return [Math.min(...zooms), Math.max(...zooms)];
+  }
+
+  /** Point the RENDERED style at `template`, leaving the picker alone. */
+  function renderStyleWith(template) {
+    mapStub.getSource = (id) => (id === 'basemap' ? { tiles: [template], bounds: null } : null);
+  }
+
+  // A swisstopo host, which is what `BASEMAP_HOST_KEYS` matches on — the
+  // band that follows is z0-9.
+  const SWISSTOPO_TEMPLATE = 'https://vectortiles0.geo.admin.ch/{z}/{x}/{y}.pbf';
+
+  it('takes the default band mid-switch TO a national basemap', async () => {
+    installDbStub({});
+    // Picker already says swisstopo (z0-9); the style still renders the
+    // default basemap's template, whose band is z0-7.
+    switchBasemap('swisstopo_winter');
+    renderStyleWith(BASE_TEMPLATE);
+
+    const plan = await window.pwaBasemapDownloads.baseLayerPlan();
+
+    expect(bandOf(plan.urls)).toEqual([0, 7]);
+    // …and the bucket is still filed under the picker's key.
+    expect(plan.basemapKey).toBe('swisstopo_winter');
+    expect(plan.areaId).toBe('base-swisstopo_winter');
+  });
+
+  it('takes the national band mid-switch AWAY from one', async () => {
+    installDbStub({});
+    // The mirror image: picker says the default basemap (z0-7), the style
+    // still renders swisstopo's hosts, whose band is z0-9.
+    switchBasemap('openfreemap_liberty');
+    renderStyleWith(SWISSTOPO_TEMPLATE);
+
+    const plan = await window.pwaBasemapDownloads.baseLayerPlan();
+
+    expect(bandOf(plan.urls)).toEqual([0, 9]);
+    expect(plan.basemapKey).toBe('openfreemap_liberty');
+    expect(plan.areaId).toBe('base-openfreemap_liberty');
+  });
+
+  it('hands back the band key the record is written from', async () => {
+    // `recordBaseLayer` stores `baseLayerBand(plan.bandKey)`, so this is
+    // the number that lands in `basemap.baseLayers` — and a record has to
+    // state the band that was FETCHED, not the one the picker implies.
+    installDbStub({});
+    switchBasemap('openfreemap_liberty');
+    renderStyleWith(SWISSTOPO_TEMPLATE);
+
+    const plan = await window.pwaBasemapDownloads.baseLayerPlan();
+
+    expect(plan.bandKey).toBe('swisstopo_winter');
+    expect(self.pwaBasemapDownloadCore.baseLayerBand(plan.bandKey)).toEqual(bandOf(plan.urls));
+  });
+
+  it('agrees with the picker when the style has settled', async () => {
+    // The ordinary case, so the two tests above read as the race they are
+    // and not as a rule that the picker is always wrong.
+    installDbStub({});
+    switchBasemap('swisstopo_winter');
+    renderStyleWith(SWISSTOPO_TEMPLATE);
+
+    const plan = await window.pwaBasemapDownloads.baseLayerPlan();
+
+    expect(plan.bandKey).toBe('swisstopo_winter');
+    expect(bandOf(plan.urls)).toEqual([0, 9]);
   });
 });

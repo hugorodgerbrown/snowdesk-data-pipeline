@@ -754,11 +754,16 @@
    * @param {string} state - 'no-region' | 'idle' | 'busy' | 'done' |
    *   'error' | 'disabled' | 'offline' | 'other-basemap' | (SNOW-749)
    *   'signin' | (SNOW-844) 'incomplete'.
-   * @param {number} mb The region's per-tile size estimate, as the API
-   *   computed it. SNOW-843: scaled here by the number of vector sources
-   *   the active style fetches, so the figure the user reads is the one
-   *   the download will actually spend — a two-source basemap costs twice
-   *   the ground the server priced.
+   * @param {{mb: number, count: number}} [summary] The region's download
+   *   summary, as the API computed it (`data.summary`) — omitted only by
+   *   'no-region', which has no region to size. SNOW-843/SNOW-868: priced
+   *   here, so the figure the user reads is the one the download will
+   *   actually spend — a two-source basemap fetches two tiles per cell of
+   *   ground, and a national basemap's tiles are fatter than the default
+   *   one's. The whole summary rather than its `mb` because the tile
+   *   COUNT is what the per-basemap price multiplies; `mb` alone has the
+   *   documents allowance folded into it, and scaling that inflates the
+   *   allowance too.
    * @param {number} [pct] - Only meaningful for state 'busy'.
    * @param {string} [basemapKeyOverride] - SNOW-645: overrides the
    *   colour `data-basemap-key` would otherwise take from
@@ -772,12 +777,18 @@
    *   attribute rather than write an empty one.
    * @returns {void}
    */
-  function setState(state, rawMb, pct, basemapKeyOverride) {
+  function setState(state, summary, pct, basemapKeyOverride) {
     const core = self.pwaBasemapDownloadCore;
-    // SNOW-843: one funnel for every caller's `data.summary.mb`, so no
-    // surface can show the unscaled figure. Unresolved sources (style still
-    // settling) leave it untouched — see `sourceScaledMb`.
-    const mb = core ? core.sourceScaledMb(rawMb, activeBasemapTileSources(MAP)) : rawMb;
+    // SNOW-843: one funnel for every caller's `data.summary`, so no surface
+    // can show the unpriced figure. Unresolved sources (style still
+    // settling) leave it untouched — see `sourceScaledMb`. 'no-region'
+    // passes no summary at all and reads no size, so there is nothing to
+    // price for it.
+    const rawMb = summary ? summary.mb : undefined;
+    const mb =
+      core && summary
+        ? core.sourceScaledMb(rawMb, activeBasemapTileSources(MAP), summary.count)
+        : rawMb;
     btn.dataset.downloadState = state;
     // SNOW-645: paint the roundel with the ACTIVE basemap's identity colour
     // (map.css's data-basemap-key override) by default — `_probeDone`
@@ -914,7 +925,11 @@
     // the control says so before the tap than after it.
     const core = self.pwaBasemapDownloadCore;
     const scaledMb = core
-      ? core.sourceScaledMb(data.summary.mb, activeBasemapTileSources(MAP))
+      ? core.sourceScaledMb(
+          data.summary.mb,
+          activeBasemapTileSources(MAP),
+          data.summary.count,
+        )
       : data.summary.mb;
     // SNOW-XXX: the ceiling is the DEVICE's, so `data.summary.over_ceiling`
     // — computed server-side against a constant, because the server cannot
@@ -923,7 +938,7 @@
     // for it; the stored flag stays in the payload and the admin as the
     // sizing signal it always was.
     if (core && scaledMb > basemapDeviceCeilingMb()) {
-      setState('disabled', data.summary.mb);
+      setState('disabled', data.summary);
       return;
     }
     // SNOW-583: `_probeDone` can now be a network round trip (its fallback
@@ -933,14 +948,14 @@
     // `done` painted on screen for the whole of that round trip — this
     // region hasn't been checked yet, so it must not borrow the last
     // region's answer.
-    setState(networkInUse() ? gateState('idle') : 'offline', data.summary.mb);
+    setState(networkInUse() ? gateState('idle') : 'offline', data.summary);
     const probe = await _probeDone(data);
     if (regionData !== data || btn.dataset.downloadState === 'busy') return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
     // settled — the region may well already be downloaded.
     if (probe === null) {
-      setState(networkInUse() ? gateState('idle') : 'offline', data.summary.mb);
+      setState(networkInUse() ? gateState('idle') : 'offline', data.summary);
       _retryWhenStyleSettles();
       return;
     }
@@ -959,11 +974,11 @@
     // the false 'done' this ticket removes did. The honest state arrives
     // with the signal that makes it actionable.
     if (!networkInUse() && !done) {
-      setState('offline', data.summary.mb);
+      setState('offline', data.summary);
       return;
     }
     if (done) {
-      setState('done', data.summary.mb);
+      setState('done', data.summary);
       return;
     }
     // SNOW-844: the tiles are all here and something the map needs to draw
@@ -978,7 +993,7 @@
     // it would leave a signed-out visitor holding a permanently blank map
     // with the one control that could fix it refusing to.
     if (missingDeps && missingDeps.length > 0) {
-      setState('incomplete', data.summary.mb);
+      setState('incomplete', data.summary);
       return;
     }
     if (otherBasemapKey !== null) {
@@ -989,16 +1004,16 @@
       // already on disk for the other basemap is unaffected and still
       // reads offline; only the invitation goes.
       if (NEEDS_SIGNIN) {
-        setState('signin', data.summary.mb);
+        setState('signin', data.summary);
         return;
       }
       // SNOW-645: the whole point of this state is showing the OTHER
       // basemap's colour, not the active one — setState's 4th argument
       // overrides its usual activeBasemapKey() inference.
-      setState('other-basemap', data.summary.mb, undefined, otherBasemapKey);
+      setState('other-basemap', data.summary, undefined, otherBasemapKey);
       return;
     }
-    setState(gateState('idle'), data.summary.mb);
+    setState(gateState('idle'), data.summary);
   }
 
   // SNOW-613: overlapping renders coalesce onto one trailing pass — see
@@ -1054,7 +1069,7 @@
     await repairPinnedDownload({
       areaId: areaId,
       urls: missing,
-      paint: (nextState, pct) => setState(nextState, data.summary.mb, pct),
+      paint: (nextState, pct) => setState(nextState, data.summary, pct),
       finish: async (result, { core: runCore }) => {
         // The same predicate a full download settles on — a partial,
         // vacuous or absent result must not claim the area now renders.
@@ -1067,14 +1082,14 @@
           // spinning for good. 'idle' is a real state with a real label
           // rather than a bare attribute write, and it survives for the
           // one tick before the probe below settles the true one.
-          setState(gateState('idle'), data.summary.mb);
+          setState(gateState('idle'), data.summary);
           // Re-probe rather than paint 'done' outright: the repair proves
           // the documents landed, and the probe is what confirms the whole
           // area — tiles included — and heals the record's `deps` from a
           // list it has just verified.
           await renderControl();
         } else {
-          setState('error', data.summary.mb);
+          setState('error', data.summary);
           revealBasemapDownloadError(result ? result.reason : null);
         }
         // The layers menu is a live cache-state dashboard, and this run
@@ -1115,7 +1130,7 @@
     if (state === 'incomplete') {
       if (!data) return;
       if (!networkInUse()) {
-        setState('offline', data.summary.mb);
+        setState('offline', data.summary);
         return;
       }
       await handleRepair(data);
@@ -1137,7 +1152,7 @@
     // refuses such a run anyway, and a control that dispatches one and paints
     // busy until the refusal comes back is a worse way to say no.
     if (!networkInUse()) {
-      setState('offline', data.summary.mb);
+      setState('offline', data.summary);
       return;
     }
 
@@ -1150,9 +1165,12 @@
     await runPinnedDownload({
       areaId: areaId,
       mb: data.summary.mb,
+      // SNOW-868: the tile count is what the per-basemap price multiplies —
+      // see the runner's own `count` note.
+      count: data.summary.count,
       // This control's roundel carries the region's size in every state,
       // so the shared runner's (state, pct) pair is widened here.
-      paint: (nextState, pct) => setState(nextState, data.summary.mb, pct),
+      paint: (nextState, pct) => setState(nextState, data.summary, pct),
       loadBlob: async () => {
         const response = await fetch(
           '/api/region-basemap-tiles/?id=' + encodeURIComponent(data.regionId),
@@ -1270,11 +1288,11 @@
           // connectivity listener already ran while this control was still
           // 'busy' (and so early-returned), so the resting paint is this
           // callback's job.
-          setState(networkInUse() ? 'idle' : 'offline', data.summary.mb);
+          setState(networkInUse() ? 'idle' : 'offline', data.summary);
         } else if (ok) {
-          setState('done', data.summary.mb);
+          setState('done', data.summary);
         } else {
-          setState('error', data.summary.mb);
+          setState('error', data.summary);
           revealBasemapDownloadError(result ? result.reason : null);
         }
         // SNOW-505: the warm-cache run has just warmed the shell + pinned

@@ -719,7 +719,19 @@
     // constant — the frame a user may draw is bounded by what their own
     // phone can hold.
     const ceilingMb = basemapDeviceCeilingMb();
-    const scale = core.budgetScaleForBBox(naturalBbox, minZ, maxZ, sourceCount, ceilingMb);
+    // SNOW-868: and at the price THAT basemap's tiles actually cost. Sizing
+    // the frame at 50 KB a tile while `_updateReadout` below charges it at
+    // 96 leaves every frame over the ceiling, which latches Download
+    // disabled — the two must move together.
+    const bytesPerTile = core.bytesPerTileForSources(activeBasemapTileSources(MAP));
+    const scale = core.budgetScaleForBBox(
+      naturalBbox,
+      minZ,
+      maxZ,
+      sourceCount,
+      ceilingMb,
+      bytesPerTile,
+    );
 
     if (scale >= 1) {
       lockedSize = null;
@@ -772,10 +784,16 @@
     if (!core || !fitted) return;
     pendingBbox = fitted.bbox;
     pendingBlob = fitted.blob;
-    // SNOW-843: both the readout and the backstop speak in what the run
-    // will spend — `blob.mb` prices one tile per cell, and a multi-source
-    // style fetches one per cell PER SOURCE.
-    const scaledMb = core.sourceScaledMb(pendingBlob.mb, activeBasemapTileSources(MAP));
+    // SNOW-843/SNOW-868: both the readout and the backstop speak in what
+    // the run will spend — `blob.mb` prices one tile per cell at the
+    // default basemap's byte figure, and a multi-source style fetches one
+    // per cell PER SOURCE, at that basemap's own price. Recomputed from the
+    // blob's tile COUNT so the documents allowance is charged once.
+    const scaledMb = core.sourceScaledMb(
+      pendingBlob.mb,
+      activeBasemapTileSources(MAP),
+      pendingBlob.count,
+    );
     const ceilingMb = basemapDeviceCeilingMb();
     const overCeiling = pendingBlob.over_ceiling || scaledMb > ceilingMb;
     const text = overCeiling
@@ -1216,6 +1234,9 @@
     await runPinnedDownload({
       areaId: areaId,
       mb: blob.mb,
+      // SNOW-868: the tile count the per-basemap price multiplies — see the
+      // runner's own `count` note.
+      count: blob.count,
       // This control's roundel carries no size, so the shared runner's
       // (state, pct, bytes) triple is passed straight through — SNOW-632:
       // `bytes` is what drives the CTA's live "42% · 6.1 MB" readout.

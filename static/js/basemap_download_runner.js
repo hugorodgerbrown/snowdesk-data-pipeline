@@ -82,6 +82,7 @@
    * @param {{
    *   areaId: string,
    *   mb: number,
+   *   count?: number,
    *   loadBlob: function(): (Object|Promise<Object>),
    *   paint: function(string, number=, number=): void,
    *   beforeWarm?: function(Object, string, string[][]): Promise<void>,
@@ -94,6 +95,12 @@
    *     server-computed region summary or a locally built custom-area one —
    *     counts ground, not requests, and a two-source style downloads two
    *     tiles for every cell of it.
+   *   `count` — SNOW-868: that blob's tile COUNT. The per-basemap byte
+   *     figure multiplies tiles, and `mb` already carries
+   *     `DOWNLOAD_DOCUMENTS_MB` folded in, so pricing from `mb` alone
+   *     would inflate the documents allowance too. Optional: a caller
+   *     without one falls back to scaling `mb`'s tile half, which is what
+   *     `sourceScaledMb` does with no count.
    *   `loadBlob` — resolves the tile blob; a rejection is a failed download.
    *   `paint` — paints one roundel state, optionally with a busy
    *     percentage and, SNOW-632, the run's on-disk bytes so far
@@ -131,7 +138,7 @@
    *   promise, matching what both controls did before this extraction.
    */
   async function run(deps, options) {
-    const { areaId, mb, loadBlob, paint, beforeWarm, finish } = options;
+    const { areaId, mb, count, loadBlob, paint, beforeWarm, finish } = options;
 
     // A new attempt clears the previous one's message before it can raise
     // its own (SNOW-568).
@@ -145,13 +152,14 @@
 
     const core = deps.core();
     const tileSources = deps.tileSources();
-    // SNOW-843: what this run will actually spend, which is `mb` once per
-    // vector source in the active style. Read before the quota check so no
-    // pre-flight ever runs against the single-source figure — the checks
-    // themselves keep their order, and an unresolved style leaves the
-    // estimate at `mb` (see `sourceScaledMb`) and is refused outright a few
-    // lines below.
-    const estimateMb = core && core.sourceScaledMb ? core.sourceScaledMb(mb, tileSources) : mb;
+    // SNOW-843/SNOW-868: what this run will actually spend — one tile per
+    // vector source in the active style, at that basemap's own per-tile
+    // figure. Read before the quota check so no pre-flight ever runs
+    // against the unpriced figure — the checks themselves keep their
+    // order, and an unresolved style leaves the estimate at `mb` (see
+    // `sourceScaledMb`) and is refused outright a few lines below.
+    const estimateMb =
+      core && core.sourceScaledMb ? core.sourceScaledMb(mb, tileSources, count) : mb;
 
     // Refuse a download that cannot fit in the origin's storage quota
     // before spending a single fetch on it (SNOW-568). Without this the run
