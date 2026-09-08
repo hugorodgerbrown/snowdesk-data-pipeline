@@ -144,6 +144,18 @@ def dispatch_push(
             exc,
         )
         return {"ok": False, "status": status, "error": str(exc)}
+    # SNOW-874: say so on the way out. ``webpush`` raises for any status
+    # above 202, so reaching this line already means the push service
+    # accepted the message — but "no warning was logged" is a much harder
+    # thing to read off a production log than one line that says which
+    # subscription went where and what came back. Carries pk, never the
+    # account email (SNOW-311).
+    logger.info(
+        "webpush accepted for push subscription pk=%s endpoint=%.30s… (%s)",
+        sub.pk,
+        sub.endpoint,
+        response.status_code,
+    )
     # SNOW-381 (spec §16.2): server-side half of the push funnel; the
     # client emits pwa.push.received / .shown / .opened as the message
     # progresses.

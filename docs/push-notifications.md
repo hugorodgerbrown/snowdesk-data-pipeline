@@ -1,8 +1,8 @@
 ---
 name: push-notifications
-description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/ smoke test, Declarative Web Push, mechanism/inactive_at lifecycle
+description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/, Declarative Web Push, mechanism/inactive_at, icon vs badge-96.png
 status: current
-last-reviewed: 2026-08-07
+last-reviewed: 2026-09-08
 ---
 
 # Web Push notifications
@@ -368,6 +368,57 @@ print("from env:   ", push_config.VAPID_PUBLIC_KEY)
 
 If those two lines differ, regenerate the keypair end-to-end and update both
 halves together.
+
+### The send reports success and still nothing appears
+
+Work down the chain; each step has a signal you can read, and SNOW-874 added
+the ones that were missing.
+
+1. **Did the row exist?** `/_push-demo/`'s "All stored subscriptions" list is
+   fetched live from `accounts:push_subscriptions` and marks the row matching
+   this browser's endpoint "← this device". No mark means the browser is
+   subscribed to something the server has never stored.
+2. **Did the task run?** The worker logs
+   `path=apps.accounts.push_service._worker_dispatch_push state=SUCCESSFUL`.
+   Production dispatch happens on `snowdesk-background-tasks`, not the web
+   dyno — a `"enqueued": 1` response only means the row was queued.
+3. **Did the push service take it?** `dispatch_push` logs
+   `webpush accepted for push subscription pk=… (201)`. `webpush()` raises for
+   any status above 202, so a failure is a `webpush failed` warning plus, for
+   410/404, a row that has just been marked inactive or deleted.
+4. **If all three are green, it arrived and the device didn't show it.**
+   Confirm the device can display anything at all — in the page's console,
+   `(await navigator.serviceWorker.ready).showNotification('t', {body: 'x'})`.
+   If that is silent too, it is the OS: on macOS a Focus routes banners
+   straight to Notification Centre while `Notification.permission` stays
+   `granted` and `showNotification()` still resolves.
+
+Repeat sends share `tag: 'snowdesk-push'`, so a second notification replaces
+the first rather than stacking. `renotify: true` makes the replacement alert
+rather than swap in silently — without it, every test after the first looks
+like a dead pipeline.
+
+### Notification icons: `icon` and `badge` are not interchangeable
+
+`icon` is the full-colour artwork in the notification body:
+`/static/icons/pwa/icon-192.png`.
+
+`badge` is the status-bar glyph on Android, and Android **discards its
+colours entirely** — it keeps the alpha channel, tints what survives, and
+draws that at 24dp. Passing a tile works everywhere it is displayed as an
+image and fails only there: `icon-192.png` is opaque across its whole rounded
+rect, so the silhouette Android extracts is the rect, and the status bar shows
+a solid white square (SNOW-874).
+
+The badge is therefore its own file, `/static/icons/pwa/badge-96.png` — the
+mountain glyph, white on transparent, built by `bin/build-pwa-icons`
+(`buildBadge`) from the same `static/favicon.svg` as everything else. It has no
+staging variant: an alpha mask cannot carry the amber tile colour, and the
+staging asterisk would be a few illegible pixels at 24dp.
+`tests/public/test_pwa_icons.py` asserts the file keeps its alpha channel and
+is a real silhouette (alpha extrema of exactly `(0, 255)`), because a
+uniformly-opaque badge is indistinguishable from a working one until someone
+looks at an Android status bar.
 
 ---
 

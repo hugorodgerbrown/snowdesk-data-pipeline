@@ -6,6 +6,7 @@ Covers:
   - Non-staff user is also redirected.
   - Staff user gets 200 with the VAPID public-key meta tag present.
   - Staff user response references push_demo.js.
+  - The subscription list is NOT server-rendered (SNOW-874).
 
 Mirrors tests/public/test_debug_views.py fixture style.
 """
@@ -20,7 +21,11 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.accounts.models import Account
-from tests.factories import AccountFactory, UserFactory
+from tests.factories import (
+    AccountFactory,
+    PushSubscriptionFactory,
+    UserFactory,
+)
 
 _PUSH_DEMO_URL = "/_push-demo/"
 
@@ -83,3 +88,22 @@ class TestPushDemoPage:
     def test_url_resolves_to_push_demo_name(self) -> None:
         """The named URL 'public:push_demo' resolves to /_push-demo/."""
         assert reverse("public:push_demo") == _PUSH_DEMO_URL
+
+    def test_page_does_not_render_the_subscription_list_server_side(
+        self,
+        staff_client: Client,
+    ) -> None:
+        """The stored-subscription list is left empty for the client to fill.
+
+        SNOW-874: rendering it here froze it at page-load time. The page
+        then showed a live endpoint in its State panel and a stale one in
+        the list below, and reconciling those two by eye is what turned a
+        working push into an hour of debugging. The markup ships the empty
+        container; push_demo.js fills it from
+        ``accounts:push_subscriptions`` whenever it refreshes the state.
+        """
+        PushSubscriptionFactory.create(endpoint="https://push.example.com/ssr-check")
+        body = staff_client.get(_PUSH_DEMO_URL).content.decode()
+
+        assert 'id="push-subs"' in body
+        assert "https://push.example.com/ssr-check" not in body

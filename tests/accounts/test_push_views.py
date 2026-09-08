@@ -1,7 +1,8 @@
 """
 tests/accounts/test_push_views.py — Tests for Web Push JSON endpoints.
 
-Covers all three push endpoints (push_register, push_unregister, push_test):
+Covers all four push endpoints (push_register, push_unregister, push_test,
+push_subscriptions):
   - Anonymous users are redirected to /admin/login/ (302).
   - Non-staff authenticated users are also redirected (302).
   - Staff POST without CSRF token is rejected (403) when enforce_csrf_checks=True.
@@ -27,6 +28,7 @@ from unittest.mock import patch
 
 import pytest
 from django.test import Client
+from django.utils import timezone
 
 from apps.accounts.models import PushSubscription
 from tests.factories import AccountFactory, PushSubscriptionFactory, UserFactory
@@ -38,6 +40,7 @@ from tests.factories import AccountFactory, PushSubscriptionFactory, UserFactory
 _REGISTER_URL = "/account/push/register/"
 _UNREGISTER_URL = "/account/push/unregister/"
 _TEST_URL = "/account/push/test/"
+_SUBSCRIPTIONS_URL = "/account/push/subscriptions/"
 
 _REGISTER_BODY: dict[str, Any] = {
     "endpoint": "https://push.example.com/unique-endpoint-views-test",
@@ -477,3 +480,78 @@ class TestPushRegisterLogging:
         assert any(f"pk={obj.pk}" in msg for msg in all_messages), (
             f"No log record contains pk={obj.pk}; records: {all_messages}"
         )
+
+
+# ---------------------------------------------------------------------------
+# push_subscriptions (SNOW-874)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPushSubscriptions:
+    """Tests for /account/push/subscriptions/."""
+
+    def test_anonymous_redirected_to_admin_login(self) -> None:
+        """Anonymous GET is redirected to admin login."""
+        response = Client().get(_SUBSCRIPTIONS_URL)
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
+
+    def test_non_staff_redirected_to_admin_login(self, regular_user: Any) -> None:
+        """Non-staff authenticated user is also redirected."""
+        c = Client()
+        c.force_login(regular_user.user)
+        response = c.get(_SUBSCRIPTIONS_URL)
+        assert response.status_code == 302
+        assert "/admin/login/" in response["Location"]
+
+    def test_post_rejected(self, staff_client: Client) -> None:
+        """The endpoint is read-only — a POST is refused with 405."""
+        assert staff_client.post(_SUBSCRIPTIONS_URL).status_code == 405
+
+    def test_empty_table_returns_no_rows(self, staff_client: Client) -> None:
+        """With nothing stored the list is empty rather than absent."""
+        response = staff_client.get(_SUBSCRIPTIONS_URL)
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "subscriptions": []}
+
+    def test_returns_every_row_with_its_state(self, staff_client: Client) -> None:
+        """Each row carries the endpoint, label, mechanism and inactive flag."""
+        account = AccountFactory.create()
+        PushSubscriptionFactory.create(
+            account=account,
+            endpoint="https://push.example.com/owned",
+            mechanism=PushSubscription.Mechanism.DECLARATIVE,
+        )
+        PushSubscriptionFactory.create(
+            account=None,
+            endpoint="https://push.example.com/anon",
+            inactive_at=timezone.now(),
+        )
+
+        rows = staff_client.get(_SUBSCRIPTIONS_URL).json()["subscriptions"]
+
+        by_endpoint = {row["endpoint"]: row for row in rows}
+        owned = by_endpoint["https://push.example.com/owned"]
+        assert owned["label"] == account.user.email
+        assert owned["mechanism"] == "DECLARATIVE"
+        assert owned["inactive"] is False
+
+        anon = by_endpoint["https://push.example.com/anon"]
+        # The spike lets a staff tester subscribe with no Account profile,
+        # so a row with no owner is ordinary, not a data fault.
+        assert anon["label"] == "(anon)"
+        assert anon["inactive"] is True
+
+    def test_includes_inactive_rows(self, staff_client: Client) -> None:
+        """A 410'd row is listed, not filtered out.
+
+        SNOW-874: this list is a diagnostic, and the question it answers
+        most often is "why did nothing arrive?" — for which a row the push
+        service has declared gone is the single most useful thing on the
+        page. ``push_test`` filters to ``active()``; this deliberately
+        does not.
+        """
+        PushSubscriptionFactory.create(inactive_at=timezone.now())
+        rows = staff_client.get(_SUBSCRIPTIONS_URL).json()["subscriptions"]
+        assert [row["inactive"] for row in rows] == [True]

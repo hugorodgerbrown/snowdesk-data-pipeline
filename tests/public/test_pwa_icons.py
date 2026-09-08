@@ -1,12 +1,13 @@
 """tests/public/test_pwa_icons.py — assertions on the checked-in PWA icon PNGs.
 
 The four PNGs in each of ``static/icons/pwa/`` and
-``static/icons/pwa-staging/`` are build artefacts of ``bin/build-pwa-icons``
+``static/icons/pwa-staging/``, plus the notification badge that sits
+alongside them, are build artefacts of ``bin/build-pwa-icons``
 (``npm run build:icons``), committed rather than generated at deploy time.
 Nothing in the request path reads their pixels, so a regression in the build
 script ships silently and only surfaces as a wrong-looking tile on somebody's
 home screen — days later, on a device nobody is testing on. These tests read
-the bytes off disk and assert the two properties that have actually broken:
+the bytes off disk and assert the three properties that have actually broken:
 
 1. **No border under the OS mask.** Android crops a maskable icon to a
    circle that reaches the midpoint of each edge; iOS crops the
@@ -22,6 +23,11 @@ the bytes off disk and assert the two properties that have actually broken:
    season. ``static/icons/pwa-build.json`` records what the committed
    PNGs were built with, so the roll-over fails a test instead of
    shipping last season's tile.
+3. **The notification badge is a silhouette.** Android keeps only the
+   alpha channel of a notification's ``badge`` and tints what survives, so
+   an edge-to-edge opaque PNG becomes a solid white block in the status
+   bar — precisely what passing ``icon-192.png`` as the badge did
+   (SNOW-874). The badge is the one file here that must *keep* its alpha.
 
 Pixel colours are read with Pillow rather than decoded by hand; the alpha
 assertion reads the PNG IHDR byte directly, which needs no decoder at all.
@@ -200,4 +206,46 @@ def test_committed_icons_carry_the_configured_season_label() -> None:
         f"but SEASON_START_DATE ({settings.SEASON_START_DATE.isoformat()}) is "
         f"season {expected!r}. Run `npm run build:icons` and commit the "
         "regenerated PNGs and static/icons/pwa-build.json."
+    )
+
+
+def test_notification_badge_is_an_alpha_silhouette() -> None:
+    """The Android notification badge is a glyph on transparent, not a tile.
+
+    SNOW-874. Android renders a notification's ``badge`` in the status bar
+    by discarding its colours, keeping the alpha channel, and tinting what
+    survives. The service worker passed ``icon-192.png``, whose rounded
+    rect is opaque edge to edge, so the silhouette Android extracted was
+    the whole square and the status bar showed a solid white block. The
+    notification itself looked perfect, which is why it went unnoticed
+    until someone looked at an Android status bar.
+
+    Two properties make a badge a badge, and this asserts both: it keeps
+    an alpha channel (color_type 6, the opposite of what
+    ``test_flattened_icons_have_no_alpha_channel`` demands of the tiles),
+    and it is genuinely a silhouette — some pixels fully transparent,
+    some fully opaque. A file that is uniformly opaque passes the first
+    check and reproduces the exact bug.
+    """
+    path = _icon_path("pwa", "badge-96.png")
+    assert path.exists(), (
+        f"notification badge not found at {path} — "
+        "generate it with `npm run build:icons`."
+    )
+
+    colour_type = path.read_bytes()[25]
+    assert colour_type == 6, (
+        f"pwa/badge-96.png has color_type={colour_type}, expected 6 (RGBA). "
+        "Android reads the badge's alpha channel and nothing else; a PNG "
+        "without one is a solid block in the status bar."
+    )
+
+    with Image.open(path) as image:
+        alpha = image.convert("RGBA").getchannel("A")
+    levels = alpha.getextrema()
+    assert levels == (0, 255), (
+        f"pwa/badge-96.png has alpha range {levels}, expected (0, 255). "
+        "The badge must be a silhouette: fully transparent around the "
+        "mountain glyph and fully opaque within it. An all-opaque badge is "
+        "the SNOW-874 white square."
     )
