@@ -47,6 +47,13 @@
  * ``<meta name="pwa-app-version">`` we surface the same banner even if
  * ``sw.js`` itself didn't change. Both paths land in the same DOM node.
  *
+ * Whichever path revealed it, the banner then NAMES the two builds
+ * (SNOW-869): ``labelBanner`` reads one verified ``/api/version`` body
+ * through ``window.pwaVersionInfo`` and rewrites the title and body as
+ * "Update available (v30) / You are on v29…". It degrades to the
+ * unnumbered copy the template rendered whenever it cannot confirm both
+ * ends — see ``describeUpdate``, which owns that rule.
+ *
  * Clicking "Reload" runs ``handleReloadClick`` below:
  *
  *   * If a fresh SW is waiting → post ``{ type: 'SKIP_WAITING' }``. The
@@ -113,6 +120,13 @@
     'update-body':
       'A newer version of Snowdesk is ready. Your downloaded maps and ' +
       'saved data are kept.',
+    // SNOW-869: the versioned copy, used when /api/version confirms the
+    // update AND something distinguishes the two builds. The unnumbered
+    // pair above is the third state and stays the rendered default.
+    'update-title-versioned': 'Update available (%(version)s)',
+    'update-body-versioned':
+      'You are on %(current)s. Reload to update to %(next)s. Your ' +
+      'downloaded maps and saved data are kept.',
     reload: 'Reload',
     dismiss: 'Dismiss',
     updating: 'Updating…',
@@ -139,6 +153,10 @@
   // Guards against a double reload if controllerchange fires more than
   // once.
   let refreshing = false;
+  // SNOW-869: set once ``showBannerBusy`` has taken the banner's copy
+  // over, so a version body still in flight cannot write the offer back
+  // on top of "Updating Snowdesk".
+  let bannerBusy = false;
   // SNOW-384: idempotency guard for pwa.sw.update_available — showUpdateBanner
   // can be reached from three entry points (registration.waiting at
   // register-time, registration.installing, and updatefound); this
@@ -645,6 +663,117 @@
     } else {
       banner.classList.remove('hidden');
     }
+    labelBanner();
+  }
+
+  /**
+   * The first seven characters of a build id — a git SHA, abbreviated the
+   * way git itself abbreviates one.
+   *
+   * @param {string} build
+   * @returns {string} ``''`` for an absent or blank build.
+   */
+  function shortBuild(build) {
+    return String(build || '')
+      .trim()
+      .slice(0, 7);
+  }
+
+  /**
+   * Choose the two identifiers the versioned copy names, or decline.
+   *
+   * The choice comes from the DATA, not from the tier: release labels
+   * when both exist and differ, short SHAs otherwise. A build carries a
+   * label only on a numbered release, and a staging shell can sit between
+   * two releases carrying the same label as the server while being a
+   * genuinely different build — so the label is preferred where it
+   * distinguishes and the SHA is the fallback where it does not.
+   *
+   * Returning ``null`` means "nothing here distinguishes these two
+   * builds", and the caller keeps the unnumbered copy. That is the honest
+   * answer, not a degraded one: naming the same string twice ("You are on
+   * v30. Reload to update to v30.") would read as a bug in the update
+   * rather than as an update.
+   *
+   * Pure — no DOM, no globals — so the rule is testable on its own
+   * (tests/js/test_sw_register_update_feedback.js).
+   *
+   * @param {{clientRelease: string, serverRelease: string,
+   *   clientBuild: string, serverBuild: string}} builds
+   * @returns {{current: string, next: string} | null}
+   */
+  function describeUpdate(builds) {
+    const from = String(builds.clientRelease || '').trim();
+    const to = String(builds.serverRelease || '').trim();
+    if (from && to && from !== to) return { current: from, next: to };
+
+    const fromBuild = shortBuild(builds.clientBuild);
+    const toBuild = shortBuild(builds.serverBuild);
+    if (fromBuild && toBuild && fromBuild !== toBuild) {
+      return { current: fromBuild, next: toBuild };
+    }
+    return null;
+  }
+
+  /**
+   * Name both builds in the revealed banner, when they can be named.
+   *
+   * Reads ``window.pwaVersionInfo`` (pwa_version_check.js) for the shell's
+   * own identity and one verified ``/api/version`` body. Three states, and
+   * the first two are failures that must not invent an answer:
+   *
+   *   * no ``window.pwaVersionInfo`` — admin pages, and any page the
+   *     version check did not load on;
+   *   * a ``null`` verdict — the endpoint was unreachable, so "cannot
+   *     confirm", which is never "confirmed";
+   *   * ``describeUpdate`` declining — nothing distinguishes the builds.
+   *
+   * In all three the unnumbered copy the template already rendered
+   * stands, which is why this function only ever writes and never clears.
+   *
+   * No race with the load order (``sw_register.js`` parses before
+   * ``pwa_version_check.js``): every reveal path is asynchronous — the
+   * ``/api/sw-config`` fetch, or the version check's own round trip — so
+   * the global exists by the time this runs.
+   *
+   * @returns {void}
+   */
+  function labelBanner() {
+    const info = window.pwaVersionInfo;
+    if (!info || typeof info.verified !== 'function') return;
+    Promise.resolve(info.verified())
+      .then((verdict) => {
+        if (!verdict) return;
+        // The user clicked Reload while the body was in flight.
+        // ``showBannerBusy`` owns the copy from that moment on; writing
+        // the offer back over it would claim the update had not started.
+        if (bannerBusy) return;
+        const pair = describeUpdate({
+          clientRelease: info.release,
+          serverRelease: verdict.release,
+          clientBuild: info.build,
+          serverBuild: verdict.current,
+        });
+        if (!pair) return;
+        const title = document.getElementById('sw-update-banner-title');
+        const body = document.getElementById('sw-update-banner-body');
+        if (title) {
+          title.textContent = self.pwaStrings.interpolate(
+            STRINGS['update-title-versioned'],
+            { version: pair.next },
+          );
+        }
+        if (body) {
+          body.textContent = self.pwaStrings.interpolate(
+            STRINGS['update-body-versioned'],
+            { current: pair.current, next: pair.next },
+          );
+        }
+      })
+      .catch(() => {
+        // Never let the copy break the banner. The unnumbered strings are
+        // already on screen.
+      });
   }
 
   // SNOW-623: the banner has one owner. `pwa_version_check.js` reveals the
@@ -660,6 +789,9 @@
   window.pwaUpdateBanner = Object.freeze({
     reveal: revealUpdateBanner,
     hide: hideUpdateBanner,
+    // SNOW-869: the copy rule, exported so it can be tested as the pure
+    // function it is rather than through a DOM and a stubbed fetch.
+    describeUpdate: describeUpdate,
   });
 
   if (banner) {
@@ -761,6 +893,7 @@
    * @returns {void}
    */
   function showBannerBusy() {
+    bannerBusy = true;
     const btn = document.getElementById('sw-update-banner-reload');
     if (btn) {
       btn.setAttribute('aria-busy', 'true');
