@@ -12,7 +12,11 @@ Covered:
   label the account menu shows (covered in full by
   ``tests/public/test_release_label.py``).
 * Every page response bakes the current build into the
-  ``<meta name="pwa-app-version">`` tag.
+  ``<meta name="pwa-app-version">`` tag, and (SNOW-869) the release label
+  of that same build into ``<meta name="pwa-app-release">``. The second
+  tag comes with a caching obligation, pinned below: it must stay a pure
+  function of settings, so the page body never becomes per-client and the
+  response's ``Vary`` never grows ``X-Client-Version``.
 * The ``<meta name="pwa-app-min-version">`` tag is gone (SNOW-609) — there
   is no client-side floor to compare against any more.
 * The blocking modal partial ships hidden on every page (revealed by JS).
@@ -67,6 +71,56 @@ def test_meta_tag_present_on_home_page() -> None:
     body = response.content.decode("utf-8")
 
     assert '<meta name="pwa-app-version" content="2026.07.15.testbuild">' in body
+
+
+@pytest.mark.django_db
+@override_settings(APP_RELEASE="30")
+def test_release_meta_tag_present_on_home_page() -> None:
+    """The shell also names the release it was delivered on (SNOW-869).
+
+    The update banner reads this to say which version the user is leaving;
+    it cannot be recovered from the SHA the client sends back.
+    """
+    response = Client().get("/")
+    body = response.content.decode("utf-8")
+
+    assert '<meta name="pwa-app-release" content="v30">' in body
+
+
+@pytest.mark.django_db
+@override_settings(APP_RELEASE="")
+def test_release_meta_tag_is_empty_without_a_release_number() -> None:
+    """An unnumbered build renders the tag empty rather than omitting it.
+
+    The banner's copy rule reads "" as "no label here" and falls through
+    to short SHAs; a missing tag and an empty one mean the same thing to
+    it, and rendering the tag unconditionally keeps one code path.
+    """
+    response = Client().get("/")
+    body = response.content.decode("utf-8")
+
+    assert '<meta name="pwa-app-release" content="">' in body
+
+
+@pytest.mark.django_db
+@override_settings(APP_RELEASE="30")
+def test_release_meta_tag_is_build_scoped_not_client_scoped() -> None:
+    """The page stays shared-cacheable: no ``Vary``, no per-client value.
+
+    The whole reason the banner's copy comes from the ``/api/version``
+    body is that a page view must never read ``X-Client-Version`` — doing
+    so would either fragment the edge cache or, without the ``Vary``,
+    serve one client's verdict to another. Two clients on different builds
+    get byte-identical HTML.
+    """
+    plain = Client().get("/")
+    with_header = Client().get("/", headers={"x-client-version": "somethingelse"})
+
+    assert "X-Client-Version" not in plain.get("Vary", "")
+    assert "X-Client-Version" not in with_header.get("Vary", "")
+    assert '<meta name="pwa-app-release" content="v30">' in with_header.content.decode(
+        "utf-8"
+    )
 
 
 @pytest.mark.django_db
