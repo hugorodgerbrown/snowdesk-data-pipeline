@@ -34,6 +34,14 @@ was wrong, and it survived a year of review because there was no second
 copy to compare it against and no rule saying it should have been a
 partial (SNOW-869).
 
+Writing the rule down immediately found the other two. The same template
+drew the off-season strip's calendar and the off-map nudge's struck-through
+pin inline, and the calendar had a second copy in `includes/nav.html`'s
+season trigger at a different size — the failure mode from the opposite
+direction: not one copy nobody could check, but two that had to be edited
+in step and would not have been. Both are partials now, so the rule below
+describes the tree rather than an intention for it.
+
 The uniform geometry is what makes copies comparable at all. Two marks at
 the same box size read as the same weight only if they share a grid and a
 stroke width, so "24×24, stroke 2" is not a style preference — it is the
@@ -45,7 +53,7 @@ enumerated here.
 `<svg>` in the template that happens to need it first — and a second
 surface wanting the same mark includes the partial rather than pasting the
 path. Icon partials carry no component-library registry entry (none of the
-eighteen do): the library documents composed surfaces, and an icon is a
+twenty do): the library documents composed surfaces, and an icon is a
 primitive of one.
 
 A fourth filled glyph needs an argument that answers this file, not a

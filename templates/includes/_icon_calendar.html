@@ -1,0 +1,42 @@
+{% comment %}
+templates/includes/_icon_calendar.html — the "a span of days" glyph: a
+month grid with two hanging rings (SNOW-869).
+
+Two callers, which is why it is a partial rather than an inline path:
+
+  * includes/nav.html — the season-heatmap trigger, at 14px.
+  * includes/_overlay_banner.html's "calendar" icon variant — the
+    off-season archive strip, at 16px with `shrink-0` so a long line of
+    copy cannot squeeze the mark.
+
+Both drew the same four subpaths inline before this, at two sizes. That
+is the shape the corrupted refresh mark got into from the other
+direction: one copy nobody could compare against, and here two copies
+that had to be edited in step. One source for one mark —
+docs/decisions/ui-icons-are-house-stroke-partials.md.
+
+Feather's `calendar`. Stroke width 2, matching every other glyph in this
+codebase — see includes/_icon_pencil.html's own note.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 16, the
+            banner strip's glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:16 }}"
+    height="{{ size|default:16 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+    <line x1="16" y1="2" x2="16" y2="6" />
+    <line x1="8" y1="2" x2="8" y2="6" />
+    <line x1="3" y1="10" x2="21" y2="10" />
+</svg>
