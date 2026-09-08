@@ -1320,9 +1320,18 @@ describe('tile sources — several sources, several hosts (SNOW-843)', () => {
   });
 
   describe('sourceScaledMb', () => {
-    it('charges one estimate per source', () => {
-      expect(core.sourceScaledMb(50, SOURCES)).toBe(100);
-      expect(core.sourceScaledMb(50, [RELIEF])).toBe(50);
+    it("charges one estimate per source, at that basemap's own price", () => {
+      // SOURCES is a two-source swisstopo spec, so SNOW-868 prices it at
+      // 96 KB a tile a source rather than the blob's own 50 KB. With no
+      // tile count to recompute from, only the TILE half of `mb` scales:
+      // (50 - 2) * 2 * 96/50 rounds up to 185 MB of tiles, plus the
+      // documents allowance once — not once per source, which is what the
+      // old `mb * sources` charged.
+      expect(core.sourceScaledMb(50, SOURCES)).toBe(187);
+      // A SINGLE-source NATIONAL style still costs more than the fallback,
+      // which is why the old `count <= 1` early return had to become an
+      // unresolved-spec test: (50 - 2) * 96/50 -> 93, plus the documents.
+      expect(core.sourceScaledMb(50, [RELIEF])).toBe(95);
     });
 
     it('leaves the estimate alone when the style is unresolved', () => {
@@ -1346,7 +1355,12 @@ describe('tile sources — several sources, several hosts (SNOW-843)', () => {
     it('still fits the ceiling at the size it allows', () => {
       const bbox = [7.0, 46.0, 8.0, 47.0];
       const [minZ, maxZ] = core.MICRO_BAND;
-      const scale = core.budgetScaleForBBox(bbox, minZ, maxZ, 2);
+      // The frame is sized at the SAME price the estimate charges it at —
+      // size at 50 KB while pricing at 96 and every frame the control lets
+      // you draw is over the ceiling, which latches Download off for good
+      // (see budgetScaleForBBox's own note).
+      const bytesPerTile = core.bytesPerTileForSources(SOURCES);
+      const scale = core.budgetScaleForBBox(bbox, minZ, maxZ, 2, undefined, bytesPerTile);
       const width = (bbox[2] - bbox[0]) * scale;
       const height = (bbox[3] - bbox[1]) * scale;
       const cx = (bbox[0] + bbox[2]) / 2;
@@ -1356,7 +1370,7 @@ describe('tile sources — several sources, several hosts (SNOW-843)', () => {
         minZ,
         maxZ,
       );
-      expect(core.sourceScaledMb(blob.mb, SOURCES)).toBeLessThanOrEqual(
+      expect(core.sourceScaledMb(blob.mb, SOURCES, blob.count)).toBeLessThanOrEqual(
         core.DOWNLOAD_CEILING_MB,
       );
     });

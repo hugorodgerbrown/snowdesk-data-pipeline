@@ -142,6 +142,13 @@ MICRO_BAND: tuple[int, int] = (10, 14)
 # counts tiles only, while a run also writes documents and promoted glyphs
 # into the same bucket and reports their bytes too. See
 # ``DOWNLOAD_DOCUMENTS_MB``.
+#
+# SNOW-868: this stays ONE figure, and it is OpenFreeMap's — the per-basemap
+# refinement (a swisstopo tile measured 60.8 KB against OpenFreeMap's 25.2)
+# is applied CLIENT-side, in ``basemap_download_core.js``'s
+# ``BYTES_PER_TILE_BY_BASEMAP``, because the server has no view of the
+# requester's basemap. Exactly as it has none of the style's source count,
+# which ``sourceScaledMb`` has corrected for on that side since SNOW-843.
 WORST_CASE_BYTES_PER_TILE: int = 50 * 1024
 
 # What a run writes into the area's bucket that is not a tile, in

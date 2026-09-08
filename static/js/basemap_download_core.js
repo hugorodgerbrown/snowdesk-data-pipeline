@@ -64,14 +64,25 @@
  *     function below that walks a blob's tiles goes through this rather
  *     than assuming a rectangle.
  *   tileSources(spec) / tileSourceCount(spec) / tileSourcesKey(spec) /
- *   tileURLs(sources, z, x, y) / sourceScaledMb(mb, spec)
+ *   tileURLs(sources, z, x, y) / sourceScaledMb(mb, spec, count?)
  *     SNOW-843: the tile-source group. A basemap is one or more vector
  *     SOURCES, each with one or more hostnames MapLibre round-robins
  *     between per tile (``urls[(x + y) % urls.length]``) — so "the tile
  *     URL" is a list, not a string, and a download that stored a single
  *     template pinned a fraction of one layer. Every function below that
  *     builds or reads a tile URL routes through these. See ``tileSources``
- *     for the accepted shapes (a legacy template string included).
+ *     for the accepted shapes (a legacy template string included). SNOW-868 makes
+ *     ``sourceScaledMb`` price a tile PER BASEMAP rather than at one
+ *     global worst case, and recompute from the blob's ``count`` when the
+ *     caller has it so the documents allowance is not multiplied by the
+ *     source count.
+ *   basemapKeyForTileSources(spec) / bytesPerTileForBasemap(key) /
+ *   bytesPerTileForSources(spec)
+ *     SNOW-868: which basemap a resolved tile-source spec belongs to, and
+ *     what one of its tiles costs. Resolved from the source template's
+ *     HOST rather than the basemap picker — see
+ *     ``basemapKeyForTileSources`` for why that matters. The measurements
+ *     behind the figures are in ``BYTES_PER_TILE_BY_BASEMAP``'s comment.
  *   rangesToTileURLs(spec, blob)
  *     Expands a full basemap_download blob's ``z`` tile-index ranges
  *     (as fetched from ``/api/region-basemap-tiles/?id=...`` OR produced
@@ -103,7 +114,8 @@
  *     it falls back to ``DOWNLOAD_CEILING_MB``. Every page caller passes
  *     the DEVICE's ceiling (``map_basemap_downloads.js``'s
  *     ``basemapDeviceCeilingMb``) — see ``deviceCeilingMb`` below.
- *   budgetScaleForBBox(bbox, minZ, maxZ, sourceCount?, ceilingMb?)
+ *   budgetScaleForBBox(bbox, minZ, maxZ, sourceCount?, ceilingMb?,
+ *   bytesPerTile?)
  *     The largest factor in ``[0, 1]`` by which ``bbox`` may be scaled
  *     about its centre while its download still fits under that same
  *     ceiling. Client-only — it has no ``basemap_tiles.py`` counterpart
@@ -117,13 +129,16 @@
  *     SNOW-568: whether a download of ``mb`` megabytes fits in the
  *     origin's remaining storage quota, with a safety margin. Client-only,
  *     like ``budgetScaleForBBox`` — no ``basemap_tiles.py`` counterpart.
- *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, DOWNLOAD_DOCUMENTS_MB,
- *   DOWNLOAD_CEILING_MB, STORAGE_HEADROOM_FACTOR
+ *   MICRO_BAND, WORST_CASE_BYTES_PER_TILE, BYTES_PER_TILE_BY_BASEMAP,
+ *   DOWNLOAD_DOCUMENTS_MB, DOWNLOAD_CEILING_MB, STORAGE_HEADROOM_FACTOR
  *     Constants mirroring ``basemap_tiles.py``'s module-level constants
  *     of the same name (see there for the sizing rationale) — except
  *     ``STORAGE_HEADROOM_FACTOR``, which is client-only.
  *     ``DOWNLOAD_CEILING_MB`` is now only a fallback on this side: the
  *     ceiling a page applies comes from ``deviceCeilingMb``.
+ *     ``BYTES_PER_TILE_BY_BASEMAP`` is client-only (SNOW-868) — the server
+ *     has no view of the requester's basemap, exactly as it has none of
+ *     the source count.
  *
  * SNOW-586: a third client-only group — area identity and the standing
  * download-budget arithmetic that replaced the pinned cache's old
@@ -276,6 +291,82 @@
   // that averaged 34 KB a tile. See that constant's comment for why an
   // estimate-vs-actual gap of 3x turned out not to be this number.
   var WORST_CASE_BYTES_PER_TILE = 50 * 1024;
+
+  // SNOW-868: what a tile actually costs, PER BASEMAP. The single figure
+  // above was calibrated on OpenFreeMap and then spent on every style, so
+  // the "up to N MB" the UI shows was not an upper bound on swisstopo at
+  // all — a Ybrig region download reported 59.9 KB a tile against an
+  // estimate priced at 50 KB, and the promise the readout makes is that
+  // the real number comes in UNDER it.
+  //
+  // Measured 2026-09-08 by fetching real tiles, not modelled. The
+  // project's own ``build_region_blob`` expanded all 149 CH regions into
+  // their real 36,511 tile coordinates; 400 of those were sampled at
+  // random and each fetched from swisstopo (both sources) and OpenFreeMap
+  // — 1,200 requests, zero failures, and the true geographic and per-zoom
+  // mix (z10 464, z11 956, z12 2,452, z13 7,412, z14 25,227) rather than a
+  // handful of town-centre tiles, which are the densest in any area.
+  //
+  //   source            mean     p50     p95      max
+  //   openfreemap       25.2 KB  17.1    76.0     186.3
+  //   swisstopo base    48.6 KB  42.9    98.8     190.2
+  //   swisstopo relief  73.1 KB  38.2    236.0    572.3
+  //   swisstopo/source  60.8 KB  40.8    171.0    572.3
+  //
+  // The Ybrig download trace says 59.9 KB per swisstopo tile. The sample
+  // says 60.8. Two independent methods agreeing to 1.5% is what made a
+  // full 4.5 GB download of every region unnecessary.
+  //
+  // What the constant has to bound is a DOWNLOAD's mean, not the fattest
+  // tile: a download averages hundreds of tiles, so only small areas carry
+  // real variance. Bootstrapped from the sample at the real CH region
+  // sizes (min 56 tiles, median 181, max 2,816), the worst-region p99 is
+  // 34.7 KB for OpenFreeMap (at 56 tiles; 30.3 at 181, 26.4 at 2,816) and
+  // 85.5 KB per source for swisstopo (74.1 / 63.9). Each constant below
+  // clears its own p99. That is also why 72 KB was REJECTED for swisstopo
+  // even though it sits well above the 60.8 KB mean — a small region would
+  // exceed it about 1% of the time, and "up to" would be false again.
+  //
+  // OpenFreeMap is deliberately ABSENT from ``BASEMAP_HOST_KEYS`` below
+  // even though it has an entry here: its origin is deployment-dependent
+  // (``OPENFREEMAP_STYLE_URL``, config/settings/base.py, and staging
+  // self-hosts at tiles.snowdesk-data.info — docs/runbooks/
+  // self-hosted-tiles.md), so there is no host to match on. It resolves
+  // through the fallback instead, and the fallback's 50 KB IS its measured
+  // value. Do not "complete" the host table with an origin staging does
+  // not use.
+  var BYTES_PER_TILE_BY_BASEMAP = {
+    // Measured, see above: mean 25.2 KB, worst-region p99 34.7 KB.
+    openfreemap_liberty: 50 * 1024,
+    // Measured, see above: 60.8 KB per source over two sources, worst-region
+    // p99 85.5 KB per source. Charged per source by ``sourceScaledMb``.
+    swisstopo_winter: 96 * 1024,
+    // Same tile sources as winter — the two styles differ only in paint.
+    swisstopo_light: 96 * 1024,
+    // PROVISIONAL. Only CH region geometry exists in the local fixture, so
+    // there was no French region set to run the stratified sample against.
+    // This is a crude four-point sample (weighted mean ~52 KB) scaled by the
+    // same worst-region factor the CH bootstrap produced. Generous rather
+    // than accurate; nothing is blocked by it, because it already sits well
+    // above the measurement. Replace it by re-running the same stratified
+    // method against real FR region geometry, or against a real download
+    // trace.
+    ign_plan: 96 * 1024,
+    // PROVISIONAL, on the same footing as ign_plan: a crude four-point
+    // sample (~85 KB, with a fat z10 tail — one tile came back at 782 KB)
+    // scaled by the CH worst-region factor. Replace it the same way.
+    basemap_at: 144 * 1024,
+  };
+
+  // SNOW-868: host fragment → the basemap key whose per-tile figure prices
+  // it. Matched against a tile source's URL TEMPLATE, never against the
+  // picker — see ``basemapKeyForTileSources`` for why that distinction is
+  // load-bearing. OpenFreeMap is deliberately absent; see the table above.
+  var BASEMAP_HOST_KEYS = [
+    ['.geo.admin.ch', 'swisstopo_winter'],
+    ['data.geopf.fr', 'ign_plan'],
+    ['wien.gv.at', 'basemap_at'],
+  ];
 
   // Mirrors apps/regions/services/basemap_tiles.py::DOWNLOAD_DOCUMENTS_MB —
   // the style, sprite, TileJSON and promoted glyphs a run writes into the
@@ -875,25 +966,117 @@
   }
 
   /**
-   * ``mb`` scaled for a style that fetches more than one tile per cell
-   * (SNOW-843).
+   * Which basemap's per-tile figure prices ``spec`` (SNOW-868).
    *
-   * A blob's ``mb`` is computed per TILE — server-side for a region,
-   * ``buildBlob`` for a custom area — and neither knows which basemap will
-   * be fetched. A two-source style downloads two tiles per cell, so it costs
-   * twice the estimate, and every pre-flight that spends the number (the
-   * storage-quota check, the standing budget, the readout the user is shown)
-   * has to say so.
+   * Resolved from the source template's HOST, deliberately, and NOT from
+   * ``activeBasemapKey()``. That function reads the picker's DOM, which
+   * ``map_basemap_picker.js`` updates synchronously on click — so between
+   * the click and MapLibre finishing ``setStyle()`` it LEADS the render,
+   * while ``activeBasemapTileSources`` still returns the outgoing style's
+   * templates. Its own comment (``map_basemap_downloads.js``) says that
+   * mismatch is harmless precisely because it is display-only and nothing
+   * there feeds a decision. Pricing off it would end that guarantee, and in
+   * that window would apply the incoming basemap's constant to the outgoing
+   * basemap's tiles. Matching the host instead makes the estimate a
+   * function of what will actually be fetched.
+   *
+   * The key returned is a PRICING representative, not an identity. Both
+   * swisstopo styles serve from the same ``vectortilesN.geo.admin.ch``
+   * hosts, so the host cannot tell winter from light — harmless only
+   * because the table gives both the same figure. Do not read this as
+   * "which basemap is on screen"; ``activeBasemapKey`` answers that, and
+   * ``baseLayerBasemapKey`` answers it for a stored area.
+   *
+   * @param {string | string[] | string[][] | null | undefined} spec
+   * @returns {string} ``''`` when no host matches — including OpenFreeMap,
+   *   whose origin is deployment-dependent (see ``BYTES_PER_TILE_BY_BASEMAP``).
+   */
+  function basemapKeyForTileSources(spec) {
+    const sources = tileSources(spec);
+    for (const source of sources) {
+      for (const url of source) {
+        for (const [fragment, key] of BASEMAP_HOST_KEYS) {
+          if (url.indexOf(fragment) !== -1) return key;
+        }
+      }
+    }
+    return '';
+  }
+
+  /**
+   * What one tile of ``key``'s basemap costs, in bytes (SNOW-868).
+   *
+   * @param {string} key A ``BASEMAP_STYLES`` key.
+   * @returns {number} ``WORST_CASE_BYTES_PER_TILE`` for an unknown key —
+   *   which is also OpenFreeMap's own measured figure, so the default
+   *   basemap is priced correctly by the fallback.
+   */
+  function bytesPerTileForBasemap(key) {
+    const bytes = BYTES_PER_TILE_BY_BASEMAP[key];
+    return Number.isFinite(bytes) ? bytes : WORST_CASE_BYTES_PER_TILE;
+  }
+
+  /**
+   * What one tile costs for the style ``spec`` describes (SNOW-868) — the
+   * composition of ``basemapKeyForTileSources`` and
+   * ``bytesPerTileForBasemap``, and what the two frame-sizing call sites
+   * pass to ``budgetScaleForBBox``.
+   *
+   * @param {string | string[] | string[][] | null | undefined} spec
+   * @returns {number} Bytes per tile PER SOURCE.
+   */
+  function bytesPerTileForSources(spec) {
+    return bytesPerTileForBasemap(basemapKeyForTileSources(spec));
+  }
+
+  /**
+   * What a blob costs on the basemap ``spec`` describes, in megabytes
+   * (SNOW-843, re-based per basemap by SNOW-868).
+   *
+   * A blob's ``mb`` is computed per TILE at ``WORST_CASE_BYTES_PER_TILE`` —
+   * server-side for a region, ``buildBlob`` for a custom area — and neither
+   * knows which basemap will be fetched. Two things follow from that, and
+   * this is where both are corrected:
+   *
+   *   - a multi-source style fetches one tile per source per cell, so it
+   *     costs a multiple of the ground (SNOW-843); and
+   *   - a national style's tiles are simply fatter than the default
+   *     basemap's — 60.8 KB against 25.2 measured — so the same tile count
+   *     costs more (SNOW-868). See ``BYTES_PER_TILE_BY_BASEMAP``.
+   *
+   * Given ``count`` this recomputes from the tile count rather than scaling
+   * ``mb``, because ``mb`` already has ``DOWNLOAD_DOCUMENTS_MB`` folded in
+   * and scaling it would inflate the allowance too — the pre-SNOW-868 code
+   * charged the documents once PER SOURCE. Every blob carries ``count``
+   * (``{band, count, mb, over_ceiling, centre_tile, z}``, and it is one of
+   * ``basemap_tiles._SUMMARY_KEYS``), so the ``mb``-only path below is a
+   * fallback for a caller holding nothing but the number.
    *
    * @param {number} mb The blob's own per-tile estimate.
    * @param {string | string[] | string[][] | null | undefined} spec
-   * @returns {number} ``mb`` unchanged when the style is unresolved — an
-   *   unknown basemap must not inflate an estimate on a guess.
+   * @param {number} [count] The blob's tile count, when the caller has it.
+   * @returns {number} ``mb`` unchanged when the style is UNRESOLVED — an
+   *   unknown basemap must not inflate an estimate on a guess. Note this is
+   *   an unresolved-spec test, not the single-source one it was before
+   *   SNOW-868: a single-source NATIONAL style (ign_plan, basemap_at) still
+   *   costs more than the fallback and must be priced.
    */
-  function sourceScaledMb(mb, spec) {
-    const count = tileSourceCount(spec);
-    if (!Number.isFinite(mb) || count <= 1) return mb;
-    return mb * count;
+  function sourceScaledMb(mb, spec, count) {
+    const sources = tileSourceCount(spec);
+    if (!Number.isFinite(mb) || sources <= 0) return mb;
+    const bytesPerTile = bytesPerTileForSources(spec);
+    const bytesPerMb = 1024 * 1024;
+    if (Number.isFinite(count) && count >= 0) {
+      return Math.ceil((count * sources * bytesPerTile) / bytesPerMb) + DOWNLOAD_DOCUMENTS_MB;
+    }
+    // No count: scale the TILE half of ``mb`` only, then put the documents
+    // allowance back. Exactly a no-op when the fallback figure applies to a
+    // single-source style, which is the arithmetic ``buildBlob`` did.
+    const tileMb = Math.max(0, mb - DOWNLOAD_DOCUMENTS_MB);
+    return (
+      Math.ceil((tileMb * sources * bytesPerTile) / WORST_CASE_BYTES_PER_TILE) +
+      DOWNLOAD_DOCUMENTS_MB
+    );
   }
 
   /**
@@ -1222,9 +1405,21 @@
    *   ground, so the frame it may draw is the one whose HALVED tile budget
    *   still fits the ceiling. Defaults to 1 — the single-source case, and
    *   the shape the golden vector asserts.
+   * @param {number} [ceilingMb] The ceiling to size against; defaults to
+   *   ``DOWNLOAD_CEILING_MB``.
+   * @param {number} [bytesPerTile] SNOW-868: what one tile of the active
+   *   basemap costs, per source — ``bytesPerTileForSources``. Defaults to
+   *   ``WORST_CASE_BYTES_PER_TILE``, which leaves the golden vector and
+   *   the default basemap untouched.
+   *
+   *   This MUST move in step with ``sourceScaledMb``: sizing the frame at
+   *   50 KB a tile while pricing the same box at 96 KB means the frame the
+   *   control lets you draw is always over the ceiling, and
+   *   ``map_custom_download.js``'s ``confirmBtn.disabled = overCeiling ||
+   *   …`` then latches Download off for good on every national basemap.
    * @returns {number} A factor in ``(0, 1]``.
    */
-  function budgetScaleForBBox(bbox, minZ, maxZ, sourceCount, ceilingMb) {
+  function budgetScaleForBBox(bbox, minZ, maxZ, sourceCount, ceilingMb, bytesPerTile) {
     const [west, south, east, north] = bbox;
     // Whole tiles, not MB: buildBlob rounds bytes UP to the next MB, so a
     // count at exactly this budget is the largest that still reports
@@ -1233,7 +1428,9 @@
     // scaling the box can trade away.
     const sources = Number.isFinite(sourceCount) && sourceCount > 1 ? sourceCount : 1;
     const tileBudgetMb = Math.max(1, resolveCeilingMb(ceilingMb) - DOWNLOAD_DOCUMENTS_MB);
-    const budget = (tileBudgetMb * 1024 * 1024) / (WORST_CASE_BYTES_PER_TILE * sources);
+    const perTile =
+      Number.isFinite(bytesPerTile) && bytesPerTile > 0 ? bytesPerTile : WORST_CASE_BYTES_PER_TILE;
+    const budget = (tileBudgetMb * 1024 * 1024) / (perTile * sources);
     // World-fraction spans. Longitude is linear in the projection and
     // latitude is not, hence the Mercator y difference rather than a
     // degree one.
@@ -1927,6 +2124,9 @@
     tileSourceCount: tileSourceCount,
     tileSourcesKey: tileSourcesKey,
     tileURLs: tileURLs,
+    basemapKeyForTileSources: basemapKeyForTileSources,
+    bytesPerTileForBasemap: bytesPerTileForBasemap,
+    bytesPerTileForSources: bytesPerTileForSources,
     sourceScaledMb: sourceScaledMb,
     rangesToTileURLs: rangesToTileURLs,
     lonLatToTile: lonLatToTile,
@@ -1960,6 +2160,7 @@
     MICRO_BAND: MICRO_BAND,
     BASE_LAYER_BAND: BASE_LAYER_BAND,
     WORST_CASE_BYTES_PER_TILE: WORST_CASE_BYTES_PER_TILE,
+    BYTES_PER_TILE_BY_BASEMAP: BYTES_PER_TILE_BY_BASEMAP,
     DOWNLOAD_CEILING_MB: DOWNLOAD_CEILING_MB,
     DOWNLOAD_DOCUMENTS_MB: DOWNLOAD_DOCUMENTS_MB,
     STORAGE_HEADROOM_FACTOR: STORAGE_HEADROOM_FACTOR,
