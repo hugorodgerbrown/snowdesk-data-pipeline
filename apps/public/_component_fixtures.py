@@ -1159,6 +1159,28 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "caption": "Floating — SW update shape, versioned copy",
+        "context": {
+            "variant": "floating",
+            "icon": "refresh",
+            # SNOW-869: the state the banner reaches when /api/version
+            # confirms the update and both builds can be named. The
+            # unnumbered variant above is the third state — kept, because
+            # it is what an unreachable endpoint still shows.
+            "title": "Update available (v30)",
+            "body": (
+                "You are on v29. Reload to update to v30. Your downloaded "
+                "maps and saved data are kept."
+            ),
+            "title_id": "component-library-banner-title-4",
+            "body_id": "component-library-banner-body-4",
+            "cta_id": "component-library-banner-cta-2",
+            "cta_label": "Reload",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
         "caption": "Floating — off-map nudge (top, dismissible)",
         "context": {
             "variant": "floating",

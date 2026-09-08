@@ -115,6 +115,30 @@ class TestRuntimeStrings:
         assert 'id="sw-update-strings-template"' in html
         assert 'data-string="updating"' in html
 
+    def test_versioned_copy_ships_with_named_placeholders(self) -> None:
+        """The versioned strings carry ``%(name)s`` holes, never positional.
+
+        ``pwaStrings.interpolate`` substitutes by name because a locale is
+        free to reorder the two builds in the sentence; a positional
+        substitution would silently swap "from" and "to".
+        """
+        html = render()
+        assert 'data-string="update-title-versioned"' in html
+        assert "%(version)s" in html
+        assert 'data-string="update-body-versioned"' in html
+        assert "%(current)s" in html
+        assert "%(next)s" in html
+
+    def test_unnumbered_copy_survives(self) -> None:
+        """The original strings are the third state, not dead copy.
+
+        They are what shows when ``/api/version`` is unreachable or when
+        nothing distinguishes the two builds.
+        """
+        html = render()
+        assert 'data-string="update-title"' in html
+        assert 'data-string="update-body"' in html
+
     def test_keys_match_the_admin_fallback(self) -> None:
         """Both copies of this template feed the same ``pwaStrings.read``.
 
