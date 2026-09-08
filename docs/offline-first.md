@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-09-03
+last-reviewed: 2026-09-08
 ---
 
 # Offline-first PWA compliance
@@ -33,6 +33,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.2 | `X-App-Version` on every response                  | SNOW-369      | `apps.core.middleware.AppVersionHeaderMiddleware` in `config/settings/base.py::MIDDLEWARE`             |
 | 12.2 | Server-decided forced-update verdict              | SNOW-369 / SNOW-609 | `apps.public.api.version` returns `update_required` from `settings.APP_BLOCKED_VERSIONS` × the request's `X-Client-Version`. **Supersedes the `X-App-Min-Version` response header**, which SNOW-609 removed — see [`decisions/blocked-builds-not-a-version-floor.md`](decisions/blocked-builds-not-a-version-floor.md) |
 | 12.2 | `/api/version` endpoint                            | SNOW-369      | `apps.public.api.version_view` at `/api/version/`                                                      |
+| 12.2 | Server-decided soft-update verdict + release labels | SNOW-869 | `apps.public.api.version` also returns `update_available` (`X-Client-Version` != `APP_VERSION`, failing **closed** on an unidentified client) and `release` (`apps.public.release.release_label`). The banner names both builds from that one body; the shell's own label rides in `<meta name="pwa-app-release">` |
 | 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `apps.core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
 | 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `apps.observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `apps.favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap). See [`mutation-queue.md`](mutation-queue.md). |
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
@@ -41,7 +42,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.7 | "Reset local data" escape hatch                    | SNOW-378      | `static/js/pwa_reset.js`; `[data-pwa-reset-trigger]` on **two** surfaces — the manage page and the pre-cached `static/offline.html`. The offline copy is the one that reaches a stuck-and-offline user: the manage page is cached but partitioned per account (SNOW-607), so its copy is there only once that account has loaded it online in this browser. The offline copy reveals itself once `pwa_reset.js` has loaded, which `PRECACHE_URLS` (`static/js/sw.js`) guarantees — see [Reset local data](#reset-local-data-snow-378) below. |
 | 12.9 | Two-mechanism kill switch — Mechanism A            | SNOW-372      | `/api/sw-config` returns `{sw_url, kill}` from `SW_URL` / `SW_KILL` settings                      |
 | 12.9 | Two-mechanism kill switch — Mechanism B            | SNOW-373      | `static/js/sw-kill.js` served at `/sw-kill.js`; wipes storage on activate then unregisters        |
-| 12.10| Client obeys server version verdict                | SNOW-374 / SNOW-609 | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html`. The client performs no version comparison — it branches on `update_required` and reveals the modal, which waits for the user's click |
+| 12.10| Client obeys server version verdict                | SNOW-374 / SNOW-609 / SNOW-869 | `static/js/pwa_version_check.js` wraps `fetch` + hooks `htmx:afterOnLoad`; `_pwa_update_modal.html`. The client performs no version comparison — it branches on `update_required` for the modal and on `update_available` for the soft banner, and the modal waits for the user's click |
 | 12.11| First-party client telemetry (server + buffer + emit wiring) | SNOW-381 / SNOW-385 / SNOW-384 | Server: `apps/analytics/views.py::telemetry_receive`, `apps/analytics/signals.py`. Client: `static/js/telemetry.js` on the SNOW-375 `queue:events` store. Emit call sites: see [`telemetry-pipeline.md`](telemetry-pipeline.md#consumer-wire-up). **Offline:** both network paths (`flush()` fetch and the critical-event `sendBeacon`) short-circuit while the app is not using the network — `navigator.onLine === false`, or SNOW-748's user-forced offline mode with the radio still up. Events stay enqueued and drain on the next flush once the app is back on the network, so offline never fires a doomed request and nothing is dropped. |
 
 ## Version + freshness contract
@@ -57,8 +58,14 @@ inspecting responses continuously, so a deploy is noticed on the next
 in-flight request rather than needing a poll.
 
 The client's own build is baked into `<meta name="pwa-app-version">` at
-page-render time (see `apps.public.context_processors.pwa_version`).
-`pwa_version_check.js` compares the two on every fetch / HTMX response.
+page-render time (see `apps.public.context_processors.pwa_version`), and
+its release label into `<meta name="pwa-app-release">` beside it (SNOW-869
+— the client identifies itself to the server with a SHA, and no map runs
+from an arbitrary SHA back to a release ordinal, so the label has to
+travel with the page). Both tags stay pure functions of settings, so a
+page body never becomes per-client and never grows a `Vary`.
+`pwa_version_check.js` compares the two builds on every fetch / HTMX
+response.
 
 A header drift is treated as a **hint, not a verdict**: cacheable API
 responses (`/api/ratings/`, the geo feeds) can be replayed by the
@@ -76,8 +83,15 @@ from the response **body**:
   shell caches (`window.pwaClearShellCachesAndReload`, `sw_register.js`)
   and reloads. Pinned basemaps, IndexedDB and web storage are untouched
   — a code update does not destroy user data.
-- body `current` differs from the shell's build → reveal the soft
-  `#sw-update-banner`.
+- body `update_available: true` → reveal the soft `#sw-update-banner`.
+  This is the server's boolean, not a client comparison of `current`
+  against the shell's build (SNOW-869): the request carried
+  `X-Client-Version`, so the server holds both strings anyway, and
+  one authority answering both verdicts keeps them from disagreeing.
+  The same body carries `release`, which — with the shell's own
+  `<meta name="pwa-app-release">` — lets `sw_register.js` name both
+  builds in the copy (`labelBanner` / `describeUpdate`). It degrades
+  to the unnumbered copy when nothing distinguishes the two builds.
 - body matches the shell's build → the observed header value is
   memoised as a stale-cache artefact and reveals nothing.
 - an unreachable `/api/version` reveals nothing — "cannot confirm" must

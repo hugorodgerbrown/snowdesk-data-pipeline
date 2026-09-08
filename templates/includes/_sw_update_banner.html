@@ -15,9 +15,18 @@ exists, otherwise clears the SW shell cache and reloads — see
 ``sw_register.js``. Clicking × dismisses for the rest of this page's
 lifetime.
 
-SNOW-609: the body copy names what the reload keeps. Both reload paths
-touch only the ``snowdesk-shell-*`` / ``map-shell-*`` caches, so a user
-weighing "will this cost me my downloads?" should not have to guess.
+The body copy does NOT say what the reload keeps. SNOW-609 added "your
+downloaded maps and saved data are kept" so a user weighing "will this
+cost me my downloads?" did not have to guess; SNOW-869 removed it,
+because a reassurance is a warning in disguise. Naming the thing that
+survives plants the idea that it might not, and this banner is the
+routine case — both reload paths touch only the ``snowdesk-shell-*`` /
+``map-shell-*`` caches, so nothing the user owns is at risk and there is
+nothing to disclose.
+
+The rule that replaces it: warn when we are about to delete something,
+say nothing when we are not. ``pwa_reset.js``'s everything-goes wipe is
+where a warning belongs, and it has one.
 
 SNOW-486: markup delegated to the shared banner primitive
 (includes/_overlay_banner.html, "floating" variant) — this file now only
@@ -39,14 +48,19 @@ the fallback banner, and a key present in one and missing in the other
 is a string that silently falls back to English on half the site.
 {% endcomment %}
 {% trans "Update available" as sw_update_banner_title %}
-{% trans "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept." as sw_update_banner_body %}
+{% trans "A newer version of Snowdesk is ready." as sw_update_banner_body %}
 {% trans "Reload" as sw_update_banner_cta_label %}
 {% include "includes/_overlay_banner.html" with id="sw-update-banner" variant="floating" aria_live="polite" icon="refresh" title_id="sw-update-banner-title" title=sw_update_banner_title body_id="sw-update-banner-body" body=sw_update_banner_body cta_id="sw-update-banner-reload" cta_label=sw_update_banner_cta_label dismissible=True bottom_offset="calc(5.5rem + env(safe-area-inset-bottom))" %}
 <template id="sw-update-strings-template">
     <span data-string="update-title">{% trans "Update available" %}</span>
-    <span
-        data-string="update-body"
-    >{% trans "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept." %}</span>
+    <span data-string="update-body">{% trans "A newer version of Snowdesk is ready." %}</span>
+    {# SNOW-869: the versioned copy, used when /api/version confirms the #}
+    {# update AND something distinguishes the two builds — release       #}
+    {# labels when they differ, short SHAs otherwise. The two unnumbered #}
+    {# strings above stay: they are the third state, shown whenever the  #}
+    {# endpoint is unreachable or the builds cannot be told apart.       #}
+    <span data-string="update-title-versioned">{% trans "Update available (%(version)s)" %}</span>
+    <span data-string="update-body-versioned">{% trans "You are on %(current)s. Reload to update to %(next)s." %}</span>
     <span data-string="reload">{% trans "Reload" %}</span>
     <span data-string="dismiss">{% trans "Dismiss" %}</span>
     <span data-string="updating">{% trans "Updating…" %}</span>

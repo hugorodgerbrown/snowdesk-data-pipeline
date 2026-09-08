@@ -114,6 +114,22 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# pwa-app-min-version tag: the forced-update verdict is a server    #}
         {# decision (update_required), never a client-side comparison.       #}
         <meta name="pwa-app-version" content="{{ APP_VERSION }}">
+        {# SNOW-869: the release label of the build THIS page was delivered  #}
+        {# on, so the update banner can say "You are on v29" as well as name #}
+        {# the release the server is now serving. It has to be baked here    #}
+        {# because it cannot be derived server-side afterwards: the client   #}
+        {# announces itself with a git SHA (X-Client-Version) and there is   #}
+        {# no map from an arbitrary SHA back to a release ordinal.           #}
+        {#                                                                   #}
+        {# Load-bearing caching property: like the tag above, this is a pure #}
+        {# function of settings.APP_RELEASE — a per-build server constant.   #}
+        {# It reads no header, cookie or user, so it adds no Vary and no     #}
+        {# cache-key fragmentation, and this page body stays as shared-      #}
+        {# cacheable as it is today. X-Client-Version stays confined to      #}
+        {# /api/version, which carries Vary: X-Client-Version already; that  #}
+        {# is why the banner's copy is driven from the API body rather than  #}
+        {# baked in here.                                                    #}
+        <meta name="pwa-app-release" content="{{ APP_RELEASE_LABEL }}">
         {# SNOW-375: user identity for the telemetry 8-field envelope.     #}
         {# SNOW-549: Account.uuid, never the sequential auth.User PK — the #}
         {# PK leaks user count and growth rate and is trivially guessable. #}

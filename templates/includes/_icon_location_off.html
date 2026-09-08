@@ -1,0 +1,45 @@
+{% comment %}
+templates/includes/_icon_location_off.html — the "we cannot place you"
+glyph: a map pin struck through (SNOW-869).
+
+Its caller is includes/_overlay_banner.html's "location-off" icon
+variant, the roundel on the off-map nudge — the banner shown when a
+located position falls outside every mapped region.
+
+Feather's `map-pin-off`: the pin is drawn as four arcs rather than one
+closed outline so the strike-through line passes between them instead of
+crossing a stroke, which is what keeps the mark legible at 18px. Editing
+it means editing all five subpaths together, so it belongs behind one
+partial — docs/decisions/ui-icons-are-house-stroke-partials.md.
+
+Note the sibling glyph. includes/_icon_locate.html is the *working*
+locate control; this is the same subject in its failed state. They are
+deliberately different marks rather than one mark with a modifier,
+because they appear on different surfaces and never side by side.
+
+Stroke width 2, matching every other glyph in this codebase — see
+includes/_icon_pencil.html's own note.
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18, the
+            banner roundel's glyph size.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M5.43 5.43A8.06 8.06 0 0 0 4 10c0 6 8 12 8 12a29.94 29.94 0 0 0 5-5" />
+    <path d="M19.18 13.52A8.66 8.66 0 0 0 20 10a8 8 0 0 0-8-8 7.88 7.88 0 0 0-3.52.82" />
+    <path d="M9.13 9.13A2.78 2.78 0 0 0 9 10a3 3 0 0 0 3 3 2.78 2.78 0 0 0 .87-.13" />
+    <path d="M14.9 9.25a3 3 0 0 0-2.15-2.16" />
+    <line x1="2" x2="22" y1="2" y2="22" />
+</svg>

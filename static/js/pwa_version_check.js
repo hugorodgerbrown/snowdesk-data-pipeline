@@ -19,9 +19,17 @@
  *      blocking modal opens and stays open; nothing is wiped and nothing
  *      reloads until the user clicks "Reload now". No dismiss control.
  *
- *   2. body ``current`` differs from the shell's build → reveal the
- *      existing soft ``#sw-update-banner``. This is the same visible
- *      affordance as the SW-update flow.
+ *   2. body ``update_available: true`` → reveal the existing soft
+ *      ``#sw-update-banner``. This is the same visible affordance as the
+ *      SW-update flow. Since SNOW-869 that is the server's boolean rather
+ *      than a client-side comparison of ``current`` against the shell's
+ *      build: the server holds both strings anyway (the request carried
+ *      ``X-Client-Version``), so one authority answers both verdicts, and
+ *      the same body carries the release labels the banner names.
+ *
+ * The body is published as ``window.pwaVersionInfo.verified()`` for
+ * ``sw_register.js``, which labels the banner with it. Both callers share
+ * one round trip.
  *
  * The client performs NO version arithmetic (SNOW-609)
  * ----------------------------------------------------
@@ -85,6 +93,13 @@
   const CURRENT_BUILD = readMeta('pwa-app-version');
   if (!CURRENT_BUILD) return; // Meta tag absent — bail safely.
 
+  // SNOW-869: the release label of the build THIS shell was delivered on
+  // ("v29"), baked beside the build tag. Empty on an unnumbered build,
+  // which the banner's copy rule reads as "no label here". It cannot be
+  // derived later: the client identifies itself to /api/version with a
+  // SHA, and no map runs from an arbitrary SHA back to a release ordinal.
+  const CURRENT_RELEASE = readMeta('pwa-app-release');
+
   const VERSION_ENDPOINT = '/api/version';
 
   // The pristine fetch, captured BEFORE wrapFetch() replaces window.fetch.
@@ -103,8 +118,19 @@
   // drift (the soft banner is already showing, and it is sticky).
   const staleConfirmed = new Set();
   const driftConfirmed = new Set();
-  // Single-flight guard for the verification fetch.
-  let verifyInFlight = null;
+  // Single-flight guard, on the FETCH rather than on the drift
+  // verification (SNOW-869): the verification and the banner-labelling
+  // read both want the same body, and concurrent callers must share one
+  // round trip rather than issue two.
+  let fetchInFlight = null;
+  // The most recent body a round trip actually returned, or null while
+  // none has. Read by ``window.pwaVersionInfo.verified()`` so the
+  // labelling caller — which runs immediately after the reveal the
+  // verification caused — does not go back to the network for a body we
+  // are already holding. Deliberately NOT a permanent memo of the fetch:
+  // a later, distinct header drift still gets its own round trip, which
+  // is what makes a second deploy in one session verifiable.
+  let lastVerdict = null;
   // SNOW-384: separate latch so pwa.forced_update.triggered fires exactly
   // once regardless of which caller reaches showBlockingModal() first —
   // the caller already gates on forcedUpdateTriggered before calling, so
@@ -243,27 +269,48 @@
    * Storage never sees it). Uses the pristine pre-wrap fetch so the
    * request cannot recurse into ``inspectHeaders``.
    *
-   * @returns {Promise<{current: string, update_required: boolean} | null>}
-   *   The trimmed ``current`` and the server's forced-update verdict, or
-   *   ``null`` when the endpoint is unreachable / non-2xx — "cannot
-   *   confirm" must never be treated as "confirmed".
+   * Single-flight: concurrent callers share one round trip, and the
+   * resolved body is held in ``lastVerdict`` for the labelling read that
+   * follows a reveal.
+   *
+   * @returns {Promise<{current: string, release: string,
+   *   update_required: boolean, update_available: boolean} | null>}
+   *   The trimmed identifiers and both server verdicts, or ``null`` when
+   *   the endpoint is unreachable / non-2xx — "cannot confirm" must never
+   *   be treated as "confirmed".
    */
-  async function fetchAuthoritativeVersion() {
-    if (!pristineFetch) return null;
-    try {
-      const res = await pristineFetch(VERSION_ENDPOINT, { cache: 'no-store' });
-      if (!res || !res.ok) return null;
-      const json = await res.json();
-      return {
-        current: String(json.current || '').trim(),
-        // Strict ``=== true``: a server that predates SNOW-609 omits the
-        // field entirely, and an absent verdict must read as "not
-        // blocked" rather than as truthiness on ``undefined``.
-        update_required: json.update_required === true,
-      };
-    } catch (_err) {
-      return null;
-    }
+  function fetchAuthoritativeVersion() {
+    if (!pristineFetch) return Promise.resolve(null);
+    if (fetchInFlight) return fetchInFlight;
+    fetchInFlight = (async () => {
+      try {
+        const res = await pristineFetch(VERSION_ENDPOINT, { cache: 'no-store' });
+        if (!res || !res.ok) return null;
+        const json = await res.json();
+        return {
+          current: String(json.current || '').trim(),
+          // SNOW-869: the release label the server is serving ("v30"), or
+          // "" on an unnumbered build.
+          release: String(json.release || '').trim(),
+          // Strict ``=== true`` on both verdicts: a server that predates
+          // the field omits it entirely, and an absent verdict must read
+          // as "not blocked" / "nothing to pick up" rather than as
+          // truthiness on ``undefined``.
+          update_required: json.update_required === true,
+          update_available: json.update_available === true,
+        };
+      } catch (_err) {
+        return null;
+      }
+    })()
+      .then((verdict) => {
+        if (verdict) lastVerdict = verdict;
+        return verdict;
+      })
+      .finally(() => {
+        fetchInFlight = null;
+      });
+    return fetchInFlight;
   }
 
   /**
@@ -275,15 +322,16 @@
    *   * soft-update   → reveal the sticky banner.
    *   * fresh         → memoise the stale header value; no-op.
    *
-   * Single-flight: concurrent observations share one round trip.
+   * Single-flight: concurrent observations share one round trip. The
+   * guard sits on ``fetchAuthoritativeVersion`` since SNOW-869, so the
+   * banner-labelling read shares it too.
    *
    * @param {string} observed The drifting header value that prompted this
    *   verification, memoised under whichever verdict comes back.
    * @returns {Promise<void>}
    */
   function verifyObservedDrift(observed) {
-    if (verifyInFlight) return verifyInFlight;
-    verifyInFlight = fetchAuthoritativeVersion()
+    return fetchAuthoritativeVersion()
       .then((verdict) => {
         if (!verdict || forcedUpdateTriggered) return;
 
@@ -300,7 +348,16 @@
           return;
         }
 
-        if (verdict.current && differs(verdict.current, CURRENT_BUILD)) {
+        // SNOW-869: the soft-update verdict is the server's too. It used
+        // to be ``differs(verdict.current, CURRENT_BUILD)`` — a client
+        // comparison of the same two strings the server now compares
+        // itself, against the ``X-Client-Version`` this very request
+        // carried. Reading it from the body puts both verdicts on the
+        // same authority, and gives the banner the labels in the same
+        // breath. ``differs()`` stays as the header-drift HINT in
+        // ``inspectHeaders``, which is a comparison of two strings the
+        // client already holds.
+        if (verdict.update_available) {
           driftConfirmed.add(observed);
           showSoftBanner();
           return;
@@ -310,11 +367,7 @@
         // from a pre-deploy cache entry. Remember it so the same cached
         // responses don't re-trigger the round trip.
         staleConfirmed.add(observed);
-      })
-      .finally(() => {
-        verifyInFlight = null;
       });
-    return verifyInFlight;
   }
 
   /**
@@ -396,6 +449,34 @@
       clearShellAndReload().catch(() => window.location.reload());
     });
   }
+
+  /**
+   * The verified server body, or ``null`` when it cannot be had.
+   *
+   * Returns the body the last round trip produced when we are holding
+   * one — which is the normal case for the banner-labelling caller, since
+   * the reveal it is labelling was itself caused by that round trip — and
+   * otherwise issues one (sharing any fetch already in flight).
+   *
+   * ``null`` means "cannot confirm", never "confirmed": the caller shows
+   * the unnumbered copy rather than naming builds it could not check.
+   *
+   * @returns {Promise<{current: string, release: string,
+   *   update_required: boolean, update_available: boolean} | null>}
+   */
+  function verified() {
+    if (lastVerdict) return Promise.resolve(lastVerdict);
+    return fetchAuthoritativeVersion();
+  }
+
+  // SNOW-869: the shell's own identity plus the server's verdict, for
+  // ``sw_register.js``'s banner copy. Exposing the two meta values here
+  // rather than re-reading the DOM there keeps one reader of the tags.
+  window.pwaVersionInfo = Object.freeze({
+    build: CURRENT_BUILD,
+    release: CURRENT_RELEASE,
+    verified: verified,
+  });
 
   // Kick off. The pwa-app-version meta tag being present is our signal
   // that the shell knows about this contract.

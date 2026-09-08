@@ -591,7 +591,7 @@ the scenario.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | With the tab open, DevTools → Application → Service workers → click **Update** (top right) | A second SW appears in state `installed, waiting to activate` alongside the still-`activated` prior worker |
-| 2 | Look at the page | The `#sw-update-banner` slides in at the bottom-centre: refresh icon, "Update available", "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept.", and a "Reload" primary CTA + `×` |
+| 2 | Look at the page | The `#sw-update-banner` slides in at the bottom-centre: refresh icon, "Update available", "A newer version of Snowdesk is ready.", and a "Reload" primary CTA + `×`. Where `/api/version` is reachable and the builds can be told apart, the copy names them instead — "Update available (v31)" / "You are on v30. Reload to update to v31." Neither state says anything about what the reload keeps (SNOW-869) |
 | 3 | Click "Reload" on the banner | The banner button briefly disables; the waiting worker activates (Service workers panel: the new SW becomes `activated and is running`, the old one disappears); the page reloads exactly once onto the new shell (URL and content preserved) |
 | 4 | Reload one more time | No banner appears — you are already on the latest version |
 
@@ -661,7 +661,7 @@ APP_VERSION=test-newer-build APP_BLOCKED_VERSIONS=dev uv run python manage.py ru
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In the still-open tab, trigger any request (scroll the timeline, tap a region) | DevTools → Network: one `no-store` request to `/api/version` whose body reads `"update_required": true`; `#pwa-update-modal` opens as a full-viewport overlay with "Update required" copy naming what the reload keeps, and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked |
+| 1 | In the still-open tab, trigger any request (scroll the timeline, tap a region) | DevTools → Network: one `no-store` request to `/api/version` whose body reads `"update_required": true`; `#pwa-update-modal` opens as a full-viewport overlay reading "Update required" / "This version of Snowdesk is no longer supported. Reload to continue.", and a single "Reload now" CTA; no dismiss control; underlying page scroll is locked. The copy says nothing about local state — the click clears shell caches only, so there is nothing to disclose (SNOW-869) |
 | 2 | Wait 30 seconds without touching anything | The modal is still open and the page has not reloaded. Application → Cache storage still shows every bucket, including `snowdesk-basemap-*` |
 | 3 | Click "Reload now" | The `snowdesk-shell-*` / `map-shell-*` buckets are cleared and the page reloads once. The `snowdesk-basemap-*` buckets, IndexedDB (`snowdesk-pwa-v1`) and `localStorage` are all still there — the downloaded region is still available offline |
 | 4 | Restart the server without `APP_BLOCKED_VERSIONS` and reload | `/api/version` reads `"update_required": false`; no modal; the app operates normally |

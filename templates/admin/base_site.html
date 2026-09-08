@@ -40,9 +40,13 @@ absent (as it is in admin).
     {# and a key missing here is English on every admin page.                #}
     <template id="sw-update-strings-template">
         <span data-string="update-title">{% trans "Update available" %}</span>
+        <span data-string="update-body">{% trans "A newer version of Snowdesk is ready." %}</span>
+        {# SNOW-869: the versioned copy. Mirrors the public partial key   #}
+        {# for key — see the note above.                                  #}
+        <span data-string="update-title-versioned">{% trans "Update available (%(version)s)" %}</span>
         <span
-            data-string="update-body"
-        >{% trans "A newer version of Snowdesk is ready. Your downloaded maps and saved data are kept." %}</span>
+            data-string="update-body-versioned"
+        >{% trans "You are on %(current)s. Reload to update to %(next)s." %}</span>
         <span data-string="reload">{% trans "Reload" %}</span>
         <span data-string="dismiss">{% trans "Dismiss" %}</span>
         <span data-string="updating">{% trans "Updating…" %}</span>

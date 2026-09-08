@@ -1159,6 +1159,25 @@ OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "caption": "Floating — SW update shape, versioned copy",
+        "context": {
+            "variant": "floating",
+            "icon": "refresh",
+            # SNOW-869: the state the banner reaches when /api/version
+            # confirms the update and both builds can be named. The
+            # unnumbered variant above is the third state — kept, because
+            # it is what an unreachable endpoint still shows.
+            "title": "Update available (v30)",
+            "body": "You are on v29. Reload to update to v30.",
+            "title_id": "component-library-banner-title-4",
+            "body_id": "component-library-banner-body-4",
+            "cta_id": "component-library-banner-cta-2",
+            "cta_label": "Reload",
+            "dismissible": True,
+            "static": True,
+        },
+    },
+    {
         "caption": "Floating — off-map nudge (top, dismissible)",
         "context": {
             "variant": "floating",
@@ -1182,7 +1201,12 @@ OVERLAY_MODAL_VARIANTS: tuple[dict[str, Any], ...] = (
             "title_id": "component-library-overlay-modal-title",
             "body_id": "component-library-overlay-modal-body",
             "title": "Update required",
-            "body": "A new version of Snowdesk is available. Reload to continue.",
+            # SNOW-869: the real copy from includes/_pwa_update_modal.html.
+            # The library had drifted to a paraphrase, which is the one thing
+            # a component library must not do with the surface it documents.
+            "body": (
+                "This version of Snowdesk is no longer supported. Reload to continue."
+            ),
             "cta_id": "component-library-overlay-modal-cta",
             "cta_label": "Reload",
             "static": True,

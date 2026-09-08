@@ -8,11 +8,22 @@ static/js/pwa_version_check.js when ``/api/version`` answers
 ``settings.APP_BLOCKED_VERSIONS`` (spec §3.4 forced-update, SNOW-609).
 
 The modal stays open until the user clicks "Reload now"; nothing is
-cleared and nothing reloads before that click. So the body copy states
-the consequence up front — clicking clears the offline copy of the app
-itself. Downloaded maps and saved data are named explicitly as
-surviving, because "clears" on a mostly-offline app otherwise reads as
-"deletes my 500 MB of downloaded maps".
+cleared and nothing reloads before that click.
+
+The body copy says what is wrong and what to do, and nothing about local
+state (SNOW-869). It used to say the reload "refreshes the offline copy
+of the app" and then reassure that downloaded maps and saved data were
+kept — the reassurance was load-bearing only because the clause before
+it raised the alarm: "clears" on a mostly-offline app reads as "deletes
+my 500 MB of downloaded maps". Removing the alarm removes the need for
+the answer, and the whole pair goes.
+
+The rule, shared with includes/_sw_update_banner.html: warn before
+deleting something, say nothing otherwise. The click clears
+``snowdesk-shell-*`` / ``map-shell-*`` only — that is code, not the
+user's data, and SNOW-609 deliberately kept it that way for this path
+(see ``pwa_version_check.js``'s ``clearShellAndReload``). Nothing the
+user owns is at risk, so there is nothing to disclose.
 
 SNOW-486: markup delegated to the shared modal primitive
 (includes/_overlay_modal.html) — this file now only supplies the
@@ -22,7 +33,6 @@ copy/ids. See that partial's header comment for the design contract
 Copy is wrapped in ``{% trans %}`` for future localisation.
 {% endcomment %}
 {% trans "Update required" as pwa_update_modal_title %}
-{% blocktrans asvar pwa_update_modal_body %}This version of Snowdesk is no longer supported. Reloading refreshes the
-    offline copy of the app — your downloaded maps and saved data are kept.{% endblocktrans %}
+{% trans "This version of Snowdesk is no longer supported. Reload to continue." as pwa_update_modal_body %}
 {% trans "Reload now" as pwa_update_modal_cta_label %}
 {% include "includes/_overlay_modal.html" with id="pwa-update-modal" title_id="pwa-update-modal-title" body_id="pwa-update-modal-body" title=pwa_update_modal_title body=pwa_update_modal_body cta_id="pwa-update-modal-reload" cta_label=pwa_update_modal_cta_label %}

@@ -11,6 +11,10 @@ computed from the request's ``X-Client-Version`` against
 ``settings.APP_BLOCKED_VERSIONS``. The membership matrix below — including
 the fail-open case for a client that sends no version — is the test of
 record for it, since the client now performs no version comparison at all.
+
+``update_available`` (SNOW-869) is the second such decision, and its matrix
+sits beside the first. It is the soft banner's verdict: equality against
+``APP_VERSION``, failing CLOSED where ``update_required`` fails open.
 """
 
 from __future__ import annotations
@@ -26,21 +30,40 @@ from config.settings.base import comma_separated_frozenset
 @pytest.mark.django_db
 @override_settings(
     APP_VERSION="2026.07.15.testabc",
+    APP_RELEASE="30",
     APP_BLOCKED_VERSIONS=frozenset(),
     APP_RELEASED_AT="2026-07-15T09:00:00+00:00",
     SW_KILL=False,
 )
 def test_version_endpoint_returns_expected_shape() -> None:
-    """``/api/version`` returns ``{current, update_required, released_at, kill}``."""
+    """``/api/version`` returns the full six-field body.
+
+    ``release`` and ``update_available`` (SNOW-869) are what let the soft
+    banner name both builds; the other four are the original spec shape.
+    """
     response = Client().get("/api/version")
     assert response.status_code == 200
     body = json.loads(response.content)
     assert body == {
         "current": "2026.07.15.testabc",
+        "release": "v30",
         "update_required": False,
+        "update_available": False,
         "released_at": "2026-07-15T09:00:00+00:00",
         "kill": False,
     }
+
+
+@pytest.mark.django_db
+@override_settings(APP_RELEASE="")
+def test_version_endpoint_release_is_empty_without_a_release_number() -> None:
+    """An unnumbered build reports ``""``, never a bare ``v``.
+
+    The banner falls back to short SHAs on the empty string, which is why
+    it must be empty rather than absent.
+    """
+    response = Client().get("/api/version")
+    assert json.loads(response.content)["release"] == ""
 
 
 @pytest.mark.django_db
@@ -138,6 +161,45 @@ def test_blocked_versions_env_parsing(raw: str, expected: frozenset[str]) -> Non
     unidentified client.
     """
     assert comma_separated_frozenset(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# update_available — the soft-banner verdict (SNOW-869)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@override_settings(APP_VERSION="newbuild")
+def test_update_available_true_when_the_client_is_on_another_build() -> None:
+    """A client on a build other than the served one has an update."""
+    response = Client().get("/api/version", headers={"x-client-version": "oldbuild"})
+    assert json.loads(response.content)["update_available"] is True
+
+
+@pytest.mark.django_db
+@override_settings(APP_VERSION="newbuild")
+def test_update_available_false_when_the_client_is_current() -> None:
+    """A client on the served build has nothing to pick up.
+
+    This is the case the phantom banner got wrong: a stale
+    ``X-App-Version`` replayed from a pre-deploy cache entry looks like a
+    drift, and only this body can say it is not.
+    """
+    response = Client().get("/api/version", headers={"x-client-version": "newbuild"})
+    assert json.loads(response.content)["update_available"] is False
+
+
+@pytest.mark.django_db
+@override_settings(APP_VERSION="newbuild")
+def test_update_available_fails_closed_without_a_client_version_header() -> None:
+    """An unidentified client is never told it has an update.
+
+    The mirror of ``update_required``'s fail-open: we cannot read this
+    client's build, so we cannot confirm a difference, and "cannot
+    confirm" must not read as "confirmed".
+    """
+    response = Client().get("/api/version")
+    assert json.loads(response.content)["update_available"] is False
 
 
 @pytest.mark.django_db
