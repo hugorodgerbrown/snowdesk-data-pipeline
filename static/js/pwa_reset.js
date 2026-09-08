@@ -43,6 +43,13 @@
  * gates the trigger by default; markup can opt out by setting
  * ``data-pwa-reset-skip-confirm``, for a surface that already carries
  * its own dialogue.
+ *
+ * SNOW-860: on /account/settings/ that dialog also quotes the total from
+ * ``reset_data_summary.js``'s breakdown — the same figures the user has
+ * just read on the page, from the same summary, so the two can never
+ * disagree. Every other page carries the standing copy alone. The wipe
+ * itself is untouched by that ticket: still all-or-nothing, still these
+ * six steps.
  */
 
 (function () {
@@ -266,6 +273,34 @@
     'and are not affected.';
 
   /**
+   * The dialog copy, with the settings page's own figures folded in
+   * (SNOW-860).
+   *
+   * `/account/settings/` paints a breakdown of what this wipe deletes;
+   * the dialog quotes the total — and the unsent-change count, which is
+   * the one line item nothing else can get back — from THAT summary
+   * rather than computing a second one. Two numbers for the same
+   * deletion, differing, at the moment the user is deciding, would be
+   * worse than one.
+   *
+   * Absent on every other page (the module is loaded site-wide, the panel
+   * is not) and after a failed read, in which case the standing copy
+   * above stands alone. A figure that could not be read is not guessed at
+   * here.
+   *
+   * @returns {string}
+   */
+  function confirmMessage() {
+    let lines = [];
+    try {
+      lines = window.pwaResetDataSummary?.confirmLines() || [];
+    } catch (_err) {
+      // The panel's own failure must never cost the user the dialog.
+    }
+    return lines.length ? CONFIRM_MESSAGE + '\n\n' + lines.join('\n') : CONFIRM_MESSAGE;
+  }
+
+  /**
    * Wire a single trigger element. Idempotent — safe to call twice on
    * the same node.
    *
@@ -280,51 +315,11 @@
       const confirmed =
         skip ||
         (typeof window.confirm === 'function'
-          ? window.confirm(CONFIRM_MESSAGE)
+          ? window.confirm(confirmMessage())
           : true);
       if (!confirmed) return;
       resetLocalData().catch(() => window.location.reload());
     });
-  }
-
-  /**
-   * State how much shared map data this device is holding (SNOW-XXX).
-   *
-   * The z0-9 overview map is the app's OWN map data: fetched once per
-   * basemap after the first area download, shared by every area, never
-   * chosen by the user and never removable on its own. That is why the
-   * downloads panel neither lists it nor charges its budget for it — and
-   * why it has to be stated here, next to the control that clears it.
-   * Storage the user cannot see is storage they cannot consent to, and
-   * this row is the only place the app's own footprint is spoken about.
-   *
-   * Best-effort and silent: no db, no record, or a device that has never
-   * downloaded anything leaves the line hidden, which is correct — there
-   * is nothing to disclose.
-   *
-   * @returns {Promise<void>}
-   */
-  async function renderSharedMapDataSize() {
-    const line = document.querySelector('[data-pwa-reset-size]');
-    const value = document.querySelector('[data-pwa-reset-size-value]');
-    if (!line || !value || !window.pwaDb) return;
-    try {
-      const row = await window.pwaDb.get('meta:app', 'basemap.baseLayers');
-      const layers = (row && row.value) || [];
-      const bytes = layers.reduce(
-        (sum, entry) => sum + (Number(entry && entry.bytes) || 0),
-        0,
-      );
-      if (!(bytes > 0)) return;
-      // A numeral plus its unit, not translatable prose — the sentence
-      // around it is server-rendered. Same split as the downloads panel's
-      // own "Using X of Y".
-      value.textContent = Math.round(bytes / (1024 * 1024)) + ' MB';
-      line.hidden = false;
-    } catch (_err) {
-      // A device that cannot read its own record has nothing to say here,
-      // and this row's job — offering the reset — does not depend on it.
-    }
   }
 
   /**
@@ -343,16 +338,9 @@
     configurable: false,
   });
 
-  function init() {
-    bindAll();
-    // Not awaited: the reset control must be usable the moment it is
-    // bound, whatever IndexedDB is doing.
-    renderSharedMapDataSize();
-  }
-
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', bindAll);
   } else {
-    init();
+    bindAll();
   }
 })();

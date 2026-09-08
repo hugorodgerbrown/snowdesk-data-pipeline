@@ -1,0 +1,407 @@
+/*
+ * static/js/reset_data_summary.js — paint the "Reset local data"
+ * breakdown on /account/settings/ (SNOW-860).
+ *
+ * The DOM half of `reset_data_summary_core.js`, in the same shape as
+ * `sync_log.js`: read what the device is holding, replace the "Loading…"
+ * placeholder with rows, and resolve every failure to a specific sentence
+ * rather than leaving the panel sitting on "Loading…" — which reads as
+ * "still working" when it means "IndexedDB is gone".
+ *
+ * Three reads, all best-effort:
+ *
+ *   - the downloaded areas, through `window.pwaBasemapAreas`
+ *     (`basemap_downloaded_areas.js`) and `manageRows`, which is the SAME
+ *     path the map's Manage downloads sheet takes. One reader, so the two
+ *     surfaces cannot disagree about what is on the device;
+ *   - the depth of `queue:mutations` — SNOW-376's pending mutations. NOT
+ *     `queue:events`, which is the SNOW-385 telemetry buffer: counting
+ *     that would put a number of analytics payloads under a heading
+ *     reading "unsent changes". `db.js`'s own header documents the
+ *     distinction, and `docs/mutation-queue.md` is the contract;
+ *   - `navigator.storage.estimate()`, for everything else the origin
+ *     holds.
+ *
+ * `manageRows` excludes the shared overview maps (SNOW-867 — they are not
+ * the user's downloads and not in the downloads panel's budget), so this
+ * module picks them back out of the area list itself and hands them to
+ * the core separately. This panel is where they ARE stated, which is what
+ * that decision points at.
+ *
+ * It also publishes `window.pwaResetDataSummary.confirmLines()` for
+ * `pwa_reset.js`, so the confirmation dialog quotes the total from the
+ * same summary the user just read rather than computing a second one.
+ */
+
+(function () {
+  'use strict';
+
+  const LIST_ID = 'reset-data-summary-list';
+  const TOTAL_ID = 'reset-data-summary-total';
+
+  // SNOW-620: server-translated copy, read back from the template
+  // accounts/partials/_reset_data_summary_body.html renders. The literals
+  // are the English fallback — see static/js/i18n_strings.js.
+  const STRINGS = self.pwaStrings.read('reset-data-summary-strings-template', {
+    unavailable: 'Storage details unavailable on this device.',
+    failed: 'Could not read what is stored on this device.',
+    maps: 'Downloaded maps',
+    'maps-note':
+      'Areas you downloaded, plus the shared overview maps they sit on. ' +
+      'Getting them back needs a connection.',
+    'maps-none': 'Nothing downloaded on this device.',
+    'shared-tag': 'Shared',
+    unsent: 'Unsent changes',
+    'unsent-none': 'Nothing is waiting to be sent.',
+    'unsent-one': '1 change has not reached the server yet. Resetting deletes it.',
+    'unsent-many': '%(n)s changes have not reached the server yet. Resetting deletes them.',
+    cached: 'Cached pages and tiles',
+    'cached-note':
+      'Pages and map tiles saved as you browsed. Losing them costs you a reload, not your data.',
+    'cached-unknown': 'Size unknown',
+    preferences: 'Preferences',
+    'preferences-note':
+      'Your basemap choice, where the map was left, which panels were open, ' +
+      'and your usage-data choice.',
+    'preferences-value': 'Back to defaults',
+    total: 'Total on this device: %(size)s',
+    'total-approx': 'Approximate — the browser reports one figure for everything this site has stored.',
+    'total-partial':
+      'At least %(size)s — this browser will not report how much the site is storing in total.',
+    'confirm-total': 'This deletes about %(size)s from this device.',
+    'confirm-unsent-one': '1 change has not reached the server yet, and will be lost.',
+    'confirm-unsent-many': '%(n)s changes have not reached the server yet, and will be lost.',
+    'default-custom-name': 'Custom area %(n)s',
+    'base-layer-name': 'Overview map',
+  });
+
+  // The last summary painted, or null before the first paint and after a
+  // failed one. `pwa_reset.js` reads it through `confirmLines()` below;
+  // null there means the dialog keeps its standing copy alone, which is
+  // right — a figure that could not be read must not be guessed at in the
+  // one dialog the user acts on.
+  let LAST_SUMMARY = null;
+
+  /**
+   * Format a byte count the way every download surface already does, so
+   * the panel and the Manage downloads sheet report the same size for the
+   * same area. Falls back to a bare MB figure if the manage core is not
+   * on the page.
+   *
+   * @param {number} bytes
+   * @returns {string}
+   */
+  function formatBytes(bytes) {
+    const manage = self.pwaBasemapManageCore;
+    if (manage && typeof manage.formatMegabytes === 'function') {
+      return manage.formatMegabytes(bytes);
+    }
+    return Math.round((Number(bytes) || 0) / (1024 * 1024)) + ' MB';
+  }
+
+  /**
+   * Replace the list's contents with a single muted placeholder row.
+   *
+   * @param {HTMLElement} list
+   * @param {string} text
+   * @returns {void}
+   */
+  function renderPlaceholder(list, text) {
+    list.textContent = '';
+    const li = document.createElement('li');
+    li.className = 'px-4 py-3 text-text-3';
+    li.setAttribute('data-role', 'reset-data-summary-placeholder');
+    li.textContent = text;
+    list.appendChild(li);
+  }
+
+  /**
+   * Build one category row: a heading, its figure on the trailing edge,
+   * and the sentence saying what losing it costs.
+   *
+   * @param {{category: string, label: string, value: string,
+   *   note: string, warn?: boolean}} spec
+   * @returns {HTMLLIElement}
+   */
+  function buildCategory(spec) {
+    const li = document.createElement('li');
+    li.className = 'px-4 py-3';
+    li.setAttribute('data-testid', 'reset-data-summary-row');
+    li.setAttribute('data-category', spec.category);
+
+    const head = document.createElement('div');
+    head.className = 'flex items-baseline justify-between gap-3';
+
+    const label = document.createElement('span');
+    label.className = 'text-text-1 font-medium';
+    label.textContent = spec.label;
+
+    const value = document.createElement('span');
+    // The warning is on the FIGURE, not the row: an unsent change is the
+    // one thing here the reset destroys rather than makes you re-fetch,
+    // and the number is what says how much of it there is.
+    value.className = spec.warn
+      ? 'shrink-0 font-mono text-caption text-status-warning-text'
+      : 'shrink-0 font-mono text-caption text-text-2';
+    value.setAttribute('data-role', 'reset-data-summary-value');
+    value.textContent = spec.value;
+
+    head.appendChild(label);
+    head.appendChild(value);
+    li.appendChild(head);
+
+    const note = document.createElement('p');
+    note.className = 'mt-1 text-xs text-text-3';
+    note.textContent = spec.note;
+    li.appendChild(note);
+
+    return li;
+  }
+
+  /**
+   * The per-area list under the Downloaded maps row.
+   *
+   * Named one by one rather than counted, because "3 areas" does not
+   * answer the question the user is actually asking, which is whether the
+   * one they need for the weekend is among them. The shared overview maps
+   * carry a tag: they are the app's own map data, listed nowhere else.
+   *
+   * @param {Array<{id: string, label: string, bytes: number,
+   *   shared: boolean}>} items
+   * @returns {HTMLUListElement}
+   */
+  function buildMapList(items) {
+    const ul = document.createElement('ul');
+    ul.className = 'mt-2 space-y-1';
+    ul.setAttribute('data-role', 'reset-data-summary-maps');
+    items.forEach(function (item) {
+      const li = document.createElement('li');
+      li.className = 'flex items-baseline justify-between gap-3 text-xs text-text-3';
+      li.setAttribute('data-testid', 'reset-data-summary-map');
+      if (item.shared) li.setAttribute('data-shared', 'true');
+
+      const name = document.createElement('span');
+      name.className = 'min-w-0 truncate';
+      name.textContent = item.label;
+      if (item.shared) {
+        const tag = document.createElement('span');
+        tag.className = 'ml-2 rounded-tag bg-tag px-1.5 py-0.5 text-caption text-text-3';
+        tag.textContent = STRINGS['shared-tag'];
+        name.appendChild(tag);
+      }
+
+      const size = document.createElement('span');
+      size.className = 'shrink-0 font-mono';
+      size.textContent = formatBytes(item.bytes);
+
+      li.appendChild(name);
+      li.appendChild(size);
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+
+  /**
+   * Paint the four categories and the total from a computed summary.
+   *
+   * @param {HTMLElement} list
+   * @param {HTMLElement|null} totalEl
+   * @param {Object} summary `pwaResetDataSummaryCore.summarise` output.
+   * @returns {void}
+   */
+  function renderSummary(list, totalEl, summary) {
+    list.textContent = '';
+
+    const maps = buildCategory({
+      category: 'maps',
+      label: STRINGS.maps,
+      value: formatBytes(summary.maps.bytes),
+      note: summary.maps.items.length ? STRINGS['maps-note'] : STRINGS['maps-none'],
+    });
+    if (summary.maps.items.length) maps.appendChild(buildMapList(summary.maps.items));
+    list.appendChild(maps);
+
+    let unsentNote = STRINGS['unsent-none'];
+    if (summary.unsent.count === 1) {
+      unsentNote = STRINGS['unsent-one'];
+    } else if (summary.unsent.count > 1) {
+      unsentNote = self.pwaStrings.interpolate(STRINGS['unsent-many'], {
+        n: summary.unsent.count,
+      });
+    }
+    list.appendChild(
+      buildCategory({
+        category: 'unsent',
+        label: STRINGS.unsent,
+        // A count, not a size — the only figure on this panel that is not
+        // bytes, and the only one where zero is the good news.
+        value: String(summary.unsent.count),
+        note: unsentNote,
+        warn: summary.unsent.warn,
+      }),
+    );
+
+    list.appendChild(
+      buildCategory({
+        category: 'cached',
+        label: STRINGS.cached,
+        value: summary.cached.known
+          ? formatBytes(summary.cached.bytes)
+          : STRINGS['cached-unknown'],
+        note: STRINGS['cached-note'],
+      }),
+    );
+
+    list.appendChild(
+      buildCategory({
+        category: 'preferences',
+        label: STRINGS.preferences,
+        // No size: a handful of keys in web storage is not a figure worth
+        // stating, and the list of what they are is the disclosure.
+        value: STRINGS['preferences-value'],
+        note: STRINGS['preferences-note'],
+      }),
+    );
+
+    if (totalEl) {
+      const size = formatBytes(summary.totalBytes);
+      totalEl.textContent = summary.totalIsPartial
+        ? self.pwaStrings.interpolate(STRINGS['total-partial'], { size: size })
+        : self.pwaStrings.interpolate(STRINGS.total, { size: size }) +
+          ' ' +
+          STRINGS['total-approx'];
+    }
+  }
+
+  /**
+   * Read the three sources the summary is built from.
+   *
+   * Each is independently best-effort. A device with no basemap cores
+   * loaded still reports its queue depth; one with no
+   * `navigator.storage.estimate()` still lists its downloads. Only a
+   * total failure — no `pwaDb` at all — leaves the panel with nothing to
+   * say, and it says that.
+   *
+   * @returns {Promise<Object>} The core's summary.
+   */
+  async function collect() {
+    const download = self.pwaBasemapDownloadCore;
+    const manage = self.pwaBasemapManageCore;
+    const areasApi = window.pwaBasemapAreas;
+
+    let areas = [];
+    if (download && manage && areasApi) {
+      areas = await areasApi.downloadedAreas({ strings: STRINGS });
+    }
+    const rows =
+      manage && download
+        ? manage.manageRows(areas, {
+            isCustomAreaId: download.isCustomAreaId,
+            isBaseLayerAreaId: download.isBaseLayerAreaId,
+          })
+        : [];
+    // The shared overview maps, which `manageRows` deliberately drops.
+    const baseLayers = download
+      ? areas.filter(function (area) {
+          return area && download.isBaseLayerAreaId(area.id);
+        })
+      : [];
+
+    let mutationCount = 0;
+    try {
+      mutationCount = (await window.pwaDb.count('queue:mutations')) || 0;
+    } catch (_err) {
+      // A queue that cannot be read reads as empty — see the core's own
+      // note on why an unknown count must not become a warning.
+    }
+
+    let storageEstimate = null;
+    try {
+      if (navigator.storage && typeof navigator.storage.estimate === 'function') {
+        storageEstimate = await navigator.storage.estimate();
+      }
+    } catch (_err) {
+      // Some browsers reject rather than omitting the method.
+    }
+
+    return window.pwaResetDataSummaryCore.summarise({
+      rows: rows,
+      baseLayers: baseLayers,
+      mutationCount: mutationCount,
+      storageEstimate: storageEstimate,
+    });
+  }
+
+  /**
+   * Read what this device is holding and paint it, replacing the
+   * "Loading…" placeholder from the template shell. Never throws — a
+   * failed read degrades to a muted placeholder row, because the control
+   * this panel sits beside has to stay usable whatever storage is doing.
+   *
+   * @returns {Promise<void>}
+   */
+  async function render() {
+    const list = document.getElementById(LIST_ID);
+    if (!list) return;
+    const totalEl = document.getElementById(TOTAL_ID);
+
+    if (!window.pwaDb || !window.pwaResetDataSummaryCore) {
+      LAST_SUMMARY = null;
+      renderPlaceholder(list, STRINGS.unavailable);
+      return;
+    }
+
+    try {
+      const summary = await collect();
+      LAST_SUMMARY = summary;
+      renderSummary(list, totalEl, summary);
+    } catch (_err) {
+      LAST_SUMMARY = null;
+      if (totalEl) totalEl.textContent = '';
+      renderPlaceholder(list, STRINGS.failed);
+    }
+  }
+
+  /**
+   * The lines `pwa_reset.js` adds to its confirmation dialog (SNOW-860).
+   *
+   * The same total the user has just read on the panel, from the same
+   * summary — not a second computation, which would be free to disagree
+   * with the page at the exact moment disagreement is most expensive.
+   * Empty before the first paint, or after one that failed: no figure is
+   * better than an invented one in the dialog that authorises the wipe.
+   *
+   * @returns {string[]}
+   */
+  function confirmLines() {
+    if (!LAST_SUMMARY) return [];
+    const lines = [
+      self.pwaStrings.interpolate(STRINGS['confirm-total'], {
+        size: formatBytes(LAST_SUMMARY.totalBytes),
+      }),
+    ];
+    if (LAST_SUMMARY.unsent.count === 1) {
+      lines.push(STRINGS['confirm-unsent-one']);
+    } else if (LAST_SUMMARY.unsent.count > 1) {
+      lines.push(
+        self.pwaStrings.interpolate(STRINGS['confirm-unsent-many'], {
+          n: LAST_SUMMARY.unsent.count,
+        }),
+      );
+    }
+    return lines;
+  }
+
+  window.pwaResetDataSummary = Object.freeze({
+    render: render,
+    confirmLines: confirmLines,
+  });
+
+  // Deferred scripts execute in DOCUMENT ORDER, and this one's <script>
+  // tag (inside the settings content block) appears BEFORE db.js's
+  // (declared in base.html, after the content block) — so calling
+  // render() eagerly here would race window.pwaDb into existence.
+  // DOMContentLoaded fires only once every deferred script, db.js
+  // included, has already run. Same reasoning as sync_log.js.
+  document.addEventListener('DOMContentLoaded', render);
+})();
