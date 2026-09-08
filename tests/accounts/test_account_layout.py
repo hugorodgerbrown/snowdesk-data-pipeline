@@ -272,6 +272,80 @@ class TestSettingsCardLayout:
         assert reset.startswith("<button")
         assert "text-link" not in reset
 
+    def test_sign_out_sits_in_the_account_group(self) -> None:
+        """Sign out ends a SESSION, so it belongs with the account.
+
+        It sat in "This device" until SNOW-860, one row above Reset local
+        data, and the two read as neighbouring degrees of the same action —
+        which they are not: reset clears storage and leaves you signed in,
+        because it touches no cookies. Separating them is the point, so the
+        group each one lands in is worth pinning.
+        """
+        client = _client_for(AccountFactory.create())
+        html = client.get(reverse("accounts:settings")).content.decode()
+
+        account = html.split('data-testid="settings-group-account"')[1].split(
+            'data-testid="settings-group-device"'
+        )[0]
+        device = html.split('data-testid="settings-group-device"')[1].split(
+            'data-testid="settings-group-privacy"'
+        )[0]
+
+        assert 'data-testid="manage-sign-out"' in account
+        assert 'data-testid="manage-sign-out"' not in device
+        # And the reset control stays where the breakdown describes it.
+        assert "data-pwa-reset-trigger" in device
+        assert "data-pwa-reset-trigger" not in account
+
+    def test_reset_row_carries_the_breakdown_panel(self) -> None:
+        """SNOW-860 — the row states what the reset deletes, in four categories.
+
+        The row's helper line was the whole disclosure for a wipe that takes
+        every downloaded map, every unsent change, every cached page and
+        every preference. The panel is server-rendered chrome around a
+        client-side paint, so what is assertable here is that the shell, its
+        strings and the module that fills them all reach the page — and that
+        they sit in the "This device" group, beside the control they
+        describe, rather than anywhere else on the page.
+        """
+        client = _client_for(AccountFactory.create())
+        html = client.get(reverse("accounts:settings")).content.decode()
+
+        device = html.split('data-testid="settings-group-device"')[1].split(
+            'data-testid="settings-group-privacy"'
+        )[0]
+        assert 'data-testid="reset-data-summary-panel"' in device
+        assert 'data-role="reset-data-summary-placeholder"' in device
+        # SNOW-860: shown outright, not behind a disclosure. It was a
+        # collapsible titled "What this will delete", which put the one
+        # thing this row exists to say behind a click.
+        assert "What this will delete" not in device
+        assert (
+            "<details" not in device.split('data-testid="reset-data-summary-panel"')[1]
+        )
+        # The trigger keeps pwa_reset.js's binding contract, in the same row.
+        assert "data-pwa-reset-trigger" in device
+        # Every string the panel paints is server-translated and read back
+        # by window.pwaStrings.read() — makemessages never scans JS.
+        assert 'id="reset-data-summary-strings-template"' in device
+        assert "reset_data_summary.js" in html
+
+    def test_reset_breakdown_names_all_four_categories(self) -> None:
+        """Each category ships its own translated label, none assumed.
+
+        A category that is missing from the strings template does not fail
+        loudly — reset_data_summary.js falls back to its English literal —
+        so nothing else would catch a locale silently losing one.
+        """
+        client = _client_for(AccountFactory.create())
+        html = client.get(reverse("accounts:settings")).content.decode()
+
+        template = html.split('id="reset-data-summary-strings-template"')[1].split(
+            "</template>"
+        )[0]
+        for key in ("maps", "unsent", "cached", "preferences"):
+            assert f'data-string="{key}"' in template, key
+
     def test_each_group_opens_a_card(self) -> None:
         """Every group heading is followed by the card its rows sit in.
 

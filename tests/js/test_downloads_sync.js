@@ -386,6 +386,42 @@ describe('adopt', () => {
     expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
   });
 
+  it('skips a shared base layer, which the endpoint would 400', async () => {
+    // SNOW-860. `basemapDownloadedAreas()` has listed base layers since
+    // SNOW-856 — real bytes on the device, so the reader reports them —
+    // and this loop was the one consumer that did not exclude them. It
+    // posted `base-<basemapKey>` to an endpoint whose `_AREA_ID_RE` is
+    // `^(region|custom)-…`, so the request 400d; the mutation queue
+    // classifies a 400 as permanent and never retries, leaving every
+    // signed-in user with a downloaded area holding a failed row and a
+    // red sync badge for good.
+    //
+    // The id is what the assertion is about, so it is spelled out rather
+    // than built: `areaIdForBaseLayer` producing a shape the server
+    // accepts would make this test pass while the bug remained.
+    installDownloads([
+      { id: 'base-openfreemap_liberty', name: 'Overview map', bytes: 8 * 1024 * 1024, onDevice: true },
+    ]);
+
+    await expect(sync.adopt()).resolves.toBe(0);
+    expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('pushes the real areas alongside a base layer, and only those', async () => {
+    // The base layer must not take the whole pass down with it.
+    installDownloads([
+      AREAS[0],
+      { id: 'base-openfreemap_liberty', name: 'Overview map', bytes: 8 * 1024 * 1024, onDevice: true },
+      AREAS[1],
+    ]);
+
+    await expect(sync.adopt()).resolves.toBe(2);
+    const posted = window.pwaMutationQueue.enqueue.mock.calls.map(
+      ([op]) => new URLSearchParams(op.body).get('area_id'),
+    );
+    expect(posted).toEqual(['region-CH-4115', 'custom-a1']);
+  });
+
   it('skips a custom area with no stored box', async () => {
     // The server refuses it — there would be nothing another device could
     // download — so it is not posted to be rejected.

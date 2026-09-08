@@ -1,0 +1,87 @@
+{% comment %}
+apps/accounts/templates/accounts/partials/_reset_data_summary_body.html —
+"Reset local data" breakdown panel body (SNOW-860).
+
+Content partial for the settings page, included directly beneath the reset
+control it describes. It sat behind a collapsible titled "What this will
+delete" until SNOW-860 took the disclosure off: the rows are the whole
+point of the row, and putting them behind a click meant the warning was
+invisible by default. Rows are painted client-side by static/js/reset_data_summary.js,
+which reads the SAME downloaded-area list the Manage downloads sheet does
+(static/js/basemap_downloaded_areas.js) plus the ``queue:mutations`` depth
+and ``navigator.storage.estimate()`` — nothing server-side to query, so
+this shell carries only the loading placeholder, the <ul> the JS targets,
+and the strings it reads back.
+
+The four categories are grouped by what it costs the user to lose them,
+not by which storage API holds them — see reset_data_summary_core.js's
+header. The reset itself is unchanged and still all-or-nothing: this panel
+discloses, it does not select. Scoped deletion of one downloaded area
+already exists, in the map's Manage downloads sheet.
+{% endcomment %}
+{% load i18n %}
+<div class="text-sm text-text-2" data-testid="reset-data-summary">
+    <ul
+        id="reset-data-summary-list"
+        class="divide-y divide-border rounded-card border border-border bg-card text-sm"
+        data-testid="reset-data-summary-list"
+    >
+        <li class="px-4 py-3 text-text-3" data-role="reset-data-summary-placeholder">
+            {% trans "Loading…" %}
+        </li>
+    </ul>
+</div>
+{# SNOW-620 / SNOW-860: every string reset_data_summary.js writes into the  #}
+{# DOM, server-translated here and read back via window.pwaStrings.read().  #}
+{# makemessages does not scan JavaScript, so a literal written there would  #}
+{# ship as English to every locale; the module keeps the English literal as #}
+{# its fallback. See static/js/i18n_strings.js and docs/i18n.md.            #}
+{#                                                                          #}
+{# The last two keys are the panel's own copies of the names                #}
+{# basemap_downloaded_areas.js fills in for an unrenamed custom area and    #}
+{# for a shared overview map. The map page reads them out of its own        #}
+{# map-strings-template; that module takes them as an argument rather than  #}
+{# knowing either template's id.                                            #}
+<template id="reset-data-summary-strings-template">
+    <span data-string="unavailable">{% trans "Storage details unavailable on this device." %}</span>
+    <span data-string="failed">{% trans "Could not read what is stored on this device." %}</span>
+    <span data-string="maps">{% trans "Downloaded maps" %}</span>
+    <span data-string="maps-none">{% trans "Nothing downloaded on this device." %}</span>
+    <span data-string="shared-basemap-tiles">{% trans "Shared basemap tiles" %}</span>
+    <span data-string="unsent">{% trans "Unsent changes" %}</span>
+    <span data-string="unsent-none">{% trans "Nothing is waiting to be sent." %}</span>
+    <span data-string="unsent-one">{% trans "1 change has not reached the server yet. Resetting deletes it." %}</span>
+    <span data-string="unsent-many">
+        {% blocktrans trimmed %}
+            %(n)s changes have not reached the server yet. Resetting deletes them.
+        {% endblocktrans %}
+    </span>
+    <span data-string="cached">{% trans "Cached pages and tiles" %}</span>
+    <span data-string="cached-note">
+        {% blocktrans trimmed %}
+            Pages and map tiles saved by the device as you browse.
+        {% endblocktrans %}
+    </span>
+    <span data-string="cached-unknown">{% trans "Size unknown" %}</span>
+    <span data-string="preferences">{% trans "Map Viewport" %}</span>
+    <span data-string="preferences-note">
+        {% blocktrans trimmed %}
+            The selected basemap and viewport will be restored to the default (OpenFreeMap).
+        {% endblocktrans %}
+    </span>
+    {# confirm-* are the reset dialog's lines, not the panel's. The panel  #}
+    {# dropped its total footer, but the confirmation still states a size  #}
+    {# before the user commits — and still reads it from the same summary. #}
+    <span data-string="confirm-total">{% blocktrans %}This deletes about %(size)s from this
+            device.{% endblocktrans %}</span>
+    <span
+        data-string="confirm-unsent-one"
+    >{% trans "1 change has not reached the server yet, and will be lost." %}</span>
+    <span data-string="confirm-unsent-many">
+        {% blocktrans trimmed %}
+            %(n)s changes have not reached the server yet, and will be lost.
+        {% endblocktrans %}
+    </span>
+    <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
+    <span data-string="base-layer-name">{% trans "Overview map" %}</span>
+</template>

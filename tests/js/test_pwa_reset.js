@@ -57,37 +57,65 @@ triggerSkipConfirm.setAttribute('data-pwa-reset-trigger', '');
 triggerSkipConfirm.setAttribute('data-pwa-reset-skip-confirm', '');
 document.body.appendChild(triggerSkipConfirm);
 
-// SNOW-XXX: the shared-map-data line the settings row now carries. Same
-// before-import reasoning as the buttons above — `renderSharedMapDataSize`
-// runs once at import time, so both the elements and the fake `pwaDb` it
-// reads have to exist by then.
-const sizeLine = document.createElement('p');
-sizeLine.setAttribute('data-pwa-reset-size', '');
-sizeLine.hidden = true;
-const sizeValue = document.createElement('span');
-sizeValue.setAttribute('data-pwa-reset-size-value', '');
-sizeLine.appendChild(sizeValue);
-document.body.appendChild(sizeLine);
-window.pwaDb = {
-  get: async (store, key) =>
-    store === 'meta:app' && key === 'basemap.baseLayers'
-      ? { value: [{ basemapKey: 'openfreemap_liberty', bytes: 100 * 1024 * 1024 }] }
-      : null,
+// SNOW-860: the settings page's breakdown module, which is what the
+// confirmation dialog quotes its total from. Stubbed rather than loaded:
+// this suite is about the wipe, and `confirmLines()` is the whole of the
+// contract between the two files. Defined BEFORE the import for the same
+// reason the buttons above are — the module is read at click time, but the
+// stub has to be in place before any test clicks.
+window.pwaResetDataSummary = {
+  confirmLines: () => ['This deletes about 128 MB from this device.'],
 };
 
 await import('../../static/js/pwa_reset.js');
 
-describe('shared map data disclosure', () => {
-  // The z0-9 overview map is the app's own map data, so the downloads
-  // panel neither lists it nor charges its budget for it. That leaves this
-  // row as the only place it is disclosed — storage the user cannot see is
-  // storage they cannot consent to clearing.
-  it('states the size beside the reset control', async () => {
-    // The renderer is async and fired at import; one macrotask is enough
-    // for its single `pwaDb.get` to settle.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sizeValue.textContent).toBe('100 MB');
-    expect(sizeLine.hidden).toBe(false);
+describe('the confirmation dialog', () => {
+  // SNOW-860: the settings page states what the reset deletes, and the
+  // dialog quotes THAT summary rather than computing a second one. Two
+  // different numbers for the same deletion, shown seconds apart, is worse
+  // than one — and the moment they would differ is the moment the user is
+  // deciding.
+  //
+  // The shared overview map (SNOW-867's one-line disclosure) is a row in
+  // that panel's Downloaded maps category now, named and sized beside
+  // everything else on the device.
+  it('quotes the breakdown total the settings panel painted', () => {
+    const spy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    trigger.click();
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toContain('This deletes about 128 MB from this device.');
+  });
+
+  it('keeps its standing copy where there is no breakdown to quote', () => {
+    // Every page but /account/settings/ — pwa_reset.js is loaded site-wide
+    // and the panel is not. A figure that cannot be read is not invented
+    // in the one dialog the user acts on.
+    const summary = window.pwaResetDataSummary;
+    delete window.pwaResetDataSummary;
+    const spy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    trigger.click();
+
+    expect(spy.mock.calls[0][0]).toContain('Reset local data?');
+    expect(spy.mock.calls[0][0]).not.toContain('This deletes about');
+    window.pwaResetDataSummary = summary;
+  });
+
+  it('still opens when the breakdown module throws', () => {
+    const summary = window.pwaResetDataSummary;
+    window.pwaResetDataSummary = {
+      confirmLines: () => {
+        throw new Error('IDB is on fire');
+      },
+    };
+    const spy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    trigger.click();
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    window.pwaResetDataSummary = summary;
   });
 });
 

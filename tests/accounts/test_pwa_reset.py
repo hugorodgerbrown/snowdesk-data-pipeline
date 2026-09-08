@@ -48,7 +48,21 @@ def test_settings_page_loads_pwa_reset_script() -> None:
 
 @pytest.mark.django_db
 def test_settings_page_has_reset_helper_copy() -> None:
-    """The helper line explains what is and is not affected."""
+    """The helper line explains what is and is not affected.
+
+    SNOW-860 shortened the first half of it — "cached bulletins, offline
+    data, and saved preferences" was the whole disclosure for a wipe that
+    also takes every downloaded map and every unsent change, and the
+    breakdown panel now enumerates all four. What survives here is the part
+    the panel cannot say: what this does NOT touch.
+
+    "Does not log you out" is the load-bearing half: ``resetLocalData``
+    clears service workers, Cache Storage, IndexedDB and both Web Storage
+    areas and touches no cookies, so the session survives. A user reaching
+    for this on a borrowed device needs to know it is not a sign-out — the
+    sign-out control moved to the Account group precisely so the two are
+    not read as the same thing.
+    """
     account = AccountFactory.create()
     client = Client()
     client.force_login(account.user)
@@ -59,24 +73,27 @@ def test_settings_page_has_reset_helper_copy() -> None:
     # Copy is spread across template line breaks + blocktrans whitespace
     # normalisation; collapse before asserting.
     collapsed = " ".join(body.split())
-    assert "Clears cached bulletins" in collapsed
-    assert "Your subscription is not affected." in collapsed
+    assert "Delete locally cached app data. Does not log you out." in collapsed
 
 
 @pytest.mark.django_db
 def test_settings_page_discloses_shared_map_data() -> None:
-    """The row carries the shared-map-data line pwa_reset.js fills.
+    """The row discloses the shared overview map, in the breakdown panel.
 
     The z0-9 overview map is the app's own map data — fetched once per
     basemap, shared by every downloaded area, never chosen and never
     removable on its own — so the downloads panel neither lists it nor
-    charges its budget for it. That leaves this row as the only place it is
-    disclosed, and the only control that clears it. Storage the user cannot
-    see is storage they cannot consent to clearing.
+    charges its budget for it (SNOW-867). That leaves this row as the only
+    place it is disclosed, and the only control that clears it. Storage the
+    user cannot see is storage they cannot consent to clearing.
 
-    The sentence is server-rendered (so ``makemessages`` sees it) with the
-    numeral left to JS; it ships ``hidden`` and is revealed only when there
-    is a figure to show.
+    SNOW-867 disclosed it as a one-line "includes N MB of shared map data"
+    paragraph. SNOW-860 supersedes that with the four-category breakdown,
+    where the overview map is a NAMED, SIZED row in the Downloaded maps
+    category beside everything else on the device — strictly more than the
+    line it replaces. The figure is still client-side (nothing here is
+    server-knowable), so what the page must ship is the panel, its strings
+    and the module that paints them.
     """
     account = AccountFactory.create()
     client = Client()
@@ -85,6 +102,12 @@ def test_settings_page_discloses_shared_map_data() -> None:
     response = client.get("/account/settings/")
     body = response.content.decode("utf-8")
 
-    assert "data-pwa-reset-size" in body
-    assert "data-pwa-reset-size-value" in body
-    assert "of shared map data" in body
+    assert 'data-testid="reset-data-summary-panel"' in body
+    assert 'id="reset-data-summary-list"' in body
+    assert 'data-string="base-layer-name"' in body
+    assert "reset_data_summary.js" in body
+    # The reader is shared with the map's Manage downloads sheet — one
+    # reader, so the two surfaces cannot disagree about what is stored.
+    assert "basemap_downloaded_areas.js" in body
+    # And the superseded markup is gone, not left behind to paint nothing.
+    assert "data-pwa-reset-size" not in body

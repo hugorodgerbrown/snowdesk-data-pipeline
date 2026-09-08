@@ -401,7 +401,10 @@
    * Reads through `window.pwaBasemapDownloads.areas()` rather than the
    * two `meta:app` records directly — that bridge is the single
    * normalising layer, and a second reader here would have to re-derive
-   * the record-to-bucket-id mapping it already owns.
+   * the record-to-bucket-id mapping it already owns. The cost of sharing
+   * that reader is that its list is wider than this loop's: it includes
+   * the shared base layers, which are not the user's downloads and which
+   * this endpoint rejects, so they are skipped explicitly below.
    *
    * @returns {Promise<number>} How many areas were pushed — 0 when
    *   everything was already synced, which is the common case on every
@@ -428,6 +431,19 @@
       // area to describe, and syncing one would offer another device a
       // download that never finished on this one.
       if (area.orphaned) continue;
+      // SNOW-860: a shared base layer is not one of the user's downloads
+      // and must never be pushed. `basemapDownloadedAreas()` has listed
+      // them since SNOW-856 — they are real bytes on the device, so the
+      // reader reports them — and every consumer for which a base layer
+      // is NOT an area excludes it explicitly: `planEviction`,
+      // `manageRows`, `map_layer_sync_status.js` and the reset-data
+      // panel all call `isBaseLayerAreaId`. This loop was the one that
+      // did not, so it posted `base-<basemapKey>` to an endpoint whose
+      // `_AREA_ID_RE` is `^(region|custom)-…` — a 400, which the
+      // mutation queue classifies as permanent and never retries. Every
+      // signed-in user who had downloaded anything carried a failed
+      // queue row and a red sync badge because of it.
+      if (core && core.isBaseLayerAreaId(area.id)) continue;
       var isCustom = core ? core.isCustomAreaId(area.id) : false;
       // A custom area with no stored bbox cannot be described to another
       // device, and the server refuses it — so it is skipped here rather

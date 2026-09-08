@@ -37,7 +37,7 @@ tall on a `bg-chip` track and the <select> is mono on `bg-tag` at
 now, not the header, at that strip's own 16px.
 {% endcomment %}
 <div class="mt-4 flex flex-col gap-2.5">
-    {# SNOW-XXX lays this block out after the design handoff: the figure  #}
+    {# SNOW-867 lays this block out after the design handoff: the figure  #}
     {# and its cap on one line, the bar full-width beneath, and nothing    #}
     {# else. The words that used to wrap the numbers ("Using", "of") are   #}
     {# gone — two numbers with a bar between them already say what they    #}
@@ -88,5 +88,21 @@ now, not the header, at that strip's own 16px.
         class="mt-4.5 rounded-tag bg-status-warning-bg px-3 py-2 text-xs text-status-warning-text"
     >
         {% trans "You're over your budget. Your next download will remove the oldest areas to make room — or remove some yourself below." %}
+    </p>
+    {# SNOW-860: the one line pointing at everything this panel is NOT     #}
+    {# about. These rows are the areas the user chose and the budget they  #}
+    {# set for them; the shared overview maps, the cached pages, the       #}
+    {# unsent changes and the preferences are not here and are not in that #}
+    {# budget (SNOW-867), and the place they are stated — and cleared — is #}
+    {# the settings page's "Reset local data" breakdown. A link, not a     #}
+    {# second copy of the breakdown: this panel answers "what did I        #}
+    {# download and where", that one answers "what would I lose", and a    #}
+    {# duplicate here would compete with the per-row actions below.        #}
+    <p class="text-xs text-text-3">
+        {% url 'accounts:settings' as settings_url %}
+        {% blocktrans trimmed %}
+            Snowdesk stores more than this on your device.
+            <a href="{{ settings_url }}" class="text-link">See it all in Settings</a>
+        {% endblocktrans %}
     </p>
 </div>
