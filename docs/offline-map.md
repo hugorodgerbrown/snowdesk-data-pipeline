@@ -1854,6 +1854,17 @@ The sheet (`public/partials/_map_downloads_sheet.html`, driven by
 and size, a running total against the budget, an explicit delete, and the
 budget control itself.
 
+**One reader, two surfaces (SNOW-860).** `basemapDownloadedAreas()` moved
+out of `static/js/map_basemap_downloads.js` into the page-agnostic
+`static/js/basemap_downloaded_areas.js` (`window.pwaBasemapAreas`), which
+both the map page and `/account/settings/` load; the map module delegates
+to it, injecting `MAP_STRINGS` and its orphaned-bucket measurement. The
+settings page's "Reset local data" breakdown reads this same list, so the
+two surfaces cannot disagree about what is on the device — and the sheet
+now carries a line linking to it, because the shared overview maps, the
+cached pages, the unsent mutations and the preferences are none of them
+listed or budgeted here.
+
 **A row can be listed and still not render (SNOW-844).** The sheet asks
 the same render-dependency question the roundel does (see `incomplete`
 above), per row, through `markIncompleteRows`. A row that fails it takes
