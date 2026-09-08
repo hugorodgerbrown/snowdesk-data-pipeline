@@ -23,14 +23,20 @@
  *      the curl evidence). The fix under test here is simpler: record the
  *      run's own reported bytes directly, replacing the previous record.
  *   2. A re-download of the SAME region under a DIFFERENT basemap must
- *      evict the old basemap's tiles from the bucket FIRST — otherwise
- *      they sit alongside the new run's tiles, and "record the run's own
- *      bytes" under-counts what the bucket actually holds. This drives the
- *      real ``mapDownloadControlInit`` click flow through the real
+ *      leave the old basemap's tiles out of the bucket — otherwise they
+ *      sit alongside the new run's, and "record the run's own bytes"
+ *      under-counts what the bucket actually holds. This drives the real
+ *      ``mapDownloadControlInit`` click flow through the real
  *      ``basemap_download_runner.js`` with the stub map's active tile
- *      template switched between runs, and asserts both that the bucket
- *      was cleared before the second run wrote to it and that the
+ *      template switched between runs, and asserts both that the old
+ *      basemap's tiles are gone by the time the run settles and that the
  *      recorded total is the second run's own figure, not a sum.
+ *      SNOW-871 changed WHEN that happens — the bucket is no longer
+ *      cleared before the warm; the old basemap's urls are pruned out from
+ *      under the new ones once the run has succeeded — and added the
+ *      confirm these tests answer via ``answerReplaceConfirm``. The
+ *      ordering itself, and what a FAILED replacement leaves behind, is
+ *      tests/js/test_map_download_replace.js.
  *
  * Booting map.js in jsdom follows the same pattern as
  * ``test_map_download_eviction.js`` (see its header for why: one script of
@@ -195,6 +201,9 @@ function installCachesStub() {
       const store = openBucket(name);
       return {
         keys: async () => [...store.keys()].map((url) => ({ url })),
+        // SNOW-871: the per-entry delete the post-success prune uses. The
+        // real Cache Storage API returns whether the entry was there.
+        delete: vi.fn(async (url) => store.delete(url)),
         put: vi.fn(async (url, response) => {
           const raw = response && response.headers && response.headers.get('Content-Length');
           const length = Number(raw);
@@ -288,7 +297,37 @@ function buildFixture() {
       <p id="map-download-evict-confirm-body"></p>
       <button id="map-download-evict-confirm-cta" type="button">Delete and download</button>
       <button type="button" data-action="dismiss">&times;</button>
+    </div>
+    <!-- SNOW-871: the REPLACE confirm. A download of a region already held
+         under another basemap now asks before replacing it, so every
+         template-change run below has to answer this banner to get as far
+         as a warm — see answerReplaceConfirm(). -->
+    <div id="map-download-replace-confirm" class="hidden" data-overlay data-overlay-hide="class">
+      <p id="map-download-replace-confirm-title">Replace your earlier download?</p>
+      <p id="map-download-replace-confirm-body"></p>
+      <button id="map-download-replace-confirm-cta" type="button">Replace and download</button>
+      <button type="button" data-action="dismiss">&times;</button>
     </div>`;
+}
+
+/**
+ * Answer SNOW-871's replace confirm with "yes", if it appears.
+ *
+ * Every run in this file that switches basemap is replacing a copy this
+ * device already holds, which is exactly the case that now raises the
+ * banner. The tests here are about what gets RECORDED and what is left in
+ * the bucket, so they confirm and carry on; the confirm's own behaviour —
+ * when it is raised, and what declining does — is
+ * tests/js/test_map_download_replace.js.
+ *
+ * @returns {Promise<void>}
+ */
+async function answerReplaceConfirm() {
+  const banner = document.getElementById('map-download-replace-confirm');
+  await waitFor(() => !banner.classList.contains('hidden'), 500);
+  if (!banner.classList.contains('hidden')) {
+    document.getElementById('map-download-replace-confirm-cta').click();
+  }
 }
 
 /** Poll `predicate` until it holds or the budget runs out. */
@@ -407,6 +446,7 @@ async function downloadRegion() {
     () => btn.dataset.downloadState === 'idle' || btn.dataset.downloadState === 'done',
   );
   btn.click();
+  await answerReplaceConfirm();
   await waitFor(() => btn.dataset.downloadState === 'done', 5000);
   expect(btn.dataset.downloadState).toBe('done');
 }
@@ -490,10 +530,11 @@ describe('region download byte recording (SNOW-632)', () => {
     expect(after.template).toEqual([[TEMPLATE_B]]);
     expect(after.bytes).not.toBe(before.bytes + nextReportedBytes);
 
-    // The bucket was evicted before the second run wrote to it: TEMPLATE_B's
-    // tile URLs are present, and none of TEMPLATE_A's survive alongside
-    // them — proving eviction happened rather than the bucket simply
-    // accumulating a second basemap's tiles on top of the first.
+    // TEMPLATE_A's tiles were pruned out from under the second run's:
+    // TEMPLATE_B's tile URLs are present, and none of TEMPLATE_A's survive
+    // alongside them — proving the replacement happened rather than the
+    // bucket simply accumulating a second basemap's tiles on top of the
+    // first.
     const afterKeys = bucketKeys(cachesStub, areaId);
     const afterTileKeysA = afterKeys.filter((k) => k.includes('tiles-a.example.invalid'));
     const afterTileKeysB = afterKeys.filter((k) => k.includes('tiles-b.example.invalid'));
@@ -518,6 +559,7 @@ async function runDownloadAndAwaitDone() {
   });
   if (btn.dataset.downloadState !== 'done') {
     btn.click();
+    await answerReplaceConfirm();
     await waitFor(() => btn.dataset.downloadState === 'done', 5000);
   }
   expect(btn.dataset.downloadState).toBe('done');
@@ -552,6 +594,7 @@ describe('the other-basemap roundel state (SNOW-645)', () => {
     nextReportedBytes = 5002;
     btn().click();
     await waitFor(() => btn().dataset.downloadState === 'busy');
+    await answerReplaceConfirm();
     await waitFor(() => btn().dataset.downloadState === 'done', 5000);
 
     const recorded = await recordedRegion();

@@ -129,24 +129,80 @@ the same area, unlike a custom area which can now simply be a new one.
   **Candidate future optimisation, not built:** source an already-held
   tile from a sibling bucket rather than re-fetching it, while still
   keeping a copy in each bucket that needs it (so eviction stays safe).
-- **A REGION's bucket is evicted outright on a basemap-template change, so
-  it always holds exactly one basemap's tiles (SNOW-632, amending this
-  decision's original design).** The bucket is keyed on area id alone, not
-  on basemap, so a region re-downloaded under a DIFFERENT basemap at the
-  SAME ground would otherwise leave the previous basemap's tiles sitting
-  in the bucket alongside the new run's — bloating it, and leaving
-  whatever gets recorded for it wrong either way (see the next bullet).
-  The region control's `beforeWarm` (run by `basemap_download_runner.js`
-  as the last step before the warm-cache call — see its own module header
-  for why the ordering lives there) compares the ACTIVE tile template
-  against the one the existing record was downloaded with, stored
-  alongside it as `template`, and calls `evictBasemapAreas` first when
-  they differ. A record with no `template` (written before SNOW-632) is
-  treated as a mismatch — "unknown" reads safer as "different", costing
-  one redundant re-download rather than an unaccounted-for stale bucket.
-  This doesn't change what the roundel's `done` state means (it was
-  always a real probe against the active template, per-basemap already);
-  it changes what the bucket holds and what gets recorded for it.
+- **A REGION's copy is REPLACED on a basemap-template change, so its
+  bucket always holds exactly one basemap's tiles (SNOW-632, amending this
+  decision's original design; SNOW-871, amending how).** The bucket is
+  keyed on area id alone, not on basemap, so a region re-downloaded under
+  a DIFFERENT basemap at the SAME ground would otherwise leave the
+  previous basemap's tiles sitting in the bucket alongside the new run's
+  — bloating it, and leaving whatever gets recorded for it wrong either
+  way (see the next bullet). The region control's `beforeWarm` (run by
+  `basemap_download_runner.js` as the last step before the warm-cache
+  call — see its own module header for why the ordering lives there)
+  compares the ACTIVE tile sources against the ones the existing record
+  was downloaded with, stored alongside it as `template`.
+
+  **SNOW-632 acted on that comparison by calling `evictBasemapAreas`
+  there and then, before the warm — and that was wrong in two ways this
+  decision originally recorded as an accepted trade-off.** It was
+  SILENT, where every other destructive control on the map confirms
+  first; and it destroyed the user's existing copy before the
+  replacement had fetched anything, so a run that then failed left them
+  with neither. On the connection this whole feature exists for, failing
+  is not the exotic case. SNOW-871 split the two:
+
+  - `beforeWarm` now only ASKS (`confirmBasemapReplace`), and only when
+    there is something to lose — the record names another basemap AND
+    `blobFullyCached` finds that basemap's tiles still on disk. A stale
+    record replaces nothing and raises no dialog. Declining resolves
+    `false`, which aborts the run before anything is cached. (The
+    runner's `loadBlob` does run first, so one read-only GET to
+    `/api/region-basemap-tiles/` precedes the question — that ordering
+    predates this ticket and writes nothing.)
+  - `finish` PRUNES, and only on `downloadSucceeded`: the old record's
+    own urls (`template` + `z` through `rangesToTileURLs`, plus its
+    `deps`) are deleted from the bucket entry by entry, skipping any the
+    new run also fetched. Never `caches.delete()` of the bucket — by
+    then it holds the new copy too.
+  - GLYPHS need a second instrument, because they are the one thing in
+    the bucket no url list names: a download never fetches them, it
+    PROMOTES whatever the passive cache held under the style's glyph
+    prefix (SNOW-742), so `missingRenderDependencies` excludes them and
+    they can never appear in a record's `deps`. The whole-bucket delete
+    took them for free; the surgical prune structurally cannot. So each
+    run records the prefix it promoted under (`glyphPrefix`, resolved by
+    the runner alongside `renderDeps` and stored on the record), and the
+    replacement SWEEPS that prefix out of the bucket — sparing anything
+    under the prefix the new run is using, since two styles can be
+    served from one glyph host and the incoming copy's labels must
+    survive. A record with no stored prefix is UNKNOWN, not "no glyphs":
+    nothing is swept for it, because the active style's prefix belongs
+    to a different basemap and deleting on that basis would be a guess.
+    `_probeDone` heals the field for such a record, but only once the
+    area's own bucket is found to hold an entry under the active prefix
+    — the "heal only from what has just been proven" rule `deps` follows.
+
+    **Stated residue.** A record written before SNOW-871 whose glyphs
+    were promoted and have since been trimmed out of the bucket (or
+    never promoted at all) can never prove a prefix, so it heals none
+    and, if it is later replaced, leaves nothing behind — correct. The
+    real residue is narrower: a record whose glyphs ARE in the bucket
+    but which is replaced before any probe runs under its own basemap
+    keeps its orphans for good. That is bounded at one basemap's glyph
+    set for one area, it does not accumulate (every record written from
+    SNOW-871 on carries a prefix), and closing it would mean deleting on
+    a guess about which basemap a bucket's glyph entries belong to.
+
+  The cost is a transient overlap on disk for the length of one run,
+  which `fitsQuota` already tolerates (it measures while the old copy is
+  present) and `planEviction` already excludes the incoming area from.
+  A record with no `template` (written before SNOW-632) names no urls at
+  all, so there is nothing identifiable to prune and nothing is asked or
+  deleted; `_probeDone` reads that same absence as "the active
+  basemap's". None of this changes what the roundel's `done` state means
+  (it was always a real probe against the active template, per-basemap
+  already); it changes what the bucket holds, when, and whether the user
+  was asked.
   **SNOW-635:** the custom-area control had an analogous `beforeWarm` —
   evicting on EITHER a bbox change or a template change, since it (unlike
   a region) had no fixed geometry of its own to distinguish "the same

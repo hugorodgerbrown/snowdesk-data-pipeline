@@ -1446,10 +1446,157 @@ async function evictBasemapAreas(areaIds) {
   window.pwaDownloadedOverlay?.refresh();
 }
 
+/**
+ * SNOW-871: delete NAMED urls — and, optionally, one PREFIX's worth of
+ * unnameable ones — from one area's pinned bucket, leaving the bucket (and
+ * every other entry in it) alone.
+ *
+ * `evictBasemapAreas` above is the whole-area instrument: bucket deleted,
+ * record deleted, ring gone. This is the surgical one, and it exists for
+ * exactly one caller — the region control replacing its own earlier copy
+ * of an area under a different basemap. That bucket is keyed on the region
+ * id alone, so both basemaps' tiles share it, and the copy being replaced
+ * has to be taken out from UNDER the copy that just landed. `caches.delete`
+ * of the whole bucket would take both.
+ *
+ * The area's record is deliberately untouched: the run that called this
+ * has already rewritten it (`_recordRegionDownload`), and this only
+ * removes the entries that record no longer describes.
+ *
+ * Sequential rather than `Promise.all` over the list: a replaced download
+ * is hundreds to thousands of urls, and this runs AFTER the roundel has
+ * settled green, so there is nothing to be gained by asking the browser
+ * for a thousand concurrent Cache Storage transactions on a device that
+ * has just finished a large download.
+ *
+ * Best-effort throughout — a bucket that cannot be opened, or one entry
+ * that will not delete, must never surface as an error inside a completed
+ * download's `finish`. The cost of a failure here is disk, not
+ * correctness: the record already names the new basemap, so nothing reads
+ * a leftover entry as available.
+ *
+ * GLYPHS are why the second argument is not the whole story. A download
+ * does not fetch glyph PBFs — sw.js's `_promoteGlyphs` copies whatever the
+ * passive cache already held under the style's glyph prefix into the
+ * bucket (SNOW-742) — so the set that landed is partial, unpredictable and
+ * named by nothing the device stores. `missingRenderDependencies` excludes
+ * them for exactly that reason, which means the replaced record's `deps`
+ * can never contain one and a url-list prune structurally cannot reach
+ * them. Until SNOW-871 they went with the whole-bucket delete; a
+ * PREFIX sweep is what replaces that, and it is the only place in this
+ * function that reads the bucket rather than being told what to remove.
+ *
+ * @param {string} areaId The bucket, in `pwaBasemapDownloadCore`'s own
+ *   `areaIdForRegion` form — never assembled by hand.
+ * @param {string[]} urls Exactly the entries to remove.
+ * @param {{prefix: string, spare?: string} | null} glyphs SNOW-871: also
+ *   remove every entry starting with `prefix` — the replaced style's glyph
+ *   prefix, as `activeBasemapGlyphPrefix` derives it and the record stores
+ *   it. `spare` is the prefix the REPLACEMENT promotes under, and nothing
+ *   beginning with it is ever deleted: two styles can legitimately be
+ *   served from one glyph host, and the incoming copy's labels must
+ *   survive the outgoing copy's prune. An empty or absent `prefix` sweeps
+ *   nothing — a prefix of `''` matches every entry in the bucket, which is
+ *   the whole-bucket delete this function exists to avoid.
+ * @returns {Promise<number>} How many entries were actually deleted —
+ *   returned for the debug trace and the tests, not for control flow.
+ */
+async function prunePinnedBasemapURLs(areaId, urls, glyphs) {
+  const core = self.pwaBasemapDownloadCore;
+  const list = Array.isArray(urls) ? urls : [];
+  const prefix = (glyphs && glyphs.prefix) || '';
+  const spare = (glyphs && glyphs.spare) || '';
+  if (!core || !areaId || !('caches' in window)) return 0;
+  if (!list.length && !prefix) return 0;
+  let deleted = 0;
+  let swept = 0;
+  try {
+    const cache = await caches.open(core.pinnedCacheName(areaId));
+    for (const url of list) {
+      try {
+        if (await cache.delete(url)) deleted += 1;
+      } catch (_e) {
+        // One entry refusing to go must not strand the rest.
+      }
+    }
+    if (prefix) {
+      // Enumerated AFTER the named deletions, so the sweep never
+      // reconsiders an entry that has already gone. `cache.keys()` answers
+      // with a snapshot array, so deleting while walking it is safe.
+      for (const request of await cache.keys()) {
+        const url = request.url;
+        if (!url.startsWith(prefix)) continue;
+        // The replacement's own glyphs, on a shared host — and the reason
+        // this is a `startsWith` rather than an inequality: one prefix can
+        // legitimately nest inside the other (`…/fonts/` and
+        // `…/fonts/noto/`), and the incoming one wins either way.
+        if (spare && url.startsWith(spare)) continue;
+        try {
+          if (await cache.delete(url)) swept += 1;
+        } catch (_e) {
+          // As above — best-effort, per entry.
+        }
+      }
+    }
+  } catch (_e) {
+    // Cache Storage unavailable, or the bucket gone out from under this —
+    // both leave the new download intact, which is what matters.
+  }
+  // SNOW-612: the bucket just changed size, so any measurement of it is
+  // stale — same reason an eviction forgets it.
+  forgetPinnedBucketMeasurement(areaId);
+  window.pwaDebugLog?.record('cache', 'basemap.prune', {
+    areaId: areaId,
+    asked: list.length,
+    deleted: deleted,
+    // Separate counts: the named half is checkable against what was asked
+    // for, the glyph half is only ever discovered by the sweep itself.
+    glyphPrefix: prefix,
+    glyphsSwept: swept,
+  });
+  return deleted + swept;
+}
 
-// SNOW-588: the two functions above, for modules OUTSIDE this file — the
-// "Manage downloads" sheet (static/js/map_downloads_manager.js), which
-// lists every downloaded area and deletes the ones the user picks.
+/**
+ * SNOW-871: whether ONE area's pinned bucket holds any entry beginning
+ * with `prefix`.
+ *
+ * Area-scoped on purpose, unlike `pinnedBasemapCacheURLs` above, which
+ * unions every bucket: the one caller (`_probeDone`'s glyph-prefix heal,
+ * map_region_download.js) is establishing a fact about THIS area's own
+ * record, and a hit in a sibling area's bucket would prove nothing about
+ * it.
+ *
+ * An empty `prefix` answers `false` rather than "everything matches" — a
+ * style with no `glyphs` yields `''` from `activeBasemapGlyphPrefix`, and
+ * treating that as a match would heal a record with a prefix that sweeps
+ * the whole bucket.
+ *
+ * @param {string} areaId
+ * @param {string} prefix
+ * @returns {Promise<boolean>} `false` for an unreadable or absent bucket —
+ *   the caller heals nothing on a `false`, which is the safe direction.
+ */
+async function pinnedAreaCacheHasPrefix(areaId, prefix) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !areaId || !prefix || !('caches' in window)) return false;
+  try {
+    const cache = await caches.open(core.pinnedCacheName(areaId));
+    const requests = await cache.keys();
+    return requests.some((request) => request.url.startsWith(prefix));
+  } catch (_e) {
+    return false;
+  }
+}
+
+// SNOW-588: `basemapDownloadedAreas` and `evictBasemapAreas` above, for
+// modules OUTSIDE this file — the "Manage downloads" sheet
+// (static/js/map_downloads_manager.js), which lists every downloaded area
+// and deletes the ones the user picks. (SNOW-871 put two more functions
+// between them and this comment, which used to say "the two functions
+// above"; `prunePinnedBasemapURLs` and `pinnedAreaCacheHasPrefix` are both
+// reached from this file's own lexical scope by the region control, and
+// neither is exposed here.)
 //
 // Both are module scope, so the sheet cannot reach them directly, and
 // both are exactly what it needs — which is why it delegates rather than
@@ -1664,39 +1811,44 @@ window.pwaBasemapDownloads = Object.freeze({
 });
 
 /**
- * SNOW-586: reveal the whole-area-eviction confirm banner naming
- * `evictAreas` and resolve once the user answers.
+ * Reveal one `_overlay_banner.html` confirm carrying `bodyText`, and
+ * resolve once the user answers it (SNOW-871).
+ *
+ * The listener/cleanup body below was `confirmBasemapEviction`'s alone
+ * until this ticket gave the download surface a SECOND question to ask
+ * ("this replaces the copy you already have"). Both are the same
+ * interaction against the same primitive — reveal, wait, resolve `true` on
+ * the CTA and `false` on the overlay's own dismiss — and the only things
+ * that differ are which three elements to drive and what to write into the
+ * body. Copying it would have been the third place in this file where an
+ * `overlay:dismissed` listener has to remember to remove itself.
  *
  * Degrades to `false` (treated as "cancelled") when the banner markup
  * isn't present — an older cached shell mid-rollout, say — because
- * silently proceeding to evict without ever having asked is exactly the
- * silence this ticket exists to remove; refusing the run is the safe
- * direction, not evicting anyway.
+ * silently proceeding without ever having asked is exactly the silence
+ * both callers exist to remove; refusing the run is the safe direction.
  *
- * @param {Array<{id: string, name?: string}>} evictAreas
- * @returns {Promise<boolean>} `true` = proceed (the caller still has to
- *   call `evictBasemapAreas` itself — this only asks), `false` = cancel.
+ * @param {{banner: string, body: string, cta: string}} ids The element ids
+ *   of the include's wrapper, its `body_id` paragraph and its `cta_id`
+ *   button. Passed rather than derived from the wrapper id: the partial
+ *   takes all three independently, so deriving them here would encode a
+ *   naming convention the template does not actually enforce.
+ * @param {string} bodyText The specifics, as DATA — a region's own name, a
+ *   basemap's translated picker label, a formatted size. Written with
+ *   `textContent`, never assembled as HTML.
+ * @returns {Promise<boolean>} `true` = proceed (every caller still has to
+ *   do the destructive thing itself — this only asks), `false` = cancel.
  */
-function confirmBasemapEviction(evictAreas) {
+function confirmViaOverlayBanner(ids, bodyText) {
   return new Promise((resolve) => {
-    const banner = document.getElementById('map-download-evict-confirm');
-    const body = document.getElementById('map-download-evict-confirm-body');
-    const cta = document.getElementById('map-download-evict-confirm-cta');
+    const banner = document.getElementById(ids.banner);
+    const body = document.getElementById(ids.body);
+    const cta = document.getElementById(ids.cta);
     if (!banner || !cta) {
       resolve(false);
       return;
     }
-    // SNOW-635 review: `name` is populated for every non-orphaned area —
-    // stored for a region, stored-or-defaulted-from-ordinal for a custom
-    // area (see `basemapDownloadedAreas`'s own comment) — so this banner
-    // never has to know how to build a default itself. The `|| a.id`
-    // fallback exists only for the one case that still has no name at
-    // all: an orphaned bucket (SNOW-612) with no record behind it, which
-    // `planEviction` can legitimately pick (its missing `savedAt` sorts
-    // it as the oldest thing on disk).
-    if (body) {
-      body.textContent = (evictAreas || []).map((a) => a.name || a.id).join(', ');
-    }
+    if (body) body.textContent = bodyText;
     let settled = false;
     const onConfirm = () => {
       if (settled) return;
@@ -1719,6 +1871,97 @@ function confirmBasemapEviction(evictAreas) {
     document.addEventListener('overlay:dismissed', onDismiss);
     banner.classList.remove('hidden');
   });
+}
+
+/**
+ * SNOW-586: reveal the whole-area-eviction confirm banner naming
+ * `evictAreas` and resolve once the user answers.
+ *
+ * @param {Array<{id: string, name?: string}>} evictAreas
+ * @returns {Promise<boolean>} `true` = proceed (the caller still has to
+ *   call `evictBasemapAreas` itself — this only asks), `false` = cancel.
+ */
+function confirmBasemapEviction(evictAreas) {
+  // SNOW-635 review: `name` is populated for every non-orphaned area —
+  // stored for a region, stored-or-defaulted-from-ordinal for a custom
+  // area (see `basemapDownloadedAreas`'s own comment) — so this banner
+  // never has to know how to build a default itself. The `|| a.id`
+  // fallback exists only for the one case that still has no name at
+  // all: an orphaned bucket (SNOW-612) with no record behind it, which
+  // `planEviction` can legitimately pick (its missing `savedAt` sorts
+  // it as the oldest thing on disk).
+  const names = (evictAreas || []).map((a) => a.name || a.id).join(', ');
+  return confirmViaOverlayBanner(
+    {
+      banner: 'map-download-evict-confirm',
+      body: 'map-download-evict-confirm-body',
+      cta: 'map-download-evict-confirm-cta',
+    },
+    names,
+  );
+}
+
+/**
+ * SNOW-871: ask before REPLACING the copy of an area this device already
+ * holds under a different basemap.
+ *
+ * A region's pinned bucket is keyed on the region id alone, so downloading
+ * the same region under a second basemap replaces the first — the tiles
+ * the user already paid for go, and until this ticket they went silently,
+ * before the new run had fetched anything. Every other destructive control
+ * on this surface confirms first (the budget eviction above, the Manage
+ * downloads sheet's Delete); this one did not, which is half of what
+ * SNOW-871 exists to fix. The other half is the ORDER — see the region
+ * control's `finish`, which now prunes the old copy only once the new one
+ * has landed.
+ *
+ * Only ever raised when there is genuinely something to lose: the caller
+ * establishes that the record names a different basemap AND that its tiles
+ * are still on disk (`map_region_download.js`'s `beforeWarm`). A stale
+ * record whose bucket has already been evicted replaces nothing, and must
+ * not be dressed up as a loss.
+ *
+ * @param {{basemapKey: string, name: string, bytes: number}} previous What
+ *   the replacement costs, from the existing record: the basemap it was
+ *   downloaded under (a picker key, `''` when nothing on record names it),
+ *   the area's own name, and its recorded size.
+ * @returns {Promise<boolean>} `true` = go ahead and download, `false` =
+ *   leave the existing copy alone and start nothing.
+ */
+function confirmBasemapReplace(previous) {
+  // The picker's own server-translated label, so the banner names the
+  // basemap exactly as the popover the user chose it from does. `''` for a
+  // record whose basemap cannot be named (a pre-SNOW-645 record nothing
+  // else on the device shares a template with) — which takes the unnamed
+  // string rather than interpolating an empty name into the named one, the
+  // same pairing the roundel's own label uses.
+  const label = basemapLabel(previous.basemapKey || '');
+  // Defensive, like map_custom_download.js's `_formatBytes`:
+  // `pwaBasemapManageCore` is loaded on the map page, and treated as
+  // optional here anyway.
+  const manage = self.pwaBasemapManageCore;
+  const size =
+    manage && typeof manage.formatMegabytes === 'function'
+      ? manage.formatMegabytes(previous.bytes || 0)
+      : '0 MB';
+  const body = label
+    ? self.pwaStrings.interpolate(MAP_STRINGS['download-replace-body'], {
+        basemap: label,
+        region: previous.name,
+        size: size,
+      })
+    : self.pwaStrings.interpolate(MAP_STRINGS['download-replace-body-unnamed'], {
+        region: previous.name,
+        size: size,
+      });
+  return confirmViaOverlayBanner(
+    {
+      banner: 'map-download-replace-confirm',
+      body: 'map-download-replace-confirm-body',
+      cta: 'map-download-replace-confirm-cta',
+    },
+    body,
+  );
 }
 
 // SNOW-568: the basemap-download failure toasts in _map_embed.html. Only

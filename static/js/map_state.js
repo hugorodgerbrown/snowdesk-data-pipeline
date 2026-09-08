@@ -269,6 +269,17 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
     "This region's basemap is downloaded for %(basemap)s — tap to download it for this basemap too",
   'download-other-basemap-unnamed':
     "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
+  // SNOW-871: the body of the "this replaces the copy you already have"
+  // confirm (`confirmBasemapReplace`, map_basemap_downloads.js). The title
+  // asks the question and is server-rendered in the banner itself; this
+  // line is the SPECIFICS — which basemap's copy, of what, and how big —
+  // so the user is answering about something identifiable rather than
+  // about "an earlier download". Two variants, for the same reason
+  // 'download-other-basemap' has two: a pre-SNOW-645 record can carry no
+  // basemap key that anything on the device can name, and an empty name
+  // must never be interpolated into the named string.
+  'download-replace-body': 'Your %(basemap)s copy of %(region)s (%(size)s)',
+  'download-replace-body-unnamed': 'Your earlier copy of %(region)s (%(size)s)',
   // SNOW-749: the roundel's ninth state. Downloading is gated on an
   // account, and the control stays
   // VISIBLE and tappable while the visitor is signed out — a hidden
