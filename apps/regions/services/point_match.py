@@ -1,10 +1,9 @@
 """
-apps/regions/services/point_match.py — Pure-Python point-in-polygon classification.
+apps/regions/services/point_match.py — Pure-Python point-in-polygon matching.
 
-Provides ``point_in_polygon`` (ray-casting), ``classify_match``
-(region-relative subscriber classification: in_region / in_neighbour /
-elsewhere / unknown), and ``region_for_point`` (global point→MicroRegion
-resolver used by the GPS-gated field-report feature).
+Provides ``point_in_polygon`` (ray-casting) and ``region_for_point`` (global
+point→MicroRegion resolver, used by the GPS-gated field-report feature and
+by favourite placement).
 
 Deliberately uses no Shapely or GDAL.  Shapely is a dev-only dependency
 (used lazily by ``audit_resort_regions``); promoting it to the request path
@@ -24,19 +23,6 @@ if TYPE_CHECKING:
     from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Match-kind constants
-# ---------------------------------------------------------------------------
-# Plain strings so regions/ keeps no dependency on accounts/.
-# Subscription.GeoMatchKind literal values MUST match these — a unit test in
-# tests/regions/services/test_point_match.py guards against drift.
-
-IN_REGION: str = "IN_REGION"
-IN_NEIGHBOUR: str = "IN_NEIGHBOUR"
-ELSEWHERE: str = "ELSEWHERE"
-UNKNOWN: str = "UNKNOWN"
-
 
 # ---------------------------------------------------------------------------
 # Ray-casting algorithm
@@ -149,52 +135,6 @@ def point_in_polygon(lon: float, lat: float, geometry: dict | None) -> bool:
             exc_info=True,
         )
         return False
-
-
-# ---------------------------------------------------------------------------
-# Region-relative classification
-# ---------------------------------------------------------------------------
-
-
-def classify_match(
-    lon: float | None,
-    lat: float | None,
-    target: "MicroRegion",
-) -> tuple[str, "MicroRegion | None"]:
-    """Classify a geo point relative to a target MicroRegion.
-
-    Returns a ``(kind, matched_region)`` pair in a single pass:
-
-    - ``(UNKNOWN, None)``           — coordinates are None.
-    - ``(IN_REGION, target)``       — point is inside target.boundary.
-    - ``(IN_NEIGHBOUR, neighbour)`` — point is inside a neighbour's boundary.
-    - ``(ELSEWHERE, None)``         — point does not fall inside target or
-                                       any of its neighbours.
-
-    ``target.neighbours.all()`` is evaluated lazily; the first neighbour
-    that contains the point short-circuits the loop, so average query
-    overhead is one FK lookup plus an early-exit scan of the neighbour set.
-
-    Args:
-        lon: Longitude of the subscriber's geolocation, or None.
-        lat: Latitude of the subscriber's geolocation, or None.
-        target: The MicroRegion the subscriber is subscribing to.
-
-    Returns:
-        Tuple of (kind_constant, matched_region_or_none).
-
-    """
-    if lon is None or lat is None:
-        return UNKNOWN, None
-
-    if point_in_polygon(lon, lat, target.boundary):
-        return IN_REGION, target
-
-    for neighbour in target.neighbours.all():
-        if point_in_polygon(lon, lat, neighbour.boundary):
-            return IN_NEIGHBOUR, neighbour
-
-    return ELSEWHERE, None
 
 
 # ---------------------------------------------------------------------------
