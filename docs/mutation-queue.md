@@ -238,14 +238,26 @@ is what `report_submit`'s `CsrfViewMiddleware` check needs.
 
 ## Drain triggers
 
-`_wireLifecycle()` (`mutation_queue.js:751`) wires four, mirroring the
-function of the same name in `static/js/telemetry.js`: `online`,
-`visibilitychange` → visible, a 30s timer that runs only while the tab is
-visible (`DRAIN_INTERVAL_MS`), and `pagehide`. `enqueue()` is the fifth — it
-drains inline once the row is persisted, when the app is using the network
-(`mutation_queue.js:580`). All of them funnel through one in-flight guard
-(`_drainInFlight`) so concurrent triggers can never double-POST the same
-row, and one pass replays at most `BATCH_SIZE` (50) rows.
+`_wireLifecycle()` wires four, mirroring the function of the same name in
+`static/js/telemetry.js`: `online`, `visibilitychange` → visible, a 30s
+timer that runs only while the tab is visible (`DRAIN_INTERVAL_MS`), and
+`pagehide`. `enqueue()` is the fifth — it drains inline once the row is
+persisted, when the app is using the network.
+
+**Load is the sixth (SNOW-860), and it was missing.** `_wireLifecycle()`
+ends by chaining a `drain()` onto the reconcile promise. Without it, a row
+left over from a previous session was painted onto the badge and never
+attempted: `online` fires only on an offline→online *transition* and never
+for a tab that opened online, `visibilitychange` needs a tab switch, and
+the 30s timer is created fresh on every load — so refreshing restarted the
+only clock that would have sent the row. The badge read "1 change queued"
+indefinitely while nothing was ever tried. It is chained onto the reconcile
+rather than fired beside it because a mismatched principal clears the whole
+queue, and replaying rows about to be discarded is wasted work.
+
+All six funnel through one in-flight guard (`_drainInFlight`) so concurrent
+triggers can never double-POST the same row, and one pass replays at most
+`BATCH_SIZE` (50) rows.
 
 **Which 50** matters (SNOW-617). `drain()` reads the whole store and hands
 it to `pwaMutationQueueCore.selectDrainBatch(rows, now, BATCH_SIZE)`, which

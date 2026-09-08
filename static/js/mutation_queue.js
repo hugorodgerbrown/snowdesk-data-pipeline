@@ -780,13 +780,17 @@
   }
 
   // -------------------------------------------------------------------
-  // Lifecycle triggers — mirrors telemetry.js's _wireLifecycle.
+  // Lifecycle triggers — mirrors telemetry.js's _wireLifecycle, plus the
+  // load drain at the end, which telemetry.js has no equivalent of (a
+  // buffered event costs nothing by waiting; a queued mutation is work the
+  // user believes they have done).
   // -------------------------------------------------------------------
 
   function _wireLifecycle() {
     // SNOW-462: fire-and-forget — must not block wiring the rest of the
     // lifecycle. The drain-guard in _processRow is the race backstop.
-    _reconcilePrincipal().catch(() => {});
+    // SNOW-860 keeps the handle so the load drain below can wait for it.
+    var reconciled = _reconcilePrincipal().catch(() => {});
     try {
       window.addEventListener('online', () => {
         drain().catch(() => {});
@@ -829,6 +833,27 @@
     _wireToast();
     // Reflect any rows left over from a previous session/tab close.
     _updateBadge().catch(() => {});
+
+    // SNOW-860: and TRY TO SEND THEM. Load was not a drain trigger, so a
+    // row left over from a previous session was painted onto the badge
+    // and then sat there: `online` fires only on an offline→online
+    // transition and never for a tab that opened online, and
+    // `visibilitychange` needs a tab switch, which left the 30s timer as
+    // the first real attempt — a timer created fresh on every load, so
+    // refreshing repeatedly restarted the only clock that would have
+    // sent the row. The badge read "1 change queued" indefinitely while
+    // nothing was ever tried.
+    //
+    // Chained onto the reconcile rather than fired beside it: a mismatched
+    // principal clears the whole queue, and there is no point replaying
+    // rows that are about to be discarded. `_processRow`'s drain-guard
+    // would catch them anyway; this just avoids the pointless work.
+    //
+    // Safe to call unconditionally — `drain()` returns an already-resolved
+    // promise when offline, when `window.pwaDb` is absent (this file loads
+    // on admin pages too) or when a reset is required, and `_drainInFlight`
+    // serialises it against every other trigger.
+    reconciled.then(() => drain()).catch(() => {});
   }
 
   Object.defineProperty(window, 'pwaMutationQueue', {
