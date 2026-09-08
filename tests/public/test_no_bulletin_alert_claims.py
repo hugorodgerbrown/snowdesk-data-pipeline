@@ -53,6 +53,16 @@ Two consequences a reader should know about:
   phrases at all ("we'll be in touch when conditions change"), passes.
   The guard catches the phrasings the site actually used, not every
   phrasing it could.
+* Each pattern matches one word order, so the same claim rearranged
+  slips through. These were all checked and none of them fires:
+  "manage the subscriptions on your account" (``your`` not adjacent, and
+  outside the three-word budget), "manage subscriptions from your account
+  settings" (no possessive before the noun), and "notifications are
+  unlocked by installing" (``unlocks`` before the noun is what
+  ``install-unlocks-notifications`` looks for). This is the narrowest and
+  most foreseeable gap: a rewrite of a caught line can evade the pattern
+  written for it. Prefer adding a pattern over trusting this list to
+  stay short.
 """
 
 from __future__ import annotations
