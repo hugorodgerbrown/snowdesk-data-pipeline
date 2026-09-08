@@ -78,6 +78,15 @@ const STATIC_JS = path.resolve(
 const PARSE_TIME_CORES = [
   'layer_visibility_core.js',
   'hatch_core.js',
+  // SNOW-860: not a parse-time read — `map_basemap_downloads.js` reaches
+  // `window.pwaBasemapAreas` from inside its own functions, never at load.
+  // It is here for the other reason this list exists: it is a property of
+  // the BUNDLE rather than of any one suite. Every read of what this device
+  // has downloaded now goes through this module (`basemapDownloadedAreas`,
+  // `_readCustomAreas`, `_readBaseLayers` all delegate), so a bundle booted
+  // without it answers "nothing downloaded" to every such call — which no
+  // suite would be asserting on purpose.
+  'basemap_downloaded_areas.js',
   // SNOW-737: `map.js`'s boot IIFE resolves the stored camera through
   // `pwaViewportCore.restore` while building the MapLibre constructor
   // options, so a bundle booted without it throws before any test has run —

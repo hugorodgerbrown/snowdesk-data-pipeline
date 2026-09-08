@@ -13,6 +13,16 @@
  * on-map progress grid, and the thin delegator to
  * `basemap_download_runner.js`.
  *
+ * SNOW-860 moved the READER out — `basemapDownloadedAreas`,
+ * `pinnedBucketAreaIds` and the two `meta:app` record reads behind them
+ * are `static/js/basemap_downloaded_areas.js` now, and the functions of
+ * those names left here delegate to it. Everything that WRITES a record,
+ * plans an eviction, runs a download or paints on the map stayed. The
+ * reason is that /account/settings/ has to state what "Reset local data"
+ * is about to delete, and it must read the same list the Manage downloads
+ * sheet does — which it cannot do from this file, whose bare `MAP` /
+ * `COUNTRY_STATE` / `RATINGS_URL` reads only resolve on the map page.
+ *
  * LOAD ORDER MATTERS. This is a classic script, so its top-level `let` /
  * `const` land in the global lexical scope — readable from map.js as bare
  * identifiers, but NOT as `window.X` (the asymmetry behind SNOW-610's M1).
@@ -491,33 +501,9 @@ async function pinnedBasemapCacheURLs() {
   return urls;
 }
 
-/**
- * Every area id with a pinned bucket present in Cache Storage (SNOW-612).
- *
- * The bucket is the ground truth for what is actually stored; the
- * `basemap.regions` / `basemap.customAreas` records are only what COMPLETED
- * runs left behind. A download that failed partway leaves the former
- * without the latter, which is exactly the stranded quota this reader
- * exists to surface — see `basemapDownloadedAreas` below.
- *
- * Never throws: Cache Storage being unavailable reads as "no buckets",
- * which degrades to the pre-SNOW-612 behaviour of trusting the records
- * alone rather than blocking anything.
- *
- * @returns {Promise<string[]>}
- */
-async function pinnedBucketAreaIds() {
-  if (!('caches' in window)) return [];
-  try {
-    const names = await caches.keys();
-    return names
-      .filter((name) => name.startsWith(BASEMAP_PINNED_CACHE_PREFIX))
-      .map((name) => name.slice(BASEMAP_PINNED_CACHE_PREFIX.length))
-      .filter(Boolean);
-  } catch (_e) {
-    return [];
-  }
-}
+// SNOW-860: `pinnedBucketAreaIds` moved to
+// `static/js/basemap_downloaded_areas.js` with the reader that was its only
+// caller. Reach it as `window.pwaBasemapAreas.pinnedBucketAreaIds()`.
 
 // SNOW-612: measured sizes for orphaned buckets, keyed by area id. Held
 // for the page's lifetime only — a reload re-measures, which is cheap
@@ -613,38 +599,28 @@ async function basemapDownloadBudgetBytes() {
   return mb * 1024 * 1024;
 }
 
-// SNOW-635: the array-shaped record replacing the old single-row
-// `basemap.customArea` — see `_readCustomAreas`'s docstring for the lazy
-// migration between the two. Top-level constants because `basemapDownloadedAreas`,
-// `evictBasemapAreas` and `mapCustomDownloadControlInit`'s IIFE (all of
-// which read or write this record) need to agree on the same key.
-const CUSTOM_AREAS_KEY = 'basemap.customAreas';
-const LEGACY_CUSTOM_AREA_KEY = 'basemap.customArea';
-
-// SNOW-856: the shared base layers, one entry per basemap that has
-// one — `[{basemapKey, band, bbox, bytes, savedAt}]`. A sibling of the two
-// records above rather than an entry in either, because a base layer is
-// not an area: no user chose it, no user can delete it, and it outlives
-// every area that shares it.
-const BASE_LAYERS_KEY = 'basemap.baseLayers';
+// SNOW-860: the `meta:app` keys for the custom-area and base-layer
+// records, and the reads over them, moved to
+// `static/js/basemap_downloaded_areas.js` — the page-agnostic reader both
+// the map page and /account/settings/ now share. The WRITERS stayed here,
+// because they belong to the download runs this file drives; they name
+// their rows through `window.pwaBasemapAreas.CUSTOM_AREAS_KEY` /
+// `.BASE_LAYERS_KEY` so there is still exactly one definition of each key.
 
 /**
- * SNOW-856: the `basemap.baseLayers` record. Best-effort — a failed read
- * is "no base layer recorded", which makes the next download re-warm one
- * it may already hold. That costs a `cache.keys()` walk and no bytes
- * (`resolveBaseLayerPlan` fetches only what is genuinely missing), which
- * is the right way round for a read that must never throw on the boot path.
+ * SNOW-856: the `basemap.baseLayers` record, via the extracted reader
+ * (SNOW-860). Kept as a local name because the base-layer writers below
+ * read-modify-write through it.
+ *
+ * Optional-chained rather than assumed: this file's own contract is that
+ * a failed read is "no base layer recorded", so a page that somehow
+ * loaded it without the reader degrades the same way a thrown IndexedDB
+ * error does rather than taking the download path down.
  *
  * @returns {Promise<Array<Object>>}
  */
 async function _readBaseLayers() {
-  if (!window.pwaDb) return [];
-  try {
-    const row = await window.pwaDb.get('meta:app', BASE_LAYERS_KEY);
-    return Array.isArray(row && row.value) ? row.value : [];
-  } catch (_e) {
-    return [];
-  }
+  return (await window.pwaBasemapAreas?.readBaseLayers()) || [];
 }
 
 /**
@@ -837,7 +813,7 @@ async function _forgetBaseLayerRecord(basemapKey) {
   try {
     const existing = await _readBaseLayers();
     await window.pwaDb.put('meta:app', {
-      key: BASE_LAYERS_KEY,
+      key: window.pwaBasemapAreas.BASE_LAYERS_KEY,
       value: existing.filter((entry) => entry && entry.basemapKey !== basemapKey),
     });
   } catch (_e) {
@@ -973,7 +949,10 @@ async function recordBaseLayer(result, plan) {
       bytes: (Number(previous && previous.bytes) || 0) + (Number(result.bytes) || 0),
       savedAt: new Date().toISOString(),
     });
-    await window.pwaDb.put('meta:app', { key: BASE_LAYERS_KEY, value: next });
+    await window.pwaDb.put('meta:app', {
+      key: window.pwaBasemapAreas.BASE_LAYERS_KEY,
+      value: next,
+    });
   } catch (err) {
     console.warn('base layer record write failed', err);
   }
@@ -981,59 +960,20 @@ async function recordBaseLayer(result, plan) {
 }
 
 /**
- * SNOW-635: read `basemap.customAreas`, migrating the legacy single-row
- * `basemap.customArea` into it on first read if the new key is absent.
+ * SNOW-635: the `basemap.customAreas` record, via the extracted reader
+ * (SNOW-860 — `static/js/basemap_downloaded_areas.js`), which also owns
+ * the lazy migration from the legacy single-row `basemap.customArea`.
+ * Kept as a local name because every custom-area writer below
+ * read-modify-writes through it.
  *
- * Lazy rather than a one-off migration command, because this runs inside
- * `basemapDownloadedAreas()` — the boot-path probe the roundel calls on
- * every page load (post-SNOW-634) — so every existing device reaches it
- * without a separate step. Best-effort throughout, and this MUST degrade
- * to "read the legacy row as a one-entry list" rather than throw: a device
- * that cannot write here would otherwise take both the roundel and the
- * manage sheet down with it, since both sit on this same boot-path read.
+ * Optional-chained for the same reason `_readBaseLayers` above is: a
+ * missing reader reads as "nothing recorded", never as a throw on the
+ * boot path.
  *
- * The legacy area keeps id `CUSTOM_AREA_ID` ('custom') and ordinal `1` —
- * its existing `snowdesk-basemap-pinned-custom` Cache Storage bucket has
- * no rename, so the id has to survive unchanged for that bucket to keep
- * resolving (docs/decisions/per-area-pinned-basemap-caches.md).
- *
- * @returns {Promise<Array<Object>>} `[]` when nothing is stored and there
- *   is no legacy row to migrate.
+ * @returns {Promise<Array<Object>>}
  */
 async function _readCustomAreas() {
-  if (!window.pwaDb) return [];
-  let row;
-  try {
-    row = await window.pwaDb.get('meta:app', CUSTOM_AREAS_KEY);
-  } catch (_e) {
-    row = undefined;
-  }
-  // An empty array is a legitimate "already migrated, nothing left" —
-  // return it as-is rather than falling through to the legacy read, or a
-  // device that deleted its last custom area would have it re-created
-  // from a legacy row that (by then) no longer exists anyway.
-  if (Array.isArray(row && row.value)) return row.value;
-
-  let legacyRow;
-  try {
-    legacyRow = await window.pwaDb.get('meta:app', LEGACY_CUSTOM_AREA_KEY);
-  } catch (_e) {
-    legacyRow = undefined;
-  }
-  const legacy = legacyRow && legacyRow.value;
-  if (!legacy || !Array.isArray(legacy.bbox)) return [];
-
-  const core = self.pwaBasemapDownloadCore;
-  const migrated = [{ ...legacy, id: core ? core.CUSTOM_AREA_ID : 'custom', ordinal: 1 }];
-  try {
-    await window.pwaDb.put('meta:app', { key: CUSTOM_AREAS_KEY, value: migrated });
-    await window.pwaDb.delete('meta:app', LEGACY_CUSTOM_AREA_KEY);
-  } catch (_e) {
-    // Best-effort — see docstring above. The legacy row is untouched, so
-    // the next read tries the migration again; this call still returns the
-    // migrated shape for ITS OWN caller even though the write didn't land.
-  }
-  return migrated;
+  return (await window.pwaBasemapAreas?.readCustomAreas()) || [];
 }
 
 /**
@@ -1052,7 +992,10 @@ async function _readCustomAreas() {
 async function _writeCustomAreas(areas) {
   if (!window.pwaDb) return false;
   try {
-    await window.pwaDb.put('meta:app', { key: CUSTOM_AREAS_KEY, value: areas });
+    await window.pwaDb.put('meta:app', {
+      key: window.pwaBasemapAreas.CUSTOM_AREAS_KEY,
+      value: areas,
+    });
     return true;
   } catch (_e) {
     return false;
@@ -1151,202 +1094,32 @@ async function renameCustomArea(areaId, name) {
   return ok;
 }
 
-// SNOW-586: every area currently recorded as downloaded, normalised into
-// planEviction's `[{id, name, bytes, savedAt}]` shape — the union of
-// `basemap.regions` (mapDownloadControlInit's record, one entry per
-// downloaded region) and (SNOW-635) `basemap.customAreas`
-// (mapCustomDownloadControlInit's record, now an array — see
-// `_readCustomAreas`). `name` is always populated for a non-orphaned area
-// — stored for a region, stored-or-defaulted-from-ordinal for a custom
-// area (see the inline comment below) — so every downstream reader can
-// treat it uniformly; only `reconcileAreas`' orphan entries (no record at
-// all) ever leave it unset. Best-effort: a failed read contributes
-// nothing rather than throwing — eviction planning degrades to "nothing
-// recorded, so nothing to evict", never to blocking a download outright
-// over a transient IndexedDB error.
+// SNOW-860: the reader itself now lives in
+// `static/js/basemap_downloaded_areas.js`, page-agnostic, so
+// /account/settings/'s "what will Reset local data delete" breakdown reads
+// the SAME list the Manage downloads sheet does — the two surfaces cannot
+// disagree about what is on this device, which is the whole reason the
+// extraction happened rather than a second reader being written. This is
+// the map page's binding for it, and it stays a bare identifier because
+// half a dozen call sites in this file and in `map.js` read it as one.
+//
+// The two things this file still supplies:
+//
+//   - `MAP_STRINGS` (map_state.js), so a custom area's numbered default
+//     name and the shared overview map's name arrive in the language the
+//     map page rendered. The settings page passes its own panel's copies.
+//   - `measurePinnedBucketBytes`, for an ORPHANED bucket with no record to
+//     read a size off. It walks every entry of the bucket, and that is
+//     work the map page absorbs and an account page should not do on load
+//     — so it is injected here rather than moved.
 //
 // @returns {Promise<Array<{id: string, name?: string, bytes: number,
-//   savedAt: string, basemapKey: string|null}>>} `basemapKey` (SNOW-645)
-//   is the basemap the area was fetched under, null for a record written
-//   before that ticket or for a reconciled orphan — "downloaded, basemap
-//   unknown". SNOW-722: named here because it is load-bearing outside the
-//   eviction path now (map_layer_sync_status.js decides each basemap
-//   row's dot on it), and the abbreviated shape above read as though it
-//   were dropped.
+//   savedAt: string, basemapKey: string|null}>>}
 async function basemapDownloadedAreas() {
-  const core = self.pwaBasemapDownloadCore;
-  const areas = [];
-  if (!core || !window.pwaDb) return areas;
-  try {
-    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
-    const regions = Array.isArray(row && row.value) ? row.value : [];
-    for (const entry of regions) {
-      if (!entry || !entry.region_id) continue;
-      areas.push({
-        id: core.areaIdForRegion(entry.region_id),
-        name: entry.name || entry.region_id,
-        bytes: Number(entry.bytes) || 0,
-        savedAt: entry.savedAt,
-        // SNOW-645: absent on a record written before this ticket shipped
-        // — reads as "downloaded, basemap unknown" rather than a wrong one.
-        basemapKey: entry.basemapKey || null,
-        // SNOW-749: the region id, carried so `reconcileAreas` can compare
-        // and `downloads_sync.js` can describe this area to the account
-        // without re-parsing it back out of the bucket id — that format
-        // belongs to `areaIdForRegion` and is deliberately never
-        // reverse-engineered elsewhere.
-        regionId: entry.region_id,
-        // SNOW-844: the render dependencies the run recorded, so the
-        // Manage downloads sheet can check a row whose basemap is not the
-        // one on screen. Absent on every record written before that ticket
-        // — normalised to `[]` here, which the sheet reads as UNKNOWN
-        // rather than as "nothing needed".
-        deps: Array.isArray(entry.deps) ? entry.deps : [],
-      });
-    }
-  } catch (_e) {
-    // Best-effort — see docstring.
-  }
-  try {
-    const customAreas = await _readCustomAreas();
-    for (const entry of customAreas) {
-      if (!entry || !entry.id || !Array.isArray(entry.bbox)) continue;
-      areas.push({
-        id: entry.id,
-        // SNOW-635 (review): `name` is set by a rename
-        // (map_downloads_manager.js's Rename control) when present; an
-        // unrenamed area's default display name ("Custom area N") is
-        // filled in HERE, from `ordinal`, in memory only — never
-        // persisted, so it stays translatable rather than freezing in
-        // whatever language was active at download time. Filling it at
-        // THIS single normalising layer, rather than at every
-        // downstream reader, is what let the eviction confirm banner's
-        // fallback regress to a raw id: the banner (and the sheet, and
-        // the rename prompt's pre-fill) can all just read `area.name`
-        // uniformly now, with nothing left to distinguish "stored" from
-        // "defaulted".
-        name:
-          entry.name ||
-          (Number.isFinite(entry.ordinal)
-            ? self.pwaStrings.interpolate(MAP_STRINGS['default-custom-name'], {
-                n: entry.ordinal,
-              })
-            : entry.id),
-        bytes: Number(entry.bytes) || 0,
-        savedAt: entry.savedAt,
-        // SNOW-645: see the region branch above for the "unknown" fallback.
-        basemapKey: entry.basemapKey || null,
-        // SNOW-XXX: which KIND of user-made area this is — a framed box
-        // ('custom') or a circle dropped on the user's own position
-        // ('dropzone'). The sheet names it in words on every row, and a
-        // record written before the field existed is what it was: a
-        // framed box.
-        type: entry.type === 'dropzone' ? 'dropzone' : 'custom',
-        // SNOW-749: a custom area IS its box — it is the only thing that
-        // lets another device (or this one after an eviction) fetch the
-        // same ground again, so it travels with the area.
-        bbox: entry.bbox,
-        // SNOW-844: see the region branch above.
-        deps: Array.isArray(entry.deps) ? entry.deps : [],
-      });
-    }
-  } catch (_e) {
-    // Best-effort — see docstring.
-  }
-
-  // SNOW-856: and the shared base layers. They belong in this list for
-  // exactly one reason — they are real bytes against the user's budget,
-  // and a total that counts what it does not list is worse than one that
-  // lists everything. Every consumer for which a base layer is NOT an
-  // area excludes it explicitly via `core.isBaseLayerAreaId`:
-  // `planEviction` (never a candidate), `manageRows` (never deletable)
-  // and `map_layer_sync_status.js` (a basemap with only a base layer has
-  // no ground downloaded, so its dot must not go green).
-  //
-  // SNOW-863: driven by the BUCKETS on disk, joined to the records for
-  // their sizes — not by the records alone, which is what shipped and was
-  // wrong. A base layer's record is written by the page once the service
-  // worker's warm resolves, and that warm is the tail of a download the
-  // roundel has already reported as finished; a reader who closes the tab
-  // in between (or reloads, or whose device sleeps) is left with a
-  // complete bucket and no record. Reported on staging as a row reading
-  // "base-swisstopo_winter" under "Unknown basemap", with a delete button
-  // — the reconciliation below had picked the bucket up as an orphan,
-  // because nothing in the record-driven pass could name it.
-  //
-  // The bucket names its own basemap now (`baseLayerBasemapKey`), so a
-  // missing record costs only the SIZE, which reads 0 until the next
-  // download's top-up writes one. An unsized row is a small lie; an
-  // unnamed deletable one was a trap.
-  try {
-    const byKey = new Map();
-    for (const entry of await _readBaseLayers()) {
-      if (entry && entry.basemapKey) byKey.set(entry.basemapKey, entry);
-    }
-    for (const areaId of await pinnedBucketAreaIds()) {
-      if (!core.isBaseLayerAreaId(areaId)) continue;
-      const basemapKey = core.baseLayerBasemapKey(areaId);
-      if (!basemapKey) continue;
-      const entry = byKey.get(basemapKey);
-      areas.push({
-        id: areaId,
-        name: MAP_STRINGS['base-layer-name'] || 'Overview map',
-        bytes: Number(entry && entry.bytes) || 0,
-        savedAt: (entry && entry.savedAt) || '',
-        basemapKey: basemapKey,
-        bbox: entry && entry.bbox,
-        // Not a render dependency of anything — the tiles ARE the layer.
-        deps: [],
-      });
-    }
-  } catch (_e) {
-    // Best-effort — see docstring.
-  }
-
-  // SNOW-612: union in the pinned buckets actually on disk. A record is
-  // only written when a run COMPLETES, so a download that failed partway
-  // left a bucket the budget never counted and the manage sheet could not
-  // delete — quota that accumulated silently across failed attempts.
-  // Without the manage core there is no reconciliation to run, so this
-  // degrades to the records alone rather than to nothing.
-  const manage = self.pwaBasemapManageCore;
-  if (!manage || typeof manage.reconcileAreas !== 'function') return areas;
-  const storedIds = await pinnedBucketAreaIds();
-  const recordedIds = new Set(areas.map((area) => area.id));
-  const orphanIds = storedIds.filter((id) => !recordedIds.has(id));
-  // SNOW-812: the two halves of "is this area downloaded" side by side —
-  // the records the page keeps in meta:app, and the pinned buckets
-  // actually on disk. `missing` is the one that matters for a blank map:
-  // an area the UI reports as downloaded with no bucket behind it. It is
-  // the same comparison sw.js's `pinned.buckets` line records from the
-  // other side, so the two can be read against each other.
-  window.pwaDebugLog?.record('cache', 'areas.reconcile', {
-    recorded: [...recordedIds],
-    onDisk: storedIds,
-    orphans: orphanIds,
-    missing: [...recordedIds].filter((id) => !storedIds.includes(id)),
+  return window.pwaBasemapAreas.downloadedAreas({
+    strings: MAP_STRINGS,
+    measureBytes: measurePinnedBucketBytes,
   });
-  // Measured one bucket at a time rather than in parallel: an orphan is
-  // rare, and a concurrent walk of several thousand cache entries each is
-  // the kind of burst that makes a slow device feel broken.
-  const bytesById = {};
-  for (const id of orphanIds) {
-    bytesById[id] = await measurePinnedBucketBytes(id);
-  }
-  // SNOW-749: and union in the areas on the ACCOUNT, in this same one
-  // normalising layer — exactly where SNOW-612's orphans already join,
-  // and for the same reason: a second reader somewhere else would be free
-  // to disagree with this one about what exists.
-  //
-  // `accountAreas()` resolves `[]` for an anonymous visitor, a flag-off
-  // page, an offline device and any failure alike, so this never waits on
-  // a network it cannot reach and never turns a read of local storage
-  // into a rejection. With `[]` the reconciliation output is what it was
-  // before this ticket, which is the path every existing caller takes.
-  const accountAreas = window.pwaDownloadsSync
-    ? await window.pwaDownloadsSync.accountAreas()
-    : [];
-  return manage.reconcileAreas(areas, storedIds, bytesById, accountAreas);
 }
 
 /**

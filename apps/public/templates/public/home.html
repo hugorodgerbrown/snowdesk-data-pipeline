@@ -343,6 +343,14 @@ in addition to the shared map assets.
     {# parse time, so it sits with the other call-site cores.               #}
     <script defer src="{% static 'js/trip_deeplink_core.js' %}"></script>
     <script defer src="{% static 'js/basemap_download_core.js' %}"></script>
+    {# SNOW-860: the one reader of what this device has downloaded          #}
+    {# (window.pwaBasemapAreas). map_basemap_downloads.js delegates to it,  #}
+    {# and /account/settings/ loads the same file for the "Reset local      #}
+    {# data" breakdown — one reader, so the two surfaces cannot disagree.   #}
+    {# Outside the map bundle's contiguous run (it publishes on window and  #}
+    {# reads nothing from another file's lexical scope), and before it,     #}
+    {# because map_basemap_downloads.js calls into it.                      #}
+    <script defer src="{% static 'js/basemap_downloaded_areas.js' %}"></script>
     {# SNOW-611: the one ordered pinned-download run both map download      #}
     {# controls share (window.pwaBasemapDownloadRunner). Must load before   #}
     {# map.js, whose runPinnedDownload delegates to it.                     #}
