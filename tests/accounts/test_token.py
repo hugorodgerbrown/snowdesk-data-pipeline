@@ -2,31 +2,24 @@
 tests/accounts/test_token.py — Tests for the TimestampSigner-based token service.
 
 Covers:
-  - Round-trip per salt (account-access, unsubscribe).
+  - Round-trip per salt (account-access, email-verification).
   - Cross-salt replay fails in both directions.
   - Expiry on account-access tokens.
-  - No expiry on unsubscribe tokens.
+  - The no-expiry branch (``max_age=None``) accepts an ancient token.
   - Tampered and garbage tokens return None.
   - Generated tokens contain no '/' characters (safe in URL path segments).
-  - Unsubscribe convenience wrappers encode/decode (email, region_id).
-  - SNOW-311 caplog regression: malformed-token warning logs parts/length, not the
-    raw token value.
 """
 
-import logging
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from django.conf import settings
 from freezegun import freeze_time
 
 from apps.accounts.services.token import (
     SALT_ACCOUNT_ACCESS,
-    SALT_UNSUBSCRIBE,
+    SALT_EMAIL_VERIFICATION,
     generate_token,
-    generate_unsubscribe_token,
     verify_token,
-    verify_unsubscribe_token,
 )
 
 
@@ -40,13 +33,13 @@ class TestGenerateToken:
 
     def test_no_forward_slash_in_token(self) -> None:
         """Tokens must be safe as URL path segments — no '/' characters."""
-        for salt in (SALT_ACCOUNT_ACCESS, SALT_UNSUBSCRIBE):
+        for salt in (SALT_ACCOUNT_ACCESS, SALT_EMAIL_VERIFICATION):
             token = generate_token("alice@example.com", salt=salt)
             assert "/" not in token, f"Token for salt={salt!r} contains '/': {token!r}"
 
     def test_different_salts_produce_different_tokens(self) -> None:
         token_a = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
-        token_b = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
+        token_b = generate_token("alice@example.com", salt=SALT_EMAIL_VERIFICATION)
         assert token_a != token_b
 
 
@@ -60,20 +53,20 @@ class TestVerifyToken:
         )
         assert result == "alice@example.com"
 
-    def test_round_trip_unsubscribe(self) -> None:
-        token = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
-        result = verify_token(token, salt=SALT_UNSUBSCRIBE, max_age=None)
+    def test_round_trip_email_verification(self) -> None:
+        token = generate_token("alice@example.com", salt=SALT_EMAIL_VERIFICATION)
+        result = verify_token(token, salt=SALT_EMAIL_VERIFICATION, max_age=None)
         assert result == "alice@example.com"
 
-    def test_cross_salt_replay_account_to_unsubscribe_fails(self) -> None:
-        """A token signed with SALT_ACCOUNT_ACCESS cannot be verified as SALT_UNSUBSCRIBE."""
+    def test_cross_salt_replay_account_to_verification_fails(self) -> None:
+        """A SALT_ACCOUNT_ACCESS token cannot be verified as SALT_EMAIL_VERIFICATION."""
         token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
-        result = verify_token(token, salt=SALT_UNSUBSCRIBE, max_age=None)
+        result = verify_token(token, salt=SALT_EMAIL_VERIFICATION, max_age=None)
         assert result is None
 
-    def test_cross_salt_replay_unsubscribe_to_account_fails(self) -> None:
-        """A token signed with SALT_UNSUBSCRIBE cannot be verified as SALT_ACCOUNT_ACCESS."""
-        token = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
+    def test_cross_salt_replay_verification_to_account_fails(self) -> None:
+        """A SALT_EMAIL_VERIFICATION token cannot be verified as SALT_ACCOUNT_ACCESS."""
+        token = generate_token("alice@example.com", salt=SALT_EMAIL_VERIFICATION)
         result = verify_token(
             token, salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
         )
@@ -91,13 +84,13 @@ class TestVerifyToken:
             )
         assert result is None
 
-    def test_unsubscribe_token_does_not_expire(self) -> None:
-        """Unsubscribe tokens have no expiry — max_age=None."""
+    def test_max_age_none_accepts_an_ancient_token(self) -> None:
+        """``max_age=None`` disables the expiry check entirely."""
         with freeze_time("2020-01-01T00:00:00Z"):
-            token = generate_token("alice@example.com", salt=SALT_UNSUBSCRIBE)
+            token = generate_token("alice@example.com", salt=SALT_EMAIL_VERIFICATION)
         # Verify five years later — should still be valid.
         with freeze_time("2025-01-01T00:00:00Z"):
-            result = verify_token(token, salt=SALT_UNSUBSCRIBE, max_age=None)
+            result = verify_token(token, salt=SALT_EMAIL_VERIFICATION, max_age=None)
         assert result == "alice@example.com"
 
     def test_tampered_token_returns_none(self) -> None:
@@ -121,94 +114,3 @@ class TestVerifyToken:
             "", salt=SALT_ACCOUNT_ACCESS, max_age=settings.ACCOUNT_TOKEN_MAX_AGE
         )
         assert result is None
-
-
-class TestUnsubscribeConvenienceWrappers:
-    """Tests for generate_unsubscribe_token / verify_unsubscribe_token."""
-
-    def test_round_trip(self) -> None:
-        token = generate_unsubscribe_token("alice@example.com", "CH-4115")
-        result = verify_unsubscribe_token(token)
-        assert result == ("alice@example.com", "CH-4115")
-
-    def test_no_forward_slash(self) -> None:
-        token = generate_unsubscribe_token("alice@example.com", "CH-4115")
-        assert "/" not in token
-
-    def test_tampered_unsubscribe_token_returns_none(self) -> None:
-        token = generate_unsubscribe_token("alice@example.com", "CH-4115")
-        tampered = token[:-4] + "ZZZZ"
-        result = verify_unsubscribe_token(tampered)
-        assert result is None
-
-    def test_garbage_token_returns_none(self) -> None:
-        result = verify_unsubscribe_token("garbage")
-        assert result is None
-
-    def test_region_id_with_dash_handled_correctly(self) -> None:
-        """Region IDs contain '-' but not '|' so splitting is unambiguous."""
-        token = generate_unsubscribe_token("user@example.com", "CH-4115-SUB")
-        result = verify_unsubscribe_token(token)
-        assert result == ("user@example.com", "CH-4115-SUB")
-
-    def test_generate_raises_on_separator_in_email(self) -> None:
-        with pytest.raises(ValueError, match="must not contain"):
-            generate_unsubscribe_token("bad|email@example.com", "CH-4115")
-
-    def test_generate_raises_on_separator_in_region_id(self) -> None:
-        with pytest.raises(ValueError, match="must not contain"):
-            generate_unsubscribe_token("alice@example.com", "CH|4115")
-
-    def test_does_not_expire(self) -> None:
-        with freeze_time("2020-01-01T00:00:00Z"):
-            token = generate_unsubscribe_token("alice@example.com", "CH-4115")
-        with freeze_time("2025-06-01T00:00:00Z"):
-            result = verify_unsubscribe_token(token)
-        assert result == ("alice@example.com", "CH-4115")
-
-
-# ---------------------------------------------------------------------------
-# SNOW-311 — caplog regression: malformed-token warning logs parts/length
-# ---------------------------------------------------------------------------
-
-
-class TestVerifyUnsubscribeTokenLogging:
-    """SNOW-311: verify_unsubscribe_token warning logs parts/length, not the raw value."""
-
-    def test_malformed_token_warning_logs_parts_and_length(
-        self,
-        caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A token whose decoded value has no separator logs parts= and len=, not the value.
-
-        We craft a token whose signed payload contains no '|' separator so that
-        verify_unsubscribe_token hits the unexpected-format branch.
-
-        The accounts logger has propagate=False in base.py; we flip it for
-        the duration of this test so caplog can capture the records.
-        """
-        from apps.accounts.services.token import SALT_UNSUBSCRIBE, generate_token
-
-        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
-
-        # Sign a value with no '|' so the split check fails.
-        no_sep_token = generate_token("noseparatorvalue", salt=SALT_UNSUBSCRIBE)
-
-        with caplog.at_level(logging.WARNING, logger="apps.accounts.services.token"):
-            result = verify_unsubscribe_token(no_sep_token)
-
-        assert result is None
-
-        all_messages = [r.getMessage() for r in caplog.records]
-
-        # The raw signed value must not appear in any warning.
-        for msg in all_messages:
-            assert "noseparatorvalue" not in msg, (
-                f"Raw token value found in log warning: {msg!r}"
-            )
-
-        # At least one record must contain parts= and len=.
-        assert any("parts=" in msg and "len=" in msg for msg in all_messages), (
-            f"No log record contains parts= and len=; records: {all_messages}"
-        )

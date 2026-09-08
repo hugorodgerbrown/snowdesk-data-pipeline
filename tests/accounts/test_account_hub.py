@@ -85,6 +85,14 @@ class TestAccountRouting:
         with pytest.raises(NoReverseMatch):
             reverse(name, kwargs={"region_id": "CH-4115"} if "region" in name else {})
 
+    @pytest.mark.parametrize(
+        "name", ["accounts:unsubscribe", "accounts:unsubscribe_done"]
+    )
+    def test_the_unsubscribe_routes_are_gone(self, name: str) -> None:
+        """SNOW-875: nothing mints an unsubscribe token, so nothing redeems one."""
+        with pytest.raises(NoReverseMatch):
+            reverse(name, kwargs={"token": "x"} if name.endswith("unsubscribe") else {})
+
     def test_settings_get_renders(self) -> None:
         """GET /account/settings/ renders the settings page."""
         response = _client_for(AccountFactory.create()).get(

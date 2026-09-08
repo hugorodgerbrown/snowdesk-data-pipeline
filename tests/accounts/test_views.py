@@ -5,18 +5,15 @@ Covers:
   account_view        — valid token verifies an unverified account; redirects
                         to manage with ?just_confirmed=1; idempotent on
                         re-click; bad/expired token → 400.
-  delete_account      — hard-deletes account; clears session; HX-Redirect to done;
-                        no session → 403; non-HTMX → 400; sweeps the Location
-                        a deleted favourite was the last referent of, while
-                        leaving shared and curated locations alone.
-  unsubscribe_view    — valid token GET/POST removes the region pin
-                        (SNOW-802); idempotent; bad token → 400; rate-limit
-                        429.
-  unsubscribe_done_view — GET renders done page.
+  delete_account      — hard-deletes account; clears session; HX-Redirect to
+                        /account/deleted/; no session → 403; non-HTMX → 400;
+                        sweeps the Location a deleted favourite was the last
+                        referent of, while leaving shared and curated
+                        locations alone.
+  account_deleted_view — GET renders the account-deleted page (SNOW-875).
   caplog regression   — plaintext emails never appear in log output; pk=/masked
                         forms appear instead; covers account_view,
-                        sign_in_view POST, delete_account, and unsubscribe_view
-                        hard-delete (SNOW-311).
+                        sign_in_view POST and delete_account (SNOW-311).
 """
 
 import re
@@ -39,8 +36,8 @@ from waffle.testutils import override_flag
 from apps.accounts.models import Account
 from apps.accounts.services.token import (
     SALT_ACCOUNT_ACCESS,
+    SALT_EMAIL_VERIFICATION,
     generate_token,
-    generate_unsubscribe_token,
 )
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
@@ -66,11 +63,6 @@ def _make_session_client(account: Account) -> Client:
     client = Client()
     client.force_login(account.user, backend=_TOKEN_BACKEND)
     return client
-
-
-def _region_pins(account: Account, region: Any) -> Any:
-    """The account's region pin(s) for ``region`` — what an unsubscribe removes."""
-    return Favourite.objects.for_user(account.user).region_pins().filter(region=region)
 
 
 def _valid_account_token(email: str) -> str:
@@ -297,9 +289,9 @@ class TestAccountView:
         response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 400
 
-    def test_unsubscribe_token_at_account_endpoint_returns_400(self) -> None:
-        """An unsubscribe token must not be accepted at the account endpoint."""
-        token = generate_unsubscribe_token("ghost@example.com", "CH-4115")
+    def test_verification_token_at_account_endpoint_returns_400(self) -> None:
+        """An email-verification token must not be accepted at the account endpoint."""
+        token = generate_token("ghost@example.com", salt=SALT_EMAIL_VERIFICATION)
         client = Client()
         response = client.get(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 400
@@ -642,153 +634,6 @@ class TestSignOut:
 
 
 # ---------------------------------------------------------------------------
-# unsubscribe_view
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestUnsubscribeView:
-    """Tests for the unsubscribe_view."""
-
-    def test_get_valid_token_renders_confirmation(self) -> None:
-        """Valid token GET renders the unsubscribe confirmation page."""
-        account = AccountFactory.create(user__email="unsub@example.com")
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        token = generate_unsubscribe_token("unsub@example.com", region.region_id)
-        client = Client()
-        response = client.get(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        assert response.status_code == 200
-        assert b"unsubscribe" in response.content.lower()
-
-    def test_post_valid_token_removes_subscription(self) -> None:
-        """Valid token POST removes the matching region pin (SNOW-802)."""
-        account = AccountFactory.create(user__email="unsub2@example.com")
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        token = generate_unsubscribe_token("unsub2@example.com", region.region_id)
-        client = Client()
-        response = client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        assert response.status_code == 200
-        assert not _region_pins(account, region).exists()
-
-    def test_post_last_subscription_keeps_account(self) -> None:
-        """Removing the last subscription leaves the User and Account intact."""
-        account = AccountFactory.create(user__email="lastregion@example.com")
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        account_pk = account.pk
-        user_pk = account.user_id
-        token = generate_unsubscribe_token("lastregion@example.com", region.region_id)
-        client = Client()
-        client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        assert Account.objects.filter(pk=account_pk).exists()
-        assert User.objects.filter(pk=user_pk).exists()
-        assert not Favourite.objects.filter(user_id=user_pk).region_pins().exists()
-
-    def test_post_not_last_subscription_keeps_subscriber(self) -> None:
-        """Removing one of multiple subscriptions keeps the account."""
-        account = AccountFactory.create(user__email="keep@example.com")
-        region1 = MicroRegionFactory.create()
-        region2 = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region1, region_pin=True)
-        FavouriteFactory.create(user=account.user, region=region2, region_pin=True)
-        token = generate_unsubscribe_token("keep@example.com", region1.region_id)
-        client = Client()
-        client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        assert Account.objects.filter(user__email="keep@example.com").exists()
-        assert _region_pins(account, region2).exists()
-
-    def test_post_idempotent_when_already_deleted(self) -> None:
-        """Re-submitting after account deletion renders done page without error."""
-        account = AccountFactory.create(user__email="gone@example.com")
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        token = generate_unsubscribe_token("gone@example.com", region.region_id)
-        account.delete()
-        client = Client()
-        response = client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        assert response.status_code == 200
-        assert b"unsubscribed" in response.content.lower()
-
-    def test_post_last_subscription_does_not_touch_an_existing_session(self) -> None:
-        """The unauthenticated token path makes no session change on last-region removal.
-
-        A user who is already signed in (e.g. clicked an old unsubscribe email
-        link from their own inbox while logged in elsewhere in the same
-        browser) stays signed in — unsubscribe_view never calls login/logout.
-        """
-        account = AccountFactory.create(user__email="stillin@example.com")
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        token = generate_unsubscribe_token("stillin@example.com", region.region_id)
-        client = _make_session_client(account)
-        client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        assert "_auth_user_id" in client.session
-
-    def test_bad_token_returns_400(self) -> None:
-        """Garbage token returns 400."""
-        client = Client()
-        response = client.get(
-            reverse("accounts:unsubscribe", kwargs={"token": "garbage"})
-        )
-        assert response.status_code == 400
-
-    def test_unsubscribe_token_does_not_expire(self) -> None:
-        """Unsubscribe tokens must remain valid regardless of age."""
-        account = AccountFactory.create(user__email="old@example.com")
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-
-        with freeze_time("2020-01-01T00:00:00Z"):
-            token = generate_unsubscribe_token("old@example.com", region.region_id)
-
-        with freeze_time("2025-06-01T00:00:00Z"):
-            client = Client()
-            response = client.get(
-                reverse("accounts:unsubscribe", kwargs={"token": token})
-            )
-        assert response.status_code == 200
-
-    def test_rate_limit_returns_429(self) -> None:
-        """Exceeding rate limit returns 429."""
-        rf = RequestFactory()
-        region = MicroRegionFactory.create()
-        token = generate_unsubscribe_token("rl@example.com", region.region_id)
-        request = rf.get(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        request.limited = True  # type: ignore[attr-defined]  # noqa: B010 — django-ratelimit attr
-
-        from apps.accounts.views import unsubscribe_view
-
-        response = unsubscribe_view(request, token=token)
-        assert response.status_code == 429
-
-    def test_cross_salt_token_returns_400(self) -> None:
-        """An account-access token must not be accepted at the unsubscribe endpoint."""
-        token = generate_token("alice@example.com", salt=SALT_ACCOUNT_ACCESS)
-        client = Client()
-        response = client.get(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        assert response.status_code == 400
-
-
-# ---------------------------------------------------------------------------
-# unsubscribe_done_view
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestUnsubscribeDoneView:
-    """Tests for the standalone unsubscribe_done_view."""
-
-    def test_get_renders_done_page(self) -> None:
-        """GET /account/unsubscribe-done/ renders the done page."""
-        client = Client()
-        response = client.get(reverse("accounts:unsubscribe_done"))
-        assert response.status_code == 200
-        assert b"unsubscribed" in response.content.lower()
-
-
-# ---------------------------------------------------------------------------
 # account_deleted_view
 # ---------------------------------------------------------------------------
 
@@ -850,7 +695,7 @@ class TestEmailFormNormalisation:
 
 @pytest.mark.django_db
 class TestAnalyticsUnsubscribed:
-    """analytics.track('unsubscribed') fires in delete_account and unsubscribe_view."""
+    """analytics.track('unsubscribed') fires in delete_account."""
 
     def test_fires_in_delete_account(self) -> None:
         account = AccountFactory.create()
@@ -863,22 +708,6 @@ class TestAnalyticsUnsubscribed:
         assert calls[0].args[1] == distinct_id
         props = calls[0].args[2]
         assert props["reason"] == "account_deleted"
-        assert "account_age_days" in props
-
-    def test_fires_in_unsubscribe_view(self) -> None:
-        account = AccountFactory.create()
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        distinct_id = str(account.uuid)
-        token = generate_unsubscribe_token(account.user.email, region.region_id)
-        client = Client()
-        with patch("apps.accounts.views.analytics.track") as mock_track:
-            client.post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-        calls = [c for c in mock_track.call_args_list if c.args[0] == "unsubscribed"]
-        assert len(calls) == 1
-        assert calls[0].args[1] == distinct_id
-        props = calls[0].args[2]
-        assert props["reason"] == "unsubscribe_link"
         assert "account_age_days" in props
 
 
@@ -1053,84 +882,5 @@ class TestDeleteAccountLogging:
 
         # The masked form d***@example.com must appear in at least one record.
         assert any("d***@example.com" in msg for msg in all_messages), (
-            f"Masked email not found in any log record; records: {all_messages}"
-        )
-
-
-@pytest.mark.django_db
-class TestUnsubscribeViewLogging:
-    """SNOW-311: unsubscribe_view never logs a plaintext email address."""
-
-    def test_last_subscription_removal_logs_no_plaintext_email(
-        self,
-        caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Removing the last subscription logs the account pk, never the plaintext email.
-
-        The account survives the request (only the region pin is
-        deleted), so the success log line is pk-based already — this guards
-        against a future regression that logs the raw address.
-
-        The accounts logger has propagate=False in base.py; we flip it for
-        the duration of this test so caplog can capture the records.
-        """
-        import logging
-
-        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
-
-        email = "unsub-caplog@example.com"
-        account = AccountFactory.create(user__email=email)
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        token = generate_unsubscribe_token(email, region.region_id)
-
-        with caplog.at_level(logging.INFO, logger="apps.accounts.views"):
-            Client().post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-
-        all_messages = [r.getMessage() for r in caplog.records]
-
-        # The plaintext email must not appear in any log record.
-        for msg in all_messages:
-            assert email not in msg, f"Plaintext email found in log: {msg!r}"
-
-        # At least one record must mention the account's pk.
-        assert any(str(account.pk) in msg for msg in all_messages), (
-            f"No log record contains pk={account.pk}; records: {all_messages}"
-        )
-
-    def test_already_removed_logs_masked_not_plaintext(
-        self,
-        caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Re-submitting for a since-deleted Account logs the masked email.
-
-        Hits the idempotent Account.DoesNotExist branch, the only path that
-        still logs a masked email (the account itself is gone, so pk is
-        unavailable).
-        """
-        import logging
-
-        monkeypatch.setattr(logging.getLogger("apps.accounts"), "propagate", True)
-
-        email = "gone-caplog@example.com"
-        account = AccountFactory.create(user__email=email)
-        region = MicroRegionFactory.create()
-        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
-        token = generate_unsubscribe_token(email, region.region_id)
-        account.delete()
-
-        with caplog.at_level(logging.INFO, logger="apps.accounts.views"):
-            Client().post(reverse("accounts:unsubscribe", kwargs={"token": token}))
-
-        all_messages = [r.getMessage() for r in caplog.records]
-
-        # The plaintext email must not appear in any log record.
-        for msg in all_messages:
-            assert email not in msg, f"Plaintext email found in log: {msg!r}"
-
-        # The masked form g***@example.com must appear in at least one record.
-        assert any("g***@example.com" in msg for msg in all_messages), (
             f"Masked email not found in any log record; records: {all_messages}"
         )
