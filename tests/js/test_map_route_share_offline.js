@@ -199,9 +199,10 @@ describe('a shared-route deep link whose layer never loads', () => {
   });
 
   it('leaves no deep-link listener bound to sourcedata', () => {
-    // One remains: map.js's own attribution updater, which is bound for the
-    // life of the map. A second is the leak — the deep link waiting for an
-    // install that has already failed, and which nothing will retry.
-    expect(mapStub.handlers.sourcedata.length).toBe(1);
+    // Two remain, both bound for the life of the map: SNOW-870's basemap
+    // tile-origin learner, and map.js's own attribution updater. A third is
+    // the leak — the deep link waiting for an install that has already
+    // failed, and which nothing will retry.
+    expect(mapStub.handlers.sourcedata.length).toBe(2);
   });
 });
