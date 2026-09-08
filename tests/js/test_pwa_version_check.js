@@ -24,7 +24,10 @@
  *      modal; ``false``, an absent field (a server predating the change)
  *      and an unreachable endpoint all open nothing. There is no version
  *      comparison left on the client to test — the ``min_supported`` floor
- *      and the ``X-App-Min-Version`` header are both gone.
+ *      and the ``X-App-Min-Version`` header are both gone. SNOW-869
+ *      extends that to the SOFT banner: it reveals on
+ *      ``update_available: true`` and on nothing else, so an absent field
+ *      now reveals nothing even when ``current`` differs.
  *   2. Nothing happens until the click. The reveal alone must not clear a
  *      cache or reload; the wipe used to fire under the modal, so the copy
  *      explaining what it cost was torn down before it could be read.
@@ -75,8 +78,11 @@ import '../../static/js/i18n_strings.js';
 
 const CURRENT_BUILD = '2026.08.01';
 const NEWER_BUILD = '2026.08.02';
+const CURRENT_RELEASE = 'v29';
 
-document.head.innerHTML = `<meta name="pwa-app-version" content="${CURRENT_BUILD}">`;
+document.head.innerHTML =
+  `<meta name="pwa-app-version" content="${CURRENT_BUILD}">` +
+  `<meta name="pwa-app-release" content="${CURRENT_RELEASE}">`;
 document.body.innerHTML = `
   <div id="sw-update-banner" class="hidden"></div>
   <div id="pwa-update-modal" class="hidden">
@@ -197,7 +203,12 @@ function modalShowing() {
 beforeEach(async () => {
   versionCalls = [];
   versionUnreachable = false;
-  versionBody = { current: CURRENT_BUILD, update_required: false };
+  versionBody = {
+    current: CURRENT_BUILD,
+    release: CURRENT_RELEASE,
+    update_required: false,
+    update_available: false,
+  };
   document.getElementById('sw-update-banner').classList.add('hidden');
   document.getElementById('pwa-update-modal').classList.add('hidden');
   document.documentElement.style.overflow = '';
@@ -259,7 +270,7 @@ describe('the fetch wrapper', () => {
 
 describe('a drifting header is a hint, not a verdict', () => {
   it('verifies against /api/version rather than acting on the header', async () => {
-    versionBody = { current: CURRENT_BUILD, update_required: false };
+    versionBody = { current: CURRENT_BUILD, update_available: false };
 
     await respondWith({ version: NEWER_BUILD });
     await settle();
@@ -286,7 +297,7 @@ describe('a drifting header is a hint, not a verdict', () => {
   });
 
   it('shows the soft banner when the drift is confirmed', async () => {
-    versionBody = { current: NEWER_BUILD, update_required: false };
+    versionBody = { current: NEWER_BUILD, update_available: true };
 
     await respondWith({ version: NEWER_BUILD });
     await settle();
@@ -300,7 +311,7 @@ describe('a drifting header is a hint, not a verdict', () => {
 
   it('does nothing when the banner owner has not loaded', async () => {
     delete window.pwaUpdateBanner;
-    versionBody = { current: NEWER_BUILD, update_required: false };
+    versionBody = { current: NEWER_BUILD, update_available: true };
 
     await respondWith({ version: NEWER_BUILD });
     await settle();
@@ -309,7 +320,7 @@ describe('a drifting header is a hint, not a verdict', () => {
   });
 
   it('keeps a confirmed drift sticky without another round trip', async () => {
-    versionBody = { current: NEWER_BUILD, update_required: false };
+    versionBody = { current: NEWER_BUILD, update_available: true };
     await respondWith({ version: NEWER_BUILD });
     await settle();
     expect(versionCalls).toHaveLength(1);
@@ -347,7 +358,7 @@ describe('a drifting header is a hint, not a verdict', () => {
   });
 
   it('shares one round trip between concurrent observations', async () => {
-    versionBody = { current: NEWER_BUILD, update_required: false };
+    versionBody = { current: NEWER_BUILD, update_available: true };
 
     await Promise.all([
       respondWith({ version: NEWER_BUILD }),
@@ -370,18 +381,27 @@ describe('the forced-update gate is the server verdict (SNOW-609)', () => {
       expected: { modal: true, banner: false },
     },
     {
-      name: 'update_required false with a drifted current shows the soft banner',
-      body: { current: NEWER_BUILD, update_required: false },
+      name: 'update_available true shows the soft banner',
+      body: { current: NEWER_BUILD, update_required: false, update_available: true },
       expected: { modal: false, banner: true },
     },
     {
       name: 'an absent update_required field reads as not blocked',
-      body: { current: NEWER_BUILD },
+      body: { current: NEWER_BUILD, update_available: true },
       expected: { modal: false, banner: true },
     },
     {
-      name: 'a body matching the shell reveals nothing (stale cached header)',
-      body: { current: CURRENT_BUILD, update_required: false },
+      name: 'update_available false reveals nothing (stale cached header)',
+      body: { current: CURRENT_BUILD, update_required: false, update_available: false },
+      expected: { modal: false, banner: false },
+    },
+    {
+      // SNOW-869: the soft-banner verdict is the server's boolean, not a
+      // client comparison of ``current`` against the shell's build. A
+      // server predating the field says nothing, and "cannot confirm"
+      // must not read as "confirmed" — even when ``current`` differs.
+      name: 'an absent update_available field reveals nothing, drifted current or not',
+      body: { current: NEWER_BUILD, update_required: false },
       expected: { modal: false, banner: false },
     },
   ];
@@ -428,7 +448,7 @@ describe('the forced-update gate is the server verdict (SNOW-609)', () => {
   });
 
   it('does not clear anything on a soft update', async () => {
-    versionBody = { current: NEWER_BUILD, update_required: false };
+    versionBody = { current: NEWER_BUILD, update_available: true };
 
     await respondWith({ version: NEWER_BUILD });
     await settle();
@@ -465,6 +485,60 @@ describe('the forced-update gate is the server verdict (SNOW-609)', () => {
     await settle();
 
     expect(versionCalls).toHaveLength(callsAfterFirst);
+  });
+});
+
+describe('window.pwaVersionInfo (SNOW-869)', () => {
+  it('publishes the identity of the build this shell was delivered on', () => {
+    // Both meta tags, read once here so `sw_register.js` does not read the
+    // DOM a second time to label the banner.
+    expect(window.pwaVersionInfo.build).toBe(CURRENT_BUILD);
+    expect(window.pwaVersionInfo.release).toBe(CURRENT_RELEASE);
+  });
+
+  it('hands back the verified body', async () => {
+    versionBody = {
+      current: NEWER_BUILD,
+      release: 'v30',
+      update_required: false,
+      update_available: true,
+    };
+
+    const verdict = await window.pwaVersionInfo.verified();
+
+    expect(verdict).toEqual({
+      current: NEWER_BUILD,
+      release: 'v30',
+      update_required: false,
+      update_available: true,
+    });
+  });
+
+  it('reuses the round trip the drift verification already made', async () => {
+    versionBody = { current: NEWER_BUILD, release: 'v30', update_available: true };
+    await respondWith({ version: NEWER_BUILD });
+    await settle();
+    expect(versionCalls).toHaveLength(1);
+
+    // The labelling read runs immediately after the reveal that round
+    // trip caused; going back to the network for a body we are holding
+    // would double the cost of every update.
+    const verdict = await window.pwaVersionInfo.verified();
+
+    expect(versionCalls).toHaveLength(1);
+    expect(verdict.release).toBe('v30');
+  });
+
+  it('returns null when the endpoint is unreachable', async () => {
+    versionUnreachable = true;
+
+    // "Cannot confirm" is never "confirmed": the caller keeps the
+    // unnumbered copy rather than naming builds it could not check.
+    await expect(window.pwaVersionInfo.verified()).resolves.toBeNull();
+  });
+
+  it('is frozen', () => {
+    expect(Object.isFrozen(window.pwaVersionInfo)).toBe(true);
   });
 });
 
