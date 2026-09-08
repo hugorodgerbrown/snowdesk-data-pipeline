@@ -20,6 +20,6 @@ Copy is wrapped in {% trans %} for future localisation.
 {% endcomment %}
 {% trans "Reset local data" as pwa_reset_required_title %}
 {% blocktrans asvar pwa_reset_required_body %}Snowdesk needs to reset local data on this device to keep working. Your
-    subscription and account are stored on the server and are not affected.{% endblocktrans %}
+    account and everything saved to it are stored on the server and are not affected.{% endblocktrans %}
 {% trans "Reset now" as pwa_reset_required_cta_label %}
 {% include "includes/_overlay_modal.html" with id="pwa-reset-required" title_id="pwa-reset-required-title" body_id="pwa-reset-required-body" title=pwa_reset_required_title body=pwa_reset_required_body cta_id="pwa-reset-required-cta" cta_label=pwa_reset_required_cta_label %}

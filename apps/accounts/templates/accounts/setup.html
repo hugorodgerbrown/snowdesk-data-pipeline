@@ -28,7 +28,7 @@ account" always reaches the manage page.
             {% trans "You're verified" as page_heading %}
             {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" %}
             <p class="text-text-2 text-sm mb-6 leading-relaxed">
-                {% trans "Your email address is confirmed. You can manage your account and subscriptions from here." %}
+                {% trans "Your email address is confirmed. You can manage your account from here." %}
             </p>
             <div>
                 {% url 'accounts:settings' as manage_url %}
