@@ -25,12 +25,6 @@ Provides two public functions:
     usable password; unknown / passwordless addresses are a silent no-op
     (SNOW-432).
 
-``send_subscription_confirmation_email(email, *, region, request=None)``
-    Sends a confirmation email to an already-active subscriber who just added
-    a new region.  Generates an account-access token (same salt as the
-    account-access flow) so the link in the email lands directly on the
-    manage page.  Includes the region name in the subject and body.
-
 ``send_email_change_confirmation(user, new_email, *, request=None)``
     Sends a confirmation link (``SALT_EMAIL_CHANGE``) to the **new** address; on
     confirmation the account's email is swapped (SNOW-433).
@@ -66,8 +60,6 @@ from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy
 from django_tasks import task
 
-from apps.regions.models import MicroRegion
-
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
@@ -101,7 +93,6 @@ _EMAIL_CHANGE_PATH_PREFIX = "/account/change-email/"
 # module scope.  Use %-named placeholders (not f-strings) as xgettext cannot
 # parse f-strings.
 _SUBJECT_ACCESS = gettext_lazy("Your Snowdesk account link")
-_SUBJECT_SUBSCRIBED = gettext_lazy("Snowdesk: you're subscribed to %(region_name)s")
 _SUBJECT_VERIFY = gettext_lazy("Verify your Snowdesk email address")
 _SUBJECT_RESET = gettext_lazy("Reset your Snowdesk password")
 _SUBJECT_EMAIL_CHANGE = gettext_lazy("Confirm your new Snowdesk email address")
@@ -275,55 +266,6 @@ def _worker_send_account_access_email(
     html_body = render_to_string("accounts/emails/account_access.html", context)
 
     logger.info("Sending account-access email to %s", mask_email(email))
-
-    send_mail(
-        subject=subject,
-        message=plain_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[email],
-        html_message=html_body,
-        fail_silently=False,
-    )
-
-
-@task()
-def _worker_send_subscription_confirmation_email(
-    email: str,
-    region_name: str,
-    base_url: str | None,
-) -> None:
-    """
-    Background worker: generate a token and send the subscription confirmation email.
-
-    Token generation is deferred into the worker so that a retry issues a
-    fresh token rather than replaying a stale one from the original enqueue.
-
-    Args:
-        email: Recipient email address.
-        region_name: Human-readable name of the newly-subscribed region.
-        base_url: Absolute base URL (scheme + host) extracted from the
-            originating request, or ``None`` to fall back to SITE_BASE_URL.
-
-    """
-    token = generate_token(email, salt=SALT_ACCOUNT_ACCESS)
-    account_url = _build_account_url(token, base_url)
-    expiry_hours = getattr(settings, "ACCOUNT_TOKEN_MAX_AGE", 86400) // 3600
-
-    context = {
-        "account_url": account_url,
-        "expiry_hours": expiry_hours,
-        "region_name": region_name,
-    }
-
-    subject = str(_SUBJECT_SUBSCRIBED % {"region_name": region_name})
-    plain_body = render_to_string("accounts/emails/account_subscribed.txt", context)
-    html_body = render_to_string("accounts/emails/account_subscribed.html", context)
-
-    logger.info(
-        "Sending subscription confirmation email to %s for region %s",
-        mask_email(email),
-        region_name,
-    )
 
     send_mail(
         subject=subject,
@@ -534,29 +476,6 @@ def send_account_access_email(
     """
     base_url = _extract_base_url(request)
     _worker_send_account_access_email.enqueue(email, base_url, next_url)
-
-
-def send_subscription_confirmation_email(
-    email: str,
-    *,
-    region: MicroRegion,
-    request: HttpRequest | None = None,
-) -> None:
-    """
-    Enqueue a subscription confirmation email to an active subscriber.
-
-    Called when an already-active subscriber adds a new region via the
-    inline subscribe CTA.  The embedded link uses an account-access token
-    so the subscriber lands directly on the manage page.
-
-    Args:
-        email: Recipient email address.
-        region: The newly-added MicroRegion instance (provides ``region.name``).
-        request: Optional HttpRequest used to derive the absolute base URL.
-
-    """
-    base_url = _extract_base_url(request)
-    _worker_send_subscription_confirmation_email.enqueue(email, region.name, base_url)
 
 
 def send_verification_email(
