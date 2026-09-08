@@ -133,7 +133,7 @@ def opted_out_pages(db: None) -> dict[str, str]:
         "reset_password": reverse("accounts:reset_password"),
         # A _status_page.html child, so this also covers the eleven
         # confirmation pages that share that parent.
-        "unsubscribe_done": reverse("accounts:unsubscribe_done"),
+        "account_deleted": reverse("accounts:account_deleted"),
     }
 
 

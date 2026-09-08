@@ -19,10 +19,9 @@ URL map
 /account/access/<token>/              account                GET/POST — access token
 /account/manage/                      manage                 301 → /?panel=favourites
 /account/manage/delete/               delete_account         POST HTMX
+/account/deleted/                     account_deleted        GET  — deletion done
 /account/manage/passkeys/<uuid>/delete/ passkey_delete       POST HTMX
 /account/sign-out/                    sign_out               POST
-/account/unsubscribe/<token>/         unsubscribe            GET/POST
-/account/unsubscribe-done/            unsubscribe_done       GET
 /account/webauthn/auth-request/       passkey_auth_request   GET
 /account/webauthn/auth-response/      passkey_auth_response  POST
 /account/webauthn/register-request/   passkey_reg_request    GET
@@ -101,14 +100,13 @@ urlpatterns = [
         name="manage",
     ),
     path("manage/delete/", views.delete_account, name="delete_account"),
+    path("deleted/", views.account_deleted_view, name="account_deleted"),
     path("sign-out/", views.sign_out, name="sign_out"),
     path(
         "manage/passkeys/<str:passkey_uuid>/delete/",
         views_passkey.passkey_delete,
         name="passkey_delete",
     ),
-    path("unsubscribe/<str:token>/", views.unsubscribe_view, name="unsubscribe"),
-    path("unsubscribe-done/", views.unsubscribe_done_view, name="unsubscribe_done"),
     # WebAuthn / passkey API endpoints
     path(
         "webauthn/auth-request/",

@@ -5,12 +5,8 @@ from __future__ import annotations
 import pytest
 from django.test import Client, override_settings
 
-from apps.accounts.services.token import (
-    SALT_ACCOUNT_ACCESS,
-    generate_token,
-    generate_unsubscribe_token,
-)
-from tests.factories import AccountFactory, MicroRegionFactory, SubscriptionFactory
+from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
+from tests.factories import AccountFactory
 
 
 @pytest.mark.django_db
@@ -92,25 +88,11 @@ def test_account_view_error_keeps_no_referrer() -> None:
 
 
 @pytest.mark.django_db
-def test_unsubscribe_view_get_sets_same_origin() -> None:
-    """unsubscribe_view GET renders a POST form → same-origin (SNOW-438)."""
-    region = MicroRegionFactory.create()
-    account = AccountFactory.create()
-    SubscriptionFactory.create(account=account, region=region)
-    token = generate_unsubscribe_token(account.user.email, region.region_id)
-    response = Client().get(f"/account/unsubscribe/{token}/")
-    assert response.status_code == 200
-    assert response["Referrer-Policy"] == "same-origin"
-
-
-@pytest.mark.django_db
 def test_view_override_takes_precedence_over_middleware_default() -> None:
     """A view-set Referrer-Policy survives the middleware (not overwritten)."""
-    region = MicroRegionFactory.create()
     account = AccountFactory.create()
-    SubscriptionFactory.create(account=account, region=region)
-    token = generate_unsubscribe_token(account.user.email, region.region_id)
-    response = Client().get(f"/account/unsubscribe/{token}/")
+    token = generate_token(account.user.email, salt=SALT_ACCOUNT_ACCESS)
+    response = Client().get(f"/account/access/{token}/")
     # Must be the view-set value, not the middleware default.
     assert response["Referrer-Policy"] == "same-origin"
     assert response["Referrer-Policy"] != "strict-origin-when-cross-origin"

@@ -1,6 +1,6 @@
 ---
 name: auth-testing-checklist
-description: Manual login/logout test checklist — magic-link, password, passkey sign-in, logout, registration, password reset, change email, unsubscribe
+description: Manual auth test checklist — magic-link, password, passkey sign-in, logout, registration, password reset, change email, account deletion
 status: current
 last-reviewed: 2026-09-03
 ---
@@ -90,14 +90,12 @@ the scenario doc does not.
 - [ ] Request a change to an address **already owned** by another account → silent no-op (same page, no email).
 - [ ] Replay a stale change-email link after a newer request → `link_expired`.
 
-## 9. Unsubscribe (no login required)
+## 9. Account deletion (auth-gated)
 
-- [ ] `/account/unsubscribe/<token>/` (`GET`) → confirmation page naming the region; **no state change** on GET.
-- [ ] POST → the region pin is removed (SNOW-802 — the token still resolves, and removes the pin that the subscription became); landing page confirms.
-- [ ] Removing the **last** pin → only that `Favourite` row is removed; the `User`/`Account` survive (no hard-delete, no session change — this path is unauthenticated by design).
-- [ ] Re-POST an already-processed unsubscribe → idempotent (still renders the done page).
-- [ ] Use an **old** email's unsubscribe link (token never expires) → still works.
-- [ ] Invalid/tampered token → `link_expired` (400).
+- [ ] `/account/settings/` → delete the account → HX-Redirect lands on `/account/deleted/`.
+- [ ] That page says the account and its data were deleted; it says nothing about regions, pins or unsubscribing (SNOW-875).
+- [ ] The session is gone: reloading `/account/settings/` redirects to sign-in.
+- [ ] The `User`, its `Account` and everything it owned are gone — deletion is the only hard-delete path.
 
 ## 10. Nav visibility (check in each state)
 
@@ -108,12 +106,12 @@ the scenario doc does not.
 
 ## 11. Cross-cutting checks
 
-- [ ] **GET never changes state** on any `/access/`, `/verify/`, `/change-email/`, or `/unsubscribe/` confirm page — only the POST button acts.
+- [ ] **GET never changes state** on any `/access/`, `/verify/`, or `/change-email/` confirm page — only the POST button acts.
 - [ ] **Enumeration parity**: register, sign-in, password-reset, and inline-subscribe give indistinguishable responses for known vs unknown emails.
 - [ ] **Rate limits** (with `RATELIMIT_ENABLE=True`): exceed each and confirm a 429 —
       sign-in 3/min, register 3/min, reset-confirm 10/min, change-email 3/min,
       change-email-confirm 10/min, passkey auth/register 10/min, passkey delete 5/min, subscribe 5/min.
-- [ ] **Token TTLs**: account-access / verification / reset / change-email all expire after 24h → `link_expired`; unsubscribe tokens never expire.
-- [ ] **Cross-salt replay** is blocked — e.g. using an access token on the unsubscribe route → `link_expired`.
+- [ ] **Token TTLs**: account-access / verification / reset / change-email all expire after 24h → `link_expired`.
+- [ ] **Cross-salt replay** is blocked — e.g. using an access token on the verify route → `link_expired`.
 - [ ] **Post-login redirects are hard-coded** (no `?next=` support): verify → setup; magic-link → manage; password / reset / change-email → manage; logout → sign-in.
 - [ ] **Legacy redirects**: old `/subscribe/…` links 301 to `/account/…`; `/subscribe/account/<token>/` → `/account/access/<token>/`.

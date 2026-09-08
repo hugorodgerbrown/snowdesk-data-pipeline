@@ -380,7 +380,7 @@ pages redirect into the map's sheets.
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/account/settings/ and locate "Delete account" | The control is visible in its own group |
 | 2 | Click it | A browser confirmation dialog appears |
-| 3 | Click "OK" | Browser is redirected to http://localhost:8000/account/unsubscribe-done/; the account is hard-deleted and the session is cleared; the pins sheet on the map is anonymous again |
+| 3 | Click "OK" | Browser is redirected to http://localhost:8000/account/deleted/, which says the account and its data have been deleted; the account is hard-deleted and the session is cleared; the pins sheet on the map is anonymous again |
 
 ### Scenario 14: Removing the last pin keeps the account
 
@@ -403,15 +403,18 @@ pages redirect into the map's sheets.
 | 3 | Navigate to http://localhost:8000/account/observations/ and http://localhost:8000/observations/ | Both 301 to `/?panel=reports`; the reports sheet opens |
 | 4 | Navigate to http://localhost:8000/favourites/<uuid>/ for one of your pins | 301 to that pin's `/weather/<short_id>/` page |
 
-### Scenario 16: Unpin from a historical unsubscribe link (no login required)
+### Scenario 16: The retired unsubscribe URLs are gone
 
-**Goal**: Verify an unsubscribe token still resolves and removes the region pin.
+**Goal**: Verify SNOW-875 left no reachable remnant of the email-subscription
+flow. Nothing mints an unsubscribe token any more, so nothing redeems one.
+The number is kept rather than reused so the later scenarios — which e2e
+docstrings cite by number — do not shift.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In a private window, open an unsubscribe link of the form `http://localhost:8000/account/unsubscribe/<token>/` (build one in a shell with `build_unsubscribe_url(email, region_id)`) | A confirmation page names the region; nothing changes on the GET |
-| 2 | Click "Yes, unsubscribe me" | The done page confirms the region was removed from the account's pins |
-| 3 | Sign in and open the region + date panel | The region is gone from "Pinned regions" |
+| 1 | In a private window, open `http://localhost:8000/account/unsubscribe/anything/` | 404 |
+| 2 | Open `http://localhost:8000/account/unsubscribe-done/` | 404 |
+| 3 | Open `http://localhost:8000/account/deleted/` | The account-deleted page renders, with a "Back to Snowdesk" button |
 
 ### Scenario 17: Submit the registration form with an invalid email address
 

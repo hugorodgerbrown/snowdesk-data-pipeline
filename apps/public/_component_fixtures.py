@@ -606,7 +606,7 @@ BUTTON_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Primary · full width",
         "context": {
-            "label": "Yes, unsubscribe me",
+            "label": "Yes, delete my account",
             "variant": "primary",
             "size": "standard",
             "full_width": True,

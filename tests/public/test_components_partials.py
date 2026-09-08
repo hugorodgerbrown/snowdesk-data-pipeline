@@ -7,7 +7,7 @@ Covers:
   _card.html       — chrome classes present, padding forwarded, center flag,
                      extra classes, inner content preserved.
   _status_page.html — rendered via real child templates (manage_sent,
-                     manage_saved, link_expired, unsubscribe_done) using the
+                     manage_saved, link_expired, account_deleted) using the
                      test client; asserts on structural chrome and content.
 
 Follows the pattern in tests/public/test_nav_partial.py: render_to_string
@@ -16,12 +16,9 @@ for partials, test client for full-page templates.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
-from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 from django.test import Client, RequestFactory
 
@@ -400,40 +397,14 @@ class TestStatusPageChildren:
         assert "Request a new link" in html
         assert "inline-block" in html
 
-    def test_unsubscribe_done_has_cta_button(self, anon_request: HttpRequest) -> None:
-        """unsubscribe_done.html renders the 'Back to Snowdesk' anchor."""
+    def test_account_deleted_has_cta_button(self, anon_request: HttpRequest) -> None:
+        """account_deleted.html renders the 'Back to Snowdesk' anchor."""
         html = render_to_string(
-            "accounts/unsubscribe_done.html", {}, request=anon_request
+            "accounts/account_deleted.html", {}, request=anon_request
         )
-        assert "You've been unsubscribed" in html
+        assert "Your account has been deleted" in html
         assert "Back to Snowdesk" in html
         assert "inline-block" in html
-
-    def test_unsubscribe_confirmation_form(self) -> None:
-        """unsubscribe.html renders the confirmation form with CSRF token and cancel link."""
-        rf = RequestFactory()
-        request = rf.get("/")
-        request.user = AnonymousUser()
-        # Seed a CSRF token on the request so {% csrf_token %} emits the hidden field.
-        get_token(request)
-
-        region = SimpleNamespace(region_id="CH-SZ", name="Schwyz")
-        html = render_to_string(
-            "accounts/unsubscribe.html",
-            {"region": region, "email": "test@example.com"},
-            request=request,
-        )
-        # Form is preserved.
-        assert '<form method="post"' in html
-        # CSRF hidden field is present.
-        assert "csrfmiddlewaretoken" in html
-        # Full-width primary button rendered by _button.html.
-        assert "bg-text-1" in html
-        assert "text-card" in html
-        assert "w-full" in html
-        # Cancel link has the expected classes and points home.
-        assert "text-xs text-text-3" in html
-        assert 'href="/"' in html
 
     def test_all_status_pages_share_chrome(self, anon_request: HttpRequest) -> None:
         """All four status pages share the same flex + card wrapper classes."""
@@ -441,7 +412,7 @@ class TestStatusPageChildren:
             "accounts/manage_sent.html",
             "accounts/manage_saved.html",
             "accounts/link_expired.html",
-            "accounts/unsubscribe_done.html",
+            "accounts/account_deleted.html",
         ]
         for tpl in templates:
             html = render_to_string(tpl, {}, request=anon_request)

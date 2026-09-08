@@ -319,8 +319,8 @@ def _view_name(request: HttpRequest) -> str:
     """Return the resolved view name for ``request`` or ``"unresolved"``.
 
     Preferred over ``request.path`` in log lines because some URL patterns
-    embed sensitive data in the path itself (e.g. the unsubscribe token
-    contains a lower-cased email address). Logging the view name gives
+    embed sensitive data in the path itself (e.g. the account-access
+    token contains a lower-cased email address). Logging the view name gives
     the same diagnostic value — "which endpoint is missing a key?" —
     without leaking PII into log files.
     """

@@ -37,8 +37,10 @@ Implements the subscription flow built around Django's TimestampSigner:
   manage_view         GET  — authenticated "your subscriptions" page.
                             Unauthenticated requests redirect to /sign-in/.
   remove_region       POST — HTMX: remove one subscribed region card.
-  delete_account      POST — HTMX: hard-delete the account and redirect to done.
-  unsubscribe_view    GET/POST — token-verified one-click unsubscribe.
+  delete_account      POST — HTMX: hard-delete the account and redirect to the
+                            account-deleted page.
+  account_deleted_view
+                      GET  — post-deletion landing page.
 
 Rate limiting via django-ratelimit (block=False pattern):
   subscribe_partial:  5 requests/min per IP.
@@ -47,7 +49,6 @@ Rate limiting via django-ratelimit (block=False pattern):
   remove_region POST: 10 requests/min per IP.
   remove_region_from_bulletin POST: 10 requests/min per IP.
   delete_account POST: 3 requests/min per IP.
-  unsubscribe_view: 10 requests/min per IP.
 
 Authentication uses Django's standard session auth (request.user).  After
 a token is verified in account_view or passkey authentication completes in
@@ -72,7 +73,7 @@ from django.contrib.auth import (
 )
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
@@ -83,8 +84,6 @@ from django_ratelimit.decorators import ratelimit
 from apps import analytics
 from apps.core.decorators import require_htmx
 from apps.core.services.request_log import capture as capture_request_log
-from apps.favourites.services import delete_region_favourite
-from apps.regions.models import MicroRegion
 
 from .forms import (
     ChangeEmailForm,
@@ -108,11 +107,9 @@ from .services.email import (
 from .services.token import (
     SALT_ACCOUNT_ACCESS,
     SALT_EMAIL_VERIFICATION,
-    generate_unsubscribe_token,
     verify_email_change_token,
     verify_password_reset_token,
     verify_token,
-    verify_unsubscribe_token,
 )
 
 if TYPE_CHECKING:
@@ -150,8 +147,9 @@ _REFERRER_CONFIRM_PAGE = "same-origin"
 # SNOW-802: where a just-verified account lands — the map, pins sheet open.
 _VERIFIED_LANDING_URL = "/?panel=favourites"
 
-# URL for the unsubscribe-done page — used in HX-Redirect headers.
-_UNSUBSCRIBE_DONE_URL = "/account/unsubscribe-done/"
+# URL for the account-deleted page — used in the HX-Redirect header sent by
+# delete_account once the row is gone and the session has been dropped.
+_ACCOUNT_DELETED_URL = "/account/deleted/"
 
 
 def _get_account(request: HttpRequest) -> Account | None:
@@ -1135,7 +1133,7 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     calls; this view adds only the session and analytics work around it,
     calling ``django.contrib.auth.logout()`` to clear the Django session and
     responding with an ``HX-Redirect`` header pointing to the
-    unsubscribe-done page.
+    account-deleted page.
 
     Guarded by authentication (no session → 403), ``@require_POST``,
     ``@require_htmx``, and rate-limited at 3 requests/min per IP.
@@ -1179,8 +1177,31 @@ def delete_account(request: HttpRequest) -> HttpResponse:
     )
 
     response = HttpResponse(status=200)
-    response["HX-Redirect"] = _UNSUBSCRIBE_DONE_URL
+    response["HX-Redirect"] = _ACCOUNT_DELETED_URL
     return response
+
+
+# ---------------------------------------------------------------------------
+# account_deleted — standalone page for post-deletion landing
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def account_deleted_view(request: HttpRequest) -> HttpResponse:
+    """
+    Render the "your account has been deleted" confirmation page.
+
+    This view exists so that the HX-Redirect from ``delete_account`` can
+    point at a stable GET URL that the just-logged-out visitor can reach.
+
+    Args:
+        request: Incoming GET request.
+
+    Returns:
+        Rendered account-deleted page.
+
+    """
+    return render(request, "accounts/account_deleted.html", {})
 
 
 # ---------------------------------------------------------------------------
@@ -1202,153 +1223,3 @@ def sign_out(request: HttpRequest) -> HttpResponse:
     """
     logout(request)
     return redirect("accounts:sign_in")
-
-
-# ---------------------------------------------------------------------------
-# unsubscribe_done — standalone page for post-unsubscribe landing
-# ---------------------------------------------------------------------------
-
-
-@require_GET
-def unsubscribe_done_view(request: HttpRequest) -> HttpResponse:
-    """
-    Render the "you've been unsubscribed" confirmation page.
-
-    This view exists so that HTMX HX-Redirect from remove_region and
-    delete_account can point to a stable GET URL rather than relying on
-    the unsubscribe flow's POST-only done path.
-
-    Args:
-        request: Incoming GET request.
-
-    Returns:
-        Rendered unsubscribe-done page.
-
-    """
-    return render(request, "accounts/unsubscribe_done.html", {})
-
-
-# ---------------------------------------------------------------------------
-# unsubscribe_view — token-verified one-click unsubscribe
-# ---------------------------------------------------------------------------
-
-
-@require_http_methods(["GET", "POST"])
-@ratelimit(key="ip", rate="10/m", block=False)
-def unsubscribe_view(request: HttpRequest, token: str) -> HttpResponse:
-    """
-    Confirm and execute a single-region unsubscribe.
-
-    Verifies the unsubscribe token (no expiry — tokens are permanent) to
-    extract ``(email, region_id)``.
-
-    GET: render a confirmation page showing which region will be removed.
-    POST: remove that region's **region pin** (SNOW-802 — the row a
-          ``Subscription`` became; see ``apps.favourites.services
-          .delete_region_favourite``). The User and Account are not
-          touched. Idempotent on re-submit (already removed → renders the
-          done page anyway). The tokens have no expiry and are live in
-          historical emails, so this path keeps resolving and keeps doing
-          what the person clicking intends.
-
-    Rate limited to 10 requests per minute per IP.
-
-    Args:
-        request: Incoming HTTP request.
-        token: The signed unsubscribe token from the URL path.
-
-    Returns:
-        Rendered confirmation, done, or error page.
-
-    """
-    if getattr(request, "limited", False):
-        return HttpResponse(status=429)
-
-    result = verify_unsubscribe_token(token)
-    if result is None:
-        logger.debug("unsubscribe_view received an invalid token")
-        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
-        return response
-
-    email, region_id = result
-
-    # Look up the region — 404 if deleted from the pipeline side.
-    region = get_object_or_404(MicroRegion, region_id=region_id)
-
-    if request.method == "GET":
-        response = render(
-            request,
-            "accounts/unsubscribe.html",
-            {"email": email, "region": region, "token": token},
-        )
-        response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
-        return response
-
-    # POST — execute unsubscribe.
-    try:
-        account = Account.objects.get(user__email=email.lower())
-    except Account.DoesNotExist:
-        # Already unsubscribed (perhaps from a different link) — idempotent.
-        logger.info(
-            "unsubscribe_view: account for %s not found — already deleted",
-            mask_email(email),
-        )
-        response = render(request, "accounts/unsubscribe_done.html", {})
-        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
-        return response
-
-    # Capture distinct_id and account_age_days BEFORE deleting the row.
-    distinct_id = str(account.uuid)
-    account_age_days = (timezone.now() - account.created_at).days
-
-    # Remove the region pin. The User and Account survive — this
-    # unauthenticated token path makes no session change and removes only
-    # the pin, even when it was the account's last one.
-    # Note: we intentionally do NOT fire ``region_removed`` here.  The
-    # unsubscribe-link path fires only ``unsubscribed``; ``region_removed``
-    # is reserved for the in-app toggle.  Firing both would double-count
-    # churn for people who leave via the email link.
-    delete_region_favourite(account.user, region)
-    logger.info("Account pk=%s unsubscribed from region %s", account.pk, region_id)
-
-    analytics.track(
-        "unsubscribed",
-        distinct_id,
-        {"reason": "unsubscribe_link", "account_age_days": account_age_days},
-    )
-
-    response = render(request, "accounts/unsubscribe_done.html", {})
-    response["Referrer-Policy"] = _REFERRER_NO_REFERRER
-    return response
-
-
-# ---------------------------------------------------------------------------
-# Unsubscribe token helper (used in bulletin email templates)
-# ---------------------------------------------------------------------------
-
-
-def build_unsubscribe_url(
-    email: str, region_id: str, request: HttpRequest | None = None
-) -> str:
-    """
-    Build an absolute unsubscribe URL for the given email and region.
-
-    Convenience helper for use in bulletin email templates and management
-    commands that need to embed per-region unsubscribe links.
-
-    Args:
-        email: The account's email address.
-        region_id: The SLF region identifier.
-        request: Optional request used to derive the base URL.
-
-    Returns:
-        Absolute URL string.
-
-    """
-    token = generate_unsubscribe_token(email, region_id)
-    path = f"/account/unsubscribe/{token}/"
-    if request is not None:
-        return request.build_absolute_uri(path)
-    base = getattr(settings, "SITE_BASE_URL", "http://localhost:8000").rstrip("/")
-    return f"{base}{path}"

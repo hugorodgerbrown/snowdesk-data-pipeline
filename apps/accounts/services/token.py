@@ -4,15 +4,14 @@
 """
 apps/accounts/services/token.py — Account-access token generation and validation.
 
-Provides pure functions for creating and verifying signed tokens used in the
-account-access and unsubscribe flows.  Tokens are produced by Django's
-built-in ``TimestampSigner`` so they do not require a separate secret
+Provides pure functions for creating and verifying the signed tokens used in
+the account-access, email-verification, password-reset and email-change
+flows.  Tokens are produced by Django's built-in ``TimestampSigner`` so they
+do not require a separate secret
 — they are derived from ``settings.SECRET_KEY`` and an additional salt.
 
 The salts are:
   - ``SALT_ACCOUNT_ACCESS`` — short-lived tokens for account-access email links.
-  - ``SALT_UNSUBSCRIBE`` — permanent tokens embedded in bulletin emails; these
-    never expire so a subscriber can always opt out even months later.
   - ``SALT_EMAIL_VERIFICATION`` — short-lived tokens for the registration
     email-verification links (SNOW-430).
   - ``SALT_PASSWORD_RESET`` — short-lived, single-use password-reset tokens
@@ -29,14 +28,6 @@ Public API
 ``verify_token(token, *, salt, max_age)``
     Verify ``token`` against ``salt``.  Returns the original ``value`` string
     on success, or ``None`` on failure (bad signature, tampered, or expired).
-
-``generate_unsubscribe_token(email, region_id)``
-    Convenience wrapper that encodes ``{email}|{region_id}`` and signs with
-    ``SALT_UNSUBSCRIBE``.
-
-``verify_unsubscribe_token(token)``
-    Convenience wrapper that verifies and splits an unsubscribe token.
-    Returns ``(email, region_id)`` on success or ``None`` on failure.
 """
 
 from __future__ import annotations
@@ -56,7 +47,6 @@ logger = logging.getLogger(__name__)
 # Salt values — changing a salt invalidates all tokens produced with the old
 # salt, which is intentional: bump the salt to rotate all outstanding tokens.
 SALT_ACCOUNT_ACCESS = "account-access"
-SALT_UNSUBSCRIBE = "unsubscribe"
 SALT_EMAIL_VERIFICATION = "email-verification"
 SALT_PASSWORD_RESET = "password-reset"  # noqa: S105 — salt label, not a password
 SALT_EMAIL_CHANGE = "email-change"
@@ -100,7 +90,7 @@ def verify_token(token: str, *, salt: str, max_age: int | None) -> str | None:
         token: The token string to verify.
         salt: Must match the salt used to generate the token.
         max_age: Maximum age of the token in seconds.  Pass ``None`` to
-            accept tokens regardless of age (unsubscribe flow).
+            accept tokens regardless of age.
 
     Returns:
         The original plain-text value embedded in the token, or ``None``.
@@ -117,65 +107,6 @@ def verify_token(token: str, *, salt: str, max_age: int | None) -> str | None:
     except BadSignature:
         logger.debug("Token has a bad signature (salt=%s)", salt)
         return None
-
-
-# ---------------------------------------------------------------------------
-# Unsubscribe convenience wrappers
-# ---------------------------------------------------------------------------
-
-
-def generate_unsubscribe_token(email: str, region_id: str) -> str:
-    """
-    Create a permanent unsubscribe token encoding both email and region_id.
-
-    The two values are joined with ``|`` before signing, which is safe
-    because neither email addresses nor SLF region IDs contain that character.
-
-    Args:
-        email: The subscriber's email address.
-        region_id: The SLF region identifier (e.g. ``"CH-4115"``).
-
-    Returns:
-        A signed, URL-safe token string.
-
-    """
-    if _UNSUB_SEP in email or _UNSUB_SEP in region_id:
-        raise ValueError(
-            f"email and region_id must not contain '{_UNSUB_SEP}'; "
-            f"got email={email!r}, region_id={region_id!r}"
-        )
-    value = f"{email.lower()}{_UNSUB_SEP}{region_id}"
-    return generate_token(value, salt=SALT_UNSUBSCRIBE)
-
-
-def verify_unsubscribe_token(token: str) -> tuple[str, str] | None:
-    """
-    Verify an unsubscribe token and return ``(email, region_id)``, or ``None``.
-
-    Unsubscribe tokens never expire (``max_age=None``) so a subscriber can
-    always opt out of a region using a link embedded in a historical email.
-
-    Args:
-        token: The unsubscribe token to verify.
-
-    Returns:
-        A ``(email, region_id)`` tuple on success, or ``None`` on failure.
-
-    """
-    raw = verify_token(token, salt=SALT_UNSUBSCRIBE, max_age=None)
-    if raw is None:
-        return None
-    parts = raw.split(_UNSUB_SEP, 1)
-    if len(parts) != 2:
-        logger.warning(
-            "Unsubscribe token value has unexpected format: parts=%d len=%d",
-            len(parts),
-            len(raw),
-        )
-        return None
-    email = parts[0].lower()
-    region_id = parts[1]
-    return email, region_id
 
 
 # ---------------------------------------------------------------------------

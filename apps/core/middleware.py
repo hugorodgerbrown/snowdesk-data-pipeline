@@ -85,7 +85,8 @@ class SecurityHeadersMiddleware:
 
     Uses ``strict-origin-when-cross-origin`` as the global Referrer-Policy
     default.  Views that carry tokens in their URL paths (account_view,
-    unsubscribe_view, verify_view, …) set their own value — ``no-referrer``
+    verify_view, reset_password_confirm_view, …) set their own value —
+    ``no-referrer``
     on terminal responses, ``same-origin`` on GET pages with a POST form
     (SNOW-438) — and this middleware honours that by only writing the header
     when it is absent.

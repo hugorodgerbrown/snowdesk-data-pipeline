@@ -16,7 +16,7 @@ renders a same-origin POST form:
 
 - **`same-origin`** on any GET page that renders a POST form back to the same
   view: `verify_view`, `reset_password_confirm_view`, `change_email_confirm_view`,
-  `unsubscribe_view`, and `account_view` (all the "click the button to confirm"
+  and `account_view` (all the "click the button to confirm"
   interstitials).
 - **`no-referrer`** on terminal responses that carry no POST form: the
   `link_expired` error page, and the post-confirmation redirects.
