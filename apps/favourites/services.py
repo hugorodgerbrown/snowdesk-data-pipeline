@@ -241,9 +241,9 @@ def create_region_favourite(
         user: The authenticated user pinning the region.
         region: The region being pinned.
         enforce_cap: Whether ``settings.FAVOURITES_MAX_PER_USER`` applies.
-            ``False`` for the one-time ``Subscription`` backfill — a user's
-            existing regions must not be dropped on the floor because they
-            also hold many placed pins.
+            ``False`` for a bulk writer that must not drop a user's regions
+            on the floor because they also hold many placed pins — the
+            SNOW-802 backfill wanted it, and ``seed_test_data`` still does.
 
     Returns:
         The newly created (or pre-existing) region pin.

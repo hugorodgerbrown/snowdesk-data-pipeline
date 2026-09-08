@@ -308,17 +308,13 @@ print("Done. 6 bulletins loaded.")
 
 ---
 
-### Scenario 17: Subscription flow unaffected
+### Scenario 17: Subscription flow unaffected — **retired**
 
-**Preconditions**: `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` in `.env`.
-
-| Step | Action | Expected Result |
-|------|--------|-----------------|
-| 1 | Navigate to `/subscribe/` | Form with email field renders |
-| 2 | Submit `qa-test@example.com` | Redirects to `/subscribe/sent/` |
-| 3 | Find email in Terminal 2 | URL beginning `http://localhost:8000/subscribe/verify/?token=` |
-| 4 | Paste verify URL | New subscriber → redirects to `/subscribe/regions/` |
-| 5 | Regions page | Search field and region list visible |
+There is no subscription flow to leave unaffected. `/subscribe/` and its
+verify and regions pages went with SNOW-802, and SNOW-805 dropped the
+`Subscription` table itself. A region is bookmarked from the map now (see
+`docs/testing-scenarios.md`). The number is kept so the ones after it do
+not shift.
 
 ---
 

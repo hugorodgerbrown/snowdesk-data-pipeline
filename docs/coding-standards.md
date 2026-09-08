@@ -41,8 +41,8 @@ apps/            Parent package for the nine Django apps (SNOW-557 — moved
                  slf_archive / geoip), the dev-only SLF mirror
                  endpoints, and the bulletin management
                  commands
-  accounts/      Signed-token email subscription flow — Account, Subscription,
-                 PasskeyCredential, PushSubscription
+  accounts/      Signed-token account flow — Account, PasskeyCredential,
+                 PushSubscription
   favourites/    Saved map pins and resorts — Favourite, its relevance
                  scoring, and the /favourites/ HTMX partials
   observations/  Community field reports — FieldObservation and the

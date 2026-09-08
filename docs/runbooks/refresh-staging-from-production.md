@@ -23,7 +23,7 @@ database into crash recovery.
 
 | Copied | Not copied |
 | ------ | ---------- |
-| `bulletins.PipelineRun` | `auth_user`, `accounts.Account`, `accounts.Subscription` |
+| `bulletins.PipelineRun` | `auth_user`, `accounts.Account` |
 | `bulletins.Bulletin` | `accounts.PasskeyCredential`, `accounts.PushSubscription` |
 | `bulletins.RegionBulletin` | `favourites.Favourite`, `observations.FieldObservation` |
 | `bulletins.RegionDayRating` | `routes.Route`, `core.RequestLog` |

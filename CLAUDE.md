@@ -64,9 +64,9 @@ apps/            Parent package for the thirteen Django apps (SNOW-557 — moved
                  ``Subscriber`` into it), ``PushSubscription`` (FK to
                  ``Account``) and ``PasskeyCredential`` (FK to auth.User,
                  so any authenticated user can register a passkey without
-                 an Account profile). ``Subscription`` is retired — its
-                 rows became region pins (SNOW-802) and SNOW-805 drops the
-                 table in its own deploy
+                 an Account profile). ``Subscription`` is gone — its rows
+                 became region pins (SNOW-802) and SNOW-805 dropped the
+                 table
   favourites/    The one saved-place model — ``Favourite`` is a map pin, a
                  saved resort, or a region pin (a region with no
                  coordinate, SNOW-802) — plus its relevance scoring and the
