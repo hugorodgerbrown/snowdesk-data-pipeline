@@ -124,9 +124,12 @@ class TestSiteFooterVersion:
         screen-reader user gets the word "Version" in front of it.
         """
         body = client.get("/").content.decode("utf-8")
-        row = body[
-            body.index('data-testid="site-footer-version"') : body.index("v24") + 3
-        ]
+        # Anchored on the footer row, not on the first "v24" in the
+        # document: SNOW-869 bakes the same label into
+        # <meta name="pwa-app-release"> in the head, so the first match is
+        # now the meta tag and the slice would run backwards.
+        row = body[body.index('data-testid="site-footer-version"') :]
+        row = row[: row.index("v24") + 3]
 
         assert "sr-only" in row
         assert "Version" in row
@@ -137,9 +140,15 @@ class TestSiteFooterVersion:
 
         The account menu is scoped to everything before the footer, so a
         version string found there would be a genuine duplicate.
+
+        The head is excluded from that scope: SNOW-869 bakes the label
+        into <meta name="pwa-app-release"> for the update banner, which is
+        machine-readable metadata rather than a second thing on screen.
         """
         body = self._signed_in_client().get("/").content.decode("utf-8")
-        before_footer = body[: body.index('data-testid="site-footer"')]
+        before_footer = body[
+            body.index("</head>") : body.index('data-testid="site-footer"')
+        ]
 
         assert "v24" not in before_footer
 
