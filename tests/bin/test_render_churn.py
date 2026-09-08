@@ -1,11 +1,20 @@
 """Tests for bin/render-churn — the weekly churn page renderer.
 
-The parsing half is unit-tested against synthetic `git log --numstat` output,
-because that is where the decisions live: which paths count as churn, which
-count as data, and what happens to a week that merged nothing. The rendering
-half is covered by one end-to-end pass over the real repository, which is
-also what proves the embedded JSON and the computed prose agree with each
-other.
+Two layers, and neither of them reads the repository this file lives in.
+
+The parsing rules are unit-tested against synthetic `git log --numstat`
+output, because that is where the decisions live: which paths count as
+churn, which count as data, and what happens to a week that merged nothing.
+
+Everything that needs a real `git` is pointed at a throwaway repository
+built by the `fixture_repo` fixture, with a known shape — two commits in one
+week, a silent week, then a week carrying two release tags and one named tag
+that must not count as a release.
+
+The first version of this file asserted against the real history instead,
+and passed locally and failed in CI: `actions/checkout` produces a shallow
+clone with no tags, so there was no gap week and no release to find. A test
+that depends on how the checkout was made is testing the checkout.
 """
 
 from __future__ import annotations
@@ -15,9 +24,12 @@ import importlib.machinery
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RENDER_CHURN = REPO_ROOT / "bin" / "render-churn"
@@ -38,6 +50,78 @@ def _load() -> ModuleType:
 
 
 churn = _load()
+
+
+# The fixture repository: (date, [(added, removed, path), ...]) per commit.
+# Week of 6 Apr carries two commits touching the same file plus a fixture
+# import; the week of 13 Apr is deliberately empty; the week of 20 Apr
+# carries the tags.
+FIXTURE_COMMITS = [
+    ("2026-04-06T09:00:00", {"a.py": 10, "apps/x/fixtures/regions.json": 100}),
+    ("2026-04-08T09:00:00", {"a.py": 15}),
+    ("2026-04-20T09:00:00", {"b.py": 7}),
+]
+FIXTURE_TAGS = ["2026.04.20", "2026.04.20.2", "spike-something"]
+
+
+def _run(repo: Path, *args: str, when: str | None = None) -> None:
+    """Run one git command in the fixture repo, optionally at a fixed date."""
+    env = {
+        "PATH": "/usr/bin:/bin:/usr/local/bin",
+        "HOME": str(repo),
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+    }
+    if when is not None:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = when
+    # S603 — a test helper driving git with a fixed argument list, no shell,
+    # against a temporary directory pytest created.
+    subprocess.run(  # noqa: S603
+        [
+            churn.GIT,
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "-C",
+            str(repo),
+            *args,
+        ],
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+@pytest.fixture(scope="module")
+def fixture_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Build a throwaway git repository with a known weekly shape."""
+    repo = tmp_path_factory.mktemp("churn-repo")
+    _run(repo, "init", "-b", "main")
+
+    for when, files in FIXTURE_COMMITS:
+        for name, lines in files.items():
+            path = repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("\n".join(f"line {n}" for n in range(lines)) + "\n")
+        # A binary file: git reports "-" for its line counts, which the
+        # renderer has to skip rather than parse as an integer.
+        (repo / "logo.png").write_bytes(b"\x89PNG\x00\x00binary\x00")
+        _run(repo, "add", "-A")
+        _run(repo, "commit", "-m", f"commit at {when}", when=when)
+
+    for tag in FIXTURE_TAGS:
+        _run(repo, "tag", tag)
+    return repo
+
+
+@pytest.fixture
+def churn_at(fixture_repo: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    """Point the renderer at the fixture repository instead of this one."""
+    monkeypatch.setattr(churn, "REPO_ROOT", fixture_repo)
+    return churn
 
 
 def _log(*commits: tuple[str, list[tuple[int, int, str]]]) -> str:
@@ -155,54 +239,77 @@ class TestWeekMonday:
 
 
 class TestWeeklyHistory:
-    """The calendar walk over the real repository."""
+    """The calendar walk, against a repository of known shape."""
 
-    def test_weeks_are_contiguous_and_ordered(self) -> None:
-        """Every week between the first and last commit is present exactly once."""
-        weeks = churn.weekly_history()
-        assert weeks, "the repository has commits"
-        starts = [dt.date.fromisoformat(str(w["start"])) for w in weeks]
-        assert starts == sorted(starts)
-        gaps = {(b - a).days for a, b in zip(starts, starts[1:])}
-        assert gaps == {7}
+    def test_one_record_per_week_including_the_silent_one(
+        self, churn_at: ModuleType
+    ) -> None:
+        weeks = churn_at.weekly_history()
+        assert [w["label"] for w in weeks] == ["6 Apr", "13 Apr", "20 Apr"]
 
-    def test_silent_weeks_are_kept_as_zeroes(self) -> None:
-        """A week that merged nothing is a zero row, not a missing one."""
-        weeks = churn.weekly_history()
-        silent = [w for w in weeks if w["c"] == 0]
-        assert silent, "the history contains at least one week with no commits"
-        for week in silent:
-            assert (week["a"], week["d"], week["f"]) == (0, 0, 0)
+    def test_weeks_are_contiguous(self, churn_at: ModuleType) -> None:
+        """Consecutive records are exactly seven days apart."""
+        starts = [
+            dt.date.fromisoformat(str(w["start"])) for w in churn_at.weekly_history()
+        ]
+        assert {(b - a).days for a, b in zip(starts, starts[1:])} == {7}
 
-    def test_release_counts_match_their_tag_lists(self) -> None:
-        weeks = churn.weekly_history()
-        assert all(w["rel"] == len(w["tags"]) for w in weeks)
-        assert sum(int(w["rel"]) for w in weeks) > 0
+    def test_a_silent_week_is_a_zero_row_not_a_missing_one(
+        self, churn_at: ModuleType
+    ) -> None:
+        silent = churn_at.weekly_history()[1]
+        assert (silent["c"], silent["a"], silent["d"], silent["f"]) == (0, 0, 0, 0)
+        assert silent["tags"] == []
+
+    def test_commits_and_churn_are_summed_across_the_week(
+        self, churn_at: ModuleType
+    ) -> None:
+        """Two commits, one file rewritten, and a fixture import beside it."""
+        first = churn_at.weekly_history()[0]
+        assert first["c"] == 2
+        assert first["f"] == 1  # a.py, touched twice
+        assert first["g"] == 100  # the fixture import, kept out of churn
+        assert first["a"] > 0
+
+    def test_release_tags_are_counted_and_named_tags_are_not(
+        self, churn_at: ModuleType
+    ) -> None:
+        last = churn_at.weekly_history()[-1]
+        assert last["rel"] == 2
+        assert last["tags"] == ["2026.04.20", "2026.04.20.2"]
+
+    def test_release_counts_match_their_tag_lists(self, churn_at: ModuleType) -> None:
+        assert all(w["rel"] == len(w["tags"]) for w in churn_at.weekly_history())
 
 
 class TestRender:
     """The rendered page."""
 
-    def test_page_is_a_fragment_not_a_document(self) -> None:
+    def test_page_is_a_fragment_not_a_document(self, churn_at: ModuleType) -> None:
         """Artifacts supply the skeleton; the renderer must not."""
-        page = churn.render(churn.weekly_history(), dt.date(2026, 9, 8))
+        page = churn_at.render(churn_at.weekly_history(), dt.date(2026, 4, 27))
         lowered = page.lower()
         for tag in ("<!doctype", "<html", "<head>", "<body>"):
             assert tag not in lowered
 
-    def test_every_placeholder_is_substituted(self) -> None:
-        page = churn.render(churn.weekly_history(), dt.date(2026, 9, 8))
+    def test_every_placeholder_is_substituted(self, churn_at: ModuleType) -> None:
+        page = churn_at.render(churn_at.weekly_history(), dt.date(2026, 4, 27))
         assert re.search(r"__[A-Z_]+__", page) is None
 
-    def test_embedded_data_matches_the_history(self) -> None:
+    def test_embedded_data_matches_the_history(self, churn_at: ModuleType) -> None:
         """The JSON the chart reads is the same data the table totals."""
-        weeks = churn.weekly_history()
-        page = churn.render(weeks, dt.date(2026, 9, 8))
+        weeks = churn_at.weekly_history()
+        page = churn_at.render(weeks, dt.date(2026, 4, 27))
         match = re.search(r"const DATA = (\[.*?\]);\n", page)
         assert match is not None, "the page carries an embedded DATA array"
-        embedded = json.loads(match.group(1))
-        assert embedded == json.loads(json.dumps(weeks))
+        assert json.loads(match.group(1)) == json.loads(json.dumps(weeks))
 
-    def test_the_render_date_is_stamped(self) -> None:
-        page = churn.render(churn.weekly_history(), dt.date(2026, 9, 8))
-        assert "8 September 2026" in page
+    def test_the_render_date_is_stamped(self, churn_at: ModuleType) -> None:
+        page = churn_at.render(churn_at.weekly_history(), dt.date(2026, 4, 27))
+        assert "27 April 2026" in page
+
+    def test_the_silent_week_reaches_the_prose(self, churn_at: ModuleType) -> None:
+        """The notes are computed, so the gap must be named there too."""
+        page = churn_at.render(churn_at.weekly_history(), dt.date(2026, 4, 27))
+        assert "13 Apr" in page
+        assert "no commits at all" in page
