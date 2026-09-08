@@ -9,10 +9,17 @@
  * every area under it, in its own pinned bucket.
  *
  * SNOW-863 trimmed it from z0-9 to z0-7 after measuring what it actually
- * cost (144.4 MB on the default basemap, 29% of the standing budget). The
- * SIZE assertions below are load-bearing for that reason and not
+ * cost (144.4 MB on the default basemap, 29% of the standing budget), and
+ * SNOW-868 made the band a function of the BASEMAP rather than a flat
+ * rule, having measured the other three. The trim was right for
+ * OpenFreeMap and was never a statement about a national style: z8+z9
+ * costs OpenFreeMap 121 MB over its Alps-wide camera extent, and costs
+ * swisstopo 4.4 MB, IGN 4.4 MB and basemap.at ~7.3 MB over theirs. So the
+ * national basemaps close the seam to z9 and the default keeps the gap.
+ * The SIZE assertions below are load-bearing for that reason and not
  * decoration — the old cost was invisible until a user complained about
- * their budget.
+ * their budget, and the numbers are what keeps this from being argued
+ * from taste in either direction.
  *
  * What is actually worth asserting here, and why:
  *
@@ -143,38 +150,70 @@ describe('baseLayerBBox', () => {
 });
 
 describe('baseLayerBlob', () => {
-  it('covers z0-7 and deliberately leaves a gap below MICRO_BAND', () => {
+  it('defaults to z0-7 when no basemap is named', () => {
     const blob = core.baseLayerBlob(CAMERA, SWISSTOPO);
 
     expect(blob.band).toEqual([0, 7]);
     expect(Object.keys(blob.z).map(Number).sort((a, b) => a - b)).toEqual([
       0, 1, 2, 3, 4, 5, 6, 7,
     ]);
-    // SNOW-863: the bands do NOT meet, and the assertion is inverted from
-    // the one that shipped. SNOW-856 chose z0-9 so they would abut, and
-    // that tidiness cost 123 MB on the default basemap — z8 and z9 are
-    // most of the layer's size (see BASE_LAYER_BAND's own comment). They
-    // draw from the stored z7 tile via MapLibre's findLoadedParent, which
-    // is the same mechanism the whole feature already relies on.
-    expect(core.BASE_LAYER_BAND[1] + 1).toBeLessThan(core.MICRO_BAND[0]);
+    // The default is the CHEAPEST band, which is the conservative
+    // direction for a basemap whose extent nothing has measured.
+    expect(core.baseLayerBand()).toEqual(core.BASE_LAYER_BAND);
+    expect(core.baseLayerBand('a_basemap_nobody_has_measured')).toEqual([0, 7]);
   });
 
-  it('is 25 tiles per source over swisstopo, not 215', () => {
-    // Measured 2026-09-07 (SNOW-863): the z0-9 band was 215 tiles per
-    // source and 14.8 MB on disk for swisstopo's two; z0-7 is 25. The
-    // count is asserted so a band or bbox change that quietly multiplies
-    // the download fails loudly rather than showing up as a budget
-    // complaint months later — which is exactly how the z0-9 cost was
-    // found.
+  it('closes the seam below MICRO_BAND for a national basemap, not for the default', () => {
+    // This assertion is per-basemap, and it has now been inverted twice —
+    // so read the numbers, not the history. SNOW-856 chose z0-9 so the two
+    // bands would abut. SNOW-863 measured the DEFAULT basemap and trimmed
+    // to z0-7 everywhere. SNOW-868 measured the other three, and what
+    // z8+z9 costs over each basemap's OWN extent is:
+    //
+    //   openfreemap_liberty  121 MB   (33.4 + 88.0, Alps-wide camera)
+    //   swisstopo            4.4 MB   (1.4 + 3.0, CH, both sources)
+    //   ign_plan             4.4 MB   (2.1 + 2.3, FR)
+    //   basemap_at           ~7.3 MB  (~3.2 + ~4.1, AT)
+    //
+    // A quarter of the standing 500 MB budget against a rounding error.
+    // So the gap stays for OpenFreeMap, where z8 and z9 draw from the
+    // stored z7 tile through MapLibre's findLoadedParent — the same
+    // mechanism the whole feature already relies on — and closes for the
+    // national three, where paying to close it is not paying much.
+    //
+    // This is NOT SNOW-856's mistake being repeated: that band was global
+    // and was never measured per basemap. This one is neither.
+    expect(core.baseLayerBand('openfreemap_liberty')[1] + 1).toBeLessThan(
+      core.MICRO_BAND[0],
+    );
+    for (const key of ['swisstopo_winter', 'swisstopo_light', 'ign_plan', 'basemap_at']) {
+      expect(core.baseLayerBand(key)).toEqual([0, 9]);
+      expect(core.baseLayerBand(key)[1] + 1).toBe(core.MICRO_BAND[0]);
+    }
+  });
+
+  it('is 25 tiles per source over swisstopo at the default band, 215 at its own', () => {
+    // Measured 2026-09-07 (SNOW-863): the z0-9 band is 215 tiles per source
+    // and 14.8 MB on disk for swisstopo's two; z0-7 is 25. Both counts are
+    // asserted so a band or bbox change that quietly multiplies the
+    // download fails loudly rather than showing up as a budget complaint
+    // months later — which is exactly how the z0-9 cost was found. 215 is
+    // also the figure BASE_LAYER_BAND's own comment records, so the two
+    // cannot drift apart silently.
     expect(core.baseLayerBlob(CAMERA, SWISSTOPO).count).toBe(25);
+    const national = core.baseLayerBlob(CAMERA, SWISSTOPO, 'swisstopo_winter');
+    expect(national.band).toEqual([0, 9]);
+    expect(national.count).toBe(215);
   });
 
   it('is 56 tiles for a global style — the camera holds it, not the style', () => {
     // The case that made the size matter: OpenFreeMap Liberty declares the
     // whole world, so only the camera bounds it. At z0-9 that was 682
     // tiles and 144.4 MB on disk, 29% of the standing budget before a
-    // single area was downloaded.
+    // single area was downloaded. Named or not, it stays at z0-7 — the
+    // measurement is why the default is the default.
     expect(core.baseLayerBlob(CAMERA, null).count).toBe(56);
+    expect(core.baseLayerBlob(CAMERA, null, 'openfreemap_liberty').count).toBe(56);
   });
 
   it('answers null where the extent does', () => {
@@ -193,6 +232,21 @@ describe('baseLayerTileURLs', () => {
     expect(urls).toHaveLength(25 * 2);
     expect(urls.filter((url) => url.startsWith('https://a.'))).toHaveLength(25);
     expect(urls.filter((url) => url.startsWith('https://b.'))).toHaveLength(25);
+  });
+
+  it("asks for the named basemap's band, not the default one", () => {
+    // What `resolveBaseLayerPlan` threads through, and the reason the
+    // stale-bucket migration needs nothing per-basemap of its own: the url
+    // set it compares against is already this basemap's.
+    const urls = core.baseLayerTileURLs([[A]], CAMERA, SWISSTOPO, 'swisstopo_winter');
+
+    expect(urls).toHaveLength(215);
+    // The old band's urls are a strict SUBSET of the new one's, which is
+    // why widening a national basemap's band evicts nothing: the ordinary
+    // missing-url plan tops the bucket up with z8 and z9 and re-fetches
+    // none of what is already held.
+    const old = core.baseLayerTileURLs([[A]], CAMERA, SWISSTOPO);
+    expect(old.every((url) => urls.includes(url))).toBe(true);
   });
 
   it("picks each tile's host the way MapLibre does", () => {
